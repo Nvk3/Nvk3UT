@@ -10,6 +10,86 @@ local ICON_UP   = "esoui/art/market/keyboard/giftmessageicon_up.dds"
 local ICON_DOWN = "esoui/art/market/keyboard/giftmessageicon_down.dds"
 local ICON_OVER = "esoui/art/market/keyboard/giftmessageicon_over.dds"
 
+local function _formatCompletedTooltipLine(data, points)
+    local name = data and (data.name or data.text)
+    if not name and data and data.categoryData then
+        name = data.categoryData.name or data.categoryData.text
+    end
+    local label = zo_strformat("<<1>>", name or "")
+    local value = ZO_CommaDelimitNumber(points or 0)
+    return string.format("%s – %s", label, value)
+end
+
+local function _completedPointsForKey(key)
+    if not (Comp and Comp.SummaryCountAndPointsForKey) then
+        return 0
+    end
+    local ok, count, points = pcall(Comp.SummaryCountAndPointsForKey, key)
+    if ok then
+        if type(points) == "number" then
+            return points
+        end
+        if type(count) == "number" then
+            return count
+        end
+    end
+    return 0
+end
+
+local function _updateCompletedTooltip(ach)
+    if not ach or not Comp then
+        return
+    end
+
+    local parentNode = ach._nvkCompletedNode
+    local children = ach._nvkCompletedChildren
+    if not parentNode or not parentNode.GetData then
+        return
+    end
+
+    local parentData = parentNode:GetData()
+    if not parentData then
+        return
+    end
+    parentData.nvkSummaryTooltipText = nil
+
+    local lines = {}
+    local orderedChildren = {}
+    if parentNode.GetChildren then
+        local actualChildren = parentNode:GetChildren()
+        if type(actualChildren) == "table" then
+            for idx = 1, #actualChildren do
+                orderedChildren[#orderedChildren + 1] = actualChildren[idx]
+            end
+        end
+    end
+    if #orderedChildren == 0 and type(children) == "table" then
+        for idx = 1, #children do
+            orderedChildren[#orderedChildren + 1] = children[idx]
+        end
+    end
+    ach._nvkCompletedChildren = orderedChildren
+
+    for idx = 1, #orderedChildren do
+        local node = orderedChildren[idx]
+        local data = node and node.GetData and node:GetData()
+        if data and data.subcategoryIndex then
+            local pts = _completedPointsForKey(data.subcategoryIndex)
+            local line = _formatCompletedTooltipLine(data, pts)
+            data.isNvkCompleted = true
+            data.nvkSummaryTooltipText = line
+            lines[#lines + 1] = line
+        elseif data then
+            data.nvkSummaryTooltipText = nil
+        end
+    end
+
+    parentData.isNvkCompleted = true
+    if #lines > 0 then
+        parentData.nvkSummaryTooltipText = table.concat(lines, "\n")
+    end
+end
+
 local function AddCompletedCategory(AchClass)
     local orgAddTopLevelCategory = AchClass.AddTopLevelCategory
     function AchClass.AddTopLevelCategory(...)
@@ -27,13 +107,30 @@ local function AddCompletedCategory(AchClass)
 
         local parentNode = self:AddCategory(lookup, tree, nodeTemplate, nil, NVK3_DONE, label, false, ICON_UP, ICON_DOWN, ICON_OVER, true, true)
 
+        self._nvkCompletedNode = parentNode
+        self._nvkCompletedChildren = {}
+
         local _row = parentNode and parentNode.GetData and parentNode:GetData()
-        if _row then _row.isNvkCompleted = true end
+        if _row then
+            _row.isNvkCompleted = true
+            _row.nvkSummaryTooltipText = nil
+        end
 
         local names, ids = Comp.GetSubcategoryList()
         for i, n in ipairs(names) do
-            self:AddCategory(lookup, tree, subTemplate, parentNode, ids[i], n, true)
+            local node = self:AddCategory(lookup, tree, subTemplate, parentNode, ids[i], n, true)
+            if self._nvkCompletedChildren then
+                self._nvkCompletedChildren[#self._nvkCompletedChildren + 1] = node
+            end
+            local data = node and node.GetData and node:GetData()
+            if data then
+                data.isNvkCompleted = true
+                data.nvkSummaryTooltipText = nil
+            end
         end
+
+        -- Collect tooltip data immediately so hover state matches the freshly built tree.
+        _updateCompletedTooltip(self)
 
         if self.refreshGroups then self.refreshGroups:RefreshAll("FullUpdate") end
         return result
@@ -48,6 +145,7 @@ local function OverrideOnCategorySelected(AchClass)
         if _nvk3ut_is_enabled("completed") and data and data.categoryIndex == NVK3_DONE then
             self:HideSummary()
             self:UpdateCategoryLabels(data, true, false)
+            _updateCompletedTooltip(self)
             if Nvk3UT and Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then Nvk3UT.UI.UpdateStatus() end
         else
             local __r = org(...)
@@ -90,6 +188,7 @@ local function OverrideOnAchievementUpdated(AchClass)
         if _nvk3ut_is_enabled("completed") and data and data.categoryIndex == NVK3_DONE then
             Comp.Rebuild()
             self:UpdateCategoryLabels(data, true, false)
+            _updateCompletedTooltip(self)
             if Nvk3UT and Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then Nvk3UT.UI.UpdateStatus() end
         else
             local __r = org(...)
