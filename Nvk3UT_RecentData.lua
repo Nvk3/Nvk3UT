@@ -85,9 +85,23 @@ function M.List(maxCount, sinceTs)
     table.sort(t, function(a,b) return a.ts > b.ts end)
     local res = {}
     local limit = tonumber(maxCount) or 0
+    local removed = 0
     for i=1,#t do
-        res[#res+1] = t[i].id
-        if limit > 0 and #res >= limit then break end
+        local id = t[i].id
+        local open = IsOpen(id)
+        if open then
+            if limit == 0 or #res < limit then
+                res[#res+1] = id
+            end
+        elseif id then
+            M.Clear(id)
+            removed = removed + 1
+        end
+    end
+    if U and U.d then
+        if removed > 0 then
+            U.d("[Nvk3UT][Recent][List] filtered", "removed:", removed)
+        end
     end
     return res
 end
