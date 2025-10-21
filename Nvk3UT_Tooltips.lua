@@ -402,6 +402,7 @@ local function HookHandlers(tree, control)
     end
 
     ClearTooltip(AchievementTooltip)
+    -- Basegame category anchor reference: AchievementTooltip TOPRIGHT -> control TOPLEFT with (0, -104) offsets
     InitializeTooltip(AchievementTooltip, ctrl, TOPRIGHT, 0, -104, TOPLEFT)
 
     local name = data.name or data.text or (data.categoryData and data.categoryData.name)
@@ -608,7 +609,7 @@ end
 
 local function _nvkInitializeCategoryTooltip(control)
   local tooltip = AchievementTooltip
-  if not tooltip or not control or not control.GetCenter then
+  if not tooltip or not control then
     return nil
   end
 
@@ -620,35 +621,10 @@ local function _nvkInitializeCategoryTooltip(control)
     InformationTooltip:SetClampedToScreen(true)
   end
 
-  local controlCenterX = select(1, control:GetCenter())
-  local referenceX
-  local parent = control.GetParent and control:GetParent()
-
-  while parent and parent.GetCenter do
-    if parent.GetWidth and parent:GetWidth() > 0 then
-      referenceX = select(1, parent:GetCenter())
-      break
-    end
-    parent = parent.GetParent and parent:GetParent()
-  end
-
-  if not referenceX and AchievementJournal and AchievementJournal.GetCenter then
-    referenceX = select(1, AchievementJournal:GetCenter())
-  end
-
-  if not referenceX and GuiRoot and GuiRoot.GetCenter then
-    referenceX = select(1, GuiRoot:GetCenter())
-  end
-
-  local tooltipPoint = TOPLEFT
-  local relativePoint = TOPRIGHT
-
-  if referenceX and controlCenterX and controlCenterX >= referenceX then
-    tooltipPoint = TOPRIGHT
-    relativePoint = TOPLEFT
-  end
-
-  InitializeTooltip(tooltip, control, tooltipPoint, 0, -104, relativePoint)
+  -- Align with basegame category anchor: owner=control, tooltip TOPRIGHT -> control TOPLEFT, offsets (0, -104)
+  InitializeTooltip(tooltip, control, TOPRIGHT, 0, -104, TOPLEFT)
+  tooltip:ClearAnchors()
+  tooltip:SetAnchor(TOPRIGHT, control, TOPLEFT, 0, -104)
 
   return tooltip
 end
@@ -746,6 +722,7 @@ local function _nvkCountFavorites()
 end
 
 local function _nvkRenderFavorites(control)
+  -- Matches basegame category anchor (TOPRIGHT -> TOPLEFT, offset 0/-104)
   local tooltip = _nvkInitializeCategoryTooltip(control)
   if not tooltip then
     return nil
@@ -787,6 +764,7 @@ local function _nvkCountRecent()
 end
 
 local function _nvkRenderRecent(control)
+  -- Matches basegame category anchor (TOPRIGHT -> TOPLEFT, offset 0/-104)
   local tooltip = _nvkInitializeCategoryTooltip(control)
   if not tooltip then
     return nil
@@ -841,6 +819,7 @@ local function _nvkCompletedPointsForKey(Comp, key)
 end
 
 local function _nvkRenderCompleted(control)
+  -- Matches basegame category anchor (TOPRIGHT -> TOPLEFT, offset 0/-104)
   local tooltip = _nvkInitializeCategoryTooltip(control)
   if not tooltip then
     return
@@ -910,6 +889,7 @@ local function _nvkMaxPointsForTop(topId, Todo)
 end
 
 local function _nvkRenderTodo(control)
+  -- Matches basegame category anchor (TOPRIGHT -> TOPLEFT, offset 0/-104)
   local tooltip = _nvkInitializeCategoryTooltip(control)
   if not tooltip then
     return nil
