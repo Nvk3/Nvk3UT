@@ -2,26 +2,15 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Zip Addon",
+      "label": "Zip Addon (safe)",
       "type": "shell",
       "command": "powershell",
       "args": [
         "-NoProfile",
         "-ExecutionPolicy",
         "Bypass",
-        "-Command",
-        "$n=(Split-Path -Leaf $PWD.Path);",
-        "$o=\"$n-Release.zip\";",
-        "if(Test-Path $o){Remove-Item $o};",
-        "Add-Type -AssemblyName System.IO.Compression.FileSystem;",
-        "$z=[System.IO.Compression.ZipFile]::Open($o,'Create');",
-        "$ex='\\\\.git(\\\\|$)|\\\\.vscode(\\\\|$)|\\\\.DS_Store$|thumbs.db$|^'+[regex]::Escape($o)+'$';",
-        "Get-ChildItem -Recurse -File | Where-Object { $_.FullName -notmatch $ex } | ForEach-Object {",
-        "  $rel=$_.FullName.Substring($PWD.Path.Length+1);",
-        "  [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($z,$_.FullName,$rel)",
-        "};",
-        "$z.Dispose();",
-        "Write-Host \"Created $o\";"
+        "-File",
+        "${workspaceFolder}/tools/build_zip.ps1"
       ],
       "problemMatcher": []
     }
