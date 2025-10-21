@@ -38,6 +38,24 @@ local function _formatCompletedTooltipLine(data, points)
     return string.format("%s – %s", label, value)
 end
 
+local function _extractYearFromKey(key, last50Key)
+    if type(key) ~= "number" then
+        return nil
+    end
+    if last50Key and key == last50Key then
+        return nil
+    end
+    local month = key % 100
+    if month < 1 or month > 12 then
+        return nil
+    end
+    local year = math.floor(key / 100)
+    if year < 1 then
+        return nil
+    end
+    return year
+end
+
 local function _completedPointsForKey(key)
     if not (Comp and Comp.SummaryCountAndPointsForKey) then
         return 0
@@ -111,9 +129,13 @@ local function _updateCompletedTooltip(ach)
         ach._nvkCompletedChildren = orderedChildren
     end
 
-    local lines = {}
+    local detailLines = {}
     parentData.isNvkCompleted = true
     parentData.nvkSummaryTooltipText = nil
+
+    local constants = Comp and Comp.Constants and Comp.Constants()
+    local last50Key = constants and constants.LAST50_KEY
+    local yearTotals, years, monthlyCount = {}, {}, 0
 
     for idx = 1, #orderedChildren do
         local node = orderedChildren[idx]
@@ -125,20 +147,52 @@ local function _updateCompletedTooltip(ach)
                 local points = _completedPointsForKey(key)
                 local line = _formatCompletedTooltipLine(data, points)
                 data.nvkSummaryTooltipText = line
-                lines[#lines + 1] = line
+                local year = _extractYearFromKey(key, last50Key)
+                if year then
+                    monthlyCount = monthlyCount + 1
+                    if yearTotals[year] == nil then
+                        yearTotals[year] = points or 0
+                        years[#years + 1] = year
+                    else
+                        yearTotals[year] = (yearTotals[year] or 0) + (points or 0)
+                    end
+                elseif line then
+                    detailLines[#detailLines + 1] = line
+                end
             else
                 data.nvkSummaryTooltipText = nil
             end
         end
     end
 
-    if #lines > 0 then
-        parentData.nvkSummaryTooltipText = table.concat(lines, "\n")
+    local parentLines = {}
+    for idx = 1, #detailLines do
+        parentLines[#parentLines + 1] = detailLines[idx]
+    end
+
+    table.sort(years, function(a, b)
+        return a > b
+    end)
+
+    local yearLineCount = 0
+    for idx = 1, #years do
+        local year = years[idx]
+        local total = yearTotals[year] or 0
+        if total > 0 then
+            parentLines[#parentLines + 1] = string.format("%d: %s", year, ZO_CommaDelimitNumber(total))
+            yearLineCount = yearLineCount + 1
+        end
+    end
+
+    if #parentLines > 0 then
+        parentData.nvkSummaryTooltipText = table.concat(parentLines, "\n")
     end
 
     if _isDebug() then
-        local payload = (#lines == 0) and "lines={}" or string.format("lines={%s}", table.concat(lines, " || "))
-        _debugLog("[Nvk3UT][Completed][TooltipData]", payload)
+        _debugLog(
+            "[Nvk3UT][Completed][TooltipData]",
+            string.format("months=%d years=%d", monthlyCount, yearLineCount)
+        )
     end
 end
 
