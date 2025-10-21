@@ -596,6 +596,34 @@ local function _nvkInitializeCategoryTooltip(control)
   return tooltip
 end
 
+local function _nvkApplySummaryLabelStyle(label)
+  if not label then
+    return
+  end
+  label:SetFont("$(MEDIUM_FONT)|$(KB_12)|soft-shadow-none")
+  label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
+  label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+  label:SetPixelRoundingEnabled(false)
+end
+
+local function _nvkShowSummaryText(control, text)
+  if not text or text == "" then
+    return
+  end
+
+  local tooltip = _nvkInitializeCategoryTooltip(control)
+  if not tooltip then
+    return
+  end
+
+  tooltip:ClearLines()
+  local r, g, b = ZO_SELECTED_TEXT:UnpackRGB()
+  local _, label = tooltip:AddLine(text, "", r, g, b, LEFT, MODIFY_TEXT_TYPE_NONE, TEXT_ALIGN_LEFT, false)
+  if label then
+    _nvkApplySummaryLabelStyle(label)
+  end
+end
+
 local function _nvkInitTooltip(control)
   local tt = AchievementTooltip or InformationTooltip
   InitializeTooltip(tt, control, BOTTOM, 0, -10)
@@ -865,6 +893,12 @@ function Nvk3UT.TryCustomCategoryTooltip(control, data)
   data = _nvkGetData(control, data)
   if not data then
     return false
+  end
+
+  local summaryText = data.nvkSummaryTooltipText
+  if type(summaryText) == "string" and summaryText ~= "" then
+    _nvkShowSummaryText(control, summaryText)
+    return true
   end
 
   if data.isNvkFavorites then
