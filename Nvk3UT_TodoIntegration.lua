@@ -11,22 +11,32 @@ local NVK3_TODO = 84002
 local ICON_UP = "esoui/art/market/keyboard/giftmessageicon_up.dds"
 local ICON_DOWN = "esoui/art/market/keyboard/giftmessageicon_down.dds"
 local ICON_OVER = "esoui/art/market/keyboard/giftmessageicon_over.dds"
+local todoProvide_lastTs = 0
+local todoProvide_lastCount = 0
 
 -- Add one 'To-Do-Liste' header with subcategories for each basegame top category
 
-local function _todoOpenPointsForTop(topId)
-  if not topId then
-    return 0
+local function _todoCollectOpenSummary(topId)
+  if not topId or not Todo or type(Todo.ListOpenForTop) ~= "function" then
+    return 0, 0
   end
-  local ok, _name, _numSub, _numAch, earned, total = pcall(GetAchievementCategoryInfo, topId)
-  if not ok then
-    return 0
+
+  local ok, ids = pcall(Todo.ListOpenForTop, topId, false)
+  if not ok or type(ids) ~= "table" then
+    return 0, 0
   end
-  local open = (total or 0) - (earned or 0)
-  if open < 0 then
-    open = 0
+
+  local num = #ids
+  local points = 0
+  for index = 1, num do
+    local id = ids[index]
+    local infoOk, _name, _desc, score = pcall(GetAchievementInfo, id)
+    if infoOk then
+      points = points + (score or 0)
+    end
   end
-  return open
+
+  return num, points
 end
 
 local function _formatTodoTooltipLine(data, points)
@@ -75,11 +85,17 @@ local function _updateTodoTooltip(ach)
     local node = orderedChildren[idx]
     local data = node and node.GetData and node:GetData()
     if data and data.subcategoryIndex then
-      local points = _todoOpenPointsForTop(data.subcategoryIndex)
-      local line = _formatTodoTooltipLine(data, points)
-      data.isNvkTodo = true
-      data.nvkSummaryTooltipText = line
-      lines[#lines + 1] = line
+      local count, points = _todoCollectOpenSummary(data.subcategoryIndex)
+      if count > 0 then
+        local line = _formatTodoTooltipLine(data, points)
+        data.isNvkTodo = true
+        data.nvkTodoOpenCount = count
+        data.nvkTodoOpenPoints = points
+        data.nvkSummaryTooltipText = line
+        lines[#lines + 1] = line
+      else
+        data.nvkSummaryTooltipText = nil
+      end
     elseif data then
       data.nvkSummaryTooltipText = nil
     end
@@ -163,16 +179,21 @@ local function AddTodoCategory(AchClass)
 
     local numTop = GetNumAchievementCategories and GetNumAchievementCategories() or 0
     for top = 1, numTop do
-      local topName, nSub, nAch = GetAchievementCategoryInfo(top)
-      if (nSub and nSub > 0) or (nAch and nAch > 0) then
-        local node = self:AddCategory(lookup, tree, subTemplate, parentNode, top, topName, true)
-        if self._nvkTodoChildren then
-          self._nvkTodoChildren[#self._nvkTodoChildren + 1] = node
-        end
-        local data = node and node.GetData and node:GetData()
-        if data then
-          data.isNvkTodo = true
-          data.nvkSummaryTooltipText = nil
+      local ok, topName, nSub, nAch = pcall(GetAchievementCategoryInfo, top)
+      if ok and ((nSub and nSub > 0) or (nAch and nAch > 0)) then
+        local openCount, openPoints = _todoCollectOpenSummary(top)
+        if openCount > 0 then
+          local node = self:AddCategory(lookup, tree, subTemplate, parentNode, top, topName, true)
+          if self._nvkTodoChildren then
+            self._nvkTodoChildren[#self._nvkTodoChildren + 1] = node
+          end
+          local data = node and node.GetData and node:GetData()
+          if data then
+            data.isNvkTodo = true
+            data.nvkTodoOpenCount = openCount
+            data.nvkTodoOpenPoints = openPoints
+            data.nvkSummaryTooltipText = nil
+          end
         end
       end
     end
