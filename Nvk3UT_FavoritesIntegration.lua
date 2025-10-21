@@ -14,6 +14,53 @@ local SUMMARY_ICONS = {
     "esoui/art/market/keyboard/giftmessageicon_over.dds"
 }
 
+local function _countFavorites()
+    if not (Fav and Fav.Iterate) then
+        return 0
+    end
+    local scope = (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.ui and Nvk3UT.sv.ui.favScope) or "account"
+    local ok, iterator, state, key = pcall(Fav.Iterate, scope)
+    if not ok or type(iterator) ~= "function" then
+        return 0
+    end
+    local count = 0
+    local current = key
+    while true do
+        local id, flagged = iterator(state, current)
+        current = id
+        if id == nil then
+            break
+        end
+        if flagged then
+            count = count + 1
+        end
+    end
+    return count
+end
+
+local function _updateFavoritesTooltip(ach)
+    if not ach then
+        return
+    end
+    local node = ach._nvkFavoritesNode
+    local data
+    if node and node.GetData then
+        data = node:GetData()
+    end
+    data = data or ach._nvkFavoritesData
+    if not data then
+        return
+    end
+
+    local count = _countFavorites()
+    local name = data.name or data.text or (data.categoryData and data.categoryData.name) or "Favoriten"
+    local label = zo_strformat("<<1>>", name)
+    local line = string.format("%s – %s", label, ZO_CommaDelimitNumber(count or 0))
+    data.isNvkFavorites = true
+    data.nvkSummaryTooltipText = line
+    ach._nvkFavoritesData = data
+end
+
 local function AddFavoritesTopCategory(AchievementsClass)
     local orgAddTopLevelCategory = AchievementsClass.AddTopLevelCategory
     function AchievementsClass.AddTopLevelCategory(...)
@@ -26,9 +73,16 @@ local function AddFavoritesTopCategory(AchievementsClass)
         local lookup, tree, hidesUnearned = self.nodeLookupData, self.categoryTree, false
         local normalIcon, pressedIcon, mouseoverIcon = unpack(SUMMARY_ICONS)
         local parentNode = self:AddCategory(lookup, tree, "ZO_IconChildlessHeader", nil, NVK3_FAVORITES_KEY, "Favoriten", hidesUnearned, normalIcon, pressedIcon, mouseoverIcon, true, true)
-        local _row = parentNode and parentNode.GetData and parentNode:GetData()
-        if _row then _row.isNvkFavorites = true end
-        local row = parentNode:GetData(); row.isNvk3Fav = true
+        self._nvkFavoritesNode = parentNode
+        local row = parentNode and parentNode.GetData and parentNode:GetData()
+        if row then
+            row.isNvkFavorites = true
+            row.nvkSummaryTooltipText = nil
+            row.isNvk3Fav = true
+            self._nvkFavoritesData = row
+        end
+        -- Capture tooltip data right after the category row exists.
+        _updateFavoritesTooltip(self)
         if self.refreshGroups then self.refreshGroups:RefreshAll("FullUpdate") end
         return result
     end
@@ -42,6 +96,7 @@ local function OverrideOnCategorySelected(AchievementsClass)
         if data.categoryIndex == NVK3_FAVORITES_KEY then
             ACH:HideSummary()
             ACH.UpdateCategoryLabels(...)
+            _updateFavoritesTooltip(ACH)
         else
             return org(...)
         end
@@ -77,6 +132,7 @@ local function OverrideOnAchievementUpdated(AchievementsClass)
         if _nvk3ut_is_enabled("favorites") and data and data.categoryIndex == NVK3_FAVORITES_KEY then
             if Fav.IsFavorite(id) and ZO_ShouldShowAchievement(ACH.categoryFilter.filterType, id) then
                 ACH:UpdateCategoryLabels(data, true, false)
+                _updateFavoritesTooltip(ACH)
             end
         else
             return org(...)
@@ -144,6 +200,7 @@ local function HookAchievementContext()
                                 local __scope = (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.ui and Nvk3UT.sv.ui.favScope) or "account"; while id ~= 0 do Fav.Remove(id, __scope); id = GetNextAchievementInLine(id) end; local U = Nvk3UT and Nvk3UT.Utils; if U and U.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then U.d("[Nvk3UT][Favorites][Toggle] remove", "data={rootId:", ACHIEVEMENTS:GetBaseAchievementId(self:GetId()), "}") end
                                 if ACHIEVEMENTS and ACHIEVEMENTS.refreshGroups then ACHIEVEMENTS.refreshGroups:RefreshAll("FullUpdate") end
                                 Nvk3UT.RebuildSelected(ACHIEVEMENTS)
+                                _updateFavoritesTooltip(ACHIEVEMENTS)
                                 if Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then Nvk3UT.UI.UpdateStatus() end
                             end)
                         else
@@ -151,6 +208,7 @@ local function HookAchievementContext()
                                 local __scope = (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.ui and Nvk3UT.sv.ui.favScope) or "account"; Fav.Add(id, __scope)
                                 local U = Nvk3UT and Nvk3UT.Utils; if U and U.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then U.d("[Nvk3UT][Favorites][Toggle] add", "data={id:", id, ", scope:account}") end
                                 Nvk3UT.RebuildSelected(ACHIEVEMENTS)
+                                _updateFavoritesTooltip(ACHIEVEMENTS)
                                 if Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then Nvk3UT.UI.UpdateStatus() end
                             end)
                         end

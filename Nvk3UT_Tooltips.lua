@@ -4,6 +4,60 @@ Nvk3UT.Tooltips = T
 
 local U = Nvk3UT and Nvk3UT.Utils
 
+local function _nvkIsDebug()
+  local sv = Nvk3UT and Nvk3UT.sv
+  return sv and sv.debug
+end
+
+local function _nvkTooltipLabel(data)
+  if not data then
+    return "<nil>"
+  end
+  local name = data.name or data.text
+  if not name and data.categoryData then
+    name = data.categoryData.name or data.categoryData.text
+  end
+  if not name or name == "" then
+    return "<unnamed>"
+  end
+  return zo_strformat("<<1>>", name)
+end
+
+local function _nvkTooltipKind(data)
+  if not data then
+    return "Unknown"
+  end
+  if data.isNvkCompleted then
+    return "Completed"
+  end
+  if data.isNvkFavorites then
+    return "Favorites"
+  end
+  if data.isNvkRecent then
+    return "Recent"
+  end
+  if data.isNvkTodo then
+    return "ToDo"
+  end
+  if data.summary then
+    return "Summary"
+  end
+  return "Custom"
+end
+
+local function _nvkDebugTooltipText(data, text)
+  if not (_nvkIsDebug() and U and U.d) then
+    return
+  end
+  local payload
+  if type(text) == "string" and text ~= "" then
+    payload = text:gsub("\n", " | ")
+  else
+    payload = "<empty>"
+  end
+  U.d("[Nvk3UT][TT][" .. _nvkTooltipKind(data) .. "]", string.format("name=%s text=%s", _nvkTooltipLabel(data), payload))
+end
+
 T.name = "Nvk3UT_Tooltips"
 T.enabled = true
 
@@ -596,6 +650,34 @@ local function _nvkInitializeCategoryTooltip(control)
   return tooltip
 end
 
+local function _nvkApplySummaryLabelStyle(label)
+  if not label then
+    return
+  end
+  label:SetFont("$(MEDIUM_FONT)|$(KB_12)|soft-shadow-none")
+  label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
+  label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+  label:SetPixelRoundingEnabled(false)
+end
+
+local function _nvkShowSummaryText(control, text)
+  if not text or text == "" then
+    return
+  end
+
+  local tooltip = _nvkInitializeCategoryTooltip(control)
+  if not tooltip then
+    return
+  end
+
+  tooltip:ClearLines()
+  local r, g, b = ZO_SELECTED_TEXT:UnpackRGB()
+  local _, label = tooltip:AddLine(text, "", r, g, b, LEFT, MODIFY_TEXT_TYPE_NONE, TEXT_ALIGN_LEFT, false)
+  if label then
+    _nvkApplySummaryLabelStyle(label)
+  end
+end
+
 local function _nvkInitTooltip(control)
   local tt = AchievementTooltip or InformationTooltip
   InitializeTooltip(tt, control, BOTTOM, 0, -10)
@@ -663,7 +745,7 @@ end
 local function _nvkRenderFavorites(control)
   local tooltip = _nvkInitializeCategoryTooltip(control)
   if not tooltip then
-    return
+    return nil
   end
   local n = _nvkCountFavorites()
   local title = (GetString and GetString(SI_NAMED_FRIENDS_LIST_FAVOURITES_HEADER)) or "Favoriten"
@@ -676,6 +758,7 @@ local function _nvkRenderFavorites(control)
     lbl:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
     lbl:SetPixelRoundingEnabled(false)
   end
+  return line
 end
 
 local function _nvkCountRecent()
@@ -703,7 +786,7 @@ end
 local function _nvkRenderRecent(control)
   local tooltip = _nvkInitializeCategoryTooltip(control)
   if not tooltip then
-    return
+    return nil
   end
   local n = _nvkCountRecent()
   local title = (GetString and GetString(SI_GAMEPAD_NOTIFICATIONS_CATEGORY_RECENT)) or "Kürzlich"
@@ -716,6 +799,7 @@ local function _nvkRenderRecent(control)
     lbl:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
     lbl:SetPixelRoundingEnabled(false)
   end
+  return line
 end
 
 local function _nvkGetCompletedSubs()
@@ -825,7 +909,7 @@ end
 local function _nvkRenderTodo(control)
   local tooltip = _nvkInitializeCategoryTooltip(control)
   if not tooltip then
-    return
+    return nil
   end
   local names, keys, topIds, Todo = _nvkGetTodoSubs()
   local lines = {}
@@ -858,7 +942,9 @@ local function _nvkRenderTodo(control)
       lbl:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
       lbl:SetPixelRoundingEnabled(false)
     end
+    return text
   end
+  return nil
 end
 
 function Nvk3UT.TryCustomCategoryTooltip(control, data)
@@ -867,20 +953,37 @@ function Nvk3UT.TryCustomCategoryTooltip(control, data)
     return false
   end
 
+  local summaryText = data.nvkSummaryTooltipText
+  if type(summaryText) == "string" then
+    if summaryText ~= "" then
+      _nvkShowSummaryText(control, summaryText)
+      _nvkDebugTooltipText(data, summaryText)
+      return true
+    else
+      _nvkDebugTooltipText(data, summaryText)
+    end
+  elseif summaryText == nil then
+    _nvkDebugTooltipText(data, summaryText)
+  end
+
   if data.isNvkFavorites then
-    _nvkRenderFavorites(control)
+    local text = _nvkRenderFavorites(control)
+    _nvkDebugTooltipText(data, text)
     return true
   end
   if data.isNvkRecent then
-    _nvkRenderRecent(control)
+    local text = _nvkRenderRecent(control)
+    _nvkDebugTooltipText(data, text)
     return true
   end
   if data.isNvkTodo then
-    _nvkRenderTodo(control)
+    local text = _nvkRenderTodo(control)
+    _nvkDebugTooltipText(data, text)
     return true
   end
   if data.isNvkCompleted then
-    _nvkRenderCompleted(control)
+    local text = _nvkRenderCompleted(control)
+    _nvkDebugTooltipText(data, text)
     return true
   end
 

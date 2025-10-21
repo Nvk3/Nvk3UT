@@ -12,6 +12,48 @@ local ICON_UP   = "esoui/art/market/keyboard/giftmessageicon_up.dds"
 local ICON_DOWN = "esoui/art/market/keyboard/giftmessageicon_down.dds"
 local ICON_OVER = "esoui/art/market/keyboard/giftmessageicon_over.dds"
 
+local function _countRecent()
+    if not RD then
+        return 0
+    end
+    if type(RD.CountConfigured) == "function" then
+        local ok, count = pcall(RD.CountConfigured)
+        if ok and type(count) == "number" then
+            return count
+        end
+    end
+    if type(RD.ListConfigured) == "function" then
+        local ok, list = pcall(RD.ListConfigured)
+        if ok and type(list) == "table" then
+            return #list
+        end
+    end
+    return 0
+end
+
+local function _updateRecentTooltip(ach)
+    if not ach then
+        return
+    end
+    local node = ach._nvkRecentNode
+    local data
+    if node and node.GetData then
+        data = node:GetData()
+    end
+    data = data or ach._nvkRecentData
+    if not data then
+        return
+    end
+
+    local count = _countRecent()
+    local name = data.name or data.text or (data.categoryData and data.categoryData.name) or "Kürzlich"
+    local label = zo_strformat("<<1>>", name)
+    local line = string.format("%s – %s", label, ZO_CommaDelimitNumber(count or 0))
+    data.isNvkRecent = true
+    data.nvkSummaryTooltipText = line
+    ach._nvkRecentData = data
+end
+
 local function AddRecentCategory(AchClass)
     local orgAddTopLevelCategory = AchClass.AddTopLevelCategory
     function AchClass.AddTopLevelCategory(...)
@@ -26,8 +68,14 @@ local function AddRecentCategory(AchClass)
         local lookup, tree = self.nodeLookupData, self.categoryTree
         local label = "Kürzlich"
         local parentNode = self:AddCategory(lookup, tree, "ZO_IconChildlessHeader", nil, NVK3_RECENT, label, false, ICON_UP, ICON_DOWN, ICON_OVER, true, true)
-        local _row = parentNode and parentNode.GetData and parentNode:GetData()
-        if _row then _row.isNvkRecent = true end
+        self._nvkRecentNode = parentNode
+        local row = parentNode and parentNode.GetData and parentNode:GetData()
+        if row then
+            row.isNvkRecent = true
+            row.nvkSummaryTooltipText = nil
+            self._nvkRecentData = row
+        end
+        _updateRecentTooltip(self)
         if self.refreshGroups then self.refreshGroups:RefreshAll("FullUpdate") end
         local U = Nvk3UT and Nvk3UT.Utils; local __now = (U and U.now and U.now() or 0); if U and U.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug and ((__now - recProvide_lastTs) > 0.5 or #result ~= recProvide_lastCount) then recProvide_lastTs = __now; recProvide_lastCount = #result; U.d("[Nvk3UT][Recent][Provide] list", "data={count:", #result, ", searchFiltered:", tostring(considerSearchResults and true or false), "}") end; return result
     end
@@ -41,6 +89,7 @@ local function OverrideOnCategorySelected(AchClass)
         if _nvk3ut_is_enabled("recent") and data and data.categoryIndex == NVK3_RECENT then
             self:HideSummary()
             self:UpdateCategoryLabels(data, true, false)
+            _updateRecentTooltip(self)
             if self.refreshGroups then self.refreshGroups:RefreshAll("FullUpdate") end
         else
             return org(...)
@@ -70,6 +119,7 @@ local function OverrideOnAchievementUpdated(AchClass)
         local data = self.categoryTree:GetSelectedData()
         if _nvk3ut_is_enabled("recent") and data and data.categoryIndex == NVK3_RECENT then
             self:UpdateCategoryLabels(data, true, false)
+            _updateRecentTooltip(self)
         else
             return org(...)
         end
