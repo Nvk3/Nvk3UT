@@ -549,6 +549,25 @@ local function _nvkTooltipRow(tt, leftText, rightText)
   tt:AddLine(zo_strformat("<<1>>   |cAAAAAA<<2>>|r", leftText, rightText), "ZoFontGameSmall")
 end
 
+local function _nvkInitializeCategoryTooltip(control)
+  local tooltip = AchievementTooltip
+  if not tooltip or not control then
+    return nil
+  end
+
+  ClearTooltip(tooltip)
+  if tooltip.SetClampedToScreen then
+    tooltip:SetClampedToScreen(true)
+  end
+  if InformationTooltip and InformationTooltip.SetClampedToScreen then
+    InformationTooltip:SetClampedToScreen(true)
+  end
+
+  InitializeTooltip(tooltip, control, TOPRIGHT, 0, -104, TOPLEFT)
+
+  return tooltip
+end
+
 local function _nvkInitTooltip(control)
   local tt = AchievementTooltip or InformationTooltip
   InitializeTooltip(tt, control, BOTTOM, 0, -10)
@@ -614,13 +633,15 @@ local function _nvkCountFavorites()
 end
 
 local function _nvkRenderFavorites(control)
-  ClearTooltip(AchievementTooltip)
-  InitializeTooltip(AchievementTooltip, AchievementJournal, TOPRIGHT, 0, -104, TOPLEFT)
+  local tooltip = _nvkInitializeCategoryTooltip(control)
+  if not tooltip then
+    return
+  end
   local n = _nvkCountFavorites()
   local title = (GetString and GetString(SI_NAMED_FRIENDS_LIST_FAVOURITES_HEADER)) or "Favoriten"
   local line = string.format("%s |cfafafa(%s)|r", zo_strformat("<<1>>", title), ZO_CommaDelimitNumber(n or 0))
   local r, g, b = ZO_SELECTED_TEXT:UnpackRGB()
-  local _, lbl = AchievementTooltip:AddLine(line, "", r, g, b, LEFT, MODIFY_TEXT_TYPE_NONE, TEXT_ALIGN_LEFT, false)
+  local _, lbl = tooltip:AddLine(line, "", r, g, b, LEFT, MODIFY_TEXT_TYPE_NONE, TEXT_ALIGN_LEFT, false)
   if lbl then
     lbl:SetFont("$(MEDIUM_FONT)|$(KB_12)|soft-shadow-none")
     lbl:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
@@ -652,13 +673,15 @@ local function _nvkCountRecent()
 end
 
 local function _nvkRenderRecent(control)
-  ClearTooltip(AchievementTooltip)
-  InitializeTooltip(AchievementTooltip, AchievementJournal, TOPRIGHT, 0, -104, TOPLEFT)
+  local tooltip = _nvkInitializeCategoryTooltip(control)
+  if not tooltip then
+    return
+  end
   local n = _nvkCountRecent()
   local title = (GetString and GetString(SI_GAMEPAD_NOTIFICATIONS_CATEGORY_RECENT)) or "Kürzlich"
   local line = string.format("%s |cfafafa(%s)|r", zo_strformat("<<1>>", title), ZO_CommaDelimitNumber(n or 0))
   local r, g, b = ZO_SELECTED_TEXT:UnpackRGB()
-  local _, lbl = AchievementTooltip:AddLine(line, "", r, g, b, LEFT, MODIFY_TEXT_TYPE_NONE, TEXT_ALIGN_LEFT, false)
+  local _, lbl = tooltip:AddLine(line, "", r, g, b, LEFT, MODIFY_TEXT_TYPE_NONE, TEXT_ALIGN_LEFT, false)
   if lbl then
     lbl:SetFont("$(MEDIUM_FONT)|$(KB_12)|soft-shadow-none")
     lbl:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
@@ -703,8 +726,10 @@ local function _nvkCompletedPointsForKey(Comp, key)
 end
 
 local function _nvkRenderCompleted(control)
-  ClearTooltip(AchievementTooltip)
-  InitializeTooltip(AchievementTooltip, AchievementJournal, TOPRIGHT, 0, -104, TOPLEFT)
+  local tooltip = _nvkInitializeCategoryTooltip(control)
+  if not tooltip then
+    return
+  end
   local node = control and control.node
   if node == nil and control and control.GetParent then
     local p = control:GetParent()
@@ -770,8 +795,10 @@ local function _nvkMaxPointsForTop(topId, Todo)
 end
 
 local function _nvkRenderTodo(control)
-  ClearTooltip(AchievementTooltip)
-  InitializeTooltip(AchievementTooltip, AchievementJournal, TOPRIGHT, 0, -104, TOPLEFT)
+  local tooltip = _nvkInitializeCategoryTooltip(control)
+  if not tooltip then
+    return
+  end
   local names, keys, topIds, Todo = _nvkGetTodoSubs()
   local lines = {}
   for i = 1, (keys and #keys or 0) do
@@ -796,7 +823,7 @@ local function _nvkRenderTodo(control)
   if #lines > 0 then
     local text = table.concat(lines, "\n")
     local r, g, b = ZO_SELECTED_TEXT:UnpackRGB()
-    local _, lbl = AchievementTooltip:AddLine(text, "", r, g, b, LEFT, MODIFY_TEXT_TYPE_NONE, TEXT_ALIGN_LEFT, false)
+    local _, lbl = tooltip:AddLine(text, "", r, g, b, LEFT, MODIFY_TEXT_TYPE_NONE, TEXT_ALIGN_LEFT, false)
     if lbl then
       lbl:SetFont("$(MEDIUM_FONT)|$(KB_12)|soft-shadow-none")
       lbl:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
