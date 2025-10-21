@@ -84,8 +84,10 @@ local function _updateTodoTooltip(ach)
   for idx = 1, #orderedChildren do
     local node = orderedChildren[idx]
     local data = node and node.GetData and node:GetData()
-    if data and data.subcategoryIndex then
-      local count, points = _todoCollectOpenSummary(data.subcategoryIndex)
+    if data and (data.nvkTodoTopId or data.subcategoryIndex or data.categoryIndex) then
+      local topId = data.nvkTodoTopId or data.subcategoryIndex or data.categoryIndex
+      data.nvkTodoTopId = topId
+      local count, points = _todoCollectOpenSummary(topId)
       if count > 0 then
         local line = _formatTodoTooltipLine(data, points)
         data.isNvkTodo = true
@@ -192,6 +194,7 @@ local function AddTodoCategory(AchClass)
             data.isNvkTodo = true
             data.nvkTodoOpenCount = openCount
             data.nvkTodoOpenPoints = openPoints
+            data.nvkTodoTopId = top
             data.nvkSummaryTooltipText = nil
           end
         end
