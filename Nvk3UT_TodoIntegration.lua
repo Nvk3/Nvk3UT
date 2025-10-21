@@ -1,9 +1,11 @@
 Nvk3UT = Nvk3UT or {}
+
 local function _nvk3ut_is_enabled(key)
   return (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.features and Nvk3UT.sv.features[key]) and true or false
 end
+
 local Todo = Nvk3UT.TodoData
-local todoProvide_lastTs, todoProvide_lastCount = 0, -1
+local U = Nvk3UT and Nvk3UT.Utils
 
 local NVK3_TODO = 84002
 local ICON_UP = "esoui/art/market/keyboard/giftmessageicon_up.dds"

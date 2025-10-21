@@ -107,9 +107,12 @@ function M.SummaryCountAndPointsForKey(key)
     local ids = M.ListForKey(key)
     local count = #ids
     local points = 0
-    for i=1,count do
-        local _,_,_,pts = GetAchievementInfo(ids[i])
-        points = points + (pts or 0)
+    for i = 1, count do
+        local _, _, pts = GetAchievementInfo(ids[i])
+        if type(pts) ~= "number" then
+            pts = tonumber(pts) or 0
+        end
+        points = points + pts
     end
     return count, points
 end

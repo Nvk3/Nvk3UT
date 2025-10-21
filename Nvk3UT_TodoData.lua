@@ -20,8 +20,17 @@ end
 
 local function BuildSearchMap()
     local results = ACHIEVEMENTS_MANAGER and ACHIEVEMENTS_MANAGER:GetSearchResults()
-    if not results or not next(results) then return nil end
-    local U = Nvk3UT and Nvk3UT.Utils; if U and U.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then U.d("[Nvk3UT][ToDo][Build] done", "data={count:", #res, "}") end; if Nvk3UT and Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then Nvk3UT.UI.UpdateStatus() end; return results
+    if not results or not next(results) then
+        return nil
+    end
+    local U = Nvk3UT and Nvk3UT.Utils
+    if U and U.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then
+        U.d("[Nvk3UT][ToDo][Build] done")
+    end
+    if Nvk3UT and Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then
+        Nvk3UT.UI.UpdateStatus()
+    end
+    return results
 end
 
 local function SortByName(ids)
