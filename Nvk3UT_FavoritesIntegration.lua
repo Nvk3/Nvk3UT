@@ -7,6 +7,7 @@ local U = Nvk3UT.Utils
 local favProvide_lastTs, favProvide_lastCount = 0, -1
 
 local NVK3_FAVORITES_KEY = "Nvk3UT_Favorites"
+local ICON_PATH_FAVORITES = "/esoui/art/achievements/achievement_categoryicon_exploration_64.dds"
 
 local SUMMARY_ICONS = {
     "esoui/art/market/keyboard/giftmessageicon_up.dds",
@@ -55,7 +56,9 @@ local function _updateFavoritesTooltip(ach)
     local count = _countFavorites()
     local name = data.name or data.text or (data.categoryData and data.categoryData.name) or "Favoriten"
     local label = zo_strformat("<<1>>", name)
-    local line = string.format("%s – %s", label, ZO_CommaDelimitNumber(count or 0))
+    local iconTag = (U and U.GetIconTagForTexture and U.GetIconTagForTexture(ICON_PATH_FAVORITES)) or ""
+    local displayLabel = (iconTag ~= "" and (iconTag .. label)) or label
+    local line = string.format("%s – %s", displayLabel, ZO_CommaDelimitNumber(count or 0))
     data.isNvkFavorites = true
     data.nvkSummaryTooltipText = line
     ach._nvkFavoritesData = data
@@ -79,6 +82,7 @@ local function AddFavoritesTopCategory(AchievementsClass)
             row.isNvkFavorites = true
             row.nvkSummaryTooltipText = nil
             row.isNvk3Fav = true
+            row.nvkPlainName = row.nvkPlainName or row.name or row.text or "Favoriten"
             self._nvkFavoritesData = row
         end
         -- Capture tooltip data right after the category row exists.

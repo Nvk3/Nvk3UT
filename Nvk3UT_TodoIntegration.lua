@@ -39,12 +39,16 @@ local function _todoCollectOpenSummary(topId)
   return num, points
 end
 
-local function _formatTodoTooltipLine(data, points)
+local function _formatTodoTooltipLine(data, points, iconTag)
   local name = data and (data.name or data.text)
   if not name and data and data.categoryData then
     name = data.categoryData.name or data.categoryData.text
   end
   local label = zo_strformat("<<1>>", name or "")
+  local prefix = iconTag or ""
+  if prefix ~= "" then
+    return string.format("%s%s – %s", prefix, label, ZO_CommaDelimitNumber(points or 0))
+  end
   return string.format("%s – %s", label, ZO_CommaDelimitNumber(points or 0))
 end
 
@@ -89,7 +93,8 @@ local function _updateTodoTooltip(ach)
       data.nvkTodoTopId = topId
       local count, points = _todoCollectOpenSummary(topId)
       if count > 0 then
-        local line = _formatTodoTooltipLine(data, points)
+        local iconTag = (U and U.GetAchievementCategoryIconTag and U.GetAchievementCategoryIconTag(topId)) or ""
+        local line = _formatTodoTooltipLine(data, points, iconTag)
         data.isNvkTodo = true
         data.nvkTodoOpenCount = count
         data.nvkTodoOpenPoints = points
@@ -141,9 +146,20 @@ local function AddTodoCategory(AchClass)
           true,
           true
         )
+        local parentRowDone = parentNodeDone and parentNodeDone.GetData and parentNodeDone:GetData()
+        if parentRowDone then
+          parentRowDone.nvkPlainName = parentRowDone.nvkPlainName or labelDone
+          parentRowDone.isNvkCompleted = true
+        end
         local names, ids = Nvk3UT.CompletedData.GetSubcategoryList()
         for i, n in ipairs(names) do
-          self:AddCategory(lookup, tree, subTemplate, parentNodeDone, ids[i], n, true)
+          local childNode = self:AddCategory(lookup, tree, subTemplate, parentNodeDone, ids[i], n, true)
+          local childData = childNode and childNode.GetData and childNode:GetData()
+          if childData then
+            childData.nvkPlainName = childData.nvkPlainName or n
+            childData.nvkCompletedKey = childData.nvkCompletedKey or ids[i]
+            childData.isNvkCompleted = true
+          end
         end
       end
       return orgAddTopLevelCategory(...)
@@ -177,6 +193,7 @@ local function AddTodoCategory(AchClass)
     if _row then
       _row.isNvkTodo = true
       _row.nvkSummaryTooltipText = nil
+      _row.nvkPlainName = _row.nvkPlainName or label
     end
 
     local numTop = GetNumAchievementCategories and GetNumAchievementCategories() or 0
@@ -196,6 +213,7 @@ local function AddTodoCategory(AchClass)
             data.nvkTodoOpenPoints = openPoints
             data.nvkTodoTopId = top
             data.nvkSummaryTooltipText = nil
+            data.nvkPlainName = data.nvkPlainName or topName
           end
         end
       end

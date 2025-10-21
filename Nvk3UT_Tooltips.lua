@@ -69,6 +69,102 @@ local SUMMARY_COLOR = ZO_SELECTED_TEXT
 local NVK3_DONE = 84003
 local Comp = Nvk3UT and Nvk3UT.CompletedData
 
+local ICON_PATH_COMPLETED = "/esoui/art/achievements/achievement_categoryicon_holiday_64.dds"
+local ICON_PATH_FAVORITES = "/esoui/art/achievements/achievement_categoryicon_exploration_64.dds"
+local ICON_PATH_RECENT = "/esoui/art/achievements/achievement_categoryicon_quests_64.dds"
+
+local staticIconCache = {}
+
+local function GetStaticIconTag(key, path)
+  if staticIconCache[key] ~= nil then
+    if staticIconCache[key] == "" and U and U.GetIconTagForTexture then
+      local refreshed = U.GetIconTagForTexture(path)
+      if refreshed ~= nil then
+        staticIconCache[key] = refreshed or ""
+      end
+    end
+    return staticIconCache[key]
+  end
+  local tag = ""
+  if U and U.GetIconTagForTexture then
+    tag = U.GetIconTagForTexture(path)
+  end
+  staticIconCache[key] = tag or ""
+  return staticIconCache[key]
+end
+
+local function GetCompletedIconTag()
+  return GetStaticIconTag("completed", ICON_PATH_COMPLETED)
+end
+
+local function GetFavoritesIconTag()
+  return GetStaticIconTag("favorites", ICON_PATH_FAVORITES)
+end
+
+local function GetRecentIconTag()
+  return GetStaticIconTag("recent", ICON_PATH_RECENT)
+end
+
+local function GetTodoIconTag(topCategoryId)
+  if not U or not U.GetAchievementCategoryIconTag then
+    return ""
+  end
+  return U.GetAchievementCategoryIconTag(topCategoryId)
+end
+
+local function GetCategoryLabel(control)
+  if not control or not control.GetNamedChild then
+    return nil
+  end
+  return control:GetNamedChild("Text") or control:GetNamedChild("Label") or control:GetNamedChild("Name")
+end
+
+local function DetermineCategoryIconTag(data)
+  if not data then
+    return ""
+  end
+  if data.isNvkFavorites then
+    return GetFavoritesIconTag()
+  end
+  if data.isNvkRecent then
+    return GetRecentIconTag()
+  end
+  if data.isNvkCompleted and not data.nvkCompletedKey then
+    return GetCompletedIconTag()
+  end
+  if data.isNvkTodo and data.nvkTodoTopId then
+    return GetTodoIconTag(data.nvkTodoTopId)
+  end
+  return ""
+end
+
+local function ApplyCategoryIcon(control, data)
+  local label = GetCategoryLabel(control)
+  if not label then
+    return
+  end
+
+  local iconTag = DetermineCategoryIconTag(data)
+  if iconTag and iconTag ~= "" then
+    if not label._nvkPlainText or label._nvkPlainText == "" then
+      local plain = data and data.nvkPlainName
+      if type(plain) == "string" and plain ~= "" then
+        plain = zo_strformat("<<1>>", plain)
+      else
+        local current = label:GetText() or ""
+        plain = current:gsub("^|t.-|t%s*", "")
+      end
+      label._nvkPlainText = plain
+    end
+    local text = label._nvkPlainText or ""
+    label:SetText(iconTag .. text)
+    label._nvkHasIcon = true
+  elseif label._nvkHasIcon and label._nvkPlainText then
+    label:SetText(label._nvkPlainText)
+    label._nvkHasIcon = nil
+  end
+end
+
 local function EnsureTooltipPools()
   if not AchievementTooltip then
     return
@@ -276,14 +372,25 @@ local function ShowCompletedRootTooltip(node)
   AchievementTooltip.nvk3utRowPool:ReleaseAllObjects()
 
   local lines = {}
+  local constants = Comp and Comp.Constants and Comp.Constants()
+  local last50Key = constants and constants.LAST50_KEY
+  local iconHoliday = GetCompletedIconTag()
+  local iconRecent = GetRecentIconTag()
   if node and node.GetChildren and node:GetChildren() then
     for _, child in pairs(node:GetChildren()) do
       local d = child:GetData()
       if d and d.subcategoryIndex then
         local name = d.name or d.text or (d.categoryData and d.categoryData.name) or ""
         local _, points = Comp.SummaryCountAndPointsForKey(d.subcategoryIndex)
-        lines[#lines + 1] =
-          string.format("%s |cfafafa(%s Punkte)|r", zo_strformat("<<1>>", name), ZO_CommaDelimitNumber(points or 0))
+        local label = zo_strformat("<<1>>", name)
+        local iconTag = iconHoliday
+        if last50Key and d.nvkCompletedKey == last50Key then
+          iconTag = iconRecent
+        end
+        if iconTag ~= "" then
+          label = iconTag .. label
+        end
+        lines[#lines + 1] = string.format("%s |cfafafa(%s Punkte)|r", label, ZO_CommaDelimitNumber(points or 0))
       end
     end
   else
@@ -293,11 +400,16 @@ local function ShowCompletedRootTooltip(node)
       if names and keys then
         for i = 1, #keys do
           local _, points = Comp.SummaryCountAndPointsForKey(keys[i])
-          lines[#lines + 1] = string.format(
-            "%s |cfafafa(%s Punkte)|r",
-            zo_strformat("<<1>>", names[i] or ""),
-            ZO_CommaDelimitNumber(points or 0)
-          )
+          local label = zo_strformat("<<1>>", names[i] or "")
+          local iconTag = iconHoliday
+          if last50Key and keys[i] == last50Key then
+            iconTag = iconRecent
+          end
+          if iconTag ~= "" then
+            label = iconTag .. label
+          end
+          lines[#lines + 1] =
+            string.format("%s |cfafafa(%s Punkte)|r", label, ZO_CommaDelimitNumber(points or 0))
         end
       end
     end
@@ -382,8 +494,23 @@ local function AttachHoverToLabel(tree, parentControl, label, MouseEnter, MouseE
   label._nvk3ut_tip = true
 end
 
-local function HookHandlers(tree, control)
-  if not control or control._nvk3ut_tip then
+local function HookHandlers(tree, control, data)
+  if not control then
+    return
+  end
+
+  local nodeData = data
+  if not nodeData then
+    if control.data then
+      nodeData = control.data
+    elseif control.node and control.node.GetData then
+      nodeData = control.node:GetData()
+    end
+  end
+
+  ApplyCategoryIcon(control, nodeData)
+
+  if control._nvk3ut_tip then
     return
   end
 
@@ -494,13 +621,13 @@ local function HookExisting(tree)
   if root and root:GetChildren() then
     for _, node in pairs(root:GetChildren()) do
       local control = node:GetControl()
-      HookHandlers(tree, control)
+      HookHandlers(tree, control, node:GetData())
     end
   end
   -- Depth-first to catch subnodes too
   if tree and tree.DepthFirstIterator and root then
     for node in tree:DepthFirstIterator(root) do
-      HookHandlers(tree, node:GetControl())
+      HookHandlers(tree, node:GetControl(), node:GetData())
     end
   end
 end
@@ -510,7 +637,7 @@ local function HookTemplates(tree)
     return
   end
   local function setup(node, control, data, open)
-    HookHandlers(tree, control)
+    HookHandlers(tree, control, data)
   end
   for _, info in pairs(tree.templateInfo) do
     if info and info.setupFunction then
@@ -729,7 +856,10 @@ local function _nvkRenderFavorites(control)
   end
   local n = _nvkCountFavorites()
   local title = (GetString and GetString(SI_NAMED_FRIENDS_LIST_FAVOURITES_HEADER)) or "Favoriten"
-  local line = string.format("%s |cfafafa(%s)|r", zo_strformat("<<1>>", title), ZO_CommaDelimitNumber(n or 0))
+  local baseLabel = zo_strformat("<<1>>", title)
+  local favoritesIcon = GetFavoritesIconTag()
+  local displayLabel = (favoritesIcon ~= "" and (favoritesIcon .. baseLabel)) or baseLabel
+  local line = string.format("%s |cfafafa(%s)|r", displayLabel, ZO_CommaDelimitNumber(n or 0))
   local r, g, b = ZO_SELECTED_TEXT:UnpackRGB()
   local _, lbl = tooltip:AddLine(line, "", r, g, b, LEFT, MODIFY_TEXT_TYPE_NONE, TEXT_ALIGN_LEFT, false)
   if lbl then
@@ -771,7 +901,10 @@ local function _nvkRenderRecent(control)
   end
   local n = _nvkCountRecent()
   local title = (GetString and GetString(SI_GAMEPAD_NOTIFICATIONS_CATEGORY_RECENT)) or "Kürzlich"
-  local line = string.format("%s |cfafafa(%s)|r", zo_strformat("<<1>>", title), ZO_CommaDelimitNumber(n or 0))
+  local baseLabel = zo_strformat("<<1>>", title)
+  local recentIcon = GetRecentIconTag()
+  local displayLabel = (recentIcon ~= "" and (recentIcon .. baseLabel)) or baseLabel
+  local line = string.format("%s |cfafafa(%s)|r", displayLabel, ZO_CommaDelimitNumber(n or 0))
   local r, g, b = ZO_SELECTED_TEXT:UnpackRGB()
   local _, lbl = tooltip:AddLine(line, "", r, g, b, LEFT, MODIFY_TEXT_TYPE_NONE, TEXT_ALIGN_LEFT, false)
   if lbl then
@@ -900,19 +1033,25 @@ local function _nvkRenderTodo(control)
     local name = names[i] or "—"
     local pts = _nvkTodoPointsForSub(Todo, keys[i])
     local maxTop = 0
+    local iconTag = ""
     if type(topIds) == "table" then
       maxTop = _nvkMaxPointsForTop(topIds[i], Todo)
+      if topIds[i] then
+        iconTag = GetTodoIconTag(topIds[i]) or ""
+      end
     end
+    local formattedName = zo_strformat("<<1>>", name)
+    local displayName = (iconTag ~= "" and (iconTag .. formattedName)) or formattedName
     if maxTop and maxTop > 0 then
       lines[#lines + 1] = string.format(
         "%s |cfafafa(%s / %s)|r",
-        zo_strformat("<<1>>", name),
+        displayName,
         ZO_CommaDelimitNumber(pts or 0),
         ZO_CommaDelimitNumber(maxTop or 0)
       )
     else
       lines[#lines + 1] =
-        string.format("%s |cfafafa(%s)|r", zo_strformat("<<1>>", name), ZO_CommaDelimitNumber(pts or 0))
+        string.format("%s |cfafafa(%s)|r", displayName, ZO_CommaDelimitNumber(pts or 0))
     end
   end
   if #lines > 0 then

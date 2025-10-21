@@ -11,6 +11,8 @@ local NVK3_DONE = 84003
 local ICON_UP = "esoui/art/market/keyboard/giftmessageicon_up.dds"
 local ICON_DOWN = "esoui/art/market/keyboard/giftmessageicon_down.dds"
 local ICON_OVER = "esoui/art/market/keyboard/giftmessageicon_over.dds"
+local ICON_PATH_COMPLETED = "/esoui/art/achievements/achievement_categoryicon_holiday_64.dds"
+local ICON_PATH_COMPLETED_RECENT = "/esoui/art/achievements/achievement_categoryicon_quests_64.dds"
 
 local compProvide_lastTs, compProvide_lastCount = 0, -1
 
@@ -28,13 +30,17 @@ local function _debugLog(...)
     end
 end
 
-local function _formatCompletedTooltipLine(data, points)
+local function _formatCompletedTooltipLine(data, points, iconTag)
     local name = data and (data.name or data.text)
     if not name and data and data.categoryData then
         name = data.categoryData.name or data.categoryData.text
     end
     local label = zo_strformat("<<1>>", name or "")
     local value = ZO_CommaDelimitNumber(points or 0)
+    local prefix = iconTag or ""
+    if prefix ~= "" then
+        return string.format("%s%s – %s", prefix, label, value)
+    end
     return string.format("%s – %s", label, value)
 end
 
@@ -129,6 +135,9 @@ local function _updateCompletedTooltip(ach)
         ach._nvkCompletedChildren = orderedChildren
     end
 
+    local iconHoliday = (U and U.GetIconTagForTexture and U.GetIconTagForTexture(ICON_PATH_COMPLETED)) or ""
+    local iconRecent = (U and U.GetIconTagForTexture and U.GetIconTagForTexture(ICON_PATH_COMPLETED_RECENT)) or ""
+
     local detailLines = {}
     parentData.isNvkCompleted = true
     parentData.nvkSummaryTooltipText = nil
@@ -145,7 +154,11 @@ local function _updateCompletedTooltip(ach)
             local key = data.nvkCompletedKey or data.subcategoryIndex
             if key then
                 local points = _completedPointsForKey(key)
-                local line = _formatCompletedTooltipLine(data, points)
+                local iconTag = iconHoliday
+                if last50Key and key == last50Key then
+                    iconTag = iconRecent
+                end
+                local line = _formatCompletedTooltipLine(data, points, iconTag)
                 data.nvkSummaryTooltipText = line
                 local year = _extractYearFromKey(key, last50Key)
                 if year then
@@ -179,7 +192,11 @@ local function _updateCompletedTooltip(ach)
         local year = years[idx]
         local total = yearTotals[year] or 0
         if total > 0 then
-            parentLines[#parentLines + 1] = string.format("%d: %s", year, ZO_CommaDelimitNumber(total))
+            local line = string.format("%d: %s", year, ZO_CommaDelimitNumber(total))
+            if iconHoliday ~= "" then
+                line = iconHoliday .. line
+            end
+            parentLines[#parentLines + 1] = line
             yearLineCount = yearLineCount + 1
         end
     end
@@ -226,6 +243,7 @@ local function AddCompletedCategory(AchClass)
         if parentData then
             parentData.isNvkCompleted = true
             parentData.nvkSummaryTooltipText = nil
+            parentData.nvkPlainName = parentData.nvkPlainName or parentData.name or parentData.text or "Abgeschlossen"
         end
 
         local names, ids = Comp.GetSubcategoryList()
@@ -242,6 +260,7 @@ local function AddCompletedCategory(AchClass)
                     data.isNvkCompleted = true
                     data.nvkSummaryTooltipText = nil
                     data.nvkCompletedKey = ids[index]
+                    data.nvkPlainName = data.nvkPlainName or names[index]
                 end
             end
         end

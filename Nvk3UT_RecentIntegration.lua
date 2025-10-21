@@ -3,9 +3,11 @@ local function _nvk3ut_is_enabled(key)
   return (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.features and Nvk3UT.sv.features[key]) and true or false
 end
 local RD = Nvk3UT.RecentData
+local U = Nvk3UT and Nvk3UT.Utils
 
 local recProvide_lastTs, recProvide_lastCount = 0, -1
 local NVK3_RECENT = 84001
+local ICON_PATH_RECENT = "/esoui/art/achievements/achievement_categoryicon_quests_64.dds"
 
 -- Use same icon set as Favoriten for visual parity
 local ICON_UP   = "esoui/art/market/keyboard/giftmessageicon_up.dds"
@@ -48,7 +50,9 @@ local function _updateRecentTooltip(ach)
     local count = _countRecent()
     local name = data.name or data.text or (data.categoryData and data.categoryData.name) or "Kürzlich"
     local label = zo_strformat("<<1>>", name)
-    local line = string.format("%s – %s", label, ZO_CommaDelimitNumber(count or 0))
+    local iconTag = (U and U.GetIconTagForTexture and U.GetIconTagForTexture(ICON_PATH_RECENT)) or ""
+    local displayLabel = (iconTag ~= "" and (iconTag .. label)) or label
+    local line = string.format("%s – %s", displayLabel, ZO_CommaDelimitNumber(count or 0))
     data.isNvkRecent = true
     data.nvkSummaryTooltipText = line
     ach._nvkRecentData = data
@@ -73,6 +77,7 @@ local function AddRecentCategory(AchClass)
         if row then
             row.isNvkRecent = true
             row.nvkSummaryTooltipText = nil
+            row.nvkPlainName = row.nvkPlainName or row.name or row.text or label
             self._nvkRecentData = row
         end
         _updateRecentTooltip(self)
