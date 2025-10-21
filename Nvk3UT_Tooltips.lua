@@ -551,7 +551,7 @@ end
 
 local function _nvkInitializeCategoryTooltip(control)
   local tooltip = AchievementTooltip
-  if not tooltip or not control then
+  if not tooltip or not control or not control.GetCenter then
     return nil
   end
 
@@ -563,7 +563,35 @@ local function _nvkInitializeCategoryTooltip(control)
     InformationTooltip:SetClampedToScreen(true)
   end
 
-  InitializeTooltip(tooltip, control, TOPRIGHT, 0, -104, TOPLEFT)
+  local controlCenterX = select(1, control:GetCenter())
+  local referenceX
+  local parent = control.GetParent and control:GetParent()
+
+  while parent and parent.GetCenter do
+    if parent.GetWidth and parent:GetWidth() > 0 then
+      referenceX = select(1, parent:GetCenter())
+      break
+    end
+    parent = parent.GetParent and parent:GetParent()
+  end
+
+  if not referenceX and AchievementJournal and AchievementJournal.GetCenter then
+    referenceX = select(1, AchievementJournal:GetCenter())
+  end
+
+  if not referenceX and GuiRoot and GuiRoot.GetCenter then
+    referenceX = select(1, GuiRoot:GetCenter())
+  end
+
+  local tooltipPoint = TOPLEFT
+  local relativePoint = TOPRIGHT
+
+  if referenceX and controlCenterX and controlCenterX >= referenceX then
+    tooltipPoint = TOPRIGHT
+    relativePoint = TOPLEFT
+  end
+
+  InitializeTooltip(tooltip, control, tooltipPoint, 0, -104, relativePoint)
 
   return tooltip
 end
