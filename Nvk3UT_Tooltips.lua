@@ -125,6 +125,61 @@ local function ControlToNode(tree, ctrl)
     return nil
 end
 
+local function NodeIsCategory(node)
+    if not node then return false end
+    if type(node.isCategory) == "boolean" then return node.isCategory end
+
+    local data = node.GetData and node:GetData()
+    if not data then
+        node.isCategory = false
+        return false
+    end
+
+    if data.summary or data.isSummary then
+        node.isCategory = true
+        return true
+    end
+
+    if data.isNvkCompleted or data.isNvkFavorites or data.isNvkRecent or data.isNvkTodo then
+        node.isCategory = true
+        return true
+    end
+
+    if data.categoryIndex ~= nil and data.subcategoryIndex == nil then
+        node.isCategory = true
+        return true
+    end
+
+    if data.categoryIndex ~= nil and data.subcategoryIndex ~= nil then
+        node.isCategory = false
+        return false
+    end
+
+    local catData = data.categoryData
+    if catData then
+        if catData.categoryIndex ~= nil and catData.subcategoryIndex == nil then
+            node.isCategory = true
+            return true
+        end
+        if catData.categoryIndex ~= nil and catData.subcategoryIndex ~= nil then
+            node.isCategory = false
+            return false
+        end
+    end
+
+    local ACH = GetACH()
+    if ACH and ACH.GetCategoryIndicesFromData then
+        local ok, categoryIndex, subcategoryIndex = pcall(ACH.GetCategoryIndicesFromData, ACH, data)
+        if ok and categoryIndex and not subcategoryIndex then
+            node.isCategory = true
+            return true
+        end
+    end
+
+    node.isCategory = false
+    return false
+end
+
 -- =====================================================
 -- Tooltip renderers
 -- =====================================================
@@ -304,11 +359,17 @@ local function AttachHoverToLabel(tree, parentControl, label, MouseEnter, MouseE
 end
 
 local function HookHandlers(tree, control)
-    if not control or control._nvk3ut_tip then return end
+    if not control then return end
+
+    local node = ControlToNode(tree, control)
+    if not NodeIsCategory(node) then return end
+    if control._nvk3ut_tip then return end
 
     local function MouseEnter(ctrl)
         if not T.enabled then return end
         local node = ControlToNode(tree, ctrl)
+        if not NodeIsCategory(node) then return end
+
         local data = node and node:GetData()
         if not data then return end
 
