@@ -1,0 +1,15 @@
+{
+  "Lua.runtime.version": "Lua 5.1",
+  "Lua.diagnostics.globals": [
+    "ZO_SavedVars",
+    "EVENT_MANAGER",
+    "SLASH_COMMANDS",
+    "LibAddonMenu2",
+    "d",
+    "ZO_CreateStringId"
+  ],
+  "[lua]": {
+    "editor.defaultFormatter": "JohnnyMorganz.stylua"
+  },
+  "editor.formatOnSave": true
+}

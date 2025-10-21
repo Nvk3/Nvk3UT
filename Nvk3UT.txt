@@ -1,0 +1,24 @@
+## Title: Nvk3's Ultimate Tracker
+## Description: Favorites category + context menu; 'Kürzlich' as its own category with same icon; Status + LAM.
+## Author: Nvk3
+## Version: 0.10.2
+## APIVersion: 101041 101042 101043
+## DependsOn: LibAddonMenu-2.0
+## OptionalDependsOn: LibCustomMenu-2.0
+## SavedVariables: Nvk3UT_SV Nvk3UT_Data_Favorites Nvk3UT_Data_Recent
+Nvk3UT_Utils.lua
+Nvk3UT_Diagnostics.lua
+Nvk3UT_UI.lua
+Nvk3UT_Tooltips.lua
+Nvk3UT_FavoritesData.lua
+Nvk3UT_Rebuild.lua
+Nvk3UT_RecentData.lua
+Nvk3UT_FavoritesIntegration.lua
+Nvk3UT_RecentIntegration.lua
+Nvk3UT_SelfTest.lua
+Nvk3UT_TodoData.lua
+Nvk3UT_TodoIntegration.lua
+Nvk3UT_CompletedData.lua
+Nvk3UT_CompletedIntegration.lua
+Nvk3UT_Core.lua
+README.txt
