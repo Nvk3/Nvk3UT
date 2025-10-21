@@ -13,6 +13,123 @@ local ICON_OVER = "esoui/art/market/keyboard/giftmessageicon_over.dds"
 
 -- Add one 'To-Do-Liste' header with subcategories for each basegame top category
 
+local function _todoOpenPointsForTop(topId)
+    if not topId then
+        return 0
+    end
+    local ok, _name, _numSub, _numAch, earned, total = pcall(GetAchievementCategoryInfo, topId)
+    if not ok then
+        return 0
+    end
+    local open = (total or 0) - (earned or 0)
+    if open < 0 then
+        open = 0
+    end
+    return open
+end
+
+local function _formatTodoTooltipLine(data, points)
+    local name = data and (data.name or data.text)
+    if not name and data and data.categoryData then
+        name = data.categoryData.name or data.categoryData.text
+    end
+    local label = zo_strformat("<<1>>", name or "")
+    return string.format("%s – %s", label, ZO_CommaDelimitNumber(points or 0))
+end
+
+local function _debugTodoTooltip(lines)
+    local utils = Nvk3UT and Nvk3UT.Utils
+    if not (utils and utils.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug) then
+        return
+    end
+
+    local payload
+    if #lines == 0 then
+        payload = "lines={}"
+    else
+        payload = string.format("lines={%s}", table.concat(lines, " || "))
+    end
+
+    utils.d("[Nvk3UT][Todo][TooltipData]", payload)
+end
+
+local function _updateTodoTooltip(ach)
+    if not ach then
+        return
+    end
+    local parentNode = ach._nvkTodoNode
+    local children = ach._nvkTodoChildren
+    if not parentNode or not parentNode.GetData then
+        return
+    end
+
+    local parentData = parentNode:GetData()
+    if not parentData then
+        return
+    end
+    parentData.nvkSummaryTooltipText = nil
+
+    local lines = {}
+    local orderedChildren = {}
+    local hasFreshOrder = false
+
+    if parentNode.GetChildren then
+        local actualChildren = parentNode:GetChildren()
+        if type(actualChildren) == "table" then
+            for idx = 1, #actualChildren do
+                local node = actualChildren[idx]
+                if node ~= nil then
+                    orderedChildren[#orderedChildren + 1] = node
+                end
+            end
+            if #orderedChildren == 0 and parentNode.GetNumChildren and parentNode.GetChildByIndex then
+                local count = parentNode:GetNumChildren()
+                for idx = 1, (count or 0) do
+                    local node = parentNode:GetChildByIndex(idx)
+                    if node ~= nil then
+                        orderedChildren[#orderedChildren + 1] = node
+                    end
+                end
+            end
+            hasFreshOrder = (#orderedChildren > 0)
+        end
+    end
+
+    if (not hasFreshOrder) and type(children) == "table" then
+        for idx = 1, #children do
+            orderedChildren[#orderedChildren + 1] = children[idx]
+        end
+    end
+
+    if hasFreshOrder then
+        ach._nvkTodoChildren = orderedChildren
+    end
+
+    for idx = 1, #orderedChildren do
+        local node = orderedChildren[idx]
+        local data = node and node.GetData and node:GetData()
+        if data then
+            local key = data.nvkTodoTopId or data.subcategoryIndex
+            if key then
+                local points = _todoOpenPointsForTop(key)
+                local line = _formatTodoTooltipLine(data, points)
+                data.isNvkTodo = true
+                data.nvkSummaryTooltipText = line
+                lines[#lines + 1] = line
+            else
+                data.nvkSummaryTooltipText = nil
+            end
+        end
+    end
+
+    parentData.isNvkTodo = true
+    if #lines > 0 then
+        parentData.nvkSummaryTooltipText = table.concat(lines, "\n")
+    end
+
+    _debugTodoTooltip(lines)
+end
+
 local function AddTodoCategory(AchClass)
     local orgAddTopLevelCategory = AchClass.AddTopLevelCategory
     function AchClass.AddTopLevelCategory(...)
@@ -46,16 +163,33 @@ local function AddTodoCategory(AchClass)
         local label        = "To-Do-Liste"
 
         local parentNode = self:AddCategory(lookup, tree, nodeTemplate, nil, NVK3_TODO, label, false, ICON_UP, ICON_DOWN, ICON_OVER, true, true)
+        self._nvkTodoNode = parentNode
+        self._nvkTodoChildren = {}
         local _row = parentNode and parentNode.GetData and parentNode:GetData()
-        if _row then _row.isNvkTodo = true end
+        if _row then
+            _row.isNvkTodo = true
+            _row.nvkSummaryTooltipText = nil
+        end
 
         local numTop = GetNumAchievementCategories and GetNumAchievementCategories() or 0
         for top=1,numTop do
             local topName, nSub, nAch = GetAchievementCategoryInfo(top)
             if (nSub and nSub>0) or (nAch and nAch>0) then
-                self:AddCategory(lookup, tree, subTemplate, parentNode, top, topName, true)
+                local node = self:AddCategory(lookup, tree, subTemplate, parentNode, top, topName, true)
+                if self._nvkTodoChildren then
+                    self._nvkTodoChildren[#self._nvkTodoChildren + 1] = node
+                end
+                local data = node and node.GetData and node:GetData()
+                if data then
+                    data.isNvkTodo = true
+                    data.nvkSummaryTooltipText = nil
+                    data.nvkTodoTopId = top
+                end
             end
         end
+
+        -- Update tooltip cache so hover text matches immediately.
+        _updateTodoTooltip(self)
 
         if self.refreshGroups then self.refreshGroups:RefreshAll("FullUpdate") end
         return result
@@ -71,6 +205,7 @@ local function OverrideOnCategorySelected(AchClass)
         if _nvk3ut_is_enabled("todo") and data and data.categoryIndex == NVK3_TODO then
             self:HideSummary()
             self:UpdateCategoryLabels(data, true, false)
+            _updateTodoTooltip(self)
         else
             return org(...)
         end
@@ -121,6 +256,7 @@ local function OverrideOnAchievementUpdated(AchClass)
         local data = self.categoryTree:GetSelectedData()
         if _nvk3ut_is_enabled("todo") and data and data.categoryIndex == NVK3_TODO then
             self:UpdateCategoryLabels(data, true, false)
+            _updateTodoTooltip(self)
         else
             return org(...)
         end
