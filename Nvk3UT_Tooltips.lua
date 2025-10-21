@@ -55,7 +55,10 @@ local function _nvkDebugTooltipText(data, text)
   else
     payload = "<empty>"
   end
-  U.d("[Nvk3UT][TT][" .. _nvkTooltipKind(data) .. "]", string.format("name=%s text=%s", _nvkTooltipLabel(data), payload))
+  U.d(
+    "[Nvk3UT][TT][" .. _nvkTooltipKind(data) .. "]",
+    string.format("name=%s text=%s", _nvkTooltipLabel(data), payload)
+  )
 end
 
 T.name = "Nvk3UT_Tooltips"
@@ -954,16 +957,9 @@ function Nvk3UT.TryCustomCategoryTooltip(control, data)
   end
 
   local summaryText = data.nvkSummaryTooltipText
-  if type(summaryText) == "string" then
-    if summaryText ~= "" then
-      _nvkShowSummaryText(control, summaryText)
-      _nvkDebugTooltipText(data, summaryText)
-      return true
-    else
-      _nvkDebugTooltipText(data, summaryText)
-    end
-  elseif summaryText == nil then
-    _nvkDebugTooltipText(data, summaryText)
+  if type(summaryText) == "string" and summaryText ~= "" then
+    _nvkShowSummaryText(control, summaryText)
+    return true
   end
 
   if data.isNvkFavorites then
