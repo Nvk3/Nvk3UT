@@ -150,3 +150,75 @@ function M.GetAchievementCategoryIconTag(topCategoryId, size)
   return M.GetIconTagForTexture(textures.normal, size)
 end
 
+local function safeAchievementInfo(id)
+  if type(GetAchievementInfo) ~= "function" then
+    return false
+  end
+  local ok, _, _, _, completed = pcall(GetAchievementInfo, id)
+  if not ok then
+    return false
+  end
+  return completed == true
+end
+
+local function getBaseAchievementId(id)
+  if type(id) ~= "number" then
+    return nil
+  end
+  if type(ACHIEVEMENTS) == "table" and type(ACHIEVEMENTS.GetBaseAchievementId) == "function" then
+    local ok, baseId = pcall(ACHIEVEMENTS.GetBaseAchievementId, ACHIEVEMENTS, id)
+    if ok and type(baseId) == "number" and baseId ~= 0 then
+      return baseId
+    end
+  end
+  return id
+end
+
+local function getNextAchievementId(id)
+  if type(GetNextAchievementInLine) ~= "function" then
+    return nil
+  end
+  local ok, nextId = pcall(GetNextAchievementInLine, id)
+  if ok and type(nextId) == "number" and nextId ~= 0 then
+    return nextId
+  end
+  return nil
+end
+
+function M.NormalizeAchievementId(id)
+  local baseId = getBaseAchievementId(id)
+  if baseId and baseId ~= 0 then
+    return baseId
+  end
+  return id
+end
+
+function M.IsAchievementFullyComplete(id)
+  if type(id) ~= "number" then
+    return false
+  end
+  local visited = {}
+  local stageId = M.NormalizeAchievementId(id)
+  local utilsDebug = M.d
+  local lastStage = id
+
+  while type(stageId) == "number" and stageId ~= 0 and not visited[stageId] do
+    visited[stageId] = true
+    lastStage = stageId
+    if not safeAchievementInfo(stageId) then
+      if utilsDebug and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then
+        utilsDebug("[Nvk3UT][Utils][Stage] pending", string.format("data={id:%d,stage:%d}", id, stageId))
+      end
+      return false
+    end
+    stageId = getNextAchievementId(stageId)
+  end
+
+  if not stageId or stageId == 0 then
+    return safeAchievementInfo(lastStage)
+  end
+
+  -- fallback if we encountered an unexpected loop or invalid data
+  return safeAchievementInfo(id)
+end
+

@@ -57,6 +57,9 @@ local function now() return (U and U.now and U.now()) or GetTimeStamp() end
 
 local function IsOpen(id)
     if not id then return false end
+    if U and U.IsAchievementFullyComplete then
+        return not U.IsAchievementFullyComplete(id)
+    end
     local _,_,_,_,completed = GetAchievementInfo(id)
     return completed == false
 end
@@ -64,12 +67,18 @@ end
 function M.Touch(id, ts)
     ensureSV()
     if not id then return end
+    if U and U.NormalizeAchievementId then
+        id = U.NormalizeAchievementId(id)
+    end
     Nvk3UT._recentSV.progress[id] = ts or now()
 end
 
 function M.Clear(id)
     ensureSV()
     if not id then return end
+    if U and U.NormalizeAchievementId then
+        id = U.NormalizeAchievementId(id)
+    end
     Nvk3UT._recentSV.progress[id] = nil
 end
 
@@ -113,10 +122,12 @@ function M.RegisterEvents()
     em:UnregisterForEvent("Nvk3UT_RecentData", EVENT_ACHIEVEMENT_UPDATED)
     em:UnregisterForEvent("Nvk3UT_RecentData", EVENT_ACHIEVEMENT_AWARDED)
     em:RegisterForEvent("Nvk3UT_RecentData", EVENT_ACHIEVEMENT_UPDATED, function(_, id)
-        if IsOpen(id) then M.Touch(id) else M.Clear(id) end
+        local open = IsOpen(id)
+        if open then M.Touch(id) else M.Clear(id) end
     end)
     em:RegisterForEvent("Nvk3UT_RecentData", EVENT_ACHIEVEMENT_AWARDED, function(_, _, _, id)
-        M.Clear(id)
+        local open = IsOpen(id)
+        if open then M.Touch(id) else M.Clear(id) end
     end)
 end
 
@@ -154,10 +165,17 @@ function M.BuildInitial()
 
     local function add(id)
         if not id or added >= INIT_CAP then return end
-        local _,_,_,_,completed = GetAchievementInfo(id)
-        if completed == false then
-            sv.progress[id] = stamp
-            added = added + 1
+        if IsOpen(id) then
+            local storeId = id
+            if U and U.NormalizeAchievementId then
+                storeId = U.NormalizeAchievementId(id)
+            end
+            if storeId then
+                if sv.progress[storeId] == nil then
+                    added = added + 1
+                end
+                sv.progress[storeId] = stamp
+            end
         end
     end
 
