@@ -69,6 +69,232 @@ local SUMMARY_COLOR = ZO_SELECTED_TEXT
 local NVK3_DONE = 84003
 local Comp = Nvk3UT and Nvk3UT.CompletedData
 
+local ICON_PATH_COMPLETED = "/esoui/art/guild/tabicon_history_up.dds"
+local ICON_PATH_FAVORITES = "/esoui/art/guild/guild_rankicon_leader_large.dds"
+local ICON_PATH_RECENT = "/esoui/art/journal/journal_tabicon_quest_up.dds"
+local ICON_PATH_TODO = "/esoui/art/market/keyboard/giftmessageicon_up.dds"
+
+local staticIconCache = {}
+
+local function GetStaticIconTag(key, path)
+  if staticIconCache[key] ~= nil then
+    if staticIconCache[key] == "" and U and U.GetIconTagForTexture then
+      local refreshed = U.GetIconTagForTexture(path)
+      if refreshed ~= nil then
+        staticIconCache[key] = refreshed or ""
+      end
+    end
+    return staticIconCache[key]
+  end
+  local tag = ""
+  if U and U.GetIconTagForTexture then
+    tag = U.GetIconTagForTexture(path)
+  end
+  staticIconCache[key] = tag or ""
+  return staticIconCache[key]
+end
+
+local function GetCompletedIconTag()
+  return GetStaticIconTag("completed", ICON_PATH_COMPLETED)
+end
+
+local function GetFavoritesIconTag()
+  return GetStaticIconTag("favorites", ICON_PATH_FAVORITES)
+end
+
+local function GetRecentIconTag()
+  return GetStaticIconTag("recent", ICON_PATH_RECENT)
+end
+
+local function GetTodoIconTag(topCategoryId)
+  if not U or not U.GetAchievementCategoryIconTag then
+    return ""
+  end
+  return U.GetAchievementCategoryIconTag(topCategoryId)
+end
+
+local function GetCategoryLabel(control)
+  if not control or not control.GetNamedChild then
+    return nil
+  end
+  return control:GetNamedChild("Text") or control:GetNamedChild("Label") or control:GetNamedChild("Name")
+end
+
+local function TryResolveTexture(path)
+  if not path or path == "" then
+    return nil
+  end
+  if U and U.ResolveTexturePath then
+    path = U.ResolveTexturePath(path)
+  end
+  if not path or path == "" then
+    return nil
+  end
+  return path
+end
+
+local function BuildStateTextures(path)
+  local normal = TryResolveTexture(path)
+  if not normal then
+    return nil
+  end
+
+  local base = path
+  if base:find("_up%.dds$") then
+    base = base:gsub("_up%.dds$", "")
+  elseif base:find("_down%.dds$") then
+    base = base:gsub("_down%.dds$", "")
+  elseif base:find("_over%.dds$") then
+    base = base:gsub("_over%.dds$", "")
+  else
+    base = base:gsub("%.dds$", "")
+  end
+
+  local function pickTexture(suffixes, fallback)
+    for _, suffix in ipairs(suffixes) do
+      local candidate = TryResolveTexture(base .. suffix)
+      if candidate then
+        return candidate
+      end
+    end
+    return fallback
+  end
+
+  local pressed = pickTexture({ "_down.dds", "_pressed.dds" }, normal)
+  local mouseover = pickTexture({ "_over.dds", "_hover.dds" }, pressed)
+  local selected = pickTexture({ "_selected.dds", "_over.dds", "_up.dds" }, mouseover)
+
+  return {
+    normal = normal,
+    pressed = pressed or normal,
+    mouseover = mouseover or pressed or normal,
+    selected = selected or mouseover or pressed or normal,
+  }
+end
+
+local function MakeStaticTextureSet(path)
+  if not path or path == "" then
+    return nil
+  end
+  return BuildStateTextures(path)
+end
+
+local function DetermineCategoryIconTextures(data)
+  if not data then
+    return nil
+  end
+
+  if data.isNvkFavorites then
+    return MakeStaticTextureSet(ICON_PATH_FAVORITES)
+  end
+
+  if data.isNvkRecent then
+    return MakeStaticTextureSet(ICON_PATH_RECENT)
+  end
+
+  if data.isNvkCompleted and not data.nvkCompletedKey then
+    return MakeStaticTextureSet(ICON_PATH_COMPLETED)
+  end
+
+  if data.isNvkTodo and data.nvkTodoTopId then
+    if U and U.GetAchievementCategoryIconTextures then
+      local textures = U.GetAchievementCategoryIconTextures(data.nvkTodoTopId)
+      if textures then
+        return textures
+      end
+    end
+  end
+
+  if data.isNvkTodo then
+    return MakeStaticTextureSet(ICON_PATH_TODO)
+  end
+
+  return nil
+end
+
+local function ApplyCategoryIcon(control, data)
+  if not control or not data then
+    return
+  end
+
+  local textures = DetermineCategoryIconTextures(data)
+  local iconPath = textures and (textures.normal or textures.pressed or textures.mouseover or textures.selected)
+  if not iconPath or iconPath == "" then
+    return
+  end
+
+  local function applyTexture(iconControl, texture)
+    if iconControl and iconControl.SetTexture then
+      iconControl:SetTexture(texture or iconPath)
+      if iconControl.SetHidden then
+        iconControl:SetHidden(false)
+      end
+    end
+  end
+
+  local normalTexture = textures.normal or iconPath
+  local pressedTexture = textures.pressed or normalTexture
+  local mouseoverTexture = textures.mouseover or pressedTexture
+  local selectedTexture = textures.selected or mouseoverTexture
+
+  applyTexture(control.icon or control.iconTexture, normalTexture)
+  applyTexture(control.iconTexture, normalTexture)
+  applyTexture(control.iconDown or control.iconPressed, pressedTexture)
+  applyTexture(control.iconPressed, pressedTexture)
+  applyTexture(control.iconMouseOver, mouseoverTexture)
+  applyTexture(control.iconHighlight, mouseoverTexture)
+  applyTexture(control.iconSelected, selectedTexture)
+
+  if control.SetNormalTexture and normalTexture then
+    control:SetNormalTexture(normalTexture)
+  end
+  if control.SetPressedTexture and pressedTexture then
+    control:SetPressedTexture(pressedTexture)
+  end
+  if control.SetMouseOverTexture and mouseoverTexture then
+    control:SetMouseOverTexture(mouseoverTexture)
+  end
+  if control.SetSelectedTexture and selectedTexture then
+    control:SetSelectedTexture(selectedTexture)
+  end
+
+  if data then
+    data.icon = normalTexture
+    data.iconTexture = normalTexture
+    data.normalIcon = normalTexture
+    data.upIcon = normalTexture
+    data.pressedIcon = pressedTexture
+    data.downIcon = pressedTexture
+    data.mouseoverIcon = mouseoverTexture
+    data.overIcon = mouseoverTexture
+    data.iconMouseOver = mouseoverTexture
+    data.iconSelected = selectedTexture
+    data.selectedIcon = selectedTexture
+    data.highlightIcon = mouseoverTexture
+  end
+
+  local label = GetCategoryLabel(control)
+  if not label then
+    return
+  end
+
+  local plain = data.nvkPlainName
+  if type(plain) ~= "string" or plain == "" then
+    local current = label:GetText() or ""
+    if U and U.StripLeadingIconTag then
+      current = U.StripLeadingIconTag(current)
+    else
+      current = current:gsub("^|t[^|]-|t%s*", "")
+    end
+    plain = current
+  end
+
+  plain = zo_strformat("<<1>>", plain or "")
+  if label:GetText() ~= plain then
+    label:SetText(plain)
+  end
+end
+
 local function EnsureTooltipPools()
   if not AchievementTooltip then
     return
@@ -276,14 +502,25 @@ local function ShowCompletedRootTooltip(node)
   AchievementTooltip.nvk3utRowPool:ReleaseAllObjects()
 
   local lines = {}
+  local constants = Comp and Comp.Constants and Comp.Constants()
+  local last50Key = constants and constants.LAST50_KEY
+  local iconHoliday = GetCompletedIconTag()
+  local iconRecent = GetRecentIconTag()
   if node and node.GetChildren and node:GetChildren() then
     for _, child in pairs(node:GetChildren()) do
       local d = child:GetData()
       if d and d.subcategoryIndex then
         local name = d.name or d.text or (d.categoryData and d.categoryData.name) or ""
         local _, points = Comp.SummaryCountAndPointsForKey(d.subcategoryIndex)
-        lines[#lines + 1] =
-          string.format("%s |cfafafa(%s Punkte)|r", zo_strformat("<<1>>", name), ZO_CommaDelimitNumber(points or 0))
+        local label = zo_strformat("<<1>>", name)
+        local iconTag = iconHoliday
+        if last50Key and d.nvkCompletedKey == last50Key then
+          iconTag = iconRecent
+        end
+        if iconTag ~= "" then
+          label = iconTag .. label
+        end
+        lines[#lines + 1] = string.format("%s - |cfafafa%s Punkte|r", label, ZO_CommaDelimitNumber(points or 0))
       end
     end
   else
@@ -293,11 +530,16 @@ local function ShowCompletedRootTooltip(node)
       if names and keys then
         for i = 1, #keys do
           local _, points = Comp.SummaryCountAndPointsForKey(keys[i])
-          lines[#lines + 1] = string.format(
-            "%s |cfafafa(%s Punkte)|r",
-            zo_strformat("<<1>>", names[i] or ""),
-            ZO_CommaDelimitNumber(points or 0)
-          )
+          local label = zo_strformat("<<1>>", names[i] or "")
+          local iconTag = iconHoliday
+          if last50Key and keys[i] == last50Key then
+            iconTag = iconRecent
+          end
+          if iconTag ~= "" then
+            label = iconTag .. label
+          end
+          lines[#lines + 1] =
+            string.format("%s - |cfafafa%s Punkte|r", label, ZO_CommaDelimitNumber(points or 0))
         end
       end
     end
@@ -331,7 +573,7 @@ local function ShowCompletedSubTooltip(data)
     end
   end
   local _, points = Comp.SummaryCountAndPointsForKey(data.subcategoryIndex)
-  local line = string.format("%s |cfafafa(%s Punkte)|r", labelText, ZO_CommaDelimitNumber(points or 0))
+  local line = string.format("%s - |cfafafa%s Punkte|r", labelText, ZO_CommaDelimitNumber(points or 0))
   local r, g, b = ZO_SELECTED_TEXT:UnpackRGB()
   local _, lbl = AchievementTooltip:AddLine(line, "", r, g, b, LEFT, MODIFY_TEXT_TYPE_NONE, TEXT_ALIGN_LEFT, false)
   if lbl then
@@ -382,8 +624,23 @@ local function AttachHoverToLabel(tree, parentControl, label, MouseEnter, MouseE
   label._nvk3ut_tip = true
 end
 
-local function HookHandlers(tree, control)
-  if not control or control._nvk3ut_tip then
+local function HookHandlers(tree, control, data)
+  if not control then
+    return
+  end
+
+  local nodeData = data
+  if not nodeData then
+    if control.data then
+      nodeData = control.data
+    elseif control.node and control.node.GetData then
+      nodeData = control.node:GetData()
+    end
+  end
+
+  ApplyCategoryIcon(control, nodeData)
+
+  if control._nvk3ut_tip then
     return
   end
 
@@ -489,33 +746,94 @@ local function HookHandlers(tree, control)
   end
 end
 
-local function HookExisting(tree)
-  local root = tree and tree.rootNode
-  if root and root:GetChildren() then
+local function RefreshTreeIcons(tree)
+  if not tree then
+    return
+  end
+
+  local root = tree.rootNode
+  if not root then
+    return
+  end
+
+  if root.GetChildren then
     for _, node in pairs(root:GetChildren()) do
-      local control = node:GetControl()
-      HookHandlers(tree, control)
+      HookHandlers(tree, node and node:GetControl(), node and node:GetData())
     end
   end
-  -- Depth-first to catch subnodes too
-  if tree and tree.DepthFirstIterator and root then
+
+  if tree.DepthFirstIterator then
     for node in tree:DepthFirstIterator(root) do
-      HookHandlers(tree, node:GetControl())
+      HookHandlers(tree, node and node:GetControl(), node and node:GetData())
     end
   end
 end
 
+local function HookExisting(tree)
+  RefreshTreeIcons(tree)
+end
+
 local function HookTemplates(tree)
-  if not tree or not tree.templateInfo then
+  if not tree then
     return
   end
-  local function setup(node, control, data, open)
-    HookHandlers(tree, control)
+  if tree._nvk3utSetupHooked then
+    return
   end
-  for _, info in pairs(tree.templateInfo) do
-    if info and info.setupFunction then
-      SecurePostHook(info, "setupFunction", setup)
+  tree._nvk3utSetupHooked = true
+
+  local function setupFn(self, node, control, data)
+    HookHandlers(self, control, data)
+  end
+  if SecurePostHook then
+    SecurePostHook(tree, "SetupNode", setupFn)
+  elseif ZO_PostHook then
+    ZO_PostHook(tree, "SetupNode", setupFn)
+  end
+end
+
+local function HookTreeRefresh(tree)
+  if not tree or tree._nvk3utRefreshHooked then
+    return
+  end
+  tree._nvk3utRefreshHooked = true
+
+  local function scheduleRefresh()
+    RefreshTreeIcons(tree)
+  end
+
+  local function postHookMethod(method)
+    if not method or type(tree[method]) ~= "function" then
+      return
     end
+    if SecurePostHook then
+      SecurePostHook(tree, method, scheduleRefresh)
+    elseif ZO_PostHook then
+      ZO_PostHook(tree, method, scheduleRefresh)
+    end
+  end
+
+  postHookMethod("RefreshVisible")
+  postHookMethod("SelectNode")
+  postHookMethod("SetSelectedNode")
+  postHookMethod("ToggleNode")
+end
+
+local function HookAchievementUpdateLabels(ACH)
+  if not ACH or ACH._nvk3utUpdateLabelsHooked then
+    return
+  end
+  local org = ACH.UpdateCategoryLabels
+  if type(org) ~= "function" then
+    return
+  end
+  ACH._nvk3utUpdateLabelsHooked = true
+  function ACH:UpdateCategoryLabels(...)
+    local result = org(self, ...)
+    if self and self.categoryTree then
+      RefreshTreeIcons(self.categoryTree)
+    end
+    return result
   end
 end
 
@@ -527,6 +845,8 @@ function T.HookNow()
   local tree = ACH.categoryTree
   HookTemplates(tree)
   HookExisting(tree)
+  HookTreeRefresh(tree)
+  HookAchievementUpdateLabels(ACH)
 end
 
 local function HookSceneAndEvents()
@@ -729,7 +1049,10 @@ local function _nvkRenderFavorites(control)
   end
   local n = _nvkCountFavorites()
   local title = (GetString and GetString(SI_NAMED_FRIENDS_LIST_FAVOURITES_HEADER)) or "Favoriten"
-  local line = string.format("%s |cfafafa(%s)|r", zo_strformat("<<1>>", title), ZO_CommaDelimitNumber(n or 0))
+  local baseLabel = zo_strformat("<<1>>", title)
+  local favoritesIcon = GetFavoritesIconTag()
+  local displayLabel = (favoritesIcon ~= "" and (favoritesIcon .. baseLabel)) or baseLabel
+  local line = string.format("%s - |cfafafa%s|r", displayLabel, ZO_CommaDelimitNumber(n or 0))
   local r, g, b = ZO_SELECTED_TEXT:UnpackRGB()
   local _, lbl = tooltip:AddLine(line, "", r, g, b, LEFT, MODIFY_TEXT_TYPE_NONE, TEXT_ALIGN_LEFT, false)
   if lbl then
@@ -771,7 +1094,10 @@ local function _nvkRenderRecent(control)
   end
   local n = _nvkCountRecent()
   local title = (GetString and GetString(SI_GAMEPAD_NOTIFICATIONS_CATEGORY_RECENT)) or "Kürzlich"
-  local line = string.format("%s |cfafafa(%s)|r", zo_strformat("<<1>>", title), ZO_CommaDelimitNumber(n or 0))
+  local baseLabel = zo_strformat("<<1>>", title)
+  local recentIcon = GetRecentIconTag()
+  local displayLabel = (recentIcon ~= "" and (recentIcon .. baseLabel)) or baseLabel
+  local line = string.format("%s - |cfafafa%s|r", displayLabel, ZO_CommaDelimitNumber(n or 0))
   local r, g, b = ZO_SELECTED_TEXT:UnpackRGB()
   local _, lbl = tooltip:AddLine(line, "", r, g, b, LEFT, MODIFY_TEXT_TYPE_NONE, TEXT_ALIGN_LEFT, false)
   if lbl then
@@ -900,19 +1226,25 @@ local function _nvkRenderTodo(control)
     local name = names[i] or "—"
     local pts = _nvkTodoPointsForSub(Todo, keys[i])
     local maxTop = 0
+    local iconTag = ""
     if type(topIds) == "table" then
       maxTop = _nvkMaxPointsForTop(topIds[i], Todo)
+      if topIds[i] then
+        iconTag = GetTodoIconTag(topIds[i]) or ""
+      end
     end
+    local formattedName = zo_strformat("<<1>>", name)
+    local displayName = (iconTag ~= "" and (iconTag .. formattedName)) or formattedName
     if maxTop and maxTop > 0 then
       lines[#lines + 1] = string.format(
-        "%s |cfafafa(%s / %s)|r",
-        zo_strformat("<<1>>", name),
+        "%s - |cfafafa%s / %s|r",
+        displayName,
         ZO_CommaDelimitNumber(pts or 0),
         ZO_CommaDelimitNumber(maxTop or 0)
       )
     else
       lines[#lines + 1] =
-        string.format("%s |cfafafa(%s)|r", zo_strformat("<<1>>", name), ZO_CommaDelimitNumber(pts or 0))
+        string.format("%s - |cfafafa%s|r", displayName, ZO_CommaDelimitNumber(pts or 0))
     end
   end
   if #lines > 0 then

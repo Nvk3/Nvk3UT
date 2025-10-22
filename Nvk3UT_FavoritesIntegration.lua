@@ -7,12 +7,15 @@ local U = Nvk3UT.Utils
 local favProvide_lastTs, favProvide_lastCount = 0, -1
 
 local NVK3_FAVORITES_KEY = "Nvk3UT_Favorites"
+local ICON_PATH_FAVORITES = "/esoui/art/guild/guild_rankicon_leader_large.dds"
+local FAVORITES_LOOKUP_KEY = "NVK3UT_FAVORITES_ROOT"
 
-local SUMMARY_ICONS = {
-    "esoui/art/market/keyboard/giftmessageicon_up.dds",
-    "esoui/art/market/keyboard/giftmessageicon_down.dds",
-    "esoui/art/market/keyboard/giftmessageicon_over.dds"
-}
+local function sanitizePlainName(name)
+  if U and U.StripLeadingIconTag then
+    name = U.StripLeadingIconTag(name)
+  end
+  return name
+end
 
 local function _countFavorites()
     if not (Fav and Fav.Iterate) then
@@ -55,7 +58,9 @@ local function _updateFavoritesTooltip(ach)
     local count = _countFavorites()
     local name = data.name or data.text or (data.categoryData and data.categoryData.name) or "Favoriten"
     local label = zo_strformat("<<1>>", name)
-    local line = string.format("%s – %s", label, ZO_CommaDelimitNumber(count or 0))
+    local iconTag = (U and U.GetIconTagForTexture and U.GetIconTagForTexture(ICON_PATH_FAVORITES)) or ""
+    local displayLabel = (iconTag ~= "" and (iconTag .. label)) or label
+    local line = string.format("%s - %s", displayLabel, ZO_CommaDelimitNumber(count or 0))
     data.isNvkFavorites = true
     data.nvkSummaryTooltipText = line
     ach._nvkFavoritesData = data
@@ -63,27 +68,48 @@ end
 
 local function AddFavoritesTopCategory(AchievementsClass)
     local orgAddTopLevelCategory = AchievementsClass.AddTopLevelCategory
-    function AchievementsClass.AddTopLevelCategory(...)
-                if not _nvk3ut_is_enabled("favorites") then return orgAddTopLevelCategory(...) end
-        if not _nvk3ut_is_enabled("favorites") then return (
-            select(1, ...)).AddTopLevelCategory and select(1, ...).AddTopLevelCategory(...) end
-        local self, name = ...
-        if name then return orgAddTopLevelCategory(...) end
-        local result = orgAddTopLevelCategory(...)
-        local lookup, tree, hidesUnearned = self.nodeLookupData, self.categoryTree, false
-        local normalIcon, pressedIcon, mouseoverIcon = unpack(SUMMARY_ICONS)
-        local parentNode = self:AddCategory(lookup, tree, "ZO_IconChildlessHeader", nil, NVK3_FAVORITES_KEY, "Favoriten", hidesUnearned, normalIcon, pressedIcon, mouseoverIcon, true, true)
+    function AchievementsClass:AddTopLevelCategory(...)
+        local result = orgAddTopLevelCategory(self, ...)
+        if not _nvk3ut_is_enabled("favorites") then
+            return result
+        end
+
+        local lookup, tree = self.nodeLookupData, self.categoryTree
+        if not (lookup and tree) then
+            return result
+        end
+
+        if lookup[FAVORITES_LOOKUP_KEY] then
+            local node = lookup[FAVORITES_LOOKUP_KEY]
+            if node and not self._nvkFavoritesNode then
+                self._nvkFavoritesNode = node
+            end
+            return result
+        end
+
+        local parentNode =
+            self:AddCategory(lookup, tree, "ZO_IconChildlessHeader", nil, NVK3_FAVORITES_KEY, "Favoriten", false, nil, nil, nil, true, true)
+        if not parentNode then
+            return result
+        end
+
+        lookup[FAVORITES_LOOKUP_KEY] = parentNode
         self._nvkFavoritesNode = parentNode
-        local row = parentNode and parentNode.GetData and parentNode:GetData()
+        local row = parentNode.GetData and parentNode:GetData()
         if row then
             row.isNvkFavorites = true
             row.nvkSummaryTooltipText = nil
             row.isNvk3Fav = true
+            local plain = row.name or row.text or "Favoriten"
+            row.nvkPlainName = row.nvkPlainName or sanitizePlainName(plain)
             self._nvkFavoritesData = row
         end
-        -- Capture tooltip data right after the category row exists.
+
         _updateFavoritesTooltip(self)
-        if self.refreshGroups then self.refreshGroups:RefreshAll("FullUpdate") end
+        if self.refreshGroups then
+            self.refreshGroups:RefreshAll("FullUpdate")
+        end
+
         return result
     end
 end

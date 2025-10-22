@@ -3,15 +3,20 @@ local function _nvk3ut_is_enabled(key)
   return (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.features and Nvk3UT.sv.features[key]) and true or false
 end
 local RD = Nvk3UT.RecentData
+local U = Nvk3UT and Nvk3UT.Utils
 
-local recProvide_lastTs, recProvide_lastCount = 0, -1
 local NVK3_RECENT = 84001
+local ICON_PATH_RECENT = "/esoui/art/journal/journal_tabicon_quest_up.dds"
+local RECENT_LOOKUP_KEY = "NVK3UT_RECENT_ROOT"
+
+local function sanitizePlainName(name)
+    if U and U.StripLeadingIconTag then
+        name = U.StripLeadingIconTag(name)
+    end
+    return name
+end
 
 -- Use same icon set as Favoriten for visual parity
-local ICON_UP   = "esoui/art/market/keyboard/giftmessageicon_up.dds"
-local ICON_DOWN = "esoui/art/market/keyboard/giftmessageicon_down.dds"
-local ICON_OVER = "esoui/art/market/keyboard/giftmessageicon_over.dds"
-
 local function _countRecent()
     if not RD then
         return 0
@@ -48,7 +53,9 @@ local function _updateRecentTooltip(ach)
     local count = _countRecent()
     local name = data.name or data.text or (data.categoryData and data.categoryData.name) or "Kürzlich"
     local label = zo_strformat("<<1>>", name)
-    local line = string.format("%s – %s", label, ZO_CommaDelimitNumber(count or 0))
+    local iconTag = (U and U.GetIconTagForTexture and U.GetIconTagForTexture(ICON_PATH_RECENT)) or ""
+    local displayLabel = (iconTag ~= "" and (iconTag .. label)) or label
+    local line = string.format("%s - %s", displayLabel, ZO_CommaDelimitNumber(count or 0))
     data.isNvkRecent = true
     data.nvkSummaryTooltipText = line
     ach._nvkRecentData = data
@@ -56,28 +63,49 @@ end
 
 local function AddRecentCategory(AchClass)
     local orgAddTopLevelCategory = AchClass.AddTopLevelCategory
-    function AchClass.AddTopLevelCategory(...)
-                if not _nvk3ut_is_enabled("recent") then return orgAddTopLevelCategory(...) end
-        if not _nvk3ut_is_enabled("recent") then return (
-            select(1, ...)).AddTopLevelCategory and select(1, ...).AddTopLevelCategory(...) end
-        local self, name = ...
-        if name then
-            return orgAddTopLevelCategory(...)
+    function AchClass:AddTopLevelCategory(...)
+        local result = orgAddTopLevelCategory(self, ...)
+        if not _nvk3ut_is_enabled("recent") then
+            return result
         end
-        local result = orgAddTopLevelCategory(...)
+
         local lookup, tree = self.nodeLookupData, self.categoryTree
+        if not (lookup and tree) then
+            return result
+        end
+
+        if lookup[RECENT_LOOKUP_KEY] then
+            local node = lookup[RECENT_LOOKUP_KEY]
+            if node and not self._nvkRecentNode then
+                self._nvkRecentNode = node
+            end
+            return result
+        end
+
         local label = "Kürzlich"
-        local parentNode = self:AddCategory(lookup, tree, "ZO_IconChildlessHeader", nil, NVK3_RECENT, label, false, ICON_UP, ICON_DOWN, ICON_OVER, true, true)
+        local parentNode =
+            self:AddCategory(lookup, tree, "ZO_IconChildlessHeader", nil, NVK3_RECENT, label, false, nil, nil, nil, true, true)
+        if not parentNode then
+            return result
+        end
+
+        lookup[RECENT_LOOKUP_KEY] = parentNode
         self._nvkRecentNode = parentNode
-        local row = parentNode and parentNode.GetData and parentNode:GetData()
+        local row = parentNode.GetData and parentNode:GetData()
         if row then
             row.isNvkRecent = true
             row.nvkSummaryTooltipText = nil
+            local plain = row.name or row.text or label
+            row.nvkPlainName = row.nvkPlainName or sanitizePlainName(plain)
             self._nvkRecentData = row
         end
+
         _updateRecentTooltip(self)
-        if self.refreshGroups then self.refreshGroups:RefreshAll("FullUpdate") end
-        local U = Nvk3UT and Nvk3UT.Utils; local __now = (U and U.now and U.now() or 0); if U and U.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug and ((__now - recProvide_lastTs) > 0.5 or #result ~= recProvide_lastCount) then recProvide_lastTs = __now; recProvide_lastCount = #result; U.d("[Nvk3UT][Recent][Provide] list", "data={count:", #result, ", searchFiltered:", tostring(considerSearchResults and true or false), "}") end; return result
+        if self.refreshGroups then
+            self.refreshGroups:RefreshAll("FullUpdate")
+        end
+
+        return result
     end
 end
 

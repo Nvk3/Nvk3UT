@@ -8,11 +8,16 @@ local Todo = Nvk3UT.TodoData
 local U = Nvk3UT and Nvk3UT.Utils
 
 local NVK3_TODO = 84002
-local ICON_UP = "esoui/art/market/keyboard/giftmessageicon_up.dds"
-local ICON_DOWN = "esoui/art/market/keyboard/giftmessageicon_down.dds"
-local ICON_OVER = "esoui/art/market/keyboard/giftmessageicon_over.dds"
+local TODO_LOOKUP_KEY = "NVK3UT_TODO_ROOT"
 local todoProvide_lastTs = 0
 local todoProvide_lastCount = 0
+
+local function sanitizePlainName(name)
+  if U and U.StripLeadingIconTag then
+    name = U.StripLeadingIconTag(name)
+  end
+  return name
+end
 
 -- Add one 'To-Do-Liste' header with subcategories for each basegame top category
 
@@ -39,13 +44,17 @@ local function _todoCollectOpenSummary(topId)
   return num, points
 end
 
-local function _formatTodoTooltipLine(data, points)
+local function _formatTodoTooltipLine(data, points, iconTag)
   local name = data and (data.name or data.text)
   if not name and data and data.categoryData then
     name = data.categoryData.name or data.categoryData.text
   end
   local label = zo_strformat("<<1>>", name or "")
-  return string.format("%s – %s", label, ZO_CommaDelimitNumber(points or 0))
+  local prefix = iconTag or ""
+  if prefix ~= "" then
+    return string.format("%s%s - %s", prefix, label, ZO_CommaDelimitNumber(points or 0))
+  end
+  return string.format("%s - %s", label, ZO_CommaDelimitNumber(points or 0))
 end
 
 local function _updateTodoTooltip(ach)
@@ -89,7 +98,8 @@ local function _updateTodoTooltip(ach)
       data.nvkTodoTopId = topId
       local count, points = _todoCollectOpenSummary(topId)
       if count > 0 then
-        local line = _formatTodoTooltipLine(data, points)
+        local iconTag = (U and U.GetAchievementCategoryIconTag and U.GetAchievementCategoryIconTag(topId)) or ""
+        local line = _formatTodoTooltipLine(data, points, iconTag)
         data.isNvkTodo = true
         data.nvkTodoOpenCount = count
         data.nvkTodoOpenPoints = points
@@ -111,48 +121,25 @@ end
 
 local function AddTodoCategory(AchClass)
   local orgAddTopLevelCategory = AchClass.AddTopLevelCategory
-  function AchClass.AddTopLevelCategory(...)
+  function AchClass:AddTopLevelCategory(...)
+    local result = orgAddTopLevelCategory(self, ...)
     if not _nvk3ut_is_enabled("todo") then
-      return orgAddTopLevelCategory(...)
+      return result
     end
-    if not _nvk3ut_is_enabled("todo") then
-      return (select(1, ...)).AddTopLevelCategory and select(1, ...).AddTopLevelCategory(...)
-    end
-    local self, name = ...
-    if name then
-      -- On the first real category, append "Abgeschlossen" as the last entry
-      if not self._nvk_completed_added then
-        self._nvk_completed_added = true
-        local lookup, tree = self.nodeLookupData, self.categoryTree
-        local nodeTemplate = "ZO_IconHeader"
-        local subTemplate = "ZO_TreeLabelSubCategory"
-        local labelDone = "Abgeschlossen"
-        local parentNodeDone = self:AddCategory(
-          lookup,
-          tree,
-          nodeTemplate,
-          nil,
-          84003,
-          labelDone,
-          false,
-          ICON_UP,
-          ICON_DOWN,
-          ICON_OVER,
-          true,
-          true
-        )
-        local names, ids = Nvk3UT.CompletedData.GetSubcategoryList()
-        for i, n in ipairs(names) do
-          self:AddCategory(lookup, tree, subTemplate, parentNodeDone, ids[i], n, true)
-        end
-      end
-      return orgAddTopLevelCategory(...)
-    end
-
-    -- Default build path: after base creates roots, add our To-Do header with subcats
-    local result = orgAddTopLevelCategory(...)
 
     local lookup, tree = self.nodeLookupData, self.categoryTree
+    if not (lookup and tree) then
+      return result
+    end
+
+    if lookup[TODO_LOOKUP_KEY] then
+      local node = lookup[TODO_LOOKUP_KEY]
+      if node and not self._nvkTodoNode then
+        self._nvkTodoNode = node
+      end
+      return result
+    end
+
     local nodeTemplate = "ZO_IconHeader"
     local subTemplate = "ZO_TreeLabelSubCategory"
     local label = "To-Do-Liste"
@@ -165,18 +152,24 @@ local function AddTodoCategory(AchClass)
       NVK3_TODO,
       label,
       false,
-      ICON_UP,
-      ICON_DOWN,
-      ICON_OVER,
+      nil,
+      nil,
+      nil,
       true,
       true
     )
+    if not parentNode then
+      return result
+    end
+
+    lookup[TODO_LOOKUP_KEY] = parentNode
     self._nvkTodoNode = parentNode
     self._nvkTodoChildren = {}
-    local _row = parentNode and parentNode.GetData and parentNode:GetData()
+    local _row = parentNode.GetData and parentNode:GetData()
     if _row then
       _row.isNvkTodo = true
       _row.nvkSummaryTooltipText = nil
+      _row.nvkPlainName = _row.nvkPlainName or sanitizePlainName(label)
     end
 
     local numTop = GetNumAchievementCategories and GetNumAchievementCategories() or 0
@@ -186,22 +179,22 @@ local function AddTodoCategory(AchClass)
         local openCount, openPoints = _todoCollectOpenSummary(top)
         if openCount > 0 then
           local node = self:AddCategory(lookup, tree, subTemplate, parentNode, top, topName, true)
-          if self._nvkTodoChildren then
+          if node then
             self._nvkTodoChildren[#self._nvkTodoChildren + 1] = node
-          end
-          local data = node and node.GetData and node:GetData()
-          if data then
-            data.isNvkTodo = true
-            data.nvkTodoOpenCount = openCount
-            data.nvkTodoOpenPoints = openPoints
-            data.nvkTodoTopId = top
-            data.nvkSummaryTooltipText = nil
+            local data = node.GetData and node:GetData()
+            if data then
+              data.isNvkTodo = true
+              data.nvkTodoOpenCount = openCount
+              data.nvkTodoOpenPoints = openPoints
+              data.nvkTodoTopId = top
+              data.nvkSummaryTooltipText = nil
+              data.nvkPlainName = data.nvkPlainName or sanitizePlainName(topName)
+            end
           end
         end
       end
     end
 
-    -- Update tooltip cache so hover text matches immediately.
     _updateTodoTooltip(self)
 
     if self.refreshGroups then
