@@ -270,9 +270,46 @@ local function ApplyCategoryIcon(control, data)
   end
 
   local iconTag = DetermineCategoryIconTag(data)
-  UpdateTemplateIcons(control, iconTag ~= "")
+  local hasIcon = iconTag ~= "" and iconTag ~= nil
+  UpdateTemplateIcons(control, hasIcon)
 
-  if iconTag and iconTag ~= "" then
+  if hasIcon and label.ClearAnchors and label.SetAnchor then
+    if not label._nvkOriginalAnchors and label.GetNumAnchors and label.GetAnchor then
+      local anchors = {}
+      local total = label:GetNumAnchors()
+      for idx = 1, total do
+        local isSet, point, relativeTo, relativePoint, offsetX, offsetY = label:GetAnchor(idx)
+        if isSet then
+          anchors[#anchors + 1] = { point, relativeTo, relativePoint, offsetX or 0, offsetY or 0 }
+        end
+      end
+      if #anchors > 0 then
+        label._nvkOriginalAnchors = anchors
+      end
+    end
+    label:ClearAnchors()
+    label:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+    label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
+    label._nvkAnchorsAdjusted = true
+  elseif label._nvkAnchorsAdjusted and label.ClearAnchors and label.SetAnchor then
+    label:ClearAnchors()
+    local anchors = label._nvkOriginalAnchors
+    if type(anchors) == "table" and #anchors > 0 then
+      for idx = 1, #anchors do
+        local entry = anchors[idx]
+        if entry then
+          local point, relativeTo, relativePoint, offsetX, offsetY = entry[1], entry[2], entry[3], entry[4], entry[5]
+          label:SetAnchor(point or LEFT, relativeTo, relativePoint or point or LEFT, offsetX or 0, offsetY or 0)
+        end
+      end
+    else
+      label:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+      label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
+    end
+    label._nvkAnchorsAdjusted = nil
+  end
+
+  if hasIcon then
     local plain = data and data.nvkPlainName
     if type(plain) == "string" and plain ~= "" then
       plain = zo_strformat("<<1>>", plain)
@@ -282,7 +319,7 @@ local function ApplyCategoryIcon(control, data)
       plain = zo_strformat("<<1>>", current)
     end
     label._nvkPlainText = plain
-    label:SetText(iconTag .. (plain or ""))
+    label:SetText((iconTag or "") .. (plain or ""))
     label._nvkHasIcon = true
   else
     local plain = data and data.nvkPlainName
