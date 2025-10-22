@@ -194,15 +194,46 @@ local function UpdateTemplateIcons(control, hide)
         if icon._nvkOriginalHidden == nil and icon.IsHidden then
           icon._nvkOriginalHidden = icon:IsHidden()
         end
+        if icon._nvkOriginalDimensions == nil then
+          local width = icon.GetWidth and icon:GetWidth()
+          local height = icon.GetHeight and icon:GetHeight()
+          if (width and width > 0) or (height and height > 0) then
+            icon._nvkOriginalDimensions = { width or 0, height or 0 }
+          end
+        end
         if icon.SetHidden then
           icon:SetHidden(true)
           icon._nvkForceHide = true
+        end
+        if icon.SetDimensions then
+          icon:SetDimensions(0, 0)
+        else
+          if icon.SetWidth then
+            icon:SetWidth(0)
+          end
+          if icon.SetHeight then
+            icon:SetHeight(0)
+          end
         end
       elseif icon._nvkForceHide then
         if icon._nvkOriginalHidden ~= nil and icon.SetHidden then
           icon:SetHidden(icon._nvkOriginalHidden)
         elseif icon.SetHidden then
           icon:SetHidden(false)
+        end
+        local dims = icon._nvkOriginalDimensions
+        if dims then
+          local width, height = dims[1] or 0, dims[2] or 0
+          if icon.SetDimensions then
+            icon:SetDimensions(width, height)
+          else
+            if icon.SetWidth then
+              icon:SetWidth(width)
+            end
+            if icon.SetHeight then
+              icon:SetHeight(height)
+            end
+          end
         end
         icon._nvkForceHide = nil
       end
@@ -718,20 +749,31 @@ local function HookHandlers(tree, control, data)
   end
 end
 
-local function HookExisting(tree)
-  local root = tree and tree.rootNode
-  if root and root:GetChildren() then
+local function RefreshTreeIcons(tree)
+  if not tree then
+    return
+  end
+
+  local root = tree.rootNode
+  if not root then
+    return
+  end
+
+  if root.GetChildren then
     for _, node in pairs(root:GetChildren()) do
-      local control = node:GetControl()
-      HookHandlers(tree, control, node:GetData())
+      HookHandlers(tree, node and node:GetControl(), node and node:GetData())
     end
   end
-  -- Depth-first to catch subnodes too
-  if tree and tree.DepthFirstIterator and root then
+
+  if tree.DepthFirstIterator then
     for node in tree:DepthFirstIterator(root) do
-      HookHandlers(tree, node:GetControl(), node:GetData())
+      HookHandlers(tree, node and node:GetControl(), node and node:GetData())
     end
   end
+end
+
+local function HookExisting(tree)
+  RefreshTreeIcons(tree)
 end
 
 local function HookTemplates(tree)
@@ -753,6 +795,51 @@ local function HookTemplates(tree)
   end
 end
 
+local function HookTreeRefresh(tree)
+  if not tree or tree._nvk3utRefreshHooked then
+    return
+  end
+  tree._nvk3utRefreshHooked = true
+
+  local function scheduleRefresh()
+    RefreshTreeIcons(tree)
+  end
+
+  local function postHookMethod(method)
+    if not method or type(tree[method]) ~= "function" then
+      return
+    end
+    if SecurePostHook then
+      SecurePostHook(tree, method, scheduleRefresh)
+    elseif ZO_PostHook then
+      ZO_PostHook(tree, method, scheduleRefresh)
+    end
+  end
+
+  postHookMethod("RefreshVisible")
+  postHookMethod("SelectNode")
+  postHookMethod("SetSelectedNode")
+  postHookMethod("ToggleNode")
+end
+
+local function HookAchievementUpdateLabels(ACH)
+  if not ACH or ACH._nvk3utUpdateLabelsHooked then
+    return
+  end
+  local org = ACH.UpdateCategoryLabels
+  if type(org) ~= "function" then
+    return
+  end
+  ACH._nvk3utUpdateLabelsHooked = true
+  function ACH:UpdateCategoryLabels(...)
+    local result = org(self, ...)
+    if self and self.categoryTree then
+      RefreshTreeIcons(self.categoryTree)
+    end
+    return result
+  end
+end
+
 function T.HookNow()
   local ACH = GetACH()
   if not ACH or not ACH.categoryTree then
@@ -761,6 +848,8 @@ function T.HookNow()
   local tree = ACH.categoryTree
   HookTemplates(tree)
   HookExisting(tree)
+  HookTreeRefresh(tree)
+  HookAchievementUpdateLabels(ACH)
 end
 
 local function HookSceneAndEvents()
