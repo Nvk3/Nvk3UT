@@ -1648,9 +1648,9 @@ function QT:ApplyVisibility()
   local combatHidden = behavior.hideInCombat and self.isInCombat
   local shouldShow = isEnabled and sceneAllowed and not combatHidden
   if self.fragment and self.fragment.SetHiddenForReason then
-    self.fragment:SetHiddenForReason("disabled", not isEnabled, true)
-    self.fragment:SetHiddenForReason("scene", not sceneAllowed, true)
-    self.fragment:SetHiddenForReason("combat", combatHidden, true)
+    self.fragment:SetHiddenForReason("disabled", not isEnabled)
+    self.fragment:SetHiddenForReason("scene", not sceneAllowed)
+    self.fragment:SetHiddenForReason("combat", combatHidden)
   end
   if self.control then
     self.control:SetHidden(not shouldShow)
