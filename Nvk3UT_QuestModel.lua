@@ -21,6 +21,20 @@ local function debugLog(message)
     end
 end
 
+local function getTrackerSV()
+    local sv = M and M.sv and M.sv.tracker
+    if not sv then
+        return nil
+    end
+
+    sv.collapseState = sv.collapseState or {}
+    sv.collapseState.quests = sv.collapseState.quests or {}
+    sv.collapseState.zones = sv.collapseState.zones or {}
+    sv.collapseState.achieves = sv.collapseState.achieves or {}
+
+    return sv
+end
+
 local function safeCall(fn, ...)
     if type(fn) ~= "function" then
         return nil
@@ -302,6 +316,8 @@ function Module.Scan()
     end
 
     local trackedLookup = gatherTrackedQuestSet()
+    local trackerSV = getTrackerSV()
+    local collapseLookup = trackerSV and trackerSV.collapseState and trackerSV.collapseState.quests or nil
     local categoryLookup = buildCategoryLookup(allCategories)
     local orderCounter = #allCategories
 
@@ -346,7 +362,7 @@ function Module.Scan()
                 zoneIcon = "EsoUI/Art/Journal/journal_tabIcon_locations_up.dds",
                 isComplete = questData.isComplete or false,
                 isTracked = true,
-                isCollapsed = false,
+                isCollapsed = collapseLookup and collapseLookup[questKey] == true or false,
                 objectives = objectives,
                 steps = steps,
                 stepSummaries = summaries,
@@ -451,6 +467,49 @@ function Module.Init()
     end)
     EM:UnregisterForEvent("Nvk3UT_QuestModel_ObjectiveCompleted", EVENT_OBJECTIVE_COMPLETED)
     EM:RegisterForEvent("Nvk3UT_QuestModel_ObjectiveCompleted", EVENT_OBJECTIVE_COMPLETED, handleQuestUpdate)
+
+    Module.ForceRefresh()
+end
+
+function Module.SetTracked(questKey, shouldTrack)
+    if not questKey then
+        return
+    end
+
+    local quests = Module.Quests or {}
+    local quest = quests.byId and quests.byId[questKey]
+    if not quest then
+        return
+    end
+
+    if shouldTrack == nil then
+        shouldTrack = not (quest.isTracked ~= false)
+    end
+
+    quest.isTracked = shouldTrack and true or false
+
+    local journalIndex = quest.journalIndex
+    if journalIndex then
+        local applied = false
+        if QUEST_MANAGER and QUEST_MANAGER.SetQuestIsTracked then
+            local ok = pcall(QUEST_MANAGER.SetQuestIsTracked, QUEST_MANAGER, journalIndex, shouldTrack)
+            applied = applied or ok
+        end
+        if type(SetTrackedIsTracked) == "function" then
+            local ok = pcall(SetTrackedIsTracked, journalIndex, shouldTrack)
+            applied = applied or ok
+        end
+        if shouldTrack and type(SetTrackedQuestIndex) == "function" then
+            pcall(SetTrackedQuestIndex, journalIndex)
+        end
+        if not applied and QUEST_MANAGER and QUEST_MANAGER.SetQuestStepIsTracked and type(quest.steps) == "table" then
+            for _, step in ipairs(quest.steps) do
+                if step.index then
+                    pcall(QUEST_MANAGER.SetQuestStepIsTracked, QUEST_MANAGER, journalIndex, step.index, shouldTrack)
+                end
+            end
+        end
+    end
 
     Module.ForceRefresh()
 end

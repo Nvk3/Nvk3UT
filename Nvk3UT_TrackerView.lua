@@ -24,6 +24,10 @@ local DIVIDER_ROW_HEIGHT = 2
 local ACHIEVEMENT_ROW_HEIGHT = 32
 
 local LEFT_BUTTON = (_G and _G.MOUSE_BUTTON_INDEX_LEFT) or MOUSE_BUTTON_INDEX_LEFT or 1
+local RIGHT_BUTTON = (_G and _G.MOUSE_BUTTON_INDEX_RIGHT) or MOUSE_BUTTON_INDEX_RIGHT or 2
+
+local CARET_TEXTURE_OPEN = "EsoUI/Art/Buttons/tree_open_up.dds"
+local CARET_TEXTURE_CLOSED = "EsoUI/Art/Buttons/tree_closed_up.dds"
 
 local function debugLog(message)
     if d then
@@ -216,6 +220,55 @@ local function hideTooltip()
     end
 end
 
+local function toggleQuestCollapsedFor(control)
+    if not control or not control.data then
+        return
+    end
+
+    local questKey = control.data.questKey
+    if not questKey then
+        return
+    end
+
+    local quest = control.data.quest
+    local newCollapsed = not (quest and quest.isCollapsed == true)
+    setQuestCollapsed(questKey, newCollapsed)
+    if quest then
+        quest.isCollapsed = newCollapsed
+    end
+    control.data.collapsed = newCollapsed
+    Module.MarkDirty()
+end
+
+local function openQuestContextMenu(control)
+    if type(ClearMenu) ~= "function" or type(AddMenuItem) ~= "function" or type(ShowMenu) ~= "function" then
+        return
+    end
+
+    local data = control and control.data
+    local quest = data and data.quest
+    local questKey = data and data.questKey
+    if not quest or not questKey then
+        return
+    end
+
+    ClearMenu()
+
+    local isTracked = quest.isTracked ~= false
+    local toggleLabel = isTracked and "Remove from tracker" or "Track in tracker"
+
+    AddMenuItem(
+        toggleLabel,
+        function()
+            if M.QuestModel and M.QuestModel.SetTracked then
+                M.QuestModel.SetTracked(questKey, not isTracked)
+            end
+        end
+    )
+
+    ShowMenu(control)
+end
+
 local function setupQuestTitleRow(control, data)
     control.data = data
     local label = control.label
@@ -229,30 +282,57 @@ local function setupQuestTitleRow(control, data)
             label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
         end
         control.label = label
+    end
+
+    local caret = control.caret
+    if not caret then
+        caret = control:GetNamedChild("Caret")
+        if not caret then
+            caret = WM:CreateControl(nil, control, CT_TEXTURE)
+            caret:SetDimensions(18, 18)
+            caret:SetAnchor(LEFT, control, LEFT, 6, 0)
+        end
+        caret:SetMouseEnabled(true)
+        caret:SetHandler("OnMouseEnter", function()
+            showQuestTooltip(control)
+        end)
+        caret:SetHandler("OnMouseExit", hideTooltip)
+        caret:SetHandler("OnMouseUp", function(_, button, upInside)
+            if not upInside or button ~= LEFT_BUTTON then
+                return
+            end
+            toggleQuestCollapsedFor(control)
+        end)
+        control.caret = caret
+    end
+
+    if not control.handlersRegistered then
         control:SetMouseEnabled(true)
         control:SetHandler("OnMouseEnter", showQuestTooltip)
         control:SetHandler("OnMouseExit", hideTooltip)
         control:SetHandler("OnMouseUp", function(ctrl, button, upInside)
-            if not upInside or button ~= LEFT_BUTTON then
+            if not upInside or button ~= RIGHT_BUTTON then
                 return
             end
-            local questData = ctrl.data
-            if not questData or not questData.questKey then
-                return
-            end
-            local newCollapsed = not isQuestCollapsed(questData.questKey)
-            setQuestCollapsed(questData.questKey, newCollapsed)
-            Module.MarkDirty()
+            openQuestContextMenu(ctrl)
         end)
+        control.handlersRegistered = true
     end
 
     local quest = data.quest
-    local marker = data.collapsed and "▶" or "▼"
+    local collapsed = data.collapsed == true
+    if quest then
+        quest.isCollapsed = collapsed
+    end
+    if caret then
+        caret:SetTexture(collapsed and CARET_TEXTURE_CLOSED or CARET_TEXTURE_OPEN)
+    end
+
     local text = quest and (quest.displayName or quest.title) or ""
     if quest and quest.stepText and quest.stepText ~= "" then
         text = string.format("%s — %s", text, quest.stepText)
     end
-    label:SetText(string.format("%s %s", marker, text))
+    label:SetText(text)
 end
 
 local function resetRow(control)
@@ -413,14 +493,18 @@ local function appendQuestRows(feed)
     for _, questKey in ipairs(order) do
         local quest = byId[questKey]
         if quest then
-            local collapsed = isQuestCollapsed(quest.key or questKey)
+            local collapsed = quest.isCollapsed
+            if collapsed == nil then
+                collapsed = isQuestCollapsed(quest.key or questKey)
+            end
+            quest.isCollapsed = collapsed == true
             acquireFeedEntry(feed, ROW_TYPES.QUEST_TITLE, {
                 questKey = quest.key or questKey,
                 quest = quest,
-                collapsed = collapsed,
+                collapsed = quest.isCollapsed,
             })
 
-            if not collapsed then
+            if not quest.isCollapsed then
                 local objectives = quest.objectives or {}
                 if #objectives == 0 then
                     local steps = quest.steps or {}
