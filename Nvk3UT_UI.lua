@@ -111,12 +111,12 @@ function M.BuildLAM()
     registerForDefaults = true,
   }
   local panelControl = LAM:RegisterAddonPanel("Nvk3UT_Panel", panel)
-  if Nvk3UT and Nvk3UT.Questtracker and Nvk3UT.Questtracker.RegisterLamPanel then
-    Nvk3UT.Questtracker:RegisterLamPanel(panelControl)
+  if Nvk3UT and Nvk3UT.Tracker and Nvk3UT.Tracker.RegisterLamPanel then
+    Nvk3UT.Tracker.RegisterLamPanel(panelControl)
   end
 
   local function getTracker()
-    return Nvk3UT and Nvk3UT.Questtracker
+    return Nvk3UT and Nvk3UT.Tracker
   end
 
   local function trackerSV()

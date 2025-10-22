@@ -30,5 +30,4 @@ Nvk3UT_TodoData.lua
 Nvk3UT_TodoIntegration.lua
 Nvk3UT_CompletedData.lua
 Nvk3UT_CompletedIntegration.lua
-Nvk3UT_Questtracker.lua
 README.txt

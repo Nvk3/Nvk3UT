@@ -5,6 +5,19 @@ local M = Nvk3UT
 M.Core = M.Core or {}
 local Module = M.Core
 
+--[[
+MIGRATION NOTES
+- Legacy quest tracker bootstrap/helpers previously defined in Nvk3UT_Questtracker.lua
+  are now owned by the modular files:
+    * SavedVars / event bus               -> Nvk3UT_Core.lua (this file)
+    * Quest data acquisition              -> Nvk3UT_QuestModel.lua
+    * Achievement favourites aggregation  -> Nvk3UT_AchievementModel.lua
+    * Tracker orchestration & settings    -> Nvk3UT_Tracker.lua
+    * Unified tracker view / scroll list  -> Nvk3UT_TrackerView.lua
+- Removed obsolete calls to Nvk3UT.Questtracker.* and deleted the legacy file.
+- No Legacy_* shims required; callers now use Nvk3UT.Tracker directly.
+]]
+
 local subscribers = {}
 
 local function debugLog(message)
@@ -226,22 +239,6 @@ local function OnLoaded(e,name)
     end
     TryEnable(1)
     if Nvk3UT.Tooltips and Nvk3UT.Tooltips.Init then Nvk3UT.Tooltips.Init() end
-    if Nvk3UT.Questtracker and Nvk3UT.Questtracker.Init then
-        Nvk3UT.Questtracker.Init()
-        if EVENT_MANAGER then
-            EVENT_MANAGER:UnregisterForEvent("Nvk3UT_Questtracker_PlayerActivated", EVENT_PLAYER_ACTIVATED)
-            EVENT_MANAGER:RegisterForEvent(
-                "Nvk3UT_Questtracker_PlayerActivated",
-                EVENT_PLAYER_ACTIVATED,
-                function()
-                    EVENT_MANAGER:UnregisterForEvent("Nvk3UT_Questtracker_PlayerActivated", EVENT_PLAYER_ACTIVATED)
-                    if Nvk3UT and Nvk3UT.Questtracker and Nvk3UT.Questtracker.Enable then
-                        Nvk3UT.Questtracker.Enable()
-                    end
-                end
-            )
-        end
-    end
 
     initializeSavedVars()
     initializeModules()
