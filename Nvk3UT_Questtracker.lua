@@ -18,6 +18,8 @@ local ROW_TYPES = {
   ACH_OBJECTIVE = "achObjective",
 }
 
+local SCENE_ATTACH_NAMES = { "hud", "hudui", "siegeBar", "siegeBarUI" }
+
 local DEFAULT_ICONS = {
   zone = "EsoUI/Art/Journal/journal_tabIcon_locations_up.dds",
   quest = "EsoUI/Art/Journal/journal_tabIcon_quests_up.dds",
@@ -562,6 +564,17 @@ local function getFavoriteScope()
   return (sv and sv.ui and sv.ui.favScope) or "account"
 end
 
+local function isAchievementCompleted(achievementId)
+  if type(GetAchievementInfo) ~= "function" then
+    return false
+  end
+  local ok, _, _, _, _, completed = pcall(GetAchievementInfo, achievementId)
+  if ok then
+    return completed == true
+  end
+  return false
+end
+
 local function collectFavoriteAchievements()
   local favorites = {}
   local Fav = Nvk3UT and Nvk3UT.FavoritesData
@@ -668,6 +681,37 @@ local function ensureLamCallbacks(self)
   end
   CALLBACK_MANAGER:RegisterCallback("LAM-PanelOpened", self.lamPanelOpenedCallback)
   CALLBACK_MANAGER:RegisterCallback("LAM-PanelClosed", self.lamPanelClosedCallback)
+end
+
+local function removeCompletedFavorite(achievementId)
+  if not achievementId then
+    return
+  end
+  local Fav = Nvk3UT and Nvk3UT.FavoritesData
+  if not (Fav and Fav.IsFavorite and Fav.Remove) then
+    return
+  end
+  local scope = getFavoriteScope()
+  if Fav.IsFavorite(achievementId, scope) and isAchievementCompleted(achievementId) then
+    Fav.Remove(achievementId, scope)
+  end
+end
+
+local function pruneCompletedFavorites()
+  local Fav = Nvk3UT and Nvk3UT.FavoritesData
+  if not (Fav and Fav.Iterate and Fav.Remove) then
+    return
+  end
+  local scope = getFavoriteScope()
+  local removals = {}
+  for achievementId, flagged in Fav.Iterate(scope) do
+    if flagged and isAchievementCompleted(achievementId) then
+      removals[#removals + 1] = achievementId
+    end
+  end
+  for _, achievementId in ipairs(removals) do
+    Fav.Remove(achievementId, scope)
+  end
 end
 
 local function applyColorToLabel(label, color)
@@ -833,6 +877,22 @@ function QT:EnsureControl()
   self.scrollChild = scrollChild
   self.rowPool = {}
   self.activeRows = {}
+  if ZO_SimpleSceneFragment and SCENE_MANAGER then
+    self.sceneFragments = self.sceneFragments or {}
+    if not self.fragment then
+      self.fragment = ZO_SimpleSceneFragment:New(control)
+      self.fragment:SetHideOnSceneHidden(true)
+    end
+    for _, sceneName in ipairs(SCENE_ATTACH_NAMES) do
+      if not self.sceneFragments[sceneName] then
+        local scene = SCENE_MANAGER:GetScene(sceneName)
+        if scene and scene.AddFragment then
+          scene:AddFragment(self.fragment)
+          self.sceneFragments[sceneName] = true
+        end
+      end
+    end
+  end
 end
 
 function QT:SavePosition()
@@ -1544,18 +1604,37 @@ local function registerEvents(self)
   EM:RegisterForEvent("Nvk3UT_QT_ConditionChanged", EVENT_QUEST_CONDITION_COUNTER_CHANGED, function()
     self:Refresh(true)
   end)
+  EM:RegisterForEvent("Nvk3UT_QT_QuestListUpdated", EVENT_QUEST_LIST_UPDATED, function()
+    self:Refresh(true)
+  end)
   EM:RegisterForEvent("Nvk3UT_QT_ObjectiveCompleted", EVENT_OBJECTIVE_COMPLETED, function()
     self:Refresh(true)
   end)
-  EM:RegisterForEvent("Nvk3UT_QT_AchUpdated", EVENT_ACHIEVEMENT_UPDATED, function()
+  EM:RegisterForEvent("Nvk3UT_QT_AchUpdated", EVENT_ACHIEVEMENT_UPDATED, function(_, achievementId)
+    removeCompletedFavorite(achievementId)
     self:Refresh(true)
   end)
-  EM:RegisterForEvent("Nvk3UT_QT_AchAwarded", EVENT_ACHIEVEMENT_AWARDED, function()
+  EM:RegisterForEvent("Nvk3UT_QT_AchAwarded", EVENT_ACHIEVEMENT_AWARDED, function(_, _, _, achievementId)
+    removeCompletedFavorite(achievementId)
+    self:Refresh(true)
+  end)
+  EM:RegisterForEvent("Nvk3UT_QT_AchievementsUpdated", EVENT_ACHIEVEMENTS_UPDATED, function()
+    pruneCompletedFavorites()
     self:Refresh(true)
   end)
   EM:RegisterForEvent("Nvk3UT_QT_CombatState", EVENT_PLAYER_COMBAT_STATE, function(_, inCombat)
     self.isInCombat = inCombat
     self:ApplyVisibility()
+  end)
+  EM:RegisterForEvent("Nvk3UT_QT_PlayerActivated", EVENT_PLAYER_ACTIVATED, function()
+    if not self.hasActivated then
+      self.hasActivated = true
+      pruneCompletedFavorites()
+      self:Refresh(false)
+      self:ApplyVisibility()
+    else
+      self:Refresh(true)
+    end
   end)
   self.eventsRegistered = true
   if CM and not self.favoritesCallback then
@@ -1583,10 +1662,13 @@ local function unregisterEvents(self)
     EM:UnregisterForEvent("Nvk3UT_QT_QuestRemoved", EVENT_QUEST_REMOVED)
     EM:UnregisterForEvent("Nvk3UT_QT_QuestAdvanced", EVENT_QUEST_ADVANCED)
     EM:UnregisterForEvent("Nvk3UT_QT_ConditionChanged", EVENT_QUEST_CONDITION_COUNTER_CHANGED)
+    EM:UnregisterForEvent("Nvk3UT_QT_QuestListUpdated", EVENT_QUEST_LIST_UPDATED)
     EM:UnregisterForEvent("Nvk3UT_QT_ObjectiveCompleted", EVENT_OBJECTIVE_COMPLETED)
     EM:UnregisterForEvent("Nvk3UT_QT_AchUpdated", EVENT_ACHIEVEMENT_UPDATED)
     EM:UnregisterForEvent("Nvk3UT_QT_AchAwarded", EVENT_ACHIEVEMENT_AWARDED)
+    EM:UnregisterForEvent("Nvk3UT_QT_AchievementsUpdated", EVENT_ACHIEVEMENTS_UPDATED)
     EM:UnregisterForEvent("Nvk3UT_QT_CombatState", EVENT_PLAYER_COMBAT_STATE)
+    EM:UnregisterForEvent("Nvk3UT_QT_PlayerActivated", EVENT_PLAYER_ACTIVATED)
   end
   if CM and self.favoritesCallback then
     CM:UnregisterCallback("NVK3UT_FAVORITES_CHANGED", self.favoritesCallback)
@@ -1610,6 +1692,7 @@ function QT.Init()
   QT.enabled = false
   QT.pendingQuestExpand = {}
   QT.lamPanelOpen = QT.lamPanelOpen or false
+  QT.hasActivated = false
   if QT.lamPanelControl then
     ensureLamCallbacks(QT)
   end
@@ -1647,6 +1730,17 @@ end
 
 function QT.Destroy()
   QT:Disable()
+  if QT.fragment and QT.sceneFragments and SCENE_MANAGER then
+    for sceneName in pairs(QT.sceneFragments) do
+      local scene = SCENE_MANAGER:GetScene(sceneName)
+      if scene and scene.RemoveFragment then
+        scene:RemoveFragment(QT.fragment)
+      end
+      QT.sceneFragments[sceneName] = nil
+    end
+  end
+  QT.sceneFragments = nil
+  QT.fragment = nil
   if CALLBACK_MANAGER then
     if QT.lamPanelOpenedCallback then
       CALLBACK_MANAGER:UnregisterCallback("LAM-PanelOpened", QT.lamPanelOpenedCallback)
