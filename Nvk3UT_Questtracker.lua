@@ -104,11 +104,9 @@ local function isQuestTracked(journalIndex)
     return true
 end
 
-local function getZoneKey(zoneName, zoneId)
-    if zoneId and zoneId ~= 0 then
-        return string.format("%d:%s", zoneId, zoneName or "")
-    end
-    return tostring(zoneName or "Unknown")
+local function buildCategoryKey(categoryIndex, subCategoryIndex, name)
+    local label = sanitizeText(name)
+    return string.format("%d:%d:%s", categoryIndex or 0, subCategoryIndex or 0, label)
 end
 
 local function sanitizeText(text)
@@ -171,54 +169,145 @@ local function buildQuestObjectives(journalIndex)
     return objectives
 end
 
+local function gatherQuestIndices(categoryIndex, subCategoryIndex, questCount)
+    local indices = {}
+    if subCategoryIndex then
+        local collected = { safeCall(GetJournalQuestSubCategoryQuestIndices, categoryIndex, subCategoryIndex) }
+        for _, value in ipairs(collected) do
+            if type(value) == "number" then
+                indices[#indices + 1] = value
+            end
+        end
+        if #indices == 0 then
+            if questCount == nil then
+                local _, numQuests = safeCall(GetJournalQuestSubCategoryInfo, categoryIndex, subCategoryIndex)
+                questCount = numQuests
+            end
+            questCount = questCount or 0
+            for order = 1, questCount do
+                local journalIndex = safeCall(GetJournalQuestIndexFromSubCategoryIndex, categoryIndex, subCategoryIndex, order)
+                if type(journalIndex) == "number" then
+                    indices[#indices + 1] = journalIndex
+                end
+            end
+        end
+    else
+        local collected = { safeCall(GetJournalQuestCategoryQuestIndices, categoryIndex) }
+        for _, value in ipairs(collected) do
+            if type(value) == "number" then
+                indices[#indices + 1] = value
+            end
+        end
+        if #indices == 0 then
+            questCount = questCount or select(3, safeCall(GetJournalQuestCategoryInfo, categoryIndex)) or 0
+            for order = 1, questCount do
+                local journalIndex = safeCall(GetJournalQuestIndexFromCategoryIndex, categoryIndex, order)
+                if type(journalIndex) == "number" then
+                    indices[#indices + 1] = journalIndex
+                end
+            end
+        end
+    end
+    return indices
+end
+
+local function collectQuestCategories()
+    local categories = {}
+    local numCategories = safeCall(GetJournalQuestNumCategories) or 0
+    for categoryIndex = 1, numCategories do
+        local categoryName, numSubCategories, numCategoryQuests = safeCall(GetJournalQuestCategoryInfo, categoryIndex)
+        categoryName = sanitizeText(categoryName)
+        if (numCategoryQuests or 0) > 0 then
+            categories[#categories + 1] = {
+                key = buildCategoryKey(categoryIndex, 0, categoryName),
+                name = categoryName,
+                categoryIndex = categoryIndex,
+                subCategoryIndex = nil,
+                questIndices = gatherQuestIndices(categoryIndex, nil, numCategoryQuests),
+            }
+        end
+        numSubCategories = numSubCategories or 0
+        for subCategoryIndex = 1, numSubCategories do
+            local subName, numSubQuests = safeCall(GetJournalQuestSubCategoryInfo, categoryIndex, subCategoryIndex)
+            subName = sanitizeText(subName)
+            if subName == "" then
+                subName = categoryName
+            end
+            categories[#categories + 1] = {
+                key = buildCategoryKey(categoryIndex, subCategoryIndex, subName),
+                name = subName,
+                categoryIndex = categoryIndex,
+                subCategoryIndex = subCategoryIndex,
+                questIndices = gatherQuestIndices(categoryIndex, subCategoryIndex, numSubQuests),
+            }
+        end
+    end
+    return categories
+end
+
 local function getQuestData()
     local questZones = {}
     local zoneOrder = {}
+    local questLookup = {}
+    local journalZoneLookup = {}
     local showQuest = true
     local trackerSv = Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.tracker
     if trackerSv and trackerSv.showQuests == false then
         showQuest = false
     end
     if not showQuest then
-        return zoneOrder, questZones
+        return zoneOrder, questZones, questLookup, journalZoneLookup
     end
-    local total = safeCall(GetNumJournalQuests) or 0
-    for journalIndex = 1, total do
-        local questName, backgroundText, stepText, trackerOverrideText, completed = safeCall(GetJournalQuestInfo, journalIndex)
-        if questName and questName ~= "" and completed ~= true then
-            local zoneName, _, zoneId = safeCall(GetJournalQuestLocationInfo, journalIndex)
-            local questId = safeCall(GetJournalQuestId, journalIndex) or 0
-            local zoneKey = getZoneKey(zoneName, zoneId)
-            if not questZones[zoneKey] then
-                questZones[zoneKey] = {
-                    key = zoneKey,
-                    zoneName = sanitizeText(zoneName),
+
+    local categories = collectQuestCategories()
+    for _, category in ipairs(categories) do
+        local zoneKey = category.key
+        local zoneName = category.name
+        local zoneEntry = {
+            key = zoneKey,
+            zoneName = zoneName,
+            categoryIndex = category.categoryIndex,
+            subCategoryIndex = category.subCategoryIndex,
+            quests = {},
+            order = {},
+        }
+
+        for _, journalIndex in ipairs(category.questIndices) do
+            local questName, backgroundText, stepText, trackerOverrideText, completed =
+                safeCall(GetJournalQuestInfo, journalIndex)
+            if questName and questName ~= "" and completed ~= true then
+                local questId = safeCall(GetJournalQuestId, journalIndex) or 0
+                local locationName, _, zoneId = safeCall(GetJournalQuestLocationInfo, journalIndex)
+                local stepKey = getQuestStepKey(journalIndex)
+                local questKey = buildQuestKey(questId, stepKey)
+                local questEntry = {
+                    key = questKey,
+                    questId = questId,
+                    journalIndex = journalIndex,
+                    name = sanitizeText(questName),
+                    background = sanitizeText(backgroundText),
+                    stepText = sanitizeText(stepText),
+                    trackerText = sanitizeText(trackerOverrideText),
+                    objectives = buildQuestObjectives(journalIndex),
+                    zoneName = sanitizeText(locationName),
                     zoneId = zoneId,
-                    quests = {},
-                    order = {},
+                    zoneKey = zoneKey,
+                    isTracked = isQuestTracked(journalIndex),
                 }
-                zoneOrder[#zoneOrder + 1] = zoneKey
+                questLookup[questKey] = zoneKey
+                journalZoneLookup[journalIndex] = zoneKey
+                zoneEntry.quests[questKey] = questEntry
+                zoneEntry.order[#zoneEntry.order + 1] = questKey
             end
-            local stepKey = getQuestStepKey(journalIndex)
-            local questKey = buildQuestKey(questId, stepKey)
-            local questEntry = {
-                key = questKey,
-                questId = questId,
-                journalIndex = journalIndex,
-                name = sanitizeText(questName),
-                background = sanitizeText(backgroundText),
-                stepText = sanitizeText(stepText),
-                trackerText = sanitizeText(trackerOverrideText),
-                objectives = buildQuestObjectives(journalIndex),
-                zoneName = sanitizeText(zoneName),
-                zoneKey = zoneKey,
-                isTracked = isQuestTracked(journalIndex),
-            }
-            questZones[zoneKey].quests[questKey] = questEntry
-            questZones[zoneKey].order[#questZones[zoneKey].order + 1] = questKey
+        end
+
+        if #zoneEntry.order > 0 then
+            questZones[zoneKey] = zoneEntry
+            zoneOrder[#zoneOrder + 1] = zoneKey
         end
     end
-    return zoneOrder, questZones
+
+    return zoneOrder, questZones, questLookup, journalZoneLookup
 end
 
 local function buildAchievementList()
@@ -261,9 +350,6 @@ local function buildAchievementList()
             }
         end
     end
-    table.sort(list, function(a, b)
-        return (a.name or "") < (b.name or "")
-    end)
     return list
 end
 
@@ -319,6 +405,8 @@ function Tracker:Init()
         questKeyHistory = {},
         zoneOrder = {},
         questZones = {},
+        questZoneLookup = {},
+        journalZoneLookup = {},
         achievements = {},
         inCombat = false,
         lamOpen = false,
@@ -852,12 +940,36 @@ function Tracker:ApplyCombatVisibility(inCombat)
     self:UpdateVisibility()
 end
 
+function Tracker:GetZoneKeyForJournalIndex(journalIndex)
+    if not journalIndex then
+        return nil
+    end
+    if self.state and self.state.journalZoneLookup then
+        local known = self.state.journalZoneLookup[journalIndex]
+        if known then
+            return known
+        end
+    end
+    local categories = collectQuestCategories()
+    for _, category in ipairs(categories) do
+        for _, index in ipairs(category.questIndices) do
+            if index == journalIndex then
+                if self.state then
+                    self.state.journalZoneLookup = self.state.journalZoneLookup or {}
+                    self.state.journalZoneLookup[journalIndex] = category.key
+                end
+                return category.key
+            end
+        end
+    end
+    return nil
+end
+
 function Tracker:OnQuestChanged(eventCode, ...)
     if eventCode == EVENT_QUEST_ADDED and self.sv and self.sv.behavior and self.sv.behavior.autoExpandNewQuests then
         local journalIndex = select(1, ...)
         local questId = safeCall(GetJournalQuestId, journalIndex)
-        local zoneName, _, zoneId = safeCall(GetJournalQuestLocationInfo, journalIndex)
-        local zoneKey = getZoneKey(zoneName, zoneId)
+        local zoneKey = self:GetZoneKeyForJournalIndex(journalIndex)
         if zoneKey then
             self:SetCollapsed("zones", zoneKey, false)
         end
@@ -963,6 +1075,9 @@ local function ensureHeader(control)
     arrow:SetAnchor(LEFT, header, LEFT, 4, 0)
     arrow:SetDrawLayer(DL_CONTROLS)
     arrow:SetDrawLevel(2)
+    if arrow.SetDrawTier then
+        arrow:SetDrawTier(DT_HIGH)
+    end
     arrow:SetMouseEnabled(false)
     arrow:SetTexture(TEXTURE_ARROW_COLLAPSED)
     arrow:SetColor(1, 1, 1, 1)
@@ -1429,7 +1544,13 @@ function Tracker:Rebuild()
         self:ApplyCombatVisibility()
         return
     end
-    local zoneOrder, zoneData = getQuestData()
+    local zoneOrder, zoneData, questLookup, journalLookup = getQuestData()
+    if self.state then
+        self.state.zoneOrder = zoneOrder
+        self.state.questZones = zoneData
+        self.state.questZoneLookup = questLookup
+        self.state.journalZoneLookup = journalLookup
+    end
     local nextQuestHistory = {}
     if self.sv then
         self:EnsureCollapseState()
