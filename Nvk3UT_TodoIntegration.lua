@@ -8,9 +8,6 @@ local Todo = Nvk3UT.TodoData
 local U = Nvk3UT and Nvk3UT.Utils
 
 local NVK3_TODO = 84002
-local ICON_UP = "esoui/art/market/keyboard/giftmessageicon_up.dds"
-local ICON_DOWN = "esoui/art/market/keyboard/giftmessageicon_down.dds"
-local ICON_OVER = "esoui/art/market/keyboard/giftmessageicon_over.dds"
 local todoProvide_lastTs = 0
 local todoProvide_lastCount = 0
 
@@ -47,9 +44,9 @@ local function _formatTodoTooltipLine(data, points, iconTag)
   local label = zo_strformat("<<1>>", name or "")
   local prefix = iconTag or ""
   if prefix ~= "" then
-    return string.format("%s%s – %s", prefix, label, ZO_CommaDelimitNumber(points or 0))
+    return string.format("%s%s - %s", prefix, label, ZO_CommaDelimitNumber(points or 0))
   end
-  return string.format("%s – %s", label, ZO_CommaDelimitNumber(points or 0))
+  return string.format("%s - %s", label, ZO_CommaDelimitNumber(points or 0))
 end
 
 local function _updateTodoTooltip(ach)
@@ -140,9 +137,9 @@ local function AddTodoCategory(AchClass)
           84003,
           labelDone,
           false,
-          ICON_UP,
-          ICON_DOWN,
-          ICON_OVER,
+          nil,
+          nil,
+          nil,
           true,
           true
         )
@@ -181,9 +178,9 @@ local function AddTodoCategory(AchClass)
       NVK3_TODO,
       label,
       false,
-      ICON_UP,
-      ICON_DOWN,
-      ICON_OVER,
+      nil,
+      nil,
+      nil,
       true,
       true
     )

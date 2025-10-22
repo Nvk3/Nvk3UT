@@ -8,9 +8,6 @@ local Comp = Nvk3UT.CompletedData
 local U = Nvk3UT and Nvk3UT.Utils
 
 local NVK3_DONE = 84003
-local ICON_UP = "esoui/art/market/keyboard/giftmessageicon_up.dds"
-local ICON_DOWN = "esoui/art/market/keyboard/giftmessageicon_down.dds"
-local ICON_OVER = "esoui/art/market/keyboard/giftmessageicon_over.dds"
 local ICON_PATH_COMPLETED = "/esoui/art/achievements/achievement_categoryicon_holiday_64.dds"
 local ICON_PATH_COMPLETED_RECENT = "/esoui/art/achievements/achievement_categoryicon_quests_64.dds"
 
@@ -39,9 +36,9 @@ local function _formatCompletedTooltipLine(data, points, iconTag)
     local value = ZO_CommaDelimitNumber(points or 0)
     local prefix = iconTag or ""
     if prefix ~= "" then
-        return string.format("%s%s – %s", prefix, label, value)
+        return string.format("%s%s - %s", prefix, label, value)
     end
-    return string.format("%s – %s", label, value)
+    return string.format("%s - %s", label, value)
 end
 
 local function _extractYearFromKey(key, last50Key)
@@ -192,7 +189,7 @@ local function _updateCompletedTooltip(ach)
         local year = years[idx]
         local total = yearTotals[year] or 0
         if total > 0 then
-            local line = string.format("%d: %s", year, ZO_CommaDelimitNumber(total))
+            local line = string.format("%d - %s", year, ZO_CommaDelimitNumber(total))
             if iconHoliday ~= "" then
                 line = iconHoliday .. line
             end
@@ -235,7 +232,8 @@ local function AddCompletedCategory(AchClass)
         local nodeTemplate = "ZO_IconHeader"
         local subTemplate = "ZO_TreeLabelSubCategory"
 
-        local parentNode = self:AddCategory(lookup, tree, nodeTemplate, nil, NVK3_DONE, "Abgeschlossen", false, ICON_UP, ICON_DOWN, ICON_OVER, true, true)
+        local parentNode =
+            self:AddCategory(lookup, tree, nodeTemplate, nil, NVK3_DONE, "Abgeschlossen", false, nil, nil, nil, true, true)
         self._nvkCompletedNode = parentNode
         self._nvkCompletedChildren = {}
 

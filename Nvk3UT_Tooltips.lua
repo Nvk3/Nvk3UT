@@ -390,7 +390,7 @@ local function ShowCompletedRootTooltip(node)
         if iconTag ~= "" then
           label = iconTag .. label
         end
-        lines[#lines + 1] = string.format("%s |cfafafa(%s Punkte)|r", label, ZO_CommaDelimitNumber(points or 0))
+        lines[#lines + 1] = string.format("%s - |cfafafa%s Punkte|r", label, ZO_CommaDelimitNumber(points or 0))
       end
     end
   else
@@ -409,7 +409,7 @@ local function ShowCompletedRootTooltip(node)
             label = iconTag .. label
           end
           lines[#lines + 1] =
-            string.format("%s |cfafafa(%s Punkte)|r", label, ZO_CommaDelimitNumber(points or 0))
+            string.format("%s - |cfafafa%s Punkte|r", label, ZO_CommaDelimitNumber(points or 0))
         end
       end
     end
@@ -443,7 +443,7 @@ local function ShowCompletedSubTooltip(data)
     end
   end
   local _, points = Comp.SummaryCountAndPointsForKey(data.subcategoryIndex)
-  local line = string.format("%s |cfafafa(%s Punkte)|r", labelText, ZO_CommaDelimitNumber(points or 0))
+  local line = string.format("%s - |cfafafa%s Punkte|r", labelText, ZO_CommaDelimitNumber(points or 0))
   local r, g, b = ZO_SELECTED_TEXT:UnpackRGB()
   local _, lbl = AchievementTooltip:AddLine(line, "", r, g, b, LEFT, MODIFY_TEXT_TYPE_NONE, TEXT_ALIGN_LEFT, false)
   if lbl then
@@ -859,7 +859,7 @@ local function _nvkRenderFavorites(control)
   local baseLabel = zo_strformat("<<1>>", title)
   local favoritesIcon = GetFavoritesIconTag()
   local displayLabel = (favoritesIcon ~= "" and (favoritesIcon .. baseLabel)) or baseLabel
-  local line = string.format("%s |cfafafa(%s)|r", displayLabel, ZO_CommaDelimitNumber(n or 0))
+  local line = string.format("%s - |cfafafa%s|r", displayLabel, ZO_CommaDelimitNumber(n or 0))
   local r, g, b = ZO_SELECTED_TEXT:UnpackRGB()
   local _, lbl = tooltip:AddLine(line, "", r, g, b, LEFT, MODIFY_TEXT_TYPE_NONE, TEXT_ALIGN_LEFT, false)
   if lbl then
@@ -904,7 +904,7 @@ local function _nvkRenderRecent(control)
   local baseLabel = zo_strformat("<<1>>", title)
   local recentIcon = GetRecentIconTag()
   local displayLabel = (recentIcon ~= "" and (recentIcon .. baseLabel)) or baseLabel
-  local line = string.format("%s |cfafafa(%s)|r", displayLabel, ZO_CommaDelimitNumber(n or 0))
+  local line = string.format("%s - |cfafafa%s|r", displayLabel, ZO_CommaDelimitNumber(n or 0))
   local r, g, b = ZO_SELECTED_TEXT:UnpackRGB()
   local _, lbl = tooltip:AddLine(line, "", r, g, b, LEFT, MODIFY_TEXT_TYPE_NONE, TEXT_ALIGN_LEFT, false)
   if lbl then
@@ -1044,14 +1044,14 @@ local function _nvkRenderTodo(control)
     local displayName = (iconTag ~= "" and (iconTag .. formattedName)) or formattedName
     if maxTop and maxTop > 0 then
       lines[#lines + 1] = string.format(
-        "%s |cfafafa(%s / %s)|r",
+        "%s - |cfafafa%s / %s|r",
         displayName,
         ZO_CommaDelimitNumber(pts or 0),
         ZO_CommaDelimitNumber(maxTop or 0)
       )
     else
       lines[#lines + 1] =
-        string.format("%s |cfafafa(%s)|r", displayName, ZO_CommaDelimitNumber(pts or 0))
+        string.format("%s - |cfafafa%s|r", displayName, ZO_CommaDelimitNumber(pts or 0))
     end
   end
   if #lines > 0 then

@@ -9,12 +9,6 @@ local favProvide_lastTs, favProvide_lastCount = 0, -1
 local NVK3_FAVORITES_KEY = "Nvk3UT_Favorites"
 local ICON_PATH_FAVORITES = "/esoui/art/achievements/achievement_categoryicon_exploration_64.dds"
 
-local SUMMARY_ICONS = {
-    "esoui/art/market/keyboard/giftmessageicon_up.dds",
-    "esoui/art/market/keyboard/giftmessageicon_down.dds",
-    "esoui/art/market/keyboard/giftmessageicon_over.dds"
-}
-
 local function _countFavorites()
     if not (Fav and Fav.Iterate) then
         return 0
@@ -58,7 +52,7 @@ local function _updateFavoritesTooltip(ach)
     local label = zo_strformat("<<1>>", name)
     local iconTag = (U and U.GetIconTagForTexture and U.GetIconTagForTexture(ICON_PATH_FAVORITES)) or ""
     local displayLabel = (iconTag ~= "" and (iconTag .. label)) or label
-    local line = string.format("%s – %s", displayLabel, ZO_CommaDelimitNumber(count or 0))
+    local line = string.format("%s - %s", displayLabel, ZO_CommaDelimitNumber(count or 0))
     data.isNvkFavorites = true
     data.nvkSummaryTooltipText = line
     ach._nvkFavoritesData = data
@@ -74,8 +68,8 @@ local function AddFavoritesTopCategory(AchievementsClass)
         if name then return orgAddTopLevelCategory(...) end
         local result = orgAddTopLevelCategory(...)
         local lookup, tree, hidesUnearned = self.nodeLookupData, self.categoryTree, false
-        local normalIcon, pressedIcon, mouseoverIcon = unpack(SUMMARY_ICONS)
-        local parentNode = self:AddCategory(lookup, tree, "ZO_IconChildlessHeader", nil, NVK3_FAVORITES_KEY, "Favoriten", hidesUnearned, normalIcon, pressedIcon, mouseoverIcon, true, true)
+        local parentNode =
+            self:AddCategory(lookup, tree, "ZO_IconChildlessHeader", nil, NVK3_FAVORITES_KEY, "Favoriten", hidesUnearned, nil, nil, nil, true, true)
         self._nvkFavoritesNode = parentNode
         local row = parentNode and parentNode.GetData and parentNode:GetData()
         if row then

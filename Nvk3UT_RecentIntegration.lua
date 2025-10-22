@@ -10,10 +10,6 @@ local NVK3_RECENT = 84001
 local ICON_PATH_RECENT = "/esoui/art/achievements/achievement_categoryicon_quests_64.dds"
 
 -- Use same icon set as Favoriten for visual parity
-local ICON_UP   = "esoui/art/market/keyboard/giftmessageicon_up.dds"
-local ICON_DOWN = "esoui/art/market/keyboard/giftmessageicon_down.dds"
-local ICON_OVER = "esoui/art/market/keyboard/giftmessageicon_over.dds"
-
 local function _countRecent()
     if not RD then
         return 0
@@ -52,7 +48,7 @@ local function _updateRecentTooltip(ach)
     local label = zo_strformat("<<1>>", name)
     local iconTag = (U and U.GetIconTagForTexture and U.GetIconTagForTexture(ICON_PATH_RECENT)) or ""
     local displayLabel = (iconTag ~= "" and (iconTag .. label)) or label
-    local line = string.format("%s – %s", displayLabel, ZO_CommaDelimitNumber(count or 0))
+    local line = string.format("%s - %s", displayLabel, ZO_CommaDelimitNumber(count or 0))
     data.isNvkRecent = true
     data.nvkSummaryTooltipText = line
     ach._nvkRecentData = data
@@ -71,7 +67,8 @@ local function AddRecentCategory(AchClass)
         local result = orgAddTopLevelCategory(...)
         local lookup, tree = self.nodeLookupData, self.categoryTree
         local label = "Kürzlich"
-        local parentNode = self:AddCategory(lookup, tree, "ZO_IconChildlessHeader", nil, NVK3_RECENT, label, false, ICON_UP, ICON_DOWN, ICON_OVER, true, true)
+        local parentNode =
+            self:AddCategory(lookup, tree, "ZO_IconChildlessHeader", nil, NVK3_RECENT, label, false, nil, nil, nil, true, true)
         self._nvkRecentNode = parentNode
         local row = parentNode and parentNode.GetData and parentNode:GetData()
         if row then
