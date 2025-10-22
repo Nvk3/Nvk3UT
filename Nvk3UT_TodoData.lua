@@ -2,11 +2,21 @@ Nvk3UT = Nvk3UT or {}
 local M = {}
 Nvk3UT.TodoData = M
 
+local function isFullyComplete(id)
+    local utils = Nvk3UT and Nvk3UT.Utils
+    if utils and utils.IsMultiStageAchievement and utils.IsMultiStageAchievement(id) then
+        if utils.IsAchievementFullyComplete then
+            return utils.IsAchievementFullyComplete(id)
+        end
+    end
+    local _, _, _, _, completed = GetAchievementInfo(id)
+    return completed == true
+end
+
 local function AddRange(result, topIndex, subIndex, numAchievements, searchMap)
     for a=1,(numAchievements or 0) do
         local id = GetAchievementId(topIndex, subIndex, a)
-        local _,_,_,_,completed = GetAchievementInfo(id)
-        if not completed then
+        if not isFullyComplete(id) then
             if searchMap then
                 local cIdx, scIdx, aIdx = GetCategoryInfoFromAchievementId(id)
                 local r = searchMap[cIdx]
@@ -59,8 +69,9 @@ function M.ListAllOpen(maxCount, respectSearch)
         end
     end
     SortByName(res)
-    if maxCount and #res > maxCount then
-        local out={} for i=1,maxCount do out[i]=res[i] end
+    local limit = tonumber(maxCount)
+    if limit and limit > 0 and #res > limit then
+        local out={} for i=1,limit do out[i]=res[i] end
         return out
     end
     return res

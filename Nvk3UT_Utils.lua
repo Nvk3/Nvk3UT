@@ -150,3 +150,239 @@ function M.GetAchievementCategoryIconTag(topCategoryId, size)
   return M.GetIconTagForTexture(textures.normal, size)
 end
 
+local function safeAchievementInfo(id)
+  if type(GetAchievementInfo) ~= "function" then
+    return false
+  end
+  local ok, _, _, _, completed = pcall(GetAchievementInfo, id)
+  if not ok then
+    return false
+  end
+  return completed == true
+end
+
+local stageCache = {}
+
+local function currentTimestamp()
+  if type(GetTimeStamp) == "function" then
+    local ok, stamp = pcall(GetTimeStamp)
+    if ok and type(stamp) == "number" then
+      return stamp
+    end
+  end
+  if M and M.now then
+    local ok, stamp = pcall(M.now)
+    if ok and type(stamp) == "number" then
+      return stamp
+    end
+  end
+  return 0
+end
+
+local function computeCriteriaState(id)
+  if type(id) ~= "number" then
+    return nil
+  end
+  if type(GetAchievementNumCriteria) ~= "function" or type(GetAchievementCriterion) ~= "function" then
+    return nil
+  end
+
+  local okCount, numCriteria = pcall(GetAchievementNumCriteria, id)
+  if not okCount or type(numCriteria) ~= "number" or numCriteria <= 0 then
+    stageCache[id] = {
+      total = 0,
+      completed = 0,
+      stages = {},
+      allComplete = safeAchievementInfo(id) == true,
+      refreshedAt = currentTimestamp(),
+    }
+    return stageCache[id]
+  end
+
+  local completedCount = 0
+  local stageFlags = {}
+
+  for index = 1, numCriteria do
+    local okCrit, _, numCompleted, numRequired = pcall(GetAchievementCriterion, id, index)
+    if okCrit then
+      local achieved = false
+      local completedValue = tonumber(numCompleted) or 0
+      local requiredValue = tonumber(numRequired) or 0
+
+      if requiredValue > 0 then
+        achieved = completedValue >= requiredValue
+      else
+        achieved = completedValue > 0
+      end
+
+      stageFlags[index] = achieved == true
+      if stageFlags[index] then
+        completedCount = completedCount + 1
+      end
+    else
+      stageFlags[index] = false
+    end
+  end
+
+  local allComplete = numCriteria > 0 and completedCount >= numCriteria
+
+  stageCache[id] = {
+    total = numCriteria,
+    completed = completedCount,
+    stages = stageFlags,
+    allComplete = allComplete,
+    refreshedAt = currentTimestamp(),
+  }
+
+  return stageCache[id]
+end
+
+function M.GetAchievementCriteriaState(id, forceRefresh)
+  if forceRefresh then
+    stageCache[id] = nil
+  end
+  if not stageCache[id] then
+    stageCache[id] = computeCriteriaState(id)
+  end
+  return stageCache[id]
+end
+
+local function isCriteriaComplete(id)
+  local state = M.GetAchievementCriteriaState(id, true)
+  if not state then
+    return false
+  end
+  if state.total <= 0 then
+    return state.allComplete == true
+  end
+  return state.allComplete == true
+end
+
+local function getBaseAchievementId(id)
+  if type(id) ~= "number" then
+    return nil
+  end
+  if type(ACHIEVEMENTS) == "table" and type(ACHIEVEMENTS.GetBaseAchievementId) == "function" then
+    local ok, baseId = pcall(ACHIEVEMENTS.GetBaseAchievementId, ACHIEVEMENTS, id)
+    if ok and type(baseId) == "number" and baseId ~= 0 then
+      return baseId
+    end
+  end
+  return id
+end
+
+local function getNextAchievementId(id)
+  if type(GetNextAchievementInLine) ~= "function" then
+    return nil
+  end
+  local ok, nextId = pcall(GetNextAchievementInLine, id)
+  if ok and type(nextId) == "number" and nextId ~= 0 then
+    return nextId
+  end
+  return nil
+end
+
+local function buildAchievementChain(id)
+  if type(id) ~= "number" then
+    return nil
+  end
+
+  local startId = getBaseAchievementId(id) or id
+  if not startId or startId == 0 then
+    return nil
+  end
+
+  local visited = {}
+  local stages = {}
+  local stageId = startId
+
+  while type(stageId) == "number" and stageId ~= 0 and not visited[stageId] do
+    visited[stageId] = true
+    stages[#stages + 1] = stageId
+    stageId = getNextAchievementId(stageId)
+  end
+
+  local looped = stageId and stageId ~= 0 and visited[stageId] == true
+
+  return {
+    startId = startId,
+    stages = stages,
+    looped = looped,
+  }
+end
+
+function M.NormalizeAchievementId(id)
+  local baseId = getBaseAchievementId(id)
+  if baseId and baseId ~= 0 then
+    return baseId
+  end
+  return id
+end
+
+function M.IsMultiStageAchievement(id)
+  if type(id) ~= "number" then
+    return false
+  end
+
+  local chain = buildAchievementChain(id)
+  if chain and #chain.stages > 1 then
+    return true
+  end
+
+  local criteria = M.GetAchievementCriteriaState(id)
+  if criteria and criteria.total and criteria.total > 1 then
+    return true
+  end
+
+  if chain and chain.startId and chain.startId ~= id then
+    local baseCriteria = M.GetAchievementCriteriaState(chain.startId)
+    if baseCriteria and baseCriteria.total and baseCriteria.total > 1 then
+      return true
+    end
+  end
+
+  return false
+end
+
+function M.IsAchievementFullyComplete(id)
+  if type(id) ~= "number" then
+    return false
+  end
+
+  local chain = buildAchievementChain(id)
+  if not chain or #chain.stages <= 1 then
+    if isCriteriaComplete(id) then
+      return true
+    end
+    local normalized = chain and chain.startId or id
+    if normalized ~= id and isCriteriaComplete(normalized) then
+      return true
+    end
+    return safeAchievementInfo(normalized)
+  end
+
+  local utilsDebug = M.d
+  local satisfiedUpstream = false
+  for index = #chain.stages, 1, -1 do
+    local stageId = chain.stages[index]
+    local stageComplete = isCriteriaComplete(stageId) or safeAchievementInfo(stageId) == true
+    local satisfied = stageComplete or satisfiedUpstream
+    if not satisfied then
+      if utilsDebug and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then
+        utilsDebug(
+          "[Nvk3UT][Utils][Stage] pending",
+          string.format("data={id:%d,stage:%d,index:%d}", id, stageId, index)
+        )
+      end
+      return false
+    end
+    satisfiedUpstream = satisfied
+  end
+
+  if chain.looped then
+    return isCriteriaComplete(id) or safeAchievementInfo(id)
+  end
+
+  return satisfiedUpstream
+end
+
