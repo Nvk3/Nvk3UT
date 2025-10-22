@@ -1109,6 +1109,41 @@ function QT:Refresh(throttled)
   if self.sv.showAchievements ~= false then
     achievements = collectFavoriteAchievements()
   end
+  if zones or achievements then
+    local zoneCount = zones and #zones or 0
+    local questCount, questObjectiveCount = 0, 0
+    if zones then
+      for _, zoneEntry in ipairs(zones) do
+        if zoneEntry.quests then
+          questCount = questCount + #zoneEntry.quests
+          for _, questEntry in ipairs(zoneEntry.quests) do
+            if questEntry.objectives then
+              questObjectiveCount = questObjectiveCount + #questEntry.objectives
+            end
+          end
+        end
+      end
+    end
+    local achievementCount = achievements and #achievements or 0
+    local achievementObjectiveCount = 0
+    if achievements then
+      for _, achievementEntry in ipairs(achievements) do
+        if achievementEntry.objectives then
+          achievementObjectiveCount = achievementObjectiveCount + #achievementEntry.objectives
+        end
+      end
+    end
+    debugLog(
+      string.format(
+        "Refresh collected %d zones, %d quests, %d quest objectives, %d achievements, %d achievement objectives",
+        zoneCount,
+        questCount,
+        questObjectiveCount,
+        achievementCount,
+        achievementObjectiveCount
+      )
+    )
+  end
   renderQuests(self, zones)
   if achievements and #achievements > 0 then
     renderAchievements(self, achievements)
