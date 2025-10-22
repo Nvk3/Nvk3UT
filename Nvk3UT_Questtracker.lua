@@ -18,7 +18,8 @@ local ROW_TYPES = {
   ACH_OBJECTIVE = "achObjective",
 }
 
-local SCENE_ATTACH_NAMES = { "hud", "hudui", "siegeBar", "siegeBarUI" }
+local SCENE_ATTACH_NAMES = { "hud", "hudui", "siegeBar", "siegeBarUI", "gameMenuInGame" }
+local REFRESH_HANDLE = "Nvk3UT_QT_Refresh"
 
 local DEFAULT_ICONS = {
   zone = "EsoUI/Art/Journal/journal_tabIcon_locations_up.dds",
@@ -33,6 +34,7 @@ local MODIFY_UPPERCASE = GLOBALS.MODIFY_TEXT_TYPE_UPPERCASE or 1
 local WRAP_ELLIPSIS = GLOBALS.TEXT_WRAP_MODE_ELLIPSIS or (type(TEXT_WRAP_MODE_ELLIPSIS) == "number" and TEXT_WRAP_MODE_ELLIPSIS)
   or 1
 local TEX_BLEND_ALPHA = GLOBALS.TEX_BLEND_MODE_ALPHA or 1
+local SETTING_TYPE_UI = GLOBALS.SETTING_TYPE_UI or (_G and _G.SETTING_TYPE_UI) or 1
 
 local LEFT_MOUSE_BUTTON = (_G and _G.MOUSE_BUTTON_INDEX_LEFT) or MOUSE_BUTTON_INDEX_LEFT or 1
 local RIGHT_MOUSE_BUTTON = (_G and _G.MOUSE_BUTTON_INDEX_RIGHT) or MOUSE_BUTTON_INDEX_RIGHT or 2
@@ -135,6 +137,64 @@ local function copyTable(source)
     end
   end
   return result
+end
+
+local function getAchievementLineStart(achievementId)
+  if type(GetPreviousAchievementInLine) ~= "function" then
+    return achievementId
+  end
+  local visited = {}
+  local current = achievementId
+  while type(current) == "number" and current ~= 0 and not visited[current] do
+    visited[current] = true
+    local okPrev, prevId = pcall(GetPreviousAchievementInLine, current)
+    if not okPrev or not prevId or prevId == 0 or visited[prevId] then
+      break
+    end
+    current = prevId
+  end
+  return current
+end
+
+local function getAchievementLineIds(achievementId)
+  local ids = {}
+  if type(achievementId) ~= "number" or achievementId == 0 then
+    return ids
+  end
+  local startId = getAchievementLineStart(achievementId)
+  local visited = {}
+  local current = startId
+  while type(current) == "number" and current ~= 0 and not visited[current] do
+    ids[#ids + 1] = current
+    visited[current] = true
+    if type(GetNextAchievementInLine) ~= "function" then
+      break
+    end
+    local okNext, nextId = pcall(GetNextAchievementInLine, current)
+    if not okNext or not nextId or nextId == 0 or visited[nextId] then
+      break
+    end
+    current = nextId
+  end
+  return ids
+end
+
+local function isAchievementLineCompleted(achievementId)
+  local ids = getAchievementLineIds(achievementId)
+  local finalId = ids[#ids] or achievementId
+  if type(IsAchievementComplete) == "function" then
+    local ok, complete = pcall(IsAchievementComplete, finalId)
+    if ok then
+      return complete == true, finalId, ids
+    end
+  end
+  if type(GetAchievementInfo) == "function" then
+    local ok, _, _, _, _, completed = pcall(GetAchievementInfo, finalId)
+    if ok then
+      return completed == true, finalId, ids
+    end
+  end
+  return false, finalId, ids
 end
 
 local function getColor(config, fallback)
@@ -476,14 +536,11 @@ local function getFavoriteScope()
 end
 
 local function isAchievementCompleted(achievementId)
-  if type(GetAchievementInfo) ~= "function" then
-    return false
+  local complete = false
+  if achievementId then
+    complete = isAchievementLineCompleted(achievementId)
   end
-  local ok, _, _, _, _, completed = pcall(GetAchievementInfo, achievementId)
-  if ok then
-    return completed == true
-  end
-  return false
+  return complete == true
 end
 
 local function collectFavoriteAchievements()
@@ -494,6 +551,7 @@ local function collectFavoriteAchievements()
   end
   local scope = getFavoriteScope()
   local seen = {}
+  local removals = {}
   local playerGender
   if type(GetUnitGender) == "function" then
     local okGender, gender = pcall(GetUnitGender, "player")
@@ -503,60 +561,108 @@ local function collectFavoriteAchievements()
   end
   for achievementId, flagged in Fav.Iterate(scope) do
     if flagged and type(achievementId) == "number" and achievementId ~= 0 and not seen[achievementId] then
-      seen[achievementId] = true
-      local okInfo, name, description, points, iconPath, completed = pcall(GetAchievementInfo, achievementId)
-      if not okInfo then
-        name, description, iconPath, completed = "", "", "", false
-      end
-      if playerGender and type(zo_strformat) == "function" and name and name ~= "" then
-        local okFormat, formatted = pcall(zo_strformat, name, playerGender)
-        if okFormat and formatted and formatted ~= "" then
-          name = formatted
+      local completed, finalId, chainIds = isAchievementLineCompleted(achievementId)
+      if completed then
+        chainIds = chainIds and #chainIds > 0 and chainIds or { achievementId }
+        for _, chainId in ipairs(chainIds) do
+          removals[#removals + 1] = chainId
+          seen[chainId] = true
         end
-      end
-      local objectives = {}
-      local totalCurrent, totalRequired = 0, 0
-      local numCriteria = GetAchievementNumCriteria and GetAchievementNumCriteria(achievementId) or 0
-      for criterionIndex = 1, numCriteria do
-        local okCrit, criterionDescription, numCompleted, numRequired = pcall(GetAchievementCriterion, achievementId, criterionIndex)
-        if okCrit and criterionDescription ~= "" and numCompleted < numRequired then
-          objectives[#objectives + 1] = {
-            text = sanitizeText(criterionDescription),
-            current = numCompleted,
-            max = numRequired,
-          }
-        end
-        if okCrit then
-          totalCurrent = totalCurrent + (numCompleted or 0)
-          totalRequired = totalRequired + (numRequired or 0)
-        end
-      end
-      local normalizedIcon = iconPath
-      if Utils and Utils.ResolveTexturePath then
-        normalizedIcon = Utils.ResolveTexturePath(iconPath)
-      end
-      local cleanedName = sanitizeText(name)
-      local lowerName
-      if cleanedName and cleanedName ~= "" then
-        if type(zo_strlower) == "function" then
-          lowerName = zo_strlower(cleanedName)
-        else
-          lowerName = string.lower(cleanedName)
+        if finalId then
+          removals[#removals + 1] = finalId
+          seen[finalId] = true
         end
       else
-        lowerName = ""
+        local ids = chainIds and #chainIds > 0 and chainIds or { achievementId }
+        for _, chainId in ipairs(ids) do
+          seen[chainId] = true
+        end
+        local displayName, description, iconPath, objectives, totalCurrent, totalRequired = nil, nil, nil, {}, 0, 0
+        for _, id in ipairs(ids) do
+          local okInfo, stageName, stageDescription, _, stageIcon = pcall(GetAchievementInfo, id)
+          if okInfo then
+            local sanitizedName = sanitizeText(stageName)
+            if playerGender and type(zo_strformat) == "function" and sanitizedName and sanitizedName ~= "" then
+              local okFormat, formatted = pcall(zo_strformat, sanitizedName, playerGender)
+              if okFormat and formatted and formatted ~= "" then
+                sanitizedName = formatted
+              end
+            end
+            if (not displayName or displayName == "") and sanitizedName and sanitizedName ~= "" then
+              displayName = sanitizedName
+            elseif sanitizedName and sanitizedName ~= "" then
+              displayName = sanitizedName
+            end
+            local sanitizedDescription = sanitizeText(stageDescription)
+            if sanitizedDescription ~= "" then
+              description = sanitizedDescription
+            end
+            if stageIcon and stageIcon ~= "" then
+              iconPath = stageIcon
+            end
+          end
+          local numCriteria = GetAchievementNumCriteria and GetAchievementNumCriteria(id) or 0
+          for criterionIndex = 1, numCriteria do
+            local okCrit, criterionDescription, numCompleted, numRequired = pcall(GetAchievementCriterion, id, criterionIndex)
+            if okCrit then
+              local sanitized = sanitizeText(criterionDescription)
+              local currentValue = tonumber(numCompleted) or 0
+              local requiredValue = tonumber(numRequired) or 0
+              if requiredValue == 0 then
+                requiredValue = currentValue
+              end
+              totalCurrent = totalCurrent + currentValue
+              totalRequired = totalRequired + requiredValue
+              if sanitized ~= "" and currentValue < requiredValue then
+                objectives[#objectives + 1] = {
+                  text = sanitized,
+                  current = currentValue,
+                  max = requiredValue,
+                }
+              end
+            end
+          end
+        end
+        local normalizedIcon = iconPath
+        if Utils and Utils.ResolveTexturePath then
+          normalizedIcon = Utils.ResolveTexturePath(iconPath)
+        end
+        local cleanedName = sanitizeText(displayName or "")
+        if cleanedName == "" then
+          cleanedName = string.format("%d", achievementId)
+        end
+        local lowerName
+        if cleanedName ~= "" then
+          if type(zo_strlower) == "function" then
+            lowerName = zo_strlower(cleanedName)
+          else
+            lowerName = string.lower(cleanedName)
+          end
+        else
+          lowerName = string.format("%d", achievementId)
+        end
+        favorites[#favorites + 1] = {
+          id = achievementId,
+          favoriteId = achievementId,
+          displayId = finalId or achievementId,
+          name = cleanedName,
+          description = description or "",
+          icon = normalizedIcon ~= "" and normalizedIcon or DEFAULT_ICONS.achievement,
+          objectives = objectives,
+          completed = false,
+          sortKey = lowerName,
+          progressCurrent = totalCurrent,
+          progressMax = totalRequired,
+          chainIds = ids,
+        }
       end
-      favorites[#favorites + 1] = {
-        id = achievementId,
-        name = cleanedName,
-        description = sanitizeText(description),
-        icon = normalizedIcon ~= "" and normalizedIcon or DEFAULT_ICONS.achievement,
-        objectives = objectives,
-        completed = completed,
-        sortKey = lowerName,
-        progressCurrent = totalCurrent,
-        progressMax = totalRequired,
-      }
+    end
+  end
+  if #removals > 0 and Fav and Fav.Remove then
+    for _, achievementId in ipairs(removals) do
+      if Fav.IsFavorite and Fav.IsFavorite(achievementId, scope) then
+        Fav.Remove(achievementId, scope)
+      end
     end
   end
   table.sort(favorites, function(a, b)
@@ -568,6 +674,113 @@ local function collectFavoriteAchievements()
     entry.sortKey = nil
   end
   return favorites
+end
+
+local function buildObjectiveSignature(list)
+  if not list or #list == 0 then
+    return "0"
+  end
+  local parts = {}
+  for _, objective in ipairs(list) do
+    local text = objective.text or ""
+    local current = tonumber(objective.current) or 0
+    local max = tonumber(objective.max) or 0
+    parts[#parts + 1] = string.format("%s:%d/%d", text, current, max)
+  end
+  return table.concat(parts, "|")
+end
+
+local function buildQuestSignature(quest)
+  local components = {
+    quest.displayName or quest.name or "",
+    quest.stepText or "",
+    tostring(#(quest.steps or {})),
+    buildObjectiveSignature(quest.objectives),
+  }
+  return table.concat(components, "||")
+end
+
+local function buildAchievementSignature(achievement)
+  local components = {
+    achievement.name or "",
+    tostring(achievement.progressCurrent or 0),
+    tostring(achievement.progressMax or 0),
+    buildObjectiveSignature(achievement.objectives),
+    tostring(achievement.displayId or achievement.id or 0),
+  }
+  return table.concat(components, "||")
+end
+
+function QT:SyncQuestState(zones)
+  local previous = self.questState and self.questState.zones or {}
+  local newState = { zones = {}, order = {} }
+  local changed = false
+  local seen = {}
+  if type(zones) == "table" then
+    for zoneIndex, zone in ipairs(zones) do
+      local zoneKey = zone.key or zone.name or tostring(zoneIndex)
+      local hashParts = { zone.name or "", tostring(#(zone.quests or {})) }
+      local questHashes = {}
+      if type(zone.quests) == "table" then
+        for questIndex, quest in ipairs(zone.quests) do
+          local questKey = quest.key or string.format("%s:%d", zoneKey, questIndex)
+          local questHash = buildQuestSignature(quest)
+          questHashes[questKey] = questHash
+          hashParts[#hashParts + 1] = string.format("%s=%s", questKey, questHash)
+        end
+      end
+      local zoneHash = table.concat(hashParts, "##")
+      newState.zones[zoneKey] = { hash = zoneHash, quests = questHashes }
+      newState.order[#newState.order + 1] = zoneKey
+      seen[zoneKey] = true
+      local previousZone = previous[zoneKey]
+      if not previousZone or previousZone.hash ~= zoneHash then
+        changed = true
+      end
+    end
+  end
+  for zoneKey in pairs(previous) do
+    if not seen[zoneKey] then
+      changed = true
+      break
+    end
+  end
+  self.questState = newState
+  return changed
+end
+
+function QT:ClearQuestState()
+  self.questState = { zones = {}, order = {} }
+end
+
+function QT:SyncAchievementState(achievements)
+  local previous = self.achievementState or {}
+  local newState = {}
+  local changed = false
+  local seen = {}
+  if type(achievements) == "table" then
+    for index, achievement in ipairs(achievements) do
+      local key = achievement.favoriteId or achievement.id or index
+      local hash = buildAchievementSignature(achievement)
+      newState[key] = hash
+      seen[key] = true
+      if previous[key] ~= hash then
+        changed = true
+      end
+    end
+  end
+  for key in pairs(previous) do
+    if not seen[key] then
+      changed = true
+      break
+    end
+  end
+  self.achievementState = newState
+  return changed
+end
+
+function QT:ClearAchievementState()
+  self.achievementState = {}
 end
 
 local function ensureLamCallbacks(self)
@@ -603,8 +816,15 @@ local function removeCompletedFavorite(achievementId)
     return
   end
   local scope = getFavoriteScope()
-  if Fav.IsFavorite(achievementId, scope) and isAchievementCompleted(achievementId) then
-    Fav.Remove(achievementId, scope)
+  local completed, _, chainIds = isAchievementLineCompleted(achievementId)
+  if not completed then
+    return
+  end
+  chainIds = chainIds and #chainIds > 0 and chainIds or { achievementId }
+  for _, id in ipairs(chainIds) do
+    if Fav.IsFavorite(id, scope) then
+      Fav.Remove(id, scope)
+    end
   end
 end
 
@@ -616,8 +836,14 @@ local function pruneCompletedFavorites()
   local scope = getFavoriteScope()
   local removals = {}
   for achievementId, flagged in Fav.Iterate(scope) do
-    if flagged and isAchievementCompleted(achievementId) then
-      removals[#removals + 1] = achievementId
+    if flagged then
+      local completed, _, chainIds = isAchievementLineCompleted(achievementId)
+      if completed then
+        chainIds = chainIds and #chainIds > 0 and chainIds or { achievementId }
+        for _, id in ipairs(chainIds) do
+          removals[#removals + 1] = id
+        end
+      end
     end
   end
   for _, achievementId in ipairs(removals) do
@@ -788,22 +1014,30 @@ function QT:EnsureControl()
   self.scrollChild = scrollChild
   self.rowPool = {}
   self.activeRows = {}
-  if ZO_SimpleSceneFragment and SCENE_MANAGER then
+  if SCENE_MANAGER then
     self.sceneFragments = self.sceneFragments or {}
     if not self.fragment then
-      self.fragment = ZO_SimpleSceneFragment:New(control)
-      self.fragment:SetHideOnSceneHidden(true)
+      local fragmentClass = ZO_HUDFadeSceneFragment or ZO_SimpleSceneFragment
+      if fragmentClass then
+        self.fragment = fragmentClass:New(control)
+        if self.fragment.SetHideOnSceneHidden then
+          self.fragment:SetHideOnSceneHidden(true)
+        end
+      end
     end
-    for _, sceneName in ipairs(SCENE_ATTACH_NAMES) do
-      if not self.sceneFragments[sceneName] then
-        local scene = SCENE_MANAGER:GetScene(sceneName)
-        if scene and scene.AddFragment then
-          scene:AddFragment(self.fragment)
-          self.sceneFragments[sceneName] = true
+    if self.fragment then
+      for _, sceneName in ipairs(SCENE_ATTACH_NAMES) do
+        if not self.sceneFragments[sceneName] then
+          local scene = SCENE_MANAGER:GetScene(sceneName)
+          if scene and scene.AddFragment then
+            scene:AddFragment(self.fragment)
+            self.sceneFragments[sceneName] = true
+          end
         end
       end
     end
   end
+  self.fragmentReasons = self.fragmentReasons or {}
 end
 
 function QT:SavePosition()
@@ -1265,74 +1499,118 @@ function QT:Refresh(throttled)
     return
   end
   if throttled then
-    if self.pendingRefresh then
+    if self.refreshQueued then
       return
     end
-    self.pendingRefresh = true
+    self.refreshQueued = true
     local delay = tonumber(self.sv.throttleMs) or 150
-    zo_callLater(function()
-      self.pendingRefresh = false
-      self:Refresh(false)
-    end, delay)
+    if EM and EM.RegisterForUpdate then
+      if EM.UnregisterForUpdate then
+        EM:UnregisterForUpdate(REFRESH_HANDLE)
+      end
+      EM:RegisterForUpdate(REFRESH_HANDLE, delay, function()
+        if EM.UnregisterForUpdate then
+          EM:UnregisterForUpdate(REFRESH_HANDLE)
+        end
+        self.refreshQueued = false
+        self:Refresh(false)
+      end)
+    else
+      zo_callLater(function()
+        self.refreshQueued = false
+        self:Refresh(false)
+      end, delay)
+    end
     return
   end
+  self.refreshQueued = false
   if not self.control then
     self:EnsureControl()
   end
   ensureCollapseTables(self)
-  releaseAllRows(self)
-  local zones = {}
-  if self.sv.showQuests ~= false then
-    zones = collectQuests()
-  end
-  local achievements = nil
-  if self.sv.showAchievements ~= false then
-    achievements = collectFavoriteAchievements()
-  end
-  if zones or achievements then
-    local zoneCount = zones and #zones or 0
-    local questCount, questObjectiveCount = 0, 0
-    if zones then
-      for _, zoneEntry in ipairs(zones) do
-        if zoneEntry.quests then
-          questCount = questCount + #zoneEntry.quests
-          for _, questEntry in ipairs(zoneEntry.quests) do
-            if questEntry.objectives then
-              questObjectiveCount = questObjectiveCount + #questEntry.objectives
-            end
+
+  local showQuests = self.sv.showQuests ~= false
+  local showAchievements = self.sv.showAchievements ~= false
+  local zones = showQuests and collectQuests() or {}
+  local achievements = showAchievements and collectFavoriteAchievements() or {}
+
+  local zoneCount = zones and #zones or 0
+  local questCount, questObjectiveCount = 0, 0
+  if zones then
+    for _, zoneEntry in ipairs(zones) do
+      if zoneEntry.quests then
+        questCount = questCount + #zoneEntry.quests
+        for _, questEntry in ipairs(zoneEntry.quests) do
+          if questEntry.objectives then
+            questObjectiveCount = questObjectiveCount + #questEntry.objectives
           end
         end
       end
     end
-    local achievementCount = achievements and #achievements or 0
-    local achievementObjectiveCount = 0
-    if achievements then
-      for _, achievementEntry in ipairs(achievements) do
-        if achievementEntry.objectives then
-          achievementObjectiveCount = achievementObjectiveCount + #achievementEntry.objectives
-        end
+  end
+  local achievementCount = achievements and #achievements or 0
+  local achievementObjectiveCount = 0
+  if achievements then
+    for _, achievementEntry in ipairs(achievements) do
+      if achievementEntry.objectives then
+        achievementObjectiveCount = achievementObjectiveCount + #achievementEntry.objectives
       end
     end
-    debugLog(
-      string.format(
-        "Refresh collected %d zones, %d quests, %d quest objectives, %d achievements, %d achievement objectives",
-        zoneCount,
-        questCount,
-        questObjectiveCount,
-        achievementCount,
-        achievementObjectiveCount
-      )
+  end
+  debugLog(
+    string.format(
+      "Refresh collected %d zones, %d quests, %d quest objectives, %d achievements, %d achievement objectives",
+      zoneCount,
+      questCount,
+      questObjectiveCount,
+      achievementCount,
+      achievementObjectiveCount
     )
-  end
-  renderQuests(self, zones)
-  if achievements and #achievements > 0 then
-    renderAchievements(self, achievements)
-    self.hasAchievements = true
+  )
+
+  local questsChanged
+  if showQuests then
+    questsChanged = self:SyncQuestState(zones)
   else
-    self.hasAchievements = false
+    questsChanged = next(self.questState and self.questState.zones or {}) ~= nil
+    self:ClearQuestState()
+    zones = {}
   end
-  updateFonts(self)
-  applyAutoDimensions(self)
+
+  local achievementsChanged
+  if showAchievements then
+    achievementsChanged = self:SyncAchievementState(achievements)
+  else
+    achievementsChanged = next(self.achievementState or {}) ~= nil
+    self:ClearAchievementState()
+    achievements = {}
+  end
+
+  local needsRender = self.forceRender or questsChanged or achievementsChanged or not self.renderInitialized
+
+  if needsRender then
+    releaseAllRows(self)
+    if showQuests then
+      renderQuests(self, zones)
+    end
+    if showAchievements and achievements and #achievements > 0 then
+      renderAchievements(self, achievements)
+      self.hasAchievements = true
+    else
+      self.hasAchievements = false
+    end
+    updateFonts(self)
+    applyAutoDimensions(self)
+    self.renderInitialized = true
+    self.forceRender = false
+  else
+    if showAchievements and achievements and #achievements > 0 then
+      self.hasAchievements = true
+    else
+      self.hasAchievements = false
+    end
+  end
+
   self:ApplyVisibility()
 end
 
@@ -1364,13 +1642,15 @@ function QT:IsSceneAllowed()
 end
 
 function QT:ApplyVisibility()
-  local shouldShow = self.enabled and (self.sv and self.sv.enabled ~= false)
-  if shouldShow and not self:IsSceneAllowed() then
-    shouldShow = false
-  end
   local behavior = self.sv and self.sv.behavior or {}
-  if shouldShow and behavior.hideInCombat and self.isInCombat then
-    shouldShow = false
+  local isEnabled = self.enabled and (self.sv and self.sv.enabled ~= false)
+  local sceneAllowed = self:IsSceneAllowed()
+  local combatHidden = behavior.hideInCombat and self.isInCombat
+  local shouldShow = isEnabled and sceneAllowed and not combatHidden
+  if self.fragment and self.fragment.SetHiddenForReason then
+    self.fragment:SetHiddenForReason("disabled", not isEnabled, true)
+    self.fragment:SetHiddenForReason("scene", not sceneAllowed, true)
+    self.fragment:SetHiddenForReason("combat", combatHidden, true)
   end
   if self.control then
     self.control:SetHidden(not shouldShow)
@@ -1401,16 +1681,19 @@ function QT:OnRowLeftClick(control)
     local key = data.key
     local expanded = isZoneExpanded(self, key)
     setZoneExpanded(self, key, not expanded)
+    self.forceRender = true
     self:Refresh(true)
   elseif data.type == ROW_TYPES.QUEST then
     local quest = data.quest
     local expanded = isQuestExpanded(self, quest.key)
     setQuestExpanded(self, quest.key, not expanded)
+    self.forceRender = true
     self:Refresh(true)
   elseif data.type == ROW_TYPES.ACHIEVEMENT then
     local achievement = data.achievement
     local expanded = isAchievementExpanded(self, achievement.id)
     setAchievementExpanded(self, achievement.id, not expanded)
+    self.forceRender = true
     self:Refresh(true)
   end
 end
@@ -1447,23 +1730,28 @@ end
 
 local function showAchievementContextMenu(entry)
   ClearMenu()
-    AddMenuItem(LABELS.achievementsOpen, function()
-      if SCENE_MANAGER then
-        SCENE_MANAGER:Show("achievements")
-      end
-      if ACHIEVEMENTS and ACHIEVEMENTS.BrowseToAchievement then
-        zo_callLater(function()
-          ACHIEVEMENTS:BrowseToAchievement(entry.id)
-        end, 50)
-      end
-      if ACHIEVEMENTS_MANAGER and ACHIEVEMENTS_MANAGER.PushAchievement then
-        ACHIEVEMENTS_MANAGER:PushAchievement(entry.id)
-      end
-    end)
+  local openId = entry.displayId or entry.id or entry.favoriteId
+  AddMenuItem(LABELS.achievementsOpen, function()
+    if SCENE_MANAGER then
+      SCENE_MANAGER:Show("achievements")
+    end
+    if ACHIEVEMENTS and ACHIEVEMENTS.BrowseToAchievement and openId then
+      zo_callLater(function()
+        ACHIEVEMENTS:BrowseToAchievement(openId)
+      end, 50)
+    end
+    if ACHIEVEMENTS_MANAGER and ACHIEVEMENTS_MANAGER.PushAchievement and openId then
+      ACHIEVEMENTS_MANAGER:PushAchievement(openId)
+    end
+  end)
   AddMenuItem(LABELS.achievementsRemoveFavorite, function()
     if Nvk3UT and Nvk3UT.Favorites and Nvk3UT.Favorites.Remove then
-      Nvk3UT.Favorites.Remove(entry.id)
+      local removeId = entry.favoriteId or entry.id
+      if removeId then
+        Nvk3UT.Favorites.Remove(removeId)
+      end
     end
+    QT.forceRender = true
     QT:Refresh(true)
   end)
   ShowMenu()
@@ -1502,6 +1790,8 @@ function QT:ApplySettings()
   if not self.control then
     self:EnsureControl()
   end
+  self.forceRender = true
+  self.renderInitialized = false
   ensureCollapseTables(self)
   if not self.sv.behavior then self.sv.behavior = {} end
   if not self.sv.background then self.sv.background = {} end
@@ -1529,6 +1819,7 @@ local function registerEvents(self)
         self.pendingQuestExpand[questId] = true
       end
     end
+    self.forceRender = true
     self:Refresh(true)
   end)
   EM:RegisterForEvent("Nvk3UT_QT_QuestRemoved", EVENT_QUEST_REMOVED, function(_, isCompleted, journalIndex, questName, zoneName, questId)
@@ -1539,9 +1830,11 @@ local function registerEvents(self)
         end
       end
     end
+    self.forceRender = true
     self:Refresh(true)
   end)
   EM:RegisterForEvent("Nvk3UT_QT_QuestAdvanced", EVENT_QUEST_ADVANCED, function()
+    self.forceRender = true
     self:Refresh(true)
   end)
   EM:RegisterForEvent("Nvk3UT_QT_ConditionChanged", EVENT_QUEST_CONDITION_COUNTER_CHANGED, function()
@@ -1553,16 +1846,35 @@ local function registerEvents(self)
   EM:RegisterForEvent("Nvk3UT_QT_ObjectiveCompleted", EVENT_OBJECTIVE_COMPLETED, function()
     self:Refresh(true)
   end)
+  EM:RegisterForEvent("Nvk3UT_QT_InterfaceSetting", EVENT_INTERFACE_SETTING_CHANGED, function(_, settingType)
+    if settingType == SETTING_TYPE_UI then
+      self.forceRender = true
+      self:Refresh(true)
+    end
+  end)
+  EM:RegisterForEvent("Nvk3UT_QT_LevelUpdated", EVENT_LEVEL_UPDATE, function(_, unitTag)
+    if unitTag == "player" then
+      self.forceRender = true
+      self:Refresh(true)
+    end
+  end)
+  EM:RegisterForEvent("Nvk3UT_QT_OverrideChanged", EVENT_QUEST_CONDITION_OVERRIDE_TEXT_CHANGED, function()
+    self.forceRender = true
+    self:Refresh(true)
+  end)
   EM:RegisterForEvent("Nvk3UT_QT_AchUpdated", EVENT_ACHIEVEMENT_UPDATED, function(_, achievementId)
     removeCompletedFavorite(achievementId)
+    self.forceRender = true
     self:Refresh(true)
   end)
   EM:RegisterForEvent("Nvk3UT_QT_AchAwarded", EVENT_ACHIEVEMENT_AWARDED, function(_, _, _, achievementId)
     removeCompletedFavorite(achievementId)
+    self.forceRender = true
     self:Refresh(true)
   end)
   EM:RegisterForEvent("Nvk3UT_QT_AchievementsUpdated", EVENT_ACHIEVEMENTS_UPDATED, function()
     pruneCompletedFavorites()
+    self.forceRender = true
     self:Refresh(true)
   end)
   EM:RegisterForEvent("Nvk3UT_QT_CombatState", EVENT_PLAYER_COMBAT_STATE, function(_, inCombat)
@@ -1579,15 +1891,22 @@ local function registerEvents(self)
       self:Refresh(true)
     end
   end)
+  EM:RegisterForEvent("Nvk3UT_QT_PlayerDeactivated", EVENT_PLAYER_DEACTIVATED, function()
+    self.hasActivated = false
+    self.forceRender = true
+    self:Refresh(true)
+  end)
   self.eventsRegistered = true
   if CM and not self.favoritesCallback then
     self.favoritesCallback = function()
+      self.forceRender = true
       self:Refresh(true)
     end
     CM:RegisterCallback("NVK3UT_FAVORITES_CHANGED", self.favoritesCallback)
   end
   if QUEST_JOURNAL_MANAGER and not self.questListCallback then
     self.questListCallback = function()
+      self.forceRender = true
       self:Refresh(true)
     end
     QUEST_JOURNAL_MANAGER:RegisterCallback("QuestListUpdated", self.questListCallback)
@@ -1599,6 +1918,19 @@ local function registerEvents(self)
       end
     end
     SCENE_MANAGER:RegisterCallback("SceneStateChanged", self.sceneCallback)
+  end
+  if FOCUSED_QUEST_TRACKER then
+    if FOCUSED_QUEST_TRACKER.RegisterCallback and not self.focusedQuestCallback then
+      self.focusedQuestCallback = function()
+        self:Refresh(true)
+      end
+      FOCUSED_QUEST_TRACKER:RegisterCallback("QuestTrackerAssistStateChanged", self.focusedQuestCallback)
+    elseif SecurePostHook and not self.focusedQuestHooked then
+      SecurePostHook(FOCUSED_QUEST_TRACKER, "Update", function()
+        self:Refresh(true)
+      end)
+      self.focusedQuestHooked = true
+    end
   end
 end
 
@@ -1613,11 +1945,15 @@ local function unregisterEvents(self)
     EM:UnregisterForEvent("Nvk3UT_QT_ConditionChanged", EVENT_QUEST_CONDITION_COUNTER_CHANGED)
     EM:UnregisterForEvent("Nvk3UT_QT_QuestListUpdated", EVENT_QUEST_LIST_UPDATED)
     EM:UnregisterForEvent("Nvk3UT_QT_ObjectiveCompleted", EVENT_OBJECTIVE_COMPLETED)
+    EM:UnregisterForEvent("Nvk3UT_QT_InterfaceSetting", EVENT_INTERFACE_SETTING_CHANGED)
+    EM:UnregisterForEvent("Nvk3UT_QT_LevelUpdated", EVENT_LEVEL_UPDATE)
+    EM:UnregisterForEvent("Nvk3UT_QT_OverrideChanged", EVENT_QUEST_CONDITION_OVERRIDE_TEXT_CHANGED)
     EM:UnregisterForEvent("Nvk3UT_QT_AchUpdated", EVENT_ACHIEVEMENT_UPDATED)
     EM:UnregisterForEvent("Nvk3UT_QT_AchAwarded", EVENT_ACHIEVEMENT_AWARDED)
     EM:UnregisterForEvent("Nvk3UT_QT_AchievementsUpdated", EVENT_ACHIEVEMENTS_UPDATED)
     EM:UnregisterForEvent("Nvk3UT_QT_CombatState", EVENT_PLAYER_COMBAT_STATE)
     EM:UnregisterForEvent("Nvk3UT_QT_PlayerActivated", EVENT_PLAYER_ACTIVATED)
+    EM:UnregisterForEvent("Nvk3UT_QT_PlayerDeactivated", EVENT_PLAYER_DEACTIVATED)
   end
   if CM and self.favoritesCallback then
     CM:UnregisterCallback("NVK3UT_FAVORITES_CHANGED", self.favoritesCallback)
@@ -1631,6 +1967,10 @@ local function unregisterEvents(self)
     SCENE_MANAGER:UnregisterCallback("SceneStateChanged", self.sceneCallback)
     self.sceneCallback = nil
   end
+  if FOCUSED_QUEST_TRACKER and self.focusedQuestCallback and FOCUSED_QUEST_TRACKER.UnregisterCallback then
+    FOCUSED_QUEST_TRACKER:UnregisterCallback("QuestTrackerAssistStateChanged", self.focusedQuestCallback)
+    self.focusedQuestCallback = nil
+  end
   self.eventsRegistered = false
 end
 
@@ -1641,11 +1981,15 @@ function QT.Init()
   QT.sv.background = QT.sv.background or {}
   QT.sv.fonts = QT.sv.fonts or {}
   QT.sv.pos = QT.sv.pos or {}
-  QT.pendingRefresh = false
+  QT.refreshQueued = false
   QT.enabled = false
   QT.pendingQuestExpand = {}
   QT.lamPanelOpen = QT.lamPanelOpen or false
   QT.hasActivated = false
+  QT.questState = QT.questState or { zones = {}, order = {} }
+  QT.achievementState = QT.achievementState or {}
+  QT.renderInitialized = false
+  QT.forceRender = true
   if QT.lamPanelControl then
     ensureLamCallbacks(QT)
   end
@@ -1675,10 +2019,19 @@ function QT.Disable()
   unregisterEvents(QT)
   QT.enabled = false
   QT.pendingQuestExpand = {}
+  QT:ClearQuestState()
+  QT:ClearAchievementState()
+  QT.renderInitialized = false
+  QT.forceRender = true
+  QT.refreshQueued = false
+  if EM and EM.UnregisterForUpdate then
+    EM:UnregisterForUpdate(REFRESH_HANDLE)
+  end
   if QT.control then
     QT.control:SetHidden(true)
   end
   QT:SetDefaultTrackerHidden(false)
+  QT.hasAchievements = false
 end
 
 function QT.Destroy()
@@ -1717,6 +2070,10 @@ function QT.Destroy()
   QT.rowPool = nil
   QT.activeRows = nil
   QT.questListCallback = nil
+  QT.focusedQuestCallback = nil
+  QT:ClearQuestState()
+  QT:ClearAchievementState()
+  QT.hasAchievements = false
 end
 
 function QT.SetEnabled(value)
@@ -1732,12 +2089,16 @@ end
 function QT.SetShowQuests(value)
   QT.sv = QT.sv or {}
   QT.sv.showQuests = value and true or false
+  QT.forceRender = true
+  QT.renderInitialized = false
   QT:Refresh(true)
 end
 
 function QT.SetShowAchievements(value)
   QT.sv = QT.sv or {}
   QT.sv.showAchievements = value and true or false
+  QT.forceRender = true
+  QT.renderInitialized = false
   QT:Refresh(true)
 end
 
@@ -1754,8 +2115,10 @@ function QT.SetBehaviorOption(key, value)
     applyLockState(QT)
     applyBackground(QT)
   elseif key == "autoGrowV" or key == "autoGrowH" then
+    QT.forceRender = true
     QT:Refresh(true)
   elseif key == "alwaysExpandAchievements" then
+    QT.forceRender = true
     QT:Refresh(true)
   elseif key == "tooltips" then
     clearTooltip()
@@ -1768,7 +2131,10 @@ function QT.SetThrottle(value)
   local clamped = math.max(0, round(numeric))
   QT.sv.throttleMs = clamped
   if QT.enabled then
-    QT.pendingRefresh = false
+    QT.refreshQueued = false
+    if EM and EM.UnregisterForUpdate then
+      EM:UnregisterForUpdate(REFRESH_HANDLE)
+    end
     QT:Refresh(true)
   end
 end
