@@ -1393,6 +1393,10 @@ local function setAchievementExpanded(self, achievementId, expanded)
 end
 
 local function ensureCollapseTables(self)
+  if not self.sv then
+    self.sv = {}
+  end
+  self.sv.collapseState = self.sv.collapseState or {}
   local cs = self.sv.collapseState
   cs.zones = cs.zones or {}
   cs.quests = cs.quests or {}
