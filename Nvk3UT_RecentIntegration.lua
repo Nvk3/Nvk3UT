@@ -9,6 +9,13 @@ local recProvide_lastTs, recProvide_lastCount = 0, -1
 local NVK3_RECENT = 84001
 local ICON_PATH_RECENT = "/esoui/art/journal/journal_tabicon_quest_up.dds"
 
+local function sanitizePlainName(name)
+    if U and U.StripLeadingIconTag then
+        name = U.StripLeadingIconTag(name)
+    end
+    return name
+end
+
 -- Use same icon set as Favoriten for visual parity
 local function _countRecent()
     if not RD then
@@ -74,7 +81,8 @@ local function AddRecentCategory(AchClass)
         if row then
             row.isNvkRecent = true
             row.nvkSummaryTooltipText = nil
-            row.nvkPlainName = row.nvkPlainName or row.name or row.text or label
+            local plain = row.name or row.text or label
+            row.nvkPlainName = row.nvkPlainName or sanitizePlainName(plain)
             self._nvkRecentData = row
         end
         _updateRecentTooltip(self)

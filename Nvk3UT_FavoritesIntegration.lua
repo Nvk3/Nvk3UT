@@ -9,6 +9,13 @@ local favProvide_lastTs, favProvide_lastCount = 0, -1
 local NVK3_FAVORITES_KEY = "Nvk3UT_Favorites"
 local ICON_PATH_FAVORITES = "/esoui/art/guild/guild_rankicon_leader_large.dds"
 
+local function sanitizePlainName(name)
+  if U and U.StripLeadingIconTag then
+    name = U.StripLeadingIconTag(name)
+  end
+  return name
+end
+
 local function _countFavorites()
     if not (Fav and Fav.Iterate) then
         return 0
@@ -76,7 +83,8 @@ local function AddFavoritesTopCategory(AchievementsClass)
             row.isNvkFavorites = true
             row.nvkSummaryTooltipText = nil
             row.isNvk3Fav = true
-            row.nvkPlainName = row.nvkPlainName or row.name or row.text or "Favoriten"
+            local plain = row.name or row.text or "Favoriten"
+            row.nvkPlainName = row.nvkPlainName or sanitizePlainName(plain)
             self._nvkFavoritesData = row
         end
         -- Capture tooltip data right after the category row exists.

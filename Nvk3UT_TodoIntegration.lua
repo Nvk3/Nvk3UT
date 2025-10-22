@@ -11,6 +11,13 @@ local NVK3_TODO = 84002
 local todoProvide_lastTs = 0
 local todoProvide_lastCount = 0
 
+local function sanitizePlainName(name)
+  if U and U.StripLeadingIconTag then
+    name = U.StripLeadingIconTag(name)
+  end
+  return name
+end
+
 -- Add one 'To-Do-Liste' header with subcategories for each basegame top category
 
 local function _todoCollectOpenSummary(topId)
@@ -145,7 +152,7 @@ local function AddTodoCategory(AchClass)
         )
         local parentRowDone = parentNodeDone and parentNodeDone.GetData and parentNodeDone:GetData()
         if parentRowDone then
-          parentRowDone.nvkPlainName = parentRowDone.nvkPlainName or labelDone
+          parentRowDone.nvkPlainName = parentRowDone.nvkPlainName or sanitizePlainName(labelDone)
           parentRowDone.isNvkCompleted = true
         end
         local names, ids = Nvk3UT.CompletedData.GetSubcategoryList()
@@ -153,7 +160,7 @@ local function AddTodoCategory(AchClass)
           local childNode = self:AddCategory(lookup, tree, subTemplate, parentNodeDone, ids[i], n, true)
           local childData = childNode and childNode.GetData and childNode:GetData()
           if childData then
-            childData.nvkPlainName = childData.nvkPlainName or n
+            childData.nvkPlainName = childData.nvkPlainName or sanitizePlainName(n)
             childData.nvkCompletedKey = childData.nvkCompletedKey or ids[i]
             childData.isNvkCompleted = true
           end
@@ -190,7 +197,7 @@ local function AddTodoCategory(AchClass)
     if _row then
       _row.isNvkTodo = true
       _row.nvkSummaryTooltipText = nil
-      _row.nvkPlainName = _row.nvkPlainName or label
+      _row.nvkPlainName = _row.nvkPlainName or sanitizePlainName(label)
     end
 
     local numTop = GetNumAchievementCategories and GetNumAchievementCategories() or 0
@@ -210,7 +217,7 @@ local function AddTodoCategory(AchClass)
             data.nvkTodoOpenPoints = openPoints
             data.nvkTodoTopId = top
             data.nvkSummaryTooltipText = nil
-            data.nvkPlainName = data.nvkPlainName or topName
+            data.nvkPlainName = data.nvkPlainName or sanitizePlainName(topName)
           end
         end
       end

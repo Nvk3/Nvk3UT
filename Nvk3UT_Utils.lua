@@ -67,6 +67,26 @@ function M.GetIconTagForTexture(path, size)
   return string.format("|t%d:%d:%s|t ", iconSize, iconSize, normalized)
 end
 
+local function stripLeadingIcon(text)
+  if type(text) ~= "string" or text == "" then
+    return text
+  end
+  local previous
+  local stripped = text
+  repeat
+    previous = stripped
+    stripped = stripped:gsub("^|t[^|]-|t%s*", "")
+  until stripped == previous
+  if stripped ~= text then
+    stripped = stripped:gsub("^%s+", "")
+  end
+  return stripped
+end
+
+function M.StripLeadingIconTag(text)
+  return stripLeadingIcon(text)
+end
+
 function M.GetAchievementCategoryIconTag(topCategoryId, size)
   if type(GetAchievementCategoryKeyboardIcons) ~= "function" then
     return ""

@@ -11,6 +11,13 @@ local NVK3_DONE = 84003
 local ICON_PATH_COMPLETED = "/esoui/art/guild/tabicon_history_up.dds"
 local ICON_PATH_COMPLETED_RECENT = "/esoui/art/journal/journal_tabicon_quest_up.dds"
 
+local function sanitizePlainName(name)
+    if U and U.StripLeadingIconTag then
+        name = U.StripLeadingIconTag(name)
+    end
+    return name
+end
+
 local compProvide_lastTs, compProvide_lastCount = 0, -1
 
 local function _isDebug()
@@ -241,7 +248,8 @@ local function AddCompletedCategory(AchClass)
         if parentData then
             parentData.isNvkCompleted = true
             parentData.nvkSummaryTooltipText = nil
-            parentData.nvkPlainName = parentData.nvkPlainName or parentData.name or parentData.text or "Abgeschlossen"
+            local plainParent = parentData.name or parentData.text or "Abgeschlossen"
+            parentData.nvkPlainName = parentData.nvkPlainName or sanitizePlainName(plainParent)
         end
 
         local names, ids = Comp.GetSubcategoryList()
@@ -258,7 +266,8 @@ local function AddCompletedCategory(AchClass)
                     data.isNvkCompleted = true
                     data.nvkSummaryTooltipText = nil
                     data.nvkCompletedKey = ids[index]
-                    data.nvkPlainName = data.nvkPlainName or names[index]
+                    local plainName = names[index]
+                    data.nvkPlainName = data.nvkPlainName or sanitizePlainName(plainName)
                 end
             end
         end
