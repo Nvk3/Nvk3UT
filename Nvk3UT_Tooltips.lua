@@ -120,6 +120,96 @@ local function GetCategoryLabel(control)
   return control:GetNamedChild("Text") or control:GetNamedChild("Label") or control:GetNamedChild("Name")
 end
 
+local iconFieldNames = {
+  "icon",
+  "iconTexture",
+  "iconHighlight",
+  "iconSelected",
+  "iconMouseOver",
+  "statusIcon",
+}
+
+local iconChildNames = {
+  "Icon",
+  "IconHighlight",
+  "Highlight",
+  "StatusIcon",
+}
+
+local function CollectIconControls(control)
+  if not control then
+    return nil
+  end
+
+  local controls = control._nvkCachedIconControls
+  if controls then
+    return controls
+  end
+
+  controls = {}
+
+  for _, field in ipairs(iconFieldNames) do
+    local ref = control[field]
+    if ref and ref.SetHidden then
+      controls[#controls + 1] = ref
+    end
+  end
+
+  if control.GetNamedChild then
+    for _, childName in ipairs(iconChildNames) do
+      local child = control:GetNamedChild(childName)
+      if child and child.SetHidden then
+        local found = false
+        for idx = 1, #controls do
+          if controls[idx] == child then
+            found = true
+            break
+          end
+        end
+        if not found then
+          controls[#controls + 1] = child
+        end
+      end
+    end
+  end
+
+  if #controls == 0 then
+    controls = nil
+  end
+
+  control._nvkCachedIconControls = controls
+  return controls
+end
+
+local function UpdateTemplateIcons(control, hide)
+  local icons = CollectIconControls(control)
+  if not icons then
+    return
+  end
+
+  for idx = 1, #icons do
+    local icon = icons[idx]
+    if icon then
+      if hide then
+        if icon._nvkOriginalHidden == nil and icon.IsHidden then
+          icon._nvkOriginalHidden = icon:IsHidden()
+        end
+        if icon.SetHidden then
+          icon:SetHidden(true)
+          icon._nvkForceHide = true
+        end
+      elseif icon._nvkForceHide then
+        if icon._nvkOriginalHidden ~= nil and icon.SetHidden then
+          icon:SetHidden(icon._nvkOriginalHidden)
+        elseif icon.SetHidden then
+          icon:SetHidden(false)
+        end
+        icon._nvkForceHide = nil
+      end
+    end
+  end
+end
+
 local function DetermineCategoryIconTag(data)
   if not data then
     return ""
@@ -149,23 +239,31 @@ local function ApplyCategoryIcon(control, data)
   end
 
   local iconTag = DetermineCategoryIconTag(data)
+  UpdateTemplateIcons(control, iconTag ~= "")
+
   if iconTag and iconTag ~= "" then
-    if not label._nvkPlainText or label._nvkPlainText == "" then
-      local plain = data and data.nvkPlainName
-      if type(plain) == "string" and plain ~= "" then
-        plain = zo_strformat("<<1>>", plain)
-      else
-        local current = label:GetText() or ""
-        plain = current:gsub("^|t.-|t%s*", "")
-      end
+    local plain = data and data.nvkPlainName
+    if type(plain) == "string" and plain ~= "" then
+      plain = zo_strformat("<<1>>", plain)
+    else
+      local current = label:GetText() or ""
+      current = current:gsub("^|t[^|]-|t%s*", "")
+      plain = zo_strformat("<<1>>", current)
+    end
+    label._nvkPlainText = plain
+    label:SetText(iconTag .. (plain or ""))
+    label._nvkHasIcon = true
+  else
+    local plain = data and data.nvkPlainName
+    if type(plain) == "string" and plain ~= "" then
+      plain = zo_strformat("<<1>>", plain)
       label._nvkPlainText = plain
     end
-    local text = label._nvkPlainText or ""
-    label:SetText(iconTag .. text)
-    label._nvkHasIcon = true
-  elseif label._nvkHasIcon and label._nvkPlainText then
-    label:SetText(label._nvkPlainText)
-    label._nvkHasIcon = nil
+    if label._nvkHasIcon then
+      local text = label._nvkPlainText or label:GetText() or ""
+      label:SetText(text)
+      label._nvkHasIcon = nil
+    end
   end
 end
 
@@ -637,16 +735,21 @@ local function HookExisting(tree)
 end
 
 local function HookTemplates(tree)
-  if not tree or not tree.templateInfo then
+  if not tree then
     return
   end
-  local function setup(node, control, data, open)
-    HookHandlers(tree, control, data)
+  if tree._nvk3utSetupHooked then
+    return
   end
-  for _, info in pairs(tree.templateInfo) do
-    if info and info.setupFunction then
-      SecurePostHook(info, "setupFunction", setup)
-    end
+  tree._nvk3utSetupHooked = true
+
+  local function setupFn(self, node, control, data)
+    HookHandlers(self, control, data)
+  end
+  if SecurePostHook then
+    SecurePostHook(tree, "SetupNode", setupFn)
+  elseif ZO_PostHook then
+    ZO_PostHook(tree, "SetupNode", setupFn)
   end
 end
 
