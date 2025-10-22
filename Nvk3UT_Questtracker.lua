@@ -401,12 +401,14 @@ local function gatherQuestObjectives(questIndex)
               end
             end
             if visible and conditionText ~= "" and not isFail and not isComplete then
-              objectives[#objectives + 1] = {
+              local objectiveIndex = #objectives + 1
+              objectives[objectiveIndex] = {
                 text = sanitizeText(conditionText),
                 current = cur,
                 max = max,
                 stepIndex = stepIndex,
                 conditionIndex = conditionIndex,
+                index = objectiveIndex,
               }
             end
           end
@@ -614,10 +616,12 @@ local function collectFavoriteAchievements()
               totalCurrent = totalCurrent + currentValue
               totalRequired = totalRequired + requiredValue
               if sanitized ~= "" and currentValue < requiredValue then
-                objectives[#objectives + 1] = {
+                local objectiveIndex = #objectives + 1
+                objectives[objectiveIndex] = {
                   text = sanitized,
                   current = currentValue,
                   max = requiredValue,
+                  index = objectiveIndex,
                 }
               end
             end
@@ -1013,6 +1017,7 @@ function QT:EnsureControl()
   self.scroll = scroll
   self.scrollChild = scrollChild
   self.rowPool = {}
+  self.rowLookup = self.rowLookup or {}
   self.activeRows = {}
   if SCENE_MANAGER then
     self.sceneFragments = self.sceneFragments or {}
@@ -1112,11 +1117,15 @@ local function releaseRow(self, row)
   if not row then
     return
   end
+  if row._qtKey and self.rowLookup and self.rowLookup[row._qtKey] == row then
+    self.rowLookup[row._qtKey] = nil
+  end
   row:SetHidden(true)
   row:ClearAnchors()
   row.data = nil
   row.zoneName = nil
   row.questName = nil
+  row._qtKey = nil
   if row.highlight then
     row.highlight:SetAlpha(0)
   end
@@ -1124,81 +1133,126 @@ local function releaseRow(self, row)
 end
 
 local function releaseAllRows(self)
-  if not self.activeRows then
-    return
+  if self.rowLookup then
+    for key, row in pairs(self.rowLookup) do
+      if row then
+        releaseRow(self, row)
+      end
+      self.rowLookup[key] = nil
+    end
   end
-  for i = 1, #self.activeRows do
-    releaseRow(self, self.activeRows[i])
-  end
-  if ZO_ClearNumericallyIndexedTable then
-    ZO_ClearNumericallyIndexedTable(self.activeRows)
-  else
-    for index = #self.activeRows, 1, -1 do
-      self.activeRows[index] = nil
+  if self.activeRows then
+    if ZO_ClearNumericallyIndexedTable then
+      ZO_ClearNumericallyIndexedTable(self.activeRows)
+    else
+      for index = #self.activeRows, 1, -1 do
+        self.activeRows[index] = nil
+      end
     end
   end
   self.lastRow = nil
 end
 
-local function acquireRow(self)
-  local row = table.remove(self.rowPool)
-  if row then
-    row:SetHidden(false)
-    return row
+function QT:BeginLayout()
+  self.rowLookup = self.rowLookup or {}
+  self.usedRowKeys = {}
+  self.activeRows = {}
+  self.lastRow = nil
+end
+
+function QT:EndLayout()
+  if not self.rowLookup then
+    return
   end
-  local scrollChild = self.scrollChild
-  row = WM:CreateControl(nil, scrollChild, CT_CONTROL)
-  row:SetHeight(26)
-  row:SetMouseEnabled(true)
-  row:SetHandler("OnMouseUp", function(control, button, upInside)
-    if not upInside then
-      return
+  local staleKeys = {}
+  for key in pairs(self.rowLookup) do
+    if not (self.usedRowKeys and self.usedRowKeys[key]) then
+      staleKeys[#staleKeys + 1] = key
     end
-    if button == LEFT_MOUSE_BUTTON then
-      QT:OnRowLeftClick(control)
-    elseif button == RIGHT_MOUSE_BUTTON then
-      QT:OnRowRightClick(control)
+  end
+  for _, key in ipairs(staleKeys) do
+    local row = self.rowLookup[key]
+    if row then
+      releaseRow(self, row)
     end
-  end)
-  row:SetHandler("OnMouseEnter", function(control)
-    if control.highlight then
-      control.highlight:SetAlpha(0.18)
+    self.rowLookup[key] = nil
+  end
+  self.usedRowKeys = nil
+end
+
+local function acquireRow(self, key)
+  self.rowLookup = self.rowLookup or {}
+  self.usedRowKeys = self.usedRowKeys or {}
+  if key then
+    local existing = self.rowLookup[key]
+    if existing then
+      existing:SetHidden(false)
+      existing._qtKey = key
+      self.usedRowKeys[key] = true
+      return existing
     end
-    QT:OnRowEnter(control)
-  end)
-  row:SetHandler("OnMouseExit", function(control)
-    if control.highlight then
-      control.highlight:SetAlpha(0)
-    end
-    clearTooltip()
-  end)
+  end
+  local row = table.remove(self.rowPool)
+  if not row then
+    local scrollChild = self.scrollChild
+    row = WM:CreateControl(nil, scrollChild, CT_CONTROL)
+    row:SetHeight(26)
+    row:SetMouseEnabled(true)
+    row:SetHandler("OnMouseUp", function(control, button, upInside)
+      if not upInside then
+        return
+      end
+      if button == LEFT_MOUSE_BUTTON then
+        QT:OnRowLeftClick(control)
+      elseif button == RIGHT_MOUSE_BUTTON then
+        QT:OnRowRightClick(control)
+      end
+    end)
+    row:SetHandler("OnMouseEnter", function(control)
+      if control.highlight then
+        control.highlight:SetAlpha(0.18)
+      end
+      QT:OnRowEnter(control)
+    end)
+    row:SetHandler("OnMouseExit", function(control)
+      if control.highlight then
+        control.highlight:SetAlpha(0)
+      end
+      clearTooltip()
+    end)
 
-  local highlight = WM:CreateControl(nil, row, CT_TEXTURE)
-  highlight:SetAnchorFill()
-  highlight:SetTexture("EsoUI/Art/Miscellaneous/listItem_highlight.dds")
-  highlight:SetBlendMode(TEX_BLEND_ALPHA)
-  highlight:SetAlpha(0)
-  highlight:SetDrawLayer(DL_BACKGROUND)
+    local highlight = WM:CreateControl(nil, row, CT_TEXTURE)
+    highlight:SetAnchorFill()
+    highlight:SetTexture("EsoUI/Art/Miscellaneous/listItem_highlight.dds")
+    highlight:SetBlendMode(TEX_BLEND_ALPHA)
+    highlight:SetAlpha(0)
+    highlight:SetDrawLayer(DL_BACKGROUND)
 
-  local arrow = WM:CreateControl(nil, row, CT_TEXTURE)
-  arrow:SetDimensions(16, 16)
-  arrow:SetAnchor(LEFT, row, LEFT, 0, 0)
+    local arrow = WM:CreateControl(nil, row, CT_TEXTURE)
+    arrow:SetDimensions(16, 16)
+    arrow:SetAnchor(LEFT, row, LEFT, 0, 0)
 
-  local icon = WM:CreateControl(nil, row, CT_TEXTURE)
-  icon:SetDimensions(20, 20)
-  icon:SetAnchor(LEFT, arrow, RIGHT, 4, 0)
+    local icon = WM:CreateControl(nil, row, CT_TEXTURE)
+    icon:SetDimensions(20, 20)
+    icon:SetAnchor(LEFT, arrow, RIGHT, 4, 0)
 
-  local label = WM:CreateControl(nil, row, CT_LABEL)
-  label:SetAnchor(LEFT, icon, RIGHT, 6, 0)
-  label:SetAnchor(RIGHT, row, RIGHT, 0, 0)
-  label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
-  label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+    local label = WM:CreateControl(nil, row, CT_LABEL)
+    label:SetAnchor(LEFT, icon, RIGHT, 6, 0)
+    label:SetAnchor(RIGHT, row, RIGHT, 0, 0)
+    label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
+    label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
 
-  row.arrow = arrow
-  row.icon = icon
-  row.label = label
-  row.highlight = highlight
-
+    row.arrow = arrow
+    row.icon = icon
+    row.label = label
+    row.highlight = highlight
+  end
+  row:SetHidden(false)
+  row._qtKey = key
+  if key then
+    self.rowLookup[key] = row
+    self.usedRowKeys[key] = true
+  end
   return row
 end
 
@@ -1327,8 +1381,16 @@ local function applyAutoDimensions(self)
   end
 end
 
-local function addQuestObjectiveRow(self, questEntry, objective, parentRow)
-  local row = acquireRow(self)
+local function makeQuestObjectiveKey(questEntry, objective)
+  local questKey = questEntry and questEntry.key or ""
+  local stepIndex = objective and objective.stepIndex or 0
+  local conditionIndex = objective and objective.conditionIndex or objective and objective.index or 0
+  return table.concat({ "qObj", tostring(questKey), tostring(stepIndex), tostring(conditionIndex) }, ":")
+end
+
+local function addQuestObjectiveRow(self, questEntry, objective)
+  local key = makeQuestObjectiveKey(questEntry, objective)
+  local row = acquireRow(self, key)
   row.rowType = ROW_TYPES.QUEST_OBJECTIVE
   row.data = {
     type = ROW_TYPES.QUEST_OBJECTIVE,
@@ -1345,8 +1407,19 @@ local function addQuestObjectiveRow(self, questEntry, objective, parentRow)
   return row
 end
 
+local function makeAchievementObjectiveKey(achievementEntry, objective)
+  local achId = achievementEntry and (achievementEntry.favoriteId or achievementEntry.id) or 0
+  local index = objective and (objective.index or 0)
+  local textHash = objective and objective.text or ""
+  if type(textHash) ~= "string" then
+    textHash = tostring(textHash)
+  end
+  return table.concat({ "achObj", tostring(achId), tostring(index), textHash }, ":")
+end
+
 local function addAchievementObjectiveRow(self, achievementEntry, objective)
-  local row = acquireRow(self)
+  local key = makeAchievementObjectiveKey(achievementEntry, objective)
+  local row = acquireRow(self, key)
   row.rowType = ROW_TYPES.ACH_OBJECTIVE
   row.data = {
     type = ROW_TYPES.ACH_OBJECTIVE,
@@ -1415,7 +1488,8 @@ end
 local function renderQuests(self, zones)
   for _, zoneEntry in ipairs(zones) do
     if zoneEntry.quests and #zoneEntry.quests > 0 then
-      local row = acquireRow(self)
+      local zoneKey = zoneEntry.key or zoneEntry.name or "zone"
+      local row = acquireRow(self, table.concat({ "zone", tostring(zoneKey) }, ":"))
       row.rowType = ROW_TYPES.ZONE
       local expanded = isZoneExpanded(self, zoneEntry.key)
       row.data = {
@@ -1428,7 +1502,8 @@ local function renderQuests(self, zones)
       appendRow(self, row)
       if expanded then
         for _, questEntry in ipairs(zoneEntry.quests) do
-          local questRow = acquireRow(self)
+          local questLookupKey = questEntry.key or questEntry.questId or questEntry.name or ""
+          local questRow = acquireRow(self, table.concat({ "quest", tostring(questLookupKey) }, ":"))
           questRow.rowType = ROW_TYPES.QUEST
           local questExpanded = isQuestExpanded(self, questEntry.key)
           if self.pendingQuestExpand and questEntry.questId and self.pendingQuestExpand[questEntry.questId] then
@@ -1448,7 +1523,7 @@ local function renderQuests(self, zones)
           appendRow(self, questRow)
           if questExpanded and questEntry.objectives then
             for _, objective in ipairs(questEntry.objectives) do
-              addQuestObjectiveRow(self, questEntry, objective, questRow)
+              addQuestObjectiveRow(self, questEntry, objective)
             end
           end
         end
@@ -1461,7 +1536,8 @@ local function renderAchievements(self, achievements)
   if not achievements or #achievements == 0 then
     return
   end
-  local row = acquireRow(self)
+  local rootRow = acquireRow(self, "achRoot")
+  local row = rootRow
   row.rowType = ROW_TYPES.ACH_ROOT
   local expanded = isZoneExpanded(self, "__achievements__")
   row.data = {
@@ -1476,7 +1552,8 @@ local function renderAchievements(self, achievements)
     return
   end
   for _, achievementEntry in ipairs(achievements) do
-    local achRow = acquireRow(self)
+    local achIdentifier = achievementEntry.favoriteId or achievementEntry.id
+    local achRow = acquireRow(self, table.concat({ "ach", tostring(achIdentifier or "") }, ":"))
     achRow.rowType = ROW_TYPES.ACHIEVEMENT
     local achExpanded = isAchievementExpanded(self, achievementEntry.id)
     achRow.data = {
@@ -1593,7 +1670,7 @@ function QT:Refresh(throttled)
   local needsRender = self.forceRender or questsChanged or achievementsChanged or not self.renderInitialized
 
   if needsRender then
-    releaseAllRows(self)
+    self:BeginLayout()
     if showQuests then
       renderQuests(self, zones)
     end
@@ -1603,6 +1680,7 @@ function QT:Refresh(throttled)
     else
       self.hasAchievements = false
     end
+    self:EndLayout()
     updateFonts(self)
     applyAutoDimensions(self)
     self.renderInitialized = true
@@ -2036,6 +2114,7 @@ function QT.Disable()
   end
   QT:SetDefaultTrackerHidden(false)
   QT.hasAchievements = false
+  releaseAllRows(QT)
 end
 
 function QT.Destroy()
@@ -2072,6 +2151,7 @@ function QT.Destroy()
   QT.scroll = nil
   QT.scrollChild = nil
   QT.rowPool = nil
+  QT.rowLookup = nil
   QT.activeRows = nil
   QT.questListCallback = nil
   QT.focusedQuestCallback = nil
