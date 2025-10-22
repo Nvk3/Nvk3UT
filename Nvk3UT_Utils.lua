@@ -161,6 +161,103 @@ local function safeAchievementInfo(id)
   return completed == true
 end
 
+local stageCache = {}
+
+local function currentTimestamp()
+  if type(GetTimeStamp) == "function" then
+    local ok, stamp = pcall(GetTimeStamp)
+    if ok and type(stamp) == "number" then
+      return stamp
+    end
+  end
+  if M and M.now then
+    local ok, stamp = pcall(M.now)
+    if ok and type(stamp) == "number" then
+      return stamp
+    end
+  end
+  return 0
+end
+
+local function computeCriteriaState(id)
+  if type(id) ~= "number" then
+    return nil
+  end
+  if type(GetAchievementNumCriteria) ~= "function" or type(GetAchievementCriterion) ~= "function" then
+    return nil
+  end
+
+  local okCount, numCriteria = pcall(GetAchievementNumCriteria, id)
+  if not okCount or type(numCriteria) ~= "number" or numCriteria <= 0 then
+    stageCache[id] = {
+      total = 0,
+      completed = 0,
+      stages = {},
+      allComplete = safeAchievementInfo(id) == true,
+      refreshedAt = currentTimestamp(),
+    }
+    return stageCache[id]
+  end
+
+  local completedCount = 0
+  local stageFlags = {}
+
+  for index = 1, numCriteria do
+    local okCrit, _, numCompleted, numRequired = pcall(GetAchievementCriterion, id, index)
+    if okCrit then
+      local achieved = false
+      local completedValue = tonumber(numCompleted) or 0
+      local requiredValue = tonumber(numRequired) or 0
+
+      if requiredValue > 0 then
+        achieved = completedValue >= requiredValue
+      else
+        achieved = completedValue > 0
+      end
+
+      stageFlags[index] = achieved == true
+      if stageFlags[index] then
+        completedCount = completedCount + 1
+      end
+    else
+      stageFlags[index] = false
+    end
+  end
+
+  local allComplete = numCriteria > 0 and completedCount >= numCriteria
+
+  stageCache[id] = {
+    total = numCriteria,
+    completed = completedCount,
+    stages = stageFlags,
+    allComplete = allComplete,
+    refreshedAt = currentTimestamp(),
+  }
+
+  return stageCache[id]
+end
+
+function M.GetAchievementCriteriaState(id, forceRefresh)
+  if forceRefresh then
+    stageCache[id] = nil
+  end
+  if not stageCache[id] then
+    stageCache[id] = computeCriteriaState(id)
+  end
+  return stageCache[id]
+end
+
+local function isCriteriaComplete(id)
+  local state = M.GetAchievementCriteriaState(id, true)
+  if not state then
+    return false
+  end
+  if state.total <= 0 then
+    return state.allComplete == true
+  end
+  return state.allComplete == true
+end
+
 local function getBaseAchievementId(id)
   if type(id) ~= "number" then
     return nil
@@ -223,11 +320,28 @@ function M.NormalizeAchievementId(id)
 end
 
 function M.IsMultiStageAchievement(id)
-  local chain = buildAchievementChain(id)
-  if not chain then
+  if type(id) ~= "number" then
     return false
   end
-  return #chain.stages > 1
+
+  local chain = buildAchievementChain(id)
+  if chain and #chain.stages > 1 then
+    return true
+  end
+
+  local criteria = M.GetAchievementCriteriaState(id)
+  if criteria and criteria.total and criteria.total > 1 then
+    return true
+  end
+
+  if chain and chain.startId and chain.startId ~= id then
+    local baseCriteria = M.GetAchievementCriteriaState(chain.startId)
+    if baseCriteria and baseCriteria.total and baseCriteria.total > 1 then
+      return true
+    end
+  end
+
+  return false
 end
 
 function M.IsAchievementFullyComplete(id)
@@ -236,19 +350,22 @@ function M.IsAchievementFullyComplete(id)
   end
 
   local chain = buildAchievementChain(id)
-  if not chain then
-    return safeAchievementInfo(id)
-  end
-
-  if #chain.stages <= 1 then
-    return safeAchievementInfo(chain.startId)
+  if not chain or #chain.stages <= 1 then
+    if isCriteriaComplete(id) then
+      return true
+    end
+    local normalized = chain and chain.startId or id
+    if normalized ~= id and isCriteriaComplete(normalized) then
+      return true
+    end
+    return safeAchievementInfo(normalized)
   end
 
   local utilsDebug = M.d
   local satisfiedUpstream = false
   for index = #chain.stages, 1, -1 do
     local stageId = chain.stages[index]
-    local stageComplete = safeAchievementInfo(stageId) == true
+    local stageComplete = isCriteriaComplete(stageId) or safeAchievementInfo(stageId) == true
     local satisfied = stageComplete or satisfiedUpstream
     if not satisfied then
       if utilsDebug and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then
@@ -263,7 +380,7 @@ function M.IsAchievementFullyComplete(id)
   end
 
   if chain.looped then
-    return safeAchievementInfo(id)
+    return isCriteriaComplete(id) or safeAchievementInfo(id)
   end
 
   return satisfiedUpstream
