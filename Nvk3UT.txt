@@ -7,12 +7,15 @@
 ## OptionalDependsOn: LibCustomMenu-2.0
 ## SavedVariables: Nvk3UT_SV Nvk3UT_Data_Favorites Nvk3UT_Data_Recent
 Nvk3UT_Utils.lua
+Nvk3UT_Achievements.lua
 Nvk3UT_Diagnostics.lua
 Nvk3UT_UI.lua
 Nvk3UT_Tooltips.lua
 Nvk3UT_FavoritesData.lua
+Nvk3UT_Favorites.lua
 Nvk3UT_Rebuild.lua
 Nvk3UT_RecentData.lua
+Nvk3UT_Recent.lua
 Nvk3UT_FavoritesIntegration.lua
 Nvk3UT_RecentIntegration.lua
 Nvk3UT_SelfTest.lua

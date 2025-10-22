@@ -21,6 +21,65 @@ local function OnLoaded(e,name)
         EVENT_MANAGER:RegisterForEvent("Nvk3UT_Status_Awarded", EVENT_ACHIEVEMENT_AWARDED, _nvk3ut_status_refresh_on_ach_event)
     end
 
+    local function _nvk3ut_handle_achievement_change(rawId)
+        local id = tonumber(rawId)
+        if not id then return end
+
+        local Ach = Nvk3UT and Nvk3UT.Achievements
+        if not (Ach and Ach.IsComplete) then
+            return
+        end
+
+        local isComplete = Ach.IsComplete(id)
+        if not isComplete then
+            return
+        end
+
+        local utils = Nvk3UT and Nvk3UT.Utils
+        local normalized = utils and utils.NormalizeAchievementId and utils.NormalizeAchievementId(id) or id
+
+        local favoritesData = Nvk3UT and Nvk3UT.FavoritesData
+        local favorites = Nvk3UT and Nvk3UT.Favorites
+        if favoritesData and favoritesData.IsFavorite and favorites and favorites.Remove then
+            local candidates = { id }
+            if normalized and normalized ~= id then
+                candidates[#candidates + 1] = normalized
+            end
+            for _, candidateId in ipairs(candidates) do
+                if favoritesData.IsFavorite(candidateId, "account") or favoritesData.IsFavorite(candidateId, "character") then
+                    favorites.Remove(candidateId)
+                end
+            end
+        end
+
+        local progress = Nvk3UT and Nvk3UT._recentSV and Nvk3UT._recentSV.progress
+        if progress and type(progress) == "table" then
+            local function tracked(val)
+                if val == nil then return false end
+                if progress[val] ~= nil then return true end
+                local key = tostring(val)
+                return progress[key] ~= nil
+            end
+            if tracked(id) or (normalized and normalized ~= id and tracked(normalized)) then
+                local recent = Nvk3UT and Nvk3UT.Recent
+                if recent and recent.CleanupCompleted then
+                    recent.CleanupCompleted()
+                end
+            end
+        end
+    end
+
+    if EVENT_MANAGER then
+        EVENT_MANAGER:UnregisterForEvent("Nvk3UT_AchievementWatcher_Update", EVENT_ACHIEVEMENT_UPDATED)
+        EVENT_MANAGER:RegisterForEvent("Nvk3UT_AchievementWatcher_Update", EVENT_ACHIEVEMENT_UPDATED, function(_, achievementId)
+            _nvk3ut_handle_achievement_change(achievementId)
+        end)
+        EVENT_MANAGER:UnregisterForEvent("Nvk3UT_AchievementWatcher_Awarded", EVENT_ACHIEVEMENT_AWARDED)
+        EVENT_MANAGER:RegisterForEvent("Nvk3UT_AchievementWatcher_Awarded", EVENT_ACHIEVEMENT_AWARDED, function(_, _, _, achievementId)
+            _nvk3ut_handle_achievement_change(achievementId)
+        end)
+    end
+
     if Nvk3UT.UI then Nvk3UT.UI.BuildLAM(); Nvk3UT.UI.UpdateStatus() end
     -- Enable integrations when ACHIEVEMENTS exists
     local function TryEnable(attempt)
