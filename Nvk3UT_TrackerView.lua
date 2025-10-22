@@ -24,10 +24,22 @@ local DIVIDER_ROW_HEIGHT = 2
 local ACHIEVEMENT_ROW_HEIGHT = 32
 
 local LEFT_BUTTON = (_G and _G.MOUSE_BUTTON_INDEX_LEFT) or MOUSE_BUTTON_INDEX_LEFT or 1
-local RIGHT_BUTTON = (_G and _G.MOUSE_BUTTON_INDEX_RIGHT) or MOUSE_BUTTON_INDEX_RIGHT or 2
 
 local CARET_TEXTURE_OPEN = "EsoUI/Art/Buttons/tree_open_up.dds"
 local CARET_TEXTURE_CLOSED = "EsoUI/Art/Buttons/tree_closed_up.dds"
+
+local DEFAULT_TRACKER_REASON = "Nvk3UT_TrackerView"
+local DEFAULT_TRACKER_FRAGMENTS = {
+    "FOCUSED_QUEST_TRACKER_FRAGMENT",
+    "FOCUSED_QUEST_TRACKER_ALWAYS_SHOW_FRAGMENT",
+    "FOCUSED_QUEST_TRACKER_TRACKED_FRAGMENT",
+    "FOCUSED_QUEST_TRACKER_FOCUSED_FRAGMENT",
+    "GAMEPAD_QUEST_TRACKER_FRAGMENT",
+}
+
+local COMBAT_EVENT_NAMESPACE = "Nvk3UT_TrackerViewCombat"
+
+Module.isInCombat = Module.isInCombat == true
 
 local function debugLog(message)
     if d then
@@ -141,6 +153,108 @@ local function setAchievementCollapsed(achievementId, collapsed)
     end
 end
 
+local function formatProgressValue(current, maximum)
+    local maxValue = tonumber(maximum) or 0
+    if maxValue <= 0 then
+        return ""
+    end
+    local currentValue = tonumber(current) or 0
+    if currentValue > maxValue then
+        currentValue = maxValue
+    elseif currentValue < 0 then
+        currentValue = 0
+    end
+    return string.format("%d/%d", currentValue, maxValue)
+end
+
+local function calculateQuestProgress(quest)
+    if not quest or not quest.objectives then
+        return ""
+    end
+    local totalCurrent = 0
+    local totalMax = 0
+    for _, objective in ipairs(quest.objectives) do
+        local maxValue = tonumber(objective.max) or 0
+        if maxValue > 0 then
+            local currentValue = tonumber(objective.current) or 0
+            if currentValue > maxValue then
+                currentValue = maxValue
+            elseif currentValue < 0 then
+                currentValue = 0
+            end
+            totalCurrent = totalCurrent + currentValue
+            totalMax = totalMax + maxValue
+        end
+    end
+    if totalMax > 0 then
+        return string.format("%d/%d", totalCurrent, totalMax)
+    end
+    return ""
+end
+
+local function shouldHideDefaultTracker()
+    local sv = getTrackerSV()
+    local behavior = sv and sv.behavior
+    return behavior and behavior.hideDefault == true
+end
+
+local function shouldHideInCombat()
+    local sv = getTrackerSV()
+    local behavior = sv and sv.behavior
+    return behavior and behavior.hideInCombat == true
+end
+
+local function applyDefaultTrackerVisibility()
+    local hidden = shouldHideDefaultTracker()
+    local trackerModule = M and M.Questtracker
+    if trackerModule and trackerModule.SetDefaultTrackerHidden then
+        trackerModule:SetDefaultTrackerHidden(hidden)
+        return
+    end
+
+    for _, fragmentName in ipairs(DEFAULT_TRACKER_FRAGMENTS) do
+        local fragment = _G and _G[fragmentName]
+        if fragment and fragment.SetHiddenForReason then
+            fragment:SetHiddenForReason(DEFAULT_TRACKER_REASON, hidden)
+        end
+    end
+
+    local focusedTracker = _G and _G.FOCUSED_QUEST_TRACKER
+    if focusedTracker then
+        if focusedTracker.SetHiddenForReason then
+            focusedTracker.SetHiddenForReason(DEFAULT_TRACKER_REASON, hidden)
+        elseif focusedTracker.SetHidden then
+            focusedTracker:SetHidden(hidden)
+        end
+        local control = focusedTracker.control
+        if control and control.SetHidden then
+            control:SetHidden(hidden)
+        end
+    end
+end
+
+local function shouldHideTracker()
+    if not isTrackerEnabled() then
+        return true
+    end
+    if shouldHideInCombat() and Module.isInCombat then
+        return true
+    end
+    return false
+end
+
+local function applyRootHiddenState()
+    if not Module.rootControl then
+        return
+    end
+    Module.rootControl:SetHidden(shouldHideTracker())
+end
+
+local function onCombatState(_, inCombat)
+    Module.isInCombat = inCombat == true
+    applyRootHiddenState()
+end
+
 local function anchorTooltip()
     if not areTooltipsEnabled() then
         return false
@@ -240,35 +354,6 @@ local function toggleQuestCollapsedFor(control)
     Module.MarkDirty()
 end
 
-local function openQuestContextMenu(control)
-    if type(ClearMenu) ~= "function" or type(AddMenuItem) ~= "function" or type(ShowMenu) ~= "function" then
-        return
-    end
-
-    local data = control and control.data
-    local quest = data and data.quest
-    local questKey = data and data.questKey
-    if not quest or not questKey then
-        return
-    end
-
-    ClearMenu()
-
-    local isTracked = quest.isTracked ~= false
-    local toggleLabel = isTracked and "Remove from tracker" or "Track in tracker"
-
-    AddMenuItem(
-        toggleLabel,
-        function()
-            if M.QuestModel and M.QuestModel.SetTracked then
-                M.QuestModel.SetTracked(questKey, not isTracked)
-            end
-        end
-    )
-
-    ShowMenu(control)
-end
-
 local function setupQuestTitleRow(control, data)
     control.data = data
     local label = control.label
@@ -306,15 +391,28 @@ local function setupQuestTitleRow(control, data)
         control.caret = caret
     end
 
+    local progressLabel = control.progress
+    if not progressLabel then
+        progressLabel = control:GetNamedChild("Progress")
+        if not progressLabel then
+            progressLabel = WM:CreateControl(nil, control, CT_LABEL)
+            progressLabel:SetFont("ZoFontGame")
+            progressLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+            progressLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
+            progressLabel:SetAnchor(RIGHT, control, RIGHT, -8, 0)
+        end
+        control.progress = progressLabel
+    end
+
     if not control.handlersRegistered then
         control:SetMouseEnabled(true)
         control:SetHandler("OnMouseEnter", showQuestTooltip)
         control:SetHandler("OnMouseExit", hideTooltip)
         control:SetHandler("OnMouseUp", function(ctrl, button, upInside)
-            if not upInside or button ~= RIGHT_BUTTON then
+            if not upInside or button ~= LEFT_BUTTON then
                 return
             end
-            openQuestContextMenu(ctrl)
+            toggleQuestCollapsedFor(ctrl)
         end)
         control.handlersRegistered = true
     end
@@ -328,11 +426,24 @@ local function setupQuestTitleRow(control, data)
         caret:SetTexture(collapsed and CARET_TEXTURE_CLOSED or CARET_TEXTURE_OPEN)
     end
 
+    if label then
+        label:ClearAnchors()
+        label:SetAnchor(TOPLEFT, caret or control, caret and RIGHT or LEFT, caret and 8 or 24, 0)
+        if progressLabel then
+            label:SetAnchor(BOTTOMRIGHT, progressLabel, BOTTOMLEFT, -8, 0)
+        else
+            label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, -8, 0)
+        end
+    end
+
     local text = quest and (quest.displayName or quest.title) or ""
     if quest and quest.stepText and quest.stepText ~= "" then
         text = string.format("%s — %s", text, quest.stepText)
     end
     label:SetText(text)
+    if progressLabel then
+        progressLabel:SetText(calculateQuestProgress(quest))
+    end
 end
 
 local function resetRow(control)
@@ -368,17 +479,34 @@ local function setupQuestStepRow(control, data)
         indentLevel = 0
     end
     local indent = indentLevel * 20
+    local progressLabel = control.progress
+    if not progressLabel then
+        progressLabel = control:GetNamedChild("Progress")
+        if not progressLabel then
+            progressLabel = WM:CreateControl(nil, control, CT_LABEL)
+            progressLabel:SetFont("ZoFontGame")
+            progressLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+            progressLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
+            progressLabel:SetAnchor(RIGHT, control, RIGHT, -8, 0)
+        end
+        control.progress = progressLabel
+    end
+
     label:ClearAnchors()
     label:SetAnchor(TOPLEFT, control, TOPLEFT, 24 + indent, 0)
-    label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, -8, 0)
+    if progressLabel then
+        label:SetAnchor(BOTTOMRIGHT, progressLabel, BOTTOMLEFT, -8, 0)
+    else
+        label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, -8, 0)
+    end
 
     local text = ""
     local objective = data.objective
+    local progressText = ""
     if objective then
         text = objective.text or ""
-        if text ~= "" and objective.max and objective.max > 0 then
-            text = string.format("• %s (%d/%d)", text, objective.current or 0, objective.max)
-        elseif text ~= "" then
+        progressText = formatProgressValue(objective.current, objective.max)
+        if text ~= "" then
             text = string.format("• %s", text)
         end
     elseif data.text and data.text ~= "" then
@@ -386,6 +514,9 @@ local function setupQuestStepRow(control, data)
     end
 
     label:SetText(text)
+    if progressLabel then
+        progressLabel:SetText(progressText or "")
+    end
 end
 
 local function setupDividerRow(control, data)
@@ -416,12 +547,29 @@ local function setupAchievementRow(control, data)
         control:SetHandler("OnMouseExit", hideTooltip)
     end
 
+    local progressLabel = control.progress
+    if not progressLabel then
+        progressLabel = control:GetNamedChild("Progress")
+        if not progressLabel then
+            progressLabel = WM:CreateControl(nil, control, CT_LABEL)
+            progressLabel:SetFont("ZoFontGame")
+            progressLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+            progressLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
+            progressLabel:SetAnchor(RIGHT, control, RIGHT, -8, 0)
+        end
+        control.progress = progressLabel
+    end
+
     local achievement = data.achievement
     local name = achievement and achievement.name or ""
-    if achievement and achievement.progress and achievement.progress.max and achievement.progress.max > 0 then
-        name = string.format("%s (%d/%d)", name, achievement.progress.cur or 0, achievement.progress.max)
+    local progressText = ""
+    if achievement and achievement.progress then
+        progressText = formatProgressValue(achievement.progress.cur, achievement.progress.max)
     end
     label:SetText(name)
+    if progressLabel then
+        progressLabel:SetText(progressText or "")
+    end
 end
 
 local function registerDataTypes()
@@ -593,19 +741,12 @@ local function refreshNow()
         return
     end
 
-    if not isTrackerEnabled() then
-        if Module.rootControl then
-            Module.rootControl:SetHidden(true)
-        end
-        return
+    if isTrackerEnabled() then
+        local feed = buildFeed()
+        commitFeed(feed)
     end
 
-    local feed = buildFeed()
-    commitFeed(feed)
-
-    if Module.rootControl then
-        Module.rootControl:SetHidden(false)
-    end
+    applyRootHiddenState()
 end
 
 local function scheduleRefresh()
@@ -631,7 +772,9 @@ local function onAchievementsChanged()
     Module.MarkDirty()
 end
 
-local function onSettingsChanged()
+local function onSettingsChanged(_)
+    applyDefaultTrackerVisibility()
+    applyRootHiddenState()
     Module.MarkDirty()
 end
 
@@ -699,6 +842,21 @@ function Module.Init()
 
     createTrackerControls()
 
+    if EM and EM.RegisterForEvent then
+        EM:RegisterForEvent(COMBAT_EVENT_NAMESPACE, EVENT_PLAYER_COMBAT_STATE, onCombatState)
+    end
+
+    if type(IsUnitInCombat) == "function" then
+        local okCombat, inCombat = pcall(IsUnitInCombat, "player")
+        if okCombat then
+            Module.isInCombat = inCombat == true
+        else
+            Module.isInCombat = false
+        end
+    else
+        Module.isInCombat = false
+    end
+
     if M.Subscribe then
         M.Subscribe("quests:changed", onQuestsChanged)
         M.Subscribe("ach:changed", onAchievementsChanged)
@@ -708,6 +866,9 @@ function Module.Init()
         M.Core.Subscribe("ach:changed", onAchievementsChanged)
         M.Core.Subscribe("settings:changed", onSettingsChanged)
     end
+
+    applyDefaultTrackerVisibility()
+    applyRootHiddenState()
 
     Module.initialized = true
     Module.MarkDirty()

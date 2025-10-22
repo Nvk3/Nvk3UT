@@ -10,7 +10,10 @@
                 </Texture>
                 <Label name="$(parent)Label" font="ZoFontGameBold" horizontalAlignment="LEFT" verticalAlignment="CENTER">
                     <Anchor point="TOPLEFT" relativeTo="$(parent)Caret" relativePoint="TOPRIGHT" offsetX="8" offsetY="0" />
-                    <Anchor point="BOTTOMRIGHT" offsetX="-8" offsetY="0" />
+                    <Anchor point="BOTTOMRIGHT" relativeTo="$(parent)Progress" relativePoint="BOTTOMLEFT" offsetX="-8" offsetY="0" />
+                </Label>
+                <Label name="$(parent)Progress" font="ZoFontGame" horizontalAlignment="RIGHT" verticalAlignment="CENTER">
+                    <Anchor point="RIGHT" offsetX="-8" />
                 </Label>
             </Controls>
         </Control>
@@ -19,7 +22,10 @@
             <Controls>
                 <Label name="$(parent)Label" font="ZoFontGame" horizontalAlignment="LEFT" verticalAlignment="CENTER">
                     <Anchor point="TOPLEFT" offsetX="24" offsetY="0" />
-                    <Anchor point="BOTTOMRIGHT" offsetX="-8" offsetY="0" />
+                    <Anchor point="BOTTOMRIGHT" relativeTo="$(parent)Progress" relativePoint="BOTTOMLEFT" offsetX="-8" offsetY="0" />
+                </Label>
+                <Label name="$(parent)Progress" font="ZoFontGame" horizontalAlignment="RIGHT" verticalAlignment="CENTER">
+                    <Anchor point="RIGHT" offsetX="-8" />
                 </Label>
             </Controls>
         </Control>
@@ -36,7 +42,10 @@
             <Controls>
                 <Label name="$(parent)Label" font="ZoFontGameBold" horizontalAlignment="LEFT" verticalAlignment="CENTER">
                     <Anchor point="TOPLEFT" offsetX="8" offsetY="0" />
-                    <Anchor point="BOTTOMRIGHT" offsetX="-8" offsetY="0" />
+                    <Anchor point="BOTTOMRIGHT" relativeTo="$(parent)Progress" relativePoint="BOTTOMLEFT" offsetX="-8" offsetY="0" />
+                </Label>
+                <Label name="$(parent)Progress" font="ZoFontGame" horizontalAlignment="RIGHT" verticalAlignment="CENTER">
+                    <Anchor point="RIGHT" offsetX="-8" />
                 </Label>
             </Controls>
         </Control>

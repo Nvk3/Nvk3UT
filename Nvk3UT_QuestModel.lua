@@ -325,7 +325,8 @@ function Module.Scan()
 
     for _, questData in ipairs(allQuests) do
         local questIndex = questData.questIndex
-        if questIndex and isQuestTracked(questIndex, trackedLookup) then
+        if questIndex then
+            local isTrackedFlag = isQuestTracked(questIndex, trackedLookup)
             local questId = questData.questId or safeCall(GetJournalQuestId, questIndex) or 0
             local rawName = questData.name or questData.questName or ""
             local questName = sanitizeText(rawName)
@@ -361,7 +362,7 @@ function Module.Scan()
                 zoneOrderIndex = categoryEntry.orderIndex,
                 zoneIcon = "EsoUI/Art/Journal/journal_tabIcon_locations_up.dds",
                 isComplete = questData.isComplete or false,
-                isTracked = true,
+                isTracked = isTrackedFlag == true,
                 isCollapsed = collapseLookup and collapseLookup[questKey] == true or false,
                 objectives = objectives,
                 steps = steps,
