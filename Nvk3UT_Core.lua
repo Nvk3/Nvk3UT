@@ -1,5 +1,75 @@
 Nvk3UT = Nvk3UT or {}
-local UI = Nvk3UT.UI
+
+local M = Nvk3UT
+
+M.Core = M.Core or {}
+local Module = M.Core
+
+local subscribers = {}
+
+local function debugLog(message)
+    if d then
+        d(string.format("[Nvk3UT] Core: %s", message))
+    end
+end
+
+function Module.Subscribe(topic, fn)
+    if type(topic) ~= "string" or type(fn) ~= "function" then
+        return
+    end
+
+    local bucket = subscribers[topic]
+    if not bucket then
+        bucket = {}
+        subscribers[topic] = bucket
+    end
+
+    bucket[#bucket + 1] = fn
+end
+
+function Module.Publish(topic, payload)
+    local bucket = subscribers[topic]
+    if not bucket then
+        return
+    end
+
+    for index = 1, #bucket do
+        local callback = bucket[index]
+        local ok, err = pcall(callback, payload)
+        if not ok then
+            debugLog(string.format("Publish error for '%s': %s", topic, tostring(err)))
+        end
+    end
+end
+
+local CORE_EVENT_NAMESPACE = "Nvk3UT_Core_OnLoaded"
+
+local function initializeSavedVars()
+    Module.SV = ZO_SavedVars:NewAccountWide("Nvk3UT_SV", 1, nil, { layout = { scale = 1, locked = false }, settings = {} })
+end
+
+local function initializeModules()
+    if M.LAM and M.LAM.Init then
+        M.LAM.Init()
+    end
+
+    if M.QuestModel and M.QuestModel.Init then
+        M.QuestModel.Init()
+    end
+
+    if M.AchievementModel and M.AchievementModel.Init then
+        M.AchievementModel.Init()
+    end
+
+    if M.Tracker and M.Tracker.Init then
+        M.Tracker.Init()
+    end
+
+    if M.TrackerView and M.TrackerView.Init then
+        M.TrackerView.Init()
+    end
+end
+
 local function trackerColor(r, g, b, a)
     return { r = r, g = g, b = b, a = a or 1 }
 end
@@ -169,34 +239,15 @@ local function OnLoaded(e,name)
             )
         end
     end
-    EVENT_MANAGER:UnregisterForEvent("Nvk3UT_Load", EVENT_ADD_ON_LOADED)
+
+    initializeSavedVars()
+    initializeModules()
+
+    EVENT_MANAGER:UnregisterForEvent(CORE_EVENT_NAMESPACE, EVENT_ADD_ON_LOADED)
 end
-EVENT_MANAGER:RegisterForEvent("Nvk3UT_Load", EVENT_ADD_ON_LOADED, OnLoaded)
+EVENT_MANAGER:RegisterForEvent(CORE_EVENT_NAMESPACE, EVENT_ADD_ON_LOADED, OnLoaded)
 SLASH_COMMANDS["/nvk3test"]=function() if Nvk3UT.Diagnostics then Nvk3UT.Diagnostics.SelfTest(); Nvk3UT.Diagnostics.SystemTest() end end
 
 
 -- Enable Completed category
 if Nvk3UT_EnableCompletedCategory then Nvk3UT_EnableCompletedCategory() end
-
-Nvk3UT = Nvk3UT or {}
-local M = Nvk3UT
-
-M.Core = M.Core or {}
-local Module = M.Core
-
-local function debugLog(message)
-    if d then
-        d(string.format("[Nvk3UT] Core: %s", message))
-    end
-end
-
-function Module.Init()
-    debugLog("Init() stub invoked")
-    -- TODO: Bootstrap addon initialization within the new module layout.
-end
-
-function Module.ForceRefresh()
-    -- TODO: Provide a hook for forcing full addon refresh flows.
-end
-
-return
