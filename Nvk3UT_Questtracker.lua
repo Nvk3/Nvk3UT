@@ -27,6 +27,13 @@ local DEFAULT_ICONS = {
   objective = "EsoUI/Art/Journal/journal_tabIcon_achievements_up.dds",
 }
 
+local GLOBALS = _G or {}
+local MODIFY_NONE = GLOBALS.MODIFY_TEXT_TYPE_NONE or 0
+local MODIFY_UPPERCASE = GLOBALS.MODIFY_TEXT_TYPE_UPPERCASE or 1
+local WRAP_ELLIPSIS = GLOBALS.TEXT_WRAP_MODE_ELLIPSIS or (type(TEXT_WRAP_MODE_ELLIPSIS) == "number" and TEXT_WRAP_MODE_ELLIPSIS)
+  or 1
+local TEX_BLEND_ALPHA = GLOBALS.TEX_BLEND_MODE_ALPHA or 1
+
 local LEFT_MOUSE_BUTTON = (_G and _G.MOUSE_BUTTON_INDEX_LEFT) or MOUSE_BUTTON_INDEX_LEFT or 1
 local RIGHT_MOUSE_BUTTON = (_G and _G.MOUSE_BUTTON_INDEX_RIGHT) or MOUSE_BUTTON_INDEX_RIGHT or 2
 
@@ -190,71 +197,22 @@ local function formatCategoryDisplayName(rawName)
   return sanitized
 end
 
-local function normalizeCategoryKey(name)
-  local sanitized = sanitizeText(name)
-  if sanitized == "" then
-    return ""
-  end
-  if type(zo_strlower) == "function" then
-    local okLower, lower = pcall(zo_strlower, sanitized)
-    if okLower and lower then
-      return lower
+local function getQuestDisplayIcon(displayType)
+  if QUEST_JOURNAL_KEYBOARD and QUEST_JOURNAL_KEYBOARD.GetIconTexture then
+    local ok, texture = pcall(QUEST_JOURNAL_KEYBOARD.GetIconTexture, QUEST_JOURNAL_KEYBOARD, displayType)
+    if ok and texture and texture ~= "" then
+      return texture
     end
   end
-  return string.lower(sanitized)
+  return DEFAULT_ICONS.quest
 end
 
-local function buildQuestCategoryLookup()
-  local lookup = {}
-  local normalizedLookup = {}
-  local orderCount = 0
-  if type(GetNumJournalCategories) ~= "function" or type(GetJournalCategoryInfo) ~= "function" then
-    return lookup, orderCount, normalizedLookup
+local function formatQuestLabel(name, level)
+  local questName = sanitizeText(name)
+  if level and level > 0 then
+    return string.format("[%d] %s", level, questName)
   end
-  local okCount, numCategories = pcall(GetNumJournalCategories)
-  if not okCount or not numCategories or numCategories <= 0 then
-    return lookup, orderCount, normalizedLookup
-  end
-  local hasSubFunction = type(GetJournalSubCategoryInfo) == "function"
-  for categoryIndex = 1, numCategories do
-    local okCategory, categoryName, numSubCategories = pcall(GetJournalCategoryInfo, categoryIndex)
-    if okCategory and categoryName and categoryName ~= "" then
-      orderCount = orderCount + 1
-      local key = string.format("%d:0", categoryIndex)
-      local info = {
-        order = orderCount,
-        name = formatCategoryDisplayName(categoryName),
-        categoryIndex = categoryIndex,
-        subCategoryIndex = 0,
-        normalized = normalizeCategoryKey(categoryName),
-      }
-      lookup[key] = info
-      if info.normalized ~= "" then
-        normalizedLookup[info.normalized] = info
-      end
-    end
-    if okCategory and hasSubFunction and numSubCategories and numSubCategories > 0 then
-      for subCategoryIndex = 1, numSubCategories do
-        local okSub, subName = pcall(GetJournalSubCategoryInfo, categoryIndex, subCategoryIndex)
-        if okSub and subName and subName ~= "" then
-          orderCount = orderCount + 1
-          local subKey = string.format("%d:%d", categoryIndex, subCategoryIndex)
-          local info = {
-            order = orderCount,
-            name = formatCategoryDisplayName(subName),
-            categoryIndex = categoryIndex,
-            subCategoryIndex = subCategoryIndex,
-            normalized = normalizeCategoryKey(subName),
-          }
-          lookup[subKey] = info
-          if info.normalized ~= "" then
-            normalizedLookup[info.normalized] = info
-          end
-        end
-      end
-    end
-  end
-  return lookup, orderCount, normalizedLookup
+  return questName
 end
 
 local function questStepKey(questIndex, questId)
@@ -400,163 +358,116 @@ local function gatherQuestObjectives(questIndex)
 end
 
 local function collectQuests()
-  local orderedZones = {}
-  if type(GetNumJournalQuests) ~= "function" then
-    return orderedZones
+  local categories = {}
+  if not (QUEST_JOURNAL_MANAGER and QUEST_JOURNAL_MANAGER.GetQuestListData) then
+    return categories
+  end
+  local okData, allQuests, allCategories = pcall(QUEST_JOURNAL_MANAGER.GetQuestListData, QUEST_JOURNAL_MANAGER)
+  if not okData or type(allQuests) ~= "table" or type(allCategories) ~= "table" then
+    return categories
   end
   local trackedLookup = gatherTrackedQuestSet()
-  local zonesByKey = {}
-  local categoryLookup, baseOrderCount, normalizedLookup = buildQuestCategoryLookup()
-  local fallbackLookup = {}
-  local fallbackCount = 0
-  local questCount = GetNumJournalQuests()
-  for journalIndex = 1, questCount do
-    local questName = ""
-    local questTracked
-    local activeStepText = ""
-    if type(GetJournalQuestInfo) == "function" then
-      local okQuest, name, _, stepText, _, trackedFlag = pcall(GetJournalQuestInfo, journalIndex)
-      if okQuest then
-        questName = sanitizeText(name)
-        activeStepText = sanitizeText(stepText)
-        questTracked = trackedFlag
-      end
+  local categoriesByName = {}
+  local orderCounter = 0
+
+  for index, categoryData in ipairs(allCategories) do
+    local sanitizedName = formatCategoryDisplayName(categoryData.name)
+    orderCounter = orderCounter + 1
+    local entry = {
+      key = string.format("cat:%d:%d", categoryData.type or 0, index),
+      name = sanitizedName ~= "" and sanitizedName or LABELS.generalZone,
+      icon = DEFAULT_ICONS.zone,
+      quests = {},
+      orderType = categoryData.type or 0,
+      orderIndex = orderCounter,
+    }
+    categories[#categories + 1] = entry
+    categoriesByName[categoryData.name] = entry
+  end
+
+  local function ensureCategory(categoryName, categoryType)
+    local lookupKey = categoryName ~= "" and categoryName or LABELS.generalZone
+    local existing = categoriesByName[lookupKey]
+    if existing then
+      return existing
     end
-    if questTracked == nil or questTracked == false then
-      questTracked = isQuestTracked(journalIndex, trackedLookup)
-    end
-    if questTracked then
-      local questId = safeCall(GetJournalQuestId, journalIndex) or 0
-      local zoneName = ""
-      local zoneId
-      if type(GetJournalQuestLocationInfo) == "function" then
-        local okLocation, rawZoneName, _, locationZoneId = pcall(GetJournalQuestLocationInfo, journalIndex)
-        if okLocation then
-          zoneName = sanitizeText(rawZoneName)
-          zoneId = locationZoneId
-        end
-      end
-      if zoneName == "" then
-        zoneName = sanitizeText(safeCall(GetJournalQuestZoneName, journalIndex) or "")
-      end
-      if zoneId == nil then
-        zoneId = safeCall(GetJournalQuestZoneId, journalIndex)
-      end
+    local displayName = formatCategoryDisplayName(lookupKey)
+    orderCounter = orderCounter + 1
+    local fallback = {
+      key = string.format("cat:%d:%d", categoryType or 999, orderCounter),
+      name = displayName,
+      icon = DEFAULT_ICONS.zone,
+      quests = {},
+      orderType = categoryType or 999,
+      orderIndex = orderCounter,
+    }
+    categories[#categories + 1] = fallback
+    categoriesByName[lookupKey] = fallback
+    return fallback
+  end
+
+  for _, questData in ipairs(allQuests) do
+    local questIndex = questData.questIndex
+    if questIndex and isQuestTracked(questIndex, trackedLookup) then
+      local questName = sanitizeText(questData.name or questData.questName or "")
       if questName == "" then
-        questName = sanitizeText(safeCall(GetJournalQuestName, journalIndex) or "")
+        questName = sanitizeText(safeCall(GetJournalQuestName, questIndex) or "")
       end
-      local parentCategoryIndex = safeCall(GetJournalQuestParentCategoryIndex, journalIndex)
-      local subCategoryIndex = safeCall(GetJournalQuestSubCategoryIndex, journalIndex)
-      if not parentCategoryIndex or parentCategoryIndex <= 0 then
-        parentCategoryIndex = nil
-        subCategoryIndex = nil
-      else
-        subCategoryIndex = subCategoryIndex or 0
-      end
-      local zoneKey
-      local displayName
-      local sortOrder
-      if parentCategoryIndex then
-        local catKey = string.format("%d:%d", parentCategoryIndex, subCategoryIndex or 0)
-        local catInfo = categoryLookup[catKey]
-        if catInfo then
-          zoneKey = string.format("cat:%s", catKey)
-          displayName = catInfo.name
-          sortOrder = catInfo.order
-        end
-      end
-      if not zoneKey and zoneName ~= "" then
-        local normalized = normalizeCategoryKey(zoneName)
-        if normalized ~= "" then
-          local catInfo = normalizedLookup[normalized]
-          if catInfo then
-            local catKey = string.format("%d:%d", catInfo.categoryIndex, catInfo.subCategoryIndex or 0)
-            zoneKey = string.format("cat:%s", catKey)
-            displayName = catInfo.name
-            sortOrder = catInfo.order
-          end
-        end
-      end
-      if not zoneKey then
-        local fallbackName = zoneName ~= "" and zoneName or LABELS.generalZone
-        displayName = formatCategoryDisplayName(fallbackName)
-        if zoneId and zoneId ~= 0 then
-          zoneKey = string.format("zone:%d", zoneId)
-        else
-          local normalizedFallback = normalizeCategoryKey(fallbackName)
-          if normalizedFallback ~= "" then
-            zoneKey = "zone:" .. normalizedFallback
-          else
-            zoneKey = "zone:misc"
-          end
-        end
-        local fallbackInfo = fallbackLookup[zoneKey]
-        if not fallbackInfo then
-          fallbackCount = fallbackCount + 1
-          fallbackInfo = {
-            order = baseOrderCount + fallbackCount,
-            name = displayName,
-          }
-          fallbackLookup[zoneKey] = fallbackInfo
-        end
-        sortOrder = fallbackInfo.order
-      end
-      local zoneEntry = zonesByKey[zoneKey]
-      if not zoneEntry then
-        zoneEntry = {
-          key = zoneKey,
-          name = displayName ~= "" and displayName or LABELS.generalZone,
-          icon = DEFAULT_ICONS.zone,
-          quests = {},
-          order = sortOrder,
-        }
-        zonesByKey[zoneKey] = zoneEntry
-        orderedZones[#orderedZones + 1] = zoneEntry
-      else
-        if displayName and displayName ~= "" then
-          zoneEntry.name = displayName
-        end
-        if sortOrder and (not zoneEntry.order or sortOrder < zoneEntry.order) then
-          zoneEntry.order = sortOrder
-        end
-      end
-      local objectives, stepSummaries = gatherQuestObjectives(journalIndex)
-      local stepText = stepSummaries[1] or activeStepText or ""
+      local questId = questData.questId or safeCall(GetJournalQuestId, questIndex) or 0
+      local categoryName = questData.categoryName or LABELS.generalZone
+      local categoryType = questData.categoryType or 0
+      local categoryEntry = ensureCategory(categoryName, categoryType)
+      local objectives, stepSummaries = gatherQuestObjectives(questIndex)
+      local stepText = stepSummaries[1]
+        or sanitizeText(questData.trackerOverrideText or questData.stepText or questData.conditionText or "")
+      local displayName = formatQuestLabel(questName, questData.level)
       local questEntry = {
         type = ROW_TYPES.QUEST,
-        name = questName,
+        name = questName ~= "" and questName or LABELS.generalZone,
+        displayName = displayName,
         questId = questId,
-        journalIndex = journalIndex,
-        zoneKey = zoneKey,
+        journalIndex = questIndex,
+        zoneKey = categoryEntry.key,
         objectives = objectives,
         steps = stepSummaries,
         stepText = stepText,
-        key = questStepKey(journalIndex, questId),
-        icon = DEFAULT_ICONS.quest,
-        order = journalIndex,
+        key = questStepKey(questIndex, questId),
+        icon = getQuestDisplayIcon(questData.displayType),
+        order = questData.sortOrder or questIndex,
+        level = questData.level,
+        displayType = questData.displayType,
       }
-      zoneEntry.quests[#zoneEntry.quests + 1] = questEntry
+      categoryEntry.quests[#categoryEntry.quests + 1] = questEntry
     end
   end
-  table.sort(orderedZones, function(a, b)
-    local aOrder = a.order or math.huge
-    local bOrder = b.order or math.huge
-    if aOrder ~= bOrder then
-      return aOrder < bOrder
+
+  local filtered = {}
+  for _, categoryEntry in ipairs(categories) do
+    if #categoryEntry.quests > 0 then
+      filtered[#filtered + 1] = categoryEntry
     end
-    return a.name < b.name
+  end
+
+  table.sort(filtered, function(left, right)
+    if left.orderType ~= right.orderType then
+      return left.orderType < right.orderType
+    end
+    if left.orderIndex ~= right.orderIndex then
+      return left.orderIndex < right.orderIndex
+    end
+    return left.name < right.name
   end)
-  for _, zoneEntry in ipairs(orderedZones) do
-    table.sort(zoneEntry.quests, function(a, b)
-      local aOrder = a.order or math.huge
-      local bOrder = b.order or math.huge
-      if aOrder ~= bOrder then
-        return aOrder < bOrder
+
+  for _, categoryEntry in ipairs(filtered) do
+    table.sort(categoryEntry.quests, function(left, right)
+      if left.order ~= right.order then
+        return left.order < right.order
       end
-      return a.name < b.name
+      return left.name < right.name
     end)
   end
-  return orderedZones
+
+  return filtered
 end
 
 local function getFavoriteScope()
@@ -972,6 +883,9 @@ local function releaseRow(self, row)
   row.data = nil
   row.zoneName = nil
   row.questName = nil
+  if row.highlight then
+    row.highlight:SetAlpha(0)
+  end
   self.rowPool[#self.rowPool + 1] = row
 end
 
@@ -1013,11 +927,24 @@ local function acquireRow(self)
     end
   end)
   row:SetHandler("OnMouseEnter", function(control)
+    if control.highlight then
+      control.highlight:SetAlpha(0.18)
+    end
     QT:OnRowEnter(control)
   end)
   row:SetHandler("OnMouseExit", function(control)
+    if control.highlight then
+      control.highlight:SetAlpha(0)
+    end
     clearTooltip()
   end)
+
+  local highlight = WM:CreateControl(nil, row, CT_TEXTURE)
+  highlight:SetAnchorFill()
+  highlight:SetTexture("EsoUI/Art/Miscellaneous/listItem_highlight.dds")
+  highlight:SetBlendMode(TEX_BLEND_ALPHA)
+  highlight:SetAlpha(0)
+  highlight:SetDrawLayer(DL_BACKGROUND)
 
   local arrow = WM:CreateControl(nil, row, CT_TEXTURE)
   arrow:SetDimensions(16, 16)
@@ -1036,6 +963,7 @@ local function acquireRow(self)
   row.arrow = arrow
   row.icon = icon
   row.label = label
+  row.highlight = highlight
 
   return row
 end
@@ -1057,6 +985,9 @@ end
 local function configureRow(self, row, rowType, text, iconPath, isCollapsible, expanded)
   local height = ROW_HEIGHT[rowType] or 24
   row:SetHeight(height)
+  if row.highlight then
+    row.highlight:SetAlpha(0)
+  end
   row.arrowHidden = not isCollapsible
   configureArrow(row, expanded)
   if row.arrowHidden then
@@ -1075,11 +1006,18 @@ local function configureRow(self, row, rowType, text, iconPath, isCollapsible, e
   local iconSize = ICON_SIZE[rowType] or 18
   row.icon:SetDimensions(iconSize, iconSize)
   if iconPath and iconPath ~= "" then
+    row.icon:SetColor(1, 1, 1, 1)
     row.icon:SetTexture(iconPath)
     row.icon:SetHidden(false)
   else
     row.icon:SetHidden(true)
   end
+  if rowType == ROW_TYPES.ZONE or rowType == ROW_TYPES.ACH_ROOT then
+    row.label:SetModifyTextType(MODIFY_UPPERCASE)
+  else
+    row.label:SetModifyTextType(MODIFY_NONE)
+  end
+  row.label:SetWrapMode(WRAP_ELLIPSIS)
   row.label:SetText(text or "")
 end
 
@@ -1167,6 +1105,7 @@ local function addQuestObjectiveRow(self, questEntry, objective, parentRow)
   if objective.max and objective.max > 0 then
     text = string.format("%s (%d/%d)", objective.text, objective.current or 0, objective.max)
   end
+  text = string.format("• %s", text)
   configureRow(self, row, ROW_TYPES.QUEST_OBJECTIVE, text, DEFAULT_ICONS.objective, false, false)
   appendRow(self, row)
   return row
@@ -1183,6 +1122,7 @@ local function addAchievementObjectiveRow(self, achievementEntry, objective)
   local progress = (objective.max and objective.max > 0)
       and string.format("%s (%d/%d)", objective.text, objective.current or 0, objective.max)
       or objective.text
+  progress = string.format("• %s", progress)
   configureRow(self, row, ROW_TYPES.ACH_OBJECTIVE, progress, DEFAULT_ICONS.objective, false, false)
   appendRow(self, row)
   return row
@@ -1236,39 +1176,42 @@ end
 
 local function renderQuests(self, zones)
   for _, zoneEntry in ipairs(zones) do
-    local row = acquireRow(self)
-    row.rowType = ROW_TYPES.ZONE
-    local expanded = isZoneExpanded(self, zoneEntry.key)
-    row.data = {
-      type = ROW_TYPES.ZONE,
-      zone = zoneEntry,
-      key = zoneEntry.key,
-      expanded = expanded,
-    }
-    configureRow(self, row, ROW_TYPES.ZONE, zoneEntry.name, zoneEntry.icon, true, expanded)
-    appendRow(self, row)
-    if expanded then
-      for _, questEntry in ipairs(zoneEntry.quests) do
-        local questRow = acquireRow(self)
-        questRow.rowType = ROW_TYPES.QUEST
-        local questExpanded = isQuestExpanded(self, questEntry.key)
-        if self.pendingQuestExpand and questEntry.questId and self.pendingQuestExpand[questEntry.questId] then
-          questExpanded = true
-          setQuestExpanded(self, questEntry.key, true)
-          setZoneExpanded(self, zoneEntry.key, true)
-          self.pendingQuestExpand[questEntry.questId] = nil
-        end
-        questRow.zoneName = zoneEntry.name
-        questRow.data = {
-          type = ROW_TYPES.QUEST,
-          quest = questEntry,
-          expanded = questExpanded,
-        }
-        configureRow(self, questRow, ROW_TYPES.QUEST, questEntry.name, questEntry.icon, true, questExpanded)
-        appendRow(self, questRow)
-        if questExpanded and questEntry.objectives then
-          for _, objective in ipairs(questEntry.objectives) do
-            addQuestObjectiveRow(self, questEntry, objective, questRow)
+    if zoneEntry.quests and #zoneEntry.quests > 0 then
+      local row = acquireRow(self)
+      row.rowType = ROW_TYPES.ZONE
+      local expanded = isZoneExpanded(self, zoneEntry.key)
+      row.data = {
+        type = ROW_TYPES.ZONE,
+        zone = zoneEntry,
+        key = zoneEntry.key,
+        expanded = expanded,
+      }
+      configureRow(self, row, ROW_TYPES.ZONE, zoneEntry.name, zoneEntry.icon, true, expanded)
+      appendRow(self, row)
+      if expanded then
+        for _, questEntry in ipairs(zoneEntry.quests) do
+          local questRow = acquireRow(self)
+          questRow.rowType = ROW_TYPES.QUEST
+          local questExpanded = isQuestExpanded(self, questEntry.key)
+          if self.pendingQuestExpand and questEntry.questId and self.pendingQuestExpand[questEntry.questId] then
+            questExpanded = true
+            setQuestExpanded(self, questEntry.key, true)
+            setZoneExpanded(self, zoneEntry.key, true)
+            self.pendingQuestExpand[questEntry.questId] = nil
+          end
+          questRow.zoneName = zoneEntry.name
+          questRow.data = {
+            type = ROW_TYPES.QUEST,
+            quest = questEntry,
+            expanded = questExpanded,
+          }
+          local labelText = questEntry.displayName or questEntry.name
+          configureRow(self, questRow, ROW_TYPES.QUEST, labelText, questEntry.icon, true, questExpanded)
+          appendRow(self, questRow)
+          if questExpanded and questEntry.objectives then
+            for _, objective in ipairs(questEntry.objectives) do
+              addQuestObjectiveRow(self, questEntry, objective, questRow)
+            end
           end
         end
       end
@@ -1643,6 +1586,12 @@ local function registerEvents(self)
     end
     CM:RegisterCallback("NVK3UT_FAVORITES_CHANGED", self.favoritesCallback)
   end
+  if QUEST_JOURNAL_MANAGER and not self.questListCallback then
+    self.questListCallback = function()
+      self:Refresh(true)
+    end
+    QUEST_JOURNAL_MANAGER:RegisterCallback("QuestListUpdated", self.questListCallback)
+  end
   if SCENE_MANAGER and not self.sceneCallback then
     self.sceneCallback = function(scene, oldState, newState)
       if newState == SCENE_SHOWING or newState == SCENE_SHOWN or newState == SCENE_HIDDEN then
@@ -1673,6 +1622,10 @@ local function unregisterEvents(self)
   if CM and self.favoritesCallback then
     CM:UnregisterCallback("NVK3UT_FAVORITES_CHANGED", self.favoritesCallback)
     self.favoritesCallback = nil
+  end
+  if QUEST_JOURNAL_MANAGER and self.questListCallback then
+    QUEST_JOURNAL_MANAGER:UnregisterCallback("QuestListUpdated", self.questListCallback)
+    self.questListCallback = nil
   end
   if SCENE_MANAGER and self.sceneCallback then
     SCENE_MANAGER:UnregisterCallback("SceneStateChanged", self.sceneCallback)
@@ -1763,6 +1716,7 @@ function QT.Destroy()
   QT.scrollChild = nil
   QT.rowPool = nil
   QT.activeRows = nil
+  QT.questListCallback = nil
 end
 
 function QT.SetEnabled(value)
