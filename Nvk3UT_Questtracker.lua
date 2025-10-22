@@ -345,7 +345,7 @@ function Tracker:EnsureControl()
     bg:SetHidden(true)
     ctl.background = bg
 
-    local scroll = CreateControlFromVirtual(nil, ctl, "ZO_ScrollContainer")
+    local scroll = CreateControlFromVirtual(TRACKER_NAME .. "Scroll", ctl, "ZO_ScrollContainer")
     scroll:SetAnchor(TOPLEFT, ctl, TOPLEFT, 8, 8)
     scroll:SetAnchor(BOTTOMRIGHT, ctl, BOTTOMRIGHT, -8, -8)
     scroll.scrollChild = scroll:GetNamedChild("ScrollChild")
