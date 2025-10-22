@@ -1065,18 +1065,19 @@ end
 
 local function showAchievementContextMenu(entry)
   ClearMenu()
-  AddMenuItem(LABELS.achievementsOpen, function()
-    if SCENE_MANAGER then
-      SCENE_MANAGER:Show("achievements")
-    end
-    if ACHIEVEMENTS and ACHIEVEMENTS.BrowseToAchievement then
-      zo_callLater(function()
-        ACHIEVEMENTS:BrowseToAchievement(entry.id)
-      end, 50)
-    elseif ACHIEVEMENTS_MANAGER and ACHIEVEMENTS_MANAGER:PushAchievement then
-      ACHIEVEMENTS_MANAGER:PushAchievement(entry.id)
-    end
-  end)
+    AddMenuItem(LABELS.achievementsOpen, function()
+      if SCENE_MANAGER then
+        SCENE_MANAGER:Show("achievements")
+      end
+      if ACHIEVEMENTS and ACHIEVEMENTS.BrowseToAchievement then
+        zo_callLater(function()
+          ACHIEVEMENTS:BrowseToAchievement(entry.id)
+        end, 50)
+      end
+      if ACHIEVEMENTS_MANAGER and ACHIEVEMENTS_MANAGER.PushAchievement then
+        ACHIEVEMENTS_MANAGER:PushAchievement(entry.id)
+      end
+    end)
   AddMenuItem(LABELS.achievementsRemoveFavorite, function()
     if Nvk3UT and Nvk3UT.Favorites and Nvk3UT.Favorites.Remove then
       Nvk3UT.Favorites.Remove(entry.id)
