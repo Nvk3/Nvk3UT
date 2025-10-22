@@ -4,8 +4,10 @@ Nvk3UT.TodoData = M
 
 local function isFullyComplete(id)
     local utils = Nvk3UT and Nvk3UT.Utils
-    if utils and utils.IsAchievementFullyComplete then
-        return utils.IsAchievementFullyComplete(id)
+    if utils and utils.IsMultiStageAchievement and utils.IsMultiStageAchievement(id) then
+        if utils.IsAchievementFullyComplete then
+            return utils.IsAchievementFullyComplete(id)
+        end
     end
     local _, _, _, _, completed = GetAchievementInfo(id)
     return completed == true

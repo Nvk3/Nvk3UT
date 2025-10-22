@@ -57,8 +57,10 @@ local function now() return (U and U.now and U.now()) or GetTimeStamp() end
 
 local function IsOpen(id)
     if not id then return false end
-    if U and U.IsAchievementFullyComplete then
-        return not U.IsAchievementFullyComplete(id)
+    if U and U.IsMultiStageAchievement and U.IsMultiStageAchievement(id) then
+        if U.IsAchievementFullyComplete then
+            return not U.IsAchievementFullyComplete(id)
+        end
     end
     local _,_,_,_,completed = GetAchievementInfo(id)
     return completed == false

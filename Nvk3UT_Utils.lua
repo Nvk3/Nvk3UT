@@ -185,6 +185,35 @@ local function getNextAchievementId(id)
   return nil
 end
 
+local function buildAchievementChain(id)
+  if type(id) ~= "number" then
+    return nil
+  end
+
+  local startId = getBaseAchievementId(id) or id
+  if not startId or startId == 0 then
+    return nil
+  end
+
+  local visited = {}
+  local stages = {}
+  local stageId = startId
+
+  while type(stageId) == "number" and stageId ~= 0 and not visited[stageId] do
+    visited[stageId] = true
+    stages[#stages + 1] = stageId
+    stageId = getNextAchievementId(stageId)
+  end
+
+  local looped = stageId and stageId ~= 0 and visited[stageId] == true
+
+  return {
+    startId = startId,
+    stages = stages,
+    looped = looped,
+  }
+end
+
 function M.NormalizeAchievementId(id)
   local baseId = getBaseAchievementId(id)
   if baseId and baseId ~= 0 then
@@ -193,32 +222,42 @@ function M.NormalizeAchievementId(id)
   return id
 end
 
+function M.IsMultiStageAchievement(id)
+  local chain = buildAchievementChain(id)
+  if not chain then
+    return false
+  end
+  return #chain.stages > 1
+end
+
 function M.IsAchievementFullyComplete(id)
   if type(id) ~= "number" then
     return false
   end
-  local visited = {}
-  local stageId = M.NormalizeAchievementId(id)
-  local utilsDebug = M.d
-  local lastStage = id
 
-  while type(stageId) == "number" and stageId ~= 0 and not visited[stageId] do
-    visited[stageId] = true
-    lastStage = stageId
+  local chain = buildAchievementChain(id)
+  if not chain then
+    return safeAchievementInfo(id)
+  end
+
+  if #chain.stages <= 1 then
+    return safeAchievementInfo(chain.startId)
+  end
+
+  local utilsDebug = M.d
+  for _, stageId in ipairs(chain.stages) do
     if not safeAchievementInfo(stageId) then
       if utilsDebug and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then
         utilsDebug("[Nvk3UT][Utils][Stage] pending", string.format("data={id:%d,stage:%d}", id, stageId))
       end
       return false
     end
-    stageId = getNextAchievementId(stageId)
   end
 
-  if not stageId or stageId == 0 then
-    return safeAchievementInfo(lastStage)
+  if chain.looped then
+    return safeAchievementInfo(id)
   end
 
-  -- fallback if we encountered an unexpected loop or invalid data
-  return safeAchievementInfo(id)
+  return true
 end
 
