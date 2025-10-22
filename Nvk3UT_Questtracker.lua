@@ -10,10 +10,6 @@ local GuiRoot = GuiRoot
 
 local TEXTURE_ARROW_COLLAPSED = "/esoui/art/tree/tree_icon_closed.dds"
 local TEXTURE_ARROW_EXPANDED = "/esoui/art/tree/tree_icon_open.dds"
-local TEXTURE_ZONE_ICON = "/esoui/art/journal/journal_tabicon_quest_up.dds"
-local TEXTURE_QUEST_ICON = "/esoui/art/worldmap/map_waypoint_complete.dds"
-local TEXTURE_ACHIEVEMENT_ICON = "/esoui/art/journal/journal_tabicon_achievements_up.dds"
-
 local LIST_ENTRY_HEIGHT = 30
 local INDENT_ZONE = 0
 local INDENT_QUEST = 16
@@ -293,12 +289,15 @@ function Tracker:Init()
         zoneOrder = {},
         questZones = {},
         achievements = {},
+        inCombat = false,
+        lamOpen = false,
     }
     self.controls = {
         zones = {},
     }
     self.initialized = true
     self:AttachFavoritesHooks()
+    self:EnsureLamCallbacks()
     if self.sv.enabled ~= false then
         self:Enable()
     else
@@ -324,17 +323,23 @@ function Tracker:EnsureControl()
     ctl:SetDrawLevel(1)
     ctl:SetResizeToFitDescendents(false)
     ctl:SetDimensionConstraints(260, 160, 900, 1000)
+    if ctl.SetResizeHandleSize then
+        ctl:SetResizeHandleSize(0)
+    end
 
-    ctl:SetHandler("OnMouseDown", function(window, button)
-        if button == MOUSE_BUTTON_INDEX_LEFT and self:IsUnlocked() then
-            window:StartMoving()
-        end
-    end)
-    ctl:SetHandler("OnMouseUp", function(window, button)
-        if button == MOUSE_BUTTON_INDEX_LEFT then
-            window:StopMovingOrResizing()
+    ctl:SetHandler("OnMoveStop", function(window)
+        if window == self.control then
             self:SavePosition()
         end
+    end)
+    ctl:SetHandler("OnResizeStart", function(window)
+        if not self:IsUnlocked() then
+            window:StopMovingOrResizing()
+        end
+    end)
+    ctl:SetHandler("OnResizeStop", function(window)
+        window:StopMovingOrResizing()
+        self:SavePosition()
     end)
 
     local bg = CreateControl(nil, ctl, CT_BACKDROP)
@@ -345,8 +350,28 @@ function Tracker:EnsureControl()
     bg:SetHidden(true)
     ctl.background = bg
 
+    local dragHandle = CreateControl(nil, ctl, CT_CONTROL)
+    dragHandle:SetAnchor(TOPLEFT, ctl, TOPLEFT, 0, 0)
+    dragHandle:SetAnchor(TOPRIGHT, ctl, TOPRIGHT, 0, 0)
+    dragHandle:SetHeight(16)
+    dragHandle:SetMouseEnabled(true)
+    dragHandle:SetAlpha(0)
+    dragHandle:SetHandler("OnMouseDown", function(_, button)
+        if button == MOUSE_BUTTON_INDEX_LEFT and self:IsUnlocked() then
+            ctl:StartMoving()
+        end
+    end)
+    dragHandle:SetHandler("OnMouseUp", function(_, button)
+        if button == MOUSE_BUTTON_INDEX_LEFT then
+            ctl:StopMovingOrResizing()
+            self:SavePosition()
+        end
+    end)
+    ctl.dragHandle = dragHandle
+    self.dragHandle = dragHandle
+
     local scroll = CreateControlFromVirtual(TRACKER_NAME .. "Scroll", ctl, "ZO_ScrollContainer")
-    scroll:SetAnchor(TOPLEFT, ctl, TOPLEFT, 8, 8)
+    scroll:SetAnchor(TOPLEFT, ctl, TOPLEFT, 8, 16)
     scroll:SetAnchor(BOTTOMRIGHT, ctl, BOTTOMRIGHT, -8, -8)
     scroll.scrollChild = scroll:GetNamedChild("ScrollChild")
     scroll.scrollChild:SetResizeToFitDescendents(true)
@@ -354,6 +379,7 @@ function Tracker:EnsureControl()
     self.scroll = scroll
 
     self.control = ctl
+    self:RegisterSceneCallbacks()
     self:ApplyPosition()
     self:ApplyLockState()
     self:ApplyBackground()
@@ -437,7 +463,232 @@ function Tracker:ApplyLockState()
     if not self.control then
         return
     end
-    self.control:SetMovable(self:IsUnlocked())
+    local unlocked = self:IsUnlocked()
+    self.control:SetMovable(unlocked)
+    if self.control.SetResizeHandleSize then
+        self.control:SetResizeHandleSize(unlocked and 12 or 0)
+    end
+    if self.dragHandle then
+        self.dragHandle:SetHidden(not unlocked)
+        self.dragHandle:SetMouseEnabled(unlocked)
+    end
+end
+
+function Tracker:RegisterSceneCallbacks()
+    if not SCENE_MANAGER or self.sceneCallbackRegistered then
+        return
+    end
+    local function onSceneStateChange(_, newState)
+        if newState == SCENE_SHOWN or newState == SCENE_HIDING or newState == SCENE_HIDDEN then
+            self:UpdateVisibility()
+        end
+    end
+    self.sceneCallback = onSceneStateChange
+    SCENE_MANAGER:RegisterCallback("SceneStateChanged", self.sceneCallback)
+    self.sceneCallbackRegistered = true
+    self:UpdateVisibility()
+end
+
+function Tracker:UnregisterSceneCallbacks()
+    if not SCENE_MANAGER or not self.sceneCallbackRegistered then
+        return
+    end
+    if SCENE_MANAGER.UnregisterCallback and self.sceneCallback then
+        SCENE_MANAGER:UnregisterCallback("SceneStateChanged", self.sceneCallback)
+    end
+    self.sceneCallback = nil
+    self.sceneCallbackRegistered = false
+end
+
+local HUD_SCENES = {
+    hud = true,
+    hudui = true,
+    gamepad_hud = true,
+    gamepad_hud_ui = true,
+}
+
+local function getSceneName(scene)
+    if not scene then
+        return nil
+    end
+    if scene.GetName then
+        local ok, name = pcall(scene.GetName, scene)
+        if ok and name then
+            return tostring(name)
+        end
+    end
+    if scene.name then
+        return tostring(scene.name)
+    end
+    return nil
+end
+
+function Tracker:IsSceneAllowed()
+    if not SCENE_MANAGER then
+        return true
+    end
+    if self.state and self.state.lamOpen then
+        return true
+    end
+    if SCENE_MANAGER.IsShowing then
+        for name in pairs(HUD_SCENES) do
+            local ok, showing = pcall(SCENE_MANAGER.IsShowing, SCENE_MANAGER, name)
+            if ok and showing then
+                return true
+            end
+        end
+    end
+    local scene = SCENE_MANAGER:GetCurrentScene()
+    local currentName = getSceneName(scene)
+    if currentName and HUD_SCENES[currentName] then
+        return true
+    end
+    return false
+end
+
+function Tracker:UpdateVisibility()
+    if not self.control then
+        return
+    end
+    local shouldShow = self.state and self.state.enabled == true
+    if shouldShow then
+        shouldShow = self:IsSceneAllowed()
+        if shouldShow then
+            local hideInCombat = self.sv and self.sv.behavior and self.sv.behavior.hideInCombat
+            if hideInCombat and self.state and self.state.inCombat then
+                shouldShow = false
+            end
+        end
+    end
+    self.control:SetHidden(not shouldShow)
+    if not shouldShow then
+        self:HideTooltips()
+    end
+end
+
+function Tracker:GetLamPanelControl()
+    if not self.lamPanelName then
+        return nil
+    end
+    local control = self.lamPanelControl
+    if control and control.GetName then
+        local ok, name = pcall(control.GetName, control)
+        if ok and name == self.lamPanelName then
+            return control
+        end
+    end
+    if type(LibAddonMenu2) == "table" then
+        local util = LibAddonMenu2.util
+        if util and util.GetAddonPanelControl then
+            local ok, panel = pcall(util.GetAddonPanelControl, util, self.lamPanelName)
+            if ok and panel then
+                self.lamPanelControl = panel
+                return panel
+            end
+        end
+        if LibAddonMenu2.GetPanelControlByName then
+            local ok, panel = pcall(LibAddonMenu2.GetPanelControlByName, LibAddonMenu2, self.lamPanelName)
+            if ok and panel then
+                self.lamPanelControl = panel
+                return panel
+            end
+        end
+    end
+    local globalControl = _G and _G[self.lamPanelName]
+    if globalControl then
+        self.lamPanelControl = globalControl
+        return globalControl
+    end
+    return nil
+end
+
+function Tracker:IsLamPanel(panel)
+    if not panel or not self.lamPanelName then
+        return false
+    end
+    if panel == self:GetLamPanelControl() then
+        return true
+    end
+    if panel.GetName then
+        local ok, name = pcall(panel.GetName, panel)
+        if ok and name == self.lamPanelName then
+            return true
+        end
+    end
+    if panel.name and panel.name == self.lamPanelName then
+        return true
+    end
+    if panel.panelId and panel.panelId == self.lamPanelName then
+        return true
+    end
+    if panel.data then
+        if panel.data.panelId == self.lamPanelName or panel.data.name == self.lamPanelName then
+            return true
+        end
+    end
+    return false
+end
+
+function Tracker:EnsureLamCallbacks()
+    if not CALLBACK_MANAGER or self.lamCallbacksRegistered then
+        return
+    end
+    local function onPanelOpened(panel)
+        if not self.state then
+            return
+        end
+        if self:IsLamPanel(panel) then
+            self.state.lamOpen = true
+        elseif self.state.lamOpen then
+            self.state.lamOpen = false
+        end
+        self:UpdateVisibility()
+    end
+    local function onPanelClosed(panel)
+        if not self.state then
+            return
+        end
+        if self:IsLamPanel(panel) then
+            self.state.lamOpen = false
+            self:UpdateVisibility()
+        end
+    end
+    CALLBACK_MANAGER:RegisterCallback("LAM-PanelOpened", onPanelOpened)
+    CALLBACK_MANAGER:RegisterCallback("LAM-PanelClosed", onPanelClosed)
+    self.lamOpenCallback = onPanelOpened
+    self.lamClosedCallback = onPanelClosed
+    self.lamCallbacksRegistered = true
+end
+
+function Tracker:UnregisterLamCallbacks()
+    if not CALLBACK_MANAGER or not self.lamCallbacksRegistered then
+        return
+    end
+    if self.lamOpenCallback then
+        CALLBACK_MANAGER:UnregisterCallback("LAM-PanelOpened", self.lamOpenCallback)
+    end
+    if self.lamClosedCallback then
+        CALLBACK_MANAGER:UnregisterCallback("LAM-PanelClosed", self.lamClosedCallback)
+    end
+    self.lamOpenCallback = nil
+    self.lamClosedCallback = nil
+    self.lamCallbacksRegistered = false
+end
+
+function Tracker:SetLamPanelName(panelName)
+    if panelName and panelName ~= "" then
+        self.lamPanelName = panelName
+    else
+        self.lamPanelName = nil
+        self.lamPanelControl = nil
+        if self.state then
+            self.state.lamOpen = false
+        end
+        self:UpdateVisibility()
+        return
+    end
+    self.lamPanelControl = nil
+    self:EnsureLamCallbacks()
 end
 
 function Tracker:ApplyDefaultTrackerVisibility()
@@ -450,37 +701,40 @@ end
 
 function Tracker:Enable()
     self:EnsureControl()
+    self:RegisterSceneCallbacks()
+    self:EnsureLamCallbacks()
     if self.state.enabled then
-        self.control:SetHidden(false)
         self:RegisterEvents()
         self:Refresh(false)
+        self:ApplyCombatVisibility()
+        self:UpdateVisibility()
         return
     end
     self.state.enabled = true
-    self.control:SetHidden(false)
     self:RegisterEvents()
     self:Refresh(false)
+    self:ApplyCombatVisibility()
 end
 
 function Tracker:Disable()
     if not self.state.enabled then
         if self.control then
-            self.control:SetHidden(true)
+            self:UpdateVisibility()
         end
         self:UnregisterEvents()
         self:HideTooltips()
         return
     end
     self.state.enabled = false
-    if self.control then
-        self.control:SetHidden(true)
-    end
     self:UnregisterEvents()
     self:HideTooltips()
+    self:UpdateVisibility()
 end
 
 function Tracker:Destroy()
     self:Disable()
+    self:UnregisterSceneCallbacks()
+    self:UnregisterLamCallbacks()
     if self.control then
         self.control:SetHidden(true)
         self.control:SetHandler("OnMouseDown", nil)
@@ -488,6 +742,8 @@ function Tracker:Destroy()
         self.control = nil
         self.scroll = nil
     end
+    self.dragHandle = nil
+    self.lamPanelControl = nil
     self.controls = { zones = {} }
     self.initialized = false
 end
@@ -550,18 +806,13 @@ function Tracker:UnregisterEvents()
 end
 
 function Tracker:ApplyCombatVisibility(inCombat)
-    if not self.control then
-        return
-    end
     if inCombat == nil and type(IsUnitInCombat) == "function" then
         inCombat = IsUnitInCombat("player")
     end
-    local hideInCombat = self.sv and self.sv.behavior and self.sv.behavior.hideInCombat
-    if hideInCombat then
-        self.control:SetHidden(inCombat == true or self.state.enabled ~= true)
-    else
-        self.control:SetHidden(self.state.enabled ~= true)
+    if self.state then
+        self.state.inCombat = inCombat == true
     end
+    self:UpdateVisibility()
 end
 
 function Tracker:OnQuestChanged(eventCode, ...)
@@ -671,23 +922,18 @@ local function ensureHeader(control)
     header:SetMouseEnabled(true)
 
     local arrow = CreateControl(nil, header, CT_TEXTURE)
-    arrow:SetDimensions(16, 16)
+    arrow:SetDimensions(18, 18)
     arrow:SetTexture(TEXTURE_ARROW_COLLAPSED)
     arrow:SetAnchor(LEFT, header, LEFT, 0, 0)
 
-    local icon = CreateControl(nil, header, CT_TEXTURE)
-    icon:SetDimensions(20, 20)
-    icon:SetAnchor(LEFT, arrow, RIGHT, 4, 0)
-
     local label = CreateControl(nil, header, CT_LABEL)
-    label:SetAnchor(LEFT, icon, RIGHT, 8, 0)
+    label:SetAnchor(LEFT, arrow, RIGHT, 10, 0)
     label:SetAnchor(RIGHT, header, RIGHT, -8, 0)
     label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
     label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
     label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
 
     header.arrow = arrow
-    header.icon = icon
     header.label = label
     control.header = header
     return header
@@ -724,7 +970,6 @@ end
 
 function Tracker:SetupZoneControl(zoneControl, zoneData)
     local header = ensureHeader(zoneControl)
-    header.icon:SetTexture(TEXTURE_ZONE_ICON)
     header.arrow:SetTexture(self:IsCollapsed("zones", zoneData.key) and TEXTURE_ARROW_COLLAPSED or TEXTURE_ARROW_EXPANDED)
     header.label:SetText(zoneData.zoneName or "")
     header:SetHandler("OnMouseUp", function(_, button)
@@ -735,7 +980,6 @@ function Tracker:SetupZoneControl(zoneControl, zoneData)
         end
     end)
     applyFont(header.label, self.sv and self.sv.fonts and self.sv.fonts.category)
-    header.arrow:SetTexture(self:IsCollapsed("zones", zoneData.key) and TEXTURE_ARROW_COLLAPSED or TEXTURE_ARROW_EXPANDED)
 
     local collapsed = self:IsCollapsed("zones", zoneData.key)
     local body = ensureBody(zoneControl)
@@ -841,7 +1085,6 @@ function Tracker:PopulateQuests(body, zoneData)
             questCtl:SetHidden(false)
             questCtl.questKey = questKey
             questCtl.questInfo = questInfo
-            questCtl.header.icon:SetTexture(TEXTURE_QUEST_ICON)
             questCtl.header.label:SetText(questInfo.name or "")
             applyFont(questCtl.header.label, self.sv and self.sv.fonts and self.sv.fonts.quest)
 
@@ -963,7 +1206,6 @@ function Tracker:PopulateAchievementBlock(previousAnchor)
         block:SetAnchor(TOPRIGHT, self.scroll.scrollChild, TOPRIGHT, 0, 0)
     end
 
-    block.header.icon:SetTexture(TEXTURE_ACHIEVEMENT_ICON)
     block.header.label:SetText("Errungenschaften")
     applyFont(block.header.label, self.sv and self.sv.fonts and self.sv.fonts.category)
     block.header:SetHandler("OnMouseUp", function(_, button)
@@ -994,7 +1236,6 @@ function Tracker:PopulateAchievements(body, list)
             body.achievementControls[used] = ctl
         end
         ctl:SetHidden(false)
-        ctl.header.icon:SetTexture(TEXTURE_ACHIEVEMENT_ICON)
         ctl.header.label:SetText(entry.name or "")
         applyFont(ctl.header.label, self.sv and self.sv.fonts and self.sv.fonts.achieve)
         ctl.header:SetHandler("OnMouseUp", function(_, button)

@@ -113,6 +113,9 @@ function M.BuildLAM()
   LAM:RegisterAddonPanel("Nvk3UT_Panel", panel)
 
   local tracker = Nvk3UT and Nvk3UT.QuestTracker
+  if tracker and tracker.SetLamPanelName then
+    tracker:SetLamPanelName("Nvk3UT_Panel")
+  end
   if tracker and tracker.Init then
     tracker:Init()
   end
