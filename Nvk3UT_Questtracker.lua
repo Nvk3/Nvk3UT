@@ -18,7 +18,7 @@ local ROW_TYPES = {
   ACH_OBJECTIVE = "achObjective",
 }
 
-local SCENE_ATTACH_NAMES = { "hud", "hudui", "siegeBar", "siegeBarUI", "gameMenuInGame" }
+local SCENE_ATTACH_NAMES = { "hud", "hudui" }
 local REFRESH_HANDLE = "Nvk3UT_QT_Refresh"
 
 local DEFAULT_ICONS = {
@@ -28,7 +28,61 @@ local DEFAULT_ICONS = {
   objective = "EsoUI/Art/Journal/journal_tabIcon_achievements_up.dds",
 }
 
+local BASE_TRACKER_HIDE_REASON = "Nvk3UT_DefaultTracker"
+
+local DEFAULT_TRACKER_FRAGMENT_NAMES = {
+  "FOCUSED_QUEST_TRACKER_FRAGMENT",
+  "FOCUSED_QUEST_TRACKER_ALWAYS_SHOW_FRAGMENT",
+  "FOCUSED_QUEST_TRACKER_TRACKED_FRAGMENT",
+  "FOCUSED_QUEST_TRACKER_FOCUSED_FRAGMENT",
+  "GAMEPAD_QUEST_TRACKER_FRAGMENT",
+}
+
+local DEFAULT_TRACKER_CONTROL_NAMES = {
+  "ZO_FocusedQuestTracker",
+  "ZO_QuestTracker",
+  "ZO_QuestTracker_Keyboard",
+}
+
 local GLOBALS = _G or {}
+
+local function iterateDefaultTrackerFragments(callback)
+  if type(callback) ~= "function" then
+    return
+  end
+  local visited = {}
+  local function try(target)
+    if target and not visited[target] then
+      visited[target] = true
+      callback(target)
+    end
+  end
+  for _, name in ipairs(DEFAULT_TRACKER_FRAGMENT_NAMES) do
+    local fragment = GLOBALS[name]
+    try(fragment)
+  end
+  local focusedTracker = GLOBALS.FOCUSED_QUEST_TRACKER
+  if focusedTracker then
+    try(focusedTracker.fragment)
+    try(focusedTracker.headerFragment)
+    try(focusedTracker.footerFragment)
+  end
+end
+
+local function applyHiddenToTarget(target, hidden, wasHidden)
+  if not target then
+    return
+  end
+  if target.SetHiddenForReason then
+    target:SetHiddenForReason(BASE_TRACKER_HIDE_REASON, hidden)
+  elseif target.SetHidden then
+    if hidden then
+      target:SetHidden(true)
+    elseif wasHidden then
+      target:SetHidden(false)
+    end
+  end
+end
 local MODIFY_NONE = GLOBALS.MODIFY_TEXT_TYPE_NONE or 0
 local MODIFY_UPPERCASE = GLOBALS.MODIFY_TEXT_TYPE_UPPERCASE or 1
 local WRAP_ELLIPSIS = GLOBALS.TEXT_WRAP_MODE_ELLIPSIS or (type(TEXT_WRAP_MODE_ELLIPSIS) == "number" and TEXT_WRAP_MODE_ELLIPSIS)
@@ -1742,15 +1796,18 @@ end
 
 function QT:SetDefaultTrackerHidden(hidden)
   hidden = hidden and true or false
-  local names = {
-    "ZO_QuestTracker",
-    "ZO_QuestTracker_Keyboard",
-  }
-  for _, name in ipairs(names) do
-    local ctl = _G[name]
-    if ctl and ctl.SetHidden then
-      ctl:SetHidden(hidden)
-    end
+  local wasHidden = self.defaultTrackerHidden == nil and false or self.defaultTrackerHidden
+  self.defaultTrackerHidden = hidden
+  iterateDefaultTrackerFragments(function(fragment)
+    applyHiddenToTarget(fragment, hidden, wasHidden)
+  end)
+  local focusedTracker = GLOBALS.FOCUSED_QUEST_TRACKER
+  if focusedTracker then
+    applyHiddenToTarget(focusedTracker, hidden, wasHidden)
+    applyHiddenToTarget(focusedTracker.control, hidden, wasHidden)
+  end
+  for _, name in ipairs(DEFAULT_TRACKER_CONTROL_NAMES) do
+    applyHiddenToTarget(GLOBALS[name], hidden, wasHidden)
   end
 end
 
@@ -2072,6 +2129,7 @@ function QT.Init()
   QT.achievementState = QT.achievementState or {}
   QT.renderInitialized = false
   QT.forceRender = true
+  QT.defaultTrackerHidden = nil
   if QT.lamPanelControl then
     ensureLamCallbacks(QT)
   end
