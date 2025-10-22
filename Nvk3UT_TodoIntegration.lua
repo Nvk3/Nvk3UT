@@ -8,6 +8,7 @@ local Todo = Nvk3UT.TodoData
 local U = Nvk3UT and Nvk3UT.Utils
 
 local NVK3_TODO = 84002
+local TODO_LOOKUP_KEY = "NVK3UT_TODO_ROOT"
 local todoProvide_lastTs = 0
 local todoProvide_lastCount = 0
 
@@ -120,59 +121,25 @@ end
 
 local function AddTodoCategory(AchClass)
   local orgAddTopLevelCategory = AchClass.AddTopLevelCategory
-  function AchClass.AddTopLevelCategory(...)
+  function AchClass:AddTopLevelCategory(...)
+    local result = orgAddTopLevelCategory(self, ...)
     if not _nvk3ut_is_enabled("todo") then
-      return orgAddTopLevelCategory(...)
+      return result
     end
-    if not _nvk3ut_is_enabled("todo") then
-      return (select(1, ...)).AddTopLevelCategory and select(1, ...).AddTopLevelCategory(...)
-    end
-    local self, name = ...
-    if name then
-      -- On the first real category, append "Abgeschlossen" as the last entry
-      if not self._nvk_completed_added then
-        self._nvk_completed_added = true
-        local lookup, tree = self.nodeLookupData, self.categoryTree
-        local nodeTemplate = "ZO_IconHeader"
-        local subTemplate = "ZO_TreeLabelSubCategory"
-        local labelDone = "Abgeschlossen"
-        local parentNodeDone = self:AddCategory(
-          lookup,
-          tree,
-          nodeTemplate,
-          nil,
-          84003,
-          labelDone,
-          false,
-          nil,
-          nil,
-          nil,
-          true,
-          true
-        )
-        local parentRowDone = parentNodeDone and parentNodeDone.GetData and parentNodeDone:GetData()
-        if parentRowDone then
-          parentRowDone.nvkPlainName = parentRowDone.nvkPlainName or sanitizePlainName(labelDone)
-          parentRowDone.isNvkCompleted = true
-        end
-        local names, ids = Nvk3UT.CompletedData.GetSubcategoryList()
-        for i, n in ipairs(names) do
-          local childNode = self:AddCategory(lookup, tree, subTemplate, parentNodeDone, ids[i], n, true)
-          local childData = childNode and childNode.GetData and childNode:GetData()
-          if childData then
-            childData.nvkPlainName = childData.nvkPlainName or sanitizePlainName(n)
-            childData.nvkCompletedKey = childData.nvkCompletedKey or ids[i]
-            childData.isNvkCompleted = true
-          end
-        end
-      end
-      return orgAddTopLevelCategory(...)
-    end
-
-    -- Default build path: after base creates roots, add our To-Do header with subcats
-    local result = orgAddTopLevelCategory(...)
 
     local lookup, tree = self.nodeLookupData, self.categoryTree
+    if not (lookup and tree) then
+      return result
+    end
+
+    if lookup[TODO_LOOKUP_KEY] then
+      local node = lookup[TODO_LOOKUP_KEY]
+      if node and not self._nvkTodoNode then
+        self._nvkTodoNode = node
+      end
+      return result
+    end
+
     local nodeTemplate = "ZO_IconHeader"
     local subTemplate = "ZO_TreeLabelSubCategory"
     local label = "To-Do-Liste"
@@ -191,9 +158,14 @@ local function AddTodoCategory(AchClass)
       true,
       true
     )
+    if not parentNode then
+      return result
+    end
+
+    lookup[TODO_LOOKUP_KEY] = parentNode
     self._nvkTodoNode = parentNode
     self._nvkTodoChildren = {}
-    local _row = parentNode and parentNode.GetData and parentNode:GetData()
+    local _row = parentNode.GetData and parentNode:GetData()
     if _row then
       _row.isNvkTodo = true
       _row.nvkSummaryTooltipText = nil
@@ -207,23 +179,22 @@ local function AddTodoCategory(AchClass)
         local openCount, openPoints = _todoCollectOpenSummary(top)
         if openCount > 0 then
           local node = self:AddCategory(lookup, tree, subTemplate, parentNode, top, topName, true)
-          if self._nvkTodoChildren then
+          if node then
             self._nvkTodoChildren[#self._nvkTodoChildren + 1] = node
-          end
-          local data = node and node.GetData and node:GetData()
-          if data then
-            data.isNvkTodo = true
-            data.nvkTodoOpenCount = openCount
-            data.nvkTodoOpenPoints = openPoints
-            data.nvkTodoTopId = top
-            data.nvkSummaryTooltipText = nil
-            data.nvkPlainName = data.nvkPlainName or sanitizePlainName(topName)
+            local data = node.GetData and node:GetData()
+            if data then
+              data.isNvkTodo = true
+              data.nvkTodoOpenCount = openCount
+              data.nvkTodoOpenPoints = openPoints
+              data.nvkTodoTopId = top
+              data.nvkSummaryTooltipText = nil
+              data.nvkPlainName = data.nvkPlainName or sanitizePlainName(topName)
+            end
           end
         end
       end
     end
 
-    -- Update tooltip cache so hover text matches immediately.
     _updateTodoTooltip(self)
 
     if self.refreshGroups then

@@ -181,7 +181,7 @@ local function CollectIconControls(control)
   return controls
 end
 
-local function UpdateTemplateIcons(control, hide)
+local function UpdateTemplateIcons(control, iconPath)
   local icons = CollectIconControls(control)
   if not icons then
     return
@@ -190,35 +190,26 @@ local function UpdateTemplateIcons(control, hide)
   for idx = 1, #icons do
     local icon = icons[idx]
     if icon then
-      if hide then
-        if icon._nvkOriginalHidden == nil and icon.IsHidden then
-          icon._nvkOriginalHidden = icon:IsHidden()
+      if icon._nvkOriginalHidden == nil and icon.IsHidden then
+        icon._nvkOriginalHidden = icon:IsHidden()
+      end
+      if icon._nvkOriginalDimensions == nil then
+        local width = icon.GetWidth and icon:GetWidth()
+        local height = icon.GetHeight and icon:GetHeight()
+        if (width and width > 0) or (height and height > 0) then
+          icon._nvkOriginalDimensions = { width or 0, height or 0 }
         end
-        if icon._nvkOriginalDimensions == nil then
-          local width = icon.GetWidth and icon:GetWidth()
-          local height = icon.GetHeight and icon:GetHeight()
-          if (width and width > 0) or (height and height > 0) then
-            icon._nvkOriginalDimensions = { width or 0, height or 0 }
-          end
+      end
+      if icon._nvkOriginalTexture == nil and icon.GetTextureFileName then
+        local ok, texture = pcall(icon.GetTextureFileName, icon)
+        if ok and texture ~= nil then
+          icon._nvkOriginalTexture = texture
         end
+      end
+
+      if iconPath and iconPath ~= "" and icon.SetTexture then
+        icon:SetTexture(iconPath)
         if icon.SetHidden then
-          icon:SetHidden(true)
-          icon._nvkForceHide = true
-        end
-        if icon.SetDimensions then
-          icon:SetDimensions(0, 0)
-        else
-          if icon.SetWidth then
-            icon:SetWidth(0)
-          end
-          if icon.SetHeight then
-            icon:SetHeight(0)
-          end
-        end
-      elseif icon._nvkForceHide then
-        if icon._nvkOriginalHidden ~= nil and icon.SetHidden then
-          icon:SetHidden(icon._nvkOriginalHidden)
-        elseif icon.SetHidden then
           icon:SetHidden(false)
         end
         local dims = icon._nvkOriginalDimensions
@@ -235,7 +226,27 @@ local function UpdateTemplateIcons(control, hide)
             end
           end
         end
-        icon._nvkForceHide = nil
+      else
+        if icon._nvkOriginalTexture and icon.SetTexture then
+          icon:SetTexture(icon._nvkOriginalTexture)
+        end
+        if icon._nvkOriginalHidden ~= nil and icon.SetHidden then
+          icon:SetHidden(icon._nvkOriginalHidden)
+        end
+        local dims = icon._nvkOriginalDimensions
+        if dims then
+          local width, height = dims[1] or 0, dims[2] or 0
+          if icon.SetDimensions then
+            icon:SetDimensions(width, height)
+          else
+            if icon.SetWidth then
+              icon:SetWidth(width)
+            end
+            if icon.SetHeight then
+              icon:SetHeight(height)
+            end
+          end
+        end
       end
     end
   end
@@ -270,68 +281,25 @@ local function ApplyCategoryIcon(control, data)
   end
 
   local iconTag = DetermineCategoryIconTag(data)
-  local hasIcon = iconTag ~= "" and iconTag ~= nil
-  UpdateTemplateIcons(control, hasIcon)
+  local iconPath = (iconTag and iconTag ~= "" and iconTag:match("|t[^:]*:[^:]*:([^|]+)|t")) or nil
+  UpdateTemplateIcons(control, iconPath)
 
-  if hasIcon and label.ClearAnchors and label.SetAnchor then
-    if not label._nvkOriginalAnchors and label.GetNumAnchors and label.GetAnchor then
-      local anchors = {}
-      local total = label:GetNumAnchors()
-      for idx = 1, total do
-        local isSet, point, relativeTo, relativePoint, offsetX, offsetY = label:GetAnchor(idx)
-        if isSet then
-          anchors[#anchors + 1] = { point, relativeTo, relativePoint, offsetX or 0, offsetY or 0 }
-        end
-      end
-      if #anchors > 0 then
-        label._nvkOriginalAnchors = anchors
-      end
-    end
-    label:ClearAnchors()
-    label:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
-    label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
-    label._nvkAnchorsAdjusted = true
-  elseif label._nvkAnchorsAdjusted and label.ClearAnchors and label.SetAnchor then
-    label:ClearAnchors()
-    local anchors = label._nvkOriginalAnchors
-    if type(anchors) == "table" and #anchors > 0 then
-      for idx = 1, #anchors do
-        local entry = anchors[idx]
-        if entry then
-          local point, relativeTo, relativePoint, offsetX, offsetY = entry[1], entry[2], entry[3], entry[4], entry[5]
-          label:SetAnchor(point or LEFT, relativeTo, relativePoint or point or LEFT, offsetX or 0, offsetY or 0)
-        end
-      end
+  local plain = data and data.nvkPlainName
+  if type(plain) == "string" and plain ~= "" then
+    plain = zo_strformat("<<1>>", plain)
+  else
+    local current = label:GetText() or ""
+    if U and U.StripLeadingIconTag then
+      current = U.StripLeadingIconTag(current)
     else
-      label:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
-      label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
+      current = current:gsub("^|t[^|]-|t%s*", "")
     end
-    label._nvkAnchorsAdjusted = nil
+    plain = zo_strformat("<<1>>", current)
   end
 
-  if hasIcon then
-    local plain = data and data.nvkPlainName
-    if type(plain) == "string" and plain ~= "" then
-      plain = zo_strformat("<<1>>", plain)
-    else
-      local current = label:GetText() or ""
-      current = current:gsub("^|t[^|]-|t%s*", "")
-      plain = zo_strformat("<<1>>", current)
-    end
-    label._nvkPlainText = plain
-    label:SetText((iconTag or "") .. (plain or ""))
-    label._nvkHasIcon = true
-  else
-    local plain = data and data.nvkPlainName
-    if type(plain) == "string" and plain ~= "" then
-      plain = zo_strformat("<<1>>", plain)
-      label._nvkPlainText = plain
-    end
-    if label._nvkHasIcon then
-      local text = label._nvkPlainText or label:GetText() or ""
-      label:SetText(text)
-      label._nvkHasIcon = nil
-    end
+  label._nvkPlainText = plain
+  if label:GetText() ~= plain then
+    label:SetText(plain)
   end
 end
 

@@ -10,6 +10,7 @@ local U = Nvk3UT and Nvk3UT.Utils
 local NVK3_DONE = 84003
 local ICON_PATH_COMPLETED = "/esoui/art/guild/tabicon_history_up.dds"
 local ICON_PATH_COMPLETED_RECENT = "/esoui/art/journal/journal_tabicon_quest_up.dds"
+local COMPLETED_LOOKUP_KEY = "NVK3UT_COMPLETED_ROOT"
 
 local function sanitizePlainName(name)
     if U and U.StripLeadingIconTag then
@@ -226,25 +227,37 @@ local function AddCompletedCategory(AchClass)
             return result
         end
 
-        local name = select(1, ...)
-        if name ~= nil then
-            return result
-        end
-
-        if not Comp or not Comp.GetSubcategoryList then
+        if not (Comp and Comp.GetSubcategoryList) then
             return result
         end
 
         local lookup, tree = self.nodeLookupData, self.categoryTree
+        if not (lookup and tree) then
+            return result
+        end
+
+        if lookup[COMPLETED_LOOKUP_KEY] then
+            local existing = lookup[COMPLETED_LOOKUP_KEY]
+            if existing and not self._nvkCompletedNode then
+                self._nvkCompletedNode = existing
+            end
+            return result
+        end
+
         local nodeTemplate = "ZO_IconHeader"
         local subTemplate = "ZO_TreeLabelSubCategory"
 
         local parentNode =
             self:AddCategory(lookup, tree, nodeTemplate, nil, NVK3_DONE, "Abgeschlossen", false, nil, nil, nil, true, true)
+        if not parentNode then
+            return result
+        end
+
+        lookup[COMPLETED_LOOKUP_KEY] = parentNode
         self._nvkCompletedNode = parentNode
         self._nvkCompletedChildren = {}
 
-        local parentData = parentNode and parentNode.GetData and parentNode:GetData()
+        local parentData = parentNode.GetData and parentNode:GetData()
         if parentData then
             parentData.isNvkCompleted = true
             parentData.nvkSummaryTooltipText = nil
