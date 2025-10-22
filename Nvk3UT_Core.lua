@@ -1,10 +1,65 @@
 Nvk3UT = Nvk3UT or {}
 local UI = Nvk3UT.UI
-local defaults={version=3,debug=false,ui={showStatus=true,favScope='account',recentWindow=0,recentMax=100},features={completed=true,favorites=true,recent=true,todo=true}}
+local function trackerColor(r, g, b, a)
+    return { r = r, g = g, b = b, a = a or 1 }
+end
+
+local trackerDefaults = {
+    enabled = true,
+    showQuests = true,
+    showAchievements = true,
+    behavior = {
+        hideDefault = false,
+        hideInCombat = false,
+        locked = false,
+        autoGrowV = true,
+        autoGrowH = false,
+        autoExpandNewQuests = false,
+        alwaysExpandAchievements = false,
+        tooltips = true,
+    },
+    background = {
+        enabled = false,
+        border = false,
+        alpha = 60,
+        hideWhenLocked = false,
+    },
+    fonts = {
+        category = { face = "ZoFontHeader2", effect = "soft-shadow-thin", size = 24, color = trackerColor(0.89, 0.82, 0.67, 1) },
+        quest = { face = "ZoFontGameBold", effect = "soft-shadow-thin", size = 20, color = trackerColor(1, 0.82, 0.1, 1) },
+        task = { face = "ZoFontGame", effect = "soft-shadow-thin", size = 18, color = trackerColor(0.9, 0.9, 0.9, 1) },
+        achieve = { face = "ZoFontGameBold", effect = "soft-shadow-thin", size = 20, color = trackerColor(1, 0.82, 0.1, 1) },
+        achieveTask = { face = "ZoFontGame", effect = "soft-shadow-thin", size = 18, color = trackerColor(0.9, 0.9, 0.9, 1) },
+    },
+    collapseState = {
+        zones = {},
+        quests = {},
+        achieves = {},
+    },
+    pos = { x = 400, y = 200, scale = 1.0, width = 320, height = 360 },
+    throttleMs = 150,
+}
+
+local defaults={version=3,debug=false,ui={showStatus=true,favScope='account',recentWindow=0,recentMax=100},features={completed=true,favorites=true,recent=true,todo=true},tracker=trackerDefaults}
 local function OnLoaded(e,name)
     if name~="Nvk3UT" then return end
     Nvk3UT._rebuild_lock=false
     Nvk3UT.sv = ZO_SavedVars:NewAccountWide("Nvk3UT_SV", 2, nil, defaults)
+    local function mergeDefaults(target, source)
+        if type(target) ~= "table" or type(source) ~= "table" then
+            return
+        end
+        for key, value in pairs(source) do
+            if type(value) == "table" then
+                target[key] = target[key] or {}
+                mergeDefaults(target[key], value)
+            elseif target[key] == nil then
+                target[key] = value
+            end
+        end
+    end
+    Nvk3UT.sv.tracker = Nvk3UT.sv.tracker or {}
+    mergeDefaults(Nvk3UT.sv.tracker, trackerDefaults)
     Nvk3UT.sv.features = Nvk3UT.sv.features or {}
     if Nvk3UT.sv.features.tooltips == nil then Nvk3UT.sv.features.tooltips = true end
     local U = Nvk3UT and Nvk3UT.Utils; if U and U.d then U.d("[Nvk3UT][Core][Init] loaded", "data={version:\"{VERSION}\"}") end
@@ -98,6 +153,22 @@ local function OnLoaded(e,name)
     end
     TryEnable(1)
     if Nvk3UT.Tooltips and Nvk3UT.Tooltips.Init then Nvk3UT.Tooltips.Init() end
+    if Nvk3UT.Questtracker and Nvk3UT.Questtracker.Init then
+        Nvk3UT.Questtracker.Init()
+        if EVENT_MANAGER then
+            EVENT_MANAGER:UnregisterForEvent("Nvk3UT_Questtracker_PlayerActivated", EVENT_PLAYER_ACTIVATED)
+            EVENT_MANAGER:RegisterForEvent(
+                "Nvk3UT_Questtracker_PlayerActivated",
+                EVENT_PLAYER_ACTIVATED,
+                function()
+                    EVENT_MANAGER:UnregisterForEvent("Nvk3UT_Questtracker_PlayerActivated", EVENT_PLAYER_ACTIVATED)
+                    if Nvk3UT and Nvk3UT.Questtracker and Nvk3UT.Questtracker.Enable then
+                        Nvk3UT.Questtracker.Enable()
+                    end
+                end
+            )
+        end
+    end
     EVENT_MANAGER:UnregisterForEvent("Nvk3UT_Load", EVENT_ADD_ON_LOADED)
 end
 EVENT_MANAGER:RegisterForEvent("Nvk3UT_Load", EVENT_ADD_ON_LOADED, OnLoaded)

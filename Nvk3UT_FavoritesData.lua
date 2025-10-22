@@ -5,6 +5,19 @@ Nvk3UT.FavoritesData = M
 
 local ACC_VER = 1
 local CHAR_VER = 1
+local CALLBACK_MANAGER = CALLBACK_MANAGER
+
+local function fireChanged(action, id, scope)
+    local cb = CALLBACK_MANAGER
+    if not cb then
+        return
+    end
+    cb:FireCallbacks("NVK3UT_FAVORITES_CHANGED", {
+        action = action,
+        id = id,
+        scope = scope,
+    })
+end
 
 -- SavedVariables:
 -- Account-wide: Nvk3UT_Data_Favorites (section 'account').list[id] = true
@@ -36,15 +49,30 @@ end
 
 function M.Toggle(id, scope)
     local set = getSet(scope)
-    if set[id] then set[id] = nil; return false else set[id] = true; return true end
+    local newState
+    if set[id] then
+        set[id] = nil
+        newState = false
+    else
+        set[id] = true
+        newState = true
+    end
+    fireChanged("toggle", id, scope)
+    return newState
 end
 
 function M.Add(id, scope)
-    local set = getSet(scope); set[id] = true
+    local set = getSet(scope)
+    set[id] = true
+    fireChanged("add", id, scope)
 end
 
 function M.Remove(id, scope)
-    local set = getSet(scope); set[id] = nil
+    local set = getSet(scope)
+    if set[id] then
+        set[id] = nil
+        fireChanged("remove", id, scope)
+    end
 end
 
 function M.Iterate(scope)
