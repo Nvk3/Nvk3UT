@@ -19,12 +19,14 @@ These archives contain third-party addons and example implementations used only 
 
 Important:
 
-These ZIP files must never be unpacked, copied, or imported into this repository.
+These ZIP files may be opened and read by the agent for analysis and understanding purposes, but their content must never be copied, extracted, or directly reused in this repository.
 
 They are for comparison and understanding only (e.g., how Kaleido or BSC handle certain UI or logic structures).
 
 The agent may reference them conceptually and is allowed to use the same ESO basegame functions as found in these references,
 but must rebuild all logic and structure independently using original code.
+
+The agent is explicitly allowed to use the official ESO API documentation, TXT dump files, and the ESO Wiki for reference and verification. When doing so, it must always ensure that it references the most recent game version and avoids outdated or deprecated API calls.
 
 🧩 Development Guidelines
 
@@ -36,7 +38,7 @@ Prefer clear, maintainable Lua with descriptive naming conventions.
 
 Use English for all code comments, variable names, and debug outputs.
 
-When replicating behavior from another addon (e.g., Kaleido, BSC), do so conceptually, but using the same ESO basegame functions when required.
+When replicating behavior from another addon (e.g., Kaleido, BSC), do so conceptually, but using the same ESO basegame functions when required while rebuilding all logic and structure independently using original code.
 
 🧠 Behavior and Commit Policy
 
