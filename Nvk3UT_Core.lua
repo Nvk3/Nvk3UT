@@ -1,10 +1,99 @@
 Nvk3UT = Nvk3UT or {}
 local UI = Nvk3UT.UI
-local defaults={version=3,debug=false,ui={showStatus=true,favScope='account',recentWindow=0,recentMax=100},features={completed=true,favorites=true,recent=true,todo=true}}
+local function copyTable(src)
+    if type(src) ~= "table" then
+        return src
+    end
+    local out = {}
+    for key, value in pairs(src) do
+        if type(value) == "table" then
+            out[key] = copyTable(value)
+        else
+            out[key] = value
+        end
+    end
+    return out
+end
+
+local function blendDefaults(target, defaults)
+    if type(target) ~= "table" then
+        target = {}
+    end
+    if type(defaults) ~= "table" then
+        return target
+    end
+    for key, value in pairs(defaults) do
+        if type(value) == "table" then
+            target[key] = blendDefaults(target[key], value)
+        elseif target[key] == nil then
+            target[key] = value
+        end
+    end
+    return target
+end
+
+local function getTrackerDefaults()
+    local questYellow = { r = 1, g = 0.82, b = 0.1, a = 1 }
+    local white = { r = 0.95, g = 0.95, b = 0.95, a = 1 }
+    return {
+        enabled = true,
+        showQuests = true,
+        showAchievements = true,
+        behavior = {
+            hideDefault = false,
+            hideInCombat = false,
+            locked = false,
+            autoGrowV = true,
+            autoGrowH = false,
+            autoExpandNewQuests = false,
+            alwaysExpandAchievements = false,
+            tooltips = true,
+        },
+        background = {
+            enabled = false,
+            border = false,
+            alpha = 60,
+            hideWhenLocked = false,
+        },
+        fonts = {
+            category = { face = "ZoFontGameBold", effect = "soft-shadow-thin", size = 22, color = white },
+            quest = { face = "ZoFontGame", effect = "soft-shadow-thin", size = 20, color = questYellow },
+            task = { face = "ZoFontGameSmall", effect = "soft-shadow-thin", size = 18, color = white },
+            achieve = { face = "ZoFontGame", effect = "soft-shadow-thin", size = 20, color = questYellow },
+            achieveTask = { face = "ZoFontGameSmall", effect = "soft-shadow-thin", size = 18, color = white },
+        },
+        collapseState = {
+            zones = {},
+            quests = {},
+            achieves = {},
+        },
+        pos = {
+            x = 200,
+            y = 200,
+            width = 360,
+            height = 420,
+            scale = 1,
+        },
+        throttleMs = 150,
+    }
+end
+
+local defaults = {
+    version = 3,
+    debug = false,
+    ui = { showStatus = true, favScope = "account", recentWindow = 0, recentMax = 100 },
+    features = { completed = true, favorites = true, recent = true, todo = true },
+    tracker = getTrackerDefaults(),
+}
+
+Nvk3UT.GetTrackerDefaults = getTrackerDefaults
 local function OnLoaded(e,name)
     if name~="Nvk3UT" then return end
     Nvk3UT._rebuild_lock=false
     Nvk3UT.sv = ZO_SavedVars:NewAccountWide("Nvk3UT_SV", 2, nil, defaults)
+    if Nvk3UT.sv then
+        Nvk3UT.sv.tracker = blendDefaults(Nvk3UT.sv.tracker, copyTable(getTrackerDefaults()))
+    end
     Nvk3UT.sv.features = Nvk3UT.sv.features or {}
     if Nvk3UT.sv.features.tooltips == nil then Nvk3UT.sv.features.tooltips = true end
     local U = Nvk3UT and Nvk3UT.Utils; if U and U.d then U.d("[Nvk3UT][Core][Init] loaded", "data={version:\"{VERSION}\"}") end
@@ -80,6 +169,9 @@ local function OnLoaded(e,name)
         end)
     end
 
+    if Nvk3UT.QuestTracker and Nvk3UT.QuestTracker.Init then
+        Nvk3UT.QuestTracker.Init()
+    end
     if Nvk3UT.UI then Nvk3UT.UI.BuildLAM(); Nvk3UT.UI.UpdateStatus() end
     -- Enable integrations when ACHIEVEMENTS exists
     local function TryEnable(attempt)

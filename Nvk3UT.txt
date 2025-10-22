@@ -9,6 +9,7 @@
 Nvk3UT_Utils.lua
 Nvk3UT_Achievements.lua
 Nvk3UT_Diagnostics.lua
+Nvk3UT_Questtracker.lua
 Nvk3UT_UI.lua
 Nvk3UT_Tooltips.lua
 Nvk3UT_FavoritesData.lua

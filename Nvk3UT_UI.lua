@@ -112,112 +112,344 @@ function M.BuildLAM()
   }
   LAM:RegisterAddonPanel("Nvk3UT_Panel", panel)
 
-  local opts = {
-    { type = "header", name = "Anzeige" },
+  local tracker = Nvk3UT and Nvk3UT.QuestTracker
+  if tracker and tracker.Init then
+    tracker:Init()
+  end
+
+  local trackerDefaults = (Nvk3UT and Nvk3UT.GetTrackerDefaults and Nvk3UT.GetTrackerDefaults()) or {}
+
+  local function ensureLamGroups()
+    local sv = Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.ui
+    if not sv then
+      return
+    end
+    sv.lamGroups = sv.lamGroups or {}
+  end
+
+  local function isGroupOpen(key)
+    ensureLamGroups()
+    local groups = Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.ui and Nvk3UT.sv.ui.lamGroups
+    if not groups then
+      return true
+    end
+    if groups[key] == nil then
+      groups[key] = true
+    end
+    return groups[key]
+  end
+
+  local function requestRefresh()
+    if LAM.util and LAM.util.RequestRefreshIfNeeded then
+      LAM.util.RequestRefreshIfNeeded("Nvk3UT_Panel")
+    elseif LAM.RequestRefreshIfNeeded then
+      LAM:RequestRefreshIfNeeded("Nvk3UT_Panel")
+    elseif CALLBACK_MANAGER then
+      CALLBACK_MANAGER:FireCallbacks("LAM-RefreshPanel", "Nvk3UT_Panel")
+    end
+  end
+
+  local function toggleGroup(key)
+    ensureLamGroups()
+    local groups = Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.ui and Nvk3UT.sv.ui.lamGroups
+    if not groups then
+      return
+    end
+    groups[key] = not groups[key]
+    requestRefresh()
+  end
+
+  local function wrapHidden(key, existing)
+    return function(...)
+      if not isGroupOpen(key) then
+        return true
+      end
+      if existing then
+        return existing(...)
+      end
+      return false
+    end
+  end
+
+  local TEXTURE_COLLAPSED = "/esoui/art/tree/tree_icon_closed.dds"
+  local TEXTURE_EXPANDED = "/esoui/art/tree/tree_icon_open.dds"
+  local HEADER_NORMAL = { 1, 1, 1, 1 }
+  local HEADER_HOVER = { 1, 0.95, 0.7, 1 }
+
+  local function createGroupHeader(key, label)
+    return {
+      type = "custom",
+      width = "full",
+      reference = "Nvk3UT_LAM_Header_" .. key,
+      refreshFunc = function(control)
+        control:SetResizeToFitDescendents(false)
+        control:SetHeight(32)
+        if not control._nvkInitialized then
+          control:SetMouseEnabled(true)
+          local arrow = CreateControl(nil, control, CT_TEXTURE)
+          arrow:SetDimensions(18, 18)
+          arrow:SetAnchor(LEFT, control, LEFT, 4, 0)
+          control.arrow = arrow
+
+          local lbl = CreateControl(nil, control, CT_LABEL)
+          lbl:SetAnchor(LEFT, arrow, RIGHT, 8, 0)
+          lbl:SetAnchor(RIGHT, control, RIGHT, -4, 0)
+          lbl:SetFont("ZoFontHeader")
+          lbl:SetText(label)
+          lbl:SetColor(unpack(HEADER_NORMAL))
+          control.label = lbl
+
+          control:SetHandler("OnMouseEnter", function()
+            if control.label then
+              control.label:SetColor(unpack(HEADER_HOVER))
+            end
+          end)
+          control:SetHandler("OnMouseExit", function()
+            if control.label then
+              control.label:SetColor(unpack(HEADER_NORMAL))
+            end
+          end)
+          control:SetHandler("OnMouseUp", function(_, button)
+            if button == MOUSE_BUTTON_INDEX_LEFT then
+              toggleGroup(key)
+            end
+          end)
+          control._nvkInitialized = true
+        end
+        if control.arrow then
+          control.arrow:SetTexture(isGroupOpen(key) and TEXTURE_EXPANDED or TEXTURE_COLLAPSED)
+        end
+        if control.label then
+          control.label:SetText(label)
+        end
+      end,
+    }
+  end
+
+  local FONT_CHOICES = {
+    { name = "ZoFontGame", label = "Spiel (Standard)" },
+    { name = "ZoFontGameBold", label = "Spiel (Fett)" },
+    { name = "ZoFontGameLarge", label = "Spiel (Groß)" },
+    { name = "ZoFontHeader", label = "Header" },
+    { name = "ZoFontWinH1", label = "Titel" },
+    { name = "ZoFontWinH2", label = "Untertitel" },
+    { name = "ZoFontGameSmall", label = "Spiel (Klein)" },
+  }
+
+  local EFFECT_CHOICES = {
+    { value = "", label = "Normal" },
+    { value = "soft-shadow-thin", label = "Soft Shadow (Dünn)" },
+    { value = "soft-shadow-thick", label = "Soft Shadow (Dick)" },
+    { value = "shadow", label = "Schatten" },
+    { value = "outline", label = "Outline" },
+    { value = "thick-outline", label = "Dicke Outline" },
+  }
+
+  local fontChoiceLabels, fontChoiceValues = {}, {}
+  for index, entry in ipairs(FONT_CHOICES) do
+    fontChoiceLabels[index] = entry.label
+    fontChoiceValues[index] = entry.name
+  end
+
+  local effectChoiceLabels, effectChoiceValues = {}, {}
+  for index, entry in ipairs(EFFECT_CHOICES) do
+    effectChoiceLabels[index] = entry.label
+    effectChoiceValues[index] = entry.value
+  end
+
+  local function getFontConfig(key)
+    if tracker and tracker.sv and tracker.sv.fonts and tracker.sv.fonts[key] then
+      return tracker.sv.fonts[key]
+    end
+    return trackerDefaults.fonts and trackerDefaults.fonts[key] or {}
+  end
+
+  local function cloneFontConfig(key)
+    local src = getFontConfig(key)
+    local out = {}
+    for k, v in pairs(src) do
+      if type(v) == "table" then
+        out[k] = { r = v.r, g = v.g, b = v.b, a = v.a }
+      else
+        out[k] = v
+      end
+    end
+    return out
+  end
+
+  local function setFontField(key, field, value)
+    if not (tracker and tracker.SetFontConfig) then
+      return
+    end
+    local config = cloneFontConfig(key)
+    if field == "color" then
+      config.color = value
+    else
+      config[field] = value
+    end
+    tracker:SetFontConfig(key, config)
+  end
+
+  local function colorComponents(color, fallback)
+    local src = color or fallback or {}
+    local r = tonumber(src.r) or tonumber(src[1]) or 1
+    local g = tonumber(src.g) or tonumber(src[2]) or 1
+    local b = tonumber(src.b) or tonumber(src[3]) or 1
+    local a = tonumber(src.a) or tonumber(src[4]) or 1
+    return r, g, b, a
+  end
+
+  local opts = {}
+
+  local function addGroup(key, label, controls)
+    opts[#opts + 1] = createGroupHeader(key, label)
+    for _, option in ipairs(controls) do
+      option.width = option.width or "full"
+      option.hidden = wrapHidden(key, option.hidden)
+      opts[#opts + 1] = option
+    end
+  end
+
+  local function trackerAvailable()
+    return tracker ~= nil
+  end
+
+  local function trackerEnabledFlag(defaultValue)
+    if tracker and tracker.sv and tracker.sv.enabled ~= nil then
+      return tracker.sv.enabled
+    end
+    if trackerDefaults.enabled == nil then
+      return defaultValue
+    end
+    return trackerDefaults.enabled
+  end
+
+  local function trackerBehavior(key, defaultValue)
+    if tracker and tracker.sv and tracker.sv.behavior and tracker.sv.behavior[key] ~= nil then
+      return tracker.sv.behavior[key]
+    end
+    local defaults = trackerDefaults.behavior or {}
+    if defaults[key] ~= nil then
+      return defaults[key]
+    end
+    return defaultValue
+  end
+
+  local function trackerBackground(key, defaultValue)
+    if tracker and tracker.sv and tracker.sv.background and tracker.sv.background[key] ~= nil then
+      return tracker.sv.background[key]
+    end
+    local defaults = trackerDefaults.background or {}
+    if defaults[key] ~= nil then
+      return defaults[key]
+    end
+    return defaultValue
+  end
+
+  local generalControls = {
     {
       type = "checkbox",
       name = "Status über dem Kompass anzeigen",
       getFunc = function()
-        return Nvk3UT.sv and Nvk3UT.sv.ui and Nvk3UT.sv.ui.showStatus
+        return Nvk3UT.sv and Nvk3UT.sv.ui and (Nvk3UT.sv.ui.showStatus ~= false)
       end,
-      setFunc = function(v)
+      setFunc = function(value)
         if Nvk3UT.sv and Nvk3UT.sv.ui then
-          Nvk3UT.sv.ui.showStatus = v
+          Nvk3UT.sv.ui.showStatus = value
         end
-        Nvk3UT.UI.UpdateStatus()
+        if Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then
+          Nvk3UT.UI.UpdateStatus()
+        end
       end,
       default = true,
     },
-    { type = "header", name = "Optionen" },
     {
       type = "dropdown",
-      name = "Favoritenspeicherung:",
+      name = "Favoritenspeicherung",
       choices = { "Account-Weit", "Charakter-Weit" },
+      choicesValues = { "account", "character" },
       getFunc = function()
-        local s = (Nvk3UT.sv and Nvk3UT.sv.ui and Nvk3UT.sv.ui.favScope) or "account"
-        return (s == "character" and "Charakter-Weit") or "Account-Weit"
+        return (Nvk3UT.sv and Nvk3UT.sv.ui and Nvk3UT.sv.ui.favScope) or "account"
       end,
-      setFunc = function(label)
+      setFunc = function(value)
         local old = (Nvk3UT.sv and Nvk3UT.sv.ui and Nvk3UT.sv.ui.favScope) or "account"
-        local new = (label == "Charakter-Weit") and "character" or "account"
         if Nvk3UT.sv and Nvk3UT.sv.ui then
-          Nvk3UT.sv.ui.favScope = new
+          Nvk3UT.sv.ui.favScope = value
         end
         if Nvk3UT.FavoritesData and Nvk3UT.FavoritesData.MigrateScope then
-          Nvk3UT.FavoritesData.MigrateScope(old, new)
+          Nvk3UT.FavoritesData.MigrateScope(old, value)
         end
         if Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then
           Nvk3UT.UI.UpdateStatus()
         end
       end,
-      tooltip = "Speichert und zählt Favoriten account-weit oder charakter-weit.",
+      tooltip = "Speichert Favoriten account- oder charakterweit.",
+      default = "account",
     },
     {
       type = "dropdown",
-      name = "Kürzlich-Zeitraum:",
+      name = "Kürzlich-Zeitraum",
       choices = { "Alle", "7 Tage", "30 Tage" },
+      choicesValues = { 0, 7, 30 },
       getFunc = function()
-        local w = (Nvk3UT.sv and Nvk3UT.sv.ui and Nvk3UT.sv.ui.recentWindow) or 0
-        return (w == 7 and "7 Tage") or (w == 30 and "30 Tage") or "Alle"
+        return (Nvk3UT.sv and Nvk3UT.sv.ui and Nvk3UT.sv.ui.recentWindow) or 0
       end,
-      setFunc = function(label)
-        local w = (label == "7 Tage" and 7) or (label == "30 Tage" and 30) or 0
+      setFunc = function(value)
         if Nvk3UT.sv and Nvk3UT.sv.ui then
-          Nvk3UT.sv.ui.recentWindow = w
+          Nvk3UT.sv.ui.recentWindow = value
         end
         if Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then
           Nvk3UT.UI.UpdateStatus()
         end
       end,
-      tooltip = "Wähle, welche Zeitspanne für Kürzlich gezählt/angezeigt wird.",
+      tooltip = "Zeitraum für Kürzlich-Berechnung.",
+      default = 0,
     },
     {
       type = "dropdown",
-      name = "Kürzlich - Maximum:",
+      name = "Kürzlich - Maximum",
       choices = { "50", "100", "250" },
+      choicesValues = { 50, 100, 250 },
       getFunc = function()
-        return tostring((Nvk3UT.sv and Nvk3UT.sv.ui and Nvk3UT.sv.ui.recentMax) or 100)
+        return (Nvk3UT.sv and Nvk3UT.sv.ui and Nvk3UT.sv.ui.recentMax) or 100
       end,
-      setFunc = function(label)
-        local v = tonumber(label) or 100
+      setFunc = function(value)
         if Nvk3UT.sv and Nvk3UT.sv.ui then
-          Nvk3UT.sv.ui.recentMax = v
+          Nvk3UT.sv.ui.recentMax = value
         end
         if Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then
           Nvk3UT.UI.UpdateStatus()
         end
       end,
-      tooltip = "Hardcap für die Anzahl der Kürzlich-Einträge.",
+      tooltip = "Maximale Anzahl der Kürzlich-Einträge.",
+      default = 100,
     },
-
-    { type = "header", name = "Funktionen" },
     {
       type = "checkbox",
       name = "Errungenschafts-Tooltips ein",
       getFunc = function()
         return (Nvk3UT.sv and Nvk3UT.sv.features and (Nvk3UT.sv.features.tooltips ~= false))
       end,
-      setFunc = function(v)
+      setFunc = function(value)
         if Nvk3UT.sv then
           Nvk3UT.sv.features = Nvk3UT.sv.features or {}
-          Nvk3UT.sv.features.tooltips = v
+          Nvk3UT.sv.features.tooltips = value
         end
         if Nvk3UT.Tooltips and Nvk3UT.Tooltips.Enable then
-          Nvk3UT.Tooltips.Enable(v)
+          Nvk3UT.Tooltips.Enable(value)
         end
       end,
       default = true,
     },
-
     {
       type = "checkbox",
       name = "Abgeschlossen aktiv",
       getFunc = function()
         return Nvk3UT.sv and Nvk3UT.sv.features and Nvk3UT.sv.features.completed
       end,
-      setFunc = function(v)
+      setFunc = function(value)
         Nvk3UT.sv.features = Nvk3UT.sv.features or {}
-        Nvk3UT.sv.features.completed = v
+        Nvk3UT.sv.features.completed = value
         M.ApplyFeatureToggles()
       end,
       default = true,
@@ -228,9 +460,9 @@ function M.BuildLAM()
       getFunc = function()
         return Nvk3UT.sv and Nvk3UT.sv.features and Nvk3UT.sv.features.favorites
       end,
-      setFunc = function(v)
+      setFunc = function(value)
         Nvk3UT.sv.features = Nvk3UT.sv.features or {}
-        Nvk3UT.sv.features.favorites = v
+        Nvk3UT.sv.features.favorites = value
         M.ApplyFeatureToggles()
       end,
       default = true,
@@ -241,9 +473,9 @@ function M.BuildLAM()
       getFunc = function()
         return Nvk3UT.sv and Nvk3UT.sv.features and Nvk3UT.sv.features.recent
       end,
-      setFunc = function(v)
+      setFunc = function(value)
         Nvk3UT.sv.features = Nvk3UT.sv.features or {}
-        Nvk3UT.sv.features.recent = v
+        Nvk3UT.sv.features.recent = value
         M.ApplyFeatureToggles()
       end,
       default = true,
@@ -254,9 +486,9 @@ function M.BuildLAM()
       getFunc = function()
         return Nvk3UT.sv and Nvk3UT.sv.features and Nvk3UT.sv.features.todo
       end,
-      setFunc = function(v)
+      setFunc = function(value)
         Nvk3UT.sv.features = Nvk3UT.sv.features or {}
-        Nvk3UT.sv.features.todo = v
+        Nvk3UT.sv.features.todo = value
         M.ApplyFeatureToggles()
       end,
       default = true,
@@ -268,9 +500,9 @@ function M.BuildLAM()
       getFunc = function()
         return Nvk3UT.sv and Nvk3UT.sv.debug
       end,
-      setFunc = function(v)
+      setFunc = function(value)
         if Nvk3UT.sv then
-          Nvk3UT.sv.debug = v
+          Nvk3UT.sv.debug = value
         end
       end,
       default = false,
@@ -283,7 +515,7 @@ function M.BuildLAM()
           Nvk3UT.SelfTest.Run()
         end
       end,
-      tooltip = "Führt einen kompakten Integritäts-Check aus. Bei aktiviertem Debug erscheinen ausführliche Chat-Logs.",
+      tooltip = "Führt einen kompakten Integritäts-Check aus.",
     },
     {
       type = "button",
@@ -293,6 +525,401 @@ function M.BuildLAM()
       end,
     },
   }
+
+  addGroup("general", "Allgemein", generalControls)
+
+  addGroup("funktionen", "Funktionen", {
+    {
+      type = "checkbox",
+      name = "Questtracker aktiv",
+      getFunc = function()
+        return trackerEnabledFlag(true)
+      end,
+      setFunc = function(value)
+        if tracker and tracker.SetEnabled then
+          tracker:SetEnabled(value)
+        end
+      end,
+      default = trackerDefaults.enabled ~= false,
+      disabled = function()
+        return not trackerAvailable()
+      end,
+    },
+    {
+      type = "checkbox",
+      name = "Quests im Questtracker tracken",
+      getFunc = function()
+        if tracker and tracker.sv then
+          return tracker.sv.showQuests ~= false
+        end
+        return true
+      end,
+      setFunc = function(value)
+        if tracker and tracker.SetShowQuests then
+          tracker:SetShowQuests(value)
+        end
+      end,
+      default = trackerDefaults.showQuests ~= false,
+      disabled = function()
+        return not trackerAvailable()
+      end,
+    },
+    {
+      type = "checkbox",
+      name = "Errungenschaften im Questtracker tracken",
+      getFunc = function()
+        if tracker and tracker.sv then
+          return tracker.sv.showAchievements ~= false
+        end
+        return true
+      end,
+      setFunc = function(value)
+        if tracker and tracker.SetShowAchievements then
+          tracker:SetShowAchievements(value)
+        end
+      end,
+      default = trackerDefaults.showAchievements ~= false,
+      disabled = function()
+        return not trackerAvailable()
+      end,
+    },
+  })
+
+  addGroup("behavior", "QuestTracker Verhalten", {
+    {
+      type = "checkbox",
+      name = "Default Questtracker verbergen",
+      getFunc = function()
+        return trackerBehavior("hideDefault", false)
+      end,
+      setFunc = function(value)
+        if tracker and tracker.SetHideDefault then
+          tracker:SetHideDefault(value)
+        end
+      end,
+      default = trackerDefaults.behavior and trackerDefaults.behavior.hideDefault or false,
+      disabled = function()
+        return not trackerAvailable()
+      end,
+    },
+    {
+      type = "checkbox",
+      name = "Quest Tracker im Kampf ausblenden",
+      getFunc = function()
+        return trackerBehavior("hideInCombat", false)
+      end,
+      setFunc = function(value)
+        if tracker and tracker.SetHideInCombat then
+          tracker:SetHideInCombat(value)
+        end
+      end,
+      default = trackerDefaults.behavior and trackerDefaults.behavior.hideInCombat or false,
+      disabled = function()
+        return not trackerAvailable()
+      end,
+    },
+    {
+      type = "checkbox",
+      name = "Quest Tracker sperren",
+      getFunc = function()
+        return trackerBehavior("locked", false)
+      end,
+      setFunc = function(value)
+        if tracker and tracker.SetLocked then
+          tracker:SetLocked(value)
+        end
+      end,
+      default = trackerDefaults.behavior and trackerDefaults.behavior.locked or false,
+      disabled = function()
+        return not trackerAvailable()
+      end,
+    },
+    {
+      type = "checkbox",
+      name = "Quest Tracker automatisch vertikal vergrößern",
+      getFunc = function()
+        return trackerBehavior("autoGrowV", true)
+      end,
+      setFunc = function(value)
+        if tracker and tracker.SetAutoGrowV then
+          tracker:SetAutoGrowV(value)
+        end
+      end,
+      default = trackerDefaults.behavior and trackerDefaults.behavior.autoGrowV ~= false,
+      disabled = function()
+        return not trackerAvailable()
+      end,
+    },
+    {
+      type = "checkbox",
+      name = "Questtracker automatisch horizontal vergrößern",
+      getFunc = function()
+        return trackerBehavior("autoGrowH", false)
+      end,
+      setFunc = function(value)
+        if tracker and tracker.SetAutoGrowH then
+          tracker:SetAutoGrowH(value)
+        end
+      end,
+      default = trackerDefaults.behavior and trackerDefaults.behavior.autoGrowH or false,
+      disabled = function()
+        return not trackerAvailable()
+      end,
+    },
+    {
+      type = "checkbox",
+      name = "Neue Quests automatisch aufklappen",
+      getFunc = function()
+        return trackerBehavior("autoExpandNewQuests", false)
+      end,
+      setFunc = function(value)
+        if tracker and tracker.SetAutoExpandNewQuests then
+          tracker:SetAutoExpandNewQuests(value)
+        end
+      end,
+      default = trackerDefaults.behavior and trackerDefaults.behavior.autoExpandNewQuests or false,
+      disabled = function()
+        return not trackerAvailable()
+      end,
+    },
+    {
+      type = "checkbox",
+      name = "Errungenschaften immer aufklappen",
+      getFunc = function()
+        return trackerBehavior("alwaysExpandAchievements", false)
+      end,
+      setFunc = function(value)
+        if tracker and tracker.SetAlwaysExpandAchievements then
+          tracker:SetAlwaysExpandAchievements(value)
+        end
+      end,
+      default = trackerDefaults.behavior and trackerDefaults.behavior.alwaysExpandAchievements or false,
+      disabled = function()
+        return not trackerAvailable()
+      end,
+    },
+    {
+      type = "checkbox",
+      name = "Tooltips im Questtracker anzeigen",
+      getFunc = function()
+        return trackerBehavior("tooltips", true)
+      end,
+      setFunc = function(value)
+        if tracker and tracker.SetTooltipsEnabled then
+          tracker:SetTooltipsEnabled(value)
+        end
+      end,
+      default = trackerDefaults.behavior and (trackerDefaults.behavior.tooltips ~= false) or true,
+      disabled = function()
+        return not trackerAvailable()
+      end,
+    },
+    {
+      type = "slider",
+      name = "Refresh-Throttle (ms)",
+      min = 0,
+      max = 1000,
+      step = 10,
+      getFunc = function()
+        if tracker and tracker.sv and tracker.sv.throttleMs then
+          return tracker.sv.throttleMs
+        end
+        return trackerDefaults.throttleMs or 150
+      end,
+      setFunc = function(value)
+        if tracker and tracker.SetThrottleMs then
+          tracker:SetThrottleMs(value)
+        end
+      end,
+      default = trackerDefaults.throttleMs or 150,
+      disabled = function()
+        return not trackerAvailable()
+      end,
+    },
+  })
+
+  addGroup("background", "Questtracker Background", {
+    {
+      type = "checkbox",
+      name = "Background aktivieren",
+      getFunc = function()
+        return trackerBackground("enabled", false)
+      end,
+      setFunc = function(value)
+        if tracker and tracker.SetBackgroundEnabled then
+          tracker:SetBackgroundEnabled(value)
+        end
+      end,
+      default = trackerDefaults.background and trackerDefaults.background.enabled or false,
+      disabled = function()
+        return not trackerAvailable()
+      end,
+    },
+    {
+      type = "checkbox",
+      name = "Rand aktivieren",
+      getFunc = function()
+        return trackerBackground("border", false)
+      end,
+      setFunc = function(value)
+        if tracker and tracker.SetBackgroundBorder then
+          tracker:SetBackgroundBorder(value)
+        end
+      end,
+      default = trackerDefaults.background and trackerDefaults.background.border or false,
+      disabled = function()
+        return not trackerAvailable()
+      end,
+    },
+    {
+      type = "slider",
+      name = "Background Transparenz",
+      min = 0,
+      max = 100,
+      step = 5,
+      getFunc = function()
+        return trackerBackground("alpha", 60)
+      end,
+      setFunc = function(value)
+        if tracker and tracker.SetBackgroundAlpha then
+          tracker:SetBackgroundAlpha(value)
+        end
+      end,
+      default = trackerDefaults.background and trackerDefaults.background.alpha or 60,
+      disabled = function()
+        return not trackerAvailable()
+      end,
+    },
+    {
+      type = "checkbox",
+      name = "Background bei Sperren ausblenden",
+      getFunc = function()
+        return trackerBackground("hideWhenLocked", false)
+      end,
+      setFunc = function(value)
+        if tracker and tracker.SetBackgroundHideWhenLocked then
+          tracker:SetBackgroundHideWhenLocked(value)
+        end
+      end,
+      default = trackerDefaults.background and trackerDefaults.background.hideWhenLocked or false,
+      disabled = function()
+        return not trackerAvailable()
+      end,
+    },
+  })
+
+  local fontLabels = {
+    category = {
+      font = "Kategorie Font",
+      effect = "Kategorie Font Effekte",
+      size = "Kategorie Schriftgröße",
+      color = "Kategorie Font Farbe",
+    },
+    quest = {
+      font = "Quest Font",
+      effect = "Quest Font Effekte",
+      size = "Quest Size",
+      color = "Quest Color",
+    },
+    task = {
+      font = "Quest Aufgaben Font",
+      effect = "Quest Aufgaben Font Effekte",
+      size = "Quest Aufgaben Größe",
+      color = "Quest Aufgaben Farbe",
+    },
+    achieve = {
+      font = "Errungenschaft Font",
+      effect = "Errungenschaft Font Effekte",
+      size = "Errungenschaft Size",
+      color = "Errungenschaft Color",
+    },
+    achieveTask = {
+      font = "Errungenschaft Aufgaben Font",
+      effect = "Errungenschaft Aufgaben Effekte",
+      size = "Errungenschaft Aufgaben Größe",
+      color = "Errungenschaft Aufgaben Farbe",
+    },
+  }
+
+  local function fontControls(key, labels)
+    local defaults = trackerDefaults.fonts and trackerDefaults.fonts[key] or {}
+    return {
+      {
+        type = "dropdown",
+        name = labels.font,
+        choices = fontChoiceLabels,
+        choicesValues = fontChoiceValues,
+        getFunc = function()
+          local cfg = getFontConfig(key)
+          return cfg.face or defaults.face or "ZoFontGame"
+        end,
+        setFunc = function(value)
+          setFontField(key, "face", value)
+        end,
+        default = defaults.face or "ZoFontGame",
+        disabled = function()
+          return not trackerAvailable()
+        end,
+      },
+      {
+        type = "dropdown",
+        name = labels.effect,
+        choices = effectChoiceLabels,
+        choicesValues = effectChoiceValues,
+        getFunc = function()
+          local cfg = getFontConfig(key)
+          return cfg.effect or defaults.effect or ""
+        end,
+        setFunc = function(value)
+          setFontField(key, "effect", value)
+        end,
+        default = defaults.effect or "soft-shadow-thin",
+        disabled = function()
+          return not trackerAvailable()
+        end,
+      },
+      {
+        type = "slider",
+        name = labels.size,
+        min = 12,
+        max = 36,
+        step = 1,
+        getFunc = function()
+          local cfg = getFontConfig(key)
+          return cfg.size or defaults.size or 18
+        end,
+        setFunc = function(value)
+          setFontField(key, "size", value)
+        end,
+        default = defaults.size or 18,
+        disabled = function()
+          return not trackerAvailable()
+        end,
+      },
+      {
+        type = "colorpicker",
+        name = labels.color,
+        getFunc = function()
+          local cfg = getFontConfig(key)
+          return colorComponents(cfg.color, defaults.color)
+        end,
+        setFunc = function(r, g, b, a)
+          setFontField(key, "color", { r = r, g = g, b = b, a = a })
+        end,
+        default = { colorComponents(defaults.color, { r = 1, g = 1, b = 1, a = 1 }) },
+        disabled = function()
+          return not trackerAvailable()
+        end,
+      },
+    }
+  end
+
+  addGroup("category", "Kategorie Optionen", fontControls("category", fontLabels.category))
+  addGroup("quest", "Quest Optionen", fontControls("quest", fontLabels.quest))
+  addGroup("task", "Quest Aufgaben", fontControls("task", fontLabels.task))
+  addGroup("achieve", "Errungenschaften Optionen", fontControls("achieve", fontLabels.achieve))
+  addGroup("achieveTask", "Errungenschaften Aufgaben", fontControls("achieveTask", fontLabels.achieveTask))
+
   LAM:RegisterOptionControls("Nvk3UT_Panel", opts)
 end
 
