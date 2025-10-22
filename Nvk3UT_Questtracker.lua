@@ -106,6 +106,10 @@ local function safeCall(func, ...)
   return result
 end
 
+local function pack(...)
+  return { n = select("#", ...), ... }
+end
+
 local function copyTable(source)
   if type(source) ~= "table" then
     return source
@@ -181,20 +185,57 @@ local function questStepKey(questIndex, questId)
   return string.format("%d:%s", questId or 0, table.concat(parts, "|"))
 end
 
-local function isQuestTracked(questIndex)
-  if type(GetIsJournalQuestTracked) == "function" then
-    local ok, tracked = pcall(GetIsJournalQuestTracked, questIndex)
-    if ok then
-      return tracked
+local function gatherTrackedQuestSet()
+  if type(GetTrackedQuestIndices) ~= "function" then
+    return nil
+  end
+  local ok, values = pcall(function()
+    return pack(GetTrackedQuestIndices())
+  end)
+  if not ok or type(values) ~= "table" then
+    return nil
+  end
+  local set = {}
+  for index = 1, values.n do
+    local questIndex = values[index]
+    if type(questIndex) == "number" and questIndex > 0 then
+      set[questIndex] = true
+    end
+  end
+  if next(set) then
+    return set
+  end
+  return nil
+end
+
+local function isQuestTracked(questIndex, trackedLookup)
+  if trackedLookup and trackedLookup[questIndex] then
+    return true
+  end
+  local trackers = {
+    GetJournalQuestIsTracked,
+    GetIsQuestTracked,
+    GetIsJournalQuestTracked,
+  }
+  for _, fn in ipairs(trackers) do
+    if type(fn) == "function" then
+      local ok, tracked = pcall(fn, questIndex)
+      if ok and tracked ~= nil then
+        return tracked
+      end
     end
   end
   if type(IsJournalQuestStepTracked) == "function" and type(GetJournalQuestNumSteps) == "function" then
-    local steps = GetJournalQuestNumSteps(questIndex)
+    local steps = safeCall(GetJournalQuestNumSteps, questIndex) or 0
     for stepIndex = 1, steps do
-      if IsJournalQuestStepTracked(questIndex, stepIndex) then
+      local okStep, trackedStep = pcall(IsJournalQuestStepTracked, questIndex, stepIndex)
+      if okStep and trackedStep then
         return true
       end
     end
+    return false
+  end
+  if trackedLookup then
     return false
   end
   return true
@@ -206,28 +247,59 @@ local function gatherQuestObjectives(questIndex)
   if type(GetJournalQuestNumSteps) ~= "function" then
     return objectives, stepSummaries
   end
-  local steps = GetJournalQuestNumSteps(questIndex)
+  local steps = safeCall(GetJournalQuestNumSteps, questIndex) or 0
   local seenSteps = {}
   for stepIndex = 1, steps do
-    local stepText, visibility, stepType, trackerComplete, _, _, stepOverride = GetJournalQuestStepInfo(questIndex, stepIndex)
-    local summary = stepOverride ~= "" and stepOverride or stepText or ""
-    summary = sanitizeText(summary)
-    if not trackerComplete and summary ~= "" and not seenSteps[summary] then
-      stepSummaries[#stepSummaries + 1] = summary
-      seenSteps[summary] = true
-    end
-    if not trackerComplete then
-      local numConditions = GetJournalQuestNumConditions(questIndex, stepIndex) or 0
-      for conditionIndex = 1, numConditions do
-        local conditionText, cur, max, isFail, isComplete = GetJournalQuestConditionInfo(questIndex, stepIndex, conditionIndex)
-        if conditionText ~= "" and not isFail and not isComplete then
-          objectives[#objectives + 1] = {
-            text = sanitizeText(conditionText),
-            current = cur,
-            max = max,
-            stepIndex = stepIndex,
-            conditionIndex = conditionIndex,
-          }
+    local okStep,
+      stepText,
+      visibility,
+      stepType,
+      trackerComplete,
+      _,
+      _,
+      stepOverride =
+        pcall(GetJournalQuestStepInfo, questIndex, stepIndex)
+    if okStep then
+      local isHiddenStep = false
+      if QUEST_STEP_VISIBILITY_HIDDEN and visibility == QUEST_STEP_VISIBILITY_HIDDEN then
+        isHiddenStep = true
+      end
+      if not trackerComplete and not isHiddenStep then
+        local summary = stepOverride ~= "" and stepOverride or stepText or ""
+        summary = sanitizeText(summary)
+        if summary ~= "" and not seenSteps[summary] then
+          stepSummaries[#stepSummaries + 1] = summary
+          seenSteps[summary] = true
+        end
+      end
+      if not trackerComplete then
+        local numConditions = safeCall(GetJournalQuestNumConditions, questIndex, stepIndex) or 0
+        for conditionIndex = 1, numConditions do
+          local okCondition,
+            conditionText,
+            cur,
+            max,
+            isFail,
+            isComplete =
+              pcall(GetJournalQuestConditionInfo, questIndex, stepIndex, conditionIndex)
+          if okCondition then
+            local visible = true
+            if type(IsJournalQuestConditionVisible) == "function" then
+              local okVisible, isVisible = pcall(IsJournalQuestConditionVisible, questIndex, stepIndex, conditionIndex)
+              if okVisible then
+                visible = isVisible
+              end
+            end
+            if visible and conditionText ~= "" and not isFail and not isComplete then
+              objectives[#objectives + 1] = {
+                text = sanitizeText(conditionText),
+                current = cur,
+                max = max,
+                stepIndex = stepIndex,
+                conditionIndex = conditionIndex,
+              }
+            end
+          end
         end
       end
     end
@@ -241,14 +313,46 @@ local function collectQuests()
   if type(GetNumJournalQuests) ~= "function" then
     return order
   end
+  local trackedLookup = gatherTrackedQuestSet()
   local zonesByKey = {}
   local questCount = GetNumJournalQuests()
   for journalIndex = 1, questCount do
-    if isQuestTracked(journalIndex) then
-      local questName = sanitizeText(safeCall(GetJournalQuestName, journalIndex) or "")
+    local questName = ""
+    local questTracked
+    local activeStepText = ""
+    if type(GetJournalQuestInfo) == "function" then
+      local okQuest, name, _, stepText, _, trackedFlag = pcall(GetJournalQuestInfo, journalIndex)
+      if okQuest then
+        questName = sanitizeText(name)
+        activeStepText = sanitizeText(stepText)
+        questTracked = trackedFlag
+      end
+    end
+    if questTracked == nil then
+      questTracked = isQuestTracked(journalIndex, trackedLookup)
+    elseif not questTracked then
+      questTracked = isQuestTracked(journalIndex, trackedLookup)
+    end
+    if questTracked then
       local questId = safeCall(GetJournalQuestId, journalIndex) or 0
-      local zoneName = sanitizeText(safeCall(GetJournalQuestZoneName, journalIndex) or "")
-      local zoneId = safeCall(GetJournalQuestZoneId, journalIndex)
+      local zoneName = ""
+      local zoneId
+      if type(GetJournalQuestLocationInfo) == "function" then
+        local okLocation, rawZoneName, _, locationZoneId = pcall(GetJournalQuestLocationInfo, journalIndex)
+        if okLocation then
+          zoneName = sanitizeText(rawZoneName)
+          zoneId = locationZoneId
+        end
+      end
+      if zoneName == "" then
+        zoneName = sanitizeText(safeCall(GetJournalQuestZoneName, journalIndex) or "")
+      end
+      if zoneId == nil then
+        zoneId = safeCall(GetJournalQuestZoneId, journalIndex)
+      end
+      if questName == "" then
+        questName = sanitizeText(safeCall(GetJournalQuestName, journalIndex) or "")
+      end
       local zoneKey = zoneId and string.format("%d", zoneId) or zoneName
       if zoneKey == nil or zoneKey == "" then
         zoneKey = zoneName ~= "" and zoneName or "unknown"
@@ -265,7 +369,7 @@ local function collectQuests()
         order[#order + 1] = zoneEntry
       end
       local objectives, stepSummaries = gatherQuestObjectives(journalIndex)
-      local stepText = stepSummaries[1] or ""
+      local stepText = stepSummaries[1] or activeStepText or ""
       local questEntry = {
         type = ROW_TYPES.QUEST,
         name = questName,
@@ -379,6 +483,30 @@ local function collectFavoriteAchievements()
     entry.sortKey = nil
   end
   return favorites
+end
+
+local function ensureLamCallbacks(self)
+  if not (CALLBACK_MANAGER and self and self.lamPanelControl) then
+    return
+  end
+  if self.lamCallbacksRegistered then
+    return
+  end
+  self.lamCallbacksRegistered = true
+  self.lamPanelOpenedCallback = function(panel)
+    if panel == self.lamPanelControl then
+      self.lamPanelOpen = true
+      self:ApplyVisibility()
+    end
+  end
+  self.lamPanelClosedCallback = function(panel)
+    if panel == self.lamPanelControl then
+      self.lamPanelOpen = false
+      self:ApplyVisibility()
+    end
+  end
+  CALLBACK_MANAGER:RegisterCallback("LAM-PanelOpened", self.lamPanelOpenedCallback)
+  CALLBACK_MANAGER:RegisterCallback("LAM-PanelClosed", self.lamPanelClosedCallback)
 end
 
 local function applyColorToLabel(label, color)
@@ -860,6 +988,15 @@ local function ensureCollapseTables(self)
   cs.achieves = cs.achieves or {}
 end
 
+function QT:RegisterLamPanel(panelControl)
+  self.lamPanelControl = panelControl
+  if panelControl and panelControl.IsHidden then
+    self.lamPanelOpen = not panelControl:IsHidden()
+  end
+  ensureLamCallbacks(self)
+  self:ApplyVisibility()
+end
+
 local function renderQuests(self, zones)
   for _, zoneEntry in ipairs(zones) do
     local row = acquireRow(self)
@@ -984,16 +1121,46 @@ function QT:Refresh(throttled)
   self:ApplyVisibility()
 end
 
-function QT:ApplyVisibility()
-  if not self.control then
-    return
+function QT:IsSceneAllowed()
+  if self.lamPanelOpen then
+    return true
   end
-  local shouldShow = self.enabled and (self.sv.enabled ~= false)
-  if shouldShow and self.sv.behavior.hideInCombat and self.isInCombat then
+  local manager = SCENE_MANAGER
+  if manager and manager.IsShowingBaseScene then
+    local okBase, isBase = pcall(manager.IsShowingBaseScene, manager)
+    if okBase and isBase then
+      return true
+    end
+  end
+  if manager and manager.IsShowing then
+    local okHud, hud = pcall(manager.IsShowing, manager, "hud")
+    if okHud and hud then
+      return true
+    end
+    local okHudUi, hudUi = pcall(manager.IsShowing, manager, "hudui")
+    if okHudUi and hudUi then
+      return true
+    end
+  end
+  if not manager then
+    return true
+  end
+  return false
+end
+
+function QT:ApplyVisibility()
+  local shouldShow = self.enabled and (self.sv and self.sv.enabled ~= false)
+  if shouldShow and not self:IsSceneAllowed() then
     shouldShow = false
   end
-  self.control:SetHidden(not shouldShow)
-  self:SetDefaultTrackerHidden(self.sv.behavior.hideDefault)
+  local behavior = self.sv and self.sv.behavior or {}
+  if shouldShow and behavior.hideInCombat and self.isInCombat then
+    shouldShow = false
+  end
+  if self.control then
+    self.control:SetHidden(not shouldShow)
+  end
+  self:SetDefaultTrackerHidden(behavior.hideDefault)
 end
 
 function QT:SetDefaultTrackerHidden(hidden)
@@ -1185,6 +1352,14 @@ local function registerEvents(self)
     end
     CM:RegisterCallback("NVK3UT_FAVORITES_CHANGED", self.favoritesCallback)
   end
+  if SCENE_MANAGER and not self.sceneCallback then
+    self.sceneCallback = function(scene, oldState, newState)
+      if newState == SCENE_SHOWING or newState == SCENE_SHOWN or newState == SCENE_HIDDEN then
+        self:ApplyVisibility()
+      end
+    end
+    SCENE_MANAGER:RegisterCallback("SceneStateChanged", self.sceneCallback)
+  end
 end
 
 local function unregisterEvents(self)
@@ -1205,6 +1380,10 @@ local function unregisterEvents(self)
     CM:UnregisterCallback("NVK3UT_FAVORITES_CHANGED", self.favoritesCallback)
     self.favoritesCallback = nil
   end
+  if SCENE_MANAGER and self.sceneCallback then
+    SCENE_MANAGER:UnregisterCallback("SceneStateChanged", self.sceneCallback)
+    self.sceneCallback = nil
+  end
   self.eventsRegistered = false
 end
 
@@ -1218,6 +1397,10 @@ function QT.Init()
   QT.pendingRefresh = false
   QT.enabled = false
   QT.pendingQuestExpand = {}
+  QT.lamPanelOpen = QT.lamPanelOpen or false
+  if QT.lamPanelControl then
+    ensureLamCallbacks(QT)
+  end
 end
 
 function QT.Enable()
@@ -1231,6 +1414,7 @@ function QT.Enable()
   end
   QT:EnsureControl()
   QT:ApplySettings()
+  ensureLamCallbacks(QT)
   registerEvents(QT)
   QT.enabled = true
   QT:Refresh(false)
@@ -1251,6 +1435,19 @@ end
 
 function QT.Destroy()
   QT:Disable()
+  if CALLBACK_MANAGER then
+    if QT.lamPanelOpenedCallback then
+      CALLBACK_MANAGER:UnregisterCallback("LAM-PanelOpened", QT.lamPanelOpenedCallback)
+      QT.lamPanelOpenedCallback = nil
+    end
+    if QT.lamPanelClosedCallback then
+      CALLBACK_MANAGER:UnregisterCallback("LAM-PanelClosed", QT.lamPanelClosedCallback)
+      QT.lamPanelClosedCallback = nil
+    end
+  end
+  QT.lamCallbacksRegistered = false
+  QT.lamPanelControl = nil
+  QT.lamPanelOpen = false
   if QT.control then
     QT.control:SetHidden(true)
     QT.control = nil
