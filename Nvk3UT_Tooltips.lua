@@ -120,7 +120,7 @@ local function GetCategoryLabel(control)
   return control:GetNamedChild("Text") or control:GetNamedChild("Label") or control:GetNamedChild("Name")
 end
 
-local function MakeStaticTextureSet(path)
+local function TryResolveTexture(path)
   if not path or path == "" then
     return nil
   end
@@ -130,12 +130,53 @@ local function MakeStaticTextureSet(path)
   if not path or path == "" then
     return nil
   end
+  return path
+end
+
+local function BuildStateTextures(path)
+  local normal = TryResolveTexture(path)
+  if not normal then
+    return nil
+  end
+
+  local base = path
+  if base:find("_up%.dds$") then
+    base = base:gsub("_up%.dds$", "")
+  elseif base:find("_down%.dds$") then
+    base = base:gsub("_down%.dds$", "")
+  elseif base:find("_over%.dds$") then
+    base = base:gsub("_over%.dds$", "")
+  else
+    base = base:gsub("%.dds$", "")
+  end
+
+  local function pickTexture(suffixes, fallback)
+    for _, suffix in ipairs(suffixes) do
+      local candidate = TryResolveTexture(base .. suffix)
+      if candidate then
+        return candidate
+      end
+    end
+    return fallback
+  end
+
+  local pressed = pickTexture({ "_down.dds", "_pressed.dds" }, normal)
+  local mouseover = pickTexture({ "_over.dds", "_hover.dds" }, pressed)
+  local selected = pickTexture({ "_selected.dds", "_over.dds", "_up.dds" }, mouseover)
+
   return {
-    normal = path,
-    pressed = path,
-    mouseover = path,
-    selected = path,
+    normal = normal,
+    pressed = pressed or normal,
+    mouseover = mouseover or pressed or normal,
+    selected = selected or mouseover or pressed or normal,
   }
+end
+
+local function MakeStaticTextureSet(path)
+  if not path or path == "" then
+    return nil
+  end
+  return BuildStateTextures(path)
 end
 
 local function DetermineCategoryIconTextures(data)
@@ -191,21 +232,45 @@ local function ApplyCategoryIcon(control, data)
     end
   end
 
-  applyTexture(control.icon or control.iconTexture, iconPath)
-  applyTexture(control.iconMouseOver, textures and (textures.mouseover or textures.pressed or iconPath))
-  applyTexture(control.iconSelected, textures and (textures.selected or textures.mouseover or iconPath))
+  local normalTexture = textures.normal or iconPath
+  local pressedTexture = textures.pressed or normalTexture
+  local mouseoverTexture = textures.mouseover or pressedTexture
+  local selectedTexture = textures.selected or mouseoverTexture
+
+  applyTexture(control.icon or control.iconTexture, normalTexture)
+  applyTexture(control.iconTexture, normalTexture)
+  applyTexture(control.iconDown or control.iconPressed, pressedTexture)
+  applyTexture(control.iconPressed, pressedTexture)
+  applyTexture(control.iconMouseOver, mouseoverTexture)
+  applyTexture(control.iconHighlight, mouseoverTexture)
+  applyTexture(control.iconSelected, selectedTexture)
+
+  if control.SetNormalTexture and normalTexture then
+    control:SetNormalTexture(normalTexture)
+  end
+  if control.SetPressedTexture and pressedTexture then
+    control:SetPressedTexture(pressedTexture)
+  end
+  if control.SetMouseOverTexture and mouseoverTexture then
+    control:SetMouseOverTexture(mouseoverTexture)
+  end
+  if control.SetSelectedTexture and selectedTexture then
+    control:SetSelectedTexture(selectedTexture)
+  end
 
   if data then
-    local mouseover = textures and (textures.mouseover or textures.pressed or iconPath) or iconPath
-    local selected = textures and (textures.selected or textures.mouseover or iconPath) or iconPath
-    data.icon = iconPath
-    data.iconTexture = iconPath
-    data.normalIcon = iconPath
-    data.pressedIcon = textures and (textures.pressed or iconPath) or iconPath
-    data.mouseoverIcon = mouseover
-    data.iconMouseOver = mouseover
-    data.iconSelected = selected
-    data.selectedIcon = selected
+    data.icon = normalTexture
+    data.iconTexture = normalTexture
+    data.normalIcon = normalTexture
+    data.upIcon = normalTexture
+    data.pressedIcon = pressedTexture
+    data.downIcon = pressedTexture
+    data.mouseoverIcon = mouseoverTexture
+    data.overIcon = mouseoverTexture
+    data.iconMouseOver = mouseoverTexture
+    data.iconSelected = selectedTexture
+    data.selectedIcon = selectedTexture
+    data.highlightIcon = mouseoverTexture
   end
 
   local label = GetCategoryLabel(control)
