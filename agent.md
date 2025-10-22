@@ -31,8 +31,10 @@ These archives contain **third-party addons and example implementations** used *
 ---
 
 ## 🧩 Development Guidelines
-- Follow the **ESO Addon API standards** and existing patterns within this repository.  
-- Keep all new features **modular and localized**, so they can be easily toggled or removed.  
+- Follow the **ESO Addon API standards** and existing patterns within this repository.
+- Changes may span multiple addon files (init, scenes/fragments, XML templates, LAM, SavedVars) **if required** to attach to HUD/HUDUI scenes, manage default tracker visibility, or persist tracker state. Keep the implementation modular.
+- The agent may create/attach fragments to **HUD/HUDUI** scenes and adjust anchors/parents to match base tracker behavior (show/hide on scene changes, combat hide, locking), using original code.
+- Keep all new features **modular and localized**, so they can be easily toggled or removed.
 - Prefer **clear, maintainable Lua** with descriptive naming conventions.  
 - Use English for all code comments, variable names, and debug outputs.  
 - When replicating behavior from another addon (e.g., *Kaleido*, *BSC*), do so **conceptually**, but using the same ESO basegame functions when required.  
@@ -53,7 +55,7 @@ These archives contain **third-party addons and example implementations** used *
 - ❌ Do **not** copy or reuse code directly from any ZIP file in the `reference` folder.  
 - ❌ Do **not** extract or import files from those ZIPs into this repository.  
 - ❌ Do **not** fetch external code from the internet without explicit instruction.  
-- ❌ Do **not** overwrite basegame UI functions unless necessary — prefer safe hooks.
+- ❌ Prefer safe hooks (ZO_PreHook/ZO_PostHook). However, when functional parity with the base tracker requires it, the agent **may override or replace** specific basegame handlers (e.g., default tracker visibility/fragment wiring). Such overrides must be minimal, documented, and limited in scope.
 
 ---
 
@@ -63,6 +65,7 @@ The `reference` archives serve **only** as design inspiration, not as a codebase
 All new functionality must be implemented cleanly, safely, and independently,  
 but may use the same ESO basegame functions as the reference addons when that is the correct or only viable approach.  
 The agent may freely use the **ESO API, TXT dumps, and Wiki** for accurate and up-to-date information.
+When in doubt, **functional parity with the base tracker** takes precedence over cosmetic similarity, provided all code remains original and compliant with ESO API.
 
 ---
 
