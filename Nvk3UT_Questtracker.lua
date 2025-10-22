@@ -174,10 +174,6 @@ local function safeCall(func, ...)
   return result
 end
 
-local function pack(...)
-  return { n = select("#", ...), ... }
-end
-
 local function copyTable(source)
   if type(source) ~= "table" then
     return source
@@ -291,299 +287,72 @@ local function sanitizeText(text)
   return zo_strformat("<<1>>", text)
 end
 
-local function formatCategoryDisplayName(rawName)
-  local sanitized = sanitizeText(rawName)
-  if sanitized == "" then
-    return LABELS.generalZone
+local function collectQuestZonesFromModel()
+  local QM = Nvk3UT and Nvk3UT.QuestModel
+  if not (QM and QM.GetList) then
+    return {}
   end
-  if type(zo_strformat) == "function" then
-    if SI_QUEST_JOURNAL_CATEGORY_NAME then
-      local okFmt, formatted = pcall(zo_strformat, SI_QUEST_JOURNAL_CATEGORY_NAME, sanitized)
-      if okFmt and formatted and formatted ~= "" then
-        return formatted
-      end
-    end
-    local okCaps, capitalized = pcall(zo_strformat, "<<C:1>>", sanitized)
-    if okCaps and capitalized and capitalized ~= "" then
-      return capitalized
-    end
+  local order, byId = QM.GetList()
+  if type(order) ~= "table" or type(byId) ~= "table" then
+    return {}
   end
-  return sanitized
-end
 
-local function getQuestDisplayIcon(displayType)
-  if QUEST_JOURNAL_KEYBOARD and QUEST_JOURNAL_KEYBOARD.GetIconTexture then
-    local ok, texture = pcall(QUEST_JOURNAL_KEYBOARD.GetIconTexture, QUEST_JOURNAL_KEYBOARD, displayType)
-    if ok and texture and texture ~= "" then
-      return texture
+  local zones = {}
+  local zoneLookup = {}
+
+  local function acquireZone(entry)
+    local zoneKey = entry.zoneKey or entry.zoneName or tostring(entry.id or "")
+    local zone = zoneLookup[zoneKey]
+    if zone then
+      return zone
     end
-  end
-  return DEFAULT_ICONS.quest
-end
-
-local function formatQuestLabel(name, level)
-  local questName = sanitizeText(name)
-  if level and level > 0 then
-    return string.format("[%d] %s", level, questName)
-  end
-  return questName
-end
-
-local function questStepKey(questIndex, questId)
-  if type(GetJournalQuestNumSteps) ~= "function" then
-    return tostring(questId or questIndex or "")
-  end
-  local parts = {}
-  local steps = safeCall(GetJournalQuestNumSteps, questIndex) or 0
-  for stepIndex = 1, steps do
-    local stepText, visibility, stepType, trackerComplete, _, _, stepOverride = GetJournalQuestStepInfo(questIndex, stepIndex)
-    if not trackerComplete then
-      local text = stepOverride ~= "" and stepOverride or stepText or ""
-      text = sanitizeText(text)
-      parts[#parts + 1] = string.format("%d:%s", stepIndex, text)
-    end
-  end
-  if #parts == 0 then
-    parts[#parts + 1] = "complete"
-  end
-  return string.format("%d:%s", questId or 0, table.concat(parts, "|"))
-end
-
-local function gatherTrackedQuestSet()
-  if type(GetTrackedQuestIndices) ~= "function" then
-    return nil
-  end
-  local ok, values = pcall(function()
-    return pack(GetTrackedQuestIndices())
-  end)
-  if not ok or type(values) ~= "table" then
-    return nil
-  end
-  local set = {}
-  for index = 1, values.n do
-    local questIndex = values[index]
-    if type(questIndex) == "number" and questIndex > 0 then
-      set[questIndex] = true
-    end
-  end
-  if next(set) then
-    return set
-  end
-  return nil
-end
-
-local function isQuestTracked(questIndex, trackedLookup)
-  if trackedLookup and trackedLookup[questIndex] then
-    return true
-  end
-  local trackers = {
-    GetJournalQuestIsTracked,
-    GetIsQuestTracked,
-    GetIsJournalQuestTracked,
-  }
-  for _, fn in ipairs(trackers) do
-    if type(fn) == "function" then
-      local ok, tracked = pcall(fn, questIndex)
-      if ok and tracked ~= nil then
-        return tracked
-      end
-    end
-  end
-  if type(IsJournalQuestStepTracked) == "function" and type(GetJournalQuestNumSteps) == "function" then
-    local steps = safeCall(GetJournalQuestNumSteps, questIndex) or 0
-    for stepIndex = 1, steps do
-      local okStep, trackedStep = pcall(IsJournalQuestStepTracked, questIndex, stepIndex)
-      if okStep and trackedStep then
-        return true
-      end
-    end
-    return false
-  end
-  if trackedLookup then
-    return false
-  end
-  return true
-end
-
-local function gatherQuestObjectives(questIndex)
-  local objectives = {}
-  local stepSummaries = {}
-  if type(GetJournalQuestNumSteps) ~= "function" then
-    return objectives, stepSummaries
-  end
-  local steps = safeCall(GetJournalQuestNumSteps, questIndex) or 0
-  local seenSteps = {}
-  for stepIndex = 1, steps do
-    local okStep,
-      stepText,
-      visibility,
-      stepType,
-      trackerComplete,
-      _,
-      _,
-      stepOverride =
-        pcall(GetJournalQuestStepInfo, questIndex, stepIndex)
-    if okStep then
-      local isHiddenStep = false
-      if QUEST_STEP_VISIBILITY_HIDDEN and visibility == QUEST_STEP_VISIBILITY_HIDDEN then
-        isHiddenStep = true
-      end
-      if not trackerComplete and not isHiddenStep then
-        local summary = stepOverride ~= "" and stepOverride or stepText or ""
-        summary = sanitizeText(summary)
-        if summary ~= "" and not seenSteps[summary] then
-          stepSummaries[#stepSummaries + 1] = summary
-          seenSteps[summary] = true
-        end
-      end
-      if not trackerComplete then
-        local numConditions = safeCall(GetJournalQuestNumConditions, questIndex, stepIndex) or 0
-        for conditionIndex = 1, numConditions do
-          local okCondition,
-            conditionText,
-            cur,
-            max,
-            isFail,
-            isComplete =
-              pcall(GetJournalQuestConditionInfo, questIndex, stepIndex, conditionIndex)
-          if okCondition then
-            local visible = true
-            if type(IsJournalQuestConditionVisible) == "function" then
-              local okVisible, isVisible = pcall(IsJournalQuestConditionVisible, questIndex, stepIndex, conditionIndex)
-              if okVisible then
-                visible = isVisible
-              end
-            end
-            if visible and conditionText ~= "" and not isFail and not isComplete then
-              local objectiveIndex = #objectives + 1
-              objectives[objectiveIndex] = {
-                text = sanitizeText(conditionText),
-                current = cur,
-                max = max,
-                stepIndex = stepIndex,
-                conditionIndex = conditionIndex,
-                index = objectiveIndex,
-              }
-            end
-          end
-        end
-      end
-    end
-  end
-  return objectives, stepSummaries
-end
-
-local function collectQuests()
-  local categories = {}
-  if not (QUEST_JOURNAL_MANAGER and QUEST_JOURNAL_MANAGER.GetQuestListData) then
-    return categories
-  end
-  local okData, allQuests, allCategories = pcall(QUEST_JOURNAL_MANAGER.GetQuestListData, QUEST_JOURNAL_MANAGER)
-  if not okData or type(allQuests) ~= "table" or type(allCategories) ~= "table" then
-    return categories
-  end
-  local trackedLookup = gatherTrackedQuestSet()
-  local categoriesByName = {}
-  local orderCounter = 0
-
-  for index, categoryData in ipairs(allCategories) do
-    local sanitizedName = formatCategoryDisplayName(categoryData.name)
-    orderCounter = orderCounter + 1
-    local entry = {
-      key = string.format("cat:%d:%d", categoryData.type or 0, index),
-      name = sanitizedName ~= "" and sanitizedName or LABELS.generalZone,
-      icon = DEFAULT_ICONS.zone,
+    zone = {
+      key = zoneKey,
+      name = entry.zoneName or LABELS.generalZone,
+      icon = entry.zoneIcon or DEFAULT_ICONS.zone,
+      orderType = entry.zoneType or 0,
+      orderIndex = entry.zoneOrderIndex or (#zones + 1),
       quests = {},
-      orderType = categoryData.type or 0,
-      orderIndex = orderCounter,
     }
-    categories[#categories + 1] = entry
-    categoriesByName[categoryData.name] = entry
+    zoneLookup[zoneKey] = zone
+    zones[#zones + 1] = zone
+    return zone
   end
 
-  local function ensureCategory(categoryName, categoryType)
-    local lookupKey = categoryName ~= "" and categoryName or LABELS.generalZone
-    local existing = categoriesByName[lookupKey]
-    if existing then
-      return existing
-    end
-    local displayName = formatCategoryDisplayName(lookupKey)
-    orderCounter = orderCounter + 1
-    local fallback = {
-      key = string.format("cat:%d:%d", categoryType or 999, orderCounter),
-      name = displayName,
-      icon = DEFAULT_ICONS.zone,
-      quests = {},
-      orderType = categoryType or 999,
-      orderIndex = orderCounter,
-    }
-    categories[#categories + 1] = fallback
-    categoriesByName[lookupKey] = fallback
-    return fallback
-  end
-
-  for _, questData in ipairs(allQuests) do
-    local questIndex = questData.questIndex
-    if questIndex and isQuestTracked(questIndex, trackedLookup) then
-      local questName = sanitizeText(questData.name or questData.questName or "")
-      if questName == "" then
-        questName = sanitizeText(safeCall(GetJournalQuestName, questIndex) or "")
-      end
-      local questId = questData.questId or safeCall(GetJournalQuestId, questIndex) or 0
-      local categoryName = questData.categoryName or LABELS.generalZone
-      local categoryType = questData.categoryType or 0
-      local categoryEntry = ensureCategory(categoryName, categoryType)
-      local objectives, stepSummaries = gatherQuestObjectives(questIndex)
-      local stepText = stepSummaries[1]
-        or sanitizeText(questData.trackerOverrideText or questData.stepText or questData.conditionText or "")
-      local displayName = formatQuestLabel(questName, questData.level)
-      local questEntry = {
-        type = ROW_TYPES.QUEST,
-        name = questName ~= "" and questName or LABELS.generalZone,
-        displayName = displayName,
-        questId = questId,
-        journalIndex = questIndex,
-        zoneKey = categoryEntry.key,
-        objectives = objectives,
-        steps = stepSummaries,
-        stepText = stepText,
-        key = questStepKey(questIndex, questId),
-        icon = getQuestDisplayIcon(questData.displayType),
-        order = questData.sortOrder or questIndex,
-        level = questData.level,
-        displayType = questData.displayType,
-      }
-      categoryEntry.quests[#categoryEntry.quests + 1] = questEntry
+  for _, questKey in ipairs(order) do
+    local quest = byId[questKey]
+    if quest and quest.isTracked ~= false then
+      quest.type = ROW_TYPES.QUEST
+      quest.steps = quest.steps or {}
+      quest.stepSummaries = quest.stepSummaries or {}
+      quest.stepText = quest.stepText or ""
+      quest.objectives = quest.objectives or {}
+      quest.displayName = quest.displayName or quest.name or quest.title
+      local zone = acquireZone(quest)
+      zone.quests[#zone.quests + 1] = quest
     end
   end
 
-  local filtered = {}
-  for _, categoryEntry in ipairs(categories) do
-    if #categoryEntry.quests > 0 then
-      filtered[#filtered + 1] = categoryEntry
-    end
-  end
-
-  table.sort(filtered, function(left, right)
+  table.sort(zones, function(left, right)
     if left.orderType ~= right.orderType then
       return left.orderType < right.orderType
     end
     if left.orderIndex ~= right.orderIndex then
       return left.orderIndex < right.orderIndex
     end
-    return left.name < right.name
+    return (left.name or "") < (right.name or "")
   end)
 
-  for _, categoryEntry in ipairs(filtered) do
-    table.sort(categoryEntry.quests, function(left, right)
-      if left.order ~= right.order then
-        return left.order < right.order
+  for _, zone in ipairs(zones) do
+    table.sort(zone.quests, function(left, right)
+      if (left.order or 0) ~= (right.order or 0) then
+        return (left.order or 0) < (right.order or 0)
       end
-      return left.name < right.name
+      return (left.name or "") < (right.name or "")
     end)
   end
 
-  return filtered
+  return zones
 end
 
 local function getFavoriteScope()
@@ -749,10 +518,24 @@ local function buildObjectiveSignature(list)
 end
 
 local function buildQuestSignature(quest)
+  local summaries = quest.stepSummaries
+  if not summaries and quest.steps then
+    summaries = {}
+    for _, step in ipairs(quest.steps) do
+      summaries[#summaries + 1] = step.text or ""
+    end
+  end
+  local summaryCount = summaries and #summaries or #(quest.steps or {})
+  local summaryText = {}
+  if summaries then
+    for _, value in ipairs(summaries) do
+      summaryText[#summaryText + 1] = value
+    end
+  end
   local components = {
     quest.displayName or quest.name or "",
-    quest.stepText or "",
-    tostring(#(quest.steps or {})),
+    quest.stepText or table.concat(summaryText, "|"),
+    tostring(summaryCount or 0),
     buildObjectiveSignature(quest.objectives),
   }
   return table.concat(components, "||")
@@ -998,8 +781,9 @@ local function questTooltip(control, entry, zoneName)
   if zoneName and zoneName ~= "" then
     InformationTooltip:AddLine(zoneName, "ZoFontGame")
   end
-  if entry.steps and #entry.steps > 0 then
-    for _, stepSummary in ipairs(entry.steps) do
+  local summaries = entry.stepSummaries or entry.steps
+  if summaries and #summaries > 0 then
+    for _, stepSummary in ipairs(summaries) do
       if stepSummary ~= "" then
         InformationTooltip:AddLine(stepSummary, "ZoFontGame")
       end
@@ -1666,7 +1450,7 @@ function QT:Refresh(throttled)
 
   local showQuests = self.sv.showQuests ~= false
   local showAchievements = self.sv.showAchievements ~= false
-  local zones = showQuests and collectQuests() or {}
+  local zones = showQuests and collectQuestZonesFromModel() or {}
   local achievements = showAchievements and collectFavoriteAchievements() or {}
 
   local zoneCount = zones and #zones or 0
@@ -2130,6 +1914,13 @@ function QT.Init()
   QT.renderInitialized = false
   QT.forceRender = true
   QT.defaultTrackerHidden = nil
+  if not QT.questSubscriptionRegistered and Nvk3UT and Nvk3UT.Subscribe then
+    Nvk3UT.Subscribe("quests:changed", function()
+      QT.forceRender = true
+      QT:Refresh(true)
+    end)
+    QT.questSubscriptionRegistered = true
+  end
   if QT.lamPanelControl then
     ensureLamCallbacks(QT)
   end

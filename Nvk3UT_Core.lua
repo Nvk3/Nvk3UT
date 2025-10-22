@@ -42,6 +42,9 @@ function Module.Publish(topic, payload)
     end
 end
 
+M.Subscribe = Module.Subscribe
+M.Publish = Module.Publish
+
 local CORE_EVENT_NAMESPACE = "Nvk3UT_Core_OnLoaded"
 
 local function initializeSavedVars()
