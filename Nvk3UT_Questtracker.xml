@@ -1,5 +1,40 @@
 <GuiXml>
     <Controls>
         <Control name="Nvk3UT_TrackerRootTemplate" virtual="true" />
+        <Control name="Nvk3UT_RowQuestTitleTemplate" virtual="true">
+            <Dimensions x="0" y="32" />
+            <Controls>
+                <Label name="$(parent)Label" font="ZoFontGameBold" horizontalAlignment="LEFT" verticalAlignment="CENTER">
+                    <Anchor point="TOPLEFT" offsetX="8" offsetY="0" />
+                    <Anchor point="BOTTOMRIGHT" offsetX="-8" offsetY="0" />
+                </Label>
+            </Controls>
+        </Control>
+        <Control name="Nvk3UT_RowQuestStepTemplate" virtual="true">
+            <Dimensions x="0" y="24" />
+            <Controls>
+                <Label name="$(parent)Label" font="ZoFontGame" horizontalAlignment="LEFT" verticalAlignment="CENTER">
+                    <Anchor point="TOPLEFT" offsetX="24" offsetY="0" />
+                    <Anchor point="BOTTOMRIGHT" offsetX="-8" offsetY="0" />
+                </Label>
+            </Controls>
+        </Control>
+        <Control name="Nvk3UT_RowDividerTemplate" virtual="true">
+            <Dimensions x="0" y="2" />
+            <Controls>
+                <Texture name="$(parent)Line" color="FFFFFFFF">
+                    <AnchorFill />
+                </Texture>
+            </Controls>
+        </Control>
+        <Control name="Nvk3UT_RowAchievementTemplate" virtual="true">
+            <Dimensions x="0" y="32" />
+            <Controls>
+                <Label name="$(parent)Label" font="ZoFontGameBold" horizontalAlignment="LEFT" verticalAlignment="CENTER">
+                    <Anchor point="TOPLEFT" offsetX="8" offsetY="0" />
+                    <Anchor point="BOTTOMRIGHT" offsetX="-8" offsetY="0" />
+                </Label>
+            </Controls>
+        </Control>
     </Controls>
 </GuiXml>
