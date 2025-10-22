@@ -104,16 +104,16 @@ local function isQuestTracked(journalIndex)
     return true
 end
 
-local function buildCategoryKey(categoryIndex, subCategoryIndex, name)
-    local label = sanitizeText(name)
-    return string.format("%d:%d:%s", categoryIndex or 0, subCategoryIndex or 0, label)
-end
-
 local function sanitizeText(text)
     if type(text) ~= "string" then
         return ""
     end
     return zo_strformat("<<1>>", text)
+end
+
+local function buildCategoryKey(categoryIndex, subCategoryIndex, name)
+    local label = sanitizeText(name)
+    return string.format("%d:%d:%s", categoryIndex or 0, subCategoryIndex or 0, label)
 end
 
 local function buildQuestKey(questId, stepKey)
@@ -169,62 +169,172 @@ local function buildQuestObjectives(journalIndex)
     return objectives
 end
 
-local function gatherQuestIndices(categoryIndex, subCategoryIndex, questCount)
-    local indices = {}
-    if subCategoryIndex then
-        local collected = { safeCall(GetJournalQuestSubCategoryQuestIndices, categoryIndex, subCategoryIndex) }
-        for _, value in ipairs(collected) do
-            if type(value) == "number" then
-                indices[#indices + 1] = value
-            end
-        end
-        if #indices == 0 then
-            if questCount == nil then
-                local _, numQuests = safeCall(GetJournalQuestSubCategoryInfo, categoryIndex, subCategoryIndex)
-                questCount = numQuests
-            end
-            questCount = questCount or 0
-            for order = 1, questCount do
-                local journalIndex = safeCall(GetJournalQuestIndexFromSubCategoryIndex, categoryIndex, subCategoryIndex, order)
-                if type(journalIndex) == "number" then
-                    indices[#indices + 1] = journalIndex
-                end
-            end
+local function extractJournalIndex(questData)
+    if type(questData) == "number" then
+        return questData
+    end
+    if type(questData) ~= "table" then
+        return nil
+    end
+    if questData.data and type(questData.data) == "table" then
+        return extractJournalIndex(questData.data)
+    end
+    return questData.journalQuestIndex
+        or questData.journalIndex
+        or questData.questIndex
+        or questData.index
+        or questData.entryIndex
+end
+
+local function appendJournalQuest(zoneOrder, questZones, questLookup, journalZoneLookup, categoryIndex, subCategoryIndex, zoneName, journalIndex)
+    if type(journalIndex) ~= "number" then
+        return
+    end
+    local questName, backgroundText, stepText, _, trackerOverrideText, completed, tracked =
+        safeCall(GetJournalQuestInfo, journalIndex)
+    if not questName or questName == "" or completed == true then
+        return
+    end
+    local questId = safeCall(GetJournalQuestId, journalIndex) or 0
+    if questId == 0 then
+        questId = journalIndex
+    end
+    local locationName, _, zoneId = safeCall(GetJournalQuestLocationInfo, journalIndex)
+    local stepKey = getQuestStepKey(journalIndex)
+    local questKey = buildQuestKey(questId, stepKey)
+    local zoneLabel = sanitizeText(zoneName)
+    if zoneLabel == "" then
+        zoneLabel = sanitizeText(locationName)
+    end
+    local zoneKey = buildCategoryKey(categoryIndex, subCategoryIndex, zoneLabel)
+    local zoneEntry = questZones[zoneKey]
+    if not zoneEntry then
+        zoneEntry = {
+            key = zoneKey,
+            zoneName = zoneLabel,
+            categoryIndex = categoryIndex,
+            subCategoryIndex = subCategoryIndex,
+            quests = {},
+            order = {},
+        }
+        questZones[zoneKey] = zoneEntry
+    end
+    local questEntry = zoneEntry.quests[questKey]
+    if not questEntry then
+        questEntry = {
+            key = questKey,
+            questId = questId,
+            journalIndex = journalIndex,
+            name = sanitizeText(questName),
+            background = sanitizeText(backgroundText),
+            stepText = sanitizeText(stepText),
+            trackerText = sanitizeText(trackerOverrideText),
+            objectives = buildQuestObjectives(journalIndex),
+            zoneName = sanitizeText(locationName),
+            zoneId = zoneId,
+            zoneKey = zoneKey,
+            isTracked = tracked == true or isQuestTracked(journalIndex),
+        }
+        zoneEntry.quests[questKey] = questEntry
+        zoneEntry.order[#zoneEntry.order + 1] = questKey
+        if #zoneEntry.order == 1 then
+            zoneOrder[#zoneOrder + 1] = zoneKey
         end
     else
-        local collected = { safeCall(GetJournalQuestCategoryQuestIndices, categoryIndex) }
-        for _, value in ipairs(collected) do
-            if type(value) == "number" then
-                indices[#indices + 1] = value
+        questEntry.journalIndex = journalIndex
+        questEntry.name = sanitizeText(questName)
+        questEntry.background = sanitizeText(backgroundText)
+        questEntry.stepText = sanitizeText(stepText)
+        questEntry.trackerText = sanitizeText(trackerOverrideText)
+        questEntry.objectives = buildQuestObjectives(journalIndex)
+        questEntry.zoneName = sanitizeText(locationName)
+        questEntry.zoneId = zoneId
+        questEntry.zoneKey = zoneKey
+        questEntry.isTracked = tracked == true or isQuestTracked(journalIndex)
+    end
+    questLookup[questKey] = zoneKey
+    journalZoneLookup[journalIndex] = zoneKey
+end
+
+local function collectQuestsFromManager()
+    if not (QUEST_JOURNAL_MANAGER and QUEST_JOURNAL_MANAGER.GetQuestListData) then
+        return nil
+    end
+    local ok, listData = pcall(QUEST_JOURNAL_MANAGER.GetQuestListData, QUEST_JOURNAL_MANAGER)
+    if not ok or type(listData) ~= "table" then
+        return nil
+    end
+    local zoneOrder = {}
+    local questZones = {}
+    local questLookup = {}
+    local journalZoneLookup = {}
+    local function resolveCategoryIndex(category)
+        if type(category) ~= "table" then
+            return nil
+        end
+        return category.categoryIndex
+            or category.index
+            or category.categoryId
+            or (category.data and (category.data.categoryIndex or category.data.index))
+    end
+    local function resolveSubCategoryIndex(subCategory)
+        if type(subCategory) ~= "table" then
+            return nil
+        end
+        return subCategory.subCategoryIndex
+            or subCategory.index
+            or subCategory.categoryIndex
+            or (subCategory.data and (subCategory.data.subCategoryIndex or subCategory.data.index or subCategory.data.categoryIndex))
+    end
+    for _, category in ipairs(listData) do
+        local categoryIndex = resolveCategoryIndex(category)
+        local categoryName = sanitizeText(category and (category.name or category.categoryName or category.rawName))
+        if categoryName == "" and categoryIndex then
+            categoryName = sanitizeText(select(1, safeCall(GetJournalQuestCategoryInfo, categoryIndex)) or "")
+        end
+        local function processList(questList, subCategoryIndex, displayName)
+            if type(questList) ~= "table" then
+                return
+            end
+            for _, questData in ipairs(questList) do
+                local journalIndex = extractJournalIndex(questData)
+                if type(journalIndex) == "number" then
+                    appendJournalQuest(zoneOrder, questZones, questLookup, journalZoneLookup, categoryIndex, subCategoryIndex, displayName, journalIndex)
+                end
             end
         end
-        if #indices == 0 then
-            questCount = questCount or select(3, safeCall(GetJournalQuestCategoryInfo, categoryIndex)) or 0
-            for order = 1, questCount do
-                local journalIndex = safeCall(GetJournalQuestIndexFromCategoryIndex, categoryIndex, order)
-                if type(journalIndex) == "number" then
-                    indices[#indices + 1] = journalIndex
+        processList(category and (category.questList or category.quests), nil, categoryName)
+        local subCategories = category and (category.subCategories or category.subcategories or category.subCategoryList)
+        if type(subCategories) == "table" then
+            for _, subCategory in ipairs(subCategories) do
+                local subIndex = resolveSubCategoryIndex(subCategory)
+                local subName = sanitizeText(subCategory and (subCategory.name or subCategory.categoryName or subCategory.rawName))
+                if subName == "" then
+                    subName = categoryName
                 end
+                processList(subCategory and (subCategory.questList or subCategory.quests), subIndex, subName)
             end
         end
     end
-    return indices
+    if #zoneOrder > 0 then
+        return zoneOrder, questZones, questLookup, journalZoneLookup
+    end
+    return nil
 end
 
-local function collectQuestCategories()
-    local categories = {}
+local function collectQuestsFromApi()
+    local zoneOrder = {}
+    local questZones = {}
+    local questLookup = {}
+    local journalZoneLookup = {}
     local numCategories = safeCall(GetJournalQuestNumCategories) or 0
     for categoryIndex = 1, numCategories do
         local categoryName, numSubCategories, numCategoryQuests = safeCall(GetJournalQuestCategoryInfo, categoryIndex)
         categoryName = sanitizeText(categoryName)
-        if (numCategoryQuests or 0) > 0 then
-            categories[#categories + 1] = {
-                key = buildCategoryKey(categoryIndex, 0, categoryName),
-                name = categoryName,
-                categoryIndex = categoryIndex,
-                subCategoryIndex = nil,
-                questIndices = gatherQuestIndices(categoryIndex, nil, numCategoryQuests),
-            }
+        numCategoryQuests = numCategoryQuests or 0
+        for orderIndex = 1, numCategoryQuests do
+            local journalIndex = safeCall(GetJournalQuestIndexFromCategoryIndex, categoryIndex, orderIndex)
+            appendJournalQuest(zoneOrder, questZones, questLookup, journalZoneLookup, categoryIndex, nil, categoryName, journalIndex)
         end
         numSubCategories = numSubCategories or 0
         for subCategoryIndex = 1, numSubCategories do
@@ -233,81 +343,27 @@ local function collectQuestCategories()
             if subName == "" then
                 subName = categoryName
             end
-            categories[#categories + 1] = {
-                key = buildCategoryKey(categoryIndex, subCategoryIndex, subName),
-                name = subName,
-                categoryIndex = categoryIndex,
-                subCategoryIndex = subCategoryIndex,
-                questIndices = gatherQuestIndices(categoryIndex, subCategoryIndex, numSubQuests),
-            }
+            numSubQuests = numSubQuests or 0
+            for orderIndex = 1, numSubQuests do
+                local journalIndex =
+                    safeCall(GetJournalQuestIndexFromSubCategoryIndex, categoryIndex, subCategoryIndex, orderIndex)
+                appendJournalQuest(zoneOrder, questZones, questLookup, journalZoneLookup, categoryIndex, subCategoryIndex, subName, journalIndex)
+            end
         end
     end
-    return categories
+    return zoneOrder, questZones, questLookup, journalZoneLookup
 end
 
 local function getQuestData()
-    local questZones = {}
-    local zoneOrder = {}
-    local questLookup = {}
-    local journalZoneLookup = {}
-    local showQuest = true
     local trackerSv = Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.tracker
     if trackerSv and trackerSv.showQuests == false then
-        showQuest = false
+        return {}, {}, {}, {}
     end
-    if not showQuest then
+    local zoneOrder, questZones, questLookup, journalZoneLookup = collectQuestsFromManager()
+    if zoneOrder then
         return zoneOrder, questZones, questLookup, journalZoneLookup
     end
-
-    local categories = collectQuestCategories()
-    for _, category in ipairs(categories) do
-        local zoneKey = category.key
-        local zoneName = category.name
-        local zoneEntry = {
-            key = zoneKey,
-            zoneName = zoneName,
-            categoryIndex = category.categoryIndex,
-            subCategoryIndex = category.subCategoryIndex,
-            quests = {},
-            order = {},
-        }
-
-        for _, journalIndex in ipairs(category.questIndices) do
-            local questName, backgroundText, stepText, trackerOverrideText, completed =
-                safeCall(GetJournalQuestInfo, journalIndex)
-            if questName and questName ~= "" and completed ~= true then
-                local questId = safeCall(GetJournalQuestId, journalIndex) or 0
-                local locationName, _, zoneId = safeCall(GetJournalQuestLocationInfo, journalIndex)
-                local stepKey = getQuestStepKey(journalIndex)
-                local questKey = buildQuestKey(questId, stepKey)
-                local questEntry = {
-                    key = questKey,
-                    questId = questId,
-                    journalIndex = journalIndex,
-                    name = sanitizeText(questName),
-                    background = sanitizeText(backgroundText),
-                    stepText = sanitizeText(stepText),
-                    trackerText = sanitizeText(trackerOverrideText),
-                    objectives = buildQuestObjectives(journalIndex),
-                    zoneName = sanitizeText(locationName),
-                    zoneId = zoneId,
-                    zoneKey = zoneKey,
-                    isTracked = isQuestTracked(journalIndex),
-                }
-                questLookup[questKey] = zoneKey
-                journalZoneLookup[journalIndex] = zoneKey
-                zoneEntry.quests[questKey] = questEntry
-                zoneEntry.order[#zoneEntry.order + 1] = questKey
-            end
-        end
-
-        if #zoneEntry.order > 0 then
-            questZones[zoneKey] = zoneEntry
-            zoneOrder[#zoneOrder + 1] = zoneKey
-        end
-    end
-
-    return zoneOrder, questZones, questLookup, journalZoneLookup
+    return collectQuestsFromApi()
 end
 
 local function buildAchievementList()
