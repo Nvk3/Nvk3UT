@@ -19,14 +19,16 @@ These archives contain third-party addons and example implementations used only 
 
 Important:
 
-These ZIP files may be opened and read by the agent for analysis and understanding purposes, but their content must never be copied, extracted, or directly reused in this repository.
+These ZIP files may be opened and read by the agent for analysis and understanding purposes,
+but their content must never be copied, extracted, or directly reused in this repository.
 
 They are for comparison and understanding only (e.g., how Kaleido or BSC handle certain UI or logic structures).
 
 The agent may reference them conceptually and is allowed to use the same ESO basegame functions as found in these references,
 but must rebuild all logic and structure independently using original code.
 
-The agent is explicitly allowed to use the official ESO API documentation, TXT dump files, and the ESO Wiki for reference and verification. When doing so, it must always ensure that it references the most recent game version and avoids outdated or deprecated API calls.
+The agent is explicitly allowed to use the official ESO API documentation, TXT dump files, and the ESO Wiki for reference and verification.
+When doing so, it must always ensure that it references the most recent game version and avoids outdated or deprecated API calls.
 
 🧩 Development Guidelines
 
@@ -40,6 +42,8 @@ Use English for all code comments, variable names, and debug outputs.
 
 When replicating behavior from another addon (e.g., Kaleido, BSC), do so conceptually, but using the same ESO basegame functions when required while rebuilding all logic and structure independently using original code.
 
+When relying on ESO API data, the agent must verify compatibility with the latest API version and log deprecated usages if encountered.
+
 🧠 Behavior and Commit Policy
 
 Each Pull Request must reference a corresponding GitHub Issue (e.g., Fixes #7).
@@ -52,9 +56,9 @@ The agent should always test locally (where possible) before committing.
 
 🚫 Prohibited Actions
 
-❌ Do not unpack or reuse code from any ZIP file in the reference folder.
+❌ Do not copy or reuse code directly from any ZIP file in the reference folder.
 
-❌ Do not copy, rename, or modify those ZIPs.
+❌ Do not extract or import files from those ZIPs into this repository.
 
 ❌ Do not fetch external code from the internet without explicit instruction.
 
@@ -66,5 +70,6 @@ This repository’s agent works under strict compliance with these rules.
 The reference archives serve only as design inspiration, not as a codebase source.
 All new functionality must be implemented cleanly, safely, and independently,
 but may use the same ESO basegame functions as the reference addons when that is the correct or only viable approach.
+The agent may freely use the ESO API, TXT dumps, and Wiki for accurate and up-to-date information.
 
 Last updated: 22.10.2025
