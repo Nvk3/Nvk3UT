@@ -245,19 +245,27 @@ function M.IsAchievementFullyComplete(id)
   end
 
   local utilsDebug = M.d
-  for _, stageId in ipairs(chain.stages) do
-    if not safeAchievementInfo(stageId) then
+  local satisfiedUpstream = false
+  for index = #chain.stages, 1, -1 do
+    local stageId = chain.stages[index]
+    local stageComplete = safeAchievementInfo(stageId) == true
+    local satisfied = stageComplete or satisfiedUpstream
+    if not satisfied then
       if utilsDebug and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then
-        utilsDebug("[Nvk3UT][Utils][Stage] pending", string.format("data={id:%d,stage:%d}", id, stageId))
+        utilsDebug(
+          "[Nvk3UT][Utils][Stage] pending",
+          string.format("data={id:%d,stage:%d,index:%d}", id, stageId, index)
+        )
       end
       return false
     end
+    satisfiedUpstream = satisfied
   end
 
   if chain.looped then
     return safeAchievementInfo(id)
   end
 
-  return true
+  return satisfiedUpstream
 end
 
