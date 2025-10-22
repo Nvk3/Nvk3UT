@@ -7,7 +7,7 @@ local U = Nvk3UT.Utils
 local favProvide_lastTs, favProvide_lastCount = 0, -1
 
 local NVK3_FAVORITES_KEY = "Nvk3UT_Favorites"
-local ICON_PATH_FAVORITES = "/esoui/art/achievements/achievement_categoryicon_exploration_64.dds"
+local ICON_PATH_FAVORITES = "/esoui/art/guild/guild_rankicon_leader_large.dds"
 
 local function _countFavorites()
     if not (Fav and Fav.Iterate) then

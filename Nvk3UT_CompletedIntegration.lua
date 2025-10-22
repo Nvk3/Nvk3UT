@@ -8,8 +8,8 @@ local Comp = Nvk3UT.CompletedData
 local U = Nvk3UT and Nvk3UT.Utils
 
 local NVK3_DONE = 84003
-local ICON_PATH_COMPLETED = "/esoui/art/achievements/achievement_categoryicon_holiday_64.dds"
-local ICON_PATH_COMPLETED_RECENT = "/esoui/art/achievements/achievement_categoryicon_quests_64.dds"
+local ICON_PATH_COMPLETED = "/esoui/art/guild/tabicon_history_up.dds"
+local ICON_PATH_COMPLETED_RECENT = "/esoui/art/journal/journal_tabicon_quest_up.dds"
 
 local compProvide_lastTs, compProvide_lastCount = 0, -1
 

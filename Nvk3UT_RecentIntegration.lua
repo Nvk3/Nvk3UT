@@ -7,7 +7,7 @@ local U = Nvk3UT and Nvk3UT.Utils
 
 local recProvide_lastTs, recProvide_lastCount = 0, -1
 local NVK3_RECENT = 84001
-local ICON_PATH_RECENT = "/esoui/art/achievements/achievement_categoryicon_quests_64.dds"
+local ICON_PATH_RECENT = "/esoui/art/journal/journal_tabicon_quest_up.dds"
 
 -- Use same icon set as Favoriten for visual parity
 local function _countRecent()

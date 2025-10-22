@@ -69,9 +69,10 @@ local SUMMARY_COLOR = ZO_SELECTED_TEXT
 local NVK3_DONE = 84003
 local Comp = Nvk3UT and Nvk3UT.CompletedData
 
-local ICON_PATH_COMPLETED = "/esoui/art/achievements/achievement_categoryicon_holiday_64.dds"
-local ICON_PATH_FAVORITES = "/esoui/art/achievements/achievement_categoryicon_exploration_64.dds"
-local ICON_PATH_RECENT = "/esoui/art/achievements/achievement_categoryicon_quests_64.dds"
+local ICON_PATH_COMPLETED = "/esoui/art/guild/tabicon_history_up.dds"
+local ICON_PATH_FAVORITES = "/esoui/art/guild/guild_rankicon_leader_large.dds"
+local ICON_PATH_RECENT = "/esoui/art/journal/journal_tabicon_quest_up.dds"
+local ICON_PATH_TODO = "/esoui/art/market/keyboard/giftmessageicon_up.dds"
 
 local staticIconCache = {}
 
@@ -134,6 +135,9 @@ local function DetermineCategoryIconTag(data)
   end
   if data.isNvkTodo and data.nvkTodoTopId then
     return GetTodoIconTag(data.nvkTodoTopId)
+  end
+  if data.isNvkTodo then
+    return GetStaticIconTag("todo", ICON_PATH_TODO)
   end
   return ""
 end
