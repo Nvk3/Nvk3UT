@@ -170,7 +170,7 @@ local function OnLoaded(e,name)
     end
 
     if Nvk3UT.QuestTracker and Nvk3UT.QuestTracker.Init then
-        Nvk3UT.QuestTracker.Init()
+        Nvk3UT.QuestTracker:Init()
     end
     if Nvk3UT.UI then Nvk3UT.UI.BuildLAM(); Nvk3UT.UI.UpdateStatus() end
     -- Enable integrations when ACHIEVEMENTS exists
