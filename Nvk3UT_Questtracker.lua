@@ -747,6 +747,7 @@ local function releaseRow(self, row)
     return
   end
   row:SetHidden(true)
+  row:ClearAnchors()
   row.data = nil
   row.zoneName = nil
   row.questName = nil
@@ -767,6 +768,7 @@ local function releaseAllRows(self)
       self.activeRows[index] = nil
     end
   end
+  self.lastRow = nil
 end
 
 local function acquireRow(self)
@@ -815,6 +817,20 @@ local function acquireRow(self)
   row.label = label
 
   return row
+end
+
+local function appendRow(self, row)
+  row:ClearAnchors()
+  if self.lastRow then
+    row:SetAnchor(TOPLEFT, self.lastRow, BOTTOMLEFT, 0, 2)
+    row:SetAnchor(TOPRIGHT, self.lastRow, BOTTOMRIGHT, 0, 2)
+  else
+    row:SetAnchor(TOPLEFT, self.scrollChild, TOPLEFT, 0, 0)
+    row:SetAnchor(TOPRIGHT, self.scrollChild, TOPRIGHT, 0, 0)
+  end
+  row:SetHidden(false)
+  self.activeRows[#self.activeRows + 1] = row
+  self.lastRow = row
 end
 
 local function configureRow(self, row, rowType, text, iconPath, isCollapsible, expanded)
@@ -931,7 +947,7 @@ local function addQuestObjectiveRow(self, questEntry, objective, parentRow)
     text = string.format("%s (%d/%d)", objective.text, objective.current or 0, objective.max)
   end
   configureRow(self, row, ROW_TYPES.QUEST_OBJECTIVE, text, DEFAULT_ICONS.objective, false, false)
-  self.activeRows[#self.activeRows + 1] = row
+  appendRow(self, row)
   return row
 end
 
@@ -947,7 +963,7 @@ local function addAchievementObjectiveRow(self, achievementEntry, objective)
       and string.format("%s (%d/%d)", objective.text, objective.current or 0, objective.max)
       or objective.text
   configureRow(self, row, ROW_TYPES.ACH_OBJECTIVE, progress, DEFAULT_ICONS.objective, false, false)
-  self.activeRows[#self.activeRows + 1] = row
+  appendRow(self, row)
   return row
 end
 
@@ -1009,7 +1025,7 @@ local function renderQuests(self, zones)
       expanded = expanded,
     }
     configureRow(self, row, ROW_TYPES.ZONE, zoneEntry.name, zoneEntry.icon, true, expanded)
-    self.activeRows[#self.activeRows + 1] = row
+    appendRow(self, row)
     if expanded then
       for _, questEntry in ipairs(zoneEntry.quests) do
         local questRow = acquireRow(self)
@@ -1028,7 +1044,7 @@ local function renderQuests(self, zones)
           expanded = questExpanded,
         }
         configureRow(self, questRow, ROW_TYPES.QUEST, questEntry.name, questEntry.icon, true, questExpanded)
-        self.activeRows[#self.activeRows + 1] = questRow
+        appendRow(self, questRow)
         if questExpanded and questEntry.objectives then
           for _, objective in ipairs(questEntry.objectives) do
             addQuestObjectiveRow(self, questEntry, objective, questRow)
@@ -1053,7 +1069,7 @@ local function renderAchievements(self, achievements)
     achievements = achievements,
   }
   configureRow(self, row, ROW_TYPES.ACH_ROOT, LABELS.achievementsHeader, DEFAULT_ICONS.achievement, true, expanded)
-  self.activeRows[#self.activeRows + 1] = row
+  appendRow(self, row)
   if not expanded then
     return
   end
@@ -1071,7 +1087,7 @@ local function renderAchievements(self, achievements)
       label = string.format("%s (%s)", achievementEntry.name, LABELS.achievementComplete)
     end
     configureRow(self, achRow, ROW_TYPES.ACHIEVEMENT, label, achievementEntry.icon, true, achExpanded)
-    self.activeRows[#self.activeRows + 1] = achRow
+    appendRow(self, achRow)
     if achExpanded and achievementEntry.objectives then
       for _, objective in ipairs(achievementEntry.objectives) do
         addAchievementObjectiveRow(self, achievementEntry, objective)
