@@ -10,6 +10,7 @@ local GuiRoot = GuiRoot
 
 local TEXTURE_ARROW_COLLAPSED = "/esoui/art/tree/tree_icon_closed.dds"
 local TEXTURE_ARROW_EXPANDED = "/esoui/art/tree/tree_icon_open.dds"
+local BACKDROP_EDGE_TEXTURE = "/esoui/art/chatwindow/chat_window_edge.dds"
 local LIST_ENTRY_HEIGHT = 30
 local INDENT_ZONE = 0
 local INDENT_QUEST = 16
@@ -57,18 +58,49 @@ local function applyFont(control, fontConfig)
 end
 
 local function isQuestTracked(journalIndex)
+    local anyKnown = false
+    local anyTracked = false
+
+    local function evaluate(ok, value)
+        if not ok then
+            return
+        end
+        if value ~= nil then
+            anyKnown = true
+            if value == true or value == 1 then
+                anyTracked = true
+            end
+        end
+    end
+
     if type(IsJournalQuestInTracker) == "function" then
-        local ok, tracked = pcall(IsJournalQuestInTracker, journalIndex)
-        if ok then
-            return tracked == true
-        end
+        evaluate(pcall(IsJournalQuestInTracker, journalIndex))
     end
+
+    if type(GetJournalQuestIsTracked) == "function" then
+        evaluate(pcall(GetJournalQuestIsTracked, journalIndex))
+    end
+
+    if type(GetJournalQuestIsPinned) == "function" then
+        evaluate(pcall(GetJournalQuestIsPinned, journalIndex))
+    end
+
+    if type(GetIsTracked) == "function" and type(TRACK_TYPE_QUEST) == "number" then
+        evaluate(pcall(GetIsTracked, TRACK_TYPE_QUEST, journalIndex))
+    end
+
     if type(GetTrackedIsAssisted) == "function" and type(TRACK_TYPE_QUEST) == "number" then
-        local ok, tracked = pcall(GetTrackedIsAssisted, TRACK_TYPE_QUEST, journalIndex)
-        if ok then
-            return tracked == true
-        end
+        evaluate(pcall(GetTrackedIsAssisted, TRACK_TYPE_QUEST, journalIndex))
     end
+
+    if anyTracked then
+        return true
+    end
+
+    if anyKnown then
+        return false
+    end
+
     return true
 end
 
@@ -345,7 +377,7 @@ function Tracker:EnsureControl()
     local bg = CreateControl(nil, ctl, CT_BACKDROP)
     bg:SetAnchorFill(ctl)
     bg:SetCenterColor(0, 0, 0, 0.45)
-    bg:SetEdgeTexture("/esoui/art/chatwindow/chat_window_edge.dds", 128, 16)
+    bg:SetEdgeTexture(BACKDROP_EDGE_TEXTURE, 128, 16, 16)
     bg:SetEdgeColor(0.8, 0.8, 0.8, 0.6)
     bg:SetHidden(true)
     ctl.background = bg
@@ -448,14 +480,21 @@ function Tracker:ApplyBackground()
         hidden = true
     end
     bg:SetHidden(hidden)
+
+    local alpha = zo_clamp((tonumber(settings.alpha) or 60) / 100, 0, 1)
     if enabled then
-        local alpha = (tonumber(settings.alpha) or 60) / 100
         bg:SetCenterColor(0, 0, 0, alpha)
-        if settings.border then
-            bg:SetEdgeColor(0.8, 0.8, 0.8, alpha + 0.2)
-        else
-            bg:SetEdgeColor(0, 0, 0, 0)
-        end
+    else
+        bg:SetCenterColor(0, 0, 0, 0)
+    end
+
+    if enabled and settings.border then
+        bg:SetEdgeTexture(BACKDROP_EDGE_TEXTURE, 128, 16, 16)
+        local edgeAlpha = math.min(alpha + 0.35, 1)
+        bg:SetEdgeColor(1, 1, 1, edgeAlpha)
+    else
+        bg:SetEdgeTexture(BACKDROP_EDGE_TEXTURE, 128, 16, 16)
+        bg:SetEdgeColor(0, 0, 0, 0)
     end
 end
 
@@ -923,8 +962,12 @@ local function ensureHeader(control)
 
     local arrow = CreateControl(nil, header, CT_TEXTURE)
     arrow:SetDimensions(18, 18)
+    arrow:SetAnchor(LEFT, header, LEFT, 4, 0)
+    arrow:SetDrawLayer(DL_CONTROLS)
+    arrow:SetDrawLevel(2)
+    arrow:SetMouseEnabled(false)
     arrow:SetTexture(TEXTURE_ARROW_COLLAPSED)
-    arrow:SetAnchor(LEFT, header, LEFT, 0, 0)
+    arrow:SetColor(1, 1, 1, 1)
 
     local label = CreateControl(nil, header, CT_LABEL)
     label:SetAnchor(LEFT, arrow, RIGHT, 10, 0)
