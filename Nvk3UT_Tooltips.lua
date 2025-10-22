@@ -120,184 +120,111 @@ local function GetCategoryLabel(control)
   return control:GetNamedChild("Text") or control:GetNamedChild("Label") or control:GetNamedChild("Name")
 end
 
-local iconFieldNames = {
-  "icon",
-  "iconTexture",
-  "iconHighlight",
-  "iconSelected",
-  "iconMouseOver",
-  "statusIcon",
-}
+local function MakeStaticTextureSet(path)
+  if not path or path == "" then
+    return nil
+  end
+  if U and U.ResolveTexturePath then
+    path = U.ResolveTexturePath(path)
+  end
+  if not path or path == "" then
+    return nil
+  end
+  return {
+    normal = path,
+    pressed = path,
+    mouseover = path,
+    selected = path,
+  }
+end
 
-local iconChildNames = {
-  "Icon",
-  "IconHighlight",
-  "Highlight",
-  "StatusIcon",
-}
-
-local function CollectIconControls(control)
-  if not control then
+local function DetermineCategoryIconTextures(data)
+  if not data then
     return nil
   end
 
-  local controls = control._nvkCachedIconControls
-  if controls then
-    return controls
-  end
-
-  controls = {}
-
-  for _, field in ipairs(iconFieldNames) do
-    local ref = control[field]
-    if ref and ref.SetHidden then
-      controls[#controls + 1] = ref
-    end
-  end
-
-  if control.GetNamedChild then
-    for _, childName in ipairs(iconChildNames) do
-      local child = control:GetNamedChild(childName)
-      if child and child.SetHidden then
-        local found = false
-        for idx = 1, #controls do
-          if controls[idx] == child then
-            found = true
-            break
-          end
-        end
-        if not found then
-          controls[#controls + 1] = child
-        end
-      end
-    end
-  end
-
-  if #controls == 0 then
-    controls = nil
-  end
-
-  control._nvkCachedIconControls = controls
-  return controls
-end
-
-local function UpdateTemplateIcons(control, iconPath)
-  local icons = CollectIconControls(control)
-  if not icons then
-    return
-  end
-
-  for idx = 1, #icons do
-    local icon = icons[idx]
-    if icon then
-      if icon._nvkOriginalHidden == nil and icon.IsHidden then
-        icon._nvkOriginalHidden = icon:IsHidden()
-      end
-      if icon._nvkOriginalDimensions == nil then
-        local width = icon.GetWidth and icon:GetWidth()
-        local height = icon.GetHeight and icon:GetHeight()
-        if (width and width > 0) or (height and height > 0) then
-          icon._nvkOriginalDimensions = { width or 0, height or 0 }
-        end
-      end
-      if icon._nvkOriginalTexture == nil and icon.GetTextureFileName then
-        local ok, texture = pcall(icon.GetTextureFileName, icon)
-        if ok and texture ~= nil then
-          icon._nvkOriginalTexture = texture
-        end
-      end
-
-      if iconPath and iconPath ~= "" and icon.SetTexture then
-        icon:SetTexture(iconPath)
-        if icon.SetHidden then
-          icon:SetHidden(false)
-        end
-        local dims = icon._nvkOriginalDimensions
-        if dims then
-          local width, height = dims[1] or 0, dims[2] or 0
-          if icon.SetDimensions then
-            icon:SetDimensions(width, height)
-          else
-            if icon.SetWidth then
-              icon:SetWidth(width)
-            end
-            if icon.SetHeight then
-              icon:SetHeight(height)
-            end
-          end
-        end
-      else
-        if icon._nvkOriginalTexture and icon.SetTexture then
-          icon:SetTexture(icon._nvkOriginalTexture)
-        end
-        if icon._nvkOriginalHidden ~= nil and icon.SetHidden then
-          icon:SetHidden(icon._nvkOriginalHidden)
-        end
-        local dims = icon._nvkOriginalDimensions
-        if dims then
-          local width, height = dims[1] or 0, dims[2] or 0
-          if icon.SetDimensions then
-            icon:SetDimensions(width, height)
-          else
-            if icon.SetWidth then
-              icon:SetWidth(width)
-            end
-            if icon.SetHeight then
-              icon:SetHeight(height)
-            end
-          end
-        end
-      end
-    end
-  end
-end
-
-local function DetermineCategoryIconTag(data)
-  if not data then
-    return ""
-  end
   if data.isNvkFavorites then
-    return GetFavoritesIconTag()
+    return MakeStaticTextureSet(ICON_PATH_FAVORITES)
   end
+
   if data.isNvkRecent then
-    return GetRecentIconTag()
+    return MakeStaticTextureSet(ICON_PATH_RECENT)
   end
+
   if data.isNvkCompleted and not data.nvkCompletedKey then
-    return GetCompletedIconTag()
+    return MakeStaticTextureSet(ICON_PATH_COMPLETED)
   end
+
   if data.isNvkTodo and data.nvkTodoTopId then
-    return GetTodoIconTag(data.nvkTodoTopId)
+    if U and U.GetAchievementCategoryIconTextures then
+      local textures = U.GetAchievementCategoryIconTextures(data.nvkTodoTopId)
+      if textures then
+        return textures
+      end
+    end
   end
+
   if data.isNvkTodo then
-    return GetStaticIconTag("todo", ICON_PATH_TODO)
+    return MakeStaticTextureSet(ICON_PATH_TODO)
   end
-  return ""
+
+  return nil
 end
 
 local function ApplyCategoryIcon(control, data)
+  if not control or not data then
+    return
+  end
+
+  local textures = DetermineCategoryIconTextures(data)
+  local iconPath = textures and (textures.normal or textures.pressed or textures.mouseover or textures.selected)
+  if not iconPath or iconPath == "" then
+    return
+  end
+
+  local function applyTexture(iconControl, texture)
+    if iconControl and iconControl.SetTexture then
+      iconControl:SetTexture(texture or iconPath)
+      if iconControl.SetHidden then
+        iconControl:SetHidden(false)
+      end
+    end
+  end
+
+  applyTexture(control.icon or control.iconTexture, iconPath)
+  applyTexture(control.iconMouseOver, textures and (textures.mouseover or textures.pressed or iconPath))
+  applyTexture(control.iconSelected, textures and (textures.selected or textures.mouseover or iconPath))
+
+  if data then
+    local mouseover = textures and (textures.mouseover or textures.pressed or iconPath) or iconPath
+    local selected = textures and (textures.selected or textures.mouseover or iconPath) or iconPath
+    data.icon = iconPath
+    data.iconTexture = iconPath
+    data.normalIcon = iconPath
+    data.pressedIcon = textures and (textures.pressed or iconPath) or iconPath
+    data.mouseoverIcon = mouseover
+    data.iconMouseOver = mouseover
+    data.iconSelected = selected
+    data.selectedIcon = selected
+  end
+
   local label = GetCategoryLabel(control)
   if not label then
     return
   end
 
-  local iconTag = DetermineCategoryIconTag(data)
-  local iconPath = (iconTag and iconTag ~= "" and iconTag:match("|t[^:]*:[^:]*:([^|]+)|t")) or nil
-  UpdateTemplateIcons(control, iconPath)
-
-  local plain = data and data.nvkPlainName
-  if type(plain) == "string" and plain ~= "" then
-    plain = zo_strformat("<<1>>", plain)
-  else
+  local plain = data.nvkPlainName
+  if type(plain) ~= "string" or plain == "" then
     local current = label:GetText() or ""
     if U and U.StripLeadingIconTag then
       current = U.StripLeadingIconTag(current)
     else
       current = current:gsub("^|t[^|]-|t%s*", "")
     end
-    plain = zo_strformat("<<1>>", current)
+    plain = current
   end
 
-  label._nvkPlainText = plain
+  plain = zo_strformat("<<1>>", plain or "")
   if label:GetText() ~= plain then
     label:SetText(plain)
   end

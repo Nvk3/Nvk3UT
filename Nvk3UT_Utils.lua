@@ -58,6 +58,10 @@ local function normalizeTexturePath(path)
   return path
 end
 
+function M.ResolveTexturePath(path)
+  return normalizeTexturePath(path)
+end
+
 function M.GetIconTagForTexture(path, size)
   local normalized = normalizeTexturePath(path)
   if not normalized or normalized == "" then
@@ -87,20 +91,62 @@ function M.StripLeadingIconTag(text)
   return stripLeadingIcon(text)
 end
 
-function M.GetAchievementCategoryIconTag(topCategoryId, size)
+function M.GetAchievementCategoryIconTextures(topCategoryId)
   if type(GetAchievementCategoryKeyboardIcons) ~= "function" then
-    return ""
+    return nil
   end
   if type(topCategoryId) ~= "number" then
-    return ""
+    return nil
   end
-  local ok, icon = pcall(GetAchievementCategoryKeyboardIcons, topCategoryId)
+  local ok, normal, pressed, mouseover, selected = pcall(GetAchievementCategoryKeyboardIcons, topCategoryId)
   if not ok then
+    return nil
+  end
+
+  local textures
+  local function assign(key, value)
+    local normalized = normalizeTexturePath(value)
+    if normalized and normalized ~= "" then
+      textures = textures or {}
+      textures[key] = normalized
+    end
+  end
+
+  assign("normal", normal)
+  assign("pressed", pressed)
+  assign("mouseover", mouseover)
+  assign("selected", selected)
+
+  if not textures then
+    return nil
+  end
+
+  local base = textures.normal or textures.pressed or textures.mouseover or textures.selected
+  if not base then
+    return nil
+  end
+
+  textures.normal = textures.normal or base
+  textures.pressed = textures.pressed or base
+  textures.mouseover = textures.mouseover or textures.pressed or base
+  textures.selected = textures.selected or textures.mouseover or base
+
+  return textures
+end
+
+function M.GetAchievementCategoryIconPath(topCategoryId)
+  local textures = M.GetAchievementCategoryIconTextures(topCategoryId)
+  if not textures then
+    return nil
+  end
+  return textures.normal
+end
+
+function M.GetAchievementCategoryIconTag(topCategoryId, size)
+  local textures = M.GetAchievementCategoryIconTextures(topCategoryId)
+  if not textures or not textures.normal then
     return ""
   end
-  if type(icon) ~= "string" or icon == "" then
-    return ""
-  end
-  return M.GetIconTagForTexture(icon, size)
+  return M.GetIconTagForTexture(textures.normal, size)
 end
 
