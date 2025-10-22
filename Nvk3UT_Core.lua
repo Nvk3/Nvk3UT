@@ -177,3 +177,26 @@ SLASH_COMMANDS["/nvk3test"]=function() if Nvk3UT.Diagnostics then Nvk3UT.Diagnos
 
 -- Enable Completed category
 if Nvk3UT_EnableCompletedCategory then Nvk3UT_EnableCompletedCategory() end
+
+Nvk3UT = Nvk3UT or {}
+local M = Nvk3UT
+
+M.Core = M.Core or {}
+local Module = M.Core
+
+local function debugLog(message)
+    if d then
+        d(string.format("[Nvk3UT] Core: %s", message))
+    end
+end
+
+function Module.Init()
+    debugLog("Init() stub invoked")
+    -- TODO: Bootstrap addon initialization within the new module layout.
+end
+
+function Module.ForceRefresh()
+    -- TODO: Provide a hook for forcing full addon refresh flows.
+end
+
+return

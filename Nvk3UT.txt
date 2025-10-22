@@ -6,6 +6,13 @@
 ## DependsOn: LibAddonMenu-2.0
 ## OptionalDependsOn: LibCustomMenu-2.0
 ## SavedVariables: Nvk3UT_SV Nvk3UT_Data_Favorites Nvk3UT_Data_Recent
+Nvk3UT_Core.lua
+Nvk3UT_LAM.lua
+Nvk3UT_QuestModel.lua
+Nvk3UT_AchievementModel.lua
+Nvk3UT_TrackerView.lua
+Nvk3UT_Tracker.lua
+Nvk3UT_Questtracker.xml
 Nvk3UT_Utils.lua
 Nvk3UT_Achievements.lua
 Nvk3UT_Diagnostics.lua
@@ -24,5 +31,4 @@ Nvk3UT_TodoIntegration.lua
 Nvk3UT_CompletedData.lua
 Nvk3UT_CompletedIntegration.lua
 Nvk3UT_Questtracker.lua
-Nvk3UT_Core.lua
 README.txt
