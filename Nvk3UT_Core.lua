@@ -51,7 +51,6 @@ local function getTrackerDefaults()
         },
         background = {
             enabled = false,
-            border = false,
             alpha = 60,
             hideWhenLocked = false,
         },

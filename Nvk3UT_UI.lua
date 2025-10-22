@@ -759,22 +759,6 @@ function M.BuildLAM()
       end,
     },
     {
-      type = "checkbox",
-      name = "Rand aktivieren",
-      getFunc = function()
-        return trackerBackground("border", false)
-      end,
-      setFunc = function(value)
-        if tracker and tracker.SetBackgroundBorder then
-          tracker:SetBackgroundBorder(value)
-        end
-      end,
-      default = trackerDefaults.background and trackerDefaults.background.border or false,
-      disabled = function()
-        return not trackerAvailable()
-      end,
-    },
-    {
       type = "slider",
       name = "Background Transparenz",
       min = 0,

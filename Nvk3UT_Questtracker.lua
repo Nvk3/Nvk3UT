@@ -184,39 +184,38 @@ local function getQuestData()
     end
     local total = safeCall(GetNumJournalQuests) or 0
     for journalIndex = 1, total do
-        if isQuestTracked(journalIndex) then
-            local questName, backgroundText, stepText, trackerOverrideText, completed = safeCall(GetJournalQuestInfo, journalIndex)
-            if completed ~= true then
-                local zoneName, _, zoneId = safeCall(GetJournalQuestLocationInfo, journalIndex)
-                local questId = safeCall(GetJournalQuestId, journalIndex) or 0
-                local zoneKey = getZoneKey(zoneName, zoneId)
-                if not questZones[zoneKey] then
-                    questZones[zoneKey] = {
-                        key = zoneKey,
-                        zoneName = sanitizeText(zoneName),
-                        zoneId = zoneId,
-                        quests = {},
-                        order = {},
-                    }
-                    zoneOrder[#zoneOrder + 1] = zoneKey
-                end
-                local stepKey = getQuestStepKey(journalIndex)
-                local questKey = buildQuestKey(questId, stepKey)
-                local questEntry = {
-                    key = questKey,
-                    questId = questId,
-                    journalIndex = journalIndex,
-                    name = sanitizeText(questName),
-                    background = sanitizeText(backgroundText),
-                    stepText = sanitizeText(stepText),
-                    trackerText = sanitizeText(trackerOverrideText),
-                    objectives = buildQuestObjectives(journalIndex),
+        local questName, backgroundText, stepText, trackerOverrideText, completed = safeCall(GetJournalQuestInfo, journalIndex)
+        if questName and questName ~= "" and completed ~= true then
+            local zoneName, _, zoneId = safeCall(GetJournalQuestLocationInfo, journalIndex)
+            local questId = safeCall(GetJournalQuestId, journalIndex) or 0
+            local zoneKey = getZoneKey(zoneName, zoneId)
+            if not questZones[zoneKey] then
+                questZones[zoneKey] = {
+                    key = zoneKey,
                     zoneName = sanitizeText(zoneName),
-                    zoneKey = zoneKey,
+                    zoneId = zoneId,
+                    quests = {},
+                    order = {},
                 }
-                questZones[zoneKey].quests[questKey] = questEntry
-                questZones[zoneKey].order[#questZones[zoneKey].order + 1] = questKey
+                zoneOrder[#zoneOrder + 1] = zoneKey
             end
+            local stepKey = getQuestStepKey(journalIndex)
+            local questKey = buildQuestKey(questId, stepKey)
+            local questEntry = {
+                key = questKey,
+                questId = questId,
+                journalIndex = journalIndex,
+                name = sanitizeText(questName),
+                background = sanitizeText(backgroundText),
+                stepText = sanitizeText(stepText),
+                trackerText = sanitizeText(trackerOverrideText),
+                objectives = buildQuestObjectives(journalIndex),
+                zoneName = sanitizeText(zoneName),
+                zoneKey = zoneKey,
+                isTracked = isQuestTracked(journalIndex),
+            }
+            questZones[zoneKey].quests[questKey] = questEntry
+            questZones[zoneKey].order[#questZones[zoneKey].order + 1] = questKey
         end
     end
     return zoneOrder, questZones
@@ -488,12 +487,11 @@ function Tracker:ApplyBackground()
         bg:SetCenterColor(0, 0, 0, 0)
     end
 
-    if enabled and settings.border then
-        bg:SetEdgeTexture(BACKDROP_EDGE_TEXTURE, 128, 16, 16)
+    bg:SetEdgeTexture(BACKDROP_EDGE_TEXTURE, 128, 16, 16)
+    if enabled then
         local edgeAlpha = math.min(alpha + 0.35, 1)
         bg:SetEdgeColor(1, 1, 1, edgeAlpha)
     else
-        bg:SetEdgeTexture(BACKDROP_EDGE_TEXTURE, 128, 16, 16)
         bg:SetEdgeColor(0, 0, 0, 0)
     end
 end
@@ -1782,15 +1780,6 @@ function Tracker:SetBackgroundEnabled(value)
     end
     self.sv.background = self.sv.background or {}
     self.sv.background.enabled = value and true or false
-    self:ApplyBackground()
-end
-
-function Tracker:SetBackgroundBorder(value)
-    if not self.sv then
-        return
-    end
-    self.sv.background = self.sv.background or {}
-    self.sv.background.border = value and true or false
     self:ApplyBackground()
 end
 
