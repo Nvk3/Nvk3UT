@@ -35,6 +35,21 @@ function M.ApplyFeatureToggles()
   end
 end
 
+
+-- Refresh the achievements lists to reflect data changes immediately.
+function M.RefreshAchievements()
+  local ach = (SYSTEMS and SYSTEMS.GetObject and SYSTEMS:GetObject("achievements")) or ACHIEVEMENTS
+  if not ach then
+    return
+  end
+  if ach.refreshGroups then
+    ach.refreshGroups:RefreshAll("FullUpdate")
+  end
+  if Nvk3UT and Nvk3UT.RebuildSelected then
+    pcall(Nvk3UT.RebuildSelected, ach)
+  end
+end
+
 local TITLE = "Nvk3's Ultimate Tracker"
 
 local function ensureStatusLabel()
