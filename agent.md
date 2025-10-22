@@ -36,7 +36,8 @@ These archives contain **third-party addons and example implementations** used *
 - Prefer **clear, maintainable Lua** with descriptive naming conventions.  
 - Use English for all code comments, variable names, and debug outputs.  
 - When replicating behavior from another addon (e.g., *Kaleido*, *BSC*), do so **conceptually**, but using the same ESO basegame functions when required.  
-- When relying on ESO API data, the agent must **verify compatibility with the latest API version** and **log deprecated usages** if encountered.
+- When relying on ESO API data, the agent must **verify compatibility with the latest API version** and **log deprecated usages** if encountered.  
+- **The agent may create new functions using the same ESO basegame APIs, events, and UI resources as seen in reference addons, as long as all logic and implementation are written independently.**
 
 ---
 
