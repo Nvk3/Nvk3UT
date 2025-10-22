@@ -245,9 +245,9 @@ local function collectQuests()
   local questCount = GetNumJournalQuests()
   for journalIndex = 1, questCount do
     if isQuestTracked(journalIndex) then
-      local questName = sanitizeText(GetJournalQuestName(journalIndex))
+      local questName = sanitizeText(safeCall(GetJournalQuestName, journalIndex) or "")
       local questId = safeCall(GetJournalQuestId, journalIndex) or 0
-      local zoneName = sanitizeText(GetJournalQuestZoneName(journalIndex))
+      local zoneName = sanitizeText(safeCall(GetJournalQuestZoneName, journalIndex) or "")
       local zoneId = safeCall(GetJournalQuestZoneId, journalIndex)
       local zoneKey = zoneId and string.format("%d", zoneId) or zoneName
       if zoneKey == nil or zoneKey == "" then
