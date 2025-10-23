@@ -93,6 +93,21 @@ local function ensureSavedVars()
     sv.settings = sv.settings or {}
     sv.collapse = sv.collapse or {}
 
+    -- migrate legacy collapse state (quest ids stored directly on table)
+    if not sv.collapse.quests then
+        sv.collapse.quests = {}
+        for key, value in pairs(sv.collapse) do
+            if type(key) == "string" and tonumber(key) then
+                sv.collapse.quests[key] = value
+            end
+        end
+        for key in pairs(sv.collapse.quests) do
+            sv.collapse[key] = nil
+        end
+    end
+
+    sv.collapse.categories = sv.collapse.categories or {}
+
     copyDefaults(sv.layout, DEFAULT_LAYOUT)
     copyDefaults(sv.settings, DEFAULT_SETTINGS)
 
@@ -318,6 +333,7 @@ local function onSnapshot(snapshot)
     Module._lastSnapshot = snapshot
 
     if Module._view then
+        ensureCollapseTables()
         Module._view:Refresh(snapshot, {
             collapse = Module._collapse,
             autoGrowV = Module._settings.autoGrowV,
@@ -368,6 +384,7 @@ local function ensureView()
     end
 
     Module._view = M.QuestTrackerView
+    ensureCollapseTables()
     Module._view:Init(ensureRootControl(), {
         collapse = Module._collapse,
         autoGrowV = Module._settings.autoGrowV,
@@ -627,33 +644,73 @@ function Module.SetScale(scale)
     applyScale()
 end
 
+local function ensureCollapseTables()
+    if not Module._collapse then
+        return
+    end
+
+    Module._collapse.quests = Module._collapse.quests or {}
+    Module._collapse.categories = Module._collapse.categories or {}
+end
+
 function Module.GetCollapseTable()
-    return Module._collapse or {}
+    ensureCollapseTables()
+    return Module._collapse or { quests = {}, categories = {} }
 end
 
 function Module.ToggleCollapseState(journalIndex)
+    ensureCollapseTables()
     if not Module._collapse then
         return
     end
 
     local key = tostring(journalIndex)
-    Module._collapse[key] = not Module._collapse[key]
+    local current = Module._collapse.quests[key] == true
+    Module._collapse.quests[key] = not current
 end
 
-function Module.SetCollapseState(journalIndex, collapsed)
+function Module.SetQuestCollapseState(journalIndex, collapsed)
+    ensureCollapseTables()
     if not Module._collapse then
         return
     end
 
-    Module._collapse[tostring(journalIndex)] = collapsed == true
+    Module._collapse.quests[tostring(journalIndex)] = collapsed == true
 end
 
 function Module.ShouldCollapse(journalIndex)
+    ensureCollapseTables()
     if not Module._collapse then
         return false
     end
 
-    return Module._collapse[tostring(journalIndex)] == true
+    return Module._collapse.quests[tostring(journalIndex)] == true
+end
+
+function Module.SetCollapseState(journalIndex, collapsed)
+    Module.SetQuestCollapseState(journalIndex, collapsed)
+end
+
+function Module.SetCategoryCollapseState(categoryId, collapsed)
+    ensureCollapseTables()
+    if not Module._collapse then
+        return
+    end
+
+    Module._collapse.categories[categoryId] = collapsed == true
+end
+
+function Module.IsCategoryCollapsed(categoryId)
+    ensureCollapseTables()
+    if not Module._collapse then
+        return false
+    end
+
+    return Module._collapse.categories[categoryId] == true
+end
+
+function Module.ShouldCollapseCategory(categoryId)
+    return Module.IsCategoryCollapsed(categoryId)
 end
 
 function Module.ApplySnapshot(snapshot)

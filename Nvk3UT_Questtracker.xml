@@ -1,5 +1,22 @@
 <GuiXml>
     <Controls>
+        <Control name="Nvk3UT_QuestTrackerCategoryTemplate" virtual="true">
+            <Dimensions x="0" y="28" />
+            <Controls>
+                <Texture name="$(parent)Caret" textureFile="EsoUI/Art/Buttons/tree_open_up.dds" pixelRoundingEnabled="false">
+                    <Dimensions x="18" y="18" />
+                    <Anchor point="LEFT" offsetX="6" />
+                </Texture>
+                <Label name="$(parent)Label" font="ZoFontGameBold" horizontalAlignment="LEFT" verticalAlignment="CENTER">
+                    <Anchor point="TOPLEFT" relativeTo="$(parent)Caret" relativePoint="TOPRIGHT" offsetX="8" />
+                    <Anchor point="BOTTOMRIGHT" relativeTo="$(parent)Count" relativePoint="BOTTOMLEFT" offsetX="-8" />
+                </Label>
+                <Label name="$(parent)Count" font="ZoFontGame" horizontalAlignment="RIGHT" verticalAlignment="CENTER">
+                    <Anchor point="RIGHT" offsetX="-8" />
+                </Label>
+            </Controls>
+        </Control>
+
         <Control name="Nvk3UT_QuestTrackerHeaderTemplate" virtual="true">
             <Dimensions x="0" y="32" />
             <Controls>
