@@ -9,6 +9,9 @@ TrackerHost.__index = TrackerHost
 local ROOT_CONTROL_NAME = addonName .. "_UI_Root"
 local QUEST_CONTAINER_NAME = addonName .. "_QuestContainer"
 local ACHIEVEMENT_CONTAINER_NAME = addonName .. "_AchievementContainer"
+local SCROLL_CONTAINER_NAME = addonName .. "_ScrollContainer"
+local SCROLL_CONTENT_NAME = SCROLL_CONTAINER_NAME .. "_Content"
+local SCROLLBAR_NAME = SCROLL_CONTAINER_NAME .. "_ScrollBar"
 
 local DEFAULT_WINDOW = {
     left = 200,
@@ -21,12 +24,17 @@ local DEFAULT_WINDOW = {
 local MIN_WIDTH = 260
 local MIN_HEIGHT = 240
 local RESIZE_HANDLE_SIZE = 12
+local SCROLLBAR_WIDTH = 18
 
 local LEFT_MOUSE_BUTTON = _G.MOUSE_BUTTON_INDEX_LEFT or 1
 
 local state = {
     initialized = false,
     root = nil,
+    scrollContainer = nil,
+    scrollContent = nil,
+    scrollbar = nil,
+    scrollContentRightOffset = 0,
     questContainer = nil,
     achievementContainer = nil,
     window = nil,
@@ -139,12 +147,91 @@ local function debugLog(...)
     end
 end
 
+local function adjustScroll(delta)
+    local scrollbar = state.scrollbar
+    if not (scrollbar and scrollbar.GetMinMax and scrollbar.SetValue) then
+        return
+    end
+
+    local minValue, maxValue = scrollbar:GetMinMax()
+    if not (minValue and maxValue) then
+        return
+    end
+
+    local current = scrollbar.GetValue and scrollbar:GetValue() or 0
+    local step = 48
+    local target = current - (delta * step)
+    if target < minValue then
+        target = minValue
+    elseif target > maxValue then
+        target = maxValue
+    end
+
+    scrollbar:SetValue(target)
+end
+
+local function refreshScroll()
+    local scrollContainer = state.scrollContainer
+    local scrollContent = state.scrollContent
+    local scrollbar = state.scrollbar
+
+    if not (scrollContainer and scrollContent and scrollbar) then
+        return
+    end
+
+    if scrollContent.SetResizeToFitDescendents then
+        scrollContent:SetResizeToFitDescendents(true)
+    end
+
+    local viewportHeight = scrollContainer:GetHeight() or 0
+    local contentHeight = scrollContent:GetHeight() or 0
+    local maxOffset = math.max((contentHeight or 0) - viewportHeight, 0)
+    local showScrollbar = maxOffset > 0
+    local desiredRightOffset = showScrollbar and -SCROLLBAR_WIDTH or 0
+
+    if scrollContainer.SetScrollExtents then
+        scrollContainer:SetScrollExtents(0, 0, 0, maxOffset)
+    end
+
+    if scrollbar.SetMinMax then
+        scrollbar:SetMinMax(0, maxOffset)
+    end
+
+    local current = scrollbar.GetValue and scrollbar:GetValue() or 0
+    current = math.max(0, math.min(current, maxOffset))
+
+    if scrollbar.SetHidden then
+        scrollbar:SetHidden(not showScrollbar)
+    end
+
+    if state.scrollContentRightOffset ~= desiredRightOffset then
+        state.scrollContentRightOffset = desiredRightOffset
+        if scrollContent.ClearAnchors then
+            scrollContent:ClearAnchors()
+            scrollContent:SetAnchor(TOPLEFT, scrollContainer, TOPLEFT, 0, 0)
+            scrollContent:SetAnchor(TOPRIGHT, scrollContainer, TOPRIGHT, desiredRightOffset, 0)
+        end
+    end
+
+    if not showScrollbar then
+        current = 0
+    end
+
+    if scrollbar.SetValue then
+        scrollbar:SetValue(current)
+    end
+
+    if scrollContainer.SetVerticalScroll then
+        scrollContainer:SetVerticalScroll(current)
+    end
+end
+
 local function anchorContainers()
-    local root = state.root
+    local parent = state.scrollContent or state.root
     local questContainer = state.questContainer
     local achievementContainer = state.achievementContainer
 
-    if not questContainer or not root then
+    if not (parent and questContainer) then
         if not questContainer and not state.anchorWarnings.questMissing then
             debugLog("Quest container not ready for anchoring")
             state.anchorWarnings.questMissing = true
@@ -153,23 +240,15 @@ local function anchorContainers()
     end
 
     questContainer:ClearAnchors()
-    questContainer:SetAnchor(TOPLEFT, root, TOPLEFT, 0, 0)
-    questContainer:SetAnchor(TOPRIGHT, root, TOPRIGHT, 0, 0)
+    questContainer:SetAnchor(TOPLEFT, parent, TOPLEFT, 0, 0)
+    questContainer:SetAnchor(TOPRIGHT, parent, TOPRIGHT, 0, 0)
     state.anchorWarnings.questMissing = false
 
     if achievementContainer then
-        local anchorTarget = questContainer or root
-        if anchorTarget then
-            achievementContainer:ClearAnchors()
-            if questContainer then
-                achievementContainer:SetAnchor(TOPLEFT, questContainer, BOTTOMLEFT, 0, 0)
-                achievementContainer:SetAnchor(TOPRIGHT, questContainer, BOTTOMRIGHT, 0, 0)
-            else
-                achievementContainer:SetAnchor(TOPLEFT, root, TOPLEFT, 0, 0)
-                achievementContainer:SetAnchor(TOPRIGHT, root, TOPRIGHT, 0, 0)
-            end
-            state.anchorWarnings.achievementMissing = false
-        end
+        achievementContainer:ClearAnchors()
+        achievementContainer:SetAnchor(TOPLEFT, questContainer, BOTTOMLEFT, 0, 0)
+        achievementContainer:SetAnchor(TOPRIGHT, questContainer, BOTTOMRIGHT, 0, 0)
+        state.anchorWarnings.achievementMissing = false
     elseif not state.anchorWarnings.achievementMissing then
         debugLog("Achievement container not ready for anchoring")
         state.anchorWarnings.achievementMissing = true
@@ -196,23 +275,6 @@ end
 local function updateSectionLayout()
     if not state.root then
         return
-    end
-
-    local baseWidth = math.max(state.root:GetWidth() or MIN_WIDTH, MIN_WIDTH)
-    local questWidth = baseWidth
-
-    if state.questContainer then
-        local currentWidth = state.questContainer:GetWidth() or 0
-        if currentWidth < baseWidth then
-            state.questContainer:SetWidth(baseWidth)
-            questWidth = baseWidth
-        else
-            questWidth = currentWidth
-        end
-    end
-
-    if state.achievementContainer then
-        state.achievementContainer:SetWidth(questWidth)
     end
 
     anchorContainers()
@@ -263,6 +325,7 @@ local function applyWindowSettings()
     applyWindowGeometry()
     applyWindowLock()
     updateSectionLayout()
+    refreshScroll()
 end
 
 local function createRootControl()
@@ -311,10 +374,68 @@ local function createRootControl()
         saveWindowSize()
         applyWindowGeometry()
         updateSectionLayout()
+        refreshScroll()
+    end)
+
+    control:SetHandler("OnMouseWheel", function(_, delta)
+        adjustScroll(delta)
     end)
 
     state.root = control
     Nvk3UT.UI.Root = control
+end
+
+local function createScrollContainer()
+    if state.scrollContainer or not (state.root and WINDOW_MANAGER) then
+        return
+    end
+
+    local scrollContainer = WINDOW_MANAGER:CreateControl(SCROLL_CONTAINER_NAME, state.root, CT_SCROLL)
+    if not scrollContainer then
+        return
+    end
+
+    scrollContainer:SetMouseEnabled(true)
+    scrollContainer:SetClampedToScreen(false)
+    scrollContainer:SetAnchor(TOPLEFT, state.root, TOPLEFT, 0, 0)
+    scrollContainer:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, 0, 0)
+
+    local scrollContent = WINDOW_MANAGER:CreateControl(SCROLL_CONTENT_NAME, scrollContainer, CT_CONTROL)
+    scrollContent:SetMouseEnabled(false)
+    scrollContent:SetAnchor(TOPLEFT, scrollContainer, TOPLEFT, 0, 0)
+    scrollContent:SetAnchor(TOPRIGHT, scrollContainer, TOPRIGHT, 0, 0)
+    scrollContent:SetResizeToFitDescendents(true)
+
+    local scrollbar = WINDOW_MANAGER:CreateControl(SCROLLBAR_NAME, state.root, CT_SCROLLBAR)
+    scrollbar:SetMouseEnabled(true)
+    scrollbar:SetAnchor(TOPRIGHT, state.root, TOPRIGHT, 0, 0)
+    scrollbar:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, 0, 0)
+    scrollbar:SetWidth(SCROLLBAR_WIDTH)
+    scrollbar:SetHidden(true)
+    if scrollbar.SetAllowDragging then
+        scrollbar:SetAllowDragging(true)
+    end
+    if scrollbar.SetValue then
+        scrollbar:SetValue(0)
+    end
+    if scrollbar.SetStep then
+        scrollbar:SetStep(32)
+    end
+
+    scrollbar:SetHandler("OnValueChanged", function(_, value)
+        if state.scrollContainer and state.scrollContainer.SetVerticalScroll then
+            state.scrollContainer:SetVerticalScroll(value)
+        end
+    end)
+
+    scrollContainer:SetHandler("OnMouseWheel", function(_, delta)
+        adjustScroll(delta)
+    end)
+
+    state.scrollContainer = scrollContainer
+    state.scrollContent = scrollContent
+    state.scrollbar = scrollbar
+    state.scrollContentRightOffset = 0
 end
 
 local function createContainers()
@@ -322,23 +443,37 @@ local function createContainers()
         return
     end
 
-    if not state.questContainer then
-        local questContainer = WINDOW_MANAGER:CreateControl(QUEST_CONTAINER_NAME, state.root, CT_CONTROL)
+    createScrollContainer()
+
+    local parent = state.scrollContent or state.root
+
+    if parent and not state.questContainer then
+        local questContainer = WINDOW_MANAGER:CreateControl(QUEST_CONTAINER_NAME, parent, CT_CONTROL)
         questContainer:SetMouseEnabled(false)
+        questContainer:SetHandler("OnMouseWheel", function(_, delta)
+            adjustScroll(delta)
+        end)
         state.questContainer = questContainer
         Nvk3UT.UI.QuestContainer = questContainer
+    elseif state.questContainer and state.questContainer.GetParent and state.questContainer:GetParent() ~= parent then
+        state.questContainer:SetParent(parent)
     end
 
-    if not state.achievementContainer then
-        local achievementContainer = WINDOW_MANAGER:CreateControl(ACHIEVEMENT_CONTAINER_NAME, state.root, CT_CONTROL)
+    if parent and not state.achievementContainer then
+        local achievementContainer = WINDOW_MANAGER:CreateControl(ACHIEVEMENT_CONTAINER_NAME, parent, CT_CONTROL)
         achievementContainer:SetMouseEnabled(false)
+        achievementContainer:SetHandler("OnMouseWheel", function(_, delta)
+            adjustScroll(delta)
+        end)
         state.achievementContainer = achievementContainer
         Nvk3UT.UI.AchievementContainer = achievementContainer
+    elseif state.achievementContainer and state.achievementContainer.GetParent and state.achievementContainer:GetParent() ~= parent then
+        state.achievementContainer:SetParent(parent)
     end
 
     anchorContainers()
     normalizeContainerDecorations()
-    updateSectionLayout()
+    refreshScroll()
 end
 
 local function initModels(debugEnabled)
@@ -437,6 +572,7 @@ function TrackerHost.ApplyTheme()
     end
 
     updateSectionLayout()
+    refreshScroll()
 end
 
 function TrackerHost.Refresh()
@@ -457,6 +593,7 @@ function TrackerHost.Refresh()
     end
 
     updateSectionLayout()
+    TrackerHost.RefreshScroll()
 end
 
 function TrackerHost.Shutdown()
@@ -490,11 +627,30 @@ function TrackerHost.Shutdown()
     state.questContainer = nil
     Nvk3UT.UI.QuestContainer = nil
 
+    if state.scrollbar then
+        state.scrollbar:SetHidden(true)
+        state.scrollbar:SetParent(nil)
+    end
+    state.scrollbar = nil
+
+    if state.scrollContent then
+        state.scrollContent:SetParent(nil)
+    end
+    state.scrollContent = nil
+    state.scrollContentRightOffset = 0
+
+    if state.scrollContainer then
+        state.scrollContainer:SetHandler("OnMouseWheel", nil)
+        state.scrollContainer:SetParent(nil)
+    end
+    state.scrollContainer = nil
+
     if state.root then
         state.root:SetHandler("OnMouseDown", nil)
         state.root:SetHandler("OnMouseUp", nil)
         state.root:SetHandler("OnMoveStop", nil)
         state.root:SetHandler("OnResizeStop", nil)
+        state.root:SetHandler("OnMouseWheel", nil)
         state.root:SetHidden(true)
         state.root:SetParent(nil)
     end
@@ -510,5 +666,7 @@ function TrackerHost.Shutdown()
 end
 
 Nvk3UT.TrackerHost = TrackerHost
+
+TrackerHost.RefreshScroll = refreshScroll
 
 return TrackerHost
