@@ -42,6 +42,15 @@ local DEFAULT_APPEARANCE = {
     theme = "dark",
 }
 
+local DEFAULT_LAYOUT = {
+    autoGrowV = true,
+    autoGrowH = false,
+    minWidth = 260,
+    minHeight = 240,
+    maxWidth = 640,
+    maxHeight = 900,
+}
+
 local function clamp(value, minimum, maximum)
     if value == nil then
         return minimum
@@ -73,6 +82,16 @@ local function getGeneral()
         window.locked = DEFAULT_WINDOW.locked
     end
     return sv.General
+end
+
+local function getFeatures()
+    local general = getGeneral()
+    general.features = general.features or {}
+    local features = general.features
+    if features.hideDefaultQuestTracker == nil then
+        features.hideDefaultQuestTracker = false
+    end
+    return features
 end
 
 local function getAppearanceSettings()
@@ -107,6 +126,53 @@ local function getAppearanceSettings()
     end
 
     return appearance
+end
+
+local function getLayoutSettings()
+    local general = getGeneral()
+    general.layout = general.layout or {}
+
+    local layout = general.layout
+
+    if layout.autoGrowV == nil then
+        layout.autoGrowV = DEFAULT_LAYOUT.autoGrowV
+    else
+        layout.autoGrowV = layout.autoGrowV ~= false
+    end
+
+    if layout.autoGrowH == nil then
+        layout.autoGrowH = DEFAULT_LAYOUT.autoGrowH
+    else
+        layout.autoGrowH = layout.autoGrowH == true
+    end
+
+    local minWidth = tonumber(layout.minWidth)
+    if not minWidth then
+        minWidth = DEFAULT_LAYOUT.minWidth
+    end
+    layout.minWidth = math.max(260, math.floor(minWidth + 0.5))
+
+    local maxWidth = tonumber(layout.maxWidth)
+    if not maxWidth then
+        maxWidth = DEFAULT_LAYOUT.maxWidth
+    end
+    maxWidth = math.floor(maxWidth + 0.5)
+    layout.maxWidth = math.max(layout.minWidth, maxWidth)
+
+    local minHeight = tonumber(layout.minHeight)
+    if not minHeight then
+        minHeight = DEFAULT_LAYOUT.minHeight
+    end
+    layout.minHeight = math.max(240, math.floor(minHeight + 0.5))
+
+    local maxHeight = tonumber(layout.maxHeight)
+    if not maxHeight then
+        maxHeight = DEFAULT_LAYOUT.maxHeight
+    end
+    maxHeight = math.floor(maxHeight + 0.5)
+    layout.maxHeight = math.max(layout.minHeight, maxHeight)
+
+    return layout
 end
 
 local function getQuestSettings()
@@ -345,6 +411,149 @@ local function registerGeneralOptions(options)
             end
         end,
         tooltip = "Setzt Größe und Position des Tracker-Fensters zurück.",
+    }
+
+    options[#options + 1] = {
+        type = "checkbox",
+        name = "Standard-Quest-Tracker verstecken",
+        getFunc = function()
+            local features = getFeatures()
+            return features.hideDefaultQuestTracker == true
+        end,
+        setFunc = function(value)
+            local features = getFeatures()
+            features.hideDefaultQuestTracker = value == true
+            if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
+                Nvk3UT.TrackerHost.ApplySettings()
+            end
+        end,
+        default = false,
+    }
+
+    options[#options + 1] = { type = "header", name = "Fenstergröße & Auto-Resize" }
+
+    options[#options + 1] = {
+        type = "checkbox",
+        name = "Automatisch vertikal anpassen",
+        getFunc = function()
+            local layout = getLayoutSettings()
+            return layout.autoGrowV ~= false
+        end,
+        setFunc = function(value)
+            local layout = getLayoutSettings()
+            layout.autoGrowV = value ~= false
+            if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
+                Nvk3UT.TrackerHost.ApplySettings()
+            end
+        end,
+        default = DEFAULT_LAYOUT.autoGrowV,
+    }
+
+    options[#options + 1] = {
+        type = "checkbox",
+        name = "Automatisch horizontal anpassen",
+        getFunc = function()
+            local layout = getLayoutSettings()
+            return layout.autoGrowH == true
+        end,
+        setFunc = function(value)
+            local layout = getLayoutSettings()
+            layout.autoGrowH = value == true
+            if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
+                Nvk3UT.TrackerHost.ApplySettings()
+            end
+        end,
+        default = DEFAULT_LAYOUT.autoGrowH,
+    }
+
+    options[#options + 1] = {
+        type = "slider",
+        name = "Mindestbreite",
+        min = 260,
+        max = 800,
+        step = 10,
+        getFunc = function()
+            return getLayoutSettings().minWidth
+        end,
+        setFunc = function(value)
+            local layout = getLayoutSettings()
+            local numeric = math.floor((tonumber(value) or layout.minWidth) + 0.5)
+            numeric = math.max(260, math.min(numeric, layout.maxWidth))
+            layout.minWidth = numeric
+            if layout.maxWidth < layout.minWidth then
+                layout.maxWidth = layout.minWidth
+            end
+            if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
+                Nvk3UT.TrackerHost.ApplySettings()
+            end
+        end,
+        default = DEFAULT_LAYOUT.minWidth,
+    }
+
+    options[#options + 1] = {
+        type = "slider",
+        name = "Maximalbreite",
+        min = 260,
+        max = 1200,
+        step = 10,
+        getFunc = function()
+            return getLayoutSettings().maxWidth
+        end,
+        setFunc = function(value)
+            local layout = getLayoutSettings()
+            local numeric = math.floor((tonumber(value) or layout.maxWidth) + 0.5)
+            numeric = math.max(layout.minWidth, math.min(numeric, 1200))
+            layout.maxWidth = numeric
+            if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
+                Nvk3UT.TrackerHost.ApplySettings()
+            end
+        end,
+        default = DEFAULT_LAYOUT.maxWidth,
+    }
+
+    options[#options + 1] = {
+        type = "slider",
+        name = "Mindesthöhe",
+        min = 240,
+        max = 900,
+        step = 10,
+        getFunc = function()
+            return getLayoutSettings().minHeight
+        end,
+        setFunc = function(value)
+            local layout = getLayoutSettings()
+            local numeric = math.floor((tonumber(value) or layout.minHeight) + 0.5)
+            numeric = math.max(240, math.min(numeric, layout.maxHeight))
+            layout.minHeight = numeric
+            if layout.maxHeight < layout.minHeight then
+                layout.maxHeight = layout.minHeight
+            end
+            if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
+                Nvk3UT.TrackerHost.ApplySettings()
+            end
+        end,
+        default = DEFAULT_LAYOUT.minHeight,
+    }
+
+    options[#options + 1] = {
+        type = "slider",
+        name = "Maximalhöhe",
+        min = 240,
+        max = 1200,
+        step = 10,
+        getFunc = function()
+            return getLayoutSettings().maxHeight
+        end,
+        setFunc = function(value)
+            local layout = getLayoutSettings()
+            local numeric = math.floor((tonumber(value) or layout.maxHeight) + 0.5)
+            numeric = math.max(layout.minHeight, math.min(numeric, 1200))
+            layout.maxHeight = numeric
+            if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
+                Nvk3UT.TrackerHost.ApplySettings()
+            end
+        end,
+        default = DEFAULT_LAYOUT.maxHeight,
     }
 
     options[#options + 1] = { type = "header", name = "Hintergrund & Darstellung" }
@@ -639,21 +848,6 @@ local function registerQuestTrackerOptions(options)
 
     options[#options + 1] = {
         type = "checkbox",
-        name = "Standard-Quest-Tracker verstecken",
-        getFunc = function()
-            settings = getQuestSettings()
-            return settings.hideDefault == true
-        end,
-        setFunc = function(value)
-            settings = getQuestSettings()
-            settings.hideDefault = value
-            applyQuestSettings()
-        end,
-        default = false,
-    }
-
-    options[#options + 1] = {
-        type = "checkbox",
         name = "Im Kampf verstecken",
         getFunc = function()
             settings = getQuestSettings()
@@ -662,51 +856,6 @@ local function registerQuestTrackerOptions(options)
         setFunc = function(value)
             settings = getQuestSettings()
             settings.hideInCombat = value
-            applyQuestSettings()
-        end,
-        default = false,
-    }
-
-    options[#options + 1] = {
-        type = "checkbox",
-        name = "Tracker sperren",
-        getFunc = function()
-            settings = getQuestSettings()
-            return settings.lock == true
-        end,
-        setFunc = function(value)
-            settings = getQuestSettings()
-            settings.lock = value
-            applyQuestSettings()
-        end,
-        default = false,
-    }
-
-    options[#options + 1] = {
-        type = "checkbox",
-        name = "Automatisch vertikal anpassen",
-        getFunc = function()
-            settings = getQuestSettings()
-            return settings.autoGrowV ~= false
-        end,
-        setFunc = function(value)
-            settings = getQuestSettings()
-            settings.autoGrowV = value
-            applyQuestSettings()
-        end,
-        default = true,
-    }
-
-    options[#options + 1] = {
-        type = "checkbox",
-        name = "Automatisch horizontal anpassen",
-        getFunc = function()
-            settings = getQuestSettings()
-            return settings.autoGrowH == true
-        end,
-        setFunc = function(value)
-            settings = getQuestSettings()
-            settings.autoGrowH = value
             applyQuestSettings()
         end,
         default = false,
@@ -773,51 +922,6 @@ local function registerAchievementTrackerOptions(options)
             end
         end,
         default = true,
-    }
-
-    options[#options + 1] = {
-        type = "checkbox",
-        name = "Tracker sperren",
-        getFunc = function()
-            settings = getAchievementSettings()
-            return settings.lock == true
-        end,
-        setFunc = function(value)
-            settings = getAchievementSettings()
-            settings.lock = value
-            applyAchievementSettings()
-        end,
-        default = false,
-    }
-
-    options[#options + 1] = {
-        type = "checkbox",
-        name = "Automatisch vertikal anpassen",
-        getFunc = function()
-            settings = getAchievementSettings()
-            return settings.autoGrowV ~= false
-        end,
-        setFunc = function(value)
-            settings = getAchievementSettings()
-            settings.autoGrowV = value
-            applyAchievementSettings()
-        end,
-        default = true,
-    }
-
-    options[#options + 1] = {
-        type = "checkbox",
-        name = "Automatisch horizontal anpassen",
-        getFunc = function()
-            settings = getAchievementSettings()
-            return settings.autoGrowH == true
-        end,
-        setFunc = function(value)
-            settings = getAchievementSettings()
-            settings.autoGrowH = value
-            applyAchievementSettings()
-        end,
-        default = false,
     }
 
     options[#options + 1] = {

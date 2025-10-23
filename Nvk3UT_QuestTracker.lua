@@ -41,8 +41,9 @@ local state = {
     snapshot = nil,
     combatHidden = false,
     subscription = nil,
-    previousDefaultTrackerHidden = nil,
     pendingRefresh = false,
+    contentWidth = 0,
+    contentHeight = 0,
 }
 
 local function DebugLog(...)
@@ -55,6 +56,15 @@ local function DebugLog(...)
     elseif print then
         print("[" .. MODULE_NAME .. "]", ...)
     end
+end
+
+local function NotifyHostContentChanged()
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if not (host and host.NotifyContentChanged) then
+        return
+    end
+
+    pcall(host.NotifyContentChanged)
 end
 
 local function EnsureSavedVars()
@@ -160,11 +170,7 @@ local function AnchorControl(control, indentX)
     control.currentIndent = indentX
 end
 
-local function UpdateAutoSize()
-    if not state.control then
-        return
-    end
-
+local function UpdateContentSize()
     local maxWidth = 0
     local totalHeight = 0
     local visibleCount = 0
@@ -184,13 +190,8 @@ local function UpdateAutoSize()
         end
     end
 
-    if state.opts.autoGrowH and maxWidth > 0 then
-        state.control:SetWidth(maxWidth)
-    end
-
-    if state.opts.autoGrowV then
-        state.control:SetHeight(totalHeight)
-    end
+    state.contentWidth = maxWidth
+    state.contentHeight = totalHeight
 end
 
 local function UpdateCategoryToggle(control, expanded)
@@ -509,7 +510,8 @@ local function Rebuild()
     ResetLayoutState()
 
     if not state.snapshot or not state.snapshot.categories or not state.snapshot.categories.ordered then
-        UpdateAutoSize()
+        UpdateContentSize()
+        NotifyHostContentChanged()
         return
     end
 
@@ -520,31 +522,8 @@ local function Rebuild()
         end
     end
 
-    UpdateAutoSize()
-end
-
-local function ApplyLockState()
-    if not state.control or not state.control.SetMovable then
-        return
-    end
-    local lock = state.opts.lock
-    if lock == nil then
-        return
-    end
-    state.control:SetMovable(not lock)
-end
-
-local function ApplyHideDefaultTracker()
-    if not ZO_QuestTracker then
-        return
-    end
-    if state.opts.hideDefault == nil then
-        return
-    end
-    if state.previousDefaultTrackerHidden == nil then
-        state.previousDefaultTrackerHidden = ZO_QuestTracker:IsHidden()
-    end
-    ZO_QuestTracker:SetHidden(state.opts.hideDefault)
+    UpdateContentSize()
+    NotifyHostContentChanged()
 end
 
 local function RefreshVisibility()
@@ -561,6 +540,7 @@ local function RefreshVisibility()
     end
 
     state.control:SetHidden(hidden)
+    NotifyHostContentChanged()
 end
 
 local function OnCombatState(_, inCombat)
@@ -597,9 +577,10 @@ function QuestTracker.Init(parentControl, opts)
     assert(parentControl ~= nil, "QuestTracker.Init requires a parent control")
 
     state.control = parentControl
-    state.container = WINDOW_MANAGER:CreateControl(nil, parentControl, CT_CONTROL)
-    state.container:SetResizeToFitDescendents(true)
-    state.control.holder = state.container
+    state.container = parentControl
+    if state.control and state.control.SetResizeToFitDescendents then
+        state.control:SetResizeToFitDescendents(true)
+    end
 
     EnsureSavedVars()
     state.opts = {}
@@ -613,10 +594,6 @@ function QuestTracker.Init(parentControl, opts)
         QuestTracker.ApplySettings(opts)
     end
 
-    ApplyContainerPadding()
-    AttachBackdrop()
-    ApplyLockState()
-    ApplyHideDefaultTracker()
     if state.opts.hideInCombat then
         RegisterCombatEvents()
     else
@@ -670,32 +647,18 @@ function QuestTracker.Shutdown()
         state.conditionPool = nil
     end
 
-    if state.container then
-        if state.container.Destroy then
-            state.container:Destroy()
-        else
-            state.container:SetHidden(true)
-            state.container:SetParent(nil)
-        end
-        state.container = nil
-    end
-
-    if state.previousDefaultTrackerHidden ~= nil and ZO_QuestTracker then
-        ZO_QuestTracker:SetHidden(state.previousDefaultTrackerHidden)
-    end
-
-    if state.control then
-        state.control.holder = nil
-    end
+    state.container = nil
     state.control = nil
     state.snapshot = nil
     state.orderedControls = {}
     state.lastAnchoredControl = nil
     state.isInitialized = false
-    state.previousDefaultTrackerHidden = nil
     state.opts = {}
     state.fonts = {}
     state.pendingRefresh = false
+    state.contentWidth = 0
+    state.contentHeight = 0
+    NotifyHostContentChanged()
 end
 
 function QuestTracker.SetActive(active)
@@ -703,35 +666,14 @@ function QuestTracker.SetActive(active)
     RefreshVisibility()
 end
 
-local function ApplyAutoGrow(settings)
-    if type(settings) ~= "table" then
-        return
-    end
-
-    if settings.autoGrowV ~= nil then
-        state.opts.autoGrowV = settings.autoGrowV and true or false
-    end
-
-    if settings.autoGrowH ~= nil then
-        state.opts.autoGrowH = settings.autoGrowH and true or false
-    end
-end
-
 function QuestTracker.ApplySettings(settings)
     if type(settings) ~= "table" then
         return
     end
 
-    state.opts.lock = settings.lock ~= nil and settings.lock or state.opts.lock
-    state.opts.hideDefault = settings.hideDefault ~= nil and settings.hideDefault or state.opts.hideDefault
     state.opts.hideInCombat = settings.hideInCombat and true or false
     state.opts.autoExpand = settings.autoExpand ~= false
     state.opts.active = (settings.active ~= false)
-
-    ApplyAutoGrow(settings)
-
-    ApplyLockState()
-    ApplyHideDefaultTracker()
 
     if state.isInitialized then
         if state.opts.hideInCombat then
@@ -765,6 +707,10 @@ end
 
 function QuestTracker.RequestRefresh()
     RequestRefresh()
+end
+
+function QuestTracker.GetContentSize()
+    return state.contentWidth or 0, state.contentHeight or 0
 end
 
 Nvk3UT.QuestTracker = QuestTracker

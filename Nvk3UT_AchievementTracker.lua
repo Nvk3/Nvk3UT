@@ -45,6 +45,8 @@ local state = {
     snapshot = nil,
     subscription = nil,
     pendingRefresh = false,
+    contentWidth = 0,
+    contentHeight = 0,
 }
 
 local function DebugLog(...)
@@ -57,6 +59,15 @@ local function DebugLog(...)
     elseif print then
         print("[" .. MODULE_NAME .. "]", ...)
     end
+end
+
+local function NotifyHostContentChanged()
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if not (host and host.NotifyContentChanged) then
+        return
+    end
+
+    pcall(host.NotifyContentChanged)
 end
 
 local function EnsureSavedVars()
@@ -213,6 +224,7 @@ local function RefreshVisibility()
 
     local hidden = state.opts and state.opts.active == false
     state.control:SetHidden(hidden)
+    NotifyHostContentChanged()
 end
 
 local function ResetLayoutState()
@@ -243,11 +255,7 @@ local function AnchorControl(control, indentX)
     control.currentIndent = indentX
 end
 
-local function UpdateAutoSize()
-    if not state.control then
-        return
-    end
-
+local function UpdateContentSize()
     local maxWidth = 0
     local totalHeight = 0
     local visibleCount = 0
@@ -267,31 +275,8 @@ local function UpdateAutoSize()
         end
     end
 
-    if state.opts.autoGrowH and maxWidth > 0 and state.control.SetWidth then
-        state.control:SetWidth(maxWidth)
-    end
-
-    if state.opts.autoGrowV and totalHeight > 0 and state.control.SetHeight then
-        state.control:SetHeight(totalHeight)
-    end
-end
-
-local function EnsureContainer()
-    if state.container or not WINDOW_MANAGER then
-        return
-    end
-
-    local container = WINDOW_MANAGER:CreateControl(nil, state.control, CT_CONTROL)
-    if not container then
-        return
-    end
-
-    container:SetAnchorFill()
-    container:SetResizeToFitDescendents(true)
-    state.container = container
-    if state.control then
-        state.control.holder = container
-    end
+    state.contentWidth = maxWidth
+    state.contentHeight = totalHeight
 end
 
 local function SetCategoryExpanded(expanded)
@@ -622,7 +607,8 @@ local function Rebuild()
 
     LayoutCategory()
 
-    UpdateAutoSize()
+    UpdateContentSize()
+    NotifyHostContentChanged()
 end
 
 local function OnSnapshotUpdated(snapshot)
@@ -652,18 +638,6 @@ local function UnsubscribeFromModel()
     state.subscription = nil
 end
 
-local function ApplyLockState()
-    if not state.control or not state.control.SetMovable then
-        return
-    end
-
-    if state.opts.lock == nil then
-        return
-    end
-
-    state.control:SetMovable(not state.opts.lock)
-end
-
 function AchievementTracker.Init(parentControl, opts)
     if not parentControl then
         error("AchievementTracker.Init requires a parent control")
@@ -674,6 +648,10 @@ function AchievementTracker.Init(parentControl, opts)
     end
 
     state.control = parentControl
+    state.container = parentControl
+    if state.control and state.control.SetResizeToFitDescendents then
+        state.control:SetResizeToFitDescendents(true)
+    end
     EnsureSavedVars()
 
     state.opts = {}
@@ -686,9 +664,6 @@ function AchievementTracker.Init(parentControl, opts)
         AchievementTracker.ApplyTheme(opts)
         AchievementTracker.ApplySettings(opts)
     end
-
-    EnsureContainer()
-    ApplyLockState()
 
     SubscribeToModel()
 
@@ -723,19 +698,7 @@ function AchievementTracker.Shutdown()
     state.achievementPool = nil
     state.objectivePool = nil
 
-    if state.container then
-        if state.container.Destroy then
-            state.container:Destroy()
-        else
-            state.container:SetHidden(true)
-            state.container:SetParent(nil)
-        end
-    end
     state.container = nil
-
-    if state.control then
-        state.control.holder = nil
-    end
     state.control = nil
     state.snapshot = nil
     state.orderedControls = {}
@@ -745,20 +708,9 @@ function AchievementTracker.Shutdown()
 
     state.isInitialized = false
     state.pendingRefresh = false
-end
-
-local function ApplyAutoGrow(settings)
-    if type(settings) ~= "table" then
-        return
-    end
-
-    if settings.autoGrowV ~= nil then
-        state.opts.autoGrowV = settings.autoGrowV and true or false
-    end
-
-    if settings.autoGrowH ~= nil then
-        state.opts.autoGrowH = settings.autoGrowH and true or false
-    end
+    state.contentWidth = 0
+    state.contentHeight = 0
+    NotifyHostContentChanged()
 end
 
 local function EnsureSections()
@@ -787,15 +739,12 @@ function AchievementTracker.ApplySettings(settings)
         return
     end
 
-    state.opts.lock = settings.lock ~= nil and settings.lock or state.opts.lock
     state.opts.active = settings.active ~= false
-    ApplyAutoGrow(settings)
     ApplySections(settings.sections)
     if settings.tooltips ~= nil then
         ApplyTooltipsSetting(settings.tooltips)
     end
 
-    ApplyLockState()
     RefreshVisibility()
     RequestRefresh()
 end
@@ -829,6 +778,10 @@ end
 
 function AchievementTracker.RefreshVisibility()
     RefreshVisibility()
+end
+
+function AchievementTracker.GetContentSize()
+    return state.contentWidth or 0, state.contentHeight or 0
 end
 
 -- Ensure the container exists before populating entries during init

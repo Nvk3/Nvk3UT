@@ -52,6 +52,15 @@ local DEFAULT_WINDOW = {
     locked = false,
 }
 
+local DEFAULT_LAYOUT = {
+    autoGrowV = true,
+    autoGrowH = false,
+    minWidth = MIN_WIDTH,
+    minHeight = MIN_HEIGHT,
+    maxWidth = 640,
+    maxHeight = 900,
+}
+
 local MIN_WIDTH = 260
 local MIN_HEIGHT = 240
 local RESIZE_HANDLE_SIZE = 12
@@ -70,11 +79,14 @@ local state = {
     achievementContainer = nil,
     backdrop = nil,
     window = nil,
+    layout = nil,
     appearance = nil,
+    features = nil,
     anchorWarnings = {
         questMissing = false,
         achievementMissing = false,
     },
+    previousDefaultQuestTrackerHidden = nil,
 }
 
 local function clamp(value, minimum, maximum)
@@ -194,6 +206,130 @@ local function ensureAppearanceSettings()
     return appearance
 end
 
+local function migrateHostSettings(general)
+    local sv = getSavedVars()
+    if not sv or type(general) ~= "table" then
+        return
+    end
+
+    if general._hostMigrated then
+        return
+    end
+
+    general.window = general.window or {}
+    general.features = general.features or {}
+    general.layout = general.layout or {}
+
+    local quest = sv.QuestTracker
+    local achievement = sv.AchievementTracker
+
+    if general.window.locked == nil then
+        if quest and quest.lock ~= nil then
+            general.window.locked = quest.lock and true or false
+        elseif achievement and achievement.lock ~= nil then
+            general.window.locked = achievement.lock and true or false
+        end
+    end
+
+    if general.features.hideDefaultQuestTracker == nil and quest and quest.hideDefault ~= nil then
+        general.features.hideDefaultQuestTracker = quest.hideDefault and true or false
+    end
+
+    if general.layout.autoGrowV == nil then
+        if quest and quest.autoGrowV ~= nil then
+            general.layout.autoGrowV = quest.autoGrowV ~= false
+        elseif achievement and achievement.autoGrowV ~= nil then
+            general.layout.autoGrowV = achievement.autoGrowV ~= false
+        end
+    end
+
+    if general.layout.autoGrowH == nil then
+        if quest and quest.autoGrowH ~= nil then
+            general.layout.autoGrowH = quest.autoGrowH and true or false
+        elseif achievement and achievement.autoGrowH ~= nil then
+            general.layout.autoGrowH = achievement.autoGrowH and true or false
+        end
+    end
+
+    general._hostMigrated = true
+end
+
+local function ensureFeatureSettings()
+    local sv = getSavedVars()
+    if not sv then
+        return { hideDefaultQuestTracker = false }
+    end
+
+    sv.General = sv.General or {}
+    migrateHostSettings(sv.General)
+    sv.General.features = sv.General.features or {}
+
+    local features = sv.General.features
+    if features.hideDefaultQuestTracker == nil then
+        features.hideDefaultQuestTracker = false
+    else
+        features.hideDefaultQuestTracker = features.hideDefaultQuestTracker == true
+    end
+
+    return features
+end
+
+local function ensureLayoutSettings()
+    local sv = getSavedVars()
+    if not sv then
+        return cloneTable(DEFAULT_LAYOUT)
+    end
+
+    sv.General = sv.General or {}
+    migrateHostSettings(sv.General)
+    sv.General.layout = sv.General.layout or {}
+
+    local layout = sv.General.layout
+
+    if layout.autoGrowV == nil then
+        layout.autoGrowV = DEFAULT_LAYOUT.autoGrowV
+    else
+        layout.autoGrowV = layout.autoGrowV ~= false
+    end
+
+    if layout.autoGrowH == nil then
+        layout.autoGrowH = DEFAULT_LAYOUT.autoGrowH
+    else
+        layout.autoGrowH = layout.autoGrowH == true
+    end
+
+    local minWidth = tonumber(layout.minWidth)
+    if not minWidth then
+        minWidth = DEFAULT_LAYOUT.minWidth
+    end
+    minWidth = math.max(MIN_WIDTH, math.floor(minWidth + 0.5))
+
+    local maxWidth = tonumber(layout.maxWidth)
+    if not maxWidth then
+        maxWidth = DEFAULT_LAYOUT.maxWidth
+    end
+    maxWidth = math.max(minWidth, math.floor(maxWidth + 0.5))
+
+    local minHeight = tonumber(layout.minHeight)
+    if not minHeight then
+        minHeight = DEFAULT_LAYOUT.minHeight
+    end
+    minHeight = math.max(MIN_HEIGHT, math.floor(minHeight + 0.5))
+
+    local maxHeight = tonumber(layout.maxHeight)
+    if not maxHeight then
+        maxHeight = DEFAULT_LAYOUT.maxHeight
+    end
+    maxHeight = math.max(minHeight, math.floor(maxHeight + 0.5))
+
+    layout.minWidth = minWidth
+    layout.maxWidth = maxWidth
+    layout.minHeight = minHeight
+    layout.maxHeight = maxHeight
+
+    return layout
+end
+
 local function ensureWindowSettings()
     local sv = getSavedVars()
     if not sv then
@@ -201,6 +337,7 @@ local function ensureWindowSettings()
     end
 
     sv.General = sv.General or {}
+    migrateHostSettings(sv.General)
     sv.General.window = sv.General.window or {}
 
     local window = sv.General.window
@@ -260,8 +397,16 @@ local function saveWindowSize()
         return
     end
 
-    local width = math.max(state.root:GetWidth() or state.window.width or MIN_WIDTH, MIN_WIDTH)
-    local height = math.max(state.root:GetHeight() or state.window.height or MIN_HEIGHT, MIN_HEIGHT)
+    state.layout = ensureLayoutSettings()
+    local layout = state.layout
+
+    local minWidth = layout.minWidth or MIN_WIDTH
+    local minHeight = layout.minHeight or MIN_HEIGHT
+    local maxWidth = layout.maxWidth or math.max(minWidth, state.root:GetWidth() or minWidth)
+    local maxHeight = layout.maxHeight or math.max(minHeight, state.root:GetHeight() or minHeight)
+
+    local width = clamp(state.root:GetWidth() or state.window.width or minWidth, minWidth, maxWidth)
+    local height = clamp(state.root:GetHeight() or state.window.height or minHeight, minHeight, maxHeight)
 
     state.window.width = math.floor(width + 0.5)
     state.window.height = math.floor(height + 0.5)
@@ -356,6 +501,167 @@ local function refreshScroll()
     end
 end
 
+local function measureTrackerContent(container, trackerModule)
+    if not container or (container.IsHidden and container:IsHidden()) then
+        return 0, 0
+    end
+
+    local width = 0
+    local height = 0
+
+    if trackerModule and trackerModule.GetContentSize then
+        local ok, trackerWidth, trackerHeight = pcall(trackerModule.GetContentSize)
+        if ok then
+            width = tonumber(trackerWidth) or 0
+            height = tonumber(trackerHeight) or 0
+        end
+    end
+
+    if (width <= 0 or height <= 0) then
+        local holder = container.holder
+        if holder and holder.GetWidth then
+            width = math.max(width, holder:GetWidth() or 0)
+            height = math.max(height, holder:GetHeight() or 0)
+        else
+            width = math.max(width, container.GetWidth and container:GetWidth() or 0)
+            height = math.max(height, container.GetHeight and container:GetHeight() or 0)
+        end
+    end
+
+    if width < 0 then
+        width = 0
+    end
+    if height < 0 then
+        height = 0
+    end
+
+    return width, height
+end
+
+local function measureContentSize()
+    local totalHeight = 0
+    local maxWidth = 0
+
+    local questWidth, questHeight = measureTrackerContent(state.questContainer, Nvk3UT and Nvk3UT.QuestTracker)
+    local achievementWidth, achievementHeight = measureTrackerContent(
+        state.achievementContainer,
+        Nvk3UT and Nvk3UT.AchievementTracker
+    )
+
+    if questHeight > 0 then
+        totalHeight = totalHeight + questHeight
+    end
+
+    if achievementHeight > 0 then
+        totalHeight = totalHeight + achievementHeight
+    end
+
+    maxWidth = math.max(maxWidth, questWidth, achievementWidth)
+
+    return maxWidth, totalHeight
+end
+
+local function applyLayoutConstraints()
+    if not (state.root and state.root.SetDimensionConstraints) then
+        return
+    end
+
+    local layout = state.layout or ensureLayoutSettings()
+    state.layout = layout
+
+    local minWidth = layout.minWidth or MIN_WIDTH
+    local minHeight = layout.minHeight or MIN_HEIGHT
+    local maxWidth = layout.maxWidth
+    local maxHeight = layout.maxHeight
+
+    if maxWidth and maxHeight then
+        state.root:SetDimensionConstraints(minWidth, minHeight, maxWidth, maxHeight)
+    else
+        state.root:SetDimensionConstraints(minWidth, minHeight)
+    end
+end
+
+local function updateWindowGeometry()
+    if not (state.root and state.window) then
+        return
+    end
+
+    state.layout = ensureLayoutSettings()
+    local layout = state.layout
+    local appearance = state.appearance or ensureAppearanceSettings()
+    state.appearance = appearance
+
+    local padding = math.max(0, tonumber(appearance and appearance.padding) or 0)
+    local contentWidth, contentHeight = measureContentSize()
+
+    local minWidth = layout.minWidth or MIN_WIDTH
+    local minHeight = layout.minHeight or MIN_HEIGHT
+    local maxWidth = layout.maxWidth or minWidth
+    local maxHeight = layout.maxHeight or minHeight
+
+    local targetWidth = tonumber(state.window.width) or DEFAULT_WINDOW.width
+    local targetHeight = tonumber(state.window.height) or DEFAULT_WINDOW.height
+
+    targetWidth = clamp(targetWidth, minWidth, maxWidth)
+    targetHeight = clamp(targetHeight, minHeight, maxHeight)
+
+    if layout.autoGrowH then
+        local desiredWidth = math.floor((contentWidth + (padding * 2)) + 0.5)
+        targetWidth = clamp(desiredWidth, minWidth, maxWidth)
+    end
+
+    if layout.autoGrowV then
+        local desiredHeight = math.floor((contentHeight + (padding * 2)) + 0.5)
+        targetHeight = clamp(desiredHeight, minHeight, maxHeight)
+    end
+
+    state.window.width = targetWidth
+    state.window.height = targetHeight
+
+    applyLayoutConstraints()
+
+    clampWindowToScreen(targetWidth, targetHeight)
+
+    local anchorParent = GuiRoot or state.root:GetParent()
+    state.root:ClearAnchors()
+    state.root:SetAnchor(TOPLEFT, anchorParent, TOPLEFT, state.window.left or 0, state.window.top or 0)
+    state.root:SetDimensions(targetWidth, targetHeight)
+    state.root:SetHidden(false)
+    state.root:SetClampedToScreen(true)
+end
+
+local function applyFeatureSettings()
+    state.features = ensureFeatureSettings()
+    local features = state.features
+
+    if not (ZO_QuestTracker and ZO_QuestTracker.SetHidden) then
+        return
+    end
+
+    if state.previousDefaultQuestTrackerHidden == nil then
+        state.previousDefaultQuestTrackerHidden = ZO_QuestTracker:IsHidden()
+    end
+
+    if features.hideDefaultQuestTracker then
+        ZO_QuestTracker:SetHidden(true)
+    else
+        if state.previousDefaultQuestTrackerHidden ~= nil then
+            ZO_QuestTracker:SetHidden(state.previousDefaultQuestTrackerHidden)
+        else
+            ZO_QuestTracker:SetHidden(false)
+        end
+    end
+end
+
+local function notifyContentChanged()
+    if not state.root then
+        return
+    end
+
+    updateWindowGeometry()
+    refreshScroll()
+end
+
 local function anchorContainers()
     local parent = state.scrollContent or state.root
     local questContainer = state.questContainer
@@ -403,41 +709,20 @@ local function applyWindowLock()
     state.root:SetResizeHandleSize(locked and 0 or RESIZE_HANDLE_SIZE)
 end
 
-local function applyWindowGeometry()
-    if not (state.root and state.window) then
-        return
-    end
-
-    local width = math.max(tonumber(state.window.width) or DEFAULT_WINDOW.width, MIN_WIDTH)
-    local height = math.max(tonumber(state.window.height) or DEFAULT_WINDOW.height, MIN_HEIGHT)
-    clampWindowToScreen(width, height)
-
-    local left = tonumber(state.window.left) or DEFAULT_WINDOW.left
-    local top = tonumber(state.window.top) or DEFAULT_WINDOW.top
-
-    state.window.left = left
-    state.window.top = top
-    state.window.width = width
-    state.window.height = height
-
-    state.root:ClearAnchors()
-    state.root:SetAnchor(TOPLEFT, GuiRoot or state.root:GetParent(), TOPLEFT, left, top)
-    state.root:SetDimensions(width, height)
-    state.root:SetHidden(false)
-    state.root:SetClampedToScreen(true)
-end
-
 local function applyWindowSettings()
     state.window = ensureWindowSettings()
     state.appearance = ensureAppearanceSettings()
+    state.layout = ensureLayoutSettings()
+    state.features = ensureFeatureSettings()
 
     if not state.root then
         return
     end
 
-    applyWindowGeometry()
-    applyWindowLock()
+    applyLayoutConstraints()
     updateSectionLayout()
+    updateWindowGeometry()
+    applyWindowLock()
     refreshScroll()
 end
 
@@ -509,9 +794,8 @@ local function createRootControl()
 
     control:SetHandler("OnResizeStop", function()
         saveWindowSize()
-        applyWindowGeometry()
         updateSectionLayout()
-        refreshScroll()
+        notifyContentChanged()
     end)
 
     control:SetHandler("OnMouseWheel", function(_, delta)
@@ -521,6 +805,7 @@ local function createRootControl()
     state.root = control
     Nvk3UT.UI.Root = control
 
+    applyLayoutConstraints()
     createBackdrop()
 end
 
@@ -592,6 +877,9 @@ local function createContainers()
     if parent and not state.questContainer then
         local questContainer = WINDOW_MANAGER:CreateControl(QUEST_CONTAINER_NAME, parent, CT_CONTROL)
         questContainer:SetMouseEnabled(false)
+        if questContainer.SetResizeToFitDescendents then
+            questContainer:SetResizeToFitDescendents(true)
+        end
         questContainer:SetHandler("OnMouseWheel", function(_, delta)
             adjustScroll(delta)
         end)
@@ -604,6 +892,9 @@ local function createContainers()
     if parent and not state.achievementContainer then
         local achievementContainer = WINDOW_MANAGER:CreateControl(ACHIEVEMENT_CONTAINER_NAME, parent, CT_CONTROL)
         achievementContainer:SetMouseEnabled(false)
+        if achievementContainer.SetResizeToFitDescendents then
+            achievementContainer:SetResizeToFitDescendents(true)
+        end
         achievementContainer:SetHandler("OnMouseWheel", function(_, delta)
             adjustScroll(delta)
         end)
@@ -690,7 +981,6 @@ local function applyAppearance()
     end
 
     applyViewportPadding()
-    refreshScroll()
 end
 
 local function initModels(debugEnabled)
@@ -733,6 +1023,8 @@ function TrackerHost.Init()
 
     state.window = ensureWindowSettings()
     state.appearance = ensureAppearanceSettings()
+    state.layout = ensureLayoutSettings()
+    state.features = ensureFeatureSettings()
 
     createRootControl()
     createContainers()
@@ -764,6 +1056,7 @@ function TrackerHost.ApplySettings()
     end
 
     applyWindowSettings()
+    applyFeatureSettings()
 
     local sv = getSavedVars()
 
@@ -794,7 +1087,6 @@ function TrackerHost.ApplyTheme()
     end
 
     updateSectionLayout()
-    refreshScroll()
     TrackerHost.ApplyAppearance()
 end
 
@@ -816,7 +1108,7 @@ function TrackerHost.Refresh()
     end
 
     updateSectionLayout()
-    TrackerHost.RefreshScroll()
+    notifyContentChanged()
 end
 
 function TrackerHost.ApplyAppearance()
@@ -825,9 +1117,14 @@ function TrackerHost.ApplyAppearance()
     end
 
     applyAppearance()
+    notifyContentChanged()
 end
 
 function TrackerHost.Shutdown()
+    if state.previousDefaultQuestTrackerHidden ~= nil and ZO_QuestTracker and ZO_QuestTracker.SetHidden then
+        ZO_QuestTracker:SetHidden(state.previousDefaultQuestTrackerHidden)
+    end
+
     if Nvk3UT.QuestTracker and Nvk3UT.QuestTracker.Shutdown then
         pcall(Nvk3UT.QuestTracker.Shutdown)
     end
@@ -900,11 +1197,15 @@ function TrackerHost.Shutdown()
     end
 
     state.appearance = nil
+    state.layout = nil
+    state.features = nil
     state.initialized = false
+    state.previousDefaultQuestTrackerHidden = nil
 end
 
 Nvk3UT.TrackerHost = TrackerHost
 
 TrackerHost.RefreshScroll = refreshScroll
+TrackerHost.NotifyContentChanged = notifyContentChanged
 
 return TrackerHost
