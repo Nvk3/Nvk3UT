@@ -30,7 +30,9 @@ function M.ApplyFeatureToggles()
   end
   -- Toggle category tooltips
   if Nvk3UT and Nvk3UT.Tooltips and Nvk3UT.Tooltips.Enable then
-    local on = (Nvk3UT.sv and Nvk3UT.sv.features and (Nvk3UT.sv.features.tooltips ~= false))
+    local general = Nvk3UT.sv and Nvk3UT.sv.General
+    local features = general and general.features or (Nvk3UT.sv and Nvk3UT.sv.features)
+    local on = features and (features.tooltips ~= false)
     Nvk3UT.Tooltips.Enable(on)
   end
 end
@@ -96,209 +98,16 @@ local function Nvk3UT_UI_ComputeCounts()
   return done, total
 end
 function M.BuildLAM()
-  local LAM = LibAddonMenu2
-  if not LAM then
-    return
+  if Nvk3UT.LAM and Nvk3UT.LAM.Build then
+    Nvk3UT.LAM.Build(TITLE)
   end
-
-  local panel = {
-    type = "panel",
-    name = TITLE,
-    displayName = "|c66CCFF" .. TITLE .. "|r",
-    author = "Nvk3",
-    version = "{VERSION}",
-    registerForRefresh = true,
-    registerForDefaults = true,
-  }
-  LAM:RegisterAddonPanel("Nvk3UT_Panel", panel)
-
-  local opts = {
-    { type = "header", name = "Anzeige" },
-    {
-      type = "checkbox",
-      name = "Status über dem Kompass anzeigen",
-      getFunc = function()
-        return Nvk3UT.sv and Nvk3UT.sv.ui and Nvk3UT.sv.ui.showStatus
-      end,
-      setFunc = function(v)
-        if Nvk3UT.sv and Nvk3UT.sv.ui then
-          Nvk3UT.sv.ui.showStatus = v
-        end
-        Nvk3UT.UI.UpdateStatus()
-      end,
-      default = true,
-    },
-    { type = "header", name = "Optionen" },
-    {
-      type = "dropdown",
-      name = "Favoritenspeicherung:",
-      choices = { "Account-Weit", "Charakter-Weit" },
-      getFunc = function()
-        local s = (Nvk3UT.sv and Nvk3UT.sv.ui and Nvk3UT.sv.ui.favScope) or "account"
-        return (s == "character" and "Charakter-Weit") or "Account-Weit"
-      end,
-      setFunc = function(label)
-        local old = (Nvk3UT.sv and Nvk3UT.sv.ui and Nvk3UT.sv.ui.favScope) or "account"
-        local new = (label == "Charakter-Weit") and "character" or "account"
-        if Nvk3UT.sv and Nvk3UT.sv.ui then
-          Nvk3UT.sv.ui.favScope = new
-        end
-        if Nvk3UT.FavoritesData and Nvk3UT.FavoritesData.MigrateScope then
-          Nvk3UT.FavoritesData.MigrateScope(old, new)
-        end
-        if Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then
-          Nvk3UT.UI.UpdateStatus()
-        end
-      end,
-      tooltip = "Speichert und zählt Favoriten account-weit oder charakter-weit.",
-    },
-    {
-      type = "dropdown",
-      name = "Kürzlich-Zeitraum:",
-      choices = { "Alle", "7 Tage", "30 Tage" },
-      getFunc = function()
-        local w = (Nvk3UT.sv and Nvk3UT.sv.ui and Nvk3UT.sv.ui.recentWindow) or 0
-        return (w == 7 and "7 Tage") or (w == 30 and "30 Tage") or "Alle"
-      end,
-      setFunc = function(label)
-        local w = (label == "7 Tage" and 7) or (label == "30 Tage" and 30) or 0
-        if Nvk3UT.sv and Nvk3UT.sv.ui then
-          Nvk3UT.sv.ui.recentWindow = w
-        end
-        if Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then
-          Nvk3UT.UI.UpdateStatus()
-        end
-      end,
-      tooltip = "Wähle, welche Zeitspanne für Kürzlich gezählt/angezeigt wird.",
-    },
-    {
-      type = "dropdown",
-      name = "Kürzlich - Maximum:",
-      choices = { "50", "100", "250" },
-      getFunc = function()
-        return tostring((Nvk3UT.sv and Nvk3UT.sv.ui and Nvk3UT.sv.ui.recentMax) or 100)
-      end,
-      setFunc = function(label)
-        local v = tonumber(label) or 100
-        if Nvk3UT.sv and Nvk3UT.sv.ui then
-          Nvk3UT.sv.ui.recentMax = v
-        end
-        if Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then
-          Nvk3UT.UI.UpdateStatus()
-        end
-      end,
-      tooltip = "Hardcap für die Anzahl der Kürzlich-Einträge.",
-    },
-
-    { type = "header", name = "Funktionen" },
-    {
-      type = "checkbox",
-      name = "Errungenschafts-Tooltips ein",
-      getFunc = function()
-        return (Nvk3UT.sv and Nvk3UT.sv.features and (Nvk3UT.sv.features.tooltips ~= false))
-      end,
-      setFunc = function(v)
-        if Nvk3UT.sv then
-          Nvk3UT.sv.features = Nvk3UT.sv.features or {}
-          Nvk3UT.sv.features.tooltips = v
-        end
-        if Nvk3UT.Tooltips and Nvk3UT.Tooltips.Enable then
-          Nvk3UT.Tooltips.Enable(v)
-        end
-      end,
-      default = true,
-    },
-
-    {
-      type = "checkbox",
-      name = "Abgeschlossen aktiv",
-      getFunc = function()
-        return Nvk3UT.sv and Nvk3UT.sv.features and Nvk3UT.sv.features.completed
-      end,
-      setFunc = function(v)
-        Nvk3UT.sv.features = Nvk3UT.sv.features or {}
-        Nvk3UT.sv.features.completed = v
-        M.ApplyFeatureToggles()
-      end,
-      default = true,
-    },
-    {
-      type = "checkbox",
-      name = "Favoriten aktiv",
-      getFunc = function()
-        return Nvk3UT.sv and Nvk3UT.sv.features and Nvk3UT.sv.features.favorites
-      end,
-      setFunc = function(v)
-        Nvk3UT.sv.features = Nvk3UT.sv.features or {}
-        Nvk3UT.sv.features.favorites = v
-        M.ApplyFeatureToggles()
-      end,
-      default = true,
-    },
-    {
-      type = "checkbox",
-      name = "Kürzlich aktiv",
-      getFunc = function()
-        return Nvk3UT.sv and Nvk3UT.sv.features and Nvk3UT.sv.features.recent
-      end,
-      setFunc = function(v)
-        Nvk3UT.sv.features = Nvk3UT.sv.features or {}
-        Nvk3UT.sv.features.recent = v
-        M.ApplyFeatureToggles()
-      end,
-      default = true,
-    },
-    {
-      type = "checkbox",
-      name = "To-Do-Liste aktiv",
-      getFunc = function()
-        return Nvk3UT.sv and Nvk3UT.sv.features and Nvk3UT.sv.features.todo
-      end,
-      setFunc = function(v)
-        Nvk3UT.sv.features = Nvk3UT.sv.features or {}
-        Nvk3UT.sv.features.todo = v
-        M.ApplyFeatureToggles()
-      end,
-      default = true,
-    },
-    { type = "header", name = "Debug" },
-    {
-      type = "checkbox",
-      name = "Debug aktivieren",
-      getFunc = function()
-        return Nvk3UT.sv and Nvk3UT.sv.debug
-      end,
-      setFunc = function(v)
-        if Nvk3UT.sv then
-          Nvk3UT.sv.debug = v
-        end
-      end,
-      default = false,
-    },
-    {
-      type = "button",
-      name = "Self-Test ausführen",
-      func = function()
-        if Nvk3UT and Nvk3UT.SelfTest and Nvk3UT.SelfTest.Run then
-          Nvk3UT.SelfTest.Run()
-        end
-      end,
-      tooltip = "Führt einen kompakten Integritäts-Check aus. Bei aktiviertem Debug erscheinen ausführliche Chat-Logs.",
-    },
-    {
-      type = "button",
-      name = "UI neu laden",
-      func = function()
-        ReloadUI()
-      end,
-    },
-  }
-  LAM:RegisterOptionControls("Nvk3UT_Panel", opts)
 end
 
 local function __nvk3_IsOn(key)
   local sv = Nvk3UT and Nvk3UT.sv
-  return sv and sv.features and sv.features[key] == true
+  local general = sv and sv.General
+  local features = general and general.features or (sv and sv.features)
+  return features and features[key] == true
 end
 
 local function __nvk3_CountFavorites()
@@ -307,7 +116,8 @@ local function __nvk3_CountFavorites()
     return 0
   end
   local sv = Nvk3UT and Nvk3UT.sv
-  local scope = (sv and sv.ui and sv.ui.favScope) or "account"
+  local general = sv and sv.General
+  local scope = (general and general.favScope) or "account"
   local n = 0
   for _ in Fav.Iterate(scope) do
     n = n + 1
@@ -384,10 +194,10 @@ end
 do
   local ns = Nvk3UT and Nvk3UT.UI
   local function __nvk3_UpdateStatus_impl()
-    if not (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.ui) then
+    if not (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.General) then
       return
     end
-    local show = Nvk3UT.sv.ui.showStatus ~= false
+    local show = Nvk3UT.sv.General.showStatus ~= false
     local getLabel = (ns and ns.GetStatusLabel) or (M and M.GetStatusLabel)
     if not getLabel then
       return

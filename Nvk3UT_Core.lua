@@ -1,12 +1,124 @@
 Nvk3UT = Nvk3UT or {}
 local UI = Nvk3UT.UI
-local defaults={version=3,debug=false,ui={showStatus=true,favScope='account',recentWindow=0,recentMax=100},features={completed=true,favorites=true,recent=true,todo=true}}
+
+local DEFAULT_QUEST_FONTS = {
+    category = { face = "EsoUI/Common/Fonts/univers67.otf", size = 20, outline = "soft-shadow-thick" },
+    title = { face = "EsoUI/Common/Fonts/univers67.otf", size = 18, outline = "soft-shadow-thin" },
+    line = { face = "EsoUI/Common/Fonts/univers57.otf", size = 16, outline = "soft-shadow-thin" },
+}
+
+local DEFAULT_ACHIEVEMENT_FONTS = {
+    category = { face = "EsoUI/Common/Fonts/univers67.otf", size = 20, outline = "soft-shadow-thick" },
+    title = { face = "EsoUI/Common/Fonts/univers67.otf", size = 18, outline = "soft-shadow-thin" },
+    line = { face = "EsoUI/Common/Fonts/univers57.otf", size = 16, outline = "soft-shadow-thin" },
+}
+
+local defaults = {
+    version = 3,
+    debug = false,
+    General = {
+        showStatus = true,
+        favScope = "account",
+        recentWindow = 0,
+        recentMax = 100,
+        features = {
+            completed = true,
+            favorites = true,
+            recent = true,
+            todo = true,
+            tooltips = true,
+        },
+    },
+    QuestTracker = {
+        active = true,
+        hideDefault = false,
+        hideInCombat = false,
+        lock = false,
+        autoGrowV = true,
+        autoGrowH = false,
+        autoExpand = true,
+        background = {
+            enabled = true,
+            alpha = 0.35,
+            edgeAlpha = 0.5,
+            padding = 8,
+        },
+        fonts = DEFAULT_QUEST_FONTS,
+    },
+    AchievementTracker = {
+        active = true,
+        lock = false,
+        autoGrowV = true,
+        autoGrowH = false,
+        background = {
+            enabled = true,
+            alpha = 0.35,
+            edgeAlpha = 0.5,
+            padding = 8,
+        },
+        fonts = DEFAULT_ACHIEVEMENT_FONTS,
+        tooltips = true,
+        sections = {
+            favorites = true,
+            recent = true,
+            completed = true,
+            todo = true,
+        },
+    },
+}
+
+local function MergeDefaults(target, source)
+    if type(source) ~= "table" then
+        return target
+    end
+
+    if type(target) ~= "table" then
+        target = {}
+    end
+
+    for key, value in pairs(source) do
+        if type(value) == "table" then
+            target[key] = MergeDefaults(target[key], value)
+        elseif target[key] == nil then
+            target[key] = value
+        end
+    end
+
+    return target
+end
+
+local function AdoptLegacySettings(saved)
+    if type(saved) ~= "table" then
+        return
+    end
+
+    saved.General = MergeDefaults(saved.General, defaults.General)
+
+    if type(saved.ui) == "table" then
+        saved.General.showStatus = (saved.ui.showStatus ~= false)
+        saved.General.favScope = saved.ui.favScope or saved.General.favScope
+        saved.General.recentWindow = saved.ui.recentWindow or saved.General.recentWindow
+        saved.General.recentMax = saved.ui.recentMax or saved.General.recentMax
+    end
+
+    saved.General.features = MergeDefaults(saved.General.features, defaults.General.features)
+    if type(saved.features) == "table" then
+        for key, value in pairs(saved.features) do
+            saved.General.features[key] = value
+        end
+    end
+
+    saved.QuestTracker = MergeDefaults(saved.QuestTracker, defaults.QuestTracker)
+    saved.AchievementTracker = MergeDefaults(saved.AchievementTracker, defaults.AchievementTracker)
+
+    saved.ui = saved.General
+    saved.features = saved.General.features
+end
 local function OnLoaded(e,name)
     if name~="Nvk3UT" then return end
     Nvk3UT._rebuild_lock=false
     Nvk3UT.sv = ZO_SavedVars:NewAccountWide("Nvk3UT_SV", 2, nil, defaults)
-    Nvk3UT.sv.features = Nvk3UT.sv.features or {}
-    if Nvk3UT.sv.features.tooltips == nil then Nvk3UT.sv.features.tooltips = true end
+    AdoptLegacySettings(Nvk3UT.sv)
     local U = Nvk3UT and Nvk3UT.Utils; if U and U.d then U.d("[Nvk3UT][Core][Init] loaded", "data={version:\"{VERSION}\"}") end
     if Nvk3UT.FavoritesData and Nvk3UT.FavoritesData.InitSavedVars then Nvk3UT.FavoritesData.InitSavedVars() end
     if Nvk3UT.RecentData and Nvk3UT.RecentData.InitSavedVars then Nvk3UT.RecentData.InitSavedVars() end

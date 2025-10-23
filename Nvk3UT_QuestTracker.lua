@@ -31,6 +31,9 @@ local DEFAULT_BACKDROP = {
     edgeFileWidth = 16,
 }
 
+local DEFAULT_FONT_OUTLINE = "soft-shadow-thin"
+local REFRESH_DEBOUNCE_MS = 80
+
 local state = {
     isInitialized = false,
     opts = {},
@@ -48,6 +51,9 @@ local state = {
     combatHidden = false,
     subscription = nil,
     previousDefaultTrackerHidden = nil,
+    padding = 0,
+    theme = nil,
+    pendingRefresh = false,
 }
 
 local function DebugLog(...)
@@ -99,6 +105,104 @@ local function MergeFonts(opts)
     return fonts
 end
 
+local function ApplyContainerPadding()
+    if not state.container or not state.control then
+        return
+    end
+
+    local inset = tonumber(state.padding) or 0
+    state.container:ClearAnchors()
+    state.container:SetAnchor(TOPLEFT, state.control, TOPLEFT, inset, inset)
+    state.container:SetAnchor(BOTTOMRIGHT, state.control, BOTTOMRIGHT, -inset, -inset)
+end
+
+local function BuildFontString(descriptor, fallback)
+    if type(descriptor) ~= "table" then
+        return ResolveFont(descriptor) or fallback
+    end
+
+    local face = descriptor.face or descriptor.path
+    local size = descriptor.size
+    local outline = descriptor.outline or DEFAULT_FONT_OUTLINE
+
+    if not face or face == "" or not size then
+        return fallback
+    end
+
+    return string.format("%s|%d|%s", face, size, outline or DEFAULT_FONT_OUTLINE)
+end
+
+local function EnsureBackdrop()
+    if not state.control then
+        return
+    end
+
+    local theme = state.theme or {}
+    local background = theme.backdrop
+
+    if not background then
+        if state.backdrop then
+            if state.backdrop.Destroy then
+                state.backdrop:Destroy()
+            else
+                state.backdrop:SetHidden(true)
+                state.backdrop:SetParent(nil)
+            end
+        end
+        state.backdrop = nil
+        return
+    end
+
+    if not state.backdrop then
+        local control = WINDOW_MANAGER:CreateControl(nil, state.control, CT_BACKDROP)
+        control:SetAnchorFill()
+        control:SetDrawLayer(DL_BACKGROUND)
+        control:SetDrawTier(DT_LOW)
+        control:SetDrawLevel(0)
+        if control.SetExcludeFromResizeToFitExtents then
+            control:SetExcludeFromResizeToFitExtents(true)
+        end
+        state.backdrop = control
+    end
+
+    local control = state.backdrop
+    if background.edgeTexture then
+        control:SetEdgeTexture(background.edgeTexture, background.tileSize or 128, background.edgeFileWidth or 16)
+    end
+
+    if background.centerColor then
+        control:SetCenterColor(unpack(background.centerColor))
+    end
+
+    if background.edgeColor then
+        control:SetEdgeColor(unpack(background.edgeColor))
+    end
+
+    control:SetHidden(false)
+end
+
+local function RequestRefresh()
+    if not state.isInitialized then
+        return
+    end
+    if state.pendingRefresh then
+        return
+    end
+
+    state.pendingRefresh = true
+
+    local function execute()
+        state.pendingRefresh = false
+        QuestTracker.Refresh()
+    end
+
+    if zo_callLater then
+        zo_callLater(execute, REFRESH_DEBOUNCE_MS)
+    else
+        execute()
+    end
+end
+
 local function ResetLayoutState()
     state.orderedControls = {}
     state.lastAnchoredControl = nil
@@ -134,6 +238,12 @@ local function UpdateAutoSize()
 
     local paddingWidth = 0
     local paddingHeight = 0
+
+    if state.padding and state.padding > 0 then
+        local inset = state.padding * 2
+        paddingWidth = paddingWidth + inset
+        paddingHeight = paddingHeight + inset
+    end
 
     local maxWidth = 0
     local totalHeight = 0
@@ -375,40 +485,7 @@ local function ShouldDisplayCondition(condition)
 end
 
 local function AttachBackdrop()
-    if not state.opts.backdrop then
-        return
-    end
-
-    if state.backdrop then
-        return
-    end
-
-    local control = WINDOW_MANAGER:CreateControl(nil, state.control, CT_BACKDROP)
-    control:SetAnchorFill()
-    control:SetDrawLayer(DL_BACKGROUND)
-    control:SetDrawTier(DT_LOW)
-    control:SetDrawLevel(0)
-    if control.SetExcludeFromResizeToFitExtents then
-        control:SetExcludeFromResizeToFitExtents(true)
-    end
-    local backdrop = state.opts.backdrop
-    if type(backdrop) ~= "table" then
-        backdrop = DEFAULT_BACKDROP
-    end
-
-    if backdrop.edgeTexture then
-        control:SetEdgeTexture(backdrop.edgeTexture, backdrop.tileSize or 128, backdrop.edgeFileWidth or 16)
-    end
-
-    if backdrop.centerColor then
-        control:SetCenterColor(unpack(backdrop.centerColor))
-    end
-
-    if backdrop.edgeColor then
-        control:SetEdgeColor(unpack(backdrop.edgeColor))
-    end
-
-    state.backdrop = control
+    EnsureBackdrop()
 end
 
 local function EnsurePools()
@@ -555,11 +632,15 @@ local function RefreshVisibility()
         return
     end
 
-    if not state.opts.hideInCombat then
-        return
+    local hidden = false
+
+    if state.opts.active == false then
+        hidden = true
+    elseif state.opts.hideInCombat then
+        hidden = state.combatHidden
     end
 
-    state.control:SetHidden(state.combatHidden)
+    state.control:SetHidden(hidden)
 end
 
 local function OnCombatState(_, inCombat)
@@ -597,17 +678,29 @@ function QuestTracker.Init(parentControl, opts)
 
     state.control = parentControl
     state.container = WINDOW_MANAGER:CreateControl(nil, parentControl, CT_CONTROL)
-    state.container:SetAnchorFill()
     state.container:SetResizeToFitDescendents(true)
 
-    state.opts = opts or {}
-    state.fonts = MergeFonts(state.opts.fonts or {})
-
     EnsureSavedVars()
+    state.opts = {}
+    state.fonts = {}
+
+    QuestTracker.ApplyTheme(state.saved or {})
+    QuestTracker.ApplySettings(state.saved or {})
+
+    if opts then
+        QuestTracker.ApplyTheme(opts)
+        QuestTracker.ApplySettings(opts)
+    end
+
+    ApplyContainerPadding()
     AttachBackdrop()
     ApplyLockState()
     ApplyHideDefaultTracker()
-    RegisterCombatEvents()
+    if state.opts.hideInCombat then
+        RegisterCombatEvents()
+    else
+        UnregisterCombatEvents()
+    end
 
     state.subscription = function(snapshot)
         OnSnapshotUpdated(snapshot)
@@ -679,6 +772,102 @@ function QuestTracker.Shutdown()
     state.previousDefaultTrackerHidden = nil
     state.opts = {}
     state.fonts = {}
+    state.theme = nil
+    state.padding = 0
+    state.pendingRefresh = false
+end
+
+function QuestTracker.SetActive(active)
+    state.opts.active = active
+    RefreshVisibility()
+end
+
+local function ApplyAutoGrow(settings)
+    if type(settings) ~= "table" then
+        return
+    end
+
+    if settings.autoGrowV ~= nil then
+        state.opts.autoGrowV = settings.autoGrowV and true or false
+    end
+
+    if settings.autoGrowH ~= nil then
+        state.opts.autoGrowH = settings.autoGrowH and true or false
+    end
+end
+
+function QuestTracker.ApplySettings(settings)
+    if type(settings) ~= "table" then
+        return
+    end
+
+    state.opts.lock = settings.lock ~= nil and settings.lock or state.opts.lock
+    state.opts.hideDefault = settings.hideDefault ~= nil and settings.hideDefault or state.opts.hideDefault
+    state.opts.hideInCombat = settings.hideInCombat and true or false
+    state.opts.autoExpand = settings.autoExpand ~= false
+    state.opts.active = (settings.active ~= false)
+
+    ApplyAutoGrow(settings)
+
+    ApplyLockState()
+    ApplyHideDefaultTracker()
+
+    if state.isInitialized then
+        if state.opts.hideInCombat then
+            RegisterCombatEvents()
+        else
+            UnregisterCombatEvents()
+            state.combatHidden = false
+        end
+    end
+
+    RefreshVisibility()
+    RequestRefresh()
+end
+
+local function BuildBackdropOptions(background)
+    if type(background) ~= "table" or background.enabled == false then
+        return nil
+    end
+
+    local alpha = tonumber(background.alpha) or DEFAULT_BACKDROP.centerColor[4]
+    local edgeAlpha = tonumber(background.edgeAlpha) or DEFAULT_BACKDROP.edgeColor[4]
+
+    return {
+        edgeTexture = DEFAULT_BACKDROP.edgeTexture,
+        tileSize = DEFAULT_BACKDROP.tileSize,
+        edgeFileWidth = DEFAULT_BACKDROP.edgeFileWidth,
+        centerColor = { 0, 0, 0, alpha },
+        edgeColor = { 0, 0, 0, edgeAlpha },
+    }
+end
+
+function QuestTracker.ApplyTheme(settings)
+    if type(settings) ~= "table" then
+        return
+    end
+
+    state.opts.fonts = state.opts.fonts or {}
+
+    local fonts = settings.fonts or {}
+    state.opts.fonts.category = BuildFontString(fonts.category, state.opts.fonts.category or DEFAULT_FONTS.category)
+    state.opts.fonts.quest = BuildFontString(fonts.title, state.opts.fonts.quest or DEFAULT_FONTS.quest)
+    state.opts.fonts.condition = BuildFontString(fonts.line, state.opts.fonts.condition or DEFAULT_FONTS.condition)
+    state.opts.fonts.toggle = state.opts.fonts.category or DEFAULT_FONTS.toggle
+    state.fonts = MergeFonts(state.opts.fonts)
+
+    local background = settings.background or settings.backdrop or {}
+    state.theme = state.theme or {}
+    state.theme.backdrop = BuildBackdropOptions(background)
+    state.padding = tonumber(background.padding) or state.padding or 0
+
+    ApplyContainerPadding()
+    EnsureBackdrop()
+    RequestRefresh()
+end
+
+function QuestTracker.RequestRefresh()
+    RequestRefresh()
 end
 
 Nvk3UT.QuestTracker = QuestTracker
