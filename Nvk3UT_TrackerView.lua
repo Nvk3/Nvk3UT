@@ -497,3 +497,7 @@ function Module:Dispose()
     hideTooltip()
 end
 
+function Module:GetRootControl()
+    return self._root
+end
+

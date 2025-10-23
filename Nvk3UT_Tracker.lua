@@ -35,6 +35,8 @@ Module._settings = Module._settings or nil
 Module._layout = Module._layout or nil
 Module._collapse = Module._collapse or nil
 Module._root = Module._root or nil
+Module._achievementRoot = Module._achievementRoot or nil
+Module._achievementInitialized = Module._achievementInitialized or false
 Module._view = Module._view or nil
 Module._modelCallback = Module._modelCallback or nil
 Module._lastSnapshot = Module._lastSnapshot or nil
@@ -50,6 +52,8 @@ local DEFAULT_TRACKER_FRAGMENTS = {
 }
 
 local DEFAULT_TRACKER_REASON = "Nvk3UT_QuestTracker"
+local ACHIEVEMENT_ROOT_NAME = "Nvk3UT_AchievementTrackerRoot"
+local ACHIEVEMENT_ANCHOR_OFFSET_Y = 8
 
 local function debugLog(message)
     if not (Module._sv and Module._sv.debug) then
@@ -140,7 +144,12 @@ local function applyScale()
         return
     end
 
-    Module._root:SetScale(Module._layout.scale or 1)
+    local scale = Module._layout.scale or 1
+    Module._root:SetScale(scale)
+
+    if Module._achievementRoot then
+        Module._achievementRoot:SetScale(scale)
+    end
 end
 
 local function clampToScreen()
@@ -159,6 +168,12 @@ local function applyPosition()
     Module._root:ClearAnchors()
     Module._root:SetAnchor(TOPLEFT, GuiRoot, TOPLEFT, Module._layout.x or DEFAULT_LAYOUT.x, Module._layout.y or DEFAULT_LAYOUT.y)
     Module._root:SetDimensions(Module._layout.width or DEFAULT_LAYOUT.width, Module._layout.height or DEFAULT_LAYOUT.height)
+
+    if Module._achievementRoot then
+        Module._achievementRoot:ClearAnchors()
+        Module._achievementRoot:SetAnchor(TOPLEFT, Module._root, BOTTOMLEFT, 0, ACHIEVEMENT_ANCHOR_OFFSET_Y)
+        Module._achievementRoot:SetAnchor(TOPRIGHT, Module._root, BOTTOMRIGHT, 0, ACHIEVEMENT_ANCHOR_OFFSET_Y)
+    end
 end
 
 local function savePosition()
@@ -196,8 +211,19 @@ local function shouldHideTracker()
 end
 
 local function updateRootHidden()
+    local hidden = shouldHideTracker()
+
     if Module._root then
-        Module._root:SetHidden(shouldHideTracker())
+        Module._root:SetHidden(hidden)
+    end
+
+    if Module._achievementRoot then
+        Module._achievementRoot:SetHidden(hidden)
+    end
+
+    local achModule = M.AchievementTracker
+    if achModule and achModule.SetHidden then
+        pcall(achModule.SetHidden, hidden)
     end
 end
 
@@ -232,6 +258,58 @@ local function ensureRootControl()
     end)
 
     Module._root = control
+
+    if Nvk3UT and Nvk3UT.UI then
+        if type(Nvk3UT.UI.SetQuestContainer) == "function" then
+            Nvk3UT.UI.SetQuestContainer(control)
+        else
+            Nvk3UT.UI.questContainer = control
+        end
+    end
+
+    return control
+end
+
+local function ensureAchievementRoot()
+    if Module._achievementRoot then
+        return Module._achievementRoot
+    end
+
+    local questRoot = ensureRootControl()
+    if not questRoot then
+        return nil
+    end
+
+    local existing = _G and _G[ACHIEVEMENT_ROOT_NAME]
+    local control
+
+    if existing then
+        control = existing
+    else
+        control = WM:CreateTopLevelWindow(ACHIEVEMENT_ROOT_NAME)
+        control:SetDrawTier(DT_HIGH)
+        control:SetMouseEnabled(false)
+        control:SetMovable(false)
+        control:SetResizeHandleSize(0)
+        debugLog("Achievement container restored & anchored below quest container")
+    end
+
+    control:SetParent(questRoot:GetParent() or GuiRoot)
+    control:SetClampedToScreen(true)
+    control:ClearAnchors()
+    control:SetAnchor(TOPLEFT, questRoot, BOTTOMLEFT, 0, ACHIEVEMENT_ANCHOR_OFFSET_Y)
+    control:SetAnchor(TOPRIGHT, questRoot, BOTTOMRIGHT, 0, ACHIEVEMENT_ANCHOR_OFFSET_Y)
+    control:SetHidden(true)
+
+    Module._achievementRoot = control
+
+    if Nvk3UT and Nvk3UT.UI then
+        if type(Nvk3UT.UI.SetAchievementContainer) == "function" then
+            Nvk3UT.UI.SetAchievementContainer(control)
+        else
+            Nvk3UT.UI.achievementContainer = control
+        end
+    end
 
     return control
 end
@@ -300,6 +378,39 @@ local function ensureView()
     return Module._view
 end
 
+local function initAchievementTracker()
+    local achModule = M.AchievementTracker
+    if not achModule then
+        debugLog("AchievementTracker module unavailable; skipping init")
+        return
+    end
+
+    local root = ensureAchievementRoot()
+    if not root then
+        return
+    end
+
+    if not Module._achievementInitialized and achModule.Init then
+        local ok, err = pcall(achModule.Init, root, {
+            anchorTo = Module._root,
+            hideInCombat = Module._settings and Module._settings.hideInCombat,
+        })
+        if not ok then
+            debugLog(string.format("AchievementTracker.Init failed: %s", tostring(err)))
+        else
+            Module._achievementInitialized = true
+        end
+    elseif Module._achievementInitialized and achModule.Refresh then
+        pcall(achModule.Refresh)
+    end
+
+    local hidden = shouldHideTracker()
+    root:SetHidden(hidden)
+    if achModule.SetHidden then
+        pcall(achModule.SetHidden, hidden)
+    end
+end
+
 local function onCombatState(_, inCombat)
     Module._inCombat = inCombat
     updateRootHidden()
@@ -332,6 +443,10 @@ function Module.Init(opts)
     applyLockState()
 
     ensureView()
+    ensureAchievementRoot()
+    applyScale()
+
+    initAchievementTracker()
 
     subscribeToModel()
     registerEvents()
@@ -358,6 +473,17 @@ function Module.Shutdown()
         Module._view:Dispose()
     end
 
+    if Module._achievementInitialized and M.AchievementTracker and M.AchievementTracker.Shutdown then
+        pcall(M.AchievementTracker.Shutdown)
+    end
+
+    if Module._achievementRoot then
+        Module._achievementRoot:SetHidden(true)
+        Module._achievementRoot:ClearAnchors()
+        Module._achievementRoot = nil
+    end
+
+    Module._achievementInitialized = false
     Module._view = nil
     Module._root = nil
     Module._initialized = false
@@ -375,6 +501,11 @@ function Module.Refresh()
     elseif Module._view and M.QuestModel and M.QuestModel.GetSnapshot then
         onSnapshot(M.QuestModel.GetSnapshot())
     end
+
+    local achModule = M.AchievementTracker
+    if achModule and achModule.Refresh then
+        pcall(achModule.Refresh)
+    end
 end
 
 function Module.SetEnabled(enabled)
@@ -384,6 +515,11 @@ function Module.SetEnabled(enabled)
 
     Module._settings.enabled = enabled == true
     updateRootHidden()
+
+    local achModule = M.AchievementTracker
+    if achModule and achModule.SetEnabled then
+        pcall(achModule.SetEnabled, enabled)
+    end
 end
 
 function Module.SetHideDefaultTracker(flag)
@@ -402,6 +538,11 @@ function Module.SetHideInCombat(flag)
 
     Module._settings.hideInCombat = flag == true
     updateRootHidden()
+
+    local achModule = M.AchievementTracker
+    if achModule and achModule.SetHideInCombat then
+        pcall(achModule.SetHideInCombat, flag)
+    end
 end
 
 function Module.SetLock(flag)
@@ -423,6 +564,11 @@ function Module.SetAutoGrowVertical(flag)
         Module._view:ApplyAutoGrow(Module._settings.autoGrowV, Module._settings.autoGrowH)
     end
     Module.Refresh()
+
+    local achModule = M.AchievementTracker
+    if achModule and achModule.SetAutoGrowVertical then
+        pcall(achModule.SetAutoGrowVertical, flag)
+    end
 end
 
 function Module.SetAutoGrowHorizontal(flag)
@@ -435,6 +581,11 @@ function Module.SetAutoGrowHorizontal(flag)
         Module._view:ApplyAutoGrow(Module._settings.autoGrowV, Module._settings.autoGrowH)
     end
     Module.Refresh()
+
+    local achModule = M.AchievementTracker
+    if achModule and achModule.SetAutoGrowHorizontal then
+        pcall(achModule.SetAutoGrowHorizontal, flag)
+    end
 end
 
 function Module.SetAutoExpand(flag)
@@ -444,6 +595,11 @@ function Module.SetAutoExpand(flag)
 
     Module._settings.autoExpand = flag ~= false
     Module.Refresh()
+
+    local achModule = M.AchievementTracker
+    if achModule and achModule.SetAutoExpand then
+        pcall(achModule.SetAutoExpand, flag)
+    end
 end
 
 function Module.SetTooltips(flag)
@@ -454,6 +610,11 @@ function Module.SetTooltips(flag)
     Module._settings.tooltips = flag ~= false
     if Module._view and Module._view.SetTooltipsEnabled then
         Module._view:SetTooltipsEnabled(Module._settings.tooltips)
+    end
+
+    local achModule = M.AchievementTracker
+    if achModule and achModule.SetTooltips then
+        pcall(achModule.SetTooltips, flag)
     end
 end
 

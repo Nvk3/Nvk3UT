@@ -5,6 +5,22 @@ local D = Nvk3UT.Diagnostics
 local M = {}
 Nvk3UT.UI = M
 
+function M.SetQuestContainer(control)
+  M.questContainer = control
+end
+
+function M.GetQuestContainer()
+  return M.questContainer
+end
+
+function M.SetAchievementContainer(control)
+  M.achievementContainer = control
+end
+
+function M.GetAchievementContainer()
+  return M.achievementContainer
+end
+
 -- Apply toggles (no re-hooking). Only refresh UI/status.
 function M.ApplyFeatureToggles()
   -- Update status first and only once
