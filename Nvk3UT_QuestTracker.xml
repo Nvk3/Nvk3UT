@@ -1,0 +1,59 @@
+<GuiXml>
+    <Controls>
+        <Control name="CategoryHeader_Template" virtual="true" mouseEnabled="true">
+            <Dimensions y="26" />
+            <Controls>
+                <Label name="$(parent)Toggle"
+                       font="ZoFontGame"
+                       horizontalAlignment="CENTER"
+                       verticalAlignment="CENTER"
+                       text="\226\150\190">
+                    <Anchor point="LEFT" relativePoint="LEFT" offsetX="0" offsetY="0" />
+                    <Dimensions x="20" />
+                </Label>
+                <Label name="$(parent)Label"
+                       font="ZoFontGameBold"
+                       horizontalAlignment="LEFT"
+                       verticalAlignment="CENTER"
+                       wrapMode="ELLIPSIS">
+                    <Anchor point="LEFT" relativeTo="$(parent)Toggle" relativePoint="RIGHT" offsetX="4" />
+                    <Anchor point="RIGHT" relativePoint="RIGHT" offsetX="0" />
+                </Label>
+            </Controls>
+        </Control>
+        <Control name="QuestHeader_Template" virtual="true" mouseEnabled="true">
+            <Dimensions y="24" />
+            <Controls>
+                <Label name="$(parent)Toggle"
+                       font="ZoFontGame"
+                       horizontalAlignment="CENTER"
+                       verticalAlignment="CENTER"
+                       text="\226\150\182">
+                    <Anchor point="LEFT" relativePoint="LEFT" offsetX="0" offsetY="0" />
+                    <Dimensions x="18" />
+                </Label>
+                <Label name="$(parent)Label"
+                       font="ZoFontGame"
+                       horizontalAlignment="LEFT"
+                       verticalAlignment="CENTER"
+                       wrapMode="ELLIPSIS">
+                    <Anchor point="LEFT" relativeTo="$(parent)Toggle" relativePoint="RIGHT" offsetX="4" />
+                    <Anchor point="RIGHT" relativePoint="RIGHT" offsetX="0" />
+                </Label>
+            </Controls>
+        </Control>
+        <Control name="QuestCondition_Template" virtual="true">
+            <Dimensions y="20" />
+            <Controls>
+                <Label name="$(parent)Label"
+                       font="ZoFontGameSmall"
+                       horizontalAlignment="LEFT"
+                       verticalAlignment="CENTER"
+                       wrapMode="ELLIPSIS">
+                    <Anchor point="TOPLEFT" relativePoint="TOPLEFT" offsetX="0" offsetY="0" />
+                    <Anchor point="RIGHT" relativePoint="RIGHT" offsetX="0" />
+                </Label>
+            </Controls>
+        </Control>
+    </Controls>
+</GuiXml>
