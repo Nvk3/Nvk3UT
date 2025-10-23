@@ -20,7 +20,6 @@ local DEFAULT_WINDOW = {
 
 local MIN_WIDTH = 260
 local MIN_HEIGHT = 240
-local SECTION_SPACING = 12
 local RESIZE_HANDLE_SIZE = 12
 
 local LEFT_MOUSE_BUTTON = _G.MOUSE_BUTTON_INDEX_LEFT or 1
@@ -31,6 +30,10 @@ local state = {
     questContainer = nil,
     achievementContainer = nil,
     window = nil,
+    anchorWarnings = {
+        questMissing = false,
+        achievementMissing = false,
+    },
 }
 
 local function cloneTable(value)
@@ -122,6 +125,74 @@ local function saveWindowSize()
     state.window.height = math.floor(height + 0.5)
 end
 
+local function debugLog(...)
+    local sv = getSavedVars()
+    if not (sv and sv.debug) then
+        return
+    end
+
+    local prefix = string.format("[%s]", addonName .. ".TrackerHost")
+    if d then
+        d(prefix, ...)
+    elseif print then
+        print(prefix, ...)
+    end
+end
+
+local function anchorContainers()
+    local root = state.root
+    local questContainer = state.questContainer
+    local achievementContainer = state.achievementContainer
+
+    if not questContainer or not root then
+        if not questContainer and not state.anchorWarnings.questMissing then
+            debugLog("Quest container not ready for anchoring")
+            state.anchorWarnings.questMissing = true
+        end
+        return
+    end
+
+    questContainer:ClearAnchors()
+    questContainer:SetAnchor(TOPLEFT, root, TOPLEFT, 0, 0)
+    questContainer:SetAnchor(TOPRIGHT, root, TOPRIGHT, 0, 0)
+    state.anchorWarnings.questMissing = false
+
+    if achievementContainer then
+        local anchorTarget = questContainer or root
+        if anchorTarget then
+            achievementContainer:ClearAnchors()
+            if questContainer then
+                achievementContainer:SetAnchor(TOPLEFT, questContainer, BOTTOMLEFT, 0, 0)
+                achievementContainer:SetAnchor(TOPRIGHT, questContainer, BOTTOMRIGHT, 0, 0)
+            else
+                achievementContainer:SetAnchor(TOPLEFT, root, TOPLEFT, 0, 0)
+                achievementContainer:SetAnchor(TOPRIGHT, root, TOPRIGHT, 0, 0)
+            end
+            state.anchorWarnings.achievementMissing = false
+        end
+    elseif not state.anchorWarnings.achievementMissing then
+        debugLog("Achievement container not ready for anchoring")
+        state.anchorWarnings.achievementMissing = true
+    end
+end
+
+local function normalizeContainerDecorations()
+    local containers = {
+        state.questContainer,
+        state.achievementContainer,
+    }
+
+    for index = 1, #containers do
+        local control = containers[index]
+        if control then
+            local backdrop = control.backdrop
+            if backdrop and backdrop.SetInsets then
+                backdrop:SetInsets(0, 0, 0, 0)
+            end
+        end
+    end
+end
+
 local function updateSectionLayout()
     if not state.root then
         return
@@ -143,6 +214,9 @@ local function updateSectionLayout()
     if state.achievementContainer then
         state.achievementContainer:SetWidth(questWidth)
     end
+
+    anchorContainers()
+    normalizeContainerDecorations()
 end
 
 local function applyWindowLock()
@@ -250,7 +324,6 @@ local function createContainers()
 
     if not state.questContainer then
         local questContainer = WINDOW_MANAGER:CreateControl(QUEST_CONTAINER_NAME, state.root, CT_CONTROL)
-        questContainer:SetAnchor(TOPLEFT, state.root, TOPLEFT, 0, 0)
         questContainer:SetMouseEnabled(false)
         state.questContainer = questContainer
         Nvk3UT.UI.QuestContainer = questContainer
@@ -258,12 +331,13 @@ local function createContainers()
 
     if not state.achievementContainer then
         local achievementContainer = WINDOW_MANAGER:CreateControl(ACHIEVEMENT_CONTAINER_NAME, state.root, CT_CONTROL)
-        achievementContainer:SetAnchor(TOPLEFT, state.questContainer or state.root, BOTTOMLEFT, 0, SECTION_SPACING)
         achievementContainer:SetMouseEnabled(false)
         state.achievementContainer = achievementContainer
         Nvk3UT.UI.AchievementContainer = achievementContainer
     end
 
+    anchorContainers()
+    normalizeContainerDecorations()
     updateSectionLayout()
 end
 
@@ -426,6 +500,11 @@ function TrackerHost.Shutdown()
     end
     state.root = nil
     Nvk3UT.UI.Root = nil
+
+    if state.anchorWarnings then
+        state.anchorWarnings.questMissing = false
+        state.anchorWarnings.achievementMissing = false
+    end
 
     state.initialized = false
 end

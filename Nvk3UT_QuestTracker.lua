@@ -150,6 +150,9 @@ local function EnsureBackdrop()
             end
         end
         state.backdrop = nil
+        if state.control then
+            state.control.backdrop = nil
+        end
         return
     end
 
@@ -166,6 +169,9 @@ local function EnsureBackdrop()
     end
 
     local control = state.backdrop
+    if control.SetInsets then
+        control:SetInsets(0, 0, 0, 0)
+    end
     if background.edgeTexture then
         control:SetEdgeTexture(background.edgeTexture, background.tileSize or 128, background.edgeFileWidth or 16)
     end
@@ -179,6 +185,9 @@ local function EnsureBackdrop()
     end
 
     control:SetHidden(false)
+    if state.control then
+        state.control.backdrop = control
+    end
 end
 
 local function RequestRefresh()
@@ -679,6 +688,7 @@ function QuestTracker.Init(parentControl, opts)
     state.control = parentControl
     state.container = WINDOW_MANAGER:CreateControl(nil, parentControl, CT_CONTROL)
     state.container:SetResizeToFitDescendents(true)
+    state.control.holder = state.container
 
     EnsureSavedVars()
     state.opts = {}
@@ -763,6 +773,10 @@ function QuestTracker.Shutdown()
         ZO_QuestTracker:SetHidden(state.previousDefaultTrackerHidden)
     end
 
+    if state.control then
+        state.control.backdrop = nil
+        state.control.holder = nil
+    end
     state.control = nil
     state.backdrop = nil
     state.snapshot = nil

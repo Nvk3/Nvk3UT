@@ -223,6 +223,9 @@ local function EnsureBackdrop()
             end
         end
         state.backdrop = nil
+        if state.control then
+            state.control.backdrop = nil
+        end
         return
     end
 
@@ -243,6 +246,9 @@ local function EnsureBackdrop()
     end
 
     local control = state.backdrop
+    if control.SetInsets then
+        control:SetInsets(0, 0, 0, 0)
+    end
     if background.edgeTexture then
         control:SetEdgeTexture(background.edgeTexture, background.tileSize or 128, background.edgeFileWidth or 16)
     end
@@ -256,6 +262,9 @@ local function EnsureBackdrop()
     end
 
     control:SetHidden(false)
+    if state.control then
+        state.control.backdrop = control
+    end
 end
 
 local function RequestRefresh()
@@ -377,6 +386,9 @@ local function EnsureContainer()
     container:SetAnchorFill()
     container:SetResizeToFitDescendents(true)
     state.container = container
+    if state.control then
+        state.control.holder = container
+    end
 end
 
 local function SetCategoryExpanded(expanded)
@@ -830,6 +842,10 @@ function AchievementTracker.Shutdown()
     end
     state.container = nil
 
+    if state.control then
+        state.control.backdrop = nil
+        state.control.holder = nil
+    end
     state.control = nil
     state.snapshot = nil
     state.orderedControls = {}
