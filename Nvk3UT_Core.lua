@@ -21,6 +21,13 @@ local defaults = {
         favScope = "account",
         recentWindow = 0,
         recentMax = 100,
+        window = {
+            left = 200,
+            top = 200,
+            width = 360,
+            height = 640,
+            locked = false,
+        },
         features = {
             completed = true,
             favorites = true,
@@ -192,7 +199,9 @@ local function OnLoaded(e,name)
         end)
     end
 
-    if Nvk3UT.UI then Nvk3UT.UI.BuildLAM(); Nvk3UT.UI.UpdateStatus() end
+    if Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then
+        Nvk3UT.UI.UpdateStatus()
+    end
     -- Enable integrations when ACHIEVEMENTS exists
     local function TryEnable(attempt)
         attempt=attempt or 1
@@ -210,6 +219,9 @@ local function OnLoaded(e,name)
     end
     TryEnable(1)
     if Nvk3UT.Tooltips and Nvk3UT.Tooltips.Init then Nvk3UT.Tooltips.Init() end
+    if Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.Init then
+        pcall(Nvk3UT.TrackerHost.Init)
+    end
     EVENT_MANAGER:UnregisterForEvent("Nvk3UT_Load", EVENT_ADD_ON_LOADED)
 end
 EVENT_MANAGER:RegisterForEvent("Nvk3UT_Load", EVENT_ADD_ON_LOADED, OnLoaded)

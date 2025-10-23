@@ -24,6 +24,14 @@ local DEFAULT_FONT_SIZE = {
     achievement = { category = 20, title = 18, line = 16 },
 }
 
+local DEFAULT_WINDOW = {
+    left = 200,
+    top = 200,
+    width = 360,
+    height = 640,
+    locked = false,
+}
+
 local function getSavedVars()
     return Nvk3UT and Nvk3UT.sv
 end
@@ -32,6 +40,15 @@ local function getGeneral()
     local sv = getSavedVars()
     sv.General = sv.General or {}
     sv.General.features = sv.General.features or {}
+    sv.General.window = sv.General.window or {}
+    local window = sv.General.window
+    window.left = tonumber(window.left) or DEFAULT_WINDOW.left
+    window.top = tonumber(window.top) or DEFAULT_WINDOW.top
+    window.width = tonumber(window.width) or DEFAULT_WINDOW.width
+    window.height = tonumber(window.height) or DEFAULT_WINDOW.height
+    if window.locked == nil then
+        window.locked = DEFAULT_WINDOW.locked
+    end
     return sv.General
 end
 
@@ -232,6 +249,41 @@ local function registerGeneralOptions(options)
             updateStatus()
         end,
         default = true,
+    }
+
+    options[#options + 1] = { type = "header", name = "Tracker-Fenster" }
+
+    options[#options + 1] = {
+        type = "checkbox",
+        name = "Fenster sperren",
+        getFunc = function()
+            general = getGeneral()
+            return general.window.locked == true
+        end,
+        setFunc = function(value)
+            general = getGeneral()
+            general.window.locked = value and true or false
+            if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
+                Nvk3UT.TrackerHost.ApplySettings()
+            end
+        end,
+        default = false,
+    }
+
+    options[#options + 1] = {
+        type = "button",
+        name = "Position zurücksetzen",
+        func = function()
+            general = getGeneral()
+            general.window.left = DEFAULT_WINDOW.left
+            general.window.top = DEFAULT_WINDOW.top
+            general.window.width = DEFAULT_WINDOW.width
+            general.window.height = DEFAULT_WINDOW.height
+            if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
+                Nvk3UT.TrackerHost.ApplySettings()
+            end
+        end,
+        tooltip = "Setzt Größe und Position des Tracker-Fensters zurück.",
     }
 
     options[#options + 1] = { type = "header", name = "Optionen" }
