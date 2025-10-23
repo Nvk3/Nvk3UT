@@ -13,6 +13,11 @@ local SCROLL_CONTAINER_NAME = addonName .. "_ScrollContainer"
 local SCROLL_CONTENT_NAME = SCROLL_CONTAINER_NAME .. "_Content"
 local SCROLLBAR_NAME = SCROLL_CONTAINER_NAME .. "_ScrollBar"
 
+local MIN_WIDTH = 260
+local MIN_HEIGHT = 240
+local RESIZE_HANDLE_SIZE = 12
+local SCROLLBAR_WIDTH = 18
+
 local DEFAULT_APPEARANCE = {
     enabled = true,
     alpha = 0.35,
@@ -60,11 +65,6 @@ local DEFAULT_LAYOUT = {
     maxWidth = 640,
     maxHeight = 900,
 }
-
-local MIN_WIDTH = 260
-local MIN_HEIGHT = 240
-local RESIZE_HANDLE_SIZE = 12
-local SCROLLBAR_WIDTH = 18
 
 local LEFT_MOUSE_BUTTON = _G.MOUSE_BUTTON_INDEX_LEFT or 1
 
