@@ -234,9 +234,11 @@ local function CollectTrackedIds(self)
 
             local infoValues
             if GetTrackedAchievementInfo then
-                local ok, ... = pcall(GetTrackedAchievementInfo, trackedIndex)
-                if ok then
-                    infoValues = { ... }
+                local ok, values = pcall(function()
+                    return { GetTrackedAchievementInfo(trackedIndex) }
+                end)
+                if ok and values then
+                    infoValues = values
                     infoCache[trackedIndex] = infoValues
                 end
             end
