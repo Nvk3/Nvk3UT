@@ -151,8 +151,8 @@ local function releaseControls(pool, active)
         return
     end
 
-    for _, key in ipairs(active) do
-        pool:ReleaseObject(key)
+    for _, control in ipairs(active) do
+        pool:ReleaseObject(control)
     end
 
     ZO_ClearNumericallyIndexedTable(active)
@@ -452,8 +452,8 @@ function Module:Refresh(snapshot, opts)
 
         self._questHashes[quest.journalIndex] = hash
 
-        local headerKey, headerControl = self._headerPool:AcquireObject()
-        table.insert(self._activeHeaders, headerKey)
+        local headerControl = self._headerPool:AcquireObject()
+        table.insert(self._activeHeaders, headerControl)
 
         headerControl.data = quest
         headerControl:SetHidden(false)
@@ -469,8 +469,8 @@ function Module:Refresh(snapshot, opts)
                 for condIndex = 1, #step.conditions do
                     local condition = step.conditions[condIndex]
 
-                    local condKey, condControl = self._conditionPool:AcquireObject()
-                    table.insert(self._activeConditions, condKey)
+                    local condControl = self._conditionPool:AcquireObject()
+                    table.insert(self._activeConditions, condControl)
 
                     condControl:SetHidden(false)
                     anchorControls(self, previousControl, condControl)
