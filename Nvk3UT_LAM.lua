@@ -32,6 +32,29 @@ local DEFAULT_WINDOW = {
     locked = false,
 }
 
+local DEFAULT_APPEARANCE = {
+    enabled = true,
+    alpha = 0.35,
+    edgeEnabled = true,
+    edgeAlpha = 0.5,
+    padding = 0,
+    cornerRadius = 0,
+    theme = "dark",
+}
+
+local function clamp(value, minimum, maximum)
+    if value == nil then
+        return minimum
+    end
+    if value < minimum then
+        return minimum
+    end
+    if value > maximum then
+        return maximum
+    end
+    return value
+end
+
 local function getSavedVars()
     return Nvk3UT and Nvk3UT.sv
 end
@@ -52,10 +75,43 @@ local function getGeneral()
     return sv.General
 end
 
+local function getAppearanceSettings()
+    local general = getGeneral()
+    general.Appearance = general.Appearance or {}
+
+    local appearance = general.Appearance
+    if appearance.enabled == nil then
+        appearance.enabled = DEFAULT_APPEARANCE.enabled
+    end
+    appearance.alpha = clamp(tonumber(appearance.alpha) or DEFAULT_APPEARANCE.alpha, 0, 1)
+    if appearance.edgeEnabled == nil then
+        appearance.edgeEnabled = DEFAULT_APPEARANCE.edgeEnabled
+    else
+        appearance.edgeEnabled = appearance.edgeEnabled ~= false
+    end
+    appearance.edgeAlpha = clamp(tonumber(appearance.edgeAlpha) or DEFAULT_APPEARANCE.edgeAlpha, 0, 1)
+    local padding = tonumber(appearance.padding)
+    if padding == nil then
+        padding = DEFAULT_APPEARANCE.padding
+    end
+    appearance.padding = math.max(0, math.floor(padding + 0.5))
+    local cornerRadius = tonumber(appearance.cornerRadius)
+    if cornerRadius == nil then
+        cornerRadius = DEFAULT_APPEARANCE.cornerRadius
+    end
+    appearance.cornerRadius = math.max(0, math.floor(cornerRadius + 0.5))
+    if type(appearance.theme) ~= "string" or appearance.theme == "" then
+        appearance.theme = DEFAULT_APPEARANCE.theme
+    else
+        appearance.theme = string.lower(appearance.theme)
+    end
+
+    return appearance
+end
+
 local function getQuestSettings()
     local sv = getSavedVars()
     sv.QuestTracker = sv.QuestTracker or {}
-    sv.QuestTracker.background = sv.QuestTracker.background or {}
     sv.QuestTracker.fonts = sv.QuestTracker.fonts or {}
     return sv.QuestTracker
 end
@@ -63,7 +119,6 @@ end
 local function getAchievementSettings()
     local sv = getSavedVars()
     sv.AchievementTracker = sv.AchievementTracker or {}
-    sv.AchievementTracker.background = sv.AchievementTracker.background or {}
     sv.AchievementTracker.fonts = sv.AchievementTracker.fonts or {}
     sv.AchievementTracker.sections = sv.AchievementTracker.sections or {}
     return sv.AchievementTracker
@@ -109,6 +164,12 @@ end
 local function applyAchievementTheme()
     if Nvk3UT and Nvk3UT.AchievementTracker and Nvk3UT.AchievementTracker.ApplyTheme then
         Nvk3UT.AchievementTracker.ApplyTheme(getAchievementSettings())
+    end
+end
+
+local function applyHostAppearance()
+    if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplyAppearance then
+        Nvk3UT.TrackerHost.ApplyAppearance()
     end
 end
 
@@ -284,6 +345,139 @@ local function registerGeneralOptions(options)
             end
         end,
         tooltip = "Setzt Größe und Position des Tracker-Fensters zurück.",
+    }
+
+    options[#options + 1] = { type = "header", name = "Hintergrund & Darstellung" }
+
+    options[#options + 1] = {
+        type = "checkbox",
+        name = "Hintergrund anzeigen",
+        getFunc = function()
+            local appearance = getAppearanceSettings()
+            return appearance.enabled ~= false
+        end,
+        setFunc = function(value)
+            local appearance = getAppearanceSettings()
+            appearance.enabled = value ~= false
+            applyHostAppearance()
+        end,
+        default = true,
+    }
+
+    options[#options + 1] = {
+        type = "slider",
+        name = "Hintergrund-Transparenz (%)",
+        min = 0,
+        max = 100,
+        step = 5,
+        getFunc = function()
+            local appearance = getAppearanceSettings()
+            return math.floor((appearance.alpha or 0) * 100 + 0.5)
+        end,
+        setFunc = function(value)
+            local appearance = getAppearanceSettings()
+            appearance.alpha = clamp((tonumber(value) or 0) / 100, 0, 1)
+            applyHostAppearance()
+        end,
+        disabled = function()
+            return getAppearanceSettings().enabled == false
+        end,
+        default = math.floor(DEFAULT_APPEARANCE.alpha * 100 + 0.5),
+    }
+
+    options[#options + 1] = {
+        type = "checkbox",
+        name = "Rahmen anzeigen",
+        getFunc = function()
+            local appearance = getAppearanceSettings()
+            return appearance.edgeEnabled ~= false
+        end,
+        setFunc = function(value)
+            local appearance = getAppearanceSettings()
+            appearance.edgeEnabled = value ~= false
+            applyHostAppearance()
+        end,
+        default = true,
+        disabled = function()
+            return getAppearanceSettings().enabled == false
+        end,
+    }
+
+    options[#options + 1] = {
+        type = "slider",
+        name = "Rahmen-Transparenz (%)",
+        min = 0,
+        max = 100,
+        step = 5,
+        getFunc = function()
+            local appearance = getAppearanceSettings()
+            return math.floor((appearance.edgeAlpha or 0) * 100 + 0.5)
+        end,
+        setFunc = function(value)
+            local appearance = getAppearanceSettings()
+            appearance.edgeAlpha = clamp((tonumber(value) or 0) / 100, 0, 1)
+            applyHostAppearance()
+        end,
+        disabled = function()
+            local appearance = getAppearanceSettings()
+            return appearance.enabled == false or appearance.edgeEnabled == false
+        end,
+        default = math.floor(DEFAULT_APPEARANCE.edgeAlpha * 100 + 0.5),
+    }
+
+    options[#options + 1] = {
+        type = "slider",
+        name = "Innenabstand",
+        min = 0,
+        max = 48,
+        step = 1,
+        getFunc = function()
+            local appearance = getAppearanceSettings()
+            return appearance.padding or 0
+        end,
+        setFunc = function(value)
+            local appearance = getAppearanceSettings()
+            appearance.padding = math.max(0, math.floor((tonumber(value) or 0) + 0.5))
+            applyHostAppearance()
+        end,
+        default = DEFAULT_APPEARANCE.padding,
+    }
+
+    options[#options + 1] = {
+        type = "slider",
+        name = "Eckenradius",
+        min = 0,
+        max = 32,
+        step = 1,
+        getFunc = function()
+            local appearance = getAppearanceSettings()
+            return appearance.cornerRadius or 0
+        end,
+        setFunc = function(value)
+            local appearance = getAppearanceSettings()
+            appearance.cornerRadius = math.max(0, math.floor((tonumber(value) or 0) + 0.5))
+            applyHostAppearance()
+        end,
+        disabled = function()
+            return getAppearanceSettings().enabled == false
+        end,
+        default = DEFAULT_APPEARANCE.cornerRadius,
+    }
+
+    options[#options + 1] = {
+        type = "dropdown",
+        name = "Farbschema",
+        choices = { "Dunkel", "Hell", "Transparent" },
+        choicesValues = { "dark", "light", "transparent" },
+        getFunc = function()
+            return getAppearanceSettings().theme
+        end,
+        setFunc = function(value)
+            local appearance = getAppearanceSettings()
+            appearance.theme = value or DEFAULT_APPEARANCE.theme
+            applyHostAppearance()
+        end,
+        default = DEFAULT_APPEARANCE.theme,
     }
 
     options[#options + 1] = { type = "header", name = "Optionen" }
@@ -533,82 +727,6 @@ local function registerQuestTrackerOptions(options)
         default = true,
     }
 
-    options[#options + 1] = { type = "header", name = "Quest-Tracker Hintergrund" }
-
-    options[#options + 1] = {
-        type = "checkbox",
-        name = "Hintergrund anzeigen",
-        getFunc = function()
-            settings = getQuestSettings()
-            return settings.background.enabled ~= false
-        end,
-        setFunc = function(value)
-            settings = getQuestSettings()
-            settings.background.enabled = value
-            applyQuestTheme()
-        end,
-        default = true,
-    }
-
-    options[#options + 1] = {
-        type = "slider",
-        name = "Hintergrund-Transparenz",
-        min = 0,
-        max = 1,
-        step = 0.05,
-        getFunc = function()
-            settings = getQuestSettings()
-            return settings.background.alpha or 0.35
-        end,
-        setFunc = function(value)
-            settings = getQuestSettings()
-            settings.background.alpha = value
-            applyQuestTheme()
-        end,
-        disabled = function()
-            settings = getQuestSettings()
-            return settings.background.enabled == false
-        end,
-    }
-
-    options[#options + 1] = {
-        type = "slider",
-        name = "Rahmen-Transparenz",
-        min = 0,
-        max = 1,
-        step = 0.05,
-        getFunc = function()
-            settings = getQuestSettings()
-            return settings.background.edgeAlpha or 0.5
-        end,
-        setFunc = function(value)
-            settings = getQuestSettings()
-            settings.background.edgeAlpha = value
-            applyQuestTheme()
-        end,
-        disabled = function()
-            settings = getQuestSettings()
-            return settings.background.enabled == false
-        end,
-    }
-
-    options[#options + 1] = {
-        type = "slider",
-        name = "Innenabstand",
-        min = 0,
-        max = 48,
-        step = 1,
-        getFunc = function()
-            settings = getQuestSettings()
-            return settings.background.padding or 0
-        end,
-        setFunc = function(value)
-            settings = getQuestSettings()
-            settings.background.padding = math.floor(value + 0.5)
-            applyQuestTheme()
-        end,
-    }
-
     options[#options + 1] = { type = "header", name = "Quest-Tracker Schriftarten" }
 
     local fontGroups = {
@@ -744,82 +862,6 @@ local function registerAchievementTrackerOptions(options)
             default = true,
         }
     end
-
-    options[#options + 1] = { type = "header", name = "Erfolgstracker Hintergrund" }
-
-    options[#options + 1] = {
-        type = "checkbox",
-        name = "Hintergrund anzeigen",
-        getFunc = function()
-            settings = getAchievementSettings()
-            return settings.background.enabled ~= false
-        end,
-        setFunc = function(value)
-            settings = getAchievementSettings()
-            settings.background.enabled = value
-            applyAchievementTheme()
-        end,
-        default = true,
-    }
-
-    options[#options + 1] = {
-        type = "slider",
-        name = "Hintergrund-Transparenz",
-        min = 0,
-        max = 1,
-        step = 0.05,
-        getFunc = function()
-            settings = getAchievementSettings()
-            return settings.background.alpha or 0.35
-        end,
-        setFunc = function(value)
-            settings = getAchievementSettings()
-            settings.background.alpha = value
-            applyAchievementTheme()
-        end,
-        disabled = function()
-            settings = getAchievementSettings()
-            return settings.background.enabled == false
-        end,
-    }
-
-    options[#options + 1] = {
-        type = "slider",
-        name = "Rahmen-Transparenz",
-        min = 0,
-        max = 1,
-        step = 0.05,
-        getFunc = function()
-            settings = getAchievementSettings()
-            return settings.background.edgeAlpha or 0.5
-        end,
-        setFunc = function(value)
-            settings = getAchievementSettings()
-            settings.background.edgeAlpha = value
-            applyAchievementTheme()
-        end,
-        disabled = function()
-            settings = getAchievementSettings()
-            return settings.background.enabled == false
-        end,
-    }
-
-    options[#options + 1] = {
-        type = "slider",
-        name = "Innenabstand",
-        min = 0,
-        max = 48,
-        step = 1,
-        getFunc = function()
-            settings = getAchievementSettings()
-            return settings.background.padding or 0
-        end,
-        setFunc = function(value)
-            settings = getAchievementSettings()
-            settings.background.padding = math.floor(value + 0.5)
-            applyAchievementTheme()
-        end,
-    }
 
     options[#options + 1] = { type = "header", name = "Erfolgstracker Schriftarten" }
 

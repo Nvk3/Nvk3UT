@@ -13,6 +13,37 @@ local SCROLL_CONTAINER_NAME = addonName .. "_ScrollContainer"
 local SCROLL_CONTENT_NAME = SCROLL_CONTAINER_NAME .. "_Content"
 local SCROLLBAR_NAME = SCROLL_CONTAINER_NAME .. "_ScrollBar"
 
+local DEFAULT_APPEARANCE = {
+    enabled = true,
+    alpha = 0.35,
+    edgeEnabled = true,
+    edgeAlpha = 0.5,
+    padding = 0,
+    cornerRadius = 0,
+    theme = "dark",
+}
+
+local THEME_COLORS = {
+    dark = {
+        center = { 0, 0, 0 },
+        edge = { 0, 0, 0 },
+    },
+    light = {
+        center = { 1, 1, 1 },
+        edge = { 1, 1, 1 },
+    },
+    transparent = {
+        center = { 0, 0, 0 },
+        edge = { 0, 0, 0 },
+    },
+}
+
+local DEFAULT_BACKDROP_TEXTURE = {
+    texture = "EsoUI/Art/Tooltips/UI-Border.dds",
+    tileSize = 64,
+    edgeWidth = 16,
+}
+
 local DEFAULT_WINDOW = {
     left = 200,
     top = 200,
@@ -37,12 +68,27 @@ local state = {
     scrollContentRightOffset = 0,
     questContainer = nil,
     achievementContainer = nil,
+    backdrop = nil,
     window = nil,
+    appearance = nil,
     anchorWarnings = {
         questMissing = false,
         achievementMissing = false,
     },
 }
+
+local function clamp(value, minimum, maximum)
+    if value == nil then
+        return minimum
+    end
+    if value < minimum then
+        return minimum
+    end
+    if value > maximum then
+        return maximum
+    end
+    return value
+end
 
 local function cloneTable(value)
     if type(value) ~= "table" then
@@ -58,6 +104,94 @@ end
 
 local function getSavedVars()
     return Nvk3UT and Nvk3UT.sv
+end
+
+local function migrateAppearanceSettings(target)
+    local sv = getSavedVars()
+    if not sv then
+        return
+    end
+
+    local quest = sv.QuestTracker and sv.QuestTracker.background
+    local achievement = sv.AchievementTracker and sv.AchievementTracker.background
+
+    local function applySource(source)
+        if type(source) ~= "table" then
+            return false
+        end
+
+        local used = false
+        if source.enabled ~= nil and target.enabled == nil then
+            target.enabled = source.enabled ~= false
+            used = true
+        end
+        if source.alpha ~= nil and target.alpha == nil then
+            target.alpha = clamp(tonumber(source.alpha) or DEFAULT_APPEARANCE.alpha, 0, 1)
+            used = true
+        end
+        if source.edgeAlpha ~= nil and target.edgeAlpha == nil then
+            target.edgeAlpha = clamp(tonumber(source.edgeAlpha) or DEFAULT_APPEARANCE.edgeAlpha, 0, 1)
+            used = true
+        end
+        if source.padding ~= nil and target.padding == nil then
+            local padding = tonumber(source.padding) or DEFAULT_APPEARANCE.padding
+            target.padding = math.max(0, math.floor(padding + 0.5))
+            used = true
+        end
+        return used
+    end
+
+    local migrated = false
+    migrated = applySource(quest) or migrated
+    migrated = applySource(achievement) or migrated
+
+    if migrated then
+        target.edgeEnabled = target.edgeEnabled ~= false and (target.edgeAlpha or DEFAULT_APPEARANCE.edgeAlpha) > 0
+    end
+end
+
+local function ensureAppearanceSettings()
+    local sv = getSavedVars()
+    if not sv then
+        return cloneTable(DEFAULT_APPEARANCE)
+    end
+
+    sv.General = sv.General or {}
+    sv.General.Appearance = sv.General.Appearance or {}
+
+    local appearance = sv.General.Appearance
+    if not appearance._migrated then
+        migrateAppearanceSettings(appearance)
+        appearance._migrated = true
+    end
+
+    if appearance.enabled == nil then
+        appearance.enabled = DEFAULT_APPEARANCE.enabled
+    end
+    appearance.alpha = clamp(tonumber(appearance.alpha) or DEFAULT_APPEARANCE.alpha, 0, 1)
+    if appearance.edgeEnabled == nil then
+        appearance.edgeEnabled = DEFAULT_APPEARANCE.edgeEnabled
+    else
+        appearance.edgeEnabled = appearance.edgeEnabled ~= false
+    end
+    appearance.edgeAlpha = clamp(tonumber(appearance.edgeAlpha) or DEFAULT_APPEARANCE.edgeAlpha, 0, 1)
+    local padding = tonumber(appearance.padding)
+    if padding == nil then
+        padding = DEFAULT_APPEARANCE.padding
+    end
+    appearance.padding = math.max(0, math.floor(padding + 0.5))
+    local cornerRadius = tonumber(appearance.cornerRadius)
+    if cornerRadius == nil then
+        cornerRadius = DEFAULT_APPEARANCE.cornerRadius
+    end
+    appearance.cornerRadius = math.max(0, math.floor(cornerRadius + 0.5))
+    if type(appearance.theme) ~= "string" or appearance.theme == "" then
+        appearance.theme = DEFAULT_APPEARANCE.theme
+    else
+        appearance.theme = string.lower(appearance.theme)
+    end
+
+    return appearance
 end
 
 local function ensureWindowSettings()
@@ -206,11 +340,7 @@ local function refreshScroll()
 
     if state.scrollContentRightOffset ~= desiredRightOffset then
         state.scrollContentRightOffset = desiredRightOffset
-        if scrollContent.ClearAnchors then
-            scrollContent:ClearAnchors()
-            scrollContent:SetAnchor(TOPLEFT, scrollContainer, TOPLEFT, 0, 0)
-            scrollContent:SetAnchor(TOPRIGHT, scrollContainer, TOPRIGHT, desiredRightOffset, 0)
-        end
+        applyViewportPadding()
     end
 
     if not showScrollbar then
@@ -255,30 +385,12 @@ local function anchorContainers()
     end
 end
 
-local function normalizeContainerDecorations()
-    local containers = {
-        state.questContainer,
-        state.achievementContainer,
-    }
-
-    for index = 1, #containers do
-        local control = containers[index]
-        if control then
-            local backdrop = control.backdrop
-            if backdrop and backdrop.SetInsets then
-                backdrop:SetInsets(0, 0, 0, 0)
-            end
-        end
-    end
-end
-
 local function updateSectionLayout()
     if not state.root then
         return
     end
 
     anchorContainers()
-    normalizeContainerDecorations()
 end
 
 local function applyWindowLock()
@@ -317,6 +429,7 @@ end
 
 local function applyWindowSettings()
     state.window = ensureWindowSettings()
+    state.appearance = ensureAppearanceSettings()
 
     if not state.root then
         return
@@ -326,6 +439,30 @@ local function applyWindowSettings()
     applyWindowLock()
     updateSectionLayout()
     refreshScroll()
+end
+
+local function createBackdrop()
+    if state.backdrop or not (state.root and WINDOW_MANAGER) then
+        return
+    end
+
+    local control = WINDOW_MANAGER:CreateControl(nil, state.root, CT_BACKDROP)
+    control:SetAnchorFill()
+    control:SetDrawLayer(DL_BACKGROUND)
+    control:SetDrawTier(DT_LOW)
+    control:SetDrawLevel(0)
+    if control.SetExcludeFromResizeToFitExtents then
+        control:SetExcludeFromResizeToFitExtents(true)
+    end
+    if control.SetEdgeTexture then
+        control:SetEdgeTexture(
+            DEFAULT_BACKDROP_TEXTURE.texture,
+            DEFAULT_BACKDROP_TEXTURE.tileSize,
+            DEFAULT_BACKDROP_TEXTURE.edgeWidth
+        )
+    end
+
+    state.backdrop = control
 end
 
 local function createRootControl()
@@ -383,6 +520,8 @@ local function createRootControl()
 
     state.root = control
     Nvk3UT.UI.Root = control
+
+    createBackdrop()
 end
 
 local function createScrollContainer()
@@ -436,6 +575,9 @@ local function createScrollContainer()
     state.scrollContent = scrollContent
     state.scrollbar = scrollbar
     state.scrollContentRightOffset = 0
+
+    state.appearance = ensureAppearanceSettings()
+    applyViewportPadding()
 end
 
 local function createContainers()
@@ -472,7 +614,82 @@ local function createContainers()
     end
 
     anchorContainers()
-    normalizeContainerDecorations()
+    refreshScroll()
+end
+
+local function applyViewportPadding()
+    local appearance = state.appearance or ensureAppearanceSettings()
+    if not state.root then
+        return
+    end
+
+    local padding = math.max(0, tonumber(appearance and appearance.padding) or 0)
+
+    if state.scrollContainer then
+        state.scrollContainer:ClearAnchors()
+        state.scrollContainer:SetAnchor(TOPLEFT, state.root, TOPLEFT, padding, padding)
+        state.scrollContainer:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, -padding, -padding)
+    end
+
+    if state.scrollbar then
+        state.scrollbar:ClearAnchors()
+        state.scrollbar:SetAnchor(TOPRIGHT, state.root, TOPRIGHT, -padding, padding)
+        state.scrollbar:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, -padding, -padding)
+        state.scrollbar:SetWidth(SCROLLBAR_WIDTH)
+    end
+
+    if state.scrollContent and state.scrollContainer then
+        state.scrollContent:ClearAnchors()
+        state.scrollContent:SetAnchor(TOPLEFT, state.scrollContainer, TOPLEFT, 0, 0)
+        state.scrollContent:SetAnchor(
+            TOPRIGHT,
+            state.scrollContainer,
+            TOPRIGHT,
+            state.scrollContentRightOffset or 0,
+            0
+        )
+        state.scrollContent:SetResizeToFitDescendents(true)
+    end
+end
+
+local function applyAppearance()
+    state.appearance = ensureAppearanceSettings()
+
+    local appearance = state.appearance
+    local backdrop = state.backdrop
+
+    if backdrop then
+        local enabled = appearance.enabled ~= false
+        backdrop:SetHidden(not enabled)
+
+        if enabled then
+            local themeId = appearance.theme or DEFAULT_APPEARANCE.theme
+            local theme = THEME_COLORS[themeId] or THEME_COLORS[DEFAULT_APPEARANCE.theme]
+            local centerColor = theme.center
+            local edgeColor = theme.edge
+
+            local alpha = clamp(appearance.alpha, 0, 1)
+            local edgeAlpha = clamp(appearance.edgeAlpha, 0, 1)
+            if backdrop.SetCenterColor and centerColor then
+                local r = centerColor[1] or 0
+                local g = centerColor[2] or r
+                local b = centerColor[3] or r
+                backdrop:SetCenterColor(r, g, b, alpha)
+            end
+            if backdrop.SetEdgeColor and edgeColor then
+                local effectiveEdgeAlpha = (appearance.edgeEnabled == false) and 0 or edgeAlpha
+                local er = edgeColor[1] or 0
+                local eg = edgeColor[2] or er
+                local eb = edgeColor[3] or er
+                backdrop:SetEdgeColor(er, eg, eb, effectiveEdgeAlpha)
+            end
+            if backdrop.SetCornerRadius then
+                backdrop:SetCornerRadius(appearance.cornerRadius or 0)
+            end
+        end
+    end
+
+    applyViewportPadding()
     refreshScroll()
 end
 
@@ -515,6 +732,7 @@ function TrackerHost.Init()
     end
 
     state.window = ensureWindowSettings()
+    state.appearance = ensureAppearanceSettings()
 
     createRootControl()
     createContainers()
@@ -536,6 +754,8 @@ function TrackerHost.Init()
     end
 
     state.initialized = true
+
+    TrackerHost.ApplyAppearance()
 end
 
 function TrackerHost.ApplySettings()
@@ -554,6 +774,8 @@ function TrackerHost.ApplySettings()
     if Nvk3UT.AchievementTracker and Nvk3UT.AchievementTracker.ApplySettings then
         pcall(Nvk3UT.AchievementTracker.ApplySettings, cloneTable(sv.AchievementTracker or {}))
     end
+
+    TrackerHost.ApplyAppearance()
 end
 
 function TrackerHost.ApplyTheme()
@@ -573,6 +795,7 @@ function TrackerHost.ApplyTheme()
 
     updateSectionLayout()
     refreshScroll()
+    TrackerHost.ApplyAppearance()
 end
 
 function TrackerHost.Refresh()
@@ -594,6 +817,14 @@ function TrackerHost.Refresh()
 
     updateSectionLayout()
     TrackerHost.RefreshScroll()
+end
+
+function TrackerHost.ApplyAppearance()
+    if not state.root then
+        return
+    end
+
+    applyAppearance()
 end
 
 function TrackerHost.Shutdown()
@@ -645,6 +876,12 @@ function TrackerHost.Shutdown()
     end
     state.scrollContainer = nil
 
+    if state.backdrop then
+        state.backdrop:SetHidden(true)
+        state.backdrop:SetParent(nil)
+    end
+    state.backdrop = nil
+
     if state.root then
         state.root:SetHandler("OnMouseDown", nil)
         state.root:SetHandler("OnMouseUp", nil)
@@ -662,6 +899,7 @@ function TrackerHost.Shutdown()
         state.anchorWarnings.achievementMissing = false
     end
 
+    state.appearance = nil
     state.initialized = false
 end
 

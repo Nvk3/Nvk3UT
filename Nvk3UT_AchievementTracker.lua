@@ -24,14 +24,6 @@ local DEFAULT_FONTS = {
     toggle = "ZoFontGame",
 }
 
-local DEFAULT_BACKDROP = {
-    centerColor = { 0, 0, 0, 0.35 },
-    edgeColor = { 0, 0, 0, 0.5 },
-    edgeTexture = "EsoUI/Art/Tooltips/UI-Border.dds",
-    tileSize = 64,
-    edgeFileWidth = 16,
-}
-
 local unpack = table.unpack or unpack
 local LEFT_MOUSE_BUTTON = MOUSE_BUTTON_INDEX_LEFT or 1
 
@@ -45,7 +37,6 @@ local state = {
     saved = nil,
     control = nil,
     container = nil,
-    backdrop = nil,
     categoryPool = nil,
     achievementPool = nil,
     objectivePool = nil,
@@ -53,8 +44,6 @@ local state = {
     lastAnchoredControl = nil,
     snapshot = nil,
     subscription = nil,
-    padding = 0,
-    theme = nil,
     pendingRefresh = false,
 }
 
@@ -121,17 +110,6 @@ local function BuildFontString(descriptor, fallback)
     end
 
     return string.format("%s|%d|%s", face, size, outline or DEFAULT_FONT_OUTLINE)
-end
-
-local function ApplyContainerPadding()
-    if not state.container or not state.control then
-        return
-    end
-
-    local inset = tonumber(state.padding) or 0
-    state.container:ClearAnchors()
-    state.container:SetAnchor(TOPLEFT, state.control, TOPLEFT, inset, inset)
-    state.container:SetAnchor(BOTTOMRIGHT, state.control, BOTTOMRIGHT, -inset, -inset)
 end
 
 local function BuildFavoritesScope()
@@ -205,68 +183,6 @@ local function BuildTodoLookup()
     return lookup
 end
 
-local function EnsureBackdrop()
-    if not state.control then
-        return
-    end
-
-    local theme = state.theme or {}
-    local background = theme.backdrop
-
-    if not background then
-        if state.backdrop then
-            if state.backdrop.Destroy then
-                state.backdrop:Destroy()
-            else
-                state.backdrop:SetHidden(true)
-                state.backdrop:SetParent(nil)
-            end
-        end
-        state.backdrop = nil
-        if state.control then
-            state.control.backdrop = nil
-        end
-        return
-    end
-
-    if not state.backdrop then
-        local control = WINDOW_MANAGER and WINDOW_MANAGER:CreateControl(nil, state.control, CT_BACKDROP)
-        if not control then
-            return
-        end
-
-        control:SetAnchorFill()
-        control:SetDrawLayer(DL_BACKGROUND)
-        control:SetDrawTier(DT_LOW)
-        control:SetDrawLevel(0)
-        if control.SetExcludeFromResizeToFitExtents then
-            control:SetExcludeFromResizeToFitExtents(true)
-        end
-        state.backdrop = control
-    end
-
-    local control = state.backdrop
-    if control.SetInsets then
-        control:SetInsets(0, 0, 0, 0)
-    end
-    if background.edgeTexture then
-        control:SetEdgeTexture(background.edgeTexture, background.tileSize or 128, background.edgeFileWidth or 16)
-    end
-
-    if background.centerColor then
-        control:SetCenterColor(unpack(background.centerColor))
-    end
-
-    if background.edgeColor then
-        control:SetEdgeColor(unpack(background.edgeColor))
-    end
-
-    control:SetHidden(false)
-    if state.control then
-        state.control.backdrop = control
-    end
-end
-
 local function RequestRefresh()
     if not state.isInitialized then
         return
@@ -332,15 +248,6 @@ local function UpdateAutoSize()
         return
     end
 
-    local paddingWidth = 0
-    local paddingHeight = 0
-
-    if state.padding and state.padding > 0 then
-        local inset = state.padding * 2
-        paddingWidth = paddingWidth + inset
-        paddingHeight = paddingHeight + inset
-    end
-
     local maxWidth = 0
     local totalHeight = 0
     local visibleCount = 0
@@ -361,16 +268,12 @@ local function UpdateAutoSize()
     end
 
     if state.opts.autoGrowH and maxWidth > 0 and state.control.SetWidth then
-        state.control:SetWidth(maxWidth + paddingWidth)
+        state.control:SetWidth(maxWidth)
     end
 
     if state.opts.autoGrowV and totalHeight > 0 and state.control.SetHeight then
-        state.control:SetHeight(totalHeight + paddingHeight)
+        state.control:SetHeight(totalHeight)
     end
-end
-
-local function AttachBackdrop()
-    EnsureBackdrop()
 end
 
 local function EnsureContainer()
@@ -785,8 +688,6 @@ function AchievementTracker.Init(parentControl, opts)
     end
 
     EnsureContainer()
-    ApplyContainerPadding()
-    AttachBackdrop()
     ApplyLockState()
 
     SubscribeToModel()
@@ -822,16 +723,6 @@ function AchievementTracker.Shutdown()
     state.achievementPool = nil
     state.objectivePool = nil
 
-    if state.backdrop then
-        if state.backdrop.Destroy then
-            state.backdrop:Destroy()
-        else
-            state.backdrop:SetHidden(true)
-            state.backdrop:SetParent(nil)
-        end
-    end
-    state.backdrop = nil
-
     if state.container then
         if state.container.Destroy then
             state.container:Destroy()
@@ -843,7 +734,6 @@ function AchievementTracker.Shutdown()
     state.container = nil
 
     if state.control then
-        state.control.backdrop = nil
         state.control.holder = nil
     end
     state.control = nil
@@ -854,26 +744,7 @@ function AchievementTracker.Shutdown()
     state.opts = {}
 
     state.isInitialized = false
-    state.theme = nil
-    state.padding = 0
     state.pendingRefresh = false
-end
-
-local function BuildBackdropOptions(background)
-    if type(background) ~= "table" or background.enabled == false then
-        return nil
-    end
-
-    local alpha = tonumber(background.alpha) or DEFAULT_BACKDROP.centerColor[4]
-    local edgeAlpha = tonumber(background.edgeAlpha) or DEFAULT_BACKDROP.edgeColor[4]
-
-    return {
-        edgeTexture = DEFAULT_BACKDROP.edgeTexture,
-        tileSize = DEFAULT_BACKDROP.tileSize,
-        edgeFileWidth = DEFAULT_BACKDROP.edgeFileWidth,
-        centerColor = { 0, 0, 0, alpha },
-        edgeColor = { 0, 0, 0, edgeAlpha },
-    }
 end
 
 local function ApplyAutoGrow(settings)
@@ -944,13 +815,6 @@ function AchievementTracker.ApplyTheme(settings)
 
     state.fonts = MergeFonts(state.opts.fonts)
 
-    local background = settings.background or settings.backdrop or {}
-    state.theme = state.theme or {}
-    state.theme.backdrop = BuildBackdropOptions(background)
-    state.padding = tonumber(background.padding) or state.padding or 0
-
-    ApplyContainerPadding()
-    EnsureBackdrop()
     RequestRefresh()
 end
 
@@ -967,7 +831,7 @@ function AchievementTracker.RefreshVisibility()
     RefreshVisibility()
 end
 
--- Ensure the container exists before applying padding/backdrop during init
+-- Ensure the container exists before populating entries during init
 Nvk3UT.AchievementTracker = AchievementTracker
 
 return AchievementTracker
