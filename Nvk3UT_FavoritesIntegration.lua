@@ -21,7 +21,7 @@ local function _countFavorites()
     if not (Fav and Fav.Iterate) then
         return 0
     end
-    local scope = (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.ui and Nvk3UT.sv.ui.favScope) or "account"
+    local scope = (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.General and Nvk3UT.sv.General.favScope) or "account"
     local ok, iterator, state, key = pcall(Fav.Iterate, scope)
     if not ok or type(iterator) ~= "function" then
         return 0
@@ -136,7 +136,7 @@ local function OverrideGetCategoryInfoFromData(AchievementsClass)
         local ACH, data, parentData = ...
         if data.categoryIndex == NVK3_FAVORITES_KEY then
             local num, earned, total = 0, 0, 0
-            local __scope = (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.ui and Nvk3UT.sv.ui.favScope) or "account"; for id in Fav.Iterate(__scope) do
+            local __scope = (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.General and Nvk3UT.sv.General.favScope) or "account"; for id in Fav.Iterate(__scope) do
                 num = num + 1
                 local _, _, points, _, completed = GetAchievementInfo(id)
                 total = total + (points or 0)
@@ -184,13 +184,13 @@ local function Override_ZO_GetAchievementIds()
             local searchResults = considerSearchResults and ACHIEVEMENTS_MANAGER:GetSearchResults()
             if searchResults then
                 local GetCategoryInfoFromAchievementId = GetCategoryInfoFromAchievementId
-                local __scope = (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.ui and Nvk3UT.sv.ui.favScope) or "account"; for id in Fav.Iterate(__scope) do
+                local __scope = (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.General and Nvk3UT.sv.General.favScope) or "account"; for id in Fav.Iterate(__scope) do
                     local cIdx, scIdx, aIdx = GetCategoryInfoFromAchievementId(id)
                     local r = searchResults[cIdx]
                     if r then r = r[scIdx or ZO_ACHIEVEMENTS_ROOT_SUBCATEGORY]; if r and r[aIdx] then result[#result+1]=id end end
                 end
             else
-                local __scope = (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.ui and Nvk3UT.sv.ui.favScope) or "account"; for id in Fav.Iterate(__scope) do result[#result+1] = id end
+                local __scope = (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.General and Nvk3UT.sv.General.favScope) or "account"; for id in Fav.Iterate(__scope) do result[#result+1] = id end
             end
             table.sort(result, sortByName)
             local U = Nvk3UT and Nvk3UT.Utils; local __now = (U and U.now and U.now() or 0); if U and U.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug and ((__now - favProvide_lastTs) > 0.5 or #result ~= favProvide_lastCount) then favProvide_lastTs = __now; favProvide_lastCount = #result; U.d("[Nvk3UT][Favorites][Provide] list", "data={count:", #result, ", searchFiltered:", tostring(considerSearchResults and true or false), "}") end
@@ -217,13 +217,13 @@ local function HookAchievementContext()
                     ShowMenu = orgShowMenu
                     if not ACHIEVEMENTS.control:IsHidden() then
                         local id = ACHIEVEMENTS:GetBaseAchievementId(self:GetId())
-                        local __scope = (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.ui and Nvk3UT.sv.ui.favScope) or "account";
+                        local __scope = (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.General and Nvk3UT.sv.General.favScope) or "account";
                         local isFav = Fav.IsFavorite(id, __scope) or Fav.IsFavorite(self:GetId(), __scope)
                         local U = Nvk3UT and Nvk3UT.Utils; if U and U.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then U.d("[Nvk3UT][Favorites][Menu] open", "data={id:", id, ", isFav:", tostring(isFav), "}") end
                         if isFav then
                             AddCustomMenuItem("Von Favoriten entfernen", function() 
                                 -- remove entire line of series
-                                local __scope = (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.ui and Nvk3UT.sv.ui.favScope) or "account"; while id ~= 0 do Fav.Remove(id, __scope); id = GetNextAchievementInLine(id) end; local U = Nvk3UT and Nvk3UT.Utils; if U and U.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then U.d("[Nvk3UT][Favorites][Toggle] remove", "data={rootId:", ACHIEVEMENTS:GetBaseAchievementId(self:GetId()), "}") end
+                                local __scope = (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.General and Nvk3UT.sv.General.favScope) or "account"; while id ~= 0 do Fav.Remove(id, __scope); id = GetNextAchievementInLine(id) end; local U = Nvk3UT and Nvk3UT.Utils; if U and U.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then U.d("[Nvk3UT][Favorites][Toggle] remove", "data={rootId:", ACHIEVEMENTS:GetBaseAchievementId(self:GetId()), "}") end
                                 if ACHIEVEMENTS and ACHIEVEMENTS.refreshGroups then ACHIEVEMENTS.refreshGroups:RefreshAll("FullUpdate") end
                                 Nvk3UT.RebuildSelected(ACHIEVEMENTS)
                                 _updateFavoritesTooltip(ACHIEVEMENTS)
@@ -231,7 +231,7 @@ local function HookAchievementContext()
                             end)
                         else
                             AddCustomMenuItem("Zu Favoriten hinzufügen", function()
-                                local __scope = (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.ui and Nvk3UT.sv.ui.favScope) or "account"; Fav.Add(id, __scope)
+                                local __scope = (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.General and Nvk3UT.sv.General.favScope) or "account"; Fav.Add(id, __scope)
                                 local U = Nvk3UT and Nvk3UT.Utils; if U and U.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then U.d("[Nvk3UT][Favorites][Toggle] add", "data={id:", id, ", scope:account}") end
                                 Nvk3UT.RebuildSelected(ACHIEVEMENTS)
                                 _updateFavoritesTooltip(ACHIEVEMENTS)

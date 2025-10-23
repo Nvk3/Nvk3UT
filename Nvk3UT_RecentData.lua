@@ -135,9 +135,10 @@ end
 
 -- Config helpers shared with UI/Provider
 local function _getConfig()
-    local sv = Nvk3UT and Nvk3UT.sv or {ui={}}
-    local win = (sv.ui and sv.ui.recentWindow) or 0  -- 0=alle, 7, 30
-    local maxc = (sv.ui and sv.ui.recentMax) or 100  -- hardcap
+    local sv = Nvk3UT and Nvk3UT.sv or { General = {} }
+    local general = sv.General or {}
+    local win = general.recentWindow or 0  -- 0=alle, 7, 30
+    local maxc = general.recentMax or 100  -- hardcap
     local sinceTs = nil
     if win == 7 then sinceTs = (GetTimeStamp() - 7*24*60*60)
     elseif win == 30 then sinceTs = (GetTimeStamp() - 30*24*60*60) end

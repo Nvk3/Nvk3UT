@@ -60,7 +60,7 @@ end
 local function testHooks_Recent()
     -- If feature is hidden, skip quietly
     local sv = Nvk3UT.sv
-    if not (sv and sv.ui and sv.ui.showRecent ~= false) then return true end
+    if not (sv and sv.General and sv.General.showRecent ~= false) then return true end
     assert(EVENT_ACHIEVEMENT_UPDATED ~= nil and EVENT_ACHIEVEMENT_AWARDED ~= nil, "Events undefiniert")
     -- We cannot introspect registrations safely here; assume RecentData.RegisterEvents was called on load in Core
     return true
