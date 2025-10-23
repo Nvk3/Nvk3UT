@@ -131,7 +131,6 @@ local function applyTrackerKey(subKey, value)
         end
     end
 end
-end
 
 function Module.SetSetting(key, value)
     key = normalizeKey(key)
