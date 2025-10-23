@@ -351,22 +351,13 @@ local function computeContentWidth(view)
     return width
 end
 
-local function applyAutoGrow(view)
+local function applyAutoGrow(view, contentHeight)
     if not view._root then
         return
     end
 
-    local height = 0
-    local childCount = view._scrollChild:GetNumChildren()
-    for index = 1, childCount do
-        local control = view._scrollChild:GetChild(index)
-        if control and control:IsHidden() == false then
-            height = math.max(height, control:GetTop() + control:GetHeight())
-        end
-    end
-
     if view._autoGrowV then
-        local targetHeight = height > 0 and (height + PADDING * 2) or view._root:GetHeight()
+        local targetHeight = contentHeight and contentHeight > 0 and (contentHeight + PADDING * 2) or view._root:GetHeight()
         view._root:SetHeight(targetHeight)
     end
 
@@ -385,6 +376,7 @@ function Module:Init(rootControl, opts)
     self._autoGrowV = opts and opts.autoGrowV ~= false
     self._autoGrowH = opts and opts.autoGrowH == true
     self._autoExpand = opts and opts.autoExpand ~= false
+    self._lastContentHeight = 0
 
     self._scroll = WM:CreateControlFromVirtual("Nvk3UT_QuestTrackerScroll", rootControl, "ZO_ScrollContainer")
     self._scroll:SetAnchorFill(rootControl)
@@ -405,18 +397,13 @@ end
 function Module:ApplyAutoGrow(autoGrowV, autoGrowH)
     self._autoGrowV = autoGrowV ~= false
     self._autoGrowH = autoGrowH == true
-    applyAutoGrow(self)
+    applyAutoGrow(self, self._lastContentHeight)
 end
 
-local function anchorControls(view, previous, control)
+local function anchorControl(view, control, offsetY)
     control:ClearAnchors()
-    if previous then
-        control:SetAnchor(TOPLEFT, previous, BOTTOMLEFT, 0, 0)
-        control:SetAnchor(TOPRIGHT, previous, BOTTOMRIGHT, 0, 0)
-    else
-        control:SetAnchor(TOPLEFT, view._scrollChild, TOPLEFT, CONTENT_PADDING_X, PADDING)
-        control:SetAnchor(TOPRIGHT, view._scrollChild, TOPRIGHT, -CONTENT_PADDING_X, PADDING)
-    end
+    control:SetAnchor(TOPLEFT, view._scrollChild, TOPLEFT, CONTENT_PADDING_X, offsetY)
+    control:SetAnchor(TOPRIGHT, view._scrollChild, TOPRIGHT, -CONTENT_PADDING_X, offsetY)
 end
 
 function Module:Refresh(snapshot, opts)
@@ -432,9 +419,9 @@ function Module:Refresh(snapshot, opts)
     releaseControls(self._headerPool, self._activeHeaders)
     releaseControls(self._conditionPool, self._activeConditions)
 
-    local previousControl = nil
-
     local quests = snapshot and snapshot.quests or {}
+
+    local cursorY = PADDING
 
     for questIndex = 1, #quests do
         local quest = quests[questIndex]
@@ -458,10 +445,9 @@ function Module:Refresh(snapshot, opts)
         headerControl.data = quest
         headerControl:SetHidden(false)
 
-        anchorControls(self, previousControl, headerControl)
         configureHeader(self, headerControl, quest, isCollapsed(self, quest.journalIndex))
-
-        previousControl = headerControl
+        anchorControl(self, headerControl, cursorY)
+        cursorY = cursorY + headerControl:GetHeight()
 
         if not isCollapsed(self, quest.journalIndex) then
             for stepIndex = 1, #quest.steps do
@@ -473,19 +459,20 @@ function Module:Refresh(snapshot, opts)
                     table.insert(self._activeConditions, condControl)
 
                     condControl:SetHidden(false)
-                    anchorControls(self, previousControl, condControl)
                     configureCondition(self, condControl, quest, condition)
-                    previousControl = condControl
+                    anchorControl(self, condControl, cursorY)
+                    cursorY = cursorY + condControl:GetHeight()
                 end
             end
         end
     end
 
-    applyAutoGrow(self)
+    local contentHeight = cursorY - PADDING
+    self._lastContentHeight = contentHeight
+    applyAutoGrow(self, contentHeight)
 
-    if previousControl then
-        local bottom = previousControl:GetTop() + previousControl:GetHeight()
-        self._scrollChild:SetHeight(bottom + PADDING)
+    if contentHeight > 0 then
+        self._scrollChild:SetHeight(cursorY + PADDING)
     else
         self._scrollChild:SetHeight(self._root:GetHeight())
     end
