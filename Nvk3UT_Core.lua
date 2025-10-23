@@ -7,15 +7,12 @@ local Module = M.Core
 
 --[[
 MIGRATION NOTES
-- Legacy quest tracker bootstrap/helpers previously defined in Nvk3UT_Questtracker.lua
-  are now owned by the modular files:
-    * SavedVars / event bus               -> Nvk3UT_Core.lua (this file)
-    * Quest data acquisition              -> Nvk3UT_QuestModel.lua
-    * Achievement favourites aggregation  -> Nvk3UT_AchievementModel.lua
-    * Tracker orchestration & settings    -> Nvk3UT_Tracker.lua
-    * Unified tracker view / scroll list  -> Nvk3UT_TrackerView.lua
-- Removed obsolete calls to Nvk3UT.Questtracker.* and deleted the legacy file.
-- No Legacy_* shims required; callers now use Nvk3UT.Tracker directly.
+- Quest tracker bootstrap/helpers now live in dedicated modules:
+    * SavedVars / event bus        -> Nvk3UT_Core.lua (this file)
+    * Quest data acquisition       -> Nvk3UT_QuestModel.lua
+    * Quest tracker orchestrator   -> Nvk3UT_Tracker.lua (Nvk3UT.QuestTracker)
+    * Quest tracker view/layout    -> Nvk3UT_TrackerView.lua
+- Legacy Nvk3UT_Questtracker.lua entry points have been removed.
 ]]
 
 -- SANITY REPORT
@@ -143,12 +140,8 @@ local function initializeModules()
         M.AchievementModel.Init()
     end
 
-    if M.Tracker and M.Tracker.Init then
-        M.Tracker.Init()
-    end
-
-    if M.TrackerView and M.TrackerView.Init then
-        M.TrackerView.Init()
+    if M.QuestTracker and M.QuestTracker.Init then
+        M.QuestTracker.Init()
     end
 end
 
@@ -192,7 +185,22 @@ local trackerDefaults = {
     throttleMs = 150,
 }
 
-local defaults={version=3,debug=false,ui={showStatus=true,favScope='account',recentWindow=0,recentMax=100},features={completed=true,favorites=true,recent=true,todo=true},tracker=trackerDefaults}
+local questTrackerDefaults = {
+    layout = { x = 400, y = 200, width = 320, height = 420, scale = 1 },
+    settings = {
+        enabled = true,
+        hideDefault = false,
+        hideInCombat = false,
+        lock = false,
+        autoGrowV = true,
+        autoGrowH = false,
+        autoExpand = true,
+        tooltips = true,
+    },
+    collapse = {},
+}
+
+local defaults={version=3,debug=false,ui={showStatus=true,favScope='account',recentWindow=0,recentMax=100},features={completed=true,favorites=true,recent=true,todo=true},tracker=trackerDefaults,questTracker=questTrackerDefaults}
 local function OnLoaded(e,name)
     if name~="Nvk3UT" then return end
     Nvk3UT._rebuild_lock=false
@@ -212,6 +220,8 @@ local function OnLoaded(e,name)
     end
     Nvk3UT.sv.tracker = Nvk3UT.sv.tracker or {}
     mergeDefaults(Nvk3UT.sv.tracker, trackerDefaults)
+    Nvk3UT.sv.questTracker = Nvk3UT.sv.questTracker or {}
+    mergeDefaults(Nvk3UT.sv.questTracker, questTrackerDefaults)
     Nvk3UT.sv.settings = Nvk3UT.sv.settings or {}
     local settings = Nvk3UT.sv.settings
     settings.quest = settings.quest or {}
@@ -374,126 +384,46 @@ SLASH_COMMANDS["/nvk sanity"] = function()
         end
     end
 
-    local checks = {
-        { label = "QuestModel.GetList", fn = M.QuestModel and M.QuestModel.GetList },
-        { label = "AchievementModel.GetList", fn = M.AchievementModel and M.AchievementModel.GetList },
-        { label = "TrackerView.BuildUnifiedFeed", fn = M.TrackerView and M.TrackerView.BuildUnifiedFeed },
-    }
-
-    local missing = false
-    for _, entry in ipairs(checks) do
-        if type(entry.fn) ~= "function" then
-            missing = true
-            log("Missing API: " .. entry.label)
-        end
-    end
-    if not missing then
-        log("Module API surface OK")
-    end
-
-    if type(checks[1].fn) == "function" then
-        local ok, order, byId = pcall(checks[1].fn)
-        if ok then
-            local count = type(order) == "table" and #order or 0
-            local mapCount = 0
-            if type(byId) == "table" then
-                for _ in pairs(byId) do
-                    mapCount = mapCount + 1
-                end
-            end
-            log(string.format("QuestModel order entries=%d map=%d", count, mapCount))
+    local snapshot
+    if M.QuestModel and M.QuestModel.GetSnapshot then
+        local ok, value = pcall(M.QuestModel.GetSnapshot)
+        if ok and type(value) == "table" then
+            snapshot = value
+            local questCount = type(value.quests) == "table" and #value.quests or 0
+            log(string.format("Quest snapshot quests=%d total=%s", questCount, tostring(value.meta and value.meta.total or "?")))
         else
-            log("QuestModel.GetList error: " .. tostring(order))
-        end
-    end
-
-    if type(checks[2].fn) == "function" then
-        local ok, list = pcall(checks[2].fn)
-        if ok then
-            local count = type(list) == "table" and #list or 0
-            log(string.format("AchievementModel list entries=%d", count))
-        else
-            log("AchievementModel.GetList error: " .. tostring(list))
-        end
-    end
-
-    local questFeedCount = 0
-    local achFeedCount = 0
-
-    if M.QuestSection and type(M.QuestSection.BuildFeed) == "function" then
-        local ok, feed = pcall(function()
-            return M.QuestSection:BuildFeed()
-        end)
-        if ok and type(feed) == "table" then
-            questFeedCount = #feed
-            local first = feed[1] and tostring(feed[1].dataType) or "-"
-            local last = feed[#feed] and tostring(feed[#feed].dataType) or "-"
-            log(string.format("QuestSection feed count=%d first=%s last=%s", questFeedCount, first, last))
-        elseif not ok then
-            log("QuestSection.BuildFeed error: " .. tostring(feed))
+            log("QuestModel.GetSnapshot error: " .. tostring(value))
         end
     else
-        log("QuestSection unavailable or uninitialised")
+        log("QuestModel unavailable")
     end
 
-    if M.AchSection and type(M.AchSection.BuildFeed) == "function" then
-        local ok, feed = pcall(function()
-            return M.AchSection:BuildFeed()
-        end)
-        if ok and type(feed) == "table" then
-            achFeedCount = #feed
-            local first = feed[1] and tostring(feed[1].dataType) or "-"
-            local last = feed[#feed] and tostring(feed[#feed].dataType) or "-"
-            log(string.format("AchSection feed count=%d first=%s last=%s", achFeedCount, first, last))
-        elseif not ok then
-            log("AchSection.BuildFeed error: " .. tostring(feed))
+    if snapshot and snapshot.quests then
+        for index = 1, math.min(#snapshot.quests, 3) do
+            local quest = snapshot.quests[index]
+            log(string.format("Quest[%d]=%s", index, tostring(quest and quest.name or "?")))
+        end
+    end
+
+    if M.QuestTracker and M.QuestTracker.Refresh then
+        local ok, err = pcall(M.QuestTracker.Refresh)
+        if ok then
+            log("QuestTracker.Refresh OK")
+        else
+            log("QuestTracker.Refresh error: " .. tostring(err))
         end
     else
-        log("AchSection unavailable or uninitialised")
+        log("QuestTracker module unavailable")
     end
 
     local publish = Module.Publish or (M.Core and M.Core.Publish)
     if type(publish) == "function" then
-        local ok, err = pcall(publish, "settings:changed", "tracker.sanityCheck")
+        local ok, err = pcall(publish, "settings:changed", "quest.sanityCheck")
         if ok then
             log("settings:changed dispatch OK")
         else
             log("settings:changed dispatch error: " .. tostring(err))
         end
-    end
-
-    log(string.format("Sanity summary quests=%d achievements=%d", questFeedCount, achFeedCount))
-end
-
-SLASH_COMMANDS["/nvk test sections"] = function()
-    local questSection = Nvk3UT and Nvk3UT.QuestSection
-    local achSection = Nvk3UT and Nvk3UT.AchSection
-    if questSection then
-        local visible = questSection.IsVisible and questSection:IsVisible()
-        local dirty = questSection.IsDirty and questSection:IsDirty()
-        d(string.format("[Nvk3UT] QuestSection visible=%s dirty=%s", tostring(visible), tostring(dirty)))
-        if questSection.BuildFeed then
-            local feed = questSection:BuildFeed()
-            local firstType = feed[1] and tostring(feed[1].dataType)
-            local lastType = feed[#feed] and tostring(feed[#feed].dataType)
-            d(string.format("[Nvk3UT] QuestSection feed count=%d first=%s last=%s", #feed, firstType or "-", lastType or "-"))
-        end
-    else
-        d("[Nvk3UT] QuestSection not available")
-    end
-
-    if achSection then
-        local visible = achSection.IsVisible and achSection:IsVisible()
-        local dirty = achSection.IsDirty and achSection:IsDirty()
-        d(string.format("[Nvk3UT] AchSection visible=%s dirty=%s", tostring(visible), tostring(dirty)))
-        if achSection.BuildFeed then
-            local feed = achSection:BuildFeed()
-            local firstType = feed[1] and tostring(feed[1].dataType)
-            local lastType = feed[#feed] and tostring(feed[#feed].dataType)
-            d(string.format("[Nvk3UT] AchSection feed count=%d first=%s last=%s", #feed, firstType or "-", lastType or "-"))
-        end
-    else
-        d("[Nvk3UT] AchSection not available")
     end
 end
 

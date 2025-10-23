@@ -73,12 +73,14 @@ local function applyQuestKey(subKey, value)
     end
     questSettings[subKey] = value
     publish("quest." .. subKey)
-    if subKey == "enabled" and M.Tracker and M.Tracker.SetShowQuests then
-        M.Tracker.SetShowQuests(value)
-    elseif subKey == "autoExpandNew" and M.Tracker and M.Tracker.SetBehaviorOption then
-        M.Tracker.SetBehaviorOption("autoExpandNewQuests", value)
-    elseif subKey == "tooltips" and M.Tracker and M.Tracker.SetBehaviorOption then
-        M.Tracker.SetBehaviorOption("tooltips", value)
+    if M.QuestTracker then
+        if subKey == "enabled" and M.QuestTracker.SetEnabled then
+            M.QuestTracker.SetEnabled(value)
+        elseif subKey == "autoExpandNew" and M.QuestTracker.SetAutoExpand then
+            M.QuestTracker.SetAutoExpand(value)
+        elseif subKey == "tooltips" and M.QuestTracker.SetTooltips then
+            M.QuestTracker.SetTooltips(value)
+        end
     end
 end
 
@@ -113,17 +115,22 @@ local function applyTrackerKey(subKey, value)
     end
     trackerSettings[subKey] = value
     publish("tracker." .. subKey)
-    if subKey == "hideDefault" and M.Tracker and M.Tracker.SetBehaviorOption then
-        M.Tracker.SetBehaviorOption("hideDefault", value)
-    elseif subKey == "hideInCombat" and M.Tracker and M.Tracker.SetBehaviorOption then
-        M.Tracker.SetBehaviorOption("hideInCombat", value)
-    elseif subKey == "locked" and M.Tracker and M.Tracker.SetBehaviorOption then
-        M.Tracker.SetBehaviorOption("locked", value)
-    elseif (subKey == "autoGrowV" or subKey == "autoGrowH") and M.Tracker and M.Tracker.SetBehaviorOption then
-        M.Tracker.SetBehaviorOption(subKey, value)
-    elseif subKey == "throttle" and M.Tracker and M.Tracker.SetThrottle then
-        M.Tracker.SetThrottle(value)
+    if M.QuestTracker then
+        if subKey == "hideDefault" and M.QuestTracker.SetHideDefaultTracker then
+            M.QuestTracker.SetHideDefaultTracker(value)
+        elseif subKey == "hideInCombat" and M.QuestTracker.SetHideInCombat then
+            M.QuestTracker.SetHideInCombat(value)
+        elseif subKey == "locked" and M.QuestTracker.SetLock then
+            M.QuestTracker.SetLock(value)
+        elseif subKey == "autoGrowV" and M.QuestTracker.SetAutoGrowVertical then
+            M.QuestTracker.SetAutoGrowVertical(value)
+        elseif subKey == "autoGrowH" and M.QuestTracker.SetAutoGrowHorizontal then
+            M.QuestTracker.SetAutoGrowHorizontal(value)
+        elseif subKey == "scale" and M.QuestTracker.SetScale then
+            M.QuestTracker.SetScale(value)
+        end
     end
+end
 end
 
 function Module.SetSetting(key, value)
@@ -156,8 +163,8 @@ function Module.Init()
 end
 
 function Module.ForceRefresh()
-    if M and M.Tracker then
-        M.Tracker.MarkDirty()
+    if M and M.QuestTracker and M.QuestTracker.Refresh then
+        M.QuestTracker.Refresh()
     end
 end
 

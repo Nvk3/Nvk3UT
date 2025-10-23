@@ -1,12 +1,46 @@
 Nvk3UT = Nvk3UT or {}
+
 local M = Nvk3UT
 
-M.Tracker = M.Tracker or {}
-local Module = M.Tracker
+M.QuestTracker = M.QuestTracker or {}
+local Module = M.QuestTracker
 
 local EM = EVENT_MANAGER
+local WM = WINDOW_MANAGER
 
-local DEFAULT_TRACKER_REASON = "Nvk3UT_Tracker"
+local EVENT_NAMESPACE = "Nvk3UT_QuestTracker"
+
+local DEFAULT_LAYOUT = {
+    x = 400,
+    y = 200,
+    width = 320,
+    height = 420,
+    scale = 1,
+}
+
+local DEFAULT_SETTINGS = {
+    enabled = true,
+    hideDefault = false,
+    hideInCombat = false,
+    lock = false,
+    autoGrowV = true,
+    autoGrowH = false,
+    autoExpand = true,
+    tooltips = true,
+}
+
+Module._initialized = Module._initialized or false
+Module._sv = Module._sv or nil
+Module._settings = Module._settings or nil
+Module._layout = Module._layout or nil
+Module._collapse = Module._collapse or nil
+Module._root = Module._root or nil
+Module._view = Module._view or nil
+Module._modelCallback = Module._modelCallback or nil
+Module._lastSnapshot = Module._lastSnapshot or nil
+Module._dragging = false
+Module._inCombat = false
+
 local DEFAULT_TRACKER_FRAGMENTS = {
     "FOCUSED_QUEST_TRACKER_FRAGMENT",
     "FOCUSED_QUEST_TRACKER_ALWAYS_SHOW_FRAGMENT",
@@ -15,461 +49,470 @@ local DEFAULT_TRACKER_FRAGMENTS = {
     "GAMEPAD_QUEST_TRACKER_FRAGMENT",
 }
 
+local DEFAULT_TRACKER_REASON = "Nvk3UT_QuestTracker"
+
 local function debugLog(message)
+    if not (Module._sv and Module._sv.debug) then
+        return
+    end
+
+    if type(message) ~= "string" then
+        message = tostring(message)
+    end
+
     if d then
-        d(string.format("[Nvk3UT] Tracker: %s", tostring(message)))
+        d(string.format("[Nvk3UT] QuestTracker: %s", message))
     end
 end
 
-local function getRootSV()
-    return M and M.sv
+local function copyDefaults(target, defaults)
+    for key, value in pairs(defaults) do
+        if type(value) == "table" then
+            target[key] = target[key] or {}
+            copyDefaults(target[key], value)
+        elseif target[key] == nil then
+            target[key] = value
+        end
+    end
 end
 
-local function ensureSettings()
-    local root = getRootSV()
+local function ensureSavedVars()
+    local root = M.sv
     if not root then
-        return nil
+        return
     end
-    root.settings = root.settings or {}
-    root.settings.quest = root.settings.quest or {}
-    root.settings.ach = root.settings.ach or {}
-    root.settings.tracker = root.settings.tracker or {}
-    return root.settings
-end
 
-local function getTrackerSV()
-    local root = getRootSV()
-    if not root then
-        return nil
-    end
-    root.tracker = root.tracker or {}
-    local sv = root.tracker
-    sv.behavior = sv.behavior or {}
-    sv.background = sv.background or {}
-    sv.fonts = sv.fonts or {}
-    sv.pos = sv.pos or {}
-    sv.collapseState = sv.collapseState or { zones = {}, quests = {}, achieves = {} }
-    return sv
-end
+    root.questTracker = root.questTracker or {}
+    local sv = root.questTracker
 
-local function getQuestSettings()
-    local settings = ensureSettings()
-    return settings and settings.quest or {}
-end
+    sv.layout = sv.layout or {}
+    sv.settings = sv.settings or {}
+    sv.collapse = sv.collapse or {}
 
-local function getAchSettings()
-    local settings = ensureSettings()
-    return settings and settings.ach or {}
-end
+    copyDefaults(sv.layout, DEFAULT_LAYOUT)
+    copyDefaults(sv.settings, DEFAULT_SETTINGS)
 
-local function getTrackerSettings()
-    local settings = ensureSettings()
-    return settings and settings.tracker or {}
-end
-
-local function publishSettingsChanged(key)
-    if M and M.Publish then
-        M.Publish("settings:changed", key)
-    elseif M and M.Core and M.Core.Publish then
-        M.Core.Publish("settings:changed", key)
-    end
-end
-
-local function markViewDirty()
-    if M and M.TrackerView and M.TrackerView.MarkDirty then
-        M.TrackerView.MarkDirty()
-    end
-end
-
-local function applyViewSettings()
-    if M and M.TrackerView and M.TrackerView.ApplySettingsFromSV then
-        M.TrackerView.ApplySettingsFromSV()
-    end
-end
-
-local function applyLockState()
-    if M and M.TrackerView and M.TrackerView.ApplyLockState then
-        M.TrackerView.ApplyLockState()
-    end
-end
-
-local function applyBackground()
-    if M and M.TrackerView and M.TrackerView.ApplyBackground then
-        M.TrackerView.ApplyBackground()
-    end
-end
-
-local function applyScale()
-    if M and M.TrackerView and M.TrackerView.ApplyScaleFromSettings then
-        M.TrackerView.ApplyScaleFromSettings()
-    end
+    Module._sv = sv
+    Module._settings = sv.settings
+    Module._layout = sv.layout
+    Module._collapse = sv.collapse
 end
 
 local function setDefaultTrackerHidden(hidden)
-    for _, fragmentName in ipairs(DEFAULT_TRACKER_FRAGMENTS) do
-        local fragment = _G and _G[fragmentName]
+    for index = 1, #DEFAULT_TRACKER_FRAGMENTS do
+        local fragment = _G and _G[DEFAULT_TRACKER_FRAGMENTS[index]]
         if fragment and fragment.SetHiddenForReason then
             fragment:SetHiddenForReason(DEFAULT_TRACKER_REASON, hidden)
         end
     end
 
-    local focusedTracker = _G and _G.FOCUSED_QUEST_TRACKER
-    if focusedTracker then
-        if focusedTracker.SetHiddenForReason then
-            focusedTracker.SetHiddenForReason(DEFAULT_TRACKER_REASON, hidden)
-        elseif focusedTracker.SetHidden then
-            focusedTracker:SetHidden(hidden)
-        end
-        local control = focusedTracker.control
-        if control and control.SetHidden then
-            control:SetHidden(hidden)
-        end
+    local tracker = _G and _G.FOCUSED_QUEST_TRACKER
+    if tracker and tracker.SetHiddenForReason then
+        tracker:SetHiddenForReason(DEFAULT_TRACKER_REASON, hidden)
+    end
+
+    local trackerControl = tracker and tracker.control
+    if trackerControl and trackerControl.SetHidden then
+        trackerControl:SetHidden(hidden)
     end
 end
 
-local function updateDefaultTrackerVisibility()
-    local settings = getTrackerSettings()
-    local hideDefault = settings and settings.hideDefault == true
-    setDefaultTrackerHidden(hideDefault)
-end
-
-function Module.ApplyDefaultTrackerVisibility()
-    updateDefaultTrackerVisibility()
-end
-
-local function isEnabled()
-    local sv = getTrackerSV()
-    if not sv then
-        return true
+local function applyDefaultTrackerVisibility()
+    if not Module._settings then
+        return
     end
-    if sv.enabled == nil then
-        return true
-    end
-    return sv.enabled
+
+    setDefaultTrackerHidden(Module._settings.hideDefault == true)
 end
 
-function Module.IsCombatHidden()
-    if not Module.inCombat then
+local function applyLockState()
+    if not Module._root then
+        return
+    end
+
+    local locked = Module._settings.lock == true
+    Module._root:SetMovable(not locked)
+    Module._root:SetMouseEnabled(true)
+end
+
+local function applyScale()
+    if not Module._root or not Module._layout then
+        return
+    end
+
+    Module._root:SetScale(Module._layout.scale or 1)
+end
+
+local function clampToScreen()
+    if not Module._root then
+        return
+    end
+
+    Module._root:SetClampedToScreen(true)
+end
+
+local function applyPosition()
+    if not Module._root or not Module._layout then
+        return
+    end
+
+    Module._root:ClearAnchors()
+    Module._root:SetAnchor(TOPLEFT, GuiRoot, TOPLEFT, Module._layout.x or DEFAULT_LAYOUT.x, Module._layout.y or DEFAULT_LAYOUT.y)
+    Module._root:SetDimensions(Module._layout.width or DEFAULT_LAYOUT.width, Module._layout.height or DEFAULT_LAYOUT.height)
+end
+
+local function savePosition()
+    if not Module._root or not Module._layout then
+        return
+    end
+
+    Module._layout.x = math.floor(Module._root:GetLeft())
+    Module._layout.y = math.floor(Module._root:GetTop())
+end
+
+local function saveDimensions()
+    if not Module._root or not Module._layout then
+        return
+    end
+
+    Module._layout.width = math.floor(Module._root:GetWidth())
+    Module._layout.height = math.floor(Module._root:GetHeight())
+end
+
+local function shouldHideTracker()
+    if not Module._settings then
         return false
     end
-    local settings = getTrackerSettings()
-    return settings and settings.hideInCombat == true
-end
 
-function Module.ShouldHideTracker()
-    if not isEnabled() then
+    if Module._settings.enabled == false then
         return true
     end
-    if Module.IsCombatHidden() then
+
+    if Module._settings.hideInCombat and Module._inCombat then
         return true
     end
+
     return false
 end
 
 local function updateRootHidden()
-    if M and M.TrackerView and M.TrackerView.GetRootControl then
-        local root = M.TrackerView.GetRootControl()
-        if root then
-            root:SetHidden(Module.ShouldHideTracker())
-        end
+    if Module._root then
+        Module._root:SetHidden(shouldHideTracker())
     end
 end
 
-local function notifyQuestSection()
-    publishSettingsChanged("quest.enabled")
+local function ensureRootControl()
+    if Module._root then
+        return Module._root
+    end
+
+    local existing = _G and _G.Nvk3UT_QuestTrackerRoot
+    local control
+
+    if existing then
+        control = existing
+    else
+        control = WM:CreateTopLevelWindow("Nvk3UT_QuestTrackerRoot")
+        debugLog("Created quest tracker root control")
+    end
+
+    control:SetMouseEnabled(true)
+    control:SetMovable(true)
+    control:SetResizeHandleSize(8)
+    control:SetClampedToScreen(true)
+    control:SetDrawTier(DT_HIGH)
+    control:SetHidden(true)
+
+    control:SetHandler("OnMoveStop", function()
+        savePosition()
+    end)
+
+    control:SetHandler("OnResizeStop", function()
+        saveDimensions()
+    end)
+
+    Module._root = control
+
+    return control
 end
 
-local function notifyAchSection()
-    publishSettingsChanged("ach.enabled")
-end
+local function onSnapshot(snapshot)
+    Module._lastSnapshot = snapshot
 
-function Module.SetEnabled(value)
-    local sv = getTrackerSV()
-    if not sv then
-        return
+    if Module._view then
+        Module._view:Refresh(snapshot, {
+            collapse = Module._collapse,
+            autoGrowV = Module._settings.autoGrowV,
+            autoGrowH = Module._settings.autoGrowH,
+            autoExpand = Module._settings.autoExpand,
+            tooltips = Module._settings.tooltips,
+        })
     end
-    local flag = value == true
-    if sv.enabled == flag then
-        return
-    end
-    sv.enabled = flag
-    publishSettingsChanged("tracker.enabled")
+
     updateRootHidden()
+
+    saveDimensions()
 end
 
-function Module.RegisterLamPanel(panelControl)
-    Module.lamPanelControl = panelControl
+local function subscribeToModel()
+    if Module._modelCallback then
+        return
+    end
+
+    Module._modelCallback = function(snapshot)
+        onSnapshot(snapshot)
+    end
+
+    if M.QuestModel and M.QuestModel.Subscribe then
+        M.QuestModel.Subscribe(Module._modelCallback)
+    end
 end
 
-function Module.GetSavedVars()
-    return getTrackerSV()
+local function unsubscribeFromModel()
+    if not Module._modelCallback then
+        return
+    end
+
+    if M.QuestModel and M.QuestModel.Unsubscribe then
+        M.QuestModel.Unsubscribe(Module._modelCallback)
+    end
+
+    Module._modelCallback = nil
 end
 
-function Module.SetShowQuests(value)
-    local settings = getQuestSettings()
-    local flag = value == true
-    if settings.enabled == flag then
-        return
-    end
-    settings.enabled = flag
-    local sv = getTrackerSV()
-    if sv then
-        sv.showQuests = flag
-    end
-    notifyQuestSection()
-    markViewDirty()
-end
-
-function Module.SetShowAchievements(value)
-    local settings = getAchSettings()
-    local flag = value == true
-    if settings.enabled == flag then
-        return
-    end
-    settings.enabled = flag
-    local sv = getTrackerSV()
-    if sv then
-        sv.showAchievements = flag
-    end
-    notifyAchSection()
-    markViewDirty()
-end
-
-local function setTrackerBehavior(key, value)
-    local sv = getTrackerSV()
-    if not sv then
-        return
-    end
-    sv.behavior = sv.behavior or {}
-    if sv.behavior[key] == value then
-        return
-    end
-    sv.behavior[key] = value
-end
-
-local function setTrackerSetting(key, value)
-    local settings = getTrackerSettings()
-    if not settings then
-        return
-    end
-    if settings[key] == value then
-        return
-    end
-    settings[key] = value
-    publishSettingsChanged("tracker." .. key)
-end
-
-function Module.SetBehaviorOption(key, value)
-    local sv = getTrackerSV()
-    if not sv then
-        return
+local function ensureView()
+    if Module._view then
+        return Module._view
     end
 
-    if key == "autoExpandNewQuests" then
-        local questSettings = getQuestSettings()
-        local flag = value == true
-        if questSettings.autoExpandNew ~= flag then
-            questSettings.autoExpandNew = flag
-            publishSettingsChanged("quest.autoExpandNew")
-        end
-        sv.behavior[key] = flag
-        return
-    end
-
-    if key == "alwaysExpandAchievements" then
-        local achSettings = getAchSettings()
-        local flag = value == true
-        if achSettings.alwaysExpand ~= flag then
-            achSettings.alwaysExpand = flag
-            publishSettingsChanged("ach.alwaysExpand")
-        end
-        sv.behavior[key] = flag
-        return
-    end
-
-    if key == "tooltips" then
-        local questSettings = getQuestSettings()
-        local achSettings = getAchSettings()
-        local enabled = value ~= false
-        if questSettings.tooltips ~= enabled then
-            questSettings.tooltips = enabled
-            publishSettingsChanged("quest.tooltips")
-        end
-        if achSettings.tooltips ~= enabled then
-            achSettings.tooltips = enabled
-            publishSettingsChanged("ach.tooltips")
-        end
-        sv.behavior[key] = enabled
-        return
-    end
-
-    if key == "hideDefault" then
-        setTrackerSetting("hideDefault", value == true)
-        sv.behavior[key] = value == true
-        updateDefaultTrackerVisibility()
-        return
-    end
-
-    if key == "hideInCombat" then
-        setTrackerSetting("hideInCombat", value == true)
-        sv.behavior[key] = value == true
-        updateRootHidden()
-        return
-    end
-
-    if key == "locked" then
-        setTrackerSetting("locked", value == true)
-        sv.behavior[key] = value == true
-        applyLockState()
-        return
-    end
-
-    if key == "autoGrowV" or key == "autoGrowH" then
-        setTrackerBehavior(key, value == true)
-        publishSettingsChanged("tracker." .. key)
-        applyViewSettings()
-        return
-    end
-
-    setTrackerBehavior(key, value)
-    publishSettingsChanged("tracker.behavior." .. key)
-    applyViewSettings()
-end
-
-function Module.SetThrottle(value)
-    local numeric = tonumber(value)
-    if not numeric then
-        return
-    end
-    local sv = getTrackerSV()
-    if not sv then
-        return
-    end
-    if sv.throttleMs == numeric then
-        return
-    end
-    sv.throttleMs = numeric
-    publishSettingsChanged("tracker.throttle")
-end
-
-function Module.SetBackgroundOption(key, value)
-    local sv = getTrackerSV()
-    if not sv then
-        return
-    end
-    sv.background = sv.background or {}
-    if sv.background[key] == value then
-        return
-    end
-    sv.background[key] = value
-    publishSettingsChanged("tracker.background." .. tostring(key))
-    applyBackground()
-end
-
-local function ensureFontSection(section)
-    local sv = getTrackerSV()
-    if not sv then
+    if not M.QuestTrackerView or not M.QuestTrackerView.Init then
         return nil
     end
-    sv.fonts = sv.fonts or {}
-    sv.fonts[section] = sv.fonts[section] or {}
-    return sv.fonts[section]
-end
 
-function Module.SetFontOption(section, field, value)
-    if type(section) ~= "string" or type(field) ~= "string" then
-        return
-    end
-    local fontSection = ensureFontSection(section)
-    if not fontSection then
-        return
-    end
-    if fontSection[field] == value then
-        return
-    end
-    fontSection[field] = value
-    publishSettingsChanged("tracker.font." .. section .. "." .. field)
-    markViewDirty()
-end
+    Module._view = M.QuestTrackerView
+    Module._view:Init(ensureRootControl(), {
+        collapse = Module._collapse,
+        autoGrowV = Module._settings.autoGrowV,
+        autoGrowH = Module._settings.autoGrowH,
+        tooltips = Module._settings.tooltips,
+    })
 
-function Module.SetFontColor(section, r, g, b, a)
-    if type(section) ~= "string" then
-        return
-    end
-    local fontSection = ensureFontSection(section)
-    if not fontSection then
-        return
-    end
-    fontSection.color = fontSection.color or {}
-    fontSection.color.r = r
-    fontSection.color.g = g
-    fontSection.color.b = b
-    fontSection.color.a = a
-    publishSettingsChanged("tracker.fontColor." .. section)
-    markViewDirty()
-end
-
-function Module.SetScale(scale)
-    local numeric = tonumber(scale)
-    if not numeric then
-        return
-    end
-    local sv = getTrackerSV()
-    if not sv then
-        return
-    end
-    sv.pos = sv.pos or {}
-    if sv.pos.scale == numeric then
-        return
-    end
-    sv.pos.scale = numeric
-    applyScale()
-end
-
-function Module.ForceRefresh()
-    if M and M.TrackerView and M.TrackerView.ForceRefresh then
-        M.TrackerView.ForceRefresh()
-    else
-        markViewDirty()
-    end
-end
-
-function Module.MarkDirty()
-    markViewDirty()
-end
-
-function Module.NotifyViewReady()
-    updateDefaultTrackerVisibility()
-    updateRootHidden()
-    applyViewSettings()
-    markViewDirty()
+    return Module._view
 end
 
 local function onCombatState(_, inCombat)
-    Module.inCombat = inCombat == true
+    Module._inCombat = inCombat
     updateRootHidden()
 end
 
-function Module.Init()
-    getTrackerSV()
-    ensureSettings()
+local function registerEvents()
+    EM:RegisterForEvent(EVENT_NAMESPACE, EVENT_PLAYER_COMBAT_STATE, onCombatState)
+end
 
-    if EM and EM.RegisterForEvent then
-        EM:UnregisterForEvent("Nvk3UT_Tracker_Combat", EVENT_PLAYER_COMBAT_STATE)
-        EM:RegisterForEvent("Nvk3UT_Tracker_Combat", EVENT_PLAYER_COMBAT_STATE, onCombatState)
+local function unregisterEvents()
+    EM:UnregisterForEvent(EVENT_NAMESPACE, EVENT_PLAYER_COMBAT_STATE)
+end
+
+function Module.Init(opts)
+    if Module._initialized then
+        return
     end
 
-    if type(IsUnitInCombat) == "function" then
-        local ok, state = pcall(IsUnitInCombat, "player")
-        Module.inCombat = ok and state == true
+    ensureSavedVars()
+
+    opts = opts or {}
+    if opts.debug then
+        Module._sv.debug = true
+    end
+
+    ensureRootControl()
+    applyPosition()
+    clampToScreen()
+    applyScale()
+    applyLockState()
+
+    ensureView()
+
+    subscribeToModel()
+    registerEvents()
+
+    Module._initialized = true
+
+    applyDefaultTrackerVisibility()
+    updateRootHidden()
+
+    if opts.runSelfTest and Module.RunSelfTest then
+        Module.RunSelfTest()
+    end
+end
+
+function Module.Shutdown()
+    if not Module._initialized then
+        return
+    end
+
+    unregisterEvents()
+    unsubscribeFromModel()
+
+    if Module._view and Module._view.Dispose then
+        Module._view:Dispose()
+    end
+
+    Module._view = nil
+    Module._root = nil
+    Module._initialized = false
+
+    setDefaultTrackerHidden(false)
+end
+
+function Module.Refresh()
+    if not Module._initialized then
+        return
+    end
+
+    if Module._view and Module._lastSnapshot then
+        onSnapshot(Module._lastSnapshot)
+    elseif Module._view and M.QuestModel and M.QuestModel.GetSnapshot then
+        onSnapshot(M.QuestModel.GetSnapshot())
+    end
+end
+
+function Module.SetEnabled(enabled)
+    if not Module._settings then
+        return
+    end
+
+    Module._settings.enabled = enabled == true
+    updateRootHidden()
+end
+
+function Module.SetHideDefaultTracker(flag)
+    if not Module._settings then
+        return
+    end
+
+    Module._settings.hideDefault = flag == true
+    applyDefaultTrackerVisibility()
+end
+
+function Module.SetHideInCombat(flag)
+    if not Module._settings then
+        return
+    end
+
+    Module._settings.hideInCombat = flag == true
+    updateRootHidden()
+end
+
+function Module.SetLock(flag)
+    if not Module._settings then
+        return
+    end
+
+    Module._settings.lock = flag == true
+    applyLockState()
+end
+
+function Module.SetAutoGrowVertical(flag)
+    if not Module._settings then
+        return
+    end
+
+    Module._settings.autoGrowV = flag ~= false
+    if Module._view and Module._view.ApplyAutoGrow then
+        Module._view:ApplyAutoGrow(Module._settings.autoGrowV, Module._settings.autoGrowH)
+    end
+    Module.Refresh()
+end
+
+function Module.SetAutoGrowHorizontal(flag)
+    if not Module._settings then
+        return
+    end
+
+    Module._settings.autoGrowH = flag == true
+    if Module._view and Module._view.ApplyAutoGrow then
+        Module._view:ApplyAutoGrow(Module._settings.autoGrowV, Module._settings.autoGrowH)
+    end
+    Module.Refresh()
+end
+
+function Module.SetAutoExpand(flag)
+    if not Module._settings then
+        return
+    end
+
+    Module._settings.autoExpand = flag ~= false
+    Module.Refresh()
+end
+
+function Module.SetTooltips(flag)
+    if not Module._settings then
+        return
+    end
+
+    Module._settings.tooltips = flag ~= false
+    if Module._view and Module._view.SetTooltipsEnabled then
+        Module._view:SetTooltipsEnabled(Module._settings.tooltips)
+    end
+end
+
+function Module.SetScale(scale)
+    if not Module._layout then
+        return
+    end
+
+    Module._layout.scale = math.max(0.5, math.min(2.0, tonumber(scale) or 1))
+    applyScale()
+end
+
+function Module.GetCollapseTable()
+    return Module._collapse or {}
+end
+
+function Module.ToggleCollapseState(journalIndex)
+    if not Module._collapse then
+        return
+    end
+
+    local key = tostring(journalIndex)
+    Module._collapse[key] = not Module._collapse[key]
+end
+
+function Module.SetCollapseState(journalIndex, collapsed)
+    if not Module._collapse then
+        return
+    end
+
+    Module._collapse[tostring(journalIndex)] = collapsed == true
+end
+
+function Module.ShouldCollapse(journalIndex)
+    if not Module._collapse then
+        return false
+    end
+
+    return Module._collapse[tostring(journalIndex)] == true
+end
+
+function Module.ApplySnapshot(snapshot)
+    onSnapshot(snapshot)
+end
+
+function Module.RunSelfTest()
+    if not Module._sv or not Module._sv.debug then
+        return
+    end
+
+    local snapshot = M.QuestModel and M.QuestModel.GetSnapshot and M.QuestModel.GetSnapshot()
+    if snapshot then
+        debugLog(string.format("SelfTest: quests=%d", #snapshot.quests))
     else
-        Module.inCombat = false
+        debugLog("SelfTest: snapshot unavailable")
     end
-
-    updateDefaultTrackerVisibility()
-    updateRootHidden()
-    Module.initialized = true
-    debugLog("Init() complete")
 end
 
-return
+function Module.RegisterLamPanel(panelControl)
+    Module._lamPanel = panelControl
+end
+

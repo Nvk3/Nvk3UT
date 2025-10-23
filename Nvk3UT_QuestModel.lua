@@ -1,521 +1,433 @@
 Nvk3UT = Nvk3UT or {}
+
 local M = Nvk3UT
 
 M.QuestModel = M.QuestModel or {}
 local Module = M.QuestModel
 
 local EM = EVENT_MANAGER
-local QUEST_MANAGER = QUEST_JOURNAL_MANAGER
 
-local REFRESH_HANDLE = "Nvk3UT_QuestModelRefresh"
-local DEFAULT_REFRESH_DELAY_MS = 150
+local EVENT_NAMESPACE = "Nvk3UT_QuestModel"
+local REFRESH_HANDLE = EVENT_NAMESPACE .. "_Refresh"
 
-Module.Quests = Module.Quests or { order = {}, byId = {}, categories = {} }
+local DEFAULT_DEBOUNCE_MS = 120
+local MAX_QUESTS = 25
+
+local callbacks = {}
+
+Module._snapshot = Module._snapshot or { meta = { total = 0, lastUpdated = 0 }, quests = {} }
+Module._signature = Module._signature or ""
+Module._debounceMs = Module._debounceMs or DEFAULT_DEBOUNCE_MS
+Module._debug = false
+Module._initialized = Module._initialized or false
+Module._refreshQueued = false
 
 local function debugLog(message)
-    local utils = M and M.Utils
-    if utils and utils.d and M and M.sv and M.sv.debug then
-        utils.d("[QuestModel]", message)
-    elseif d then
-        d(string.format("[Nvk3UT] QuestModel: %s", tostring(message)))
-    end
-end
-
-local function getTrackerSV()
-    local sv = M and M.sv and M.sv.tracker
-    if not sv then
-        return nil
+    if not Module._debug then
+        return
     end
 
-    sv.collapseState = sv.collapseState or {}
-    sv.collapseState.quests = sv.collapseState.quests or {}
-    sv.collapseState.zones = sv.collapseState.zones or {}
-    sv.collapseState.achieves = sv.collapseState.achieves or {}
-
-    return sv
-end
-
-local function safeCall(fn, ...)
-    if type(fn) ~= "function" then
-        return nil
+    if type(message) ~= "string" then
+        message = tostring(message)
     end
-    local ok, result1, result2, result3, result4, result5, result6, result7 = pcall(fn, ...)
-    if not ok then
-        return nil
+
+    if d then
+        d(string.format("[Nvk3UT] QuestModel: %s", message))
     end
-    return result1, result2, result3, result4, result5, result6, result7
 end
 
 local function sanitizeText(text)
     if text == nil or text == "" then
         return ""
     end
-    local utils = M and M.Utils
-    if utils and utils.StripLeadingIconTag then
-        text = utils.StripLeadingIconTag(text)
-    end
+
     if zo_strformat then
-        return zo_strformat("<<1>>", text)
+        local ok, formatted = pcall(zo_strformat, "<<1>>", text)
+        if ok and formatted then
+            return formatted
+        end
     end
+
     return text
 end
 
-local function formatCategoryDisplayName(rawName)
-    local sanitized = sanitizeText(rawName)
-    if sanitized == "" then
-        local fallback = GetString and GetString(SI_QUEST_JOURNAL_GENERAL_CATEGORY)
-        return fallback ~= nil and fallback ~= "" and fallback or "General"
-    end
-    if zo_strformat then
-        if SI_QUEST_JOURNAL_CATEGORY_NAME then
-            local okFmt, formatted = pcall(zo_strformat, SI_QUEST_JOURNAL_CATEGORY_NAME, sanitized)
-            if okFmt and formatted and formatted ~= "" then
-                return formatted
-            end
-        end
-        local okCaps, capitalized = pcall(zo_strformat, "<<C:1>>", sanitized)
-        if okCaps and capitalized and capitalized ~= "" then
-            return capitalized
-        end
-    end
-    return sanitized
-end
-
-local function getQuestDisplayIcon(displayType)
-    if QUEST_JOURNAL_KEYBOARD and QUEST_JOURNAL_KEYBOARD.GetIconTexture then
-        local ok, texture = pcall(QUEST_JOURNAL_KEYBOARD.GetIconTexture, QUEST_JOURNAL_KEYBOARD, displayType)
-        if ok and texture and texture ~= "" then
-            return texture
-        end
-    end
-    return "EsoUI/Art/Journal/journal_tabIcon_quests_up.dds"
-end
-
-local function formatQuestLabel(name, level)
-    local questName = sanitizeText(name)
-    if level and level > 0 then
-        return string.format("[%d] %s", level, questName)
-    end
-    return questName
-end
-
-local function questStepKey(questIndex, questId)
-    if type(GetJournalQuestNumSteps) ~= "function" then
-        return tostring(questId or questIndex or "")
-    end
-    local parts = {}
-    local steps = safeCall(GetJournalQuestNumSteps, questIndex) or 0
-    for stepIndex = 1, steps do
-        local okStep,
-            stepText,
-            visibility,
-            stepType,
-            trackerComplete,
-            _,
-            _,
-            stepOverride = pcall(GetJournalQuestStepInfo, questIndex, stepIndex)
-        if okStep and not trackerComplete then
-            local summary = stepOverride ~= "" and stepOverride or stepText or ""
-            summary = sanitizeText(summary)
-            if summary ~= "" then
-                parts[#parts + 1] = string.format("%d:%s", stepIndex, summary)
-            end
-        end
-    end
-    if #parts == 0 then
-        parts[#parts + 1] = "complete"
-    end
-    return string.format("%d:%s", questId or 0, table.concat(parts, "|"))
-end
-
-local function gatherTrackedQuestSet()
-    if type(GetTrackedQuestIndices) ~= "function" then
+local function safeCall(fn, ...)
+    if type(fn) ~= "function" then
         return nil
     end
-    local callResults = { pcall(GetTrackedQuestIndices) }
-    local ok = table.remove(callResults, 1)
+
+    local ok, value1, value2, value3, value4, value5, value6, value7 = pcall(fn, ...)
     if not ok then
         return nil
     end
-    local count = #callResults
-    if count == 0 then
-        return nil
-    end
-    local set = {}
-    for index = 1, count do
-        local questIndex = callResults[index]
-        if type(questIndex) == "number" and questIndex > 0 then
-            set[questIndex] = true
-        end
-    end
-    if next(set) then
-        return set
-    end
-    return nil
+
+    return value1, value2, value3, value4, value5, value6, value7
 end
 
-local function isQuestTracked(questIndex, trackedLookup)
-    if trackedLookup and trackedLookup[questIndex] then
+local function isQuestTracked(journalIndex)
+    local tracked = safeCall(IsJournalQuestTracked, journalIndex)
+    if tracked ~= nil then
+        return tracked == true
+    end
+
+    local altTracked = safeCall(GetIsJournalQuestTracked, journalIndex)
+    if altTracked ~= nil then
+        return altTracked == true
+    end
+
+    local trackerFlag = safeCall(GetJournalQuestIsTracked, journalIndex)
+    if trackerFlag ~= nil then
+        return trackerFlag == true
+    end
+
+    return false
+end
+
+local function isQuestAssisted(journalIndex)
+    local assisted = safeCall(GetTrackedIsAssisted, journalIndex)
+    if assisted ~= nil then
+        return assisted == true
+    end
+
+    local focusedIndex = safeCall(GetTrackedQuestIndex)
+    if focusedIndex and focusedIndex == journalIndex then
         return true
     end
-    local trackers = {
-        GetJournalQuestIsTracked,
-        GetIsQuestTracked,
-        GetIsJournalQuestTracked,
-    }
-    for _, fn in ipairs(trackers) do
-        if type(fn) == "function" then
-            local ok, tracked = pcall(fn, questIndex)
-            if ok and tracked ~= nil then
-                return tracked
-            end
-        end
-    end
-    if type(IsJournalQuestStepTracked) == "function" and type(GetJournalQuestNumSteps) == "function" then
-        local steps = safeCall(GetJournalQuestNumSteps, questIndex) or 0
-        for stepIndex = 1, steps do
-            local okStep, trackedStep = pcall(IsJournalQuestStepTracked, questIndex, stepIndex)
-            if okStep and trackedStep then
-                return true
-            end
-        end
-        return false
-    end
-    if trackedLookup then
-        return false
-    end
-    return true
+
+    return false
 end
 
-local function buildQuestSteps(questIndex)
-    local stepEntries = {}
-    local summaries = {}
-    local seenSummaries = {}
-    local objectives = {}
-    local steps = safeCall(GetJournalQuestNumSteps, questIndex) or 0
-    for stepIndex = 1, steps do
-        local okStep,
+local function buildConditions(journalIndex, stepIndex)
+    local conditions = {}
+    local conditionCount = safeCall(GetJournalQuestNumConditions, journalIndex, stepIndex) or 0
+
+    for conditionIndex = 1, conditionCount do
+        local ok,
+            text,
+            cur,
+            max,
+            isFailCondition,
+            isComplete,
+            isVisible = pcall(GetJournalQuestConditionInfo, journalIndex, stepIndex, conditionIndex)
+
+        if ok then
+            local sanitized = sanitizeText(text)
+
+            if sanitized ~= "" and not isFailCondition and (isVisible ~= false) and not isComplete then
+                conditions[#conditions + 1] = {
+                    conditionIndex = conditionIndex,
+                    text = sanitized,
+                    cur = tonumber(cur),
+                    max = tonumber(max),
+                    isComplete = isComplete == true,
+                }
+            end
+        end
+    end
+
+    return conditions
+end
+
+local function buildSteps(journalIndex)
+    local steps = {}
+    local numSteps = safeCall(GetJournalQuestNumSteps, journalIndex) or 0
+
+    for stepIndex = 1, numSteps do
+        local ok,
             stepText,
             visibility,
             stepType,
             trackerComplete,
-            _,
-            _,
-            stepOverride = pcall(GetJournalQuestStepInfo, questIndex, stepIndex)
-        if okStep then
-            local hidden = (QUEST_STEP_VISIBILITY_HIDDEN and visibility == QUEST_STEP_VISIBILITY_HIDDEN)
-            if not hidden then
-                local summary = stepOverride ~= "" and stepOverride or stepText or ""
-                summary = sanitizeText(summary)
-                if summary ~= "" and not seenSummaries[summary] then
-                    summaries[#summaries + 1] = summary
-                    seenSummaries[summary] = true
-                end
-            end
+            stepOverrideText,
+            stepDescription,
+            stepComplete = pcall(GetJournalQuestStepInfo, journalIndex, stepIndex)
 
-            local conditionEntries = {}
-            local numConditions = safeCall(GetJournalQuestNumConditions, questIndex, stepIndex) or 0
-            for conditionIndex = 1, numConditions do
-                local okCondition,
-                    conditionText,
-                    cur,
-                    max,
-                    isFail,
-                    isComplete = pcall(GetJournalQuestConditionInfo, questIndex, stepIndex, conditionIndex)
-                if okCondition then
-                    local visible = true
-                    if type(IsJournalQuestConditionVisible) == "function" then
-                        local okVisible, isVisible = pcall(IsJournalQuestConditionVisible, questIndex, stepIndex, conditionIndex)
-                        if okVisible then
-                            visible = isVisible
-                        end
-                    end
-                    if visible and conditionText ~= "" then
-                        local normalized = sanitizeText(conditionText)
-                        local conditionEntry = {
-                            text = normalized,
-                            current = cur,
-                            max = max,
-                            done = isComplete,
-                            isFail = isFail,
-                            stepIndex = stepIndex,
-                            conditionIndex = conditionIndex,
-                        }
-                        conditionEntries[#conditionEntries + 1] = conditionEntry
-                        if not isComplete and not isFail then
-                            objectives[#objectives + 1] = {
-                                text = normalized,
-                                current = cur,
-                                max = max,
-                                stepIndex = stepIndex,
-                                conditionIndex = conditionIndex,
-                            }
-                        end
-                    end
-                end
-            end
+        if ok then
+            local text = stepOverrideText ~= nil and stepOverrideText ~= "" and stepOverrideText or stepText
+            local sanitized = sanitizeText(text)
 
-            stepEntries[#stepEntries + 1] = {
-                index = stepIndex,
-                text = sanitizeText(stepOverride ~= "" and stepOverride or stepText or ""),
-                done = trackerComplete,
+            local conditions = buildConditions(journalIndex, stepIndex)
+
+            local stepEntry = {
+                stepIndex = stepIndex,
+                stepText = sanitized,
+                isOptional = visibility == QUEST_STEP_VISIBILITY_OPTIONAL,
+                isComplete = trackerComplete == true or stepComplete == true,
                 stepType = stepType,
-                trackerComplete = trackerComplete,
-                conditions = conditionEntries,
+                conditions = conditions,
             }
+
+            steps[#steps + 1] = stepEntry
         end
     end
-    return stepEntries, summaries, objectives
+
+    return steps
 end
 
-local function buildCategoryLookup(allCategories)
-    local lookup = {}
-    for index, categoryData in ipairs(allCategories) do
-        local name = categoryData.name or ""
-        local sanitizedName = formatCategoryDisplayName(name)
-        local key = string.format("cat:%d:%d", categoryData.type or 0, index)
-        lookup[name] = {
-            key = key,
-            name = sanitizedName,
-            type = categoryData.type or 0,
-            orderIndex = index,
-        }
+local function questSortKey(entry)
+    if entry.isAssisted then
+        return 0
     end
-    return lookup
+    if entry.isTracked then
+        return 1
+    end
+    return 2
 end
 
-local function ensureCategory(lookup, orderCounter, categoryName, categoryType)
-    local key = categoryName ~= "" and categoryName or "__general__"
-    local data = lookup[key]
-    if data then
-        return data, orderCounter
+local function questSortComparator(a, b)
+    local priorityA = questSortKey(a)
+    local priorityB = questSortKey(b)
+
+    if priorityA ~= priorityB then
+        return priorityA < priorityB
     end
-    orderCounter = orderCounter + 1
-    data = {
-        key = string.format("cat:%d:%d", categoryType or 999, orderCounter),
-        name = formatCategoryDisplayName(categoryName ~= "" and categoryName or ""),
-        type = categoryType or 999,
-        orderIndex = orderCounter,
+
+    if a.zoneName ~= b.zoneName then
+        return a.zoneName < b.zoneName
+    end
+
+    if a.name ~= b.name then
+        return a.name < b.name
+    end
+
+    return a.journalIndex < b.journalIndex
+end
+
+local function computeQuestHash(entry)
+    local parts = {
+        tostring(entry.journalIndex or ""),
+        entry.name or "",
+        entry.zoneName or "",
+        tostring(entry.isTracked),
+        tostring(entry.isAssisted),
+        tostring(entry.isComplete),
     }
-    lookup[key] = data
-    return data, orderCounter
+
+    for stepIdx = 1, #entry.steps do
+        local step = entry.steps[stepIdx]
+        parts[#parts + 1] = tostring(step.stepIndex)
+        parts[#parts + 1] = tostring(step.stepText)
+        parts[#parts + 1] = tostring(step.isComplete)
+        for condIdx = 1, #(step.conditions) do
+            local cond = step.conditions[condIdx]
+            parts[#parts + 1] = tostring(cond.text)
+            parts[#parts + 1] = tostring(cond.cur or "")
+            parts[#parts + 1] = tostring(cond.max or "")
+        end
+    end
+
+    return table.concat(parts, "|")
 end
 
-function Module.Scan()
-    Module.Quests = Module.Quests or { order = {}, byId = {}, categories = {} }
-    Module.Quests.order = {}
-    Module.Quests.byId = {}
-    Module.Quests.categories = {}
+local function buildSnapshot()
+    local quests = {}
+    local hashes = {}
+    local total = 0
 
-    if not (QUEST_MANAGER and QUEST_MANAGER.GetQuestListData) then
-        debugLog("Quest journal manager unavailable")
-        return Module.Quests
-    end
+    local numQuests = safeCall(GetNumJournalQuests) or 0
 
-    local okData, allQuests, allCategories = pcall(QUEST_MANAGER.GetQuestListData, QUEST_MANAGER)
-    if not okData or type(allQuests) ~= "table" or type(allCategories) ~= "table" then
-        debugLog("Failed to retrieve quest list data")
-        return Module.Quests
-    end
+    for journalIndex = 1, numQuests do
+        local ok,
+            questName,
+            _,
+            _,
+            _,
+            _,
+            _,
+            questType = pcall(GetJournalQuestInfo, journalIndex)
 
-    local trackedLookup = gatherTrackedQuestSet()
-    local trackerSV = getTrackerSV()
-    local collapseLookup = trackerSV and trackerSV.collapseState and trackerSV.collapseState.quests or nil
-    local categoryLookup = buildCategoryLookup(allCategories)
-    local orderCounter = #allCategories
+        if ok and questName and questName ~= "" then
+            total = total + 1
 
-    local GENERAL = formatCategoryDisplayName("")
-
-    for _, questData in ipairs(allQuests) do
-        local questIndex = questData.questIndex
-        if questIndex then
-            local isTrackedFlag = isQuestTracked(questIndex, trackedLookup)
-            local questId = questData.questId or safeCall(GetJournalQuestId, questIndex) or 0
-            local rawName = questData.name or questData.questName or ""
-            local questName = sanitizeText(rawName)
-            if questName == "" then
-                questName = sanitizeText(select(1, safeCall(GetJournalQuestName, questIndex)) or "")
+            local zoneName = ""
+            local zoneOk, zone = pcall(GetJournalQuestZoneInfo, journalIndex)
+            if zoneOk and zone and zone ~= "" then
+                zoneName = sanitizeText(zone)
             end
 
-            local categoryName = questData.categoryName or GENERAL
-            local categoryType = questData.categoryType or 0
-            local categoryEntry, newCounter = ensureCategory(categoryLookup, orderCounter, categoryName, categoryType)
-            orderCounter = newCounter
-
-            local steps, summaries, objectives = buildQuestSteps(questIndex)
-            local stepText = summaries[1]
-            if not stepText or stepText == "" then
-                stepText = sanitizeText(
-                    questData.trackerOverrideText or questData.stepText or questData.conditionText or ""
-                )
-            end
-
-            local questKey = questStepKey(questIndex, questId)
-            local entry = {
-                id = questId,
-                questId = questId,
-                key = questKey,
-                journalIndex = questIndex,
-                title = questName,
-                name = questName,
-                displayName = formatQuestLabel(questName, questData.level),
-                zoneName = categoryEntry.name ~= "" and categoryEntry.name or GENERAL,
-                zoneKey = categoryEntry.key,
-                zoneType = categoryEntry.type,
-                zoneOrderIndex = categoryEntry.orderIndex,
-                zoneIcon = "EsoUI/Art/Journal/journal_tabIcon_locations_up.dds",
-                isComplete = questData.isComplete or false,
-                isTracked = isTrackedFlag == true,
-                isCollapsed = collapseLookup and collapseLookup[questKey] == true or false,
-                objectives = objectives,
-                steps = steps,
-                stepSummaries = summaries,
-                stepText = stepText,
-                icon = getQuestDisplayIcon(questData.displayType),
-                order = questData.sortOrder or questIndex,
-                level = questData.level,
-                displayType = questData.displayType,
-                updatedAt = GetFrameTimeMilliseconds and GetFrameTimeMilliseconds() or GetTimeStamp(),
-                priorityScore = questData.sortOrder or questIndex,
+            local questEntry = {
+                journalIndex = journalIndex,
+                questId = safeCall(GetJournalQuestId, journalIndex),
+                name = sanitizeText(questName),
+                zoneName = zoneName,
+                questType = questType,
+                isTracked = isQuestTracked(journalIndex),
+                isAssisted = isQuestAssisted(journalIndex),
+                isComplete = safeCall(IsJournalQuestComplete, journalIndex) == true,
             }
 
-            Module.Quests.byId[questKey] = entry
-            Module.Quests.order[#Module.Quests.order + 1] = questKey
+            questEntry.steps = buildSteps(journalIndex)
+
+            quests[#quests + 1] = questEntry
         end
     end
 
-    return Module.Quests
+    table.sort(quests, questSortComparator)
+
+    if #quests > MAX_QUESTS then
+        for index = #quests, MAX_QUESTS + 1, -1 do
+            table.remove(quests, index)
+        end
+    end
+
+    for index = 1, #quests do
+        hashes[#hashes + 1] = computeQuestHash(quests[index])
+    end
+
+    local signature = table.concat(hashes, "||")
+
+    return {
+        meta = {
+            total = total,
+            lastUpdated = GetFrameTimeMilliseconds and GetFrameTimeMilliseconds() or GetGameTimeMilliseconds(),
+            signature = signature,
+        },
+        quests = quests,
+    }
 end
 
-function Module.GetList()
-    if not Module.Quests or not Module.Quests.order then
-        Module.Scan()
+local function notifySubscribers(snapshot)
+    for index = 1, #callbacks do
+        local cb = callbacks[index]
+        if type(cb) == "function" then
+            local ok, err = pcall(cb, snapshot)
+            if not ok then
+                debugLog(string.format("callback error: %s", tostring(err)))
+            end
+        end
     end
-    return Module.Quests.order or {}, Module.Quests.byId or {}
-end
 
-function Module.ForceRefresh()
-    if EM and EM.UnregisterForUpdate then
-        EM:UnregisterForUpdate(REFRESH_HANDLE)
-    end
-    Module.refreshPending = false
-    Module.dirty = false
-    Module.Scan()
     if M.Publish then
-        M.Publish("quests:changed", Module.Quests)
+        M.Publish("quests:changed", snapshot)
     elseif M.Core and M.Core.Publish then
-        M.Core.Publish("quests:changed", Module.Quests)
+        M.Core.Publish("quests:changed", snapshot)
     end
 end
 
-function Module.ThrottledRefresh()
-    if Module.refreshPending then
+local function applySnapshot(snapshot)
+    Module._snapshot = snapshot
+    Module._signature = snapshot.meta.signature or ""
+
+    notifySubscribers(snapshot)
+end
+
+local function refreshSnapshot(force)
+    if not Module._initialized then
         return
     end
-    Module.refreshPending = true
-    local delay = DEFAULT_REFRESH_DELAY_MS
-    local trackerSV = M and M.sv and M.sv.tracker
-    if trackerSV and trackerSV.throttleMs then
-        delay = tonumber(trackerSV.throttleMs) or delay
-    end
 
-    local function callback()
-        Module.refreshPending = false
-        if Module.dirty then
-            Module.ForceRefresh()
-        end
-    end
+    Module._refreshQueued = false
+    EM:UnregisterForUpdate(REFRESH_HANDLE)
 
-    if EM and EM.RegisterForUpdate then
-        EM:RegisterForUpdate(REFRESH_HANDLE, delay, function()
-            if EM.UnregisterForUpdate then
-                EM:UnregisterForUpdate(REFRESH_HANDLE)
-            end
-            callback()
-        end)
+    local snapshot = buildSnapshot()
+    if force or snapshot.meta.signature ~= Module._signature then
+        debugLog("snapshot updated")
+        applySnapshot(snapshot)
     else
-        zo_callLater(callback, delay)
+        debugLog("snapshot unchanged")
     end
 end
 
-local function handleQuestUpdate()
-    Module.dirty = true
-    Module.ThrottledRefresh()
-end
-
-function Module.Init()
-    debugLog("Init() invoked")
-    Module.dirty = true
-    if not EM then
-        Module.ForceRefresh()
+local function queueRefresh()
+    if Module._refreshQueued then
         return
     end
 
-    EM:UnregisterForEvent("Nvk3UT_QuestModel_Activated", EVENT_PLAYER_ACTIVATED)
-    EM:RegisterForEvent("Nvk3UT_QuestModel_Activated", EVENT_PLAYER_ACTIVATED, handleQuestUpdate)
-    EM:UnregisterForEvent("Nvk3UT_QuestModel_QuestAdded", EVENT_QUEST_ADDED)
-    EM:RegisterForEvent("Nvk3UT_QuestModel_QuestAdded", EVENT_QUEST_ADDED, handleQuestUpdate)
-    EM:UnregisterForEvent("Nvk3UT_QuestModel_QuestRemoved", EVENT_QUEST_REMOVED)
-    EM:RegisterForEvent("Nvk3UT_QuestModel_QuestRemoved", EVENT_QUEST_REMOVED, handleQuestUpdate)
-    EM:UnregisterForEvent("Nvk3UT_QuestModel_QuestAdvanced", EVENT_QUEST_ADVANCED)
-    EM:RegisterForEvent("Nvk3UT_QuestModel_QuestAdvanced", EVENT_QUEST_ADVANCED, handleQuestUpdate)
-    EM:UnregisterForEvent("Nvk3UT_QuestModel_ConditionChanged", EVENT_QUEST_CONDITION_COUNTER_CHANGED)
-    EM:RegisterForEvent(
-        "Nvk3UT_QuestModel_ConditionChanged",
-        EVENT_QUEST_CONDITION_COUNTER_CHANGED,
-        handleQuestUpdate
-    )
-    EM:UnregisterForEvent("Nvk3UT_QuestModel_PlayerCombat", EVENT_PLAYER_COMBAT_STATE)
-    EM:RegisterForEvent("Nvk3UT_QuestModel_PlayerCombat", EVENT_PLAYER_COMBAT_STATE, function()
-        handleQuestUpdate()
+    Module._refreshQueued = true
+
+    EM:RegisterForUpdate(REFRESH_HANDLE, Module._debounceMs, function()
+        refreshSnapshot(false)
     end)
-    EM:UnregisterForEvent("Nvk3UT_QuestModel_ObjectiveCompleted", EVENT_OBJECTIVE_COMPLETED)
-    EM:RegisterForEvent("Nvk3UT_QuestModel_ObjectiveCompleted", EVENT_OBJECTIVE_COMPLETED, handleQuestUpdate)
-
-    Module.ForceRefresh()
 end
 
-function Module.SetTracked(questKey, shouldTrack)
-    if not questKey then
+local function onQuestEvent()
+    queueRefresh()
+end
+
+local EVENT_LIST = {
+    EVENT_QUEST_ADDED,
+    EVENT_QUEST_REMOVED,
+    EVENT_QUEST_ADVANCED,
+    EVENT_QUEST_CONDITION_COUNTER_CHANGED,
+    EVENT_QUEST_LOG_UPDATED,
+    EVENT_TRACKING_UPDATE,
+}
+
+local function registerEvents()
+    for index = 1, #EVENT_LIST do
+        local eventId = EVENT_LIST[index]
+        EM:RegisterForEvent(EVENT_NAMESPACE, eventId, onQuestEvent)
+    end
+end
+
+local function unregisterEvents()
+    for index = 1, #EVENT_LIST do
+        local eventId = EVENT_LIST[index]
+        EM:UnregisterForEvent(EVENT_NAMESPACE, eventId)
+    end
+end
+
+function Module.Init(opts)
+    if Module._initialized then
         return
     end
 
-    local quests = Module.Quests or {}
-    local quest = quests.byId and quests.byId[questKey]
-    if not quest then
+    opts = opts or {}
+    Module._debounceMs = tonumber(opts.debounceMs) or DEFAULT_DEBOUNCE_MS
+    Module._debug = opts.debug == true
+
+    registerEvents()
+
+    Module._initialized = true
+
+    refreshSnapshot(true)
+end
+
+function Module.Shutdown()
+    if not Module._initialized then
         return
     end
 
-    if shouldTrack == nil then
-        shouldTrack = not (quest.isTracked ~= false)
-    end
+    unregisterEvents()
 
-    quest.isTracked = shouldTrack and true or false
+    EM:UnregisterForUpdate(REFRESH_HANDLE)
+    Module._refreshQueued = false
 
-    local journalIndex = quest.journalIndex
-    if journalIndex then
-        local applied = false
-        if QUEST_MANAGER and QUEST_MANAGER.SetQuestIsTracked then
-            local ok = pcall(QUEST_MANAGER.SetQuestIsTracked, QUEST_MANAGER, journalIndex, shouldTrack)
-            applied = applied or ok
-        end
-        if type(SetTrackedIsTracked) == "function" then
-            local ok = pcall(SetTrackedIsTracked, journalIndex, shouldTrack)
-            applied = applied or ok
-        end
-        if shouldTrack and type(SetTrackedQuestIndex) == "function" then
-            pcall(SetTrackedQuestIndex, journalIndex)
-        end
-        if not applied and QUEST_MANAGER and QUEST_MANAGER.SetQuestStepIsTracked and type(quest.steps) == "table" then
-            for _, step in ipairs(quest.steps) do
-                if step.index then
-                    pcall(QUEST_MANAGER.SetQuestStepIsTracked, QUEST_MANAGER, journalIndex, step.index, shouldTrack)
-                end
-            end
-        end
-    end
-
-    Module.ForceRefresh()
+    Module._initialized = false
+    Module._signature = ""
 end
 
-return
+function Module.GetSnapshot()
+    if not Module._initialized then
+        Module.Init()
+    end
+
+    return Module._snapshot
+end
+
+function Module.Subscribe(callback)
+    if type(callback) ~= "function" then
+        return
+    end
+
+    callbacks[#callbacks + 1] = callback
+
+    callback(Module.GetSnapshot())
+end
+
+function Module.Unsubscribe(callback)
+    if type(callback) ~= "function" then
+        return
+    end
+
+    for index = #callbacks, 1, -1 do
+        if callbacks[index] == callback then
+            table.remove(callbacks, index)
+        end
+    end
+end
+
+function Module.DebugRefresh()
+    refreshSnapshot(true)
+end
+
