@@ -960,6 +960,9 @@ local function registerPanel(displayTitle)
                     if Nvk3UT and Nvk3UT.QuestTracker and Nvk3UT.QuestTracker.SetActive then
                         Nvk3UT.QuestTracker.SetActive(value)
                     end
+                    if Nvk3UT and Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then
+                        Nvk3UT.UI.UpdateStatus()
+                    end
                 end,
                 default = true,
             }

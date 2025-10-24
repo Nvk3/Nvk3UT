@@ -155,8 +155,59 @@ local function __nvk3_CountTodo()
   return 0
 end
 
+local QUEST_LOG_LIMIT = 25
+
+local function __nvk3_IsQuestTrackerEnabled()
+  local trackerModule = Nvk3UT and Nvk3UT.QuestTracker
+  if trackerModule and trackerModule.IsActive then
+    return trackerModule.IsActive()
+  end
+
+  local sv = Nvk3UT and Nvk3UT.sv
+  local tracker = sv and sv.QuestTracker
+  if tracker and tracker.active == false then
+    return false
+  end
+  return true
+end
+
+local function __nvk3_GetQuestCountForTracker()
+  local QuestModel = Nvk3UT and Nvk3UT.QuestModel
+  if QuestModel and QuestModel.GetSnapshot then
+    local snapshot = QuestModel.GetSnapshot()
+    local quests = snapshot and snapshot.quests
+    if type(quests) == "table" then
+      local count = #quests
+      count = math.min(math.max(count, 0), QUEST_LOG_LIMIT)
+      return count
+    end
+  end
+
+  local apiCount = 0
+  if GetNumJournalQuests then
+    local total = GetNumJournalQuests() or 0
+    apiCount = math.min(math.max(total, 0), QUEST_LOG_LIMIT)
+  end
+
+  return apiCount
+end
+
+local function __nvk3_BuildQuestStatusPart()
+  if not __nvk3_IsQuestTrackerEnabled() then
+    return nil
+  end
+
+  local count = __nvk3_GetQuestCountForTracker()
+  return ("Quests %d/%d"):format(count, QUEST_LOG_LIMIT)
+end
+
 local function __nvk3_BuildStatusParts()
   local parts = {}
+
+  local questPart = __nvk3_BuildQuestStatusPart()
+  if questPart then
+    parts[#parts + 1] = questPart
+  end
 
   -- Abgeschlossen zuerst
   if __nvk3_IsOn("completed") then
