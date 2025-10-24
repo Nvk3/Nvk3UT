@@ -219,23 +219,17 @@ local function __nvk3_BuildStatusParts()
 
   if __nvk3_IsOn("favorites") then
     local n = __nvk3_CountFavorites()
-    if n > 0 then
-      parts[#parts + 1] = ("Favoriten %d"):format(n)
-    end
+    parts[#parts + 1] = ("Favoriten %d"):format(n)
   end
 
   if __nvk3_IsOn("recent") then
     local n = __nvk3_CountRecent()
-    if n > 0 then
-      parts[#parts + 1] = ("Kürzlich %d"):format(n)
-    end
+    parts[#parts + 1] = ("Kürzlich %d"):format(n)
   end
 
   if __nvk3_IsOn("todo") then
     local n = __nvk3_CountTodo()
-    if n > 0 then
-      parts[#parts + 1] = ("To-Do-Liste %d"):format(n)
-    end
+    parts[#parts + 1] = ("To-Do-Liste %d"):format(n)
   end
 
   return parts
