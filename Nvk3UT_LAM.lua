@@ -371,14 +371,14 @@ local function acquireLam()
     return nil
 end
 
-function L.Build(displayTitle)
+local function registerPanel(displayTitle)
     local LAM = acquireLam()
     if not LAM then
-        return
+        return false
     end
 
     if L._registered then
-        return
+        return true
     end
 
     local panelName = "Nvk3UT_Panel"
@@ -1072,6 +1072,72 @@ function L.Build(displayTitle)
     LAM:RegisterOptionControls(panelName, options)
 
     L._registered = true
+    return true
+end
+
+local lamWaitEventName = "Nvk3UT_LAM_WaitForLibrary"
+local lamWaitRegistered = false
+local pendingPanelTitle = nil
+
+local function waitForLam()
+    if lamWaitRegistered then
+        return
+    end
+
+    if not EVENT_MANAGER then
+        return
+    end
+
+    lamWaitRegistered = true
+
+    EVENT_MANAGER:RegisterForEvent(lamWaitEventName, EVENT_ADD_ON_LOADED, function(_, addonName)
+        if addonName ~= "LibAddonMenu-2.0" then
+            return
+        end
+
+        if registerPanel(pendingPanelTitle) then
+            EVENT_MANAGER:UnregisterForEvent(lamWaitEventName, EVENT_ADD_ON_LOADED)
+            lamWaitRegistered = false
+        end
+    end)
+
+    if zo_callLater then
+        local attempts = 0
+        local function retry()
+            if L._registered then
+                return
+            end
+
+            attempts = attempts + 1
+            if registerPanel(pendingPanelTitle) then
+                if EVENT_MANAGER then
+                    EVENT_MANAGER:UnregisterForEvent(lamWaitEventName, EVENT_ADD_ON_LOADED)
+                end
+                lamWaitRegistered = false
+                return
+            end
+
+            if attempts < 10 then
+                zo_callLater(retry, 500)
+            end
+        end
+
+        zo_callLater(retry, 500)
+    end
+end
+
+function L.Build(displayTitle)
+    if L._registered then
+        return
+    end
+
+    pendingPanelTitle = displayTitle or pendingPanelTitle or "Nvk3UT"
+
+    if registerPanel(pendingPanelTitle) then
+        return
+    end
+
+    waitForLam()
 end
 
 return L
