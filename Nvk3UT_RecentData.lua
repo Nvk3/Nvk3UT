@@ -55,15 +55,36 @@ end
 
 local function now() return (U and U.now and U.now()) or GetTimeStamp() end
 
+local function isDebugEnabled()
+    return Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug and U and U.d
+end
+
 local function IsOpen(id)
     if not id then return false end
-    if U and U.IsMultiStageAchievement and U.IsMultiStageAchievement(id) then
-        if U.IsAchievementFullyComplete then
-            return not U.IsAchievementFullyComplete(id)
+
+    if U and U.IsMultiStageAchievement then
+        local okMulti, isMulti = pcall(U.IsMultiStageAchievement, id)
+        if okMulti and isMulti and U.IsAchievementFullyComplete then
+            local okComplete, fullyComplete = pcall(U.IsAchievementFullyComplete, id)
+            if okComplete then
+                return fullyComplete == false
+            end
         end
     end
-    local _,_,_,_,completed = GetAchievementInfo(id)
-    return completed == false
+
+    if type(GetAchievementInfo) ~= "function" then
+        return false
+    end
+
+    local infoOk, _, _, _, completedOrErr = pcall(GetAchievementInfo, id)
+    if not infoOk then
+        if isDebugEnabled() then
+            U.d("[Nvk3UT][Recent][IsOpen] failed", "id:", tostring(id), "error:", tostring(completedOrErr))
+        end
+        return false
+    end
+
+    return completedOrErr == false
 end
 
 function M.Touch(id, ts)
@@ -227,7 +248,15 @@ function M.BuildInitial()
 
     local function collect(id)
         if not id then return end
-        if not hasPartialProgress(id) then return end
+
+        local okPartial, hasProgress = pcall(hasPartialProgress, id)
+        if not okPartial then
+            if isDebugEnabled() then
+                U.d("[Nvk3UT][Recent][Seed] partial check failed", "id:", tostring(id), "error:", tostring(hasProgress))
+            end
+            return
+        end
+        if not hasProgress then return end
         local storeId = id
         if U and U.NormalizeAchievementId then
             storeId = U.NormalizeAchievementId(id) or id
