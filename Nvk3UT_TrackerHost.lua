@@ -84,7 +84,6 @@ local state = {
     },
     previousDefaultQuestTrackerHidden = nil,
     initializing = false,
-    revealScheduled = false,
 }
 
 local ensureSceneFragments
@@ -1204,53 +1203,6 @@ local function initTrackers(debugEnabled)
     end
 end
 
-local function revealWindowWhenReady()
-    if not state.root then
-        return
-    end
-
-    ensureSceneFragments()
-
-    state.initializing = false
-    applyWindowVisibility()
-
-    if not (state.window and state.window.visible == false) then
-        state.root:SetHidden(false)
-    end
-
-    debugLog("Host window revealed")
-end
-
-local function scheduleInitialReveal()
-    if state.revealScheduled then
-        return
-    end
-
-    state.revealScheduled = true
-
-    local function execute()
-        state.revealScheduled = false
-
-        if TrackerHost.Refresh then
-            pcall(TrackerHost.Refresh)
-        end
-
-        if TrackerHost.RefreshScroll then
-            pcall(TrackerHost.RefreshScroll)
-        else
-            refreshScroll()
-        end
-
-        revealWindowWhenReady()
-    end
-
-    if zo_callLater then
-        zo_callLater(execute, 0)
-    else
-        execute()
-    end
-end
-
 function TrackerHost.Init()
     if state.initialized then
         return
@@ -1261,7 +1213,6 @@ function TrackerHost.Init()
     end
 
     state.initializing = true
-    state.revealScheduled = false
 
     state.window = ensureWindowSettings()
     state.appearance = ensureAppearanceSettings()
@@ -1286,11 +1237,16 @@ function TrackerHost.Init()
         Nvk3UT.LAM.Build(addonName)
     end
 
+    if TrackerHost.Refresh then
+        pcall(TrackerHost.Refresh)
+    end
+
     state.initialized = true
+    state.initializing = false
 
-    TrackerHost.ApplyAppearance()
+    notifyContentChanged()
 
-    scheduleInitialReveal()
+    debugLog("Host window initialized")
 end
 
 function TrackerHost.ApplySettings()
@@ -1461,7 +1417,6 @@ function TrackerHost.Shutdown()
     state.initialized = false
     state.previousDefaultQuestTrackerHidden = nil
     state.initializing = false
-    state.revealScheduled = false
 end
 
 Nvk3UT.TrackerHost = TrackerHost
