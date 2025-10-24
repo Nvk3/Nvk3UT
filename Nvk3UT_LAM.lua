@@ -58,6 +58,13 @@ local DEFAULT_LAYOUT = {
     maxHeight = 900,
 }
 
+local DEFAULT_WINDOW_BARS = {
+    headerHeightPx = 40,
+    footerHeightPx = 100,
+}
+
+local MAX_BAR_HEIGHT = 250
+
 local function clamp(value, minimum, maximum)
     if value == nil then
         return minimum
@@ -194,6 +201,29 @@ local function getLayoutSettings()
     layout.maxHeight = math.max(layout.minHeight, maxHeight)
 
     return layout
+end
+
+local function getWindowBarSettings()
+    local general = getGeneral()
+    general.WindowBars = general.WindowBars or {}
+
+    local bars = general.WindowBars
+
+    local headerHeight = tonumber(bars.headerHeightPx)
+    if headerHeight == nil then
+        headerHeight = DEFAULT_WINDOW_BARS.headerHeightPx
+    end
+    headerHeight = clamp(math.floor(headerHeight + 0.5), 0, MAX_BAR_HEIGHT)
+    bars.headerHeightPx = headerHeight
+
+    local footerHeight = tonumber(bars.footerHeightPx)
+    if footerHeight == nil then
+        footerHeight = DEFAULT_WINDOW_BARS.footerHeightPx
+    end
+    footerHeight = clamp(math.floor(footerHeight + 0.5), 0, MAX_BAR_HEIGHT)
+    bars.footerHeightPx = footerHeight
+
+    return bars
 end
 
 local function getQuestSettings()
@@ -542,6 +572,58 @@ local function registerPanel(displayTitle)
             }
 
             controls[#controls + 1] = {
+                type = "slider",
+                name = "Header-Höhe",
+                min = 0,
+                max = MAX_BAR_HEIGHT,
+                step = 1,
+                getFunc = function()
+                    local bars = getWindowBarSettings()
+                    return bars.headerHeightPx or DEFAULT_WINDOW_BARS.headerHeightPx
+                end,
+                setFunc = function(value)
+                    local bars = getWindowBarSettings()
+                    local numeric = math.floor((tonumber(value) or bars.headerHeightPx or DEFAULT_WINDOW_BARS.headerHeightPx) + 0.5)
+                    bars.headerHeightPx = clamp(numeric, 0, MAX_BAR_HEIGHT)
+                    if Nvk3UT and Nvk3UT.TrackerHost then
+                        if Nvk3UT.TrackerHost.ApplyWindowBars then
+                            Nvk3UT.TrackerHost.ApplyWindowBars()
+                        elseif Nvk3UT.TrackerHost.ApplySettings then
+                            Nvk3UT.TrackerHost.ApplySettings()
+                        end
+                    end
+                end,
+                tooltip = "0 px blendet den Bereich aus.",
+                default = DEFAULT_WINDOW_BARS.headerHeightPx,
+            }
+
+            controls[#controls + 1] = {
+                type = "slider",
+                name = "Footer-Höhe",
+                min = 0,
+                max = MAX_BAR_HEIGHT,
+                step = 1,
+                getFunc = function()
+                    local bars = getWindowBarSettings()
+                    return bars.footerHeightPx or DEFAULT_WINDOW_BARS.footerHeightPx
+                end,
+                setFunc = function(value)
+                    local bars = getWindowBarSettings()
+                    local numeric = math.floor((tonumber(value) or bars.footerHeightPx or DEFAULT_WINDOW_BARS.footerHeightPx) + 0.5)
+                    bars.footerHeightPx = clamp(numeric, 0, MAX_BAR_HEIGHT)
+                    if Nvk3UT and Nvk3UT.TrackerHost then
+                        if Nvk3UT.TrackerHost.ApplyWindowBars then
+                            Nvk3UT.TrackerHost.ApplyWindowBars()
+                        elseif Nvk3UT.TrackerHost.ApplySettings then
+                            Nvk3UT.TrackerHost.ApplySettings()
+                        end
+                    end
+                end,
+                tooltip = "0 px blendet den Bereich aus.",
+                default = DEFAULT_WINDOW_BARS.footerHeightPx,
+            }
+
+            controls[#controls + 1] = {
                 type = "button",
                 name = "Position zurücksetzen",
                 func = function()
@@ -554,8 +636,13 @@ local function registerPanel(displayTitle)
                     general.window.clamp = DEFAULT_WINDOW.clamp
                     general.window.onTop = DEFAULT_WINDOW.onTop
                     general.window.locked = DEFAULT_WINDOW.locked
+                    general.WindowBars = general.WindowBars or {}
+                    general.WindowBars.headerHeightPx = DEFAULT_WINDOW_BARS.headerHeightPx
+                    general.WindowBars.footerHeightPx = DEFAULT_WINDOW_BARS.footerHeightPx
                     if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
                         Nvk3UT.TrackerHost.ApplySettings()
+                    elseif Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplyWindowBars then
+                        Nvk3UT.TrackerHost.ApplyWindowBars()
                     end
                 end,
                 tooltip = "Setzt Größe, Position und Verhalten des Tracker-Fensters zurück.",

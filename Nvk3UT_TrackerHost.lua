@@ -12,6 +12,9 @@ local ACHIEVEMENT_CONTAINER_NAME = addonName .. "_AchievementContainer"
 local SCROLL_CONTAINER_NAME = addonName .. "_ScrollContainer"
 local SCROLL_CONTENT_NAME = SCROLL_CONTAINER_NAME .. "_Content"
 local SCROLLBAR_NAME = SCROLL_CONTAINER_NAME .. "_ScrollBar"
+local HEADER_BAR_NAME = SCROLL_CONTENT_NAME .. "_HeaderBar"
+local CONTENT_STACK_NAME = SCROLL_CONTENT_NAME .. "_ContentStack"
+local FOOTER_BAR_NAME = SCROLL_CONTENT_NAME .. "_FooterBar"
 
 local MIN_WIDTH = 260
 local MIN_HEIGHT = 240
@@ -19,6 +22,7 @@ local RESIZE_HANDLE_SIZE = 12
 local SCROLLBAR_WIDTH = 18
 local SCROLL_OVERSHOOT_PADDING = 100 -- allow scrolling so the last entry can sit around mid-window
 local FRAGMENT_RETRY_DELAY_MS = 200
+local MAX_BAR_HEIGHT = 250
 
 local FRAGMENT_REASON_SUPPRESSED = addonName .. "_HostSuppressed"
 local FRAGMENT_REASON_USER = addonName .. "_HostHiddenBySettings"
@@ -60,6 +64,11 @@ local DEFAULT_LAYOUT = {
     maxHeight = 900,
 }
 
+local DEFAULT_WINDOW_BARS = {
+    headerHeightPx = 40,
+    footerHeightPx = 100,
+}
+
 local LEFT_MOUSE_BUTTON = _G.MOUSE_BUTTON_INDEX_LEFT or 1
 
 local state = {
@@ -77,11 +86,15 @@ local state = {
     updatingScrollbar = false,
     questContainer = nil,
     achievementContainer = nil,
+    contentStack = nil,
+    headerBar = nil,
+    footerBar = nil,
     backdrop = nil,
     window = nil,
     layout = nil,
     appearance = nil,
     features = nil,
+    windowBars = nil,
     anchorWarnings = {
         questMissing = false,
         achievementMissing = false,
@@ -96,6 +109,11 @@ local applyViewportPadding
 local measureTrackerContent
 local setScrollOffset
 local updateScrollContentAnchors
+local anchorContainers
+local applyWindowBars
+local createContainers
+local startWindowDrag
+local stopWindowDrag
 
 local function clamp(value, minimum, maximum)
     if value == nil then
@@ -343,6 +361,41 @@ local function ensureLayoutSettings()
     return layout
 end
 
+local function ensureWindowBarSettings()
+    local sv = getSavedVars()
+    if not sv then
+        return cloneTable(DEFAULT_WINDOW_BARS)
+    end
+
+    sv.General = sv.General or {}
+    sv.General.WindowBars = sv.General.WindowBars or {}
+
+    local bars = sv.General.WindowBars
+
+    local headerHeight = tonumber(bars.headerHeightPx)
+    if headerHeight == nil then
+        headerHeight = DEFAULT_WINDOW_BARS.headerHeightPx
+    end
+    headerHeight = clamp(math.floor(headerHeight + 0.5), 0, MAX_BAR_HEIGHT)
+    bars.headerHeightPx = headerHeight
+
+    local footerHeight = tonumber(bars.footerHeightPx)
+    if footerHeight == nil then
+        footerHeight = DEFAULT_WINDOW_BARS.footerHeightPx
+    end
+    footerHeight = clamp(math.floor(footerHeight + 0.5), 0, MAX_BAR_HEIGHT)
+    bars.footerHeightPx = footerHeight
+
+    return bars
+end
+
+local function getEffectiveBarHeights()
+    local bars = state.windowBars or ensureWindowBarSettings()
+    local headerHeight = clamp(tonumber(bars and bars.headerHeightPx) or DEFAULT_WINDOW_BARS.headerHeightPx, 0, MAX_BAR_HEIGHT)
+    local footerHeight = clamp(tonumber(bars and bars.footerHeightPx) or DEFAULT_WINDOW_BARS.footerHeightPx, 0, MAX_BAR_HEIGHT)
+    return headerHeight, footerHeight
+end
+
 local function ensureWindowSettings()
     local sv = getSavedVars()
     if not sv then
@@ -444,6 +497,27 @@ local function saveWindowSize()
 
     state.window.width = math.floor(width + 0.5)
     state.window.height = math.floor(height + 0.5)
+end
+
+startWindowDrag = function()
+    if not (state.root and state.window) then
+        return
+    end
+
+    if state.window.locked then
+        return
+    end
+
+    state.root:StartMoving()
+end
+
+stopWindowDrag = function()
+    if not state.root then
+        return
+    end
+
+    state.root:StopMovingOrResizing()
+    saveWindowPosition()
 end
 
 local function debugLog(...)
@@ -579,6 +653,21 @@ local function measureContentSize()
     local totalHeight = 0
     local maxWidth = 0
 
+    local headerHeight, footerHeight = getEffectiveBarHeights()
+    local headerWidth = 0
+    local footerWidth = 0
+
+    local headerBar = state.headerBar
+    if headerBar then
+        local isHidden = headerBar.IsHidden and headerBar:IsHidden()
+        if isHidden then
+            headerHeight = 0
+        else
+            headerHeight = headerBar.GetHeight and headerBar:GetHeight() or headerHeight
+            headerWidth = headerBar.GetWidth and headerBar:GetWidth() or headerWidth
+        end
+    end
+
     local questWidth, questHeight = measureTrackerContent(state.questContainer, Nvk3UT and Nvk3UT.QuestTracker)
     local achievementWidth, achievementHeight = measureTrackerContent(
         state.achievementContainer,
@@ -593,7 +682,23 @@ local function measureContentSize()
         totalHeight = totalHeight + achievementHeight
     end
 
-    maxWidth = math.max(maxWidth, questWidth, achievementWidth)
+    local footerBar = state.footerBar
+    if footerBar then
+        local isHidden = footerBar.IsHidden and footerBar:IsHidden()
+        if isHidden then
+            footerHeight = 0
+        else
+            footerHeight = footerBar.GetHeight and footerBar:GetHeight() or footerHeight
+            footerWidth = footerBar.GetWidth and footerBar:GetWidth() or footerWidth
+        end
+    end
+
+    headerHeight = math.max(0, tonumber(headerHeight) or 0)
+    footerHeight = math.max(0, tonumber(footerHeight) or 0)
+
+    totalHeight = totalHeight + headerHeight + footerHeight
+
+    maxWidth = math.max(maxWidth, headerWidth, footerWidth, questWidth, achievementWidth)
 
     return maxWidth, totalHeight
 end
@@ -690,9 +795,55 @@ local function applyFeatureSettings()
 end
 
 local function anchorContainers()
-    local parent = state.scrollContent or state.root
+    local scrollContent = state.scrollContent or state.root
     local questContainer = state.questContainer
     local achievementContainer = state.achievementContainer
+    local headerBar = state.headerBar
+    local contentStack = state.contentStack
+    local footerBar = state.footerBar
+
+    if scrollContent and headerBar then
+        headerBar:ClearAnchors()
+        headerBar:SetAnchor(TOPLEFT, scrollContent, TOPLEFT, 0, 0)
+        headerBar:SetAnchor(TOPRIGHT, scrollContent, TOPRIGHT, 0, 0)
+    end
+
+    if scrollContent and footerBar then
+        footerBar:ClearAnchors()
+        if contentStack then
+            footerBar:SetAnchor(TOPLEFT, contentStack, BOTTOMLEFT, 0, 0)
+            footerBar:SetAnchor(TOPRIGHT, contentStack, BOTTOMRIGHT, 0, 0)
+        elseif headerBar then
+            footerBar:SetAnchor(TOPLEFT, headerBar, BOTTOMLEFT, 0, 0)
+            footerBar:SetAnchor(TOPRIGHT, headerBar, BOTTOMRIGHT, 0, 0)
+        else
+            footerBar:SetAnchor(TOPLEFT, scrollContent, TOPLEFT, 0, 0)
+            footerBar:SetAnchor(TOPRIGHT, scrollContent, TOPRIGHT, 0, 0)
+        end
+        footerBar:SetAnchor(BOTTOMLEFT, scrollContent, BOTTOMLEFT, 0, 0)
+        footerBar:SetAnchor(BOTTOMRIGHT, scrollContent, BOTTOMRIGHT, 0, 0)
+    end
+
+    if scrollContent and contentStack then
+        contentStack:ClearAnchors()
+        if headerBar then
+            contentStack:SetAnchor(TOPLEFT, headerBar, BOTTOMLEFT, 0, 0)
+            contentStack:SetAnchor(TOPRIGHT, headerBar, BOTTOMRIGHT, 0, 0)
+        else
+            contentStack:SetAnchor(TOPLEFT, scrollContent, TOPLEFT, 0, 0)
+            contentStack:SetAnchor(TOPRIGHT, scrollContent, TOPRIGHT, 0, 0)
+        end
+
+        if footerBar then
+            contentStack:SetAnchor(BOTTOMLEFT, footerBar, TOPLEFT, 0, 0)
+            contentStack:SetAnchor(BOTTOMRIGHT, footerBar, TOPRIGHT, 0, 0)
+        else
+            contentStack:SetAnchor(BOTTOMLEFT, scrollContent, BOTTOMLEFT, 0, 0)
+            contentStack:SetAnchor(BOTTOMRIGHT, scrollContent, BOTTOMRIGHT, 0, 0)
+        end
+    end
+
+    local parent = contentStack or scrollContent
 
     if not (parent and questContainer) then
         if not questContainer and not state.anchorWarnings.questMissing then
@@ -715,6 +866,38 @@ local function anchorContainers()
     elseif not state.anchorWarnings.achievementMissing then
         debugLog("Achievement container not ready for anchoring")
         state.anchorWarnings.achievementMissing = true
+    end
+end
+
+applyWindowBars = function()
+    state.windowBars = ensureWindowBarSettings()
+
+    if not state.root then
+        return
+    end
+
+    local headerHeight, footerHeight = getEffectiveBarHeights()
+
+    local headerBar = state.headerBar
+    if headerBar then
+        if headerBar.SetHeight then
+            headerBar:SetHeight(headerHeight)
+        end
+        if headerBar.SetHidden then
+            headerBar:SetHidden(headerHeight <= 0)
+        end
+        headerBar:SetMouseEnabled(headerHeight > 0)
+    end
+
+    local footerBar = state.footerBar
+    if footerBar then
+        if footerBar.SetHeight then
+            footerBar:SetHeight(footerHeight)
+        end
+        if footerBar.SetHidden then
+            footerBar:SetHidden(footerHeight <= 0)
+        end
+        footerBar:SetMouseEnabled(footerHeight > 0)
     end
 end
 
@@ -762,8 +945,9 @@ refreshScroll = function()
 
     questHeight = math.max(0, tonumber(questHeight) or 0)
     achievementHeight = math.max(0, tonumber(achievementHeight) or 0)
-    local contentHeight = questHeight + achievementHeight
-    contentHeight = math.max(0, contentHeight)
+
+    local contentStackHeight = questHeight + achievementHeight
+    contentStackHeight = math.max(0, contentStackHeight)
 
     if state.questContainer and state.questContainer.SetHeight then
         state.questContainer:SetHeight(questHeight)
@@ -772,6 +956,62 @@ refreshScroll = function()
     if state.achievementContainer and state.achievementContainer.SetHeight then
         state.achievementContainer:SetHeight(achievementHeight)
     end
+
+    if state.contentStack and state.contentStack.SetHeight then
+        state.contentStack:SetHeight(contentStackHeight)
+    end
+
+    local headerBar = state.headerBar
+    local footerBar = state.footerBar
+
+    local headerHeight = 0
+    if headerBar then
+        local isHidden = headerBar.IsHidden and headerBar:IsHidden()
+        if not isHidden then
+            headerHeight = headerBar.GetHeight and headerBar:GetHeight() or headerHeight
+        end
+    end
+
+    local footerHeight = 0
+    if footerBar then
+        local isHidden = footerBar.IsHidden and footerBar:IsHidden()
+        if not isHidden then
+            footerHeight = footerBar.GetHeight and footerBar:GetHeight() or footerHeight
+        end
+    end
+
+    local bars = state.windowBars or ensureWindowBarSettings()
+
+    if headerHeight <= 0 or not headerBar then
+        headerHeight = math.max(0, tonumber(bars and bars.headerHeightPx) or 0)
+        if headerBar and headerBar.SetHeight then
+            headerBar:SetHeight(headerHeight)
+        end
+    end
+
+    if footerHeight <= 0 or not footerBar then
+        footerHeight = math.max(0, tonumber(bars and bars.footerHeightPx) or 0)
+        if footerBar and footerBar.SetHeight then
+            footerBar:SetHeight(footerHeight)
+        end
+    end
+
+    if headerBar then
+        if headerBar.SetHidden then
+            headerBar:SetHidden(headerHeight <= 0)
+        end
+        headerBar:SetMouseEnabled(headerHeight > 0)
+    end
+
+    if footerBar then
+        if footerBar.SetHidden then
+            footerBar:SetHidden(footerHeight <= 0)
+        end
+        footerBar:SetMouseEnabled(footerHeight > 0)
+    end
+
+    local contentHeight = headerHeight + contentStackHeight + footerHeight
+    contentHeight = math.max(0, contentHeight)
 
     if scrollContent.SetResizeToFitDescendents then
         scrollContent:SetResizeToFitDescendents(false)
@@ -925,14 +1165,78 @@ local function createContainers()
 
     createScrollContainer()
 
-    local parent = state.scrollContent or state.root
+    local scrollContent = state.scrollContent or state.root
+    if not scrollContent then
+        return
+    end
 
-    if parent then
+    local headerBar = state.headerBar or _G[HEADER_BAR_NAME]
+    if not headerBar then
+        headerBar = WINDOW_MANAGER:CreateControl(HEADER_BAR_NAME, scrollContent, CT_CONTROL)
+    else
+        headerBar:SetParent(scrollContent)
+    end
+    if headerBar then
+        headerBar:SetMouseEnabled(true)
+        headerBar:SetHandler("OnMouseWheel", function(_, delta)
+            adjustScroll(delta)
+        end)
+        headerBar:SetHandler("OnMouseDown", function(_, button)
+            if button ~= LEFT_MOUSE_BUTTON then
+                return
+            end
+            startWindowDrag()
+        end)
+        headerBar:SetHandler("OnMouseUp", function(_, button)
+            if button == LEFT_MOUSE_BUTTON then
+                stopWindowDrag()
+            end
+        end)
+        state.headerBar = headerBar
+    end
+
+    local contentStack = state.contentStack or _G[CONTENT_STACK_NAME]
+    if not contentStack then
+        contentStack = WINDOW_MANAGER:CreateControl(CONTENT_STACK_NAME, scrollContent, CT_CONTROL)
+    else
+        contentStack:SetParent(scrollContent)
+    end
+    if contentStack then
+        contentStack:SetMouseEnabled(true)
+        if contentStack.SetResizeToFitDescendents then
+            contentStack:SetResizeToFitDescendents(false)
+        end
+        contentStack:SetHandler("OnMouseWheel", function(_, delta)
+            adjustScroll(delta)
+        end)
+        state.contentStack = contentStack
+    end
+
+    local footerBar = state.footerBar or _G[FOOTER_BAR_NAME]
+    if not footerBar then
+        footerBar = WINDOW_MANAGER:CreateControl(FOOTER_BAR_NAME, scrollContent, CT_CONTROL)
+    else
+        footerBar:SetParent(scrollContent)
+    end
+    if footerBar then
+        footerBar:SetMouseEnabled(true)
+        if footerBar.SetResizeToFitDescendents then
+            footerBar:SetResizeToFitDescendents(false)
+        end
+        footerBar:SetHandler("OnMouseWheel", function(_, delta)
+            adjustScroll(delta)
+        end)
+        state.footerBar = footerBar
+    end
+
+    local contentParent = state.contentStack or scrollContent
+
+    if contentParent then
         local questContainer = state.questContainer or _G[QUEST_CONTAINER_NAME]
         if not questContainer then
-            questContainer = WINDOW_MANAGER:CreateControl(QUEST_CONTAINER_NAME, parent, CT_CONTROL)
+            questContainer = WINDOW_MANAGER:CreateControl(QUEST_CONTAINER_NAME, contentParent, CT_CONTROL)
         else
-            questContainer:SetParent(parent)
+            questContainer:SetParent(contentParent)
         end
         if questContainer then
             questContainer:SetMouseEnabled(false)
@@ -947,12 +1251,12 @@ local function createContainers()
         end
     end
 
-    if parent then
+    if contentParent then
         local achievementContainer = state.achievementContainer or _G[ACHIEVEMENT_CONTAINER_NAME]
         if not achievementContainer then
-            achievementContainer = WINDOW_MANAGER:CreateControl(ACHIEVEMENT_CONTAINER_NAME, parent, CT_CONTROL)
+            achievementContainer = WINDOW_MANAGER:CreateControl(ACHIEVEMENT_CONTAINER_NAME, contentParent, CT_CONTROL)
         else
-            achievementContainer:SetParent(parent)
+            achievementContainer:SetParent(contentParent)
         end
         if achievementContainer then
             achievementContainer:SetMouseEnabled(false)
@@ -968,6 +1272,7 @@ local function createContainers()
     end
 
     anchorContainers()
+    applyWindowBars()
     refreshScroll()
 end
 
@@ -976,7 +1281,7 @@ local function updateSectionLayout()
         return
     end
 
-    if not state.questContainer or not state.achievementContainer then
+    if not state.headerBar or not state.contentStack or not state.footerBar or not state.questContainer or not state.achievementContainer then
         createContainers()
     end
 
@@ -1077,6 +1382,7 @@ local function applyWindowSettings()
     state.appearance = ensureAppearanceSettings()
     state.layout = ensureLayoutSettings()
     state.features = ensureFeatureSettings()
+    state.windowBars = ensureWindowBarSettings()
 
     if not state.root then
         return
@@ -1084,6 +1390,7 @@ local function applyWindowSettings()
 
     createContainers()
 
+    applyWindowBars()
     applyLayoutConstraints()
     updateSectionLayout()
     applyWindowClamp()
@@ -1220,20 +1527,26 @@ local function createRootControl()
     control:SetDrawTier(DT_LOW)
     control:SetDrawLevel(0)
 
-    control:SetHandler("OnMouseDown", function(ctrl, button)
+    control:SetHandler("OnMouseDown", function(_, button)
         if button ~= LEFT_MOUSE_BUTTON then
             return
         end
-        if state.window and state.window.locked then
-            return
+
+        local headerBar = state.headerBar
+        if headerBar then
+            local isHidden = headerBar.IsHidden and headerBar:IsHidden()
+            local headerHeight = headerBar.GetHeight and headerBar:GetHeight() or 0
+            if not isHidden and headerHeight > 0 then
+                return
+            end
         end
-        ctrl:StartMoving()
+
+        startWindowDrag()
     end)
 
-    control:SetHandler("OnMouseUp", function(ctrl, button)
+    control:SetHandler("OnMouseUp", function(_, button)
         if button == LEFT_MOUSE_BUTTON then
-            ctrl:StopMovingOrResizing()
-            saveWindowPosition()
+            stopWindowDrag()
         end
     end)
 
@@ -1421,6 +1734,15 @@ function TrackerHost.ApplyTheme()
     TrackerHost.ApplyAppearance()
 end
 
+function TrackerHost.ApplyWindowBars()
+    if not getSavedVars() then
+        return
+    end
+
+    applyWindowBars()
+    notifyContentChanged()
+end
+
 function TrackerHost.Refresh()
     if Nvk3UT.QuestTracker then
         if Nvk3UT.QuestTracker.RequestRefresh then
@@ -1486,6 +1808,24 @@ function TrackerHost.Shutdown()
     state.questContainer = nil
     Nvk3UT.UI.QuestContainer = nil
 
+    if state.footerBar then
+        state.footerBar:SetHidden(true)
+        state.footerBar:SetParent(nil)
+    end
+    state.footerBar = nil
+
+    if state.headerBar then
+        state.headerBar:SetHidden(true)
+        state.headerBar:SetParent(nil)
+    end
+    state.headerBar = nil
+
+    if state.contentStack then
+        state.contentStack:SetHidden(true)
+        state.contentStack:SetParent(nil)
+    end
+    state.contentStack = nil
+
     if state.scrollbar then
         state.scrollbar:SetHidden(true)
         state.scrollbar:SetHandler("OnValueChanged", nil)
@@ -1550,6 +1890,7 @@ function TrackerHost.Shutdown()
     state.appearance = nil
     state.layout = nil
     state.features = nil
+    state.windowBars = nil
     state.initialized = false
     state.previousDefaultQuestTrackerHidden = nil
     state.initializing = false
