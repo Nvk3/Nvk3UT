@@ -367,7 +367,9 @@ local function AnchorControl(control, indentX)
     control:ClearAnchors()
 
     if state.lastAnchoredControl then
-        control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, indentX, VERTICAL_PADDING)
+        local previousIndent = state.lastAnchoredControl.currentIndent or 0
+        local offsetX = indentX - previousIndent
+        control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, offsetX, VERTICAL_PADDING)
         control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, 0, VERTICAL_PADDING)
     else
         control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, 0)
