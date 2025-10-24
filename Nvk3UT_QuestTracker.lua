@@ -635,7 +635,15 @@ end
 
 local function LayoutCategory(category)
     local control = AcquireCategoryControl()
-    control.data = { categoryKey = category.key }
+    control.data = {
+        categoryKey = category.key,
+        parentKey = category.parent and category.parent.key or nil,
+        parentName = category.parent and category.parent.name or nil,
+        groupKey = category.groupKey,
+        groupName = category.groupName,
+        categoryType = category.type,
+        groupOrder = category.groupOrder,
+    }
     local count = #category.quests
     control.label:SetText(FormatCategoryHeaderText(category.name or "", count, "quest"))
     local expanded = IsCategoryExpanded(category.key)
