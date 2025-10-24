@@ -359,8 +359,20 @@ local function buildFontControls(label, settings, key, defaults, onChanged)
     }
 end
 
+local function acquireLam()
+    if LibAddonMenu2 then
+        return LibAddonMenu2
+    end
+
+    if LibStub then
+        return LibStub("LibAddonMenu-2.0", true)
+    end
+
+    return nil
+end
+
 function L.Build(displayTitle)
-    local LAM = LibAddonMenu2
+    local LAM = acquireLam()
     if not LAM then
         return
     end
