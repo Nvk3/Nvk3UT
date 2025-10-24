@@ -5,7 +5,7 @@
 ## APIVersion: 101041 101042 101043
 ## DependsOn: LibAddonMenu-2.0
 ## OptionalDependsOn: LibCustomMenu-2.0
-## SavedVariables: Nvk3UT_SV Nvk3UT_Data_Favorites Nvk3UT_Data_Recent
+## SavedVariables: Nvk3UT_SV Nvk3UT_Data_Favorites Nvk3UT_Data_Recent Nvk3UT_Data_Quests
 Nvk3UT_Utils.lua
 Nvk3UT_Achievements.lua
 Nvk3UT_Diagnostics.lua

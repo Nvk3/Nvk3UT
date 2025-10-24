@@ -9,6 +9,256 @@ local QUEST_MODEL_NAME = addonName .. "QuestModel"
 local EVENT_NAMESPACE = QUEST_MODEL_NAME .. "_Event"
 local REBUILD_IDENTIFIER = QUEST_MODEL_NAME .. "_Rebuild"
 
+local QUEST_SAVED_VARS_NAME = "Nvk3UT_Data_Quests"
+local QUEST_SAVED_VARS_VERSION = 1
+local QUEST_SAVED_VARS_DEFAULTS = {
+    version = 1,
+    meta = {
+        initialized = false,
+        lastInit = nil,
+    },
+    quests = {},
+    settings = {
+        autoVerticalResize = false,
+    },
+}
+
+local questSavedVars = nil
+local bootstrapState = {
+    registered = false,
+    executed = false,
+}
+local playerState = {
+    hasActivated = false,
+}
+
+local DEBUG_INIT = false
+
+local function IsDebugLoggingEnabled()
+    if DEBUG_INIT then
+        return true
+    end
+
+    local root = Nvk3UT and Nvk3UT.sv
+    return root and root.debug == true
+end
+
+local function DebugInitLog(message, ...)
+    if not IsDebugLoggingEnabled() then
+        return
+    end
+
+    local formatted = message
+    local argumentCount = select("#", ...)
+    if argumentCount > 0 then
+        formatted = string.format(message, ...)
+    end
+
+    if d then
+        d(string.format("[Nvk3UT][QuestInit] %s", formatted))
+    elseif print then
+        print("[Nvk3UT][QuestInit]", formatted)
+    end
+end
+
+local function CopyTable(value)
+    if type(value) ~= "table" then
+        return value
+    end
+
+    local copy = {}
+    for key, entry in pairs(value) do
+        copy[key] = CopyTable(entry)
+    end
+    return copy
+end
+
+local function EnsureSavedVars()
+    if questSavedVars then
+        return questSavedVars
+    end
+
+    if not ZO_SavedVars then
+        questSavedVars = CopyTable(QUEST_SAVED_VARS_DEFAULTS)
+        DebugInitLog("[Init] SavedVars ensured (fallback)")
+        return questSavedVars
+    end
+
+    local sv = ZO_SavedVars:NewCharacterIdSettings(
+        QUEST_SAVED_VARS_NAME,
+        QUEST_SAVED_VARS_VERSION,
+        nil,
+        QUEST_SAVED_VARS_DEFAULTS
+    )
+
+    sv.version = sv.version or QUEST_SAVED_VARS_DEFAULTS.version
+
+    if type(sv.meta) ~= "table" then
+        sv.meta = {}
+    end
+    if sv.meta.initialized == nil then
+        sv.meta.initialized = false
+    else
+        sv.meta.initialized = sv.meta.initialized == true
+    end
+    if sv.meta.lastInit ~= nil then
+        local numeric = tonumber(sv.meta.lastInit)
+        sv.meta.lastInit = numeric
+    end
+
+    if type(sv.quests) ~= "table" then
+        sv.quests = {}
+    end
+
+    if type(sv.settings) ~= "table" then
+        sv.settings = {}
+    end
+    if sv.settings.autoVerticalResize == nil then
+        sv.settings.autoVerticalResize = false
+    else
+        sv.settings.autoVerticalResize = sv.settings.autoVerticalResize == true
+    end
+
+    questSavedVars = sv
+    DebugInitLog("[Init] SavedVars ensured")
+    return questSavedVars
+end
+
+local function MarkInitialized(sv)
+    if not sv then
+        return
+    end
+
+    sv.meta = sv.meta or {}
+    sv.meta.initialized = true
+    if GetTimeStamp then
+        sv.meta.lastInit = GetTimeStamp()
+    else
+        sv.meta.lastInit = sv.meta.lastInit or 0
+    end
+end
+
+local function PersistQuests(quests)
+    local sv = EnsureSavedVars()
+    if not sv then
+        return 0
+    end
+
+    local stored = {}
+    if type(quests) == "table" then
+        for index = 1, #quests do
+            stored[index] = CopyTable(quests[index])
+        end
+    end
+
+    sv.quests = stored
+    MarkInitialized(sv)
+    return #stored
+end
+
+local function ShouldBootstrap(sv)
+    if bootstrapState.executed then
+        return false
+    end
+
+    if not sv then
+        return false
+    end
+
+    local hasQuests = type(sv.quests) == "table" and next(sv.quests) ~= nil
+    if not hasQuests then
+        return true
+    end
+
+    if type(sv.meta) ~= "table" or sv.meta.initialized ~= true then
+        return true
+    end
+
+    return false
+end
+
+local BuildSnapshotFromQuests
+local CollectQuestEntries
+local ForceRebuild
+
+local function BuildSnapshotFromSaved()
+    local sv = EnsureSavedVars()
+    if not sv then
+        return nil
+    end
+
+    if type(sv.quests) ~= "table" or next(sv.quests) == nil then
+        return nil
+    end
+
+    local quests = {}
+    for index = 1, #sv.quests do
+        quests[index] = CopyTable(sv.quests[index])
+    end
+
+    return BuildSnapshotFromQuests and BuildSnapshotFromQuests(quests) or nil
+end
+
+local function BootstrapQuestData()
+    if bootstrapState.executed then
+        return 0
+    end
+
+    local quests = CollectQuestEntries and CollectQuestEntries() or {}
+    local stored = PersistQuests(quests)
+    bootstrapState.executed = true
+    DebugInitLog("[Init] BootstrapQuestData → %d quests stored", stored)
+    return stored
+end
+
+local function OnPlayerActivated()
+    if bootstrapState.registered and EVENT_MANAGER then
+        EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "PlayerActivated", EVENT_PLAYER_ACTIVATED)
+        bootstrapState.registered = false
+    end
+
+    local sv = EnsureSavedVars()
+    local requiresBootstrap = ShouldBootstrap(sv)
+    DebugInitLog("[Init] OnPlayerActivated → Bootstrap required: %s", tostring(requiresBootstrap))
+
+    playerState.hasActivated = true
+
+    if requiresBootstrap then
+        BootstrapQuestData()
+    end
+
+    if QuestModel.isInitialized then
+        ForceRebuild(QuestModel)
+    end
+end
+
+local function RegisterForPlayerActivated()
+    if bootstrapState.registered or not EVENT_MANAGER then
+        return
+    end
+
+    EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. "PlayerActivated", EVENT_PLAYER_ACTIVATED, OnPlayerActivated)
+    bootstrapState.registered = true
+end
+
+local function OnAddOnLoaded(_, name)
+    if name ~= addonName then
+        return
+    end
+
+    if EVENT_MANAGER then
+        EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "OnLoaded", EVENT_ADD_ON_LOADED)
+    end
+
+    EnsureSavedVars()
+    RegisterForPlayerActivated()
+    DebugInitLog("[Init] OnAddOnLoaded → SavedVars ready")
+end
+
+if EVENT_MANAGER then
+    EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. "OnLoaded", EVENT_ADD_ON_LOADED, OnAddOnLoaded)
+end
+
 local MIN_DEBOUNCE_MS = 50
 local MAX_DEBOUNCE_MS = 120
 local DEFAULT_DEBOUNCE_MS = 80
@@ -439,9 +689,15 @@ local function BuildCategoriesIndex(quests)
     }
 end
 
-local function BuildSnapshot(self)
+CollectQuestEntries = function()
     local quests = {}
-    local questCount = math.min(GetNumJournalQuests() or 0, QUEST_LOG_LIMIT)
+
+    if not GetNumJournalQuests then
+        return quests
+    end
+
+    local total = GetNumJournalQuests() or 0
+    local questCount = math.min(total, QUEST_LOG_LIMIT)
     for journalIndex = 1, questCount do
         local questEntry = BuildQuestEntry(journalIndex)
         if questEntry then
@@ -450,6 +706,13 @@ local function BuildSnapshot(self)
     end
 
     table.sort(quests, CompareQuestEntries)
+    return quests
+end
+
+BuildSnapshotFromQuests = function(quests)
+    if type(quests) ~= "table" then
+        quests = {}
+    end
 
     local snapshot = {
         updatedAtMs = GetTimestampMs(),
@@ -462,13 +725,23 @@ local function BuildSnapshot(self)
 
     for index = 1, #quests do
         local quest = quests[index]
-        if quest.questId then
-            snapshot.questById[quest.questId] = quest
+        if quest then
+            if quest.questId then
+                snapshot.questById[quest.questId] = quest
+            end
+            if quest.journalIndex then
+                snapshot.questByJournalIndex[quest.journalIndex] = quest
+            end
         end
-        snapshot.questByJournalIndex[quest.journalIndex] = quest
     end
 
     return snapshot
+end
+
+local function BuildSnapshot(self)
+    local quests = CollectQuestEntries()
+    local snapshot = BuildSnapshotFromQuests(quests)
+    return snapshot, quests
 end
 
 local function SnapshotsDiffer(previous, current)
@@ -479,21 +752,32 @@ local function SnapshotsDiffer(previous, current)
 end
 
 local function PerformRebuild(self)
-    if not self.isInitialized then
-        return
+    if not self.isInitialized or not playerState.hasActivated then
+        return false
     end
 
-    local snapshot = BuildSnapshot(self)
+    local snapshot, quests = BuildSnapshot(self)
+    if not snapshot then
+        return false
+    end
+
     if not SnapshotsDiffer(self.currentSnapshot, snapshot) then
-        return
+        PersistQuests(quests)
+        return false
     end
 
     snapshot.revision = (self.currentSnapshot and self.currentSnapshot.revision or 0) + 1
     self.currentSnapshot = snapshot
+    PersistQuests(quests)
     NotifySubscribers(self)
+    return true
 end
 
 local function ScheduleRebuild(self)
+    if not playerState.hasActivated then
+        return
+    end
+
     if self.pendingRebuild then
         return
     end
@@ -514,8 +798,8 @@ local function ScheduleRebuild(self)
 end
 
 local function ForceRebuild(self)
-    if not self.isInitialized then
-        return
+    if not self.isInitialized or not playerState.hasActivated then
+        return false
     end
 
     if self.pendingRebuild then
@@ -523,12 +807,13 @@ local function ForceRebuild(self)
         self.pendingRebuild = false
     end
 
-    PerformRebuild(self)
+    local updated = PerformRebuild(self)
+    return updated
 end
 
 local function OnQuestChanged(_, ...)
     local self = QuestModel
-    if not self.isInitialized then
+    if not self.isInitialized or not playerState.hasActivated then
         return
     end
 
@@ -548,6 +833,10 @@ function QuestModel.Init(opts)
     end
 
     opts = opts or {}
+
+    EnsureSavedVars()
+    RegisterForPlayerActivated()
+
     QuestModel.debugEnabled = opts.debug or false
 
     local requestedDebounce = tonumber(opts.debounceMs)
@@ -558,6 +847,14 @@ function QuestModel.Init(opts)
     end
     QuestModel.subscribers = {}
     QuestModel.isInitialized = true
+
+    local savedSnapshot = BuildSnapshotFromSaved()
+    if savedSnapshot then
+        savedSnapshot.revision = (QuestModel.currentSnapshot and QuestModel.currentSnapshot.revision) or 0
+        QuestModel.currentSnapshot = savedSnapshot
+    else
+        QuestModel.currentSnapshot = nil
+    end
 
     local eventHandler = function(...)
         OnQuestChanged(...)
@@ -570,8 +867,13 @@ function QuestModel.Init(opts)
     RegisterQuestEvent(EVENT_QUEST_LOG_UPDATED, eventHandler)
     EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. "TRACKING", EVENT_TRACKING_UPDATE, OnTrackingUpdate)
 
-    ForceRebuild(QuestModel)
-    NotifySubscribers(QuestModel)
+    if playerState.hasActivated then
+        ForceRebuild(QuestModel)
+    end
+
+    if QuestModel.currentSnapshot and next(QuestModel.subscribers) then
+        NotifySubscribers(QuestModel)
+    end
 end
 
 function QuestModel.Shutdown()
@@ -586,6 +888,9 @@ function QuestModel.Shutdown()
     UnregisterQuestEvent(EVENT_QUEST_LOG_UPDATED)
     EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "TRACKING", EVENT_TRACKING_UPDATE)
     EVENT_MANAGER:UnregisterForUpdate(REBUILD_IDENTIFIER)
+    EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "PlayerActivated", EVENT_PLAYER_ACTIVATED)
+    bootstrapState.registered = false
+    playerState.hasActivated = false
 
     QuestModel.isInitialized = false
     QuestModel.subscribers = nil
@@ -603,7 +908,7 @@ function QuestModel.Subscribe(callback)
     QuestModel.subscribers = QuestModel.subscribers or {}
     QuestModel.subscribers[callback] = true
 
-    if QuestModel.isInitialized and not QuestModel.currentSnapshot then
+    if QuestModel.isInitialized and playerState.hasActivated and not QuestModel.currentSnapshot then
         ForceRebuild(QuestModel)
     end
 

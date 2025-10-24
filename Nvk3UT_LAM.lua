@@ -50,7 +50,7 @@ local DEFAULT_APPEARANCE = {
 }
 
 local DEFAULT_LAYOUT = {
-    autoGrowV = true,
+    autoGrowV = false,
     autoGrowH = false,
     minWidth = 260,
     minHeight = 240,
