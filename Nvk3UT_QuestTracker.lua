@@ -23,14 +23,6 @@ local DEFAULT_FONTS = {
     toggle = "ZoFontGame",
 }
 
-local DEFAULT_BACKDROP = {
-    centerColor = { 0, 0, 0, 0.35 },
-    edgeColor = { 0, 0, 0, 0.5 },
-    edgeTexture = "EsoUI/Art/Tooltips/UI-Border.dds",
-    tileSize = 64,
-    edgeFileWidth = 16,
-}
-
 local DEFAULT_FONT_OUTLINE = "soft-shadow-thin"
 local REFRESH_DEBOUNCE_MS = 80
 
@@ -41,7 +33,6 @@ local state = {
     saved = nil,
     control = nil,
     container = nil,
-    backdrop = nil,
     categoryPool = nil,
     questPool = nil,
     conditionPool = nil,
@@ -50,10 +41,9 @@ local state = {
     snapshot = nil,
     combatHidden = false,
     subscription = nil,
-    previousDefaultTrackerHidden = nil,
-    padding = 0,
-    theme = nil,
     pendingRefresh = false,
+    contentWidth = 0,
+    contentHeight = 0,
 }
 
 local function DebugLog(...)
@@ -66,6 +56,15 @@ local function DebugLog(...)
     elseif print then
         print("[" .. MODULE_NAME .. "]", ...)
     end
+end
+
+local function NotifyHostContentChanged()
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if not (host and host.NotifyContentChanged) then
+        return
+    end
+
+    pcall(host.NotifyContentChanged)
 end
 
 local function EnsureSavedVars()
@@ -105,17 +104,6 @@ local function MergeFonts(opts)
     return fonts
 end
 
-local function ApplyContainerPadding()
-    if not state.container or not state.control then
-        return
-    end
-
-    local inset = tonumber(state.padding) or 0
-    state.container:ClearAnchors()
-    state.container:SetAnchor(TOPLEFT, state.control, TOPLEFT, inset, inset)
-    state.container:SetAnchor(BOTTOMRIGHT, state.control, BOTTOMRIGHT, -inset, -inset)
-end
-
 local function BuildFontString(descriptor, fallback)
     if type(descriptor) ~= "table" then
         return ResolveFont(descriptor) or fallback
@@ -130,55 +118,6 @@ local function BuildFontString(descriptor, fallback)
     end
 
     return string.format("%s|%d|%s", face, size, outline or DEFAULT_FONT_OUTLINE)
-end
-
-local function EnsureBackdrop()
-    if not state.control then
-        return
-    end
-
-    local theme = state.theme or {}
-    local background = theme.backdrop
-
-    if not background then
-        if state.backdrop then
-            if state.backdrop.Destroy then
-                state.backdrop:Destroy()
-            else
-                state.backdrop:SetHidden(true)
-                state.backdrop:SetParent(nil)
-            end
-        end
-        state.backdrop = nil
-        return
-    end
-
-    if not state.backdrop then
-        local control = WINDOW_MANAGER:CreateControl(nil, state.control, CT_BACKDROP)
-        control:SetAnchorFill()
-        control:SetDrawLayer(DL_BACKGROUND)
-        control:SetDrawTier(DT_LOW)
-        control:SetDrawLevel(0)
-        if control.SetExcludeFromResizeToFitExtents then
-            control:SetExcludeFromResizeToFitExtents(true)
-        end
-        state.backdrop = control
-    end
-
-    local control = state.backdrop
-    if background.edgeTexture then
-        control:SetEdgeTexture(background.edgeTexture, background.tileSize or 128, background.edgeFileWidth or 16)
-    end
-
-    if background.centerColor then
-        control:SetCenterColor(unpack(background.centerColor))
-    end
-
-    if background.edgeColor then
-        control:SetEdgeColor(unpack(background.edgeColor))
-    end
-
-    control:SetHidden(false)
 end
 
 local function RequestRefresh()
@@ -219,7 +158,9 @@ local function AnchorControl(control, indentX)
     control:ClearAnchors()
 
     if state.lastAnchoredControl then
-        control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, indentX, VERTICAL_PADDING)
+        local previousIndent = state.lastAnchoredControl.currentIndent or 0
+        local offsetX = indentX - previousIndent
+        control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, offsetX, VERTICAL_PADDING)
         control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, 0, VERTICAL_PADDING)
     else
         control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, 0)
@@ -231,20 +172,7 @@ local function AnchorControl(control, indentX)
     control.currentIndent = indentX
 end
 
-local function UpdateAutoSize()
-    if not state.control then
-        return
-    end
-
-    local paddingWidth = 0
-    local paddingHeight = 0
-
-    if state.padding and state.padding > 0 then
-        local inset = state.padding * 2
-        paddingWidth = paddingWidth + inset
-        paddingHeight = paddingHeight + inset
-    end
-
+local function UpdateContentSize()
     local maxWidth = 0
     local totalHeight = 0
     local visibleCount = 0
@@ -264,13 +192,8 @@ local function UpdateAutoSize()
         end
     end
 
-    if state.opts.autoGrowH and maxWidth > 0 then
-        state.control:SetWidth(maxWidth + paddingWidth)
-    end
-
-    if state.opts.autoGrowV then
-        state.control:SetHeight(totalHeight + paddingHeight)
-    end
+    state.contentWidth = maxWidth
+    state.contentHeight = totalHeight
 end
 
 local function UpdateCategoryToggle(control, expanded)
@@ -589,7 +512,8 @@ local function Rebuild()
     ResetLayoutState()
 
     if not state.snapshot or not state.snapshot.categories or not state.snapshot.categories.ordered then
-        UpdateAutoSize()
+        UpdateContentSize()
+        NotifyHostContentChanged()
         return
     end
 
@@ -600,31 +524,8 @@ local function Rebuild()
         end
     end
 
-    UpdateAutoSize()
-end
-
-local function ApplyLockState()
-    if not state.control or not state.control.SetMovable then
-        return
-    end
-    local lock = state.opts.lock
-    if lock == nil then
-        return
-    end
-    state.control:SetMovable(not lock)
-end
-
-local function ApplyHideDefaultTracker()
-    if not ZO_QuestTracker then
-        return
-    end
-    if state.opts.hideDefault == nil then
-        return
-    end
-    if state.previousDefaultTrackerHidden == nil then
-        state.previousDefaultTrackerHidden = ZO_QuestTracker:IsHidden()
-    end
-    ZO_QuestTracker:SetHidden(state.opts.hideDefault)
+    UpdateContentSize()
+    NotifyHostContentChanged()
 end
 
 local function RefreshVisibility()
@@ -641,6 +542,7 @@ local function RefreshVisibility()
     end
 
     state.control:SetHidden(hidden)
+    NotifyHostContentChanged()
 end
 
 local function OnCombatState(_, inCombat)
@@ -677,8 +579,10 @@ function QuestTracker.Init(parentControl, opts)
     assert(parentControl ~= nil, "QuestTracker.Init requires a parent control")
 
     state.control = parentControl
-    state.container = WINDOW_MANAGER:CreateControl(nil, parentControl, CT_CONTROL)
-    state.container:SetResizeToFitDescendents(true)
+    state.container = parentControl
+    if state.control and state.control.SetResizeToFitDescendents then
+        state.control:SetResizeToFitDescendents(true)
+    end
 
     EnsureSavedVars()
     state.opts = {}
@@ -692,10 +596,6 @@ function QuestTracker.Init(parentControl, opts)
         QuestTracker.ApplySettings(opts)
     end
 
-    ApplyContainerPadding()
-    AttachBackdrop()
-    ApplyLockState()
-    ApplyHideDefaultTracker()
     if state.opts.hideInCombat then
         RegisterCombatEvents()
     else
@@ -749,32 +649,18 @@ function QuestTracker.Shutdown()
         state.conditionPool = nil
     end
 
-    if state.container then
-        if state.container.Destroy then
-            state.container:Destroy()
-        else
-            state.container:SetHidden(true)
-            state.container:SetParent(nil)
-        end
-        state.container = nil
-    end
-
-    if state.previousDefaultTrackerHidden ~= nil and ZO_QuestTracker then
-        ZO_QuestTracker:SetHidden(state.previousDefaultTrackerHidden)
-    end
-
+    state.container = nil
     state.control = nil
-    state.backdrop = nil
     state.snapshot = nil
     state.orderedControls = {}
     state.lastAnchoredControl = nil
     state.isInitialized = false
-    state.previousDefaultTrackerHidden = nil
     state.opts = {}
     state.fonts = {}
-    state.theme = nil
-    state.padding = 0
     state.pendingRefresh = false
+    state.contentWidth = 0
+    state.contentHeight = 0
+    NotifyHostContentChanged()
 end
 
 function QuestTracker.SetActive(active)
@@ -782,35 +668,14 @@ function QuestTracker.SetActive(active)
     RefreshVisibility()
 end
 
-local function ApplyAutoGrow(settings)
-    if type(settings) ~= "table" then
-        return
-    end
-
-    if settings.autoGrowV ~= nil then
-        state.opts.autoGrowV = settings.autoGrowV and true or false
-    end
-
-    if settings.autoGrowH ~= nil then
-        state.opts.autoGrowH = settings.autoGrowH and true or false
-    end
-end
-
 function QuestTracker.ApplySettings(settings)
     if type(settings) ~= "table" then
         return
     end
 
-    state.opts.lock = settings.lock ~= nil and settings.lock or state.opts.lock
-    state.opts.hideDefault = settings.hideDefault ~= nil and settings.hideDefault or state.opts.hideDefault
     state.opts.hideInCombat = settings.hideInCombat and true or false
     state.opts.autoExpand = settings.autoExpand ~= false
     state.opts.active = (settings.active ~= false)
-
-    ApplyAutoGrow(settings)
-
-    ApplyLockState()
-    ApplyHideDefaultTracker()
 
     if state.isInitialized then
         if state.opts.hideInCombat then
@@ -823,23 +688,6 @@ function QuestTracker.ApplySettings(settings)
 
     RefreshVisibility()
     RequestRefresh()
-end
-
-local function BuildBackdropOptions(background)
-    if type(background) ~= "table" or background.enabled == false then
-        return nil
-    end
-
-    local alpha = tonumber(background.alpha) or DEFAULT_BACKDROP.centerColor[4]
-    local edgeAlpha = tonumber(background.edgeAlpha) or DEFAULT_BACKDROP.edgeColor[4]
-
-    return {
-        edgeTexture = DEFAULT_BACKDROP.edgeTexture,
-        tileSize = DEFAULT_BACKDROP.tileSize,
-        edgeFileWidth = DEFAULT_BACKDROP.edgeFileWidth,
-        centerColor = { 0, 0, 0, alpha },
-        edgeColor = { 0, 0, 0, edgeAlpha },
-    }
 end
 
 function QuestTracker.ApplyTheme(settings)
@@ -856,18 +704,15 @@ function QuestTracker.ApplyTheme(settings)
     state.opts.fonts.toggle = state.opts.fonts.category or DEFAULT_FONTS.toggle
     state.fonts = MergeFonts(state.opts.fonts)
 
-    local background = settings.background or settings.backdrop or {}
-    state.theme = state.theme or {}
-    state.theme.backdrop = BuildBackdropOptions(background)
-    state.padding = tonumber(background.padding) or state.padding or 0
-
-    ApplyContainerPadding()
-    EnsureBackdrop()
     RequestRefresh()
 end
 
 function QuestTracker.RequestRefresh()
     RequestRefresh()
+end
+
+function QuestTracker.GetContentSize()
+    return state.contentWidth or 0, state.contentHeight or 0
 end
 
 Nvk3UT.QuestTracker = QuestTracker

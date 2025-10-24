@@ -24,14 +24,6 @@ local DEFAULT_FONTS = {
     toggle = "ZoFontGame",
 }
 
-local DEFAULT_BACKDROP = {
-    centerColor = { 0, 0, 0, 0.35 },
-    edgeColor = { 0, 0, 0, 0.5 },
-    edgeTexture = "EsoUI/Art/Tooltips/UI-Border.dds",
-    tileSize = 64,
-    edgeFileWidth = 16,
-}
-
 local unpack = table.unpack or unpack
 local LEFT_MOUSE_BUTTON = MOUSE_BUTTON_INDEX_LEFT or 1
 
@@ -45,7 +37,6 @@ local state = {
     saved = nil,
     control = nil,
     container = nil,
-    backdrop = nil,
     categoryPool = nil,
     achievementPool = nil,
     objectivePool = nil,
@@ -53,9 +44,9 @@ local state = {
     lastAnchoredControl = nil,
     snapshot = nil,
     subscription = nil,
-    padding = 0,
-    theme = nil,
     pendingRefresh = false,
+    contentWidth = 0,
+    contentHeight = 0,
 }
 
 local function DebugLog(...)
@@ -68,6 +59,15 @@ local function DebugLog(...)
     elseif print then
         print("[" .. MODULE_NAME .. "]", ...)
     end
+end
+
+local function NotifyHostContentChanged()
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if not (host and host.NotifyContentChanged) then
+        return
+    end
+
+    pcall(host.NotifyContentChanged)
 end
 
 local function EnsureSavedVars()
@@ -121,17 +121,6 @@ local function BuildFontString(descriptor, fallback)
     end
 
     return string.format("%s|%d|%s", face, size, outline or DEFAULT_FONT_OUTLINE)
-end
-
-local function ApplyContainerPadding()
-    if not state.container or not state.control then
-        return
-    end
-
-    local inset = tonumber(state.padding) or 0
-    state.container:ClearAnchors()
-    state.container:SetAnchor(TOPLEFT, state.control, TOPLEFT, inset, inset)
-    state.container:SetAnchor(BOTTOMRIGHT, state.control, BOTTOMRIGHT, -inset, -inset)
 end
 
 local function BuildFavoritesScope()
@@ -205,59 +194,6 @@ local function BuildTodoLookup()
     return lookup
 end
 
-local function EnsureBackdrop()
-    if not state.control then
-        return
-    end
-
-    local theme = state.theme or {}
-    local background = theme.backdrop
-
-    if not background then
-        if state.backdrop then
-            if state.backdrop.Destroy then
-                state.backdrop:Destroy()
-            else
-                state.backdrop:SetHidden(true)
-                state.backdrop:SetParent(nil)
-            end
-        end
-        state.backdrop = nil
-        return
-    end
-
-    if not state.backdrop then
-        local control = WINDOW_MANAGER and WINDOW_MANAGER:CreateControl(nil, state.control, CT_BACKDROP)
-        if not control then
-            return
-        end
-
-        control:SetAnchorFill()
-        control:SetDrawLayer(DL_BACKGROUND)
-        control:SetDrawTier(DT_LOW)
-        control:SetDrawLevel(0)
-        if control.SetExcludeFromResizeToFitExtents then
-            control:SetExcludeFromResizeToFitExtents(true)
-        end
-        state.backdrop = control
-    end
-
-    local control = state.backdrop
-    if background.edgeTexture then
-        control:SetEdgeTexture(background.edgeTexture, background.tileSize or 128, background.edgeFileWidth or 16)
-    end
-
-    if background.centerColor then
-        control:SetCenterColor(unpack(background.centerColor))
-    end
-
-    if background.edgeColor then
-        control:SetEdgeColor(unpack(background.edgeColor))
-    end
-
-    control:SetHidden(false)
-end
-
 local function RequestRefresh()
     if not state.isInitialized then
         return
@@ -288,6 +224,7 @@ local function RefreshVisibility()
 
     local hidden = state.opts and state.opts.active == false
     state.control:SetHidden(hidden)
+    NotifyHostContentChanged()
 end
 
 local function ResetLayoutState()
@@ -318,20 +255,7 @@ local function AnchorControl(control, indentX)
     control.currentIndent = indentX
 end
 
-local function UpdateAutoSize()
-    if not state.control then
-        return
-    end
-
-    local paddingWidth = 0
-    local paddingHeight = 0
-
-    if state.padding and state.padding > 0 then
-        local inset = state.padding * 2
-        paddingWidth = paddingWidth + inset
-        paddingHeight = paddingHeight + inset
-    end
-
+local function UpdateContentSize()
     local maxWidth = 0
     local totalHeight = 0
     local visibleCount = 0
@@ -351,32 +275,8 @@ local function UpdateAutoSize()
         end
     end
 
-    if state.opts.autoGrowH and maxWidth > 0 and state.control.SetWidth then
-        state.control:SetWidth(maxWidth + paddingWidth)
-    end
-
-    if state.opts.autoGrowV and totalHeight > 0 and state.control.SetHeight then
-        state.control:SetHeight(totalHeight + paddingHeight)
-    end
-end
-
-local function AttachBackdrop()
-    EnsureBackdrop()
-end
-
-local function EnsureContainer()
-    if state.container or not WINDOW_MANAGER then
-        return
-    end
-
-    local container = WINDOW_MANAGER:CreateControl(nil, state.control, CT_CONTROL)
-    if not container then
-        return
-    end
-
-    container:SetAnchorFill()
-    container:SetResizeToFitDescendents(true)
-    state.container = container
+    state.contentWidth = maxWidth
+    state.contentHeight = totalHeight
 end
 
 local function SetCategoryExpanded(expanded)
@@ -707,7 +607,8 @@ local function Rebuild()
 
     LayoutCategory()
 
-    UpdateAutoSize()
+    UpdateContentSize()
+    NotifyHostContentChanged()
 end
 
 local function OnSnapshotUpdated(snapshot)
@@ -737,18 +638,6 @@ local function UnsubscribeFromModel()
     state.subscription = nil
 end
 
-local function ApplyLockState()
-    if not state.control or not state.control.SetMovable then
-        return
-    end
-
-    if state.opts.lock == nil then
-        return
-    end
-
-    state.control:SetMovable(not state.opts.lock)
-end
-
 function AchievementTracker.Init(parentControl, opts)
     if not parentControl then
         error("AchievementTracker.Init requires a parent control")
@@ -759,6 +648,10 @@ function AchievementTracker.Init(parentControl, opts)
     end
 
     state.control = parentControl
+    state.container = parentControl
+    if state.control and state.control.SetResizeToFitDescendents then
+        state.control:SetResizeToFitDescendents(true)
+    end
     EnsureSavedVars()
 
     state.opts = {}
@@ -771,11 +664,6 @@ function AchievementTracker.Init(parentControl, opts)
         AchievementTracker.ApplyTheme(opts)
         AchievementTracker.ApplySettings(opts)
     end
-
-    EnsureContainer()
-    ApplyContainerPadding()
-    AttachBackdrop()
-    ApplyLockState()
 
     SubscribeToModel()
 
@@ -810,26 +698,7 @@ function AchievementTracker.Shutdown()
     state.achievementPool = nil
     state.objectivePool = nil
 
-    if state.backdrop then
-        if state.backdrop.Destroy then
-            state.backdrop:Destroy()
-        else
-            state.backdrop:SetHidden(true)
-            state.backdrop:SetParent(nil)
-        end
-    end
-    state.backdrop = nil
-
-    if state.container then
-        if state.container.Destroy then
-            state.container:Destroy()
-        else
-            state.container:SetHidden(true)
-            state.container:SetParent(nil)
-        end
-    end
     state.container = nil
-
     state.control = nil
     state.snapshot = nil
     state.orderedControls = {}
@@ -838,40 +707,10 @@ function AchievementTracker.Shutdown()
     state.opts = {}
 
     state.isInitialized = false
-    state.theme = nil
-    state.padding = 0
     state.pendingRefresh = false
-end
-
-local function BuildBackdropOptions(background)
-    if type(background) ~= "table" or background.enabled == false then
-        return nil
-    end
-
-    local alpha = tonumber(background.alpha) or DEFAULT_BACKDROP.centerColor[4]
-    local edgeAlpha = tonumber(background.edgeAlpha) or DEFAULT_BACKDROP.edgeColor[4]
-
-    return {
-        edgeTexture = DEFAULT_BACKDROP.edgeTexture,
-        tileSize = DEFAULT_BACKDROP.tileSize,
-        edgeFileWidth = DEFAULT_BACKDROP.edgeFileWidth,
-        centerColor = { 0, 0, 0, alpha },
-        edgeColor = { 0, 0, 0, edgeAlpha },
-    }
-end
-
-local function ApplyAutoGrow(settings)
-    if type(settings) ~= "table" then
-        return
-    end
-
-    if settings.autoGrowV ~= nil then
-        state.opts.autoGrowV = settings.autoGrowV and true or false
-    end
-
-    if settings.autoGrowH ~= nil then
-        state.opts.autoGrowH = settings.autoGrowH and true or false
-    end
+    state.contentWidth = 0
+    state.contentHeight = 0
+    NotifyHostContentChanged()
 end
 
 local function EnsureSections()
@@ -900,15 +739,12 @@ function AchievementTracker.ApplySettings(settings)
         return
     end
 
-    state.opts.lock = settings.lock ~= nil and settings.lock or state.opts.lock
     state.opts.active = settings.active ~= false
-    ApplyAutoGrow(settings)
     ApplySections(settings.sections)
     if settings.tooltips ~= nil then
         ApplyTooltipsSetting(settings.tooltips)
     end
 
-    ApplyLockState()
     RefreshVisibility()
     RequestRefresh()
 end
@@ -928,13 +764,6 @@ function AchievementTracker.ApplyTheme(settings)
 
     state.fonts = MergeFonts(state.opts.fonts)
 
-    local background = settings.background or settings.backdrop or {}
-    state.theme = state.theme or {}
-    state.theme.backdrop = BuildBackdropOptions(background)
-    state.padding = tonumber(background.padding) or state.padding or 0
-
-    ApplyContainerPadding()
-    EnsureBackdrop()
     RequestRefresh()
 end
 
@@ -951,7 +780,11 @@ function AchievementTracker.RefreshVisibility()
     RefreshVisibility()
 end
 
--- Ensure the container exists before applying padding/backdrop during init
+function AchievementTracker.GetContentSize()
+    return state.contentWidth or 0, state.contentHeight or 0
+end
+
+-- Ensure the container exists before populating entries during init
 Nvk3UT.AchievementTracker = AchievementTracker
 
 return AchievementTracker
