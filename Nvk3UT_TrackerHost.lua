@@ -71,6 +71,9 @@ local state = {
     scrollContent = nil,
     scrollbar = nil,
     scrollContentRightOffset = 0,
+    scrollOffset = 0,
+    scrollMaxOffset = 0,
+    updatingScrollbar = false,
     questContainer = nil,
     achievementContainer = nil,
     backdrop = nil,
@@ -90,6 +93,8 @@ local ensureSceneFragments
 local refreshScroll
 local applyViewportPadding
 local measureTrackerContent
+local setScrollOffset
+local updateScrollContentAnchors
 
 local function clamp(value, minimum, maximum)
     if value == nil then
@@ -454,9 +459,45 @@ local function debugLog(...)
     end
 end
 
+setScrollOffset = function(offset, skipScrollbarUpdate)
+    local maxOffset = state.scrollMaxOffset or 0
+    if offset == nil then
+        offset = 0
+    end
+
+    offset = math.max(0, math.min(offset, maxOffset))
+
+    if math.abs((state.scrollOffset or 0) - offset) < 0.01 then
+        if not skipScrollbarUpdate and state.scrollbar and state.scrollbar.SetValue then
+            local current = state.scrollbar.GetValue and state.scrollbar:GetValue() or 0
+            if math.abs(current - offset) >= 0.01 then
+                state.updatingScrollbar = true
+                state.scrollbar:SetValue(offset)
+                state.updatingScrollbar = false
+            end
+        end
+        return offset
+    end
+
+    state.scrollOffset = offset
+
+    updateScrollContentAnchors()
+
+    if not skipScrollbarUpdate and state.scrollbar and state.scrollbar.SetValue then
+        local current = state.scrollbar.GetValue and state.scrollbar:GetValue() or 0
+        if math.abs(current - offset) >= 0.01 then
+            state.updatingScrollbar = true
+            state.scrollbar:SetValue(offset)
+            state.updatingScrollbar = false
+        end
+    end
+
+    return offset
+end
+
 local function adjustScroll(delta)
     local scrollbar = state.scrollbar
-    if not (scrollbar and scrollbar.GetMinMax and scrollbar.SetValue) then
+    if not (scrollbar and scrollbar.GetMinMax) then
         return
     end
 
@@ -468,13 +509,32 @@ local function adjustScroll(delta)
     local current = scrollbar.GetValue and scrollbar:GetValue() or 0
     local step = 48
     local target = current - (delta * step)
+    state.scrollMaxOffset = maxValue
     if target < minValue then
         target = minValue
     elseif target > maxValue then
         target = maxValue
     end
+    setScrollOffset(target)
+end
 
-    scrollbar:SetValue(target)
+updateScrollContentAnchors = function()
+    local scrollContainer = state.scrollContainer
+    local scrollContent = state.scrollContent
+    if not (scrollContainer and scrollContent) then
+        return
+    end
+
+    scrollContent:ClearAnchors()
+    local offsetY = -(state.scrollOffset or 0)
+    scrollContent:SetAnchor(TOPLEFT, scrollContainer, TOPLEFT, 0, offsetY)
+    scrollContent:SetAnchor(
+        TOPRIGHT,
+        scrollContainer,
+        TOPRIGHT,
+        state.scrollContentRightOffset or 0,
+        offsetY
+    )
 end
 
 measureTrackerContent = function(container, trackerModule)
@@ -671,17 +731,7 @@ applyViewportPadding = function()
         state.scrollContainer:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, -padding, -padding)
     end
 
-    if state.scrollContent and state.scrollContainer then
-        state.scrollContent:ClearAnchors()
-        state.scrollContent:SetAnchor(TOPLEFT, state.scrollContainer, TOPLEFT, 0, 0)
-        state.scrollContent:SetAnchor(
-            TOPRIGHT,
-            state.scrollContainer,
-            TOPRIGHT,
-            state.scrollContentRightOffset or 0,
-            0
-        )
-    end
+    updateScrollContentAnchors()
 
     if state.scrollbar then
         state.scrollbar:ClearAnchors()
@@ -736,23 +786,24 @@ refreshScroll = function()
     local scrollbarWidth = (scrollbar.GetWidth and scrollbar:GetWidth()) or SCROLLBAR_WIDTH
     local desiredRightOffset = showScrollbar and -scrollbarWidth or 0
 
-    local setScrollExtents = scrollContainer.SetScrollExtents
-    if setScrollExtents then
-        setScrollExtents(scrollContainer, 0, 0, 0, maxOffset)
-    end
-
     local setMinMax = scrollbar.SetMinMax
     if setMinMax then
         setMinMax(scrollbar, 0, maxOffset)
     end
 
+    local setHidden = scrollbar.SetHidden
+    if setHidden then
+        setHidden(scrollbar, not showScrollbar)
+    end
+
+    state.scrollMaxOffset = maxOffset
+
     local getValue = scrollbar.GetValue
     local current = getValue and getValue(scrollbar) or 0
     current = math.max(0, math.min(current, maxOffset))
 
-    local setHidden = scrollbar.SetHidden
-    if setHidden then
-        setHidden(scrollbar, not showScrollbar)
+    if not showScrollbar then
+        current = 0
     end
 
     if state.scrollContentRightOffset ~= desiredRightOffset then
@@ -760,19 +811,7 @@ refreshScroll = function()
         applyViewportPadding()
     end
 
-    if not showScrollbar then
-        current = 0
-    end
-
-    local setValue = scrollbar.SetValue
-    if setValue then
-        setValue(scrollbar, current)
-    end
-
-    local setVerticalScroll = scrollContainer.SetVerticalScroll
-    if setVerticalScroll then
-        setVerticalScroll(scrollContainer, current)
-    end
+    setScrollOffset(current)
 end
 
 local function createScrollContainer()
@@ -852,10 +891,10 @@ local function createScrollContainer()
     end
 
     scrollbar:SetHandler("OnValueChanged", function(_, value)
-        local setVerticalScroll = scrollContainer.SetVerticalScroll
-        if setVerticalScroll then
-            setVerticalScroll(scrollContainer, value)
+        if state.updatingScrollbar then
+            return
         end
+        setScrollOffset(value, true)
     end)
 
     scrollContainer:SetHandler("OnMouseWheel", function(_, delta)
@@ -866,6 +905,8 @@ local function createScrollContainer()
     state.scrollContent = scrollContent
     state.scrollbar = scrollbar
     state.scrollContentRightOffset = 0
+    state.scrollOffset = 0
+    state.scrollMaxOffset = 0
 
     state.appearance = ensureAppearanceSettings()
     applyViewportPadding()
@@ -1467,6 +1508,9 @@ function TrackerHost.Shutdown()
     end
     state.scrollContent = nil
     state.scrollContentRightOffset = 0
+    state.scrollOffset = 0
+    state.scrollMaxOffset = 0
+    state.updatingScrollbar = false
 
     if state.scrollContainer then
         state.scrollContainer:SetHandler("OnMouseWheel", nil)
