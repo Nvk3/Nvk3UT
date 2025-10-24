@@ -658,7 +658,7 @@ local function LayoutCategory()
     local achievements = (state.snapshot and state.snapshot.achievements) or {}
     local sections = state.opts.sections or {}
     local showCompleted = sections.completed ~= false
-    local showFavorites = sections.favorites ~= false
+    local showFavorites = true
     local showRecent = sections.recent ~= false
     local showTodo = sections.todo ~= false
 
@@ -690,6 +690,9 @@ local function LayoutCategory()
                 if showFavorites then
                     allowed = true
                 end
+            else
+                hasTag = true
+                include = false
             end
 
             if isRecent then

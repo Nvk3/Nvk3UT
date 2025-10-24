@@ -67,6 +67,21 @@ local function SafeCallMulti(func, ...)
     return tableUnpack(results)
 end
 
+local function NormalizeAchievementId(value)
+    if type(value) == "number" then
+        return value
+    end
+
+    if type(value) == "string" then
+        local numeric = tonumber(value)
+        if numeric then
+            return numeric
+        end
+    end
+
+    return nil
+end
+
 local function LogDebug(self, ...)
     if not self.debugEnabled then
         return
@@ -120,7 +135,7 @@ local function BuildObjectiveData(achievementId)
     return objectives
 end
 
-local function DetermineCategoryInfo(categoryIndex, subCategoryIndex)
+local function DetermineCategoryInfo(categoryIndex, subCategoryIndex, achievementIndex)
     if not categoryIndex then
         return nil
     end
@@ -144,142 +159,80 @@ local function DetermineCategoryInfo(categoryIndex, subCategoryIndex)
     return {
         categoryIndex = categoryIndex,
         subCategoryIndex = subCategoryIndex,
+        achievementIndex = achievementIndex,
         categoryName = categoryName,
         subCategoryName = subCategoryName,
     }
 end
 
-local function ExtractIndicesFromTrackedInfo(infoValues)
-    if not infoValues then
-        return nil
+local function BuildFavoriteScopes()
+    local scope = "account"
+    local general = Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.General
+    if general and type(general.favScope) == "string" and general.favScope ~= "" then
+        scope = general.favScope
     end
 
-    local numericValues = {}
-    for index = 1, #infoValues do
-        if type(infoValues[index]) == "number" then
-            numericValues[#numericValues + 1] = infoValues[index]
+    local ordered = {}
+    local seen = {}
+
+    local function addScope(value)
+        if not value or seen[value] then
+            return
         end
+        seen[value] = true
+        ordered[#ordered + 1] = value
     end
 
-    -- Best guess: the last three numeric values usually correspond to category/subcategory/index
-    if #numericValues >= 3 then
-        local categoryIndex = numericValues[#numericValues - 2]
-        local subCategoryIndex = numericValues[#numericValues - 1]
-        local achievementIndex = numericValues[#numericValues]
-        if categoryIndex and subCategoryIndex and achievementIndex then
-            return categoryIndex, subCategoryIndex, achievementIndex
-        end
-    end
+    addScope(scope)
+    addScope("account")
+    addScope("character")
 
-    return nil
+    return ordered
 end
 
-local function ResolveAchievementIdFromIndices(categoryIndex, subCategoryIndex, achievementIndex)
-    if not categoryIndex or not achievementIndex then
-        return nil
+local function CollectFavoriteIds(self)
+    local Fav = Nvk3UT and Nvk3UT.FavoritesData
+    if not (Fav and Fav.Iterate) then
+        return {}
     end
 
-    if type(GetAchievementId) ~= "function" then
-        return nil
-    end
+    local scopes = BuildFavoriteScopes()
+    local lookup = {}
+    local ids = {}
 
-    local ok, achievementId = pcall(GetAchievementId, categoryIndex, subCategoryIndex or 0, achievementIndex)
-    if ok then
-        return achievementId
-    end
-
-    return nil
-end
-
-local function ExtractAchievementIdFromInfoValues(infoValues)
-    if not infoValues then
-        return nil
-    end
-
-    for index = 1, #infoValues do
-        local value = infoValues[index]
-        if type(value) == "number" then
-            if GetAchievementInfo then
-                local ok, name = pcall(GetAchievementInfo, value)
-                if ok and type(name) == "string" and name ~= "" then
-                    return value
+    for index = 1, #scopes do
+        local scope = scopes[index]
+        local ok, iterator, state, key = pcall(Fav.Iterate, scope)
+        if ok and type(iterator) == "function" then
+            local currentKey = key
+            while true do
+                local rawId, flagged = iterator(state, currentKey)
+                currentKey = rawId
+                if rawId == nil then
+                    break
                 end
-            elseif IsAchievementComplete then
-                local ok, _ = pcall(IsAchievementComplete, value)
-                if ok then
-                    return value
+
+                if flagged then
+                    local normalizedId = NormalizeAchievementId(rawId)
+                    if normalizedId then
+                        if not lookup[normalizedId] then
+                            lookup[normalizedId] = true
+                            ids[#ids + 1] = normalizedId
+                        end
+                    else
+                        LogDebug(self, "Skipping invalid favorite id", tostring(rawId), tostring(scope))
+                    end
                 end
             end
+        else
+            LogDebug(self, "Unable to iterate favorites for scope", tostring(scope))
         end
     end
 
-    return nil
+    return ids
 end
 
-local function CollectTrackedIds(self)
-    local tracked = {}
-    local infoCache = {}
-
-    local numTracked = SafeCall(GetNumTrackedAchievements)
-    if numTracked and numTracked > 0 then
-        for trackedIndex = 1, numTracked do
-            local achievementId
-            local categoryIndex
-            local subCategoryIndex
-            local achievementIndex
-
-            if GetTrackedAchievementId then
-                achievementId = SafeCall(GetTrackedAchievementId, trackedIndex)
-            end
-
-            local infoValues
-            if GetTrackedAchievementInfo then
-                local ok, values = pcall(function()
-                    return { GetTrackedAchievementInfo(trackedIndex) }
-                end)
-                if ok and values then
-                    infoValues = values
-                    infoCache[trackedIndex] = infoValues
-                end
-            end
-
-            if (not achievementId or achievementId == 0) and infoValues then
-                achievementId = ExtractAchievementIdFromInfoValues(infoValues)
-            end
-
-            if GetTrackedAchievementIndices then
-                categoryIndex, subCategoryIndex, achievementIndex = SafeCallMulti(
-                    GetTrackedAchievementIndices,
-                    trackedIndex
-                )
-            elseif infoValues then
-                categoryIndex, subCategoryIndex, achievementIndex = ExtractIndicesFromTrackedInfo(infoValues)
-            end
-
-            if (not achievementId or achievementId == 0) and categoryIndex and achievementIndex then
-                achievementId = ResolveAchievementIdFromIndices(categoryIndex, subCategoryIndex, achievementIndex)
-            end
-
-            if achievementId then
-                tracked[#tracked + 1] = {
-                    trackedIndex = trackedIndex,
-                    achievementId = achievementId,
-                    categoryIndex = categoryIndex,
-                    subCategoryIndex = subCategoryIndex,
-                    achievementIndex = achievementIndex,
-                    rawInfo = infoCache[trackedIndex],
-                }
-            else
-                LogDebug(self, "Unable to resolve achievement id for tracked index", trackedIndex)
-            end
-        end
-    end
-
-    return tracked
-end
-
-local function BuildAchievementEntry(self, trackedEntry)
-    local achievementId = trackedEntry.achievementId
+local function BuildAchievementEntry(self, achievementId)
     if not achievementId then
         return nil
     end
@@ -326,39 +279,37 @@ local function BuildAchievementEntry(self, trackedEntry)
         end
     end
 
-    if not current and trackedEntry.rawInfo then
-        -- attempt to interpret the raw tracked info for progress values
-        for index = 1, #trackedEntry.rawInfo do
-            if type(trackedEntry.rawInfo[index]) == "number" then
-                if not current then
-                    current = trackedEntry.rawInfo[index]
-                elseif not maximum then
-                    maximum = trackedEntry.rawInfo[index]
-                    break
-                end
-            end
-        end
-    end
-
     local objectives = BuildObjectiveData(achievementId)
 
     local timestamp = completedTimestamp or SafeCall(GetAchievementTimestamp, achievementId)
 
-    local categoryInfo = trackedEntry.categoryIndex and DetermineCategoryInfo(
-        trackedEntry.categoryIndex,
-        trackedEntry.subCategoryIndex
-    )
+    local categoryIndex
+    local subCategoryIndex
+    local achievementIndex
+
+    if GetCategoryInfoFromAchievementId then
+        categoryIndex, subCategoryIndex, achievementIndex = SafeCallMulti(GetCategoryInfoFromAchievementId, achievementId)
+    end
+
+    local categoryInfo = DetermineCategoryInfo(categoryIndex, subCategoryIndex, achievementIndex)
 
     if (not categoryInfo or not categoryInfo.categoryName) and GetAchievementCategoryInfoFromAchievementId then
-        local ok, categoryIndex, subCategoryIndex = pcall(GetAchievementCategoryInfoFromAchievementId, achievementId)
+        local ok, fallbackCategoryIndex, fallbackSubCategoryIndex = pcall(
+            GetAchievementCategoryInfoFromAchievementId,
+            achievementId
+        )
         if ok then
-            categoryInfo = DetermineCategoryInfo(categoryIndex, subCategoryIndex)
+            categoryInfo = DetermineCategoryInfo(
+                fallbackCategoryIndex,
+                fallbackSubCategoryIndex,
+                achievementIndex
+            )
         end
     end
 
     local entry = {
         id = achievementId,
-        name = name or string.format("Achievement %d", achievementId),
+        name = (name and name ~= "" and name) or string.format("Achievement %d", achievementId),
         description = description,
         icon = icon,
         points = points,
@@ -372,9 +323,9 @@ local function BuildAchievementEntry(self, trackedEntry)
         flags = {
             isComplete = isComplete == true,
             isTracked = true,
+            isFavorite = true,
         },
         category = categoryInfo,
-        trackedIndex = trackedEntry.trackedIndex,
     }
 
     return entry
@@ -391,7 +342,7 @@ local function BuildAchievementSignature(entry)
     AppendSignaturePart(parts, entry.progress.current or "nil")
     AppendSignaturePart(parts, entry.progress.max or "nil")
     AppendSignaturePart(parts, entry.flags.isComplete and 1 or 0)
-    AppendSignaturePart(parts, entry.trackedIndex or 0)
+    AppendSignaturePart(parts, entry.sortOrder or 0)
 
     if entry.objectives then
         for index = 1, #entry.objectives do
@@ -407,23 +358,66 @@ local function BuildAchievementSignature(entry)
 end
 
 local function BuildSnapshot(self)
-    local tracked = CollectTrackedIds(self)
+    local favoriteIds = CollectFavoriteIds(self)
     local entries = {}
     local completeCount = 0
 
-    for index = 1, #tracked do
-        local entry = BuildAchievementEntry(self, tracked[index])
+    for index = 1, #favoriteIds do
+        local achievementId = favoriteIds[index]
+        local entry = BuildAchievementEntry(self, achievementId)
         if entry then
             entries[#entries + 1] = entry
             if entry.flags.isComplete then
                 completeCount = completeCount + 1
             end
+
+            local category = entry.category or {}
+            LogDebug(
+                self,
+                "Favorite entry",
+                achievementId,
+                category.categoryIndex,
+                category.subCategoryIndex,
+                category.achievementIndex
+            )
         end
     end
 
     table.sort(entries, function(left, right)
-        if left.trackedIndex and right.trackedIndex and left.trackedIndex ~= right.trackedIndex then
-            return left.trackedIndex < right.trackedIndex
+        local leftCategory = left.category or {}
+        local rightCategory = right.category or {}
+
+        local leftCategoryIndex = leftCategory.categoryIndex
+        local rightCategoryIndex = rightCategory.categoryIndex
+        if leftCategoryIndex ~= rightCategoryIndex then
+            if leftCategoryIndex == nil then
+                return false
+            elseif rightCategoryIndex == nil then
+                return true
+            end
+            return leftCategoryIndex < rightCategoryIndex
+        end
+
+        local leftSubCategoryIndex = leftCategory.subCategoryIndex
+        local rightSubCategoryIndex = rightCategory.subCategoryIndex
+        if leftSubCategoryIndex ~= rightSubCategoryIndex then
+            if leftSubCategoryIndex == nil then
+                return false
+            elseif rightSubCategoryIndex == nil then
+                return true
+            end
+            return leftSubCategoryIndex < rightSubCategoryIndex
+        end
+
+        local leftAchievementIndex = leftCategory.achievementIndex
+        local rightAchievementIndex = rightCategory.achievementIndex
+        if leftAchievementIndex ~= rightAchievementIndex then
+            if leftAchievementIndex == nil then
+                return false
+            elseif rightAchievementIndex == nil then
+                return true
+            end
+            return leftAchievementIndex < rightAchievementIndex
         end
 
         if left.name ~= right.name then
@@ -437,6 +431,7 @@ local function BuildSnapshot(self)
 
     for index = 1, #entries do
         local entry = entries[index]
+        entry.sortOrder = index
         entry.signature = BuildAchievementSignature(entry)
         signatureParts[index] = entry.signature
     end
@@ -534,6 +529,14 @@ local function UnregisterEvent(eventId)
     end
 
     EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. tostring(eventId), eventId)
+end
+
+function AchievementModel.OnFavoritesChanged()
+    if not AchievementModel.isInitialized then
+        return
+    end
+
+    ScheduleRebuild(AchievementModel)
 end
 
 function AchievementModel.Init(opts)
