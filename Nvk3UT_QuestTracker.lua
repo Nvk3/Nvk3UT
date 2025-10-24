@@ -47,6 +47,8 @@ local DEFAULT_FONTS = {
 local DEFAULT_FONT_OUTLINE = "soft-shadow-thin"
 local REFRESH_DEBOUNCE_MS = 80
 
+local RequestRefresh -- forward declaration for functions that trigger refreshes
+
 local state = {
     isInitialized = false,
     opts = {},
@@ -476,7 +478,7 @@ local function SyncTrackedQuestState(forcedIndex)
     local hasTracked = currentTracked ~= nil
     local hadTracked = previousTracked ~= nil
 
-    if previousTracked ~= currentTracked or hasTracked or hadTracked then
+    if RequestRefresh and (previousTracked ~= currentTracked or hasTracked or hadTracked) then
         RequestRefresh()
     end
 end
@@ -501,7 +503,7 @@ local function ForceAssistTrackedQuest(journalIndex)
     end, FOCUSED_QUEST_TRACKER, journalIndex)
 end
 
-local function RequestRefresh()
+local function RequestRefreshInternal()
     if not state.isInitialized then
         return
     end
@@ -522,6 +524,8 @@ local function RequestRefresh()
         execute()
     end
 end
+
+RequestRefresh = RequestRefreshInternal
 
 local function TrackQuestByJournalIndex(journalIndex)
     local numeric = tonumber(journalIndex)
