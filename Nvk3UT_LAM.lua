@@ -1,5 +1,8 @@
 Nvk3UT = Nvk3UT or {}
 
+local ADDON_NAME = "Nvk3UT"
+local DEFAULT_PANEL_TITLE = "Nvk3's Ultimate Tracker"
+
 local L = {}
 Nvk3UT.LAM = L
 
@@ -385,8 +388,8 @@ local function registerPanel(displayTitle)
 
     local panel = {
         type = "panel",
-        name = displayTitle or "Nvk3UT",
-        displayName = "|c66CCFF" .. (displayTitle or "Nvk3UT") .. "|r",
+        name = displayTitle or DEFAULT_PANEL_TITLE,
+        displayName = "|c66CCFF" .. (displayTitle or DEFAULT_PANEL_TITLE) .. "|r",
         author = "Nvk3",
         version = "{VERSION}",
         registerForRefresh = true,
@@ -1131,13 +1134,47 @@ function L.Build(displayTitle)
         return
     end
 
-    pendingPanelTitle = displayTitle or pendingPanelTitle or "Nvk3UT"
+    pendingPanelTitle = displayTitle or pendingPanelTitle or DEFAULT_PANEL_TITLE
 
     if registerPanel(pendingPanelTitle) then
         return
     end
 
     waitForLam()
+end
+
+local function ensureRegisteredWhenReady()
+    if L._registered then
+        return
+    end
+
+    if not (Nvk3UT and Nvk3UT.sv) then
+        if zo_callLater then
+            zo_callLater(ensureRegisteredWhenReady, 100)
+        end
+        return
+    end
+
+    pendingPanelTitle = pendingPanelTitle or DEFAULT_PANEL_TITLE
+
+    if registerPanel(pendingPanelTitle) then
+        return
+    end
+
+    waitForLam()
+end
+
+if EVENT_MANAGER then
+    local lamInitEvent = "Nvk3UT_LAM_OnAddonLoaded"
+    EVENT_MANAGER:RegisterForEvent(lamInitEvent, EVENT_ADD_ON_LOADED, function(_, addonName)
+        if addonName ~= ADDON_NAME then
+            return
+        end
+
+        EVENT_MANAGER:UnregisterForEvent(lamInitEvent, EVENT_ADD_ON_LOADED)
+
+        ensureRegisteredWhenReady()
+    end)
 end
 
 return L
