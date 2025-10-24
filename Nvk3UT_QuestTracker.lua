@@ -8,6 +8,17 @@ QuestTracker.__index = QuestTracker
 local MODULE_NAME = addonName .. "QuestTracker"
 local EVENT_NAMESPACE = MODULE_NAME .. "_Event"
 
+local Utils = Nvk3UT and Nvk3UT.Utils
+local FormatCategoryHeaderText =
+    (Utils and Utils.FormatCategoryHeaderText)
+    or function(baseText, count)
+        local text = baseText or ""
+        if type(count) == "number" and count >= 0 then
+            return string.format("%s (%d)", text, count)
+        end
+        return text
+    end
+
 local ICON_EXPANDED = "\226\150\190" -- ▼
 local ICON_COLLAPSED = "\226\150\182" -- ▶
 
@@ -618,7 +629,7 @@ local function LayoutCategory(category)
     local control = AcquireCategoryControl()
     control.data = { categoryKey = category.key }
     local count = #category.quests
-    control.label:SetText(string.format("%s (%d)", category.name or "", count))
+    control.label:SetText(FormatCategoryHeaderText(category.name or "", count))
     local expanded = IsCategoryExpanded(category.key)
     UpdateCategoryToggle(control, expanded)
     ApplyRowMetrics(

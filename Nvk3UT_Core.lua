@@ -21,6 +21,7 @@ local defaults = {
         favScope = "account",
         recentWindow = 0,
         recentMax = 100,
+        showCategoryCounts = true,
         window = {
             left = 200,
             top = 200,

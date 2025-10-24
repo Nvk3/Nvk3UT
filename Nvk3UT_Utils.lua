@@ -71,6 +71,39 @@ function M.GetIconTagForTexture(path, size)
   return string.format("|t%d:%d:%s|t ", iconSize, iconSize, normalized)
 end
 
+local function resolveShowCategoryCountsOverride(override)
+  if override ~= nil then
+    return override ~= false
+  end
+  local sv = Nvk3UT and Nvk3UT.sv
+  if not sv then
+    return true
+  end
+  if sv.showCategoryCounts ~= nil then
+    return sv.showCategoryCounts ~= false
+  end
+  local general = sv.General
+  if general and general.showCategoryCounts ~= nil then
+    return general.showCategoryCounts ~= false
+  end
+  return true
+end
+
+function M.ShouldShowCategoryCounts()
+  return resolveShowCategoryCountsOverride()
+end
+
+function M.FormatCategoryHeaderText(baseText, count, showCounts)
+  local text = baseText or ""
+  local show = resolveShowCategoryCountsOverride(showCounts)
+  local numericCount = tonumber(count)
+  if show and numericCount and numericCount >= 0 then
+    numericCount = math.floor(numericCount + 0.5)
+    return string.format("%s (%d)", text, numericCount)
+  end
+  return text
+end
+
 local function stripLeadingIcon(text)
   if type(text) ~= "string" or text == "" then
     return text
