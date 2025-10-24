@@ -56,6 +56,8 @@ local COLOR_CATEGORY_EXPANDED = COLOR_QUEST_TRACKED
 local COLOR_ROW_HOVER = { 1, 1, 0.6, 1 }
 
 local RequestRefresh -- forward declaration for functions that trigger refreshes
+local SetCategoryExpanded -- forward declaration for expansion helpers used before assignment
+local SetQuestExpanded
 
 local state = {
     isInitialized = false,
@@ -434,19 +436,19 @@ local function ApplyImmediateTrackedQuest(journalIndex)
     state.trackedQuestIndex = journalIndex
 end
 
-local function AutoExpandQuestForTracking(journalIndex)
+local function AutoExpandQuestForTracking(journalIndex, forceExpand)
     if not (state.saved and journalIndex) then
         return
     end
 
-    if state.saved.questExpanded[journalIndex] ~= nil then
+    if not forceExpand and state.saved.questExpanded[journalIndex] ~= nil then
         return
     end
 
-    state.saved.questExpanded[journalIndex] = true
+    SetQuestExpanded(journalIndex, true)
 end
 
-local function EnsureTrackedCategoriesExpanded(journalIndex)
+local function EnsureTrackedCategoriesExpanded(journalIndex, forceExpand)
     if not (state.saved and journalIndex) then
         return
     end
@@ -454,29 +456,31 @@ local function EnsureTrackedCategoriesExpanded(journalIndex)
     local keys = CollectCategoryKeysForQuest(journalIndex)
 
     for key in pairs(keys) do
-        if key and state.saved.catExpanded[key] == nil then
-            state.saved.catExpanded[key] = true
+        if key then
+            if forceExpand or state.saved.catExpanded[key] == nil then
+                SetCategoryExpanded(key, true)
+            end
         end
     end
 end
 
-local function EnsureTrackedQuestVisible(journalIndex)
+local function EnsureTrackedQuestVisible(journalIndex, forceExpand)
     if not journalIndex then
         return
     end
 
-    EnsureTrackedCategoriesExpanded(journalIndex)
-    AutoExpandQuestForTracking(journalIndex)
+    EnsureTrackedCategoriesExpanded(journalIndex, forceExpand)
+    AutoExpandQuestForTracking(journalIndex, forceExpand)
 end
 
-local function SyncTrackedQuestState(forcedIndex)
+local function SyncTrackedQuestState(forcedIndex, forceExpand)
     local previousTracked = state.trackedQuestIndex
 
     UpdateTrackedQuestCache(forcedIndex)
 
     local currentTracked = state.trackedQuestIndex
     if currentTracked then
-        EnsureTrackedQuestVisible(currentTracked)
+        EnsureTrackedQuestVisible(currentTracked, forceExpand)
     end
 
     if not state.isInitialized then
@@ -622,7 +626,7 @@ local function OnTrackedQuestUpdate(_, trackingType)
         return
     end
 
-    SyncTrackedQuestState()
+    SyncTrackedQuestState(nil, true)
 end
 
 local function OnFocusedTrackerAssistChanged(_, assistedData)
@@ -630,17 +634,17 @@ local function OnFocusedTrackerAssistChanged(_, assistedData)
     if questIndex ~= nil then
         local numeric = tonumber(questIndex)
         if numeric and numeric > 0 then
-            SyncTrackedQuestState(numeric)
+            SyncTrackedQuestState(numeric, true)
             return
         end
     end
 
-    SyncTrackedQuestState()
+    SyncTrackedQuestState(nil, true)
 end
 
 local function OnPlayerActivated()
     local function execute()
-        SyncTrackedQuestState()
+        SyncTrackedQuestState(nil, true)
     end
 
     if zo_callLater then
@@ -862,7 +866,7 @@ local function IsQuestExpanded(journalIndex)
     return savedValue
 end
 
-local function SetCategoryExpanded(categoryKey, expanded)
+SetCategoryExpanded = function(categoryKey, expanded)
     if not (state.saved and categoryKey) then
         return false
     end
@@ -876,7 +880,7 @@ local function SetCategoryExpanded(categoryKey, expanded)
     return true
 end
 
-local function SetQuestExpanded(journalIndex, expanded)
+SetQuestExpanded = function(journalIndex, expanded)
     if not (state.saved and journalIndex) then
         return false
     end
