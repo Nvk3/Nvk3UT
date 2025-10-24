@@ -483,29 +483,56 @@ local function refreshScroll()
         return
     end
 
+    local _, questHeight = measureTrackerContent(state.questContainer, Nvk3UT and Nvk3UT.QuestTracker)
+    local _, achievementHeight = measureTrackerContent(
+        state.achievementContainer,
+        Nvk3UT and Nvk3UT.AchievementTracker
+    )
+
+    questHeight = math.max(0, tonumber(questHeight) or 0)
+    achievementHeight = math.max(0, tonumber(achievementHeight) or 0)
+    local contentHeight = questHeight + achievementHeight
+    contentHeight = math.max(0, contentHeight)
+
+    if state.questContainer and state.questContainer.SetHeight then
+        state.questContainer:SetHeight(questHeight)
+    end
+
+    if state.achievementContainer and state.achievementContainer.SetHeight then
+        state.achievementContainer:SetHeight(achievementHeight)
+    end
+
     if scrollContent.SetResizeToFitDescendents then
-        scrollContent:SetResizeToFitDescendents(true)
+        scrollContent:SetResizeToFitDescendents(false)
+    end
+    if scrollContent.SetHeight then
+        scrollContent:SetHeight(contentHeight)
     end
 
-    local viewportHeight = scrollContainer:GetHeight() or 0
-    local contentHeight = scrollContent:GetHeight() or 0
-    local maxOffset = math.max((contentHeight or 0) - viewportHeight, 0)
-    local showScrollbar = maxOffset > 0
-    local desiredRightOffset = showScrollbar and -SCROLLBAR_WIDTH or 0
+    local viewportHeight = scrollContainer.GetHeight and scrollContainer:GetHeight() or 0
+    local maxOffset = math.max(contentHeight - viewportHeight, 0)
+    local showScrollbar = maxOffset > 0.5
 
-    if scrollContainer.SetScrollExtents then
-        scrollContainer:SetScrollExtents(0, 0, 0, maxOffset)
+    local scrollbarWidth = (scrollbar.GetWidth and scrollbar:GetWidth()) or SCROLLBAR_WIDTH
+    local desiredRightOffset = showScrollbar and -scrollbarWidth or 0
+
+    local setScrollExtents = scrollContainer.SetScrollExtents
+    if setScrollExtents then
+        setScrollExtents(scrollContainer, 0, 0, 0, maxOffset)
     end
 
-    if scrollbar.SetMinMax then
-        scrollbar:SetMinMax(0, maxOffset)
+    local setMinMax = scrollbar.SetMinMax
+    if setMinMax then
+        setMinMax(scrollbar, 0, maxOffset)
     end
 
-    local current = scrollbar.GetValue and scrollbar:GetValue() or 0
+    local getValue = scrollbar.GetValue
+    local current = getValue and getValue(scrollbar) or 0
     current = math.max(0, math.min(current, maxOffset))
 
-    if scrollbar.SetHidden then
-        scrollbar:SetHidden(not showScrollbar)
+    local setHidden = scrollbar.SetHidden
+    if setHidden then
+        setHidden(scrollbar, not showScrollbar)
     end
 
     if state.scrollContentRightOffset ~= desiredRightOffset then
@@ -517,12 +544,14 @@ local function refreshScroll()
         current = 0
     end
 
-    if scrollbar.SetValue then
-        scrollbar:SetValue(current)
+    local setValue = scrollbar.SetValue
+    if setValue then
+        setValue(scrollbar, current)
     end
 
-    if scrollContainer.SetVerticalScroll then
-        scrollContainer:SetVerticalScroll(current)
+    local setVerticalScroll = scrollContainer.SetVerticalScroll
+    if setVerticalScroll then
+        setVerticalScroll(scrollContainer, current)
     end
 end
 
@@ -720,13 +749,6 @@ local function applyViewportPadding()
         state.scrollContainer:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, -padding, -padding)
     end
 
-    if state.scrollbar then
-        state.scrollbar:ClearAnchors()
-        state.scrollbar:SetAnchor(TOPRIGHT, state.root, TOPRIGHT, -padding, padding)
-        state.scrollbar:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, -padding, -padding)
-        state.scrollbar:SetWidth(SCROLLBAR_WIDTH)
-    end
-
     if state.scrollContent and state.scrollContainer then
         state.scrollContent:ClearAnchors()
         state.scrollContent:SetAnchor(TOPLEFT, state.scrollContainer, TOPLEFT, 0, 0)
@@ -737,7 +759,16 @@ local function applyViewportPadding()
             state.scrollContentRightOffset or 0,
             0
         )
-        state.scrollContent:SetResizeToFitDescendents(true)
+    end
+
+    if state.scrollbar then
+        state.scrollbar:ClearAnchors()
+        local parent = state.scrollContainer or state.root
+        state.scrollbar:SetAnchor(TOPRIGHT, parent, TOPRIGHT, 0, 0)
+        state.scrollbar:SetAnchor(BOTTOMRIGHT, parent, BOTTOMRIGHT, 0, 0)
+        if state.scrollbar.SetWidth then
+            state.scrollbar:SetWidth(SCROLLBAR_WIDTH)
+        end
     end
 end
 
@@ -746,7 +777,14 @@ local function createScrollContainer()
         return
     end
 
-    local scrollContainer = WINDOW_MANAGER:CreateControl(SCROLL_CONTAINER_NAME, state.root, CT_SCROLL)
+    local scrollContainer = WINDOW_MANAGER:CreateControlFromVirtual(
+        SCROLL_CONTAINER_NAME,
+        state.root,
+        "ZO_ScrollContainer"
+    )
+    if not scrollContainer then
+        scrollContainer = WINDOW_MANAGER:CreateControl(SCROLL_CONTAINER_NAME, state.root, CT_SCROLL)
+    end
     if not scrollContainer then
         return
     end
@@ -759,37 +797,61 @@ local function createScrollContainer()
         scrollContainer:SetBackgroundColor(0, 0, 0, 0)
     end
 
-    local scrollContent = WINDOW_MANAGER:CreateControl(SCROLL_CONTENT_NAME, scrollContainer, CT_CONTROL)
-    scrollContent:SetMouseEnabled(false)
-    scrollContent:SetAnchor(TOPLEFT, scrollContainer, TOPLEFT, 0, 0)
-    scrollContent:SetAnchor(TOPRIGHT, scrollContainer, TOPRIGHT, 0, 0)
-    scrollContent:SetResizeToFitDescendents(true)
-    if scrollContent.SetAlpha then
-        scrollContent:SetAlpha(1)
-    end
-    if scrollContainer.SetScrollChild then
-        scrollContainer:SetScrollChild(scrollContent)
+    local scrollContent = scrollContainer:GetNamedChild("ScrollChild")
+    if scrollContent then
+        if scrollContent.SetName then
+            scrollContent:SetName(SCROLL_CONTENT_NAME)
+        end
+    else
+        scrollContent = WINDOW_MANAGER:CreateControl(SCROLL_CONTENT_NAME, scrollContainer, CT_CONTROL)
+        if scrollContainer.SetScrollChild then
+            scrollContainer:SetScrollChild(scrollContent)
+        end
     end
 
-    local scrollbar = WINDOW_MANAGER:CreateControl(SCROLLBAR_NAME, state.root, CT_SCROLLBAR)
+    scrollContent:SetMouseEnabled(false)
+    scrollContent:ClearAnchors()
+    scrollContent:SetAnchor(TOPLEFT, scrollContainer, TOPLEFT, 0, 0)
+    scrollContent:SetAnchor(TOPRIGHT, scrollContainer, TOPRIGHT, 0, 0)
+    if scrollContent.SetResizeToFitDescendents then
+        scrollContent:SetResizeToFitDescendents(false)
+    end
+    local scrollbar = scrollContainer:GetNamedChild("ScrollBar")
+    if scrollbar then
+        if scrollbar.SetName then
+            scrollbar:SetName(SCROLLBAR_NAME)
+        end
+    else
+        scrollbar = WINDOW_MANAGER:CreateControl(SCROLLBAR_NAME, scrollContainer, CT_SCROLLBAR)
+    end
+
     scrollbar:SetMouseEnabled(true)
-    scrollbar:SetAnchor(TOPRIGHT, state.root, TOPRIGHT, 0, 0)
-    scrollbar:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, 0, 0)
-    scrollbar:SetWidth(SCROLLBAR_WIDTH)
-    scrollbar:SetHidden(true)
+    scrollbar:ClearAnchors()
+    scrollbar:SetAnchor(TOPRIGHT, scrollContainer, TOPRIGHT, 0, 0)
+    scrollbar:SetAnchor(BOTTOMRIGHT, scrollContainer, BOTTOMRIGHT, 0, 0)
+    if scrollbar.SetWidth then
+        scrollbar:SetWidth(SCROLLBAR_WIDTH)
+    end
+    if scrollbar.SetHidden then
+        scrollbar:SetHidden(true)
+    end
     if scrollbar.SetAllowDragging then
         scrollbar:SetAllowDragging(true)
-    end
-    if scrollbar.SetValue then
-        scrollbar:SetValue(0)
     end
     if scrollbar.SetStep then
         scrollbar:SetStep(32)
     end
+    if scrollbar.SetValue then
+        scrollbar:SetValue(0)
+    end
+    if scrollbar.SetMinMax then
+        scrollbar:SetMinMax(0, 0)
+    end
 
     scrollbar:SetHandler("OnValueChanged", function(_, value)
-        if state.scrollContainer and state.scrollContainer.SetVerticalScroll then
-            state.scrollContainer:SetVerticalScroll(value)
+        local setVerticalScroll = scrollContainer.SetVerticalScroll
+        if setVerticalScroll then
+            setVerticalScroll(scrollContainer, value)
         end
     end)
 
@@ -825,7 +887,7 @@ local function createContainers()
         if questContainer then
             questContainer:SetMouseEnabled(false)
             if questContainer.SetResizeToFitDescendents then
-                questContainer:SetResizeToFitDescendents(true)
+                questContainer:SetResizeToFitDescendents(false)
             end
             questContainer:SetHandler("OnMouseWheel", function(_, delta)
                 adjustScroll(delta)
@@ -845,7 +907,7 @@ local function createContainers()
         if achievementContainer then
             achievementContainer:SetMouseEnabled(false)
             if achievementContainer.SetResizeToFitDescendents then
-                achievementContainer:SetResizeToFitDescendents(true)
+                achievementContainer:SetResizeToFitDescendents(false)
             end
             achievementContainer:SetHandler("OnMouseWheel", function(_, delta)
                 adjustScroll(delta)
@@ -1376,6 +1438,7 @@ function TrackerHost.Shutdown()
 
     if state.scrollbar then
         state.scrollbar:SetHidden(true)
+        state.scrollbar:SetHandler("OnValueChanged", nil)
         state.scrollbar:SetParent(nil)
     end
     state.scrollbar = nil
