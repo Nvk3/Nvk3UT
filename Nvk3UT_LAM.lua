@@ -571,23 +571,6 @@ local function registerPanel(displayTitle)
 
             controls[#controls + 1] = {
                 type = "checkbox",
-                name = "An Bildschirm fesseln",
-                getFunc = function()
-                    local general = getGeneral()
-                    return general.window.clamp ~= false
-                end,
-                setFunc = function(value)
-                    local general = getGeneral()
-                    general.window.clamp = value ~= false
-                    if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
-                        Nvk3UT.TrackerHost.ApplySettings()
-                    end
-                end,
-                default = DEFAULT_WINDOW.clamp,
-            }
-
-            controls[#controls + 1] = {
-                type = "checkbox",
                 name = "Immer im Vordergrund",
                 getFunc = function()
                     local general = getGeneral()
