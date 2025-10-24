@@ -2090,7 +2090,12 @@ function TrackerHost.OnLamPanelOpened()
 
     local label = getStatusLabel()
     if label then
-        lamPreview.wasStatusTextVisibleBeforeLAM = not label:IsHidden()
+        local visible = not label:IsHidden()
+        if not visible and label.IsHiddenByParent and label:IsHiddenByParent() then
+            visible = true
+        end
+
+        lamPreview.wasStatusTextVisibleBeforeLAM = visible
     else
         lamPreview.wasStatusTextVisibleBeforeLAM = nil
     end
