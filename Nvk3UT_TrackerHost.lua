@@ -543,7 +543,9 @@ setScrollOffset = function(offset, skipScrollbarUpdate)
 
     offset = math.max(0, math.min(offset, maxOffset))
 
-    if math.abs((state.scrollOffset or 0) - offset) < 0.01 then
+    local previous = state.scrollOffset or 0
+    if math.abs(previous - offset) < 0.01 then
+        state.scrollOffset = offset
         if not skipScrollbarUpdate and state.scrollbar and state.scrollbar.SetValue then
             local current = state.scrollbar.GetValue and state.scrollbar:GetValue() or 0
             if math.abs(current - offset) >= 0.01 then
@@ -582,7 +584,11 @@ local function adjustScroll(delta)
         return
     end
 
-    local current = scrollbar.GetValue and scrollbar:GetValue() or 0
+    local current = state.scrollOffset
+    if current == nil then
+        current = scrollbar.GetValue and scrollbar:GetValue() or 0
+    end
+    current = current or 0
     local step = 48
     local target = current - (delta * step)
     state.scrollMaxOffset = maxValue
@@ -937,6 +943,16 @@ refreshScroll = function()
         return
     end
 
+    local previousOffset = state.scrollOffset
+    if previousOffset == nil then
+        local getValue = scrollbar.GetValue
+        if getValue then
+            previousOffset = getValue(scrollbar) or 0
+        else
+            previousOffset = 0
+        end
+    end
+
     local _, questHeight = measureTrackerContent(state.questContainer, Nvk3UT and Nvk3UT.QuestTracker)
     local _, achievementHeight = measureTrackerContent(
         state.achievementContainer,
@@ -1044,20 +1060,19 @@ refreshScroll = function()
 
     state.scrollMaxOffset = maxOffset
 
-    local getValue = scrollbar.GetValue
-    local current = getValue and getValue(scrollbar) or 0
-    current = math.max(0, math.min(current, maxOffset))
-
-    if not showScrollbar then
-        current = 0
-    end
-
     if state.scrollContentRightOffset ~= desiredRightOffset then
         state.scrollContentRightOffset = desiredRightOffset
         applyViewportPadding()
     end
 
-    setScrollOffset(current)
+    local desiredOffset = previousOffset or 0
+    if not showScrollbar then
+        desiredOffset = 0
+    else
+        desiredOffset = math.max(0, math.min(desiredOffset, maxOffset))
+    end
+
+    setScrollOffset(desiredOffset)
 end
 
 local function createScrollContainer()
