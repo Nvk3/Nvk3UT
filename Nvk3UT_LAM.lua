@@ -33,6 +33,9 @@ local DEFAULT_WINDOW = {
     width = 360,
     height = 640,
     locked = false,
+    visible = true,
+    clamp = true,
+    onTop = false,
 }
 
 local DEFAULT_APPEARANCE = {

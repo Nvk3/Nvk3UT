@@ -18,6 +18,11 @@ local MIN_WIDTH = 260
 local MIN_HEIGHT = 240
 local RESIZE_HANDLE_SIZE = 12
 local SCROLLBAR_WIDTH = 18
+local ACTIVATION_FALLBACK_DELAY_MS = 2000
+local FRAGMENT_RETRY_DELAY_MS = 200
+
+local FRAGMENT_REASON_SUPPRESSED = addonName .. "_HostSuppressed"
+local FRAGMENT_REASON_USER = addonName .. "_HostHiddenBySettings"
 
 local DEFAULT_APPEARANCE = {
     enabled = true,
@@ -61,6 +66,10 @@ local LEFT_MOUSE_BUTTON = _G.MOUSE_BUTTON_INDEX_LEFT or 1
 local state = {
     initialized = false,
     root = nil,
+    fragment = nil,
+    fragmentScenes = nil,
+    fragmentRetryScheduled = false,
+    activationFallbackScheduled = false,
     scrollContainer = nil,
     scrollContent = nil,
     scrollbar = nil,
@@ -80,6 +89,8 @@ local state = {
     visibilitySuppressed = true,
     hasShown = false,
 }
+
+local ensureSceneFragments
 
 local function clamp(value, minimum, maximum)
     if value == nil then
@@ -710,11 +721,19 @@ local function applyWindowLock()
 end
 
 local function applyWindowVisibility()
-    if not (state.root and state.window) then
+    if not state.root then
         return
     end
 
-    local shouldHide = state.visibilitySuppressed or state.window.visible == false
+    local userHidden = state.window and state.window.visible == false
+    local suppressed = state.visibilitySuppressed == true
+    local shouldHide = suppressed or userHidden
+
+    if state.fragment and state.fragment.SetHiddenForReason then
+        state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, suppressed)
+        state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, userHidden)
+    end
+
     state.root:SetHidden(shouldHide)
 end
 
@@ -723,6 +742,7 @@ local function notifyContentChanged()
         return
     end
 
+    ensureSceneFragments()
     updateWindowGeometry()
     applyWindowVisibility()
     refreshScroll()
@@ -795,6 +815,7 @@ local function applyWindowSettings()
     updateWindowGeometry()
     applyWindowLock()
     applyWindowTopmost()
+    ensureSceneFragments()
     applyWindowVisibility()
     refreshScroll()
 end
@@ -831,6 +852,76 @@ local function createBackdrop()
 
     state.backdrop = control
 end
+
+local function attachFragmentToScene(scene)
+    if not (scene and state.fragment and scene.AddFragment) then
+        return false
+    end
+
+    state.fragmentScenes = state.fragmentScenes or {}
+    if state.fragmentScenes[scene] then
+        return true
+    end
+
+    if scene.HasFragment and scene:HasFragment(state.fragment) then
+        state.fragmentScenes[scene] = true
+        return true
+    end
+
+    local success, message = pcall(scene.AddFragment, scene, state.fragment)
+    if not success then
+        debugLog("Failed to attach fragment", message)
+        return false
+    end
+
+    state.fragmentScenes[scene] = true
+    return true
+end
+
+local function ensureSceneFragmentsInternal()
+    if not state.root then
+        return
+    end
+
+    if not state.fragment then
+        local fragment
+        if ZO_HUDFadeSceneFragment then
+            fragment = ZO_HUDFadeSceneFragment:New(state.root)
+        elseif ZO_SimpleSceneFragment then
+            fragment = ZO_SimpleSceneFragment:New(state.root)
+        end
+
+        if not fragment then
+            return
+        end
+
+        state.fragment = fragment
+        state.fragmentScenes = {}
+
+        if fragment.SetHideOnSceneHidden then
+            fragment:SetHideOnSceneHidden(false)
+        end
+    end
+
+    local attached = false
+    attached = attachFragmentToScene(HUD_SCENE) or attached
+    attached = attachFragmentToScene(HUD_UI_SCENE) or attached
+
+    if SCENE_MANAGER and SCENE_MANAGER.GetScene then
+        attached = attachFragmentToScene(SCENE_MANAGER:GetScene("hud")) or attached
+        attached = attachFragmentToScene(SCENE_MANAGER:GetScene("hudui")) or attached
+    end
+
+    if not attached and zo_callLater and not state.fragmentRetryScheduled then
+        state.fragmentRetryScheduled = true
+        zo_callLater(function()
+            state.fragmentRetryScheduled = false
+            ensureSceneFragmentsInternal()
+        end, FRAGMENT_RETRY_DELAY_MS)
+    end
+end
+
+ensureSceneFragments = ensureSceneFragmentsInternal
 
 local function createRootControl()
     if state.root or not WINDOW_MANAGER then
@@ -890,6 +981,7 @@ local function createRootControl()
 
     applyLayoutConstraints()
     createBackdrop()
+    ensureSceneFragments()
 end
 
 local function createScrollContainer()
@@ -1112,6 +1204,8 @@ local function finalizeInitialShow()
         return
     end
 
+    ensureSceneFragments()
+
     if EVENT_MANAGER then
         EVENT_MANAGER:UnregisterForEvent(PLAYER_ACTIVATED_EVENT_NAMESPACE, EVENT_PLAYER_ACTIVATED)
     end
@@ -1204,6 +1298,19 @@ function TrackerHost.Init()
     if EVENT_MANAGER then
         EVENT_MANAGER:UnregisterForEvent(PLAYER_ACTIVATED_EVENT_NAMESPACE, EVENT_PLAYER_ACTIVATED)
         EVENT_MANAGER:RegisterForEvent(PLAYER_ACTIVATED_EVENT_NAMESPACE, EVENT_PLAYER_ACTIVATED, onPlayerActivated)
+    end
+
+    if zo_callLater and not state.activationFallbackScheduled then
+        state.activationFallbackScheduled = true
+        zo_callLater(function()
+            state.activationFallbackScheduled = false
+            if state.hasShown or not state.root then
+                return
+            end
+
+            debugLog("Activation fallback finalized window visibility")
+            triggerInitialShow()
+        end, ACTIVATION_FALLBACK_DELAY_MS)
     end
 
     if IsPlayerActivated and IsPlayerActivated() then
@@ -1321,6 +1428,23 @@ function TrackerHost.Shutdown()
         state.scrollbar:SetParent(nil)
     end
     state.scrollbar = nil
+
+    if state.fragmentScenes and state.fragment then
+        for scene in pairs(state.fragmentScenes) do
+            if scene and scene.RemoveFragment then
+                pcall(scene.RemoveFragment, scene, state.fragment)
+            end
+        end
+    end
+    state.fragmentScenes = nil
+
+    if state.fragment and state.fragment.SetHiddenForReason then
+        state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, true)
+        state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, true)
+    end
+    state.fragment = nil
+    state.fragmentRetryScheduled = false
+    state.activationFallbackScheduled = false
 
     if state.scrollContent then
         state.scrollContent:SetParent(nil)
