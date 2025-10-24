@@ -55,15 +55,36 @@ end
 
 local function now() return (U and U.now and U.now()) or GetTimeStamp() end
 
+local function isDebugEnabled()
+    return Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug and U and U.d
+end
+
 local function IsOpen(id)
     if not id then return false end
-    if U and U.IsMultiStageAchievement and U.IsMultiStageAchievement(id) then
-        if U.IsAchievementFullyComplete then
-            return not U.IsAchievementFullyComplete(id)
+
+    if U and U.IsMultiStageAchievement then
+        local okMulti, isMulti = pcall(U.IsMultiStageAchievement, id)
+        if okMulti and isMulti and U.IsAchievementFullyComplete then
+            local okComplete, fullyComplete = pcall(U.IsAchievementFullyComplete, id)
+            if okComplete then
+                return fullyComplete == false
+            end
         end
     end
-    local _,_,_,_,completed = GetAchievementInfo(id)
-    return completed == false
+
+    if type(GetAchievementInfo) ~= "function" then
+        return false
+    end
+
+    local infoOk, _, _, _, completedOrErr = pcall(GetAchievementInfo, id)
+    if not infoOk then
+        if isDebugEnabled() then
+            U.d("[Nvk3UT][Recent][IsOpen] failed", "id:", tostring(id), "error:", tostring(completedOrErr))
+        end
+        return false
+    end
+
+    return completedOrErr == false
 end
 
 function M.Touch(id, ts)
@@ -162,46 +183,116 @@ end
 function M.BuildInitial()
     local sv = ensureSV()
     if next(sv.progress) ~= nil then return 0 end
-    local added = 0
     local INIT_CAP = 50
     local stamp = (U and U.now and U.now()) or GetTimeStamp()
 
-    local function add(id)
-        if not id or added >= INIT_CAP then return end
-        if IsOpen(id) then
-            local storeId = id
-            if U and U.NormalizeAchievementId then
-                storeId = U.NormalizeAchievementId(id)
-            end
-            if storeId then
-                if sv.progress[storeId] == nil then
-                    added = added + 1
-                end
-                sv.progress[storeId] = stamp
+    local function hasPartialProgress(id)
+        if not id or not IsOpen(id) then return false end
+
+        local inspectIds = { id }
+        if U and U.NormalizeAchievementId then
+            local normalized = U.NormalizeAchievementId(id)
+            if normalized and normalized ~= id then
+                inspectIds[#inspectIds + 1] = normalized
             end
         end
+
+        local getState = U and U.GetAchievementCriteriaState
+        if type(getState) == "function" then
+            for _, inspectId in ipairs(inspectIds) do
+                local state = getState(inspectId)
+                if state and type(state.total) == "number" and state.total > 0 then
+                    local total = state.total
+                    local completed = tonumber(state.completed) or 0
+                    if completed > 0 and completed < total then
+                        return true
+                    end
+                end
+            end
+        end
+
+        if type(GetAchievementProgress) == "function" then
+            local ok, completed, total = pcall(GetAchievementProgress, id)
+            if ok and type(total) == "number" and total > 0 and type(completed) == "number" then
+                if completed > 0 and completed < total then
+                    return true
+                end
+            end
+        end
+
+        return false
+    end
+
+    local function getRandom(minValue, maxValue)
+        if type(zo_random) == "function" then
+            return zo_random(minValue, maxValue)
+        end
+        if type(math.random) == "function" then
+            if maxValue then
+                return math.random(minValue, maxValue)
+            end
+            return math.random(minValue)
+        end
+        return minValue
+    end
+
+    local function shuffle(list)
+        for i = #list, 2, -1 do
+            local swapIndex = getRandom(1, i)
+            list[i], list[swapIndex] = list[swapIndex], list[i]
+        end
+    end
+
+    local candidates = {}
+    local seen = {}
+
+    local function collect(id)
+        if not id then return end
+
+        local okPartial, hasProgress = pcall(hasPartialProgress, id)
+        if not okPartial then
+            if isDebugEnabled() then
+                U.d("[Nvk3UT][Recent][Seed] partial check failed", "id:", tostring(id), "error:", tostring(hasProgress))
+            end
+            return
+        end
+        if not hasProgress then return end
+        local storeId = id
+        if U and U.NormalizeAchievementId then
+            storeId = U.NormalizeAchievementId(id) or id
+        end
+        if not storeId or seen[storeId] then return end
+        seen[storeId] = true
+        candidates[#candidates + 1] = storeId
     end
 
     local numCats = GetNumAchievementCategories and GetNumAchievementCategories() or 0
     for top = 1, numCats do
         local _, numSub, numAch = GetAchievementCategoryInfo(top)
-        -- top-level achievements
-        for a=1,(numAch or 0) do
-            if added >= INIT_CAP then break end
-            local id = GetAchievementId(top, nil, a)
-            add(id)
+        for a = 1, (numAch or 0) do
+            collect(GetAchievementId(top, nil, a))
         end
-        -- subcategories
-        for sub=1,(numSub or 0) do
-            if added >= INIT_CAP then break end
+        for sub = 1, (numSub or 0) do
             local _, numAch2 = GetAchievementSubCategoryInfo(top, sub)
-            for a=1,(numAch2 or 0) do
-                if added >= INIT_CAP then break end
-                local id = GetAchievementId(top, sub, a)
-                add(id)
+            for a = 1, (numAch2 or 0) do
+                collect(GetAchievementId(top, sub, a))
             end
         end
-        if added >= INIT_CAP then break end
+    end
+
+    if #candidates == 0 then return 0 end
+
+    shuffle(candidates)
+
+    local added = 0
+    for index = 1, math.min(INIT_CAP, #candidates) do
+        local storeId = candidates[index]
+        if storeId then
+            if sv.progress[storeId] == nil then
+                added = added + 1
+            end
+            sv.progress[storeId] = stamp
+        end
     end
 
     return added
