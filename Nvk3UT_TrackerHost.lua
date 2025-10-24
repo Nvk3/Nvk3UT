@@ -17,6 +17,7 @@ local MIN_WIDTH = 260
 local MIN_HEIGHT = 240
 local RESIZE_HANDLE_SIZE = 12
 local SCROLLBAR_WIDTH = 18
+local SCROLL_OVERSHOOT_RATIO = 0.5 -- allow scrolling so the last entry can sit around mid-window
 local FRAGMENT_RETRY_DELAY_MS = 200
 
 local FRAGMENT_REASON_SUPPRESSED = addonName .. "_HostSuppressed"
@@ -780,7 +781,12 @@ refreshScroll = function()
     end
 
     local viewportHeight = scrollContainer.GetHeight and scrollContainer:GetHeight() or 0
-    local maxOffset = math.max(contentHeight - viewportHeight, 0)
+    local overshootPadding = 0
+    if viewportHeight > 0 and contentHeight > viewportHeight then
+        overshootPadding = viewportHeight * SCROLL_OVERSHOOT_RATIO
+    end
+
+    local maxOffset = math.max(contentHeight - viewportHeight + overshootPadding, 0)
     local showScrollbar = maxOffset > 0.5
 
     local scrollbarWidth = (scrollbar.GetWidth and scrollbar:GetWidth()) or SCROLLBAR_WIDTH
