@@ -180,6 +180,9 @@ end
 local BuildSnapshotFromQuests
 local CollectQuestEntries
 local ForceRebuild
+local NormalizeQuestCategoryData
+local GetCategoryKey
+local GetCategoryParentCopy
 
 local function BuildSnapshotFromSaved()
     local sv = EnsureSavedVars()
@@ -193,7 +196,8 @@ local function BuildSnapshotFromSaved()
 
     local quests = {}
     for index = 1, #sv.quests do
-        quests[index] = CopyTable(sv.quests[index])
+        local questCopy = CopyTable(sv.quests[index])
+        quests[index] = NormalizeQuestCategoryData(questCopy)
     end
 
     return BuildSnapshotFromQuests and BuildSnapshotFromQuests(quests) or nil
@@ -265,21 +269,507 @@ local DEFAULT_DEBOUNCE_MS = 80
 
 local QUEST_LOG_LIMIT = 25
 
-local CATEGORY_DEFINITIONS = {
-    MAIN_STORY = { order = 10, labelId = rawget(_G, "SI_QUEST_JOURNAL_CATEGORY_MAIN_STORY"), fallbackName = "Main Story" },
-    ZONE_STORY = { order = 20, labelId = rawget(_G, "SI_QUEST_JOURNAL_CATEGORY_ZONE_STORY"), fallbackName = "Zone Story" },
-    GUILD = { order = 30, labelId = rawget(_G, "SI_QUEST_JOURNAL_CATEGORY_GUILD"), fallbackName = "Guild" },
-    CRAFTING = { order = 40, labelId = rawget(_G, "SI_QUEST_JOURNAL_CATEGORY_CRAFTING"), fallbackName = "Crafting" },
-    DUNGEON = { order = 50, labelId = rawget(_G, "SI_QUEST_JOURNAL_CATEGORY_DUNGEON"), fallbackName = "Dungeon" },
-    ALLIANCE_WAR = { order = 60, labelId = rawget(_G, "SI_QUEST_JOURNAL_CATEGORY_ALLIANCE_WAR"), fallbackName = "Alliance War" },
-    PROLOGUE = { order = 70, labelId = rawget(_G, "SI_QUEST_JOURNAL_CATEGORY_PROLOGUE"), fallbackName = "Prologue" },
-    REPEATABLE = { order = 80, labelId = rawget(_G, "SI_QUEST_JOURNAL_CATEGORY_REPEATABLE"), fallbackName = "Repeatable" },
-    COMPANION = { order = 90, labelId = rawget(_G, "SI_QUEST_JOURNAL_CATEGORY_COMPANION"), fallbackName = "Companion" },
-    MISC = { order = 100, labelId = rawget(_G, "SI_QUEST_JOURNAL_CATEGORY_MISC"), fallbackName = "Miscellaneous" },
+local CATEGORY_GROUP_DEFINITIONS = {
+    MAIN_STORY = {
+        order = 10,
+        labelId = rawget(_G, "SI_QUEST_JOURNAL_CATEGORY_MAIN_STORY"),
+        fallbackName = "Main Story",
+        typeId = rawget(_G, "ZO_QUEST_JOURNAL_CATEGORY_TYPE_MAIN_STORY"),
+    },
+    ZONE_STORY = {
+        order = 20,
+        labelId = rawget(_G, "SI_QUEST_JOURNAL_CATEGORY_ZONE_STORY"),
+        fallbackName = "Zone Story",
+        typeId = rawget(_G, "ZO_QUEST_JOURNAL_CATEGORY_TYPE_ZONE_STORY"),
+    },
+    ZONE = {
+        order = 30,
+        labelId = rawget(_G, "SI_QUEST_JOURNAL_CATEGORY_ZONE"),
+        fallbackName = "Zone",
+        typeId = rawget(_G, "ZO_QUEST_JOURNAL_CATEGORY_TYPE_ZONE"),
+    },
+    GUILD = {
+        order = 40,
+        labelId = rawget(_G, "SI_QUEST_JOURNAL_CATEGORY_GUILD"),
+        fallbackName = "Guild",
+        typeId = rawget(_G, "ZO_QUEST_JOURNAL_CATEGORY_TYPE_GUILD"),
+    },
+    CRAFTING = {
+        order = 50,
+        labelId = rawget(_G, "SI_QUEST_JOURNAL_CATEGORY_CRAFTING"),
+        fallbackName = "Crafting",
+        typeId = rawget(_G, "ZO_QUEST_JOURNAL_CATEGORY_TYPE_CRAFTING"),
+    },
+    DUNGEON = {
+        order = 60,
+        labelId = rawget(_G, "SI_QUEST_JOURNAL_CATEGORY_DUNGEON"),
+        fallbackName = "Dungeon",
+        typeId = rawget(_G, "ZO_QUEST_JOURNAL_CATEGORY_TYPE_DUNGEON"),
+    },
+    ALLIANCE_WAR = {
+        order = 70,
+        labelId = rawget(_G, "SI_QUEST_JOURNAL_CATEGORY_ALLIANCE_WAR"),
+        fallbackName = "Alliance War",
+        typeId = rawget(_G, "ZO_QUEST_JOURNAL_CATEGORY_TYPE_ALLIANCE_WAR"),
+    },
+    PROLOGUE = {
+        order = 80,
+        labelId = rawget(_G, "SI_QUEST_JOURNAL_CATEGORY_PROLOGUE"),
+        fallbackName = "Prologue",
+        typeId = rawget(_G, "ZO_QUEST_JOURNAL_CATEGORY_TYPE_PROLOGUE"),
+    },
+    REPEATABLE = {
+        order = 90,
+        labelId = rawget(_G, "SI_QUEST_JOURNAL_CATEGORY_REPEATABLE"),
+        fallbackName = "Repeatable",
+        typeId = rawget(_G, "ZO_QUEST_JOURNAL_CATEGORY_TYPE_REPEATABLE"),
+    },
+    COMPANION = {
+        order = 100,
+        labelId = rawget(_G, "SI_QUEST_JOURNAL_CATEGORY_COMPANION"),
+        fallbackName = "Companion",
+        typeId = rawget(_G, "ZO_QUEST_JOURNAL_CATEGORY_TYPE_COMPANION"),
+    },
+    MISC = {
+        order = 110,
+        labelId = rawget(_G, "SI_QUEST_JOURNAL_CATEGORY_MISC"),
+        fallbackName = "Miscellaneous",
+        typeId = rawget(_G, "ZO_QUEST_JOURNAL_CATEGORY_TYPE_MISCELLANEOUS"),
+    },
 }
 
-local DEFAULT_CATEGORY_KEY = "MISC"
+local DEFAULT_GROUP_KEY = "MISC"
 
+local function ResolveDefinitionName(definition)
+    if definition and definition.labelId and GetString then
+        local label = GetString(definition.labelId)
+        if label and label ~= "" then
+            return label
+        end
+    end
+
+    if definition then
+        return definition.fallbackName
+    end
+
+    return ""
+end
+
+local groupEntryCache = {}
+local baseCategoryCache = nil
+
+local function ResetBaseCategoryCache()
+    baseCategoryCache = nil
+end
+
+local function GetGroupDefinition(groupKey)
+    return CATEGORY_GROUP_DEFINITIONS[groupKey] or CATEGORY_GROUP_DEFINITIONS[DEFAULT_GROUP_KEY]
+end
+
+local function GetGroupEntry(groupKey)
+    groupKey = groupKey or DEFAULT_GROUP_KEY
+
+    if groupEntryCache[groupKey] then
+        return groupEntryCache[groupKey]
+    end
+
+    local definition = GetGroupDefinition(groupKey)
+    local entry = {
+        key = groupKey,
+        name = ResolveDefinitionName(definition),
+        order = definition and definition.order or 0,
+        type = definition and definition.typeId or nil,
+    }
+
+    groupEntryCache[groupKey] = entry
+    return entry
+end
+
+local function CopyParentInfo(parent)
+    if not parent then
+        return nil
+    end
+
+    return {
+        key = parent.key,
+        name = parent.name,
+        order = parent.order,
+        type = parent.type,
+    }
+end
+
+local function NormalizeNameForKey(name)
+    if not name or name == "" then
+        return nil
+    end
+
+    local normalized = tostring(name)
+    normalized = normalized:gsub("%s+", " ")
+    normalized = normalized:gsub("[^%w%s]", "")
+    normalized = normalized:lower()
+    normalized = normalized:gsub("%s", "_")
+    normalized = normalized:gsub("_+", "_")
+    normalized = normalized:gsub("^_", "")
+    normalized = normalized:gsub("_$", "")
+
+    if normalized == "" then
+        return nil
+    end
+
+    return normalized
+end
+
+local function BuildLeafKey(groupEntry, identifier, name, orderSuffix)
+    local parts = { groupEntry.key }
+
+    if identifier ~= nil then
+        parts[#parts + 1] = tostring(identifier)
+    end
+
+    local normalizedName = NormalizeNameForKey(name)
+    if normalizedName then
+        parts[#parts + 1] = normalizedName
+    end
+
+    parts[#parts + 1] = tostring(orderSuffix or 0)
+
+    return table.concat(parts, ":")
+end
+
+local function CreateLeafEntry(groupEntry, name, orderSuffix, categoryType, identifier, overrideKey)
+    local leafOrder = orderSuffix or 0
+    local key = overrideKey or BuildLeafKey(groupEntry, identifier, name, leafOrder)
+
+    local entry = {
+        key = key,
+        name = name or groupEntry.name,
+        order = (groupEntry.order or 0) * 1000 + leafOrder,
+        type = categoryType,
+        groupKey = groupEntry.key,
+        groupName = groupEntry.name,
+        groupOrder = groupEntry.order,
+        groupType = groupEntry.type,
+        rawOrder = leafOrder,
+        identifier = identifier,
+    }
+
+    entry.parent = CopyParentInfo({
+        key = groupEntry.key,
+        name = groupEntry.name,
+        order = groupEntry.order,
+        type = groupEntry.type,
+    })
+
+    return entry
+end
+
+local function CloneCategoryEntry(entry)
+    if not entry then
+        return nil
+    end
+
+    local copy = {
+        key = entry.key,
+        name = entry.name,
+        order = entry.order,
+        type = entry.type,
+        groupKey = entry.groupKey,
+        groupName = entry.groupName,
+        groupOrder = entry.groupOrder,
+        groupType = entry.groupType,
+        rawOrder = entry.rawOrder,
+        identifier = entry.identifier,
+    }
+
+    if entry.parent then
+        copy.parent = CopyParentInfo(entry.parent)
+    elseif entry.groupKey or entry.groupName then
+        copy.parent = CopyParentInfo({
+            key = entry.groupKey,
+            name = entry.groupName,
+            order = entry.groupOrder,
+            type = entry.groupType,
+        })
+    end
+
+    if copy.parent then
+        copy.parentKey = copy.parent.key
+        copy.parentName = copy.parent.name
+    end
+
+    return copy
+end
+
+local function BuildCategoryTypeToGroupMapping()
+    local mapping = {}
+
+    local function assign(constantName, groupKey)
+        local value = rawget(_G, constantName)
+        if value ~= nil then
+            mapping[value] = groupKey
+        end
+    end
+
+    assign("ZO_QUEST_JOURNAL_CATEGORY_TYPE_MAIN_STORY", "MAIN_STORY")
+    assign("ZO_QUEST_JOURNAL_CATEGORY_TYPE_ZONE_STORY", "ZONE_STORY")
+    assign("ZO_QUEST_JOURNAL_CATEGORY_TYPE_ZONE", "ZONE")
+    assign("ZO_QUEST_JOURNAL_CATEGORY_TYPE_GUILD", "GUILD")
+    assign("ZO_QUEST_JOURNAL_CATEGORY_TYPE_CRAFTING", "CRAFTING")
+    assign("ZO_QUEST_JOURNAL_CATEGORY_TYPE_DUNGEON", "DUNGEON")
+    assign("ZO_QUEST_JOURNAL_CATEGORY_TYPE_ALLIANCE_WAR", "ALLIANCE_WAR")
+    assign("ZO_QUEST_JOURNAL_CATEGORY_TYPE_PROLOGUE", "PROLOGUE")
+    assign("ZO_QUEST_JOURNAL_CATEGORY_TYPE_REPEATABLE", "REPEATABLE")
+    assign("ZO_QUEST_JOURNAL_CATEGORY_TYPE_COMPANION", "COMPANION")
+    assign("ZO_QUEST_JOURNAL_CATEGORY_TYPE_MISCELLANEOUS", "MISC")
+
+    return mapping
+end
+
+local CATEGORY_TYPE_TO_GROUP = BuildCategoryTypeToGroupMapping()
+
+local function ExtractCategoryName(categoryData)
+    if type(categoryData) ~= "table" then
+        return nil
+    end
+
+    if categoryData.name ~= nil then
+        return categoryData.name
+    end
+
+    local getter = categoryData.GetName
+    if type(getter) == "function" then
+        local ok, value = pcall(getter, categoryData)
+        if ok then
+            return value
+        end
+    end
+
+    return nil
+end
+
+local function ExtractCategoryType(categoryData)
+    if type(categoryData) ~= "table" then
+        return nil
+    end
+
+    if categoryData.type ~= nil then
+        return categoryData.type
+    end
+
+    if categoryData.categoryType ~= nil then
+        return categoryData.categoryType
+    end
+
+    local getter = categoryData.GetType or categoryData.GetCategoryType
+    if type(getter) == "function" then
+        local ok, value = pcall(getter, categoryData)
+        if ok then
+            return value
+        end
+    end
+
+    return nil
+end
+
+local function ExtractCategoryIdentifier(categoryData)
+    if type(categoryData) ~= "table" then
+        return nil
+    end
+
+    local fields = { "categoryId", "categoryIndex", "categoryId64", "index", "id", "dataId" }
+    for index = 1, #fields do
+        local fieldName = fields[index]
+        local value = categoryData[fieldName]
+        if value ~= nil then
+            return value
+        end
+
+        local getterName = string.format("Get%s", fieldName:gsub("^%l", string.upper))
+        local getter = categoryData[getterName]
+        if type(getter) == "function" then
+            local ok, result = pcall(getter, categoryData)
+            if ok and result ~= nil then
+                return result
+            end
+        end
+    end
+
+    return nil
+end
+
+local function ExtractQuestJournalIndex(questData)
+    if type(questData) ~= "table" then
+        return nil
+    end
+
+    if type(questData.questIndex) == "number" then
+        return questData.questIndex
+    end
+
+    if type(questData.journalIndex) == "number" then
+        return questData.journalIndex
+    end
+
+    local getter = questData.GetQuestIndex or questData.GetJournalIndex
+    if type(getter) == "function" then
+        local ok, value = pcall(getter, questData)
+        if ok then
+            return value
+        end
+    end
+
+    return nil
+end
+
+local function ExtractQuestCategoryName(questData)
+    if type(questData) ~= "table" then
+        return nil
+    end
+
+    if questData.categoryName ~= nil then
+        return questData.categoryName
+    end
+
+    if questData.name ~= nil and questData.category ~= nil then
+        return questData.category
+    end
+
+    local getter = questData.GetCategoryName
+    if type(getter) == "function" then
+        local ok, value = pcall(getter, questData)
+        if ok then
+            return value
+        end
+    end
+
+    return nil
+end
+
+local function ExtractQuestCategoryType(questData)
+    if type(questData) ~= "table" then
+        return nil
+    end
+
+    if questData.categoryType ~= nil then
+        return questData.categoryType
+    end
+
+    if questData.type ~= nil then
+        return questData.type
+    end
+
+    local getter = questData.GetCategoryType
+    if type(getter) == "function" then
+        local ok, value = pcall(getter, questData)
+        if ok then
+            return value
+        end
+    end
+
+    return nil
+end
+
+local function NormalizeLeafCategory(categoryData, orderIndex)
+    local categoryType = ExtractCategoryType(categoryData)
+    local groupKey = CATEGORY_TYPE_TO_GROUP[categoryType] or DEFAULT_GROUP_KEY
+    local groupEntry = GetGroupEntry(groupKey)
+    local name = ExtractCategoryName(categoryData) or groupEntry.name
+    local identifier = ExtractCategoryIdentifier(categoryData)
+
+    return CreateLeafEntry(groupEntry, name, orderIndex or 0, categoryType, identifier)
+end
+
+local function BuildBaseCategoryCacheFromData(questList, categoryList)
+    local categoriesByKey = {}
+    local categoriesByName = {}
+    local orderedCategories = {}
+
+    for index = 1, #categoryList do
+        local rawCategory = categoryList[index]
+        local entry = NormalizeLeafCategory(rawCategory, index)
+        orderedCategories[#orderedCategories + 1] = entry
+        categoriesByKey[entry.key] = entry
+
+        local categoryName = ExtractCategoryName(rawCategory)
+        if categoryName and categoryName ~= "" then
+            if not categoriesByName[categoryName] then
+                categoriesByName[categoryName] = {}
+            end
+            categoriesByName[categoryName][#categoriesByName[categoryName] + 1] = entry
+        end
+    end
+
+    local questCategoriesByJournalIndex = {}
+
+    for index = 1, #questList do
+        local questData = questList[index]
+        local questIndex = ExtractQuestJournalIndex(questData)
+        local categoryName = ExtractQuestCategoryName(questData)
+        local categoryEntry = nil
+
+        if categoryName and categoriesByName[categoryName] then
+            local possible = categoriesByName[categoryName]
+            if #possible == 1 then
+                categoryEntry = possible[1]
+            else
+                local candidateType = ExtractQuestCategoryType(questData)
+                if candidateType ~= nil then
+                    for _, entry in ipairs(possible) do
+                        if entry.type == candidateType then
+                            categoryEntry = entry
+                            break
+                        end
+                    end
+                end
+                if not categoryEntry then
+                    categoryEntry = possible[1]
+                end
+            end
+        end
+
+        if questIndex and categoryEntry then
+            questCategoriesByJournalIndex[questIndex] = categoryEntry
+        end
+    end
+
+    return {
+        ordered = orderedCategories,
+        byKey = categoriesByKey,
+        byName = categoriesByName,
+        byJournalIndex = questCategoriesByJournalIndex,
+    }
+end
+
+local function AcquireQuestJournalData()
+    if not (QUEST_JOURNAL_MANAGER and QUEST_JOURNAL_MANAGER.GetQuestListData) then
+        return nil, nil, nil
+    end
+
+    local ok, questList, categoryList, seenCategories = pcall(QUEST_JOURNAL_MANAGER.GetQuestListData, QUEST_JOURNAL_MANAGER)
+    if not ok then
+        return nil, nil, nil
+    end
+
+    if type(questList) ~= "table" or type(categoryList) ~= "table" then
+        return nil, nil, nil
+    end
+
+    return questList, categoryList, seenCategories
+end
+
+local function AcquireBaseCategoryCache()
+    if baseCategoryCache then
+        return baseCategoryCache
+    end
+
+    local questList, categoryList = AcquireQuestJournalData()
+    if type(questList) ~= "table" or type(categoryList) ~= "table" then
+        return nil
+    end
+
+    baseCategoryCache = BuildBaseCategoryCacheFromData(questList, categoryList)
+    return baseCategoryCache
+end
 local function GetTimestampMs()
     if GetFrameTimeMilliseconds then
         return GetFrameTimeMilliseconds()
@@ -294,25 +784,6 @@ local function GetTimestampMs()
     end
 
     return nil
-end
-
-local function GetCategoryName(definition)
-    if definition.labelId and GetString then
-        local label = GetString(definition.labelId)
-        if label and label ~= "" then
-            return label
-        end
-    end
-    return definition.fallbackName
-end
-
-local function BuildCategoryEntry(key)
-    local definition = CATEGORY_DEFINITIONS[key] or CATEGORY_DEFINITIONS[DEFAULT_CATEGORY_KEY]
-    return {
-        key = key,
-        name = GetCategoryName(definition),
-        order = definition.order,
-    }
 end
 
 local function BuildQuestTypeMapping()
@@ -387,7 +858,19 @@ local function BuildQuestSignature(quest)
     AppendSignaturePart(parts, quest.questId or "nil")
     AppendSignaturePart(parts, quest.name or "")
     AppendSignaturePart(parts, quest.zoneName or "")
-    AppendSignaturePart(parts, quest.category.key)
+
+    local category = quest.category or {}
+    AppendSignaturePart(parts, category.key or "nil")
+    AppendSignaturePart(parts, (category.parent and category.parent.key) or "nil")
+    AppendSignaturePart(parts, category.type or "nil")
+    AppendSignaturePart(parts, category.groupKey or "nil")
+    AppendSignaturePart(parts, category.groupOrder or "nil")
+
+    local meta = quest.meta or {}
+    AppendSignaturePart(parts, meta.parentKey or "nil")
+    AppendSignaturePart(parts, meta.categoryType or "nil")
+    AppendSignaturePart(parts, meta.groupKey or "nil")
+
     AppendSignaturePart(parts, quest.flags.tracked and 1 or 0)
     AppendSignaturePart(parts, quest.flags.assisted and 1 or 0)
     AppendSignaturePart(parts, quest.flags.isComplete and 1 or 0)
@@ -425,7 +908,7 @@ local function BuildOverallSignature(quests)
     return table.concat(parts, "\31")
 end
 
-local function GetCategoryKey(questType, displayType, isRepeatable, isDaily)
+function GetCategoryKey(questType, displayType, isRepeatable, isDaily)
     if displayType and QUEST_DISPLAY_TYPE_TO_CATEGORY[displayType] then
         return QUEST_DISPLAY_TYPE_TO_CATEGORY[displayType]
     end
@@ -438,12 +921,87 @@ local function GetCategoryKey(questType, displayType, isRepeatable, isDaily)
         return QUEST_TYPE_TO_CATEGORY[questType]
     end
 
-    return DEFAULT_CATEGORY_KEY
+    return DEFAULT_GROUP_KEY
 end
 
-local function DetermineCategory(questType, displayType, isRepeatable, isDaily)
+local function DetermineLegacyCategory(questType, displayType, isRepeatable, isDaily)
     local key = GetCategoryKey(questType, displayType, isRepeatable, isDaily)
-    return BuildCategoryEntry(key)
+    local groupEntry = GetGroupEntry(key)
+    return CreateLeafEntry(groupEntry, groupEntry.name, 0, groupEntry.type, groupEntry.key, groupEntry.key)
+end
+
+local function ResolveQuestCategory(journalQuestIndex, questType, displayType, isRepeatable, isDaily)
+    local cache = AcquireBaseCategoryCache()
+    if cache and cache.byJournalIndex then
+        local entry = cache.byJournalIndex[journalQuestIndex]
+        if entry then
+            return CloneCategoryEntry(entry)
+        end
+    end
+
+    return DetermineLegacyCategory(questType, displayType, isRepeatable, isDaily)
+end
+
+function NormalizeQuestCategoryData(quest)
+    if type(quest) ~= "table" then
+        return quest
+    end
+
+    quest.flags = quest.flags or {}
+
+    if type(quest.category) ~= "table" then
+        local fallback = DetermineLegacyCategory(quest.questType, quest.displayType, quest.flags.isRepeatable, quest.flags.isDaily)
+        quest.category = CloneCategoryEntry(fallback)
+    end
+
+    local category = quest.category
+
+    if not category.groupKey or not category.groupName or category.groupOrder == nil then
+        local groupKey = category.groupKey
+            or CATEGORY_TYPE_TO_GROUP[category.type]
+            or (quest.meta and quest.meta.groupKey)
+            or CATEGORY_TYPE_TO_GROUP[quest.meta and quest.meta.categoryType]
+            or (category.parent and category.parent.key)
+            or GetCategoryKey(quest.questType, quest.displayType, quest.flags.isRepeatable, quest.flags.isDaily)
+            or category.key
+
+        local groupEntry = GetGroupEntry(groupKey)
+        category.groupKey = groupEntry.key
+        category.groupName = groupEntry.name
+        category.groupOrder = groupEntry.order
+        category.groupType = groupEntry.type
+    end
+
+    category.parent = GetCategoryParentCopy(category)
+
+    if not category.order then
+        local orderBase = category.groupOrder or 0
+        category.order = orderBase * 1000 + (category.rawOrder or 0)
+    end
+
+    quest.category = category
+
+    quest.meta = quest.meta or {}
+    local meta = quest.meta
+    meta.questType = meta.questType or quest.questType
+    meta.displayType = meta.displayType or quest.displayType
+    meta.categoryType = meta.categoryType or category.type
+    meta.categoryKey = meta.categoryKey or category.key
+    meta.groupKey = meta.groupKey or category.groupKey
+    meta.groupName = meta.groupName or category.groupName
+    meta.parentKey = meta.parentKey or (category.parent and category.parent.key)
+    meta.parentName = meta.parentName or (category.parent and category.parent.name)
+    meta.zoneName = meta.zoneName or quest.zoneName
+
+    if meta.isRepeatable == nil then
+        meta.isRepeatable = quest.flags.isRepeatable
+    end
+
+    if meta.isDaily == nil then
+        meta.isDaily = quest.flags.isDaily
+    end
+
+    return quest
 end
 
 local function CollectQuestSteps(journalQuestIndex)
@@ -536,7 +1094,7 @@ local function BuildQuestEntry(journalQuestIndex)
     end
     isComplete = not not isComplete
 
-    local category = DetermineCategory(questType, displayType, isRepeatable, isDaily)
+    local category = ResolveQuestCategory(journalQuestIndex, questType, displayType, isRepeatable, isDaily)
 
     local questEntry = {
         journalIndex = journalQuestIndex,
@@ -563,6 +1121,22 @@ local function BuildQuestEntry(journalQuestIndex)
         description = questDescription,
     }
 
+    questEntry.meta = {
+        questType = questType,
+        displayType = displayType,
+        categoryType = category and category.type or nil,
+        categoryKey = category and category.key or nil,
+        groupKey = category and category.groupKey or nil,
+        groupName = category and category.groupName or nil,
+        parentKey = category and category.parent and category.parent.key or nil,
+        parentName = category and category.parent and category.parent.name or nil,
+        zoneName = zoneName,
+        isRepeatable = isRepeatable,
+        isDaily = isDaily,
+    }
+
+    NormalizeQuestCategoryData(questEntry)
+
     questEntry.signature = BuildQuestSignature(questEntry)
 
     return questEntry
@@ -585,8 +1159,13 @@ local function CompareStrings(left, right)
 end
 
 local function CompareQuestEntries(left, right)
-    if left.category.order ~= right.category.order then
-        return left.category.order < right.category.order
+    local leftCategory = left.category or {}
+    local rightCategory = right.category or {}
+
+    local leftOrder = leftCategory.order or 0
+    local rightOrder = rightCategory.order or 0
+    if leftOrder ~= rightOrder then
+        return leftOrder < rightOrder
     end
 
     if left.flags.assisted ~= right.flags.assisted then
@@ -647,19 +1226,47 @@ local function NotifySubscribers(self)
     end
 end
 
+GetCategoryParentCopy = function(category)
+    if not category then
+        return nil
+    end
+
+    if category.parent then
+        return CopyParentInfo(category.parent)
+    end
+
+    if category.groupKey or category.groupName then
+        return CopyParentInfo({
+            key = category.groupKey,
+            name = category.groupName,
+            order = category.groupOrder,
+            type = category.groupType,
+        })
+    end
+
+    return nil
+end
+
 local function BuildCategoriesIndex(quests)
     local categoriesByKey = {}
     local orderedKeys = {}
 
     for index = 1, #quests do
         local quest = quests[index]
-        local key = quest.category.key
+        local category = quest.category or {}
+        local key = category.key or string.format("unknown:%d", index)
         local categoryEntry = categoriesByKey[key]
         if not categoryEntry then
             categoryEntry = {
                 key = key,
-                name = quest.category.name,
-                order = quest.category.order,
+                name = category.name or "",
+                order = category.order or 0,
+                type = category.type,
+                groupKey = category.groupKey,
+                groupName = category.groupName,
+                groupOrder = category.groupOrder,
+                groupType = category.groupType,
+                parent = GetCategoryParentCopy(category),
                 quests = {},
             }
             categoriesByKey[key] = categoryEntry
@@ -669,8 +1276,8 @@ local function BuildCategoriesIndex(quests)
     end
 
     table.sort(orderedKeys, function(left, right)
-        local leftOrder = categoriesByKey[left].order
-        local rightOrder = categoriesByKey[right].order
+        local leftOrder = categoriesByKey[left].order or 0
+        local rightOrder = categoriesByKey[right].order or 0
         if leftOrder ~= rightOrder then
             return leftOrder < rightOrder
         end
@@ -712,6 +1319,10 @@ end
 BuildSnapshotFromQuests = function(quests)
     if type(quests) ~= "table" then
         quests = {}
+    end
+
+    for index = 1, #quests do
+        quests[index] = NormalizeQuestCategoryData(quests[index])
     end
 
     local snapshot = {
@@ -817,6 +1428,7 @@ local function OnQuestChanged(_, ...)
         return
     end
 
+    ResetBaseCategoryCache()
     ScheduleRebuild(self)
 end
 
@@ -896,6 +1508,8 @@ function QuestModel.Shutdown()
     QuestModel.subscribers = nil
     QuestModel.currentSnapshot = nil
     QuestModel.pendingRebuild = nil
+    groupEntryCache = {}
+    ResetBaseCategoryCache()
 end
 
 function QuestModel.GetSnapshot()
