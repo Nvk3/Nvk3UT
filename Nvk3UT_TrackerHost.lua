@@ -84,6 +84,7 @@ local state = {
     scrollOffset = 0,
     scrollMaxOffset = 0,
     updatingScrollbar = false,
+    deferredRefreshScheduled = false,
     questContainer = nil,
     achievementContainer = nil,
     contentStack = nil,
@@ -1326,7 +1327,7 @@ local function applyWindowVisibility()
     state.root:SetHidden(shouldHide)
 end
 
-local function notifyContentChanged()
+local function refreshWindowLayout()
     if not state.root then
         return
     end
@@ -1335,6 +1336,37 @@ local function notifyContentChanged()
     updateWindowGeometry()
     applyWindowVisibility()
     refreshScroll()
+end
+
+local function scheduleDeferredRefresh()
+    if not (zo_callLater and state.root) then
+        return
+    end
+
+    if state.deferredRefreshScheduled then
+        return
+    end
+
+    state.deferredRefreshScheduled = true
+
+    zo_callLater(function()
+        state.deferredRefreshScheduled = false
+
+        if not state.root then
+            return
+        end
+
+        refreshWindowLayout()
+    end, 0)
+end
+
+local function notifyContentChanged()
+    if not state.root then
+        return
+    end
+
+    refreshWindowLayout()
+    scheduleDeferredRefresh()
 end
 
 local function applyWindowClamp()
@@ -1859,6 +1891,7 @@ function TrackerHost.Shutdown()
     end
     state.fragment = nil
     state.fragmentRetryScheduled = false
+    state.deferredRefreshScheduled = false
 
     if state.scrollContent then
         state.scrollContent:SetParent(nil)
