@@ -12,13 +12,11 @@ local ACHIEVEMENT_CONTAINER_NAME = addonName .. "_AchievementContainer"
 local SCROLL_CONTAINER_NAME = addonName .. "_ScrollContainer"
 local SCROLL_CONTENT_NAME = SCROLL_CONTAINER_NAME .. "_Content"
 local SCROLLBAR_NAME = SCROLL_CONTAINER_NAME .. "_ScrollBar"
-local PLAYER_ACTIVATED_EVENT_NAMESPACE = addonName .. "_TrackerHost_PlayerActivated"
 
 local MIN_WIDTH = 260
 local MIN_HEIGHT = 240
 local RESIZE_HANDLE_SIZE = 12
 local SCROLLBAR_WIDTH = 18
-local ACTIVATION_FALLBACK_DELAY_MS = 2000
 local FRAGMENT_RETRY_DELAY_MS = 200
 
 local FRAGMENT_REASON_SUPPRESSED = addonName .. "_HostSuppressed"
@@ -69,7 +67,6 @@ local state = {
     fragment = nil,
     fragmentScenes = nil,
     fragmentRetryScheduled = false,
-    activationFallbackScheduled = false,
     scrollContainer = nil,
     scrollContent = nil,
     scrollbar = nil,
@@ -86,8 +83,8 @@ local state = {
         achievementMissing = false,
     },
     previousDefaultQuestTrackerHidden = nil,
-    visibilitySuppressed = true,
-    hasShown = false,
+    initializing = false,
+    revealScheduled = false,
 }
 
 local ensureSceneFragments
@@ -734,7 +731,7 @@ local function applyWindowVisibility()
     end
 
     local userHidden = state.window and state.window.visible == false
-    local suppressed = state.visibilitySuppressed == true
+    local suppressed = state.initializing == true
     local shouldHide = suppressed or userHidden
 
     if state.fragment and state.fragment.SetHiddenForReason then
@@ -1207,60 +1204,51 @@ local function initTrackers(debugEnabled)
     end
 end
 
-local function finalizeInitialShow()
-    if not state.root or state.hasShown then
+local function revealWindowWhenReady()
+    if not state.root then
         return
     end
 
     ensureSceneFragments()
 
-    if EVENT_MANAGER then
-        EVENT_MANAGER:UnregisterForEvent(PLAYER_ACTIVATED_EVENT_NAMESPACE, EVENT_PLAYER_ACTIVATED)
-    end
-
-    state.visibilitySuppressed = true
-    applyWindowVisibility()
-    if TrackerHost.Refresh then
-        pcall(TrackerHost.Refresh)
-    end
-
-    if TrackerHost.RefreshScroll then
-        pcall(TrackerHost.RefreshScroll)
-    else
-        refreshScroll()
-    end
-
-    state.visibilitySuppressed = false
+    state.initializing = false
     applyWindowVisibility()
 
     if not (state.window and state.window.visible == false) then
         state.root:SetHidden(false)
     end
 
-    state.hasShown = true
-    debugLog("Initialized after PlayerActivated")
+    debugLog("Host window revealed")
 end
 
-local function triggerInitialShow()
-    if state.hasShown then
+local function scheduleInitialReveal()
+    if state.revealScheduled then
         return
     end
 
+    state.revealScheduled = true
+
+    local function execute()
+        state.revealScheduled = false
+
+        if TrackerHost.Refresh then
+            pcall(TrackerHost.Refresh)
+        end
+
+        if TrackerHost.RefreshScroll then
+            pcall(TrackerHost.RefreshScroll)
+        else
+            refreshScroll()
+        end
+
+        revealWindowWhenReady()
+    end
+
     if zo_callLater then
-        zo_callLater(function()
-            finalizeInitialShow()
-        end, 0)
+        zo_callLater(execute, 0)
     else
-        finalizeInitialShow()
+        execute()
     end
-end
-
-local function onPlayerActivated()
-    if EVENT_MANAGER then
-        EVENT_MANAGER:UnregisterForEvent(PLAYER_ACTIVATED_EVENT_NAMESPACE, EVENT_PLAYER_ACTIVATED)
-    end
-
-    triggerInitialShow()
 end
 
 function TrackerHost.Init()
@@ -1272,8 +1260,8 @@ function TrackerHost.Init()
         return
     end
 
-    state.visibilitySuppressed = true
-    state.hasShown = false
+    state.initializing = true
+    state.revealScheduled = false
 
     state.window = ensureWindowSettings()
     state.appearance = ensureAppearanceSettings()
@@ -1291,7 +1279,6 @@ function TrackerHost.Init()
 
     TrackerHost.ApplySettings()
     TrackerHost.ApplyTheme()
-    TrackerHost.Refresh()
 
     if Nvk3UT.UI and Nvk3UT.UI.BuildLAM then
         Nvk3UT.UI.BuildLAM()
@@ -1303,25 +1290,7 @@ function TrackerHost.Init()
 
     TrackerHost.ApplyAppearance()
 
-    if EVENT_MANAGER then
-        EVENT_MANAGER:UnregisterForEvent(PLAYER_ACTIVATED_EVENT_NAMESPACE, EVENT_PLAYER_ACTIVATED)
-        EVENT_MANAGER:RegisterForEvent(PLAYER_ACTIVATED_EVENT_NAMESPACE, EVENT_PLAYER_ACTIVATED, onPlayerActivated)
-    end
-
-    if zo_callLater and not state.activationFallbackScheduled then
-        state.activationFallbackScheduled = true
-        zo_callLater(function()
-            state.activationFallbackScheduled = false
-            if state.hasShown or not state.root then
-                return
-            end
-
-            debugLog("Activation fallback finalized window visibility")
-            triggerInitialShow()
-        end, ACTIVATION_FALLBACK_DELAY_MS)
-    end
-
-    triggerInitialShow()
+    scheduleInitialReveal()
 end
 
 function TrackerHost.ApplySettings()
@@ -1450,7 +1419,6 @@ function TrackerHost.Shutdown()
     end
     state.fragment = nil
     state.fragmentRetryScheduled = false
-    state.activationFallbackScheduled = false
 
     if state.scrollContent then
         state.scrollContent:SetParent(nil)
@@ -1492,12 +1460,8 @@ function TrackerHost.Shutdown()
     state.features = nil
     state.initialized = false
     state.previousDefaultQuestTrackerHidden = nil
-    state.visibilitySuppressed = true
-    state.hasShown = false
-
-    if EVENT_MANAGER then
-        EVENT_MANAGER:UnregisterForEvent(PLAYER_ACTIVATED_EVENT_NAMESPACE, EVENT_PLAYER_ACTIVATED)
-    end
+    state.initializing = false
+    state.revealScheduled = false
 end
 
 Nvk3UT.TrackerHost = TrackerHost
