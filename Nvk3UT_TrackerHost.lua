@@ -1176,6 +1176,10 @@ local function createContainers()
 
     createScrollContainer()
 
+    state.windowBars = state.windowBars or ensureWindowBarSettings()
+
+    local bars = state.windowBars or ensureWindowBarSettings()
+
     local scrollContent = state.scrollContent or state.root
     if not scrollContent then
         return
@@ -1203,6 +1207,12 @@ local function createContainers()
                 stopWindowDrag()
             end
         end)
+        local headerHeight = clamp(tonumber(bars.headerHeightPx) or DEFAULT_WINDOW_BARS.headerHeightPx, 0, MAX_BAR_HEIGHT)
+        headerBar:SetHeight(headerHeight)
+        if headerBar.SetHidden then
+            headerBar:SetHidden(headerHeight <= 0)
+        end
+        headerBar:SetMouseEnabled(headerHeight > 0)
         state.headerBar = headerBar
     end
 
@@ -1237,6 +1247,12 @@ local function createContainers()
         footerBar:SetHandler("OnMouseWheel", function(_, delta)
             adjustScroll(delta)
         end)
+        local footerHeight = clamp(tonumber(bars.footerHeightPx) or DEFAULT_WINDOW_BARS.footerHeightPx, 0, MAX_BAR_HEIGHT)
+        footerBar:SetHeight(footerHeight)
+        if footerBar.SetHidden then
+            footerBar:SetHidden(footerHeight <= 0)
+        end
+        footerBar:SetMouseEnabled(footerHeight > 0)
         state.footerBar = footerBar
     end
 
