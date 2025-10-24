@@ -16,6 +16,14 @@ local QUEST_INDENT_X = 18
 local CONDITION_INDENT_X = 36
 local VERTICAL_PADDING = 3
 
+local CATEGORY_MIN_HEIGHT = 26
+local QUEST_MIN_HEIGHT = 24
+local CONDITION_MIN_HEIGHT = 20
+local ROW_TEXT_PADDING_Y = 8
+local TOGGLE_LABEL_PADDING_X = 4
+local CATEGORY_TOGGLE_WIDTH = 20
+local QUEST_TOGGLE_WIDTH = 18
+
 local DEFAULT_FONTS = {
     category = "ZoFontGameBold",
     quest = "ZoFontGame",
@@ -45,6 +53,110 @@ local state = {
     contentWidth = 0,
     contentHeight = 0,
 }
+
+local function ApplyLabelDefaults(label)
+    if not label or not label.SetHorizontalAlignment then
+        return
+    end
+
+    label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+    if label.SetVerticalAlignment then
+        label:SetVerticalAlignment(TEXT_ALIGN_TOP)
+    end
+    if label.SetWrapMode then
+        label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
+    end
+end
+
+local function ApplyToggleDefaults(toggle)
+    if not toggle or not toggle.SetVerticalAlignment then
+        return
+    end
+
+    toggle:SetVerticalAlignment(TEXT_ALIGN_TOP)
+end
+
+local function GetToggleWidth(toggle, fallback)
+    if toggle and toggle.GetWidth then
+        local width = toggle:GetWidth()
+        if width and width > 0 then
+            return width
+        end
+    end
+
+    return fallback or 0
+end
+
+local function GetContainerWidth()
+    if not state.container or not state.container.GetWidth then
+        return 0
+    end
+
+    local width = state.container:GetWidth()
+    if not width or width <= 0 then
+        return 0
+    end
+
+    return width
+end
+
+local function ApplyRowMetrics(control, indent, toggleWidth, leftPadding, rightPadding, minHeight)
+    if not control or not control.label then
+        return
+    end
+
+    indent = indent or 0
+    toggleWidth = toggleWidth or 0
+    leftPadding = leftPadding or 0
+    rightPadding = rightPadding or 0
+
+    local containerWidth = GetContainerWidth()
+    local availableWidth = containerWidth - indent - toggleWidth - leftPadding - rightPadding
+    if availableWidth < 0 then
+        availableWidth = 0
+    end
+
+    control.label:SetWidth(availableWidth)
+
+    local textHeight = control.label:GetTextHeight() or 0
+    local targetHeight = textHeight + ROW_TEXT_PADDING_Y
+    if minHeight then
+        targetHeight = math.max(minHeight, targetHeight)
+    end
+
+    control:SetHeight(targetHeight)
+end
+
+local function RefreshControlMetrics(control)
+    if not control or not control.label then
+        return
+    end
+
+    local indent = control.currentIndent or 0
+    local rowType = control.rowType
+
+    if rowType == "category" then
+        ApplyRowMetrics(
+            control,
+            indent,
+            GetToggleWidth(control.toggle, CATEGORY_TOGGLE_WIDTH),
+            TOGGLE_LABEL_PADDING_X,
+            0,
+            CATEGORY_MIN_HEIGHT
+        )
+    elseif rowType == "quest" then
+        ApplyRowMetrics(
+            control,
+            indent,
+            GetToggleWidth(control.toggle, QUEST_TOGGLE_WIDTH),
+            TOGGLE_LABEL_PADDING_X,
+            0,
+            QUEST_MIN_HEIGHT
+        )
+    elseif rowType == "condition" then
+        ApplyRowMetrics(control, indent, 0, 0, 0, CONDITION_MIN_HEIGHT)
+    end
+end
 
 local function DebugLog(...)
     if not state.opts.debug then
@@ -179,6 +291,9 @@ local function UpdateContentSize()
 
     for index = 1, #state.orderedControls do
         local control = state.orderedControls[index]
+        if control then
+            RefreshControlMetrics(control)
+        end
         if control and not control:IsHidden() then
             visibleCount = visibleCount + 1
             local width = (control:GetWidth() or 0) + (control.currentIndent or 0)
@@ -286,6 +401,9 @@ local function AcquireCategoryControl()
         end)
         control.initialized = true
     end
+    control.rowType = "category"
+    ApplyLabelDefaults(control.label)
+    ApplyToggleDefaults(control.toggle)
     ApplyFont(control.label, state.fonts.category)
     ApplyFont(control.toggle, state.fonts.toggle)
     return control, key
@@ -367,6 +485,9 @@ local function AcquireQuestControl()
         end)
         control.initialized = true
     end
+    control.rowType = "quest"
+    ApplyLabelDefaults(control.label)
+    ApplyToggleDefaults(control.toggle)
     ApplyFont(control.label, state.fonts.quest)
     ApplyFont(control.toggle, state.fonts.toggle)
     return control, key
@@ -378,6 +499,8 @@ local function AcquireConditionControl()
         control.label = control:GetNamedChild("Label")
         control.initialized = true
     end
+    control.rowType = "condition"
+    ApplyLabelDefaults(control.label)
     ApplyFont(control.label, state.fonts.condition)
     return control, key
 end
@@ -442,6 +565,7 @@ local function LayoutCondition(condition)
     local control = AcquireConditionControl()
     control.data = { condition = condition }
     control.label:SetText(FormatConditionText(condition))
+    ApplyRowMetrics(control, CONDITION_INDENT_X, 0, 0, 0, CONDITION_MIN_HEIGHT)
     control:SetHidden(false)
     AnchorControl(control, CONDITION_INDENT_X)
 end
@@ -467,6 +591,14 @@ local function LayoutQuest(quest)
 
     local expanded = IsQuestExpanded(quest.journalIndex)
     UpdateQuestToggle(control, expanded)
+    ApplyRowMetrics(
+        control,
+        QUEST_INDENT_X,
+        GetToggleWidth(control.toggle, QUEST_TOGGLE_WIDTH),
+        TOGGLE_LABEL_PADDING_X,
+        0,
+        QUEST_MIN_HEIGHT
+    )
     control:SetHidden(false)
     AnchorControl(control, QUEST_INDENT_X)
 
@@ -489,6 +621,14 @@ local function LayoutCategory(category)
     control.label:SetText(string.format("%s (%d)", category.name or "", count))
     local expanded = IsCategoryExpanded(category.key)
     UpdateCategoryToggle(control, expanded)
+    ApplyRowMetrics(
+        control,
+        CATEGORY_INDENT_X,
+        GetToggleWidth(control.toggle, CATEGORY_TOGGLE_WIDTH),
+        TOGGLE_LABEL_PADDING_X,
+        0,
+        CATEGORY_MIN_HEIGHT
+    )
     control:SetHidden(false)
     AnchorControl(control, CATEGORY_INDENT_X)
 
@@ -712,6 +852,7 @@ function QuestTracker.RequestRefresh()
 end
 
 function QuestTracker.GetContentSize()
+    UpdateContentSize()
     return state.contentWidth or 0, state.contentHeight or 0
 end
 

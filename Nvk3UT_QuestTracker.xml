@@ -6,18 +6,18 @@
                 <Label name="$(parent)Toggle"
                        font="ZoFontGame"
                        horizontalAlignment="CENTER"
-                       verticalAlignment="CENTER"
+                       verticalAlignment="TOP"
                        text="\226\150\190">
-                    <Anchor point="LEFT" relativePoint="LEFT" offsetX="0" offsetY="0" />
+                    <Anchor point="TOPLEFT" relativePoint="TOPLEFT" offsetX="0" offsetY="0" />
                     <Dimensions x="20" />
                 </Label>
                 <Label name="$(parent)Label"
                        font="ZoFontGameBold"
                        horizontalAlignment="LEFT"
-                       verticalAlignment="CENTER"
+                       verticalAlignment="TOP"
                        wrapMode="ELLIPSIS">
-                    <Anchor point="LEFT" relativeTo="$(parent)Toggle" relativePoint="RIGHT" offsetX="4" />
-                    <Anchor point="RIGHT" relativePoint="RIGHT" offsetX="0" />
+                    <Anchor point="TOPLEFT" relativeTo="$(parent)Toggle" relativePoint="TOPRIGHT" offsetX="4" />
+                    <Anchor point="TOPRIGHT" relativePoint="TOPRIGHT" offsetX="0" />
                 </Label>
             </Controls>
         </Control>
@@ -27,18 +27,18 @@
                 <Label name="$(parent)Toggle"
                        font="ZoFontGame"
                        horizontalAlignment="CENTER"
-                       verticalAlignment="CENTER"
+                       verticalAlignment="TOP"
                        text="\226\150\182">
-                    <Anchor point="LEFT" relativePoint="LEFT" offsetX="0" offsetY="0" />
+                    <Anchor point="TOPLEFT" relativePoint="TOPLEFT" offsetX="0" offsetY="0" />
                     <Dimensions x="18" />
                 </Label>
                 <Label name="$(parent)Label"
                        font="ZoFontGame"
                        horizontalAlignment="LEFT"
-                       verticalAlignment="CENTER"
+                       verticalAlignment="TOP"
                        wrapMode="ELLIPSIS">
-                    <Anchor point="LEFT" relativeTo="$(parent)Toggle" relativePoint="RIGHT" offsetX="4" />
-                    <Anchor point="RIGHT" relativePoint="RIGHT" offsetX="0" />
+                    <Anchor point="TOPLEFT" relativeTo="$(parent)Toggle" relativePoint="TOPRIGHT" offsetX="4" />
+                    <Anchor point="TOPRIGHT" relativePoint="TOPRIGHT" offsetX="0" />
                 </Label>
             </Controls>
         </Control>
@@ -48,10 +48,10 @@
                 <Label name="$(parent)Label"
                        font="ZoFontGameSmall"
                        horizontalAlignment="LEFT"
-                       verticalAlignment="CENTER"
+                       verticalAlignment="TOP"
                        wrapMode="ELLIPSIS">
                     <Anchor point="TOPLEFT" relativePoint="TOPLEFT" offsetX="0" offsetY="0" />
-                    <Anchor point="RIGHT" relativePoint="RIGHT" offsetX="0" />
+                    <Anchor point="TOPRIGHT" relativePoint="TOPRIGHT" offsetX="0" />
                 </Label>
             </Controls>
         </Control>
