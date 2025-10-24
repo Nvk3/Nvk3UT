@@ -659,16 +659,6 @@ local function applyFeatureSettings()
     end
 end
 
-local function notifyContentChanged()
-    if not state.root then
-        return
-    end
-
-    updateWindowGeometry()
-    applyWindowVisibility()
-    refreshScroll()
-end
-
 local function anchorContainers()
     local parent = state.scrollContent or state.root
     local questContainer = state.questContainer
@@ -723,6 +713,16 @@ local function applyWindowVisibility()
 
     local shouldHide = state.window.visible == false
     state.root:SetHidden(shouldHide)
+end
+
+local function notifyContentChanged()
+    if not state.root then
+        return
+    end
+
+    updateWindowGeometry()
+    applyWindowVisibility()
+    refreshScroll()
 end
 
 local function applyWindowClamp()
