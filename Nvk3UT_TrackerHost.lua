@@ -86,6 +86,7 @@ local state = {
     scrollMaxOffset = 0,
     updatingScrollbar = false,
     deferredRefreshScheduled = false,
+    pendingDeferredOffset = nil,
     questContainer = nil,
     achievementContainer = nil,
     contentStack = nil,
@@ -116,6 +117,7 @@ local applyWindowBars
 local createContainers
 local startWindowDrag
 local stopWindowDrag
+local getCurrentScrollOffset
 
 local function clamp(value, minimum, maximum)
     if value == nil then
@@ -622,6 +624,26 @@ local function adjustScroll(delta)
     setScrollOffset(target)
 end
 
+getCurrentScrollOffset = function()
+    if state.desiredScrollOffset ~= nil then
+        return state.desiredScrollOffset
+    end
+
+    if state.scrollOffset ~= nil then
+        return state.scrollOffset
+    end
+
+    local scrollbar = state.scrollbar
+    if scrollbar and scrollbar.GetValue then
+        local value = scrollbar:GetValue()
+        if value ~= nil then
+            return tonumber(value) or 0
+        end
+    end
+
+    return 0
+end
+
 updateScrollContentAnchors = function()
     local scrollContainer = state.scrollContainer
     local scrollContent = state.scrollContent
@@ -956,7 +978,7 @@ applyViewportPadding = function()
     end
 end
 
-refreshScroll = function()
+refreshScroll = function(targetOffset)
     local scrollContainer = state.scrollContainer
     local scrollContent = state.scrollContent
     local scrollbar = state.scrollbar
@@ -974,7 +996,10 @@ refreshScroll = function()
             previousActual = 0
         end
     end
-    local previousDesired = state.desiredScrollOffset or previousActual or 0
+    local previousDesired = targetOffset
+    if previousDesired == nil then
+        previousDesired = state.desiredScrollOffset or previousActual or 0
+    end
 
     local _, questHeight = measureTrackerContent(state.questContainer, Nvk3UT and Nvk3UT.QuestTracker)
     local _, achievementHeight = measureTrackerContent(
@@ -1073,7 +1098,12 @@ refreshScroll = function()
 
     local setMinMax = scrollbar.SetMinMax
     if setMinMax then
-        setMinMax(scrollbar, 0, maxOffset)
+        state.updatingScrollbar = true
+        local ok, err = pcall(setMinMax, scrollbar, 0, maxOffset)
+        state.updatingScrollbar = false
+        if not ok then
+            debugLog("Failed to update scroll range", err)
+        end
     end
 
     local setHidden = scrollbar.SetHidden
@@ -1360,7 +1390,7 @@ local function applyWindowVisibility()
     state.root:SetHidden(shouldHide)
 end
 
-local function refreshWindowLayout()
+local function refreshWindowLayout(targetOffset)
     if not state.root then
         return
     end
@@ -1368,13 +1398,15 @@ local function refreshWindowLayout()
     ensureSceneFragments()
     updateWindowGeometry()
     applyWindowVisibility()
-    refreshScroll()
+    refreshScroll(targetOffset)
 end
 
-local function scheduleDeferredRefresh()
+local function scheduleDeferredRefresh(targetOffset)
     if not (zo_callLater and state.root) then
         return
     end
+
+    state.pendingDeferredOffset = targetOffset
 
     if state.deferredRefreshScheduled then
         return
@@ -1389,7 +1421,10 @@ local function scheduleDeferredRefresh()
             return
         end
 
-        refreshWindowLayout()
+        local offset = state.pendingDeferredOffset
+        state.pendingDeferredOffset = nil
+
+        refreshWindowLayout(offset)
     end, 0)
 end
 
@@ -1398,8 +1433,10 @@ local function notifyContentChanged()
         return
     end
 
-    refreshWindowLayout()
-    scheduleDeferredRefresh()
+    local preservedOffset = getCurrentScrollOffset()
+
+    refreshWindowLayout(preservedOffset)
+    scheduleDeferredRefresh(preservedOffset)
 end
 
 local function applyWindowClamp()
@@ -1925,6 +1962,7 @@ function TrackerHost.Shutdown()
     state.fragment = nil
     state.fragmentRetryScheduled = false
     state.deferredRefreshScheduled = false
+    state.pendingDeferredOffset = nil
 
     if state.scrollContent then
         state.scrollContent:SetParent(nil)
