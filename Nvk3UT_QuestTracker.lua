@@ -395,6 +395,52 @@ local function ApplyImmediateTrackedQuest(journalIndex)
     state.trackedQuestIndex = journalIndex
 end
 
+local function AutoExpandQuestForTracking(journalIndex)
+    if not (state.saved and journalIndex) then
+        return
+    end
+
+    if state.saved.questExpanded[journalIndex] == true then
+        return
+    end
+
+    state.saved.questExpanded[journalIndex] = true
+end
+
+local function EnsureTrackedCategoriesExpanded(journalIndex)
+    if not (state.saved and journalIndex) then
+        return
+    end
+
+    local keys = CollectCategoryKeysForQuest(journalIndex)
+
+    for key in pairs(keys) do
+        if key and state.saved.catExpanded[key] == nil then
+            state.saved.catExpanded[key] = true
+        end
+    end
+end
+
+local function FocusQuestInJournal(journalIndex)
+    if not (QUEST_JOURNAL_KEYBOARD and QUEST_JOURNAL_KEYBOARD.FocusQuestWithIndex) then
+        return
+    end
+
+    SafeCall(function(journal, index)
+        journal:FocusQuestWithIndex(index)
+    end, QUEST_JOURNAL_KEYBOARD, journalIndex)
+end
+
+local function ForceAssistTrackedQuest(journalIndex)
+    if not (FOCUSED_QUEST_TRACKER and FOCUSED_QUEST_TRACKER.ForceAssist) then
+        return
+    end
+
+    SafeCall(function(tracker, index)
+        tracker:ForceAssist(index)
+    end, FOCUSED_QUEST_TRACKER, journalIndex)
+end
+
 local function RequestRefresh()
     if not state.isInitialized then
         return
@@ -427,6 +473,9 @@ local function TrackQuestByJournalIndex(journalIndex)
         return
     end
 
+    AutoExpandQuestForTracking(numeric)
+    EnsureTrackedCategoriesExpanded(numeric)
+
     ApplyImmediateTrackedQuest(numeric)
 
     if SetTrackedQuestIndex then
@@ -437,6 +486,8 @@ local function TrackQuestByJournalIndex(journalIndex)
         end, QUEST_JOURNAL_MANAGER, numeric)
     end
 
+    FocusQuestInJournal(numeric)
+    ForceAssistTrackedQuest(numeric)
     EnsureQuestTrackedState(numeric)
     ClearOtherTrackedQuests(numeric)
     EnsureExclusiveAssistedQuest(numeric)
