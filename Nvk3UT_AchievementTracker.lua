@@ -50,6 +50,10 @@ local LEFT_MOUSE_BUTTON = MOUSE_BUTTON_INDEX_LEFT or 1
 local DEFAULT_FONT_OUTLINE = "soft-shadow-thin"
 local REFRESH_DEBOUNCE_MS = 80
 
+local COLOR_CATEGORY_COLLAPSED = { 0.75, 0.75, 0.75, 1 }
+local COLOR_CATEGORY_EXPANDED = { 1, 0.95, 0.6, 1 }
+local COLOR_ROW_HOVER = { 1, 1, 0.6, 1 }
+
 local state = {
     isInitialized = false,
     opts = {},
@@ -522,6 +526,16 @@ local function AcquireCategoryControl()
             SetCategoryExpanded(expanded)
             AchievementTracker.Refresh()
         end)
+        control:SetHandler("OnMouseEnter", function(ctrl)
+            if ctrl.label then
+                ctrl.label:SetColor(unpack(COLOR_ROW_HOVER))
+            end
+        end)
+        control:SetHandler("OnMouseExit", function(ctrl)
+            if ctrl.label and ctrl.baseColor then
+                ctrl.label:SetColor(unpack(ctrl.baseColor))
+            end
+        end)
         control.initialized = true
     end
     control.rowType = "category"
@@ -588,6 +602,10 @@ local function EnsurePools()
 
     state.categoryPool:SetCustomResetBehavior(function(control)
         resetControl(control)
+        control.baseColor = nil
+        if control.toggle then
+            control.toggle:SetText(ICON_COLLAPSED)
+        end
     end)
 
     state.achievementPool:SetCustomResetBehavior(function(control)
@@ -728,6 +746,11 @@ local function LayoutCategory()
     control.label:SetText(FormatCategoryHeaderText("Errungenschaften", total or 0, "achievement"))
 
     local expanded = IsCategoryExpanded()
+    local baseColor = expanded and COLOR_CATEGORY_EXPANDED or COLOR_CATEGORY_COLLAPSED
+    control.baseColor = baseColor
+    if control.label then
+        control.label:SetColor(unpack(baseColor))
+    end
     UpdateCategoryToggle(control, expanded)
     ApplyRowMetrics(
         control,

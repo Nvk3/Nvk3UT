@@ -47,6 +47,14 @@ local DEFAULT_FONTS = {
 local DEFAULT_FONT_OUTLINE = "soft-shadow-thin"
 local REFRESH_DEBOUNCE_MS = 80
 
+local COLOR_QUEST_DEFAULT = { 0.75, 0.75, 0.75, 1 }
+local COLOR_QUEST_TRACKED = { 1, 0.95, 0.6, 1 }
+local COLOR_QUEST_ASSISTED = COLOR_QUEST_TRACKED
+local COLOR_QUEST_WATCHED = { 0.9, 0.9, 0.9, 1 }
+local COLOR_CATEGORY_COLLAPSED = COLOR_QUEST_DEFAULT
+local COLOR_CATEGORY_EXPANDED = COLOR_QUEST_TRACKED
+local COLOR_ROW_HOVER = { 1, 1, 0.6, 1 }
+
 local RequestRefresh -- forward declaration for functions that trigger refreshes
 
 local state = {
@@ -922,6 +930,16 @@ local function AcquireCategoryControl()
                 QuestTracker.Refresh()
             end
         end)
+        control:SetHandler("OnMouseEnter", function(ctrl)
+            if ctrl.label then
+                ctrl.label:SetColor(unpack(COLOR_ROW_HOVER))
+            end
+        end)
+        control:SetHandler("OnMouseExit", function(ctrl)
+            if ctrl.label and ctrl.baseColor then
+                ctrl.label:SetColor(unpack(ctrl.baseColor))
+            end
+        end)
         control.initialized = true
     end
     control.rowType = "category"
@@ -1039,7 +1057,7 @@ local function AcquireQuestControl()
         end)
         control:SetHandler("OnMouseEnter", function(ctrl)
             if ctrl.label then
-                ctrl.label:SetColor(1, 1, 0.6, 1)
+                ctrl.label:SetColor(unpack(COLOR_ROW_HOVER))
             end
         end)
         control:SetHandler("OnMouseExit", function(ctrl)
@@ -1111,15 +1129,15 @@ local function EnsurePools()
         control:SetHidden(true)
         control.data = nil
         control.currentIndent = nil
+        control.baseColor = nil
+        if control.toggle then
+            control.toggle:SetText(ICON_COLLAPSED)
+        end
     end
 
     state.categoryPool:SetCustomResetBehavior(resetControl)
     state.questPool:SetCustomResetBehavior(function(control)
         resetControl(control)
-        control.baseColor = nil
-        if control.toggle then
-            control.toggle:SetText(ICON_COLLAPSED)
-        end
     end)
     state.conditionPool:SetCustomResetBehavior(resetControl)
 end
@@ -1141,14 +1159,14 @@ local function LayoutQuest(quest)
     local control = AcquireQuestControl()
     control.data = { quest = quest }
     control.label:SetText(quest.name or "")
-    local baseColor = { 0.75, 0.75, 0.75, 1 }
+    local baseColor = COLOR_QUEST_DEFAULT
     local flags = quest.flags or {}
     if state.trackedQuestIndex and quest.journalIndex == state.trackedQuestIndex then
-        baseColor = { 1, 0.95, 0.6, 1 }
+        baseColor = COLOR_QUEST_TRACKED
     elseif flags.assisted then
-        baseColor = { 1, 0.95, 0.6, 1 }
+        baseColor = COLOR_QUEST_ASSISTED
     elseif flags.tracked then
-        baseColor = { 0.9, 0.9, 0.9, 1 }
+        baseColor = COLOR_QUEST_WATCHED
     end
     control.baseColor = baseColor
     if control.label then
@@ -1194,6 +1212,11 @@ local function LayoutCategory(category)
     local count = #category.quests
     control.label:SetText(FormatCategoryHeaderText(category.name or "", count, "quest"))
     local expanded = IsCategoryExpanded(category.key)
+    local baseColor = expanded and COLOR_CATEGORY_EXPANDED or COLOR_CATEGORY_COLLAPSED
+    control.baseColor = baseColor
+    if control.label then
+        control.label:SetColor(unpack(baseColor))
+    end
     UpdateCategoryToggle(control, expanded)
     ApplyRowMetrics(
         control,
