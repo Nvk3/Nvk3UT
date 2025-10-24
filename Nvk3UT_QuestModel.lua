@@ -227,7 +227,7 @@ local function OnPlayerActivated()
         BootstrapQuestData()
     end
 
-    if QuestModel.isInitialized then
+    if QuestModel.isInitialized and type(ForceRebuild) == "function" then
         ForceRebuild(QuestModel)
     end
 end
@@ -797,7 +797,7 @@ local function ScheduleRebuild(self)
     )
 end
 
-local function ForceRebuild(self)
+ForceRebuild = function(self)
     if not self.isInitialized or not playerState.hasActivated then
         return false
     end
