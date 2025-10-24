@@ -191,6 +191,13 @@ local function NotifyHostContentChanged()
     pcall(host.NotifyContentChanged)
 end
 
+local function NotifyStatusRefresh()
+    local ui = Nvk3UT and Nvk3UT.UI
+    if ui and ui.UpdateStatus then
+        ui.UpdateStatus()
+    end
+end
+
 local function EnsureSavedVars()
     Nvk3UT.sv = Nvk3UT.sv or {}
     Nvk3UT.sv.QuestTracker = Nvk3UT.sv.QuestTracker or {}
@@ -721,6 +728,7 @@ local function OnSnapshotUpdated(snapshot)
     if state.isInitialized then
         Rebuild()
     end
+    NotifyStatusRefresh()
 end
 
 function QuestTracker.Init(parentControl, opts)
@@ -818,6 +826,7 @@ end
 function QuestTracker.SetActive(active)
     state.opts.active = active
     RefreshVisibility()
+    NotifyStatusRefresh()
 end
 
 function QuestTracker.ApplySettings(settings)
@@ -840,6 +849,7 @@ function QuestTracker.ApplySettings(settings)
 
     RefreshVisibility()
     RequestRefresh()
+    NotifyStatusRefresh()
 end
 
 function QuestTracker.ApplyTheme(settings)
@@ -857,6 +867,10 @@ function QuestTracker.ApplyTheme(settings)
     state.fonts = MergeFonts(state.opts.fonts)
 
     RequestRefresh()
+end
+
+function QuestTracker.IsActive()
+    return state.opts.active ~= false
 end
 
 function QuestTracker.RequestRefresh()
