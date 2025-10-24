@@ -727,7 +727,15 @@ local function AcquireQuestControl()
                     return
                 end
                 local journalIndex = questData.journalIndex
-                if ctrl.toggle and ctrl.toggle:IsMouseOver() then
+                local toggleMouseOver = false
+                if ctrl.toggle then
+                    local toggleIsMouseOver = ctrl.toggle.IsMouseOver
+                    if type(toggleIsMouseOver) == "function" then
+                        toggleMouseOver = toggleIsMouseOver(ctrl.toggle)
+                    end
+                end
+
+                if toggleMouseOver then
                     local changed = SetQuestExpanded(journalIndex, not IsQuestExpanded(journalIndex))
                     if changed then
                         QuestTracker.Refresh()
