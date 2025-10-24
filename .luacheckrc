@@ -1,6 +1,69 @@
 std = "lua51"
-globals = {
-  "ZO_SavedVars","EVENT_MANAGER","SLASH_COMMANDS",
-  "LibAddonMenu2","d","ZO_CreateStringId"
+max_line_length = 120
+unused_args = false
+unused_function = false
+allow_defined_top = true
+
+exclude_files = {
+  "reference/**",
+  "tools/**",
+  ".github/**",
+  "Nvk3UT-Release.zip",
 }
-ignore = { "111" } -- undefined field (bei ESO-APIs oft ok)
+
+read_globals = {
+  "Nvk3UT",
+  "Nvk3UT_*",
+  "ZO_*",
+  "LibStub",
+  "EVENT_MANAGER",
+  "EVENT_*",
+  "SCENE_MANAGER",
+  "SCENE_FRAGMENT_MANAGER",
+  "HUD_SCENE",
+  "HUD_UI_SCENE",
+  "KEYBINDING_MANAGER",
+  "CHAT_SYSTEM",
+  "SLASH_COMMANDS",
+  "QUEST_TRACKER",
+  "QUEST_JOURNAL_MANAGER",
+  "CUSTOM_TOOLTIP",
+  "SecurePostHook",
+  "zo_callLater",
+  "zo_strformat",
+  "zo_iconFormat",
+  "zo_loadstring",
+  "ZO_CreateStringId",
+  "GetFrameTimeMilliseconds",
+  "GetGameTimeMilliseconds",
+  "GetSecondsSinceMidnight",
+  "GetTimeStamp",
+  "GetUnitDisplayName",
+  "GetUnitName",
+  "GetNumJournalQuests",
+  "GetJournalQuestLocationInfo",
+  "GetJournalQuestName",
+  "GetJournalQuestType",
+  "GetJournalQuestRepeatType",
+  "GetJournalQuestStepInfo",
+  "GetJournalQuestConditionInfo",
+  "GetNumJournalQuestConditions",
+  "GetNumJournalQuestSteps",
+  "GetAchievementInfo",
+  "GetAchievementRewardItemLink",
+  "GetAchievementCategoryInfo",
+  "GetAchievementCategoryInfoFromCategoryId",
+  "GetAchievementNumCriteria",
+  "GetAchievementCriterion",
+  "GetAchievementNumRewards",
+  "GetCompletedAchievementInfo",
+  "GetCompletedQuestInfo",
+  "GetCompletedQuestLocationInfo",
+  "GetTrackingInfo",
+  "GetTrackedIsAssisted",
+  "GetTrackedQuestLocation",
+  "IsInGamepadPreferredMode",
+  "GetCVar",
+  "SetCVar",
+  "d",
+}
