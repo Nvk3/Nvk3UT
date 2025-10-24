@@ -116,6 +116,8 @@ local lamPreview = {
     wasStatusTextVisibleBeforeLAM = nil,
     windowPreviewApplied = false,
     statusPreviewApplied = false,
+    statusLabelLayoutOnOpen = nil,
+    statusLabelPreviewLayoutApplied = false,
 }
 
 local ensureSceneFragments
@@ -172,6 +174,129 @@ local function getStatusLabel()
     end
 
     return nil
+end
+
+local function captureStatusLabelLayout(label)
+    if not label then
+        return nil
+    end
+
+    local layout = {}
+
+    if label.GetParent then
+        layout.parent = label:GetParent()
+    end
+
+    if label.GetNumAnchors and label.GetAnchor then
+        local numAnchors = label:GetNumAnchors()
+        if numAnchors and numAnchors > 0 then
+            local anchors = {}
+            for index = 0, numAnchors - 1 do
+                local point, relativeTo, relativePoint, offsetX, offsetY = label:GetAnchor(index)
+                anchors[#anchors + 1] = {
+                    point = point,
+                    relativeTo = relativeTo,
+                    relativePoint = relativePoint,
+                    offsetX = offsetX,
+                    offsetY = offsetY,
+                }
+            end
+            layout.anchors = anchors
+        end
+    end
+
+    if label.GetDrawLayer then
+        layout.drawLayer = label:GetDrawLayer()
+    end
+    if label.GetDrawTier then
+        layout.drawTier = label:GetDrawTier()
+    end
+    if label.GetDrawLevel then
+        layout.drawLevel = label:GetDrawLevel()
+    end
+
+    return layout
+end
+
+local function applyStatusLabelLayout(label, layout)
+    if not (label and layout) then
+        return
+    end
+
+    if layout.parent and label.SetParent then
+        label:SetParent(layout.parent)
+    end
+
+    if layout.anchors and label.ClearAnchors and label.SetAnchor then
+        label:ClearAnchors()
+        for _, anchor in ipairs(layout.anchors) do
+            local relativeTo = anchor.relativeTo or layout.parent
+            label:SetAnchor(anchor.point, relativeTo, anchor.relativePoint, anchor.offsetX, anchor.offsetY)
+        end
+    end
+
+    if layout.drawLayer and label.SetDrawLayer then
+        label:SetDrawLayer(layout.drawLayer)
+    end
+    if layout.drawTier and label.SetDrawTier then
+        label:SetDrawTier(layout.drawTier)
+    end
+    if layout.drawLevel and label.SetDrawLevel then
+        label:SetDrawLevel(layout.drawLevel)
+    end
+end
+
+local function applyStatusLabelPreviewLayout(label)
+    if lamPreview.statusLabelPreviewLayoutApplied then
+        return
+    end
+
+    if not label then
+        lamPreview.statusLabelLayoutOnOpen = nil
+        lamPreview.statusLabelPreviewLayoutApplied = false
+        return
+    end
+
+    lamPreview.statusLabelLayoutOnOpen = captureStatusLabelLayout(label)
+    lamPreview.statusLabelPreviewLayoutApplied = true
+
+    if label.SetParent and GuiRoot then
+        label:SetParent(GuiRoot)
+    end
+
+    local layout = lamPreview.statusLabelLayoutOnOpen
+    if layout and layout.anchors and label.ClearAnchors and label.SetAnchor then
+        label:ClearAnchors()
+        for _, anchor in ipairs(layout.anchors) do
+            local relativeTo = anchor.relativeTo or layout.parent
+            label:SetAnchor(anchor.point, relativeTo, anchor.relativePoint, anchor.offsetX, anchor.offsetY)
+        end
+    end
+
+    if label.SetDrawLayer and DL_OVERLAY ~= nil then
+        label:SetDrawLayer(DL_OVERLAY)
+    end
+    if label.SetDrawTier and DT_HIGH ~= nil then
+        label:SetDrawTier(DT_HIGH)
+    end
+end
+
+local function restoreStatusLabelPreviewLayout(label)
+    local layout = lamPreview.statusLabelLayoutOnOpen
+    lamPreview.statusLabelLayoutOnOpen = nil
+
+    if not lamPreview.statusLabelPreviewLayoutApplied then
+        lamPreview.statusLabelPreviewLayoutApplied = false
+        return
+    end
+
+    lamPreview.statusLabelPreviewLayoutApplied = false
+
+    if not (label and layout) then
+        return
+    end
+
+    applyStatusLabelLayout(label, layout)
 end
 
 local function isWindowOptionEnabled()
@@ -253,40 +378,49 @@ local function ensureStatusUpdateHook()
 end
 
 local function disableStatusPreview(restoreWithStoredState)
-    if not lamPreview.statusPreviewApplied then
+    local hadPreview = lamPreview.statusPreviewApplied
+    local hadLayout = lamPreview.statusLabelPreviewLayoutApplied
+
+    if not hadPreview and not hadLayout then
         return
     end
 
     lamPreview.statusPreviewApplied = false
 
     local ui = Nvk3UT and Nvk3UT.UI
-    if ui and ui.UpdateStatus then
+    if hadPreview and ui and ui.UpdateStatus then
         ui.UpdateStatus()
     end
 
-    if not restoreWithStoredState then
-        return
-    end
-
     local label = getStatusLabel()
-    if not label then
+
+    if not restoreWithStoredState then
+        if hadLayout then
+            restoreStatusLabelPreviewLayout(label)
+        end
         return
     end
 
-    if lamPreview.wasStatusTextVisibleBeforeLAM == nil then
-        return
+    if label and lamPreview.wasStatusTextVisibleBeforeLAM ~= nil then
+        local currentSetting = isStatusOptionEnabled()
+        if lamPreview.statusSettingOnOpen == nil or currentSetting == lamPreview.statusSettingOnOpen then
+            label:SetHidden(not lamPreview.wasStatusTextVisibleBeforeLAM)
+        end
     end
 
-    local currentSetting = isStatusOptionEnabled()
-    if lamPreview.statusSettingOnOpen ~= nil and currentSetting ~= lamPreview.statusSettingOnOpen then
-        return
+    if hadLayout then
+        restoreStatusLabelPreviewLayout(label)
     end
-
-    label:SetHidden(not lamPreview.wasStatusTextVisibleBeforeLAM)
 end
 
 local function enableStatusPreview()
     if lamPreview.statusPreviewApplied then
+        if not lamPreview.statusLabelPreviewLayoutApplied then
+            local label = getStatusLabel()
+            if label then
+                applyStatusLabelPreviewLayout(label)
+            end
+        end
         return
     end
 
@@ -304,6 +438,10 @@ local function enableStatusPreview()
     end
 
     lamPreview.statusPreviewApplied = true
+
+    if not lamPreview.statusLabelPreviewLayoutApplied then
+        applyStatusLabelPreviewLayout(label)
+    end
 
     label:SetHidden(false)
 
@@ -2081,6 +2219,8 @@ function TrackerHost.OnLamPanelOpened()
     lamPreview.active = true
     lamPreview.windowSettingOnOpen = isWindowOptionEnabled()
     lamPreview.statusSettingOnOpen = isStatusOptionEnabled()
+    lamPreview.statusLabelLayoutOnOpen = nil
+    lamPreview.statusLabelPreviewLayoutApplied = false
 
     if state.root then
         lamPreview.wasWindowVisibleBeforeLAM = not state.root:IsHidden()
@@ -2154,6 +2294,8 @@ function TrackerHost.OnLamPanelClosed()
     lamPreview.statusSettingOnOpen = nil
     lamPreview.wasWindowVisibleBeforeLAM = nil
     lamPreview.wasStatusTextVisibleBeforeLAM = nil
+    lamPreview.statusLabelLayoutOnOpen = nil
+    lamPreview.statusLabelPreviewLayoutApplied = false
 end
 
 function TrackerHost.Shutdown()
@@ -2164,6 +2306,8 @@ function TrackerHost.Shutdown()
     lamPreview.wasStatusTextVisibleBeforeLAM = nil
     lamPreview.wasWindowVisibleBeforeLAM = nil
     lamPreview.windowPreviewApplied = false
+    lamPreview.statusLabelLayoutOnOpen = nil
+    lamPreview.statusLabelPreviewLayoutApplied = false
     state.lamPreviewForceVisible = false
 
     if state.previousDefaultQuestTrackerHidden ~= nil and ZO_QuestTracker and ZO_QuestTracker.SetHidden then
