@@ -104,6 +104,14 @@ local state = {
     },
     previousDefaultQuestTrackerHidden = nil,
     initializing = false,
+    lamPreviewForceVisible = false,
+}
+
+local lamPreview = {
+    active = false,
+    windowSettingOnOpen = nil,
+    wasWindowVisibleBeforeLAM = nil,
+    windowPreviewApplied = false,
 }
 
 local ensureSceneFragments
@@ -146,6 +154,21 @@ end
 
 local function getSavedVars()
     return Nvk3UT and Nvk3UT.sv
+end
+
+local function isWindowOptionEnabled()
+    if state.window and state.window.visible ~= nil then
+        return state.window.visible ~= false
+    end
+
+    local sv = getSavedVars()
+    local general = sv and sv.General
+    local window = general and general.window
+    if window and window.visible ~= nil then
+        return window.visible ~= false
+    end
+
+    return true
 end
 
 local function migrateAppearanceSettings(target)
@@ -1380,14 +1403,24 @@ local function applyWindowVisibility()
 
     local userHidden = state.window and state.window.visible == false
     local suppressed = state.initializing == true
-    local shouldHide = suppressed or userHidden
+    local previewActive = state.lamPreviewForceVisible == true and not userHidden
+    local shouldHide = (suppressed or userHidden) and not previewActive
 
     if state.fragment and state.fragment.SetHiddenForReason then
-        state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, suppressed)
-        state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, userHidden)
+        if previewActive then
+            state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, false)
+            state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, false)
+        else
+            state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, suppressed)
+            state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, userHidden)
+        end
     end
 
     state.root:SetHidden(shouldHide)
+
+    if lamPreview.active and previewActive then
+        lamPreview.windowPreviewApplied = true
+    end
 end
 
 local function refreshWindowLayout(targetOffset)
@@ -1886,7 +1919,70 @@ function TrackerHost.ApplyAppearance()
     notifyContentChanged()
 end
 
+function TrackerHost.OnLamPanelOpened()
+    lamPreview.active = true
+    lamPreview.windowSettingOnOpen = isWindowOptionEnabled()
+
+    if state.root then
+        lamPreview.wasWindowVisibleBeforeLAM = not state.root:IsHidden()
+    else
+        lamPreview.wasWindowVisibleBeforeLAM = nil
+    end
+
+    if not lamPreview.windowSettingOnOpen then
+        state.lamPreviewForceVisible = false
+        lamPreview.windowPreviewApplied = false
+        return
+    end
+
+    state.lamPreviewForceVisible = true
+
+    if TrackerHost.ApplyWindowBars then
+        TrackerHost.ApplyWindowBars()
+    end
+
+    if TrackerHost.ApplyAppearance then
+        TrackerHost.ApplyAppearance()
+    end
+
+    if TrackerHost.Refresh then
+        TrackerHost.Refresh()
+    end
+end
+
+function TrackerHost.OnLamPanelClosed()
+    if not lamPreview.active then
+        return
+    end
+
+    lamPreview.active = false
+    state.lamPreviewForceVisible = false
+
+    applyWindowVisibility()
+
+    local currentWindowSetting = isWindowOptionEnabled()
+    if
+        lamPreview.windowPreviewApplied
+        and lamPreview.wasWindowVisibleBeforeLAM ~= nil
+        and lamPreview.windowSettingOnOpen ~= nil
+        and currentWindowSetting == lamPreview.windowSettingOnOpen
+        and state.root
+    then
+        state.root:SetHidden(not lamPreview.wasWindowVisibleBeforeLAM)
+    end
+
+    lamPreview.windowPreviewApplied = false
+    lamPreview.windowSettingOnOpen = nil
+    lamPreview.wasWindowVisibleBeforeLAM = nil
+end
+
 function TrackerHost.Shutdown()
+    lamPreview.active = false
+    lamPreview.windowSettingOnOpen = nil
+    lamPreview.wasWindowVisibleBeforeLAM = nil
+    lamPreview.windowPreviewApplied = false
+    state.lamPreviewForceVisible = false
+
     if state.previousDefaultQuestTrackerHidden ~= nil and ZO_QuestTracker and ZO_QuestTracker.SetHidden then
         ZO_QuestTracker:SetHidden(state.previousDefaultQuestTrackerHidden)
     end
