@@ -7,6 +7,18 @@ AchievementTracker.__index = AchievementTracker
 
 local MODULE_NAME = addonName .. "AchievementTracker"
 
+local Utils = Nvk3UT and Nvk3UT.Utils
+local FormatCategoryHeaderText =
+    (Utils and Utils.FormatCategoryHeaderText)
+    or function(baseText, count, showCounts)
+        local text = baseText or ""
+        if showCounts ~= false and type(count) == "number" and count >= 0 then
+            local numericCount = math.floor(count + 0.5)
+            return string.format("%s (%d)", text, numericCount)
+        end
+        return text
+    end
+
 local ICON_EXPANDED = "\226\150\190" -- ▼
 local ICON_COLLAPSED = "\226\150\182" -- ▶
 
@@ -708,7 +720,7 @@ local function LayoutCategory()
 
     local control = AcquireCategoryControl()
     control.data = { categoryKey = CATEGORY_KEY }
-    control.label:SetText(string.format("Errungenschaften (%d)", total or 0))
+    control.label:SetText(FormatCategoryHeaderText("Errungenschaften", total or 0, "achievement"))
 
     local expanded = IsCategoryExpanded()
     UpdateCategoryToggle(control, expanded)

@@ -85,9 +85,10 @@ end
 local function getGeneral()
     local sv = getSavedVars()
     sv.General = sv.General or {}
-    sv.General.features = sv.General.features or {}
-    sv.General.window = sv.General.window or {}
-    local window = sv.General.window
+    local general = sv.General
+    general.features = general.features or {}
+    general.window = general.window or {}
+    local window = general.window
     window.left = tonumber(window.left) or DEFAULT_WINDOW.left
     window.top = tonumber(window.top) or DEFAULT_WINDOW.top
     window.width = tonumber(window.width) or DEFAULT_WINDOW.width
@@ -104,7 +105,25 @@ local function getGeneral()
     if window.onTop == nil then
         window.onTop = DEFAULT_WINDOW.onTop
     end
-    return sv.General
+    local legacyShowCounts = general.showCategoryCounts
+    if general.showQuestCategoryCounts == nil then
+        if legacyShowCounts ~= nil then
+            general.showQuestCategoryCounts = legacyShowCounts ~= false
+        else
+            general.showQuestCategoryCounts = true
+        end
+    end
+    if general.showAchievementCategoryCounts == nil then
+        if legacyShowCounts ~= nil then
+            general.showAchievementCategoryCounts = legacyShowCounts ~= false
+        else
+            general.showAchievementCategoryCounts = true
+        end
+    end
+    if general.showCategoryCounts == nil then
+        general.showCategoryCounts = true
+    end
+    return general
 end
 
 local function getFeatures()
@@ -975,6 +994,22 @@ local function registerPanel(displayTitle)
                 default = true,
             }
 
+            controls[#controls + 1] = {
+                type = "checkbox",
+                name = "Show counts in category headers",
+                tooltip = "If enabled, category headers display the number of contained entries, e.g., 'Repeatable (12)'. Disable to hide the counts.",
+                getFunc = function()
+                    local general = getGeneral()
+                    return general.showQuestCategoryCounts ~= false
+                end,
+                setFunc = function(value)
+                    local general = getGeneral()
+                    general.showQuestCategoryCounts = value ~= false
+                    refreshQuestTracker()
+                end,
+                default = true,
+            }
+
             controls[#controls + 1] = { type = "header", name = "Quest-Tracker Schriftarten" }
 
             local fontGroups = {
@@ -1024,6 +1059,22 @@ local function registerPanel(displayTitle)
                     if Nvk3UT and Nvk3UT.AchievementTracker and Nvk3UT.AchievementTracker.SetActive then
                         Nvk3UT.AchievementTracker.SetActive(value)
                     end
+                end,
+                default = true,
+            }
+
+            controls[#controls + 1] = {
+                type = "checkbox",
+                name = "Show counts in category headers",
+                tooltip = "If enabled, category headers display the number of contained entries, e.g., 'Repeatable (12)'. Disable to hide the counts.",
+                getFunc = function()
+                    local general = getGeneral()
+                    return general.showAchievementCategoryCounts ~= false
+                end,
+                setFunc = function(value)
+                    local general = getGeneral()
+                    general.showAchievementCategoryCounts = value ~= false
+                    refreshAchievementTracker()
                 end,
                 default = true,
             }

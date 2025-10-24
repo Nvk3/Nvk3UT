@@ -71,6 +71,62 @@ function M.GetIconTagForTexture(path, size)
   return string.format("|t%d:%d:%s|t ", iconSize, iconSize, normalized)
 end
 
+local function resolveShowCategoryCountsOverride(override)
+  if type(override) == "boolean" then
+    return override
+  end
+
+  local sv = Nvk3UT and Nvk3UT.sv
+  local general = sv and sv.General
+
+  if type(override) == "string" then
+    local key
+    if override == "quest" then
+      key = "showQuestCategoryCounts"
+    elseif override == "achievement" then
+      key = "showAchievementCategoryCounts"
+    end
+    if key and general and general[key] ~= nil then
+      return general[key] ~= false
+    end
+  elseif override ~= nil then
+    return override ~= false
+  end
+
+  if sv and sv.showCategoryCounts ~= nil then
+    return sv.showCategoryCounts ~= false
+  end
+
+  if general then
+    if general.showQuestCategoryCounts ~= nil then
+      return general.showQuestCategoryCounts ~= false
+    end
+    if general.showAchievementCategoryCounts ~= nil then
+      return general.showAchievementCategoryCounts ~= false
+    end
+    if general.showCategoryCounts ~= nil then
+      return general.showCategoryCounts ~= false
+    end
+  end
+
+  return true
+end
+
+function M.ShouldShowCategoryCounts(context)
+  return resolveShowCategoryCountsOverride(context)
+end
+
+function M.FormatCategoryHeaderText(baseText, count, showCounts)
+  local text = baseText or ""
+  local show = resolveShowCategoryCountsOverride(showCounts)
+  local numericCount = tonumber(count)
+  if show and numericCount and numericCount >= 0 then
+    numericCount = math.floor(numericCount + 0.5)
+    return string.format("%s (%d)", text, numericCount)
+  end
+  return text
+end
+
 local function stripLeadingIcon(text)
   if type(text) ~= "string" or text == "" then
     return text
