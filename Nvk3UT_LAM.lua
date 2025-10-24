@@ -1160,34 +1160,6 @@ local function registerPanel(displayTitle)
                 default = true,
             }
 
-            controls[#controls + 1] = { type = "header", name = "Bereiche anzeigen" }
-
-            local sectionToggles = {
-                { key = "favorites", label = "Favoriten" },
-                { key = "recent", label = "Kürzlich" },
-                { key = "completed", label = "Abgeschlossen" },
-                { key = "todo", label = "To-Do" },
-            }
-
-            for index = 1, #sectionToggles do
-                local entry = sectionToggles[index]
-                controls[#controls + 1] = {
-                    type = "checkbox",
-                    name = entry.label,
-                    getFunc = function()
-                        local settings = getAchievementSettings()
-                        return settings.sections[entry.key] ~= false
-                    end,
-                    setFunc = function(value)
-                        local settings = getAchievementSettings()
-                        settings.sections[entry.key] = value
-                        applyAchievementSettings()
-                        refreshAchievementTracker()
-                    end,
-                    default = true,
-                }
-            end
-
             controls[#controls + 1] = { type = "header", name = "Erfolgstracker Schriftarten" }
 
             local fontGroups = {
@@ -1258,6 +1230,10 @@ local function registerPanel(displayTitle)
                     if Nvk3UT.FavoritesData and Nvk3UT.FavoritesData.MigrateScope then
                         Nvk3UT.FavoritesData.MigrateScope(old, general.favScope)
                     end
+                    if Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.OnFavoritesChanged then
+                        Nvk3UT.AchievementModel.OnFavoritesChanged()
+                    end
+                    refreshAchievementTracker()
                     updateStatus()
                 end,
                 tooltip = "Speichert und zählt Favoriten account-weit oder charakter-weit.",
