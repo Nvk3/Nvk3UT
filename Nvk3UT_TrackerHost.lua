@@ -706,6 +706,159 @@ local function anchorContainers()
     end
 end
 
+local function applyViewportPadding()
+    local appearance = state.appearance or ensureAppearanceSettings()
+    if not state.root then
+        return
+    end
+
+    local padding = math.max(0, tonumber(appearance and appearance.padding) or 0)
+
+    if state.scrollContainer then
+        state.scrollContainer:ClearAnchors()
+        state.scrollContainer:SetAnchor(TOPLEFT, state.root, TOPLEFT, padding, padding)
+        state.scrollContainer:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, -padding, -padding)
+    end
+
+    if state.scrollbar then
+        state.scrollbar:ClearAnchors()
+        state.scrollbar:SetAnchor(TOPRIGHT, state.root, TOPRIGHT, -padding, padding)
+        state.scrollbar:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, -padding, -padding)
+        state.scrollbar:SetWidth(SCROLLBAR_WIDTH)
+    end
+
+    if state.scrollContent and state.scrollContainer then
+        state.scrollContent:ClearAnchors()
+        state.scrollContent:SetAnchor(TOPLEFT, state.scrollContainer, TOPLEFT, 0, 0)
+        state.scrollContent:SetAnchor(
+            TOPRIGHT,
+            state.scrollContainer,
+            TOPRIGHT,
+            state.scrollContentRightOffset or 0,
+            0
+        )
+        state.scrollContent:SetResizeToFitDescendents(true)
+    end
+end
+
+local function createScrollContainer()
+    if state.scrollContainer or not (state.root and WINDOW_MANAGER) then
+        return
+    end
+
+    local scrollContainer = WINDOW_MANAGER:CreateControl(SCROLL_CONTAINER_NAME, state.root, CT_SCROLL)
+    if not scrollContainer then
+        return
+    end
+
+    scrollContainer:SetMouseEnabled(true)
+    scrollContainer:SetClampedToScreen(false)
+    scrollContainer:SetAnchor(TOPLEFT, state.root, TOPLEFT, 0, 0)
+    scrollContainer:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, 0, 0)
+    if scrollContainer.SetBackgroundColor then
+        scrollContainer:SetBackgroundColor(0, 0, 0, 0)
+    end
+
+    local scrollContent = WINDOW_MANAGER:CreateControl(SCROLL_CONTENT_NAME, scrollContainer, CT_CONTROL)
+    scrollContent:SetMouseEnabled(false)
+    scrollContent:SetAnchor(TOPLEFT, scrollContainer, TOPLEFT, 0, 0)
+    scrollContent:SetAnchor(TOPRIGHT, scrollContainer, TOPRIGHT, 0, 0)
+    scrollContent:SetResizeToFitDescendents(true)
+    if scrollContent.SetAlpha then
+        scrollContent:SetAlpha(1)
+    end
+    if scrollContainer.SetScrollChild then
+        scrollContainer:SetScrollChild(scrollContent)
+    end
+
+    local scrollbar = WINDOW_MANAGER:CreateControl(SCROLLBAR_NAME, state.root, CT_SCROLLBAR)
+    scrollbar:SetMouseEnabled(true)
+    scrollbar:SetAnchor(TOPRIGHT, state.root, TOPRIGHT, 0, 0)
+    scrollbar:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, 0, 0)
+    scrollbar:SetWidth(SCROLLBAR_WIDTH)
+    scrollbar:SetHidden(true)
+    if scrollbar.SetAllowDragging then
+        scrollbar:SetAllowDragging(true)
+    end
+    if scrollbar.SetValue then
+        scrollbar:SetValue(0)
+    end
+    if scrollbar.SetStep then
+        scrollbar:SetStep(32)
+    end
+
+    scrollbar:SetHandler("OnValueChanged", function(_, value)
+        if state.scrollContainer and state.scrollContainer.SetVerticalScroll then
+            state.scrollContainer:SetVerticalScroll(value)
+        end
+    end)
+
+    scrollContainer:SetHandler("OnMouseWheel", function(_, delta)
+        adjustScroll(delta)
+    end)
+
+    state.scrollContainer = scrollContainer
+    state.scrollContent = scrollContent
+    state.scrollbar = scrollbar
+    state.scrollContentRightOffset = 0
+
+    state.appearance = ensureAppearanceSettings()
+    applyViewportPadding()
+end
+
+local function createContainers()
+    if not (state.root and WINDOW_MANAGER) then
+        return
+    end
+
+    createScrollContainer()
+
+    local parent = state.scrollContent or state.root
+
+    if parent then
+        local questContainer = state.questContainer or _G[QUEST_CONTAINER_NAME]
+        if not questContainer then
+            questContainer = WINDOW_MANAGER:CreateControl(QUEST_CONTAINER_NAME, parent, CT_CONTROL)
+        else
+            questContainer:SetParent(parent)
+        end
+        if questContainer then
+            questContainer:SetMouseEnabled(false)
+            if questContainer.SetResizeToFitDescendents then
+                questContainer:SetResizeToFitDescendents(true)
+            end
+            questContainer:SetHandler("OnMouseWheel", function(_, delta)
+                adjustScroll(delta)
+            end)
+            state.questContainer = questContainer
+            Nvk3UT.UI.QuestContainer = questContainer
+        end
+    end
+
+    if parent then
+        local achievementContainer = state.achievementContainer or _G[ACHIEVEMENT_CONTAINER_NAME]
+        if not achievementContainer then
+            achievementContainer = WINDOW_MANAGER:CreateControl(ACHIEVEMENT_CONTAINER_NAME, parent, CT_CONTROL)
+        else
+            achievementContainer:SetParent(parent)
+        end
+        if achievementContainer then
+            achievementContainer:SetMouseEnabled(false)
+            if achievementContainer.SetResizeToFitDescendents then
+                achievementContainer:SetResizeToFitDescendents(true)
+            end
+            achievementContainer:SetHandler("OnMouseWheel", function(_, delta)
+                adjustScroll(delta)
+            end)
+            state.achievementContainer = achievementContainer
+            Nvk3UT.UI.AchievementContainer = achievementContainer
+        end
+    end
+
+    anchorContainers()
+    refreshScroll()
+end
+
 local function updateSectionLayout()
     if not state.root then
         return
@@ -994,158 +1147,6 @@ local function createRootControl()
     ensureSceneFragments()
 end
 
-local function createScrollContainer()
-    if state.scrollContainer or not (state.root and WINDOW_MANAGER) then
-        return
-    end
-
-    local scrollContainer = WINDOW_MANAGER:CreateControl(SCROLL_CONTAINER_NAME, state.root, CT_SCROLL)
-    if not scrollContainer then
-        return
-    end
-
-    scrollContainer:SetMouseEnabled(true)
-    scrollContainer:SetClampedToScreen(false)
-    scrollContainer:SetAnchor(TOPLEFT, state.root, TOPLEFT, 0, 0)
-    scrollContainer:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, 0, 0)
-    if scrollContainer.SetBackgroundColor then
-        scrollContainer:SetBackgroundColor(0, 0, 0, 0)
-    end
-
-    local scrollContent = WINDOW_MANAGER:CreateControl(SCROLL_CONTENT_NAME, scrollContainer, CT_CONTROL)
-    scrollContent:SetMouseEnabled(false)
-    scrollContent:SetAnchor(TOPLEFT, scrollContainer, TOPLEFT, 0, 0)
-    scrollContent:SetAnchor(TOPRIGHT, scrollContainer, TOPRIGHT, 0, 0)
-    scrollContent:SetResizeToFitDescendents(true)
-    if scrollContent.SetAlpha then
-        scrollContent:SetAlpha(1)
-    end
-    if scrollContainer.SetScrollChild then
-        scrollContainer:SetScrollChild(scrollContent)
-    end
-
-    local scrollbar = WINDOW_MANAGER:CreateControl(SCROLLBAR_NAME, state.root, CT_SCROLLBAR)
-    scrollbar:SetMouseEnabled(true)
-    scrollbar:SetAnchor(TOPRIGHT, state.root, TOPRIGHT, 0, 0)
-    scrollbar:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, 0, 0)
-    scrollbar:SetWidth(SCROLLBAR_WIDTH)
-    scrollbar:SetHidden(true)
-    if scrollbar.SetAllowDragging then
-        scrollbar:SetAllowDragging(true)
-    end
-    if scrollbar.SetValue then
-        scrollbar:SetValue(0)
-    end
-    if scrollbar.SetStep then
-        scrollbar:SetStep(32)
-    end
-
-    scrollbar:SetHandler("OnValueChanged", function(_, value)
-        if state.scrollContainer and state.scrollContainer.SetVerticalScroll then
-            state.scrollContainer:SetVerticalScroll(value)
-        end
-    end)
-
-    scrollContainer:SetHandler("OnMouseWheel", function(_, delta)
-        adjustScroll(delta)
-    end)
-
-    state.scrollContainer = scrollContainer
-    state.scrollContent = scrollContent
-    state.scrollbar = scrollbar
-    state.scrollContentRightOffset = 0
-
-    state.appearance = ensureAppearanceSettings()
-    applyViewportPadding()
-end
-
-local function createContainers()
-    if not (state.root and WINDOW_MANAGER) then
-        return
-    end
-
-    createScrollContainer()
-
-    local parent = state.scrollContent or state.root
-
-    if parent then
-        local questContainer = state.questContainer or _G[QUEST_CONTAINER_NAME]
-        if not questContainer then
-            questContainer = WINDOW_MANAGER:CreateControl(QUEST_CONTAINER_NAME, parent, CT_CONTROL)
-        else
-            questContainer:SetParent(parent)
-        end
-        if questContainer then
-            questContainer:SetMouseEnabled(false)
-            if questContainer.SetResizeToFitDescendents then
-                questContainer:SetResizeToFitDescendents(true)
-            end
-            questContainer:SetHandler("OnMouseWheel", function(_, delta)
-                adjustScroll(delta)
-            end)
-            state.questContainer = questContainer
-            Nvk3UT.UI.QuestContainer = questContainer
-        end
-    end
-
-    if parent then
-        local achievementContainer = state.achievementContainer or _G[ACHIEVEMENT_CONTAINER_NAME]
-        if not achievementContainer then
-            achievementContainer = WINDOW_MANAGER:CreateControl(ACHIEVEMENT_CONTAINER_NAME, parent, CT_CONTROL)
-        else
-            achievementContainer:SetParent(parent)
-        end
-        if achievementContainer then
-            achievementContainer:SetMouseEnabled(false)
-            if achievementContainer.SetResizeToFitDescendents then
-                achievementContainer:SetResizeToFitDescendents(true)
-            end
-            achievementContainer:SetHandler("OnMouseWheel", function(_, delta)
-                adjustScroll(delta)
-            end)
-            state.achievementContainer = achievementContainer
-            Nvk3UT.UI.AchievementContainer = achievementContainer
-        end
-    end
-
-    anchorContainers()
-    refreshScroll()
-end
-
-local function applyViewportPadding()
-    local appearance = state.appearance or ensureAppearanceSettings()
-    if not state.root then
-        return
-    end
-
-    local padding = math.max(0, tonumber(appearance and appearance.padding) or 0)
-
-    if state.scrollContainer then
-        state.scrollContainer:ClearAnchors()
-        state.scrollContainer:SetAnchor(TOPLEFT, state.root, TOPLEFT, padding, padding)
-        state.scrollContainer:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, -padding, -padding)
-    end
-
-    if state.scrollbar then
-        state.scrollbar:ClearAnchors()
-        state.scrollbar:SetAnchor(TOPRIGHT, state.root, TOPRIGHT, -padding, padding)
-        state.scrollbar:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, -padding, -padding)
-        state.scrollbar:SetWidth(SCROLLBAR_WIDTH)
-    end
-
-    if state.scrollContent and state.scrollContainer then
-        state.scrollContent:ClearAnchors()
-        state.scrollContent:SetAnchor(TOPLEFT, state.scrollContainer, TOPLEFT, 0, 0)
-        state.scrollContent:SetAnchor(
-            TOPRIGHT,
-            state.scrollContainer,
-            TOPRIGHT,
-            state.scrollContentRightOffset or 0,
-            0
-        )
-        state.scrollContent:SetResizeToFitDescendents(true)
-    end
-end
 
 local function applyAppearance()
     state.appearance = ensureAppearanceSettings()
