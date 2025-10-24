@@ -302,6 +302,23 @@ local function CollectCategoryKeysForQuest(journalIndex)
     return keys, found
 end
 
+local function DoesJournalQuestExist(journalIndex)
+    if not (journalIndex and GetJournalQuestName) then
+        return false
+    end
+
+    local ok, name = SafeCall(GetJournalQuestName, journalIndex)
+    if not ok then
+        return false
+    end
+
+    if type(name) ~= "string" then
+        return false
+    end
+
+    return name ~= ""
+end
+
 local function GetFocusedQuestIndex()
     if QUEST_JOURNAL_MANAGER and QUEST_JOURNAL_MANAGER.GetFocusedQuestIndex then
         local ok, focused = SafeCall(function(manager)
@@ -319,11 +336,13 @@ local function GetFocusedQuestIndex()
 end
 
 local function UpdateTrackedQuestCache(forcedIndex)
+    local forcedTrackedIndex = nil
     local trackedIndex = nil
     if forcedIndex ~= nil then
         local numeric = tonumber(forcedIndex)
         if numeric and numeric > 0 then
             trackedIndex = numeric
+            forcedTrackedIndex = numeric
         end
     end
 
@@ -331,18 +350,31 @@ local function UpdateTrackedQuestCache(forcedIndex)
         trackedIndex = GetFocusedQuestIndex()
     end
 
-    if (not trackedIndex or trackedIndex <= 0) and GetTrackedQuestIndex then
-        local ok, current = SafeCall(GetTrackedQuestIndex)
-        if ok then
-            local numeric = tonumber(current)
-            if numeric and numeric > 0 then
-                trackedIndex = numeric
-            end
+    local function adoptTrackedFromJournal()
+        if not GetTrackedQuestIndex then
+            return nil
         end
+
+        local ok, current = SafeCall(GetTrackedQuestIndex)
+        if not ok then
+            return nil
+        end
+
+        local numeric = tonumber(current)
+        if numeric and numeric > 0 then
+            return numeric
+        end
+
+        return nil
+    end
+
+    if not trackedIndex or trackedIndex <= 0 then
+        trackedIndex = adoptTrackedFromJournal()
     end
 
     local trackedCategories = {}
     local fallbackTrackedIndex = nil
+    local fallbackCategories = nil
     local trackedIndexIsTracked = false
 
     if trackedIndex and IsJournalQuestTracked then
@@ -354,7 +386,18 @@ local function UpdateTrackedQuestCache(forcedIndex)
 
     ForEachQuest(function(quest, category)
         if quest.flags and quest.flags.tracked then
-            fallbackTrackedIndex = fallbackTrackedIndex or quest.journalIndex
+            if not fallbackTrackedIndex then
+                fallbackTrackedIndex = quest.journalIndex
+                fallbackCategories = {}
+            end
+            if fallbackTrackedIndex == quest.journalIndex and fallbackCategories then
+                if category and category.key then
+                    fallbackCategories[category.key] = true
+                end
+                if category and category.parent and category.parent.key then
+                    fallbackCategories[category.parent.key] = true
+                end
+            end
         end
         if trackedIndex and quest.journalIndex == trackedIndex then
             if category and category.key then
@@ -369,31 +412,40 @@ local function UpdateTrackedQuestCache(forcedIndex)
         end
     end)
 
-    if trackedIndex and not trackedIndexIsTracked then
-        if fallbackTrackedIndex then
-            trackedIndex = fallbackTrackedIndex
+    if forcedTrackedIndex and trackedIndex == forcedTrackedIndex and not trackedIndexIsTracked then
+        local adopted = adoptTrackedFromJournal()
+        if adopted and adopted ~= trackedIndex then
+            trackedIndex = adopted
             trackedCategories = CollectCategoryKeysForQuest(trackedIndex)
-        else
+            trackedIndexIsTracked = true
+        elseif not adopted then
             trackedIndex = nil
             trackedCategories = {}
+            trackedIndexIsTracked = false
+        end
+    end
+
+    if trackedIndex and not trackedIndexIsTracked then
+        local questExists = DoesJournalQuestExist(trackedIndex)
+        if not questExists then
+            trackedIndex = nil
+            trackedCategories = {}
+            trackedIndexIsTracked = false
         end
     end
 
     if trackedIndex and next(trackedCategories) == nil then
         local keys = CollectCategoryKeysForQuest(trackedIndex)
-        trackedCategories = keys
+        trackedCategories = keys or {}
     end
 
     if not trackedIndex and fallbackTrackedIndex then
         trackedIndex = fallbackTrackedIndex
-        local keys = CollectCategoryKeysForQuest(trackedIndex)
-        for key in pairs(keys) do
-            trackedCategories[key] = true
-        end
+        trackedCategories = fallbackCategories or CollectCategoryKeysForQuest(trackedIndex) or {}
     end
 
     state.trackedQuestIndex = trackedIndex
-    state.trackedCategoryKeys = trackedCategories
+    state.trackedCategoryKeys = trackedCategories or {}
 end
 
 local function EnsureQuestTrackedState(journalIndex)
