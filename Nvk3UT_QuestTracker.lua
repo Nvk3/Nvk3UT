@@ -343,6 +343,14 @@ local function UpdateTrackedQuestCache(forcedIndex)
 
     local trackedCategories = {}
     local fallbackTrackedIndex = nil
+    local trackedIndexIsTracked = false
+
+    if trackedIndex and IsJournalQuestTracked then
+        local ok, tracked = SafeCall(IsJournalQuestTracked, trackedIndex)
+        if ok and tracked then
+            trackedIndexIsTracked = true
+        end
+    end
 
     ForEachQuest(function(quest, category)
         if quest.flags and quest.flags.tracked then
@@ -355,8 +363,21 @@ local function UpdateTrackedQuestCache(forcedIndex)
             if category and category.parent and category.parent.key then
                 trackedCategories[category.parent.key] = true
             end
+            if quest.flags and quest.flags.tracked then
+                trackedIndexIsTracked = true
+            end
         end
     end)
+
+    if trackedIndex and not trackedIndexIsTracked then
+        if fallbackTrackedIndex then
+            trackedIndex = fallbackTrackedIndex
+            trackedCategories = CollectCategoryKeysForQuest(trackedIndex)
+        else
+            trackedIndex = nil
+            trackedCategories = {}
+        end
+    end
 
     if trackedIndex and next(trackedCategories) == nil then
         local keys = CollectCategoryKeysForQuest(trackedIndex)
