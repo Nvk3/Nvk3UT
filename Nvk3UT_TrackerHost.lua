@@ -806,20 +806,8 @@ local function anchorContainers()
         return
     end
 
-    local function isBarVisible(bar)
-        if not bar then
-            return false
-        end
-
-        if bar.IsHidden and bar:IsHidden() then
-            return false
-        end
-
-        local height = bar.GetHeight and bar:GetHeight() or 0
-        return height > 0.5
-    end
-
-    local headerVisible = isBarVisible(headerBar)
+    local headerHeight = getEffectiveBarHeights()
+    local headerVisible = headerBar ~= nil and headerHeight > 0.5
 
     if headerBar then
         headerBar:ClearAnchors()
@@ -1176,9 +1164,9 @@ local function createContainers()
 
     createScrollContainer()
 
-    state.windowBars = state.windowBars or ensureWindowBarSettings()
+    state.windowBars = ensureWindowBarSettings()
 
-    local bars = state.windowBars or ensureWindowBarSettings()
+    local bars = state.windowBars
 
     local scrollContent = state.scrollContent or state.root
     if not scrollContent then
@@ -1307,10 +1295,7 @@ local function updateSectionLayout()
         return
     end
 
-    if not state.headerBar or not state.contentStack or not state.footerBar or not state.questContainer or not state.achievementContainer then
-        createContainers()
-    end
-
+    createContainers()
     anchorContainers()
 end
 
