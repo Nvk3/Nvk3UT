@@ -20,27 +20,13 @@ local SCROLLBAR_WIDTH = 18
 
 local DEFAULT_APPEARANCE = {
     enabled = true,
-    alpha = 0.35,
+    alpha = 0.6,
     edgeEnabled = true,
-    edgeAlpha = 0.5,
-    padding = 0,
+    edgeAlpha = 0.65,
+    edgeThickness = 2,
+    padding = 12,
     cornerRadius = 0,
     theme = "dark",
-}
-
-local THEME_COLORS = {
-    dark = {
-        center = { 0, 0, 0 },
-        edge = { 0, 0, 0 },
-    },
-    light = {
-        center = { 1, 1, 1 },
-        edge = { 1, 1, 1 },
-    },
-    transparent = {
-        center = { 0, 0, 0 },
-        edge = { 0, 0, 0 },
-    },
 }
 
 local DEFAULT_BACKDROP_TEXTURE = {
@@ -55,6 +41,9 @@ local DEFAULT_WINDOW = {
     width = 360,
     height = 640,
     locked = false,
+    visible = true,
+    clamp = true,
+    onTop = false,
 }
 
 local DEFAULT_LAYOUT = {
@@ -187,6 +176,11 @@ local function ensureAppearanceSettings()
         appearance.edgeEnabled = appearance.edgeEnabled ~= false
     end
     appearance.edgeAlpha = clamp(tonumber(appearance.edgeAlpha) or DEFAULT_APPEARANCE.edgeAlpha, 0, 1)
+    local thickness = tonumber(appearance.edgeThickness)
+    if thickness == nil then
+        thickness = DEFAULT_APPEARANCE.edgeThickness
+    end
+    appearance.edgeThickness = math.max(1, math.floor(thickness + 0.5))
     local padding = tonumber(appearance.padding)
     if padding == nil then
         padding = DEFAULT_APPEARANCE.padding
@@ -356,6 +350,15 @@ local function ensureWindowSettings()
     if window.locked == nil then
         window.locked = DEFAULT_WINDOW.locked
     end
+    if window.visible == nil then
+        window.visible = DEFAULT_WINDOW.visible
+    end
+    if window.clamp == nil then
+        window.clamp = DEFAULT_WINDOW.clamp
+    end
+    if window.onTop == nil then
+        window.onTop = DEFAULT_WINDOW.onTop
+    end
 
     return window
 end
@@ -370,6 +373,10 @@ local function clampWindowToScreen(width, height)
 
     local window = state.window
     if not window then
+        return
+    end
+
+    if window.clamp == false then
         return
     end
 
@@ -626,8 +633,7 @@ local function updateWindowGeometry()
     state.root:ClearAnchors()
     state.root:SetAnchor(TOPLEFT, anchorParent, TOPLEFT, state.window.left or 0, state.window.top or 0)
     state.root:SetDimensions(targetWidth, targetHeight)
-    state.root:SetHidden(false)
-    state.root:SetClampedToScreen(true)
+    state.root:SetClampedToScreen(state.window.clamp ~= false)
 end
 
 local function applyFeatureSettings()
@@ -659,6 +665,7 @@ local function notifyContentChanged()
     end
 
     updateWindowGeometry()
+    applyWindowVisibility()
     refreshScroll()
 end
 
@@ -709,6 +716,66 @@ local function applyWindowLock()
     state.root:SetResizeHandleSize(locked and 0 or RESIZE_HANDLE_SIZE)
 end
 
+local function applyWindowVisibility()
+    if not (state.root and state.window) then
+        return
+    end
+
+    local shouldHide = state.window.visible == false
+    state.root:SetHidden(shouldHide)
+end
+
+local function applyWindowClamp()
+    if not (state.root and state.window) then
+        return
+    end
+
+    local clampToScreen = state.window.clamp ~= false
+    state.root:SetClampedToScreen(clampToScreen)
+
+    if clampToScreen then
+        clampWindowToScreen(state.window.width or DEFAULT_WINDOW.width, state.window.height or DEFAULT_WINDOW.height)
+    end
+end
+
+local function applyWindowTopmost()
+    if not (state.root and state.window) then
+        return
+    end
+
+    local onTop = state.window.onTop == true
+    if state.root.SetTopmostWindow then
+        state.root:SetTopmostWindow(onTop)
+    end
+    if state.root.SetTopmost then
+        state.root:SetTopmost(onTop)
+    end
+    if state.root.SetDrawLayer then
+        state.root:SetDrawLayer(onTop and DL_OVERLAY or DL_BACKGROUND)
+    end
+    if state.root.SetDrawTier then
+        state.root:SetDrawTier(onTop and DT_HIGH or DT_LOW)
+    end
+
+    if state.backdrop then
+        if state.backdrop.SetDrawLayer then
+            state.backdrop:SetDrawLayer(onTop and DL_OVERLAY or DL_BACKGROUND)
+        end
+        if state.backdrop.SetDrawTier then
+            state.backdrop:SetDrawTier(onTop and DT_HIGH or DT_LOW)
+        end
+    end
+
+    if state.scrollbar then
+        if state.scrollbar.SetDrawLayer then
+            state.scrollbar:SetDrawLayer(onTop and DL_OVERLAY or DL_BACKGROUND)
+        end
+        if state.scrollbar.SetDrawTier then
+            state.scrollbar:SetDrawTier(onTop and DT_HIGH or DT_LOW)
+        end
+    end
+end
+
 local function applyWindowSettings()
     state.window = ensureWindowSettings()
     state.appearance = ensureAppearanceSettings()
@@ -721,8 +788,11 @@ local function applyWindowSettings()
 
     applyLayoutConstraints()
     updateSectionLayout()
+    applyWindowClamp()
     updateWindowGeometry()
     applyWindowLock()
+    applyWindowTopmost()
+    applyWindowVisibility()
     refreshScroll()
 end
 
@@ -740,11 +810,14 @@ local function createBackdrop()
         control:SetExcludeFromResizeToFitExtents(true)
     end
     if control.SetEdgeTexture then
+        local appearance = state.appearance or ensureAppearanceSettings()
+        local thickness = math.max(1, appearance.edgeThickness or DEFAULT_APPEARANCE.edgeThickness)
         control:SetEdgeTexture(
             DEFAULT_BACKDROP_TEXTURE.texture,
             DEFAULT_BACKDROP_TEXTURE.tileSize,
-            DEFAULT_BACKDROP_TEXTURE.edgeWidth
+            thickness
         )
+        control._nvk3utEdgeThickness = thickness
     end
 
     state.backdrop = control
@@ -950,33 +1023,39 @@ local function applyAppearance()
     local backdrop = state.backdrop
 
     if backdrop then
-        local enabled = appearance.enabled ~= false
-        backdrop:SetHidden(not enabled)
+        local backgroundEnabled = appearance.enabled ~= false
+        local alpha = clamp(appearance.alpha, 0, 1)
+        local edgeAlpha = clamp(appearance.edgeAlpha, 0, 1)
+        local edgeThickness = math.max(1, appearance.edgeThickness or DEFAULT_APPEARANCE.edgeThickness)
+        local borderEnabled = appearance.edgeEnabled ~= false and edgeAlpha > 0
 
-        if enabled then
-            local themeId = appearance.theme or DEFAULT_APPEARANCE.theme
-            local theme = THEME_COLORS[themeId] or THEME_COLORS[DEFAULT_APPEARANCE.theme]
-            local centerColor = theme.center
-            local edgeColor = theme.edge
+        local shouldShow = backgroundEnabled or borderEnabled
+        backdrop:SetHidden(not shouldShow)
 
-            local alpha = clamp(appearance.alpha, 0, 1)
-            local edgeAlpha = clamp(appearance.edgeAlpha, 0, 1)
-            if backdrop.SetCenterColor and centerColor then
-                local r = centerColor[1] or 0
-                local g = centerColor[2] or r
-                local b = centerColor[3] or r
-                backdrop:SetCenterColor(r, g, b, alpha)
+        if backdrop.SetEdgeTexture then
+            local currentThickness = backdrop._nvk3utEdgeThickness or 0
+            if currentThickness ~= edgeThickness then
+                backdrop:SetEdgeTexture(
+                    DEFAULT_BACKDROP_TEXTURE.texture,
+                    DEFAULT_BACKDROP_TEXTURE.tileSize,
+                    edgeThickness
+                )
+                backdrop._nvk3utEdgeThickness = edgeThickness
             end
-            if backdrop.SetEdgeColor and edgeColor then
-                local effectiveEdgeAlpha = (appearance.edgeEnabled == false) and 0 or edgeAlpha
-                local er = edgeColor[1] or 0
-                local eg = edgeColor[2] or er
-                local eb = edgeColor[3] or er
-                backdrop:SetEdgeColor(er, eg, eb, effectiveEdgeAlpha)
-            end
-            if backdrop.SetCornerRadius then
-                backdrop:SetCornerRadius(appearance.cornerRadius or 0)
-            end
+        end
+
+        if backdrop.SetCenterColor then
+            local centerAlpha = backgroundEnabled and alpha or 0
+            backdrop:SetCenterColor(0, 0, 0, centerAlpha)
+        end
+
+        if backdrop.SetEdgeColor then
+            local effectiveEdgeAlpha = borderEnabled and edgeAlpha or 0
+            backdrop:SetEdgeColor(0, 0, 0, effectiveEdgeAlpha)
+        end
+
+        if backdrop.SetCornerRadius then
+            backdrop:SetCornerRadius(appearance.cornerRadius or 0)
         end
     end
 

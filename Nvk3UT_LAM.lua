@@ -37,10 +37,11 @@ local DEFAULT_WINDOW = {
 
 local DEFAULT_APPEARANCE = {
     enabled = true,
-    alpha = 0.35,
+    alpha = 0.6,
     edgeEnabled = true,
-    edgeAlpha = 0.5,
-    padding = 0,
+    edgeAlpha = 0.65,
+    edgeThickness = 2,
+    padding = 12,
     cornerRadius = 0,
     theme = "dark",
 }
@@ -84,6 +85,15 @@ local function getGeneral()
     if window.locked == nil then
         window.locked = DEFAULT_WINDOW.locked
     end
+    if window.visible == nil then
+        window.visible = DEFAULT_WINDOW.visible
+    end
+    if window.clamp == nil then
+        window.clamp = DEFAULT_WINDOW.clamp
+    end
+    if window.onTop == nil then
+        window.onTop = DEFAULT_WINDOW.onTop
+    end
     return sv.General
 end
 
@@ -112,6 +122,11 @@ local function getAppearanceSettings()
         appearance.edgeEnabled = appearance.edgeEnabled ~= false
     end
     appearance.edgeAlpha = clamp(tonumber(appearance.edgeAlpha) or DEFAULT_APPEARANCE.edgeAlpha, 0, 1)
+    local thickness = tonumber(appearance.edgeThickness)
+    if thickness == nil then
+        thickness = DEFAULT_APPEARANCE.edgeThickness
+    end
+    appearance.edgeThickness = math.max(1, math.floor(thickness + 0.5))
     local padding = tonumber(appearance.padding)
     if padding == nil then
         padding = DEFAULT_APPEARANCE.padding
@@ -405,6 +420,23 @@ local function registerPanel(displayTitle)
 
             controls[#controls + 1] = {
                 type = "checkbox",
+                name = "Fenster anzeigen",
+                getFunc = function()
+                    local general = getGeneral()
+                    return general.window.visible ~= false
+                end,
+                setFunc = function(value)
+                    local general = getGeneral()
+                    general.window.visible = value ~= false
+                    if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
+                        Nvk3UT.TrackerHost.ApplySettings()
+                    end
+                end,
+                default = true,
+            }
+
+            controls[#controls + 1] = {
+                type = "checkbox",
                 name = "Fenster sperren",
                 getFunc = function()
                     local general = getGeneral()
@@ -417,7 +449,93 @@ local function registerPanel(displayTitle)
                         Nvk3UT.TrackerHost.ApplySettings()
                     end
                 end,
-                default = false,
+                default = DEFAULT_WINDOW.locked,
+            }
+
+            controls[#controls + 1] = {
+                type = "checkbox",
+                name = "An Bildschirm fesseln",
+                getFunc = function()
+                    local general = getGeneral()
+                    return general.window.clamp ~= false
+                end,
+                setFunc = function(value)
+                    local general = getGeneral()
+                    general.window.clamp = value ~= false
+                    if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
+                        Nvk3UT.TrackerHost.ApplySettings()
+                    end
+                end,
+                default = DEFAULT_WINDOW.clamp,
+            }
+
+            controls[#controls + 1] = {
+                type = "checkbox",
+                name = "Immer im Vordergrund",
+                getFunc = function()
+                    local general = getGeneral()
+                    return general.window.onTop == true
+                end,
+                setFunc = function(value)
+                    local general = getGeneral()
+                    general.window.onTop = value == true
+                    if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
+                        Nvk3UT.TrackerHost.ApplySettings()
+                    end
+                end,
+                default = DEFAULT_WINDOW.onTop,
+            }
+
+            controls[#controls + 1] = {
+                type = "slider",
+                name = "Fensterbreite",
+                min = 260,
+                max = 1200,
+                step = 10,
+                getFunc = function()
+                    local general = getGeneral()
+                    return math.floor((general.window.width or DEFAULT_WINDOW.width) + 0.5)
+                end,
+                setFunc = function(value)
+                    local general = getGeneral()
+                    local layout = getLayoutSettings()
+                    local numeric = math.floor((tonumber(value) or general.window.width or DEFAULT_WINDOW.width) + 0.5)
+                    numeric = clamp(numeric, layout.minWidth or 260, layout.maxWidth or 1200)
+                    general.window.width = numeric
+                    if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
+                        Nvk3UT.TrackerHost.ApplySettings()
+                    end
+                end,
+                disabled = function()
+                    return getLayoutSettings().autoGrowH == true
+                end,
+                default = DEFAULT_WINDOW.width,
+            }
+
+            controls[#controls + 1] = {
+                type = "slider",
+                name = "Fensterhöhe",
+                min = 240,
+                max = 1200,
+                step = 10,
+                getFunc = function()
+                    local general = getGeneral()
+                    return math.floor((general.window.height or DEFAULT_WINDOW.height) + 0.5)
+                end,
+                setFunc = function(value)
+                    local general = getGeneral()
+                    local layout = getLayoutSettings()
+                    local numeric = math.floor((tonumber(value) or general.window.height or DEFAULT_WINDOW.height) + 0.5)
+                    numeric = clamp(numeric, layout.minHeight or 240, layout.maxHeight or 1200)
+                    general.window.height = numeric
+                    if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
+                        Nvk3UT.TrackerHost.ApplySettings()
+                    end
+                end,
+                disabled = function()
+                    return getLayoutSettings().autoGrowV ~= false
+                end,
+                default = DEFAULT_WINDOW.height,
             }
 
             controls[#controls + 1] = {
@@ -429,11 +547,15 @@ local function registerPanel(displayTitle)
                     general.window.top = DEFAULT_WINDOW.top
                     general.window.width = DEFAULT_WINDOW.width
                     general.window.height = DEFAULT_WINDOW.height
+                    general.window.visible = DEFAULT_WINDOW.visible
+                    general.window.clamp = DEFAULT_WINDOW.clamp
+                    general.window.onTop = DEFAULT_WINDOW.onTop
+                    general.window.locked = DEFAULT_WINDOW.locked
                     if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
                         Nvk3UT.TrackerHost.ApplySettings()
                     end
                 end,
-                tooltip = "Setzt Größe und Position des Tracker-Fensters zurück.",
+                tooltip = "Setzt Größe, Position und Verhalten des Tracker-Fensters zurück.",
             }
 
             controls[#controls + 1] = {
@@ -505,7 +627,7 @@ local function registerPanel(displayTitle)
                 end,
                 default = true,
                 disabled = function()
-                    return getAppearanceSettings().enabled == false
+                    return false
                 end,
             }
 
@@ -526,9 +648,31 @@ local function registerPanel(displayTitle)
                 end,
                 disabled = function()
                     local appearance = getAppearanceSettings()
-                    return appearance.enabled == false or appearance.edgeEnabled == false
+                    return appearance.edgeEnabled == false
                 end,
                 default = math.floor(DEFAULT_APPEARANCE.edgeAlpha * 100 + 0.5),
+            }
+
+            controls[#controls + 1] = {
+                type = "slider",
+                name = "Rahmenbreite",
+                min = 1,
+                max = 12,
+                step = 1,
+                getFunc = function()
+                    local appearance = getAppearanceSettings()
+                    return appearance.edgeThickness or DEFAULT_APPEARANCE.edgeThickness
+                end,
+                setFunc = function(value)
+                    local appearance = getAppearanceSettings()
+                    local numeric = math.max(1, math.floor((tonumber(value) or appearance.edgeThickness or 1) + 0.5))
+                    appearance.edgeThickness = numeric
+                    applyHostAppearance()
+                end,
+                disabled = function()
+                    return getAppearanceSettings().edgeEnabled == false
+                end,
+                default = DEFAULT_APPEARANCE.edgeThickness,
             }
 
             controls[#controls + 1] = {
@@ -547,43 +691,6 @@ local function registerPanel(displayTitle)
                     applyHostAppearance()
                 end,
                 default = DEFAULT_APPEARANCE.padding,
-            }
-
-            controls[#controls + 1] = {
-                type = "slider",
-                name = "Eckenradius",
-                min = 0,
-                max = 32,
-                step = 1,
-                getFunc = function()
-                    local appearance = getAppearanceSettings()
-                    return appearance.cornerRadius or 0
-                end,
-                setFunc = function(value)
-                    local appearance = getAppearanceSettings()
-                    appearance.cornerRadius = math.max(0, math.floor((tonumber(value) or 0) + 0.5))
-                    applyHostAppearance()
-                end,
-                disabled = function()
-                    return getAppearanceSettings().enabled == false
-                end,
-                default = DEFAULT_APPEARANCE.cornerRadius,
-            }
-
-            controls[#controls + 1] = {
-                type = "dropdown",
-                name = "Farbschema",
-                choices = { "Dunkel", "Hell", "Transparent" },
-                choicesValues = { "dark", "light", "transparent" },
-                getFunc = function()
-                    return getAppearanceSettings().theme
-                end,
-                setFunc = function(value)
-                    local appearance = getAppearanceSettings()
-                    appearance.theme = value or DEFAULT_APPEARANCE.theme
-                    applyHostAppearance()
-                end,
-                default = DEFAULT_APPEARANCE.theme,
             }
 
             return controls
