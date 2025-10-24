@@ -82,6 +82,7 @@ local state = {
     scrollbar = nil,
     scrollContentRightOffset = 0,
     scrollOffset = 0,
+    desiredScrollOffset = 0,
     scrollMaxOffset = 0,
     updatingScrollbar = false,
     deferredRefreshScheduled = false,
@@ -535,17 +536,30 @@ local function debugLog(...)
     end
 end
 
-setScrollOffset = function(offset, skipScrollbarUpdate)
+setScrollOffset = function(rawOffset, skipScrollbarUpdate)
     local maxOffset = state.scrollMaxOffset or 0
-    if offset == nil then
-        offset = 0
+    if rawOffset == nil then
+        rawOffset = 0
     end
 
-    offset = math.max(0, math.min(offset, maxOffset))
+    maxOffset = math.max(0, maxOffset)
+    rawOffset = math.max(0, rawOffset)
 
-    local previous = state.scrollOffset or 0
-    if math.abs(previous - offset) < 0.01 then
-        state.scrollOffset = offset
+    local previousActual = state.scrollOffset or 0
+    local previousDesired = state.desiredScrollOffset or previousActual
+
+    local offset = rawOffset
+    if offset > maxOffset then
+        offset = maxOffset
+    end
+
+    state.desiredScrollOffset = rawOffset
+    state.scrollOffset = offset
+
+    local actualChanged = math.abs(previousActual - offset) >= 0.01
+    local desiredChanged = math.abs(previousDesired - rawOffset) >= 0.01
+
+    if not (actualChanged or desiredChanged) then
         if not skipScrollbarUpdate and state.scrollbar and state.scrollbar.SetValue then
             local current = state.scrollbar.GetValue and state.scrollbar:GetValue() or 0
             if math.abs(current - offset) >= 0.01 then
@@ -556,8 +570,6 @@ setScrollOffset = function(offset, skipScrollbarUpdate)
         end
         return offset
     end
-
-    state.scrollOffset = offset
 
     updateScrollContentAnchors()
 
@@ -584,13 +596,23 @@ local function adjustScroll(delta)
         return
     end
 
-    local current = state.scrollOffset
+    local current = state.desiredScrollOffset
+    if current == nil then
+        current = state.scrollOffset
+    end
     if current == nil then
         current = scrollbar.GetValue and scrollbar:GetValue() or 0
     end
     current = current or 0
+    local clampedCurrent = current
+    if clampedCurrent < minValue then
+        clampedCurrent = minValue
+    elseif clampedCurrent > maxValue then
+        clampedCurrent = maxValue
+    end
+
     local step = 48
-    local target = current - (delta * step)
+    local target = clampedCurrent - (delta * step)
     state.scrollMaxOffset = maxValue
     if target < minValue then
         target = minValue
@@ -943,15 +965,16 @@ refreshScroll = function()
         return
     end
 
-    local previousOffset = state.scrollOffset
-    if previousOffset == nil then
+    local previousActual = state.scrollOffset
+    if previousActual == nil then
         local getValue = scrollbar.GetValue
         if getValue then
-            previousOffset = getValue(scrollbar) or 0
+            previousActual = getValue(scrollbar) or 0
         else
-            previousOffset = 0
+            previousActual = 0
         end
     end
+    local previousDesired = state.desiredScrollOffset or previousActual or 0
 
     local _, questHeight = measureTrackerContent(state.questContainer, Nvk3UT and Nvk3UT.QuestTracker)
     local _, achievementHeight = measureTrackerContent(
@@ -1065,13 +1088,7 @@ refreshScroll = function()
         applyViewportPadding()
     end
 
-    local desiredOffset = previousOffset or 0
-    if not showScrollbar then
-        desiredOffset = 0
-    else
-        desiredOffset = math.max(0, math.min(desiredOffset, maxOffset))
-    end
-
+    local desiredOffset = math.max(0, previousDesired or 0)
     setScrollOffset(desiredOffset)
 end
 
@@ -1167,6 +1184,7 @@ local function createScrollContainer()
     state.scrollbar = scrollbar
     state.scrollContentRightOffset = 0
     state.scrollOffset = 0
+    state.desiredScrollOffset = 0
     state.scrollMaxOffset = 0
 
     state.appearance = ensureAppearanceSettings()
@@ -1914,6 +1932,7 @@ function TrackerHost.Shutdown()
     state.scrollContent = nil
     state.scrollContentRightOffset = 0
     state.scrollOffset = 0
+    state.desiredScrollOffset = 0
     state.scrollMaxOffset = 0
     state.updatingScrollbar = false
 
