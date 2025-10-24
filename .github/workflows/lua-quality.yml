@@ -1,0 +1,26 @@
+name: Lua Quality Checks
+
+on:
+  pull_request:
+    paths:
+      - '**/*.lua'
+      - '.luacheckrc'
+      - 'stylua.toml'
+      - 'Makefile'
+      - 'scripts/**'
+      - '.github/workflows/lua-quality.yml'
+
+jobs:
+  lint-format:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Bootstrap Lua toolchain
+        run: ./scripts/ensure-quality.sh --bootstrap-only
+
+      - name: Run stylua and luacheck checks
+        run: |
+          export PATH="$HOME/.luarocks/bin:$HOME/.local/bin:$PATH"
+          make quality:check

@@ -44,17 +44,74 @@ These archives contain **third-party addons and example implementations** used *
 ---
 
 ## 🧠 Behavior and Commit Policy
-- Each Pull Request must reference a corresponding GitHub Issue (e.g., `Fixes #7`).  
-- Commits should have **short, descriptive messages** (e.g., `Add tooltip progress tracking`, `Fix multi-stage achievement detection`).  
-- Debugging code or logs must be **flagged or wrapped** under a global debug condition.  
+- Each Pull Request must reference a corresponding GitHub Issue (e.g., `Fixes #7`).
+- Commits should have **short, descriptive messages** (e.g., `Add tooltip progress tracking`, `Fix multi-stage achievement detection`).
+- Debugging code or logs must be **flagged or wrapped** under a global debug condition.
 - The agent should always **test locally** (where possible) before committing.
 
 ---
 
+## 🛠 Sandbox Bootstrap
+To lint or format Lua code, ensure the sandbox has Lua, Luarocks, `luacheck`, and `stylua` available. The process is idempotent and can be executed as often as needed:
+
+1. Run `./scripts/ensure-quality.sh --bootstrap-only` from the repository root. The script installs `lua5.4`, `luarocks`, `luacheck`, and the latest pinned StyLua release (Linux x86_64) using `apt-get`, `luarocks`, and GitHub binary downloads.
+2. The script automatically places tooling under `~/.luarocks/bin` and `~/.local/bin`. Ensure these directories stay on `PATH` for subsequent shells. The script exports them for its runtime; add `export PATH="$HOME/.luarocks/bin:$HOME/.local/bin:$PATH"` to reuse the tooling manually.
+3. The installer detects existing tools and skips re-installation, so it is safe to rerun between tasks or CI jobs.
+
+Refer to [`scripts/ensure-quality.sh`](scripts/ensure-quality.sh) for the definitive bootstrap sequence.
+
+---
+
+## ✅ Quality Standards (Mandatory)
+- **Formatting**: StyLua must be executed with the repository `stylua.toml`. In CI/PR contexts run `stylua --check` (read-only). Locally run the fix mode (`stylua` without `--check`) before committing.
+- **Linting**: `luacheck` must pass across the full addon tree using the project `.luacheckrc` configuration.
+- **Blocking rule**: *Do not open or update a PR while either check is failing.* Every contribution must keep both checks green.
+
+---
+
+## 👩‍💻 Developer Commands
+Standardized commands are provided via the repository `Makefile` and bootstrap script:
+
+| Action | Check Mode | Fix Mode |
+| --- | --- | --- |
+| Format | `make format:check` | `make format:fix` or `./scripts/ensure-quality.sh --fix` |
+| Lint | `make lint` | N/A (luacheck has no auto-fix; resolve findings manually) |
+| All quality checks | `make quality:check` | `./scripts/ensure-quality.sh --fix` (formats, then lints) |
+
+Always execute `./scripts/ensure-quality.sh --bootstrap-only` at least once per sandbox session to install toolchain dependencies. The script without flags (`./scripts/ensure-quality.sh`) installs missing tools and runs the check workflow (`stylua --check` followed by `luacheck`).
+
+---
+
+## 📋 Pre-PR Checklist
+Before pushing or opening a Pull Request ensure **every** item below is green:
+
+- [ ] `stylua --check` (or `make format:check`) passes without changes.
+- [ ] `luacheck` (or `make lint`) reports no errors.
+- [ ] Optional but encouraged: run addon smoke tests/build scripts (`make quality:check` already chains format+lint).
+
+If any checkbox would be red, *do not* raise the PR until it is resolved.
+
+---
+
+## 🤖 CI Enforcement
+A dedicated GitHub Actions workflow (`.github/workflows/lua-quality.yml`) runs on every `pull_request`. It bootstraps the Lua toolchain via `scripts/ensure-quality.sh --bootstrap-only`, then executes `make quality:check`. The PR is automatically blocked when either `stylua --check` or `luacheck` fails.
+
+---
+
+## ⚙️ Configuration & Support Files
+- [`.luacheckrc`](.luacheckrc): project-specific lint configuration covering ESO globals, maximum line width, and ignored directories.
+- [`stylua.toml`](stylua.toml): canonical formatting rules (column width, indentation, quoting, line endings).
+- [`Makefile`](Makefile): shared developer targets (`bootstrap`, `lint`, `format:check`, `format:fix`, `quality:check`).
+- [`scripts/ensure-quality.sh`](scripts/ensure-quality.sh): idempotent bootstrapper plus combined quality checks/fix workflow.
+- [`.github/workflows/lua-quality.yml`](.github/workflows/lua-quality.yml): CI gate enforcing StyLua and Luacheck for pull requests.
+- Optional ergonomics: add a local Git `pre-commit` hook that calls `make quality:check` to catch regressions before committing.
+
+---
+
 ## 🚫 Prohibited Actions
-- ❌ Do **not** copy or reuse code directly from any ZIP file in the `reference` folder.  
-- ❌ Do **not** extract or import files from those ZIPs into this repository.  
-- ❌ Do **not** fetch external code from the internet without explicit instruction.  
+- ❌ Do **not** copy or reuse code directly from any ZIP file in the `reference` folder.
+- ❌ Do **not** extract or import files from those ZIPs into this repository.
+- ❌ Do **not** fetch external code from the internet without explicit instruction.
 - ❌ Prefer safe hooks (ZO_PreHook/ZO_PostHook). However, when functional parity with the base tracker requires it, the agent **may override or replace** specific basegame handlers (e.g., default tracker visibility/fragment wiring). Such overrides must be minimal, documented, and limited in scope.
 
 ---
