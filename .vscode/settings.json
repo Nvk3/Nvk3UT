@@ -8,8 +8,5 @@
     "d",
     "ZO_CreateStringId"
   ],
-  "[lua]": {
-    "editor.defaultFormatter": "JohnnyMorganz.stylua"
-  },
   "editor.formatOnSave": true
 }
