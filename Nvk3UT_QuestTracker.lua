@@ -11,10 +11,11 @@ local EVENT_NAMESPACE = MODULE_NAME .. "_Event"
 local Utils = Nvk3UT and Nvk3UT.Utils
 local FormatCategoryHeaderText =
     (Utils and Utils.FormatCategoryHeaderText)
-    or function(baseText, count)
+    or function(baseText, count, showCounts)
         local text = baseText or ""
-        if type(count) == "number" and count >= 0 then
-            return string.format("%s (%d)", text, count)
+        if showCounts ~= false and type(count) == "number" and count >= 0 then
+            local numericCount = math.floor(count + 0.5)
+            return string.format("%s (%d)", text, numericCount)
         end
         return text
     end
@@ -629,7 +630,7 @@ local function LayoutCategory(category)
     local control = AcquireCategoryControl()
     control.data = { categoryKey = category.key }
     local count = #category.quests
-    control.label:SetText(FormatCategoryHeaderText(category.name or "", count))
+    control.label:SetText(FormatCategoryHeaderText(category.name or "", count, "quest"))
     local expanded = IsCategoryExpanded(category.key)
     UpdateCategoryToggle(control, expanded)
     ApplyRowMetrics(

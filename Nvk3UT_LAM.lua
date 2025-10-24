@@ -105,6 +105,21 @@ local function getGeneral()
     if window.onTop == nil then
         window.onTop = DEFAULT_WINDOW.onTop
     end
+    local legacyShowCounts = general.showCategoryCounts
+    if general.showQuestCategoryCounts == nil then
+        if legacyShowCounts ~= nil then
+            general.showQuestCategoryCounts = legacyShowCounts ~= false
+        else
+            general.showQuestCategoryCounts = true
+        end
+    end
+    if general.showAchievementCategoryCounts == nil then
+        if legacyShowCounts ~= nil then
+            general.showAchievementCategoryCounts = legacyShowCounts ~= false
+        else
+            general.showAchievementCategoryCounts = true
+        end
+    end
     if general.showCategoryCounts == nil then
         general.showCategoryCounts = true
     end
@@ -985,13 +1000,12 @@ local function registerPanel(displayTitle)
                 tooltip = "If enabled, category headers display the number of contained entries, e.g., 'Repeatable (12)'. Disable to hide the counts.",
                 getFunc = function()
                     local general = getGeneral()
-                    return general.showCategoryCounts ~= false
+                    return general.showQuestCategoryCounts ~= false
                 end,
                 setFunc = function(value)
                     local general = getGeneral()
-                    general.showCategoryCounts = value ~= false
+                    general.showQuestCategoryCounts = value ~= false
                     refreshQuestTracker()
-                    refreshAchievementTracker()
                 end,
                 default = true,
             }
@@ -1045,6 +1059,22 @@ local function registerPanel(displayTitle)
                     if Nvk3UT and Nvk3UT.AchievementTracker and Nvk3UT.AchievementTracker.SetActive then
                         Nvk3UT.AchievementTracker.SetActive(value)
                     end
+                end,
+                default = true,
+            }
+
+            controls[#controls + 1] = {
+                type = "checkbox",
+                name = "Show counts in category headers",
+                tooltip = "If enabled, category headers display the number of contained entries, e.g., 'Repeatable (12)'. Disable to hide the counts.",
+                getFunc = function()
+                    local general = getGeneral()
+                    return general.showAchievementCategoryCounts ~= false
+                end,
+                setFunc = function(value)
+                    local general = getGeneral()
+                    general.showAchievementCategoryCounts = value ~= false
+                    refreshAchievementTracker()
                 end,
                 default = true,
             }

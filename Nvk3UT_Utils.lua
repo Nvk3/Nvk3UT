@@ -72,25 +72,48 @@ function M.GetIconTagForTexture(path, size)
 end
 
 local function resolveShowCategoryCountsOverride(override)
-  if override ~= nil then
+  if type(override) == "boolean" then
+    return override
+  end
+
+  local sv = Nvk3UT and Nvk3UT.sv
+  local general = sv and sv.General
+
+  if type(override) == "string" then
+    local key
+    if override == "quest" then
+      key = "showQuestCategoryCounts"
+    elseif override == "achievement" then
+      key = "showAchievementCategoryCounts"
+    end
+    if key and general and general[key] ~= nil then
+      return general[key] ~= false
+    end
+  elseif override ~= nil then
     return override ~= false
   end
-  local sv = Nvk3UT and Nvk3UT.sv
-  if not sv then
-    return true
-  end
-  if sv.showCategoryCounts ~= nil then
+
+  if sv and sv.showCategoryCounts ~= nil then
     return sv.showCategoryCounts ~= false
   end
-  local general = sv.General
-  if general and general.showCategoryCounts ~= nil then
-    return general.showCategoryCounts ~= false
+
+  if general then
+    if general.showQuestCategoryCounts ~= nil then
+      return general.showQuestCategoryCounts ~= false
+    end
+    if general.showAchievementCategoryCounts ~= nil then
+      return general.showAchievementCategoryCounts ~= false
+    end
+    if general.showCategoryCounts ~= nil then
+      return general.showCategoryCounts ~= false
+    end
   end
+
   return true
 end
 
-function M.ShouldShowCategoryCounts()
-  return resolveShowCategoryCountsOverride()
+function M.ShouldShowCategoryCounts(context)
+  return resolveShowCategoryCountsOverride(context)
 end
 
 function M.FormatCategoryHeaderText(baseText, count, showCounts)
