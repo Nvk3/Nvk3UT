@@ -47,6 +47,7 @@ local defaults = {
         autoGrowV = true,
         autoGrowH = false,
         autoExpand = true,
+        autoTrack = true,
         background = {
             enabled = true,
             alpha = 0.35,

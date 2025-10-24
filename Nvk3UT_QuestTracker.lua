@@ -64,6 +64,8 @@ local state = {
     pendingRefresh = false,
     contentWidth = 0,
     contentHeight = 0,
+    trackedQuestIndex = nil,
+    trackedCategoryKeys = {},
 }
 
 local function ApplyLabelDefaults(label)
@@ -180,6 +182,244 @@ local function DebugLog(...)
     elseif print then
         print("[" .. MODULE_NAME .. "]", ...)
     end
+end
+
+local function SafeCall(func, ...)
+    if type(func) ~= "function" then
+        return false, nil
+    end
+
+    local ok, result = pcall(func, ...)
+    if not ok then
+        DebugLog("Call failed", tostring(result))
+        return false, nil
+    end
+
+    return true, result
+end
+
+local function ForEachQuest(callback)
+    if type(callback) ~= "function" then
+        return
+    end
+
+    if not state.snapshot or not state.snapshot.categories then
+        return
+    end
+
+    local ordered = state.snapshot.categories.ordered
+    if type(ordered) ~= "table" then
+        return
+    end
+
+    for index = 1, #ordered do
+        local category = ordered[index]
+        if category and type(category.quests) == "table" then
+            for questIndex = 1, #category.quests do
+                local quest = category.quests[questIndex]
+                if quest then
+                    callback(quest, category)
+                end
+            end
+        end
+    end
+end
+
+local function ForEachQuestIndex(callback)
+    if type(callback) ~= "function" then
+        return
+    end
+
+    local visited = {}
+
+    ForEachQuest(function(quest, category)
+        if quest and quest.journalIndex then
+            visited[quest.journalIndex] = true
+            callback(quest.journalIndex, quest, category)
+        end
+    end)
+
+    if not GetNumJournalQuests then
+        return
+    end
+
+    local total = GetNumJournalQuests() or 0
+    local maxIndex = MAX_JOURNAL_QUESTS or total
+    if maxIndex and maxIndex > total then
+        total = maxIndex
+    end
+
+    for index = 1, total do
+        if not visited[index] then
+            local isValid = true
+            if IsValidJournalQuestIndex then
+                isValid = IsValidJournalQuestIndex(index)
+            elseif GetJournalQuestName then
+                local name = GetJournalQuestName(index)
+                isValid = name ~= nil and name ~= ""
+            end
+
+            if isValid then
+                callback(index, nil, nil)
+            end
+        end
+    end
+end
+
+local function CollectCategoryKeysForQuest(journalIndex)
+    local keys = {}
+    if not journalIndex then
+        return keys, false
+    end
+
+    local found = false
+    ForEachQuest(function(quest, category)
+        if quest.journalIndex == journalIndex then
+            found = true
+            if category and category.key then
+                keys[category.key] = true
+            end
+            if category and category.parent and category.parent.key then
+                keys[category.parent.key] = true
+            end
+        end
+    end)
+
+    return keys, found
+end
+
+local function UpdateTrackedQuestCache()
+    local trackedIndex = nil
+    if GetTrackedQuestIndex then
+        local ok, current = SafeCall(GetTrackedQuestIndex)
+        if ok then
+            local numeric = tonumber(current)
+            if numeric and numeric > 0 then
+                trackedIndex = numeric
+            end
+        end
+    end
+
+    local trackedCategories = {}
+    local fallbackTrackedIndex = nil
+
+    ForEachQuest(function(quest, category)
+        if quest.flags and quest.flags.tracked then
+            fallbackTrackedIndex = fallbackTrackedIndex or quest.journalIndex
+        end
+        if trackedIndex and quest.journalIndex == trackedIndex then
+            if category and category.key then
+                trackedCategories[category.key] = true
+            end
+            if category and category.parent and category.parent.key then
+                trackedCategories[category.parent.key] = true
+            end
+        end
+    end)
+
+    if trackedIndex and next(trackedCategories) == nil then
+        local keys = CollectCategoryKeysForQuest(trackedIndex)
+        trackedCategories = keys
+    end
+
+    if not trackedIndex and fallbackTrackedIndex then
+        trackedIndex = fallbackTrackedIndex
+        local keys = CollectCategoryKeysForQuest(trackedIndex)
+        for key in pairs(keys) do
+            trackedCategories[key] = true
+        end
+    end
+
+    state.trackedQuestIndex = trackedIndex
+    state.trackedCategoryKeys = trackedCategories
+end
+
+local function EnsureQuestTrackedState(journalIndex)
+    if not (journalIndex and IsJournalQuestTracked and SetTracked) then
+        return
+    end
+
+    if IsJournalQuestTracked(journalIndex) then
+        return
+    end
+
+    if not SafeCall(SetTracked, TRACK_TYPE_QUEST, journalIndex, true) then
+        SafeCall(SetTracked, TRACK_TYPE_QUEST, journalIndex)
+    end
+end
+
+local function ClearOtherTrackedQuests(journalIndex)
+    if not IsJournalQuestTracked then
+        return
+    end
+
+    ForEachQuestIndex(function(index)
+        if index and index ~= journalIndex and IsJournalQuestTracked(index) then
+            local cleared = false
+            if SetTracked then
+                cleared = SafeCall(SetTracked, TRACK_TYPE_QUEST, index, false)
+                if not cleared then
+                    cleared = SafeCall(SetTracked, TRACK_TYPE_QUEST, index)
+                end
+            end
+            if not cleared and QUEST_JOURNAL_MANAGER and QUEST_JOURNAL_MANAGER.StopTrackingQuest then
+                SafeCall(function(manager, questIndex)
+                    manager:StopTrackingQuest(questIndex)
+                end, QUEST_JOURNAL_MANAGER, index)
+            end
+        end
+    end)
+end
+
+local function EnsureExclusiveAssistedQuest(journalIndex)
+    if SetTrackedIsAssisted then
+        ForEachQuestIndex(function(index)
+            if index == journalIndex then
+                SafeCall(SetTrackedIsAssisted, TRACK_TYPE_QUEST, index, true)
+            elseif GetTrackedIsAssisted and GetTrackedIsAssisted(TRACK_TYPE_QUEST, index) then
+                SafeCall(SetTrackedIsAssisted, TRACK_TYPE_QUEST, index, false)
+            end
+        end)
+    elseif AssistJournalQuest then
+        SafeCall(AssistJournalQuest, journalIndex)
+    end
+end
+
+local function ApplyImmediateTrackedQuest(journalIndex)
+    if not journalIndex then
+        return
+    end
+
+    local keys = CollectCategoryKeysForQuest(journalIndex)
+    state.trackedCategoryKeys = keys
+    state.trackedQuestIndex = journalIndex
+end
+
+local function TrackQuestByJournalIndex(journalIndex)
+    local numeric = tonumber(journalIndex)
+    if not numeric or numeric <= 0 then
+        return
+    end
+
+    if state.opts.autoTrack == false then
+        return
+    end
+
+    ApplyImmediateTrackedQuest(numeric)
+
+    if SetTrackedQuestIndex then
+        SafeCall(SetTrackedQuestIndex, numeric)
+    elseif QUEST_JOURNAL_MANAGER and QUEST_JOURNAL_MANAGER.SetTrackedQuestIndex then
+        SafeCall(function(manager, index)
+            manager:SetTrackedQuestIndex(index)
+        end, QUEST_JOURNAL_MANAGER, numeric)
+    end
+
+    EnsureQuestTrackedState(numeric)
+    ClearOtherTrackedQuests(numeric)
+    EnsureExclusiveAssistedQuest(numeric)
+
+    RequestRefresh()
 end
 
 local function NotifyHostContentChanged()
@@ -343,16 +583,22 @@ local function UpdateQuestToggle(control, expanded)
 end
 
 local function IsCategoryExpanded(categoryKey)
-    if not state.saved or not categoryKey then
+    if not categoryKey then
         return state.opts.autoExpand ~= false
     end
 
-    local savedValue = state.saved.catExpanded[categoryKey]
-    if savedValue == nil then
-        return state.opts.autoExpand ~= false
+    if state.saved then
+        local savedValue = state.saved.catExpanded[categoryKey]
+        if savedValue ~= nil then
+            return savedValue
+        end
     end
 
-    return savedValue
+    if state.trackedCategoryKeys and state.trackedCategoryKeys[categoryKey] then
+        return true
+    end
+
+    return state.opts.autoExpand ~= false
 end
 
 local function IsQuestExpanded(journalIndex)
@@ -369,15 +615,31 @@ local function IsQuestExpanded(journalIndex)
 end
 
 local function SetCategoryExpanded(categoryKey, expanded)
-    if state.saved and categoryKey then
-        state.saved.catExpanded[categoryKey] = not not expanded
+    if not (state.saved and categoryKey) then
+        return false
     end
+
+    local newValue = not not expanded
+    if state.saved.catExpanded[categoryKey] == newValue then
+        return false
+    end
+
+    state.saved.catExpanded[categoryKey] = newValue
+    return true
 end
 
 local function SetQuestExpanded(journalIndex, expanded)
-    if state.saved and journalIndex then
-        state.saved.questExpanded[journalIndex] = not not expanded
+    if not (state.saved and journalIndex) then
+        return false
     end
+
+    local newValue = not not expanded
+    if state.saved.questExpanded[journalIndex] == newValue then
+        return false
+    end
+
+    state.saved.questExpanded[journalIndex] = newValue
+    return true
 end
 
 local function FormatConditionText(condition)
@@ -415,8 +677,10 @@ local function AcquireCategoryControl()
                 return
             end
             local expanded = not IsCategoryExpanded(catKey)
-            SetCategoryExpanded(catKey, expanded)
-            QuestTracker.Refresh()
+            local changed = SetCategoryExpanded(catKey, expanded)
+            if changed then
+                QuestTracker.Refresh()
+            end
         end)
         control.initialized = true
     end
@@ -433,6 +697,26 @@ local function AcquireQuestControl()
     if not control.initialized then
         control.label = control:GetNamedChild("Label")
         control.toggle = control:GetNamedChild("Toggle")
+        if control.toggle and control.toggle.SetMouseEnabled then
+            control.toggle:SetMouseEnabled(true)
+        end
+        if control.toggle then
+            control.toggle:SetHandler("OnMouseUp", function(toggleCtrl, button, upInside)
+                if not upInside or button ~= MOUSE_BUTTON_INDEX_LEFT then
+                    return
+                end
+                local parent = toggleCtrl:GetParent()
+                local questData = parent and parent.data and parent.data.quest
+                if not questData then
+                    return
+                end
+                local journalIndex = questData.journalIndex
+                local changed = SetQuestExpanded(journalIndex, not IsQuestExpanded(journalIndex))
+                if changed then
+                    QuestTracker.Refresh()
+                end
+            end)
+        end
         control:SetHandler("OnMouseUp", function(ctrl, button, upInside)
             if not upInside then
                 return
@@ -443,9 +727,22 @@ local function AcquireQuestControl()
                     return
                 end
                 local journalIndex = questData.journalIndex
-                local expanded = not IsQuestExpanded(journalIndex)
-                SetQuestExpanded(journalIndex, expanded)
-                QuestTracker.Refresh()
+                if ctrl.toggle and ctrl.toggle:IsMouseOver() then
+                    local changed = SetQuestExpanded(journalIndex, not IsQuestExpanded(journalIndex))
+                    if changed then
+                        QuestTracker.Refresh()
+                    end
+                    return
+                end
+
+                if state.opts.autoTrack == false then
+                    local changed = SetQuestExpanded(journalIndex, not IsQuestExpanded(journalIndex))
+                    if changed then
+                        QuestTracker.Refresh()
+                    end
+                else
+                    TrackQuestByJournalIndex(journalIndex)
+                end
             elseif button == MOUSE_BUTTON_INDEX_RIGHT then
                 if not ctrl.data or not ctrl.data.quest then
                     return
@@ -593,15 +890,14 @@ local function LayoutQuest(quest)
     local control = AcquireQuestControl()
     control.data = { quest = quest }
     control.label:SetText(quest.name or "")
-    local baseColor = { 1, 1, 1, 1 }
-    if quest.flags then
-        if quest.flags.assisted then
-            baseColor = { 1, 0.95, 0.6, 1 }
-        elseif quest.flags.tracked then
-            baseColor = { 0.9, 0.9, 0.9, 1 }
-        else
-            baseColor = { 0.75, 0.75, 0.75, 1 }
-        end
+    local baseColor = { 0.75, 0.75, 0.75, 1 }
+    local flags = quest.flags or {}
+    if state.trackedQuestIndex and quest.journalIndex == state.trackedQuestIndex then
+        baseColor = { 1, 0.95, 0.6, 1 }
+    elseif flags.assisted then
+        baseColor = { 1, 0.95, 0.6, 1 }
+    elseif flags.tracked then
+        baseColor = { 0.9, 0.9, 0.9, 1 }
     end
     control.baseColor = baseColor
     if control.label then
@@ -733,6 +1029,7 @@ end
 
 local function OnSnapshotUpdated(snapshot)
     state.snapshot = snapshot
+    UpdateTrackedQuestCache()
     if state.isInitialized then
         Rebuild()
     end
@@ -777,6 +1074,7 @@ function QuestTracker.Init(parentControl, opts)
     if Nvk3UT.QuestModel and Nvk3UT.QuestModel.Subscribe then
         Nvk3UT.QuestModel.Subscribe(state.subscription)
         state.snapshot = Nvk3UT.QuestModel.GetSnapshot and Nvk3UT.QuestModel.GetSnapshot() or state.snapshot
+        UpdateTrackedQuestCache()
     else
         DebugLog("QuestModel is not available")
     end
@@ -828,6 +1126,8 @@ function QuestTracker.Shutdown()
     state.pendingRefresh = false
     state.contentWidth = 0
     state.contentHeight = 0
+    state.trackedQuestIndex = nil
+    state.trackedCategoryKeys = {}
     NotifyHostContentChanged()
 end
 
@@ -844,6 +1144,7 @@ function QuestTracker.ApplySettings(settings)
 
     state.opts.hideInCombat = settings.hideInCombat and true or false
     state.opts.autoExpand = settings.autoExpand ~= false
+    state.opts.autoTrack = settings.autoTrack ~= false
     state.opts.active = (settings.active ~= false)
 
     if state.isInitialized then
