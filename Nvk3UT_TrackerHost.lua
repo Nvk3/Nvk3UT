@@ -87,6 +87,9 @@ local state = {
 }
 
 local ensureSceneFragments
+local refreshScroll
+local applyViewportPadding
+local measureTrackerContent
 
 local function clamp(value, minimum, maximum)
     if value == nil then
@@ -474,88 +477,7 @@ local function adjustScroll(delta)
     scrollbar:SetValue(target)
 end
 
-local function refreshScroll()
-    local scrollContainer = state.scrollContainer
-    local scrollContent = state.scrollContent
-    local scrollbar = state.scrollbar
-
-    if not (scrollContainer and scrollContent and scrollbar) then
-        return
-    end
-
-    local _, questHeight = measureTrackerContent(state.questContainer, Nvk3UT and Nvk3UT.QuestTracker)
-    local _, achievementHeight = measureTrackerContent(
-        state.achievementContainer,
-        Nvk3UT and Nvk3UT.AchievementTracker
-    )
-
-    questHeight = math.max(0, tonumber(questHeight) or 0)
-    achievementHeight = math.max(0, tonumber(achievementHeight) or 0)
-    local contentHeight = questHeight + achievementHeight
-    contentHeight = math.max(0, contentHeight)
-
-    if state.questContainer and state.questContainer.SetHeight then
-        state.questContainer:SetHeight(questHeight)
-    end
-
-    if state.achievementContainer and state.achievementContainer.SetHeight then
-        state.achievementContainer:SetHeight(achievementHeight)
-    end
-
-    if scrollContent.SetResizeToFitDescendents then
-        scrollContent:SetResizeToFitDescendents(false)
-    end
-    if scrollContent.SetHeight then
-        scrollContent:SetHeight(contentHeight)
-    end
-
-    local viewportHeight = scrollContainer.GetHeight and scrollContainer:GetHeight() or 0
-    local maxOffset = math.max(contentHeight - viewportHeight, 0)
-    local showScrollbar = maxOffset > 0.5
-
-    local scrollbarWidth = (scrollbar.GetWidth and scrollbar:GetWidth()) or SCROLLBAR_WIDTH
-    local desiredRightOffset = showScrollbar and -scrollbarWidth or 0
-
-    local setScrollExtents = scrollContainer.SetScrollExtents
-    if setScrollExtents then
-        setScrollExtents(scrollContainer, 0, 0, 0, maxOffset)
-    end
-
-    local setMinMax = scrollbar.SetMinMax
-    if setMinMax then
-        setMinMax(scrollbar, 0, maxOffset)
-    end
-
-    local getValue = scrollbar.GetValue
-    local current = getValue and getValue(scrollbar) or 0
-    current = math.max(0, math.min(current, maxOffset))
-
-    local setHidden = scrollbar.SetHidden
-    if setHidden then
-        setHidden(scrollbar, not showScrollbar)
-    end
-
-    if state.scrollContentRightOffset ~= desiredRightOffset then
-        state.scrollContentRightOffset = desiredRightOffset
-        applyViewportPadding()
-    end
-
-    if not showScrollbar then
-        current = 0
-    end
-
-    local setValue = scrollbar.SetValue
-    if setValue then
-        setValue(scrollbar, current)
-    end
-
-    local setVerticalScroll = scrollContainer.SetVerticalScroll
-    if setVerticalScroll then
-        setVerticalScroll(scrollContainer, current)
-    end
-end
-
-local function measureTrackerContent(container, trackerModule)
+measureTrackerContent = function(container, trackerModule)
     if not container or (container.IsHidden and container:IsHidden()) then
         return 0, 0
     end
@@ -735,7 +657,7 @@ local function anchorContainers()
     end
 end
 
-local function applyViewportPadding()
+applyViewportPadding = function()
     local appearance = state.appearance or ensureAppearanceSettings()
     if not state.root then
         return
@@ -769,6 +691,87 @@ local function applyViewportPadding()
         if state.scrollbar.SetWidth then
             state.scrollbar:SetWidth(SCROLLBAR_WIDTH)
         end
+    end
+end
+
+refreshScroll = function()
+    local scrollContainer = state.scrollContainer
+    local scrollContent = state.scrollContent
+    local scrollbar = state.scrollbar
+
+    if not (scrollContainer and scrollContent and scrollbar) then
+        return
+    end
+
+    local _, questHeight = measureTrackerContent(state.questContainer, Nvk3UT and Nvk3UT.QuestTracker)
+    local _, achievementHeight = measureTrackerContent(
+        state.achievementContainer,
+        Nvk3UT and Nvk3UT.AchievementTracker
+    )
+
+    questHeight = math.max(0, tonumber(questHeight) or 0)
+    achievementHeight = math.max(0, tonumber(achievementHeight) or 0)
+    local contentHeight = questHeight + achievementHeight
+    contentHeight = math.max(0, contentHeight)
+
+    if state.questContainer and state.questContainer.SetHeight then
+        state.questContainer:SetHeight(questHeight)
+    end
+
+    if state.achievementContainer and state.achievementContainer.SetHeight then
+        state.achievementContainer:SetHeight(achievementHeight)
+    end
+
+    if scrollContent.SetResizeToFitDescendents then
+        scrollContent:SetResizeToFitDescendents(false)
+    end
+    if scrollContent.SetHeight then
+        scrollContent:SetHeight(contentHeight)
+    end
+
+    local viewportHeight = scrollContainer.GetHeight and scrollContainer:GetHeight() or 0
+    local maxOffset = math.max(contentHeight - viewportHeight, 0)
+    local showScrollbar = maxOffset > 0.5
+
+    local scrollbarWidth = (scrollbar.GetWidth and scrollbar:GetWidth()) or SCROLLBAR_WIDTH
+    local desiredRightOffset = showScrollbar and -scrollbarWidth or 0
+
+    local setScrollExtents = scrollContainer.SetScrollExtents
+    if setScrollExtents then
+        setScrollExtents(scrollContainer, 0, 0, 0, maxOffset)
+    end
+
+    local setMinMax = scrollbar.SetMinMax
+    if setMinMax then
+        setMinMax(scrollbar, 0, maxOffset)
+    end
+
+    local getValue = scrollbar.GetValue
+    local current = getValue and getValue(scrollbar) or 0
+    current = math.max(0, math.min(current, maxOffset))
+
+    local setHidden = scrollbar.SetHidden
+    if setHidden then
+        setHidden(scrollbar, not showScrollbar)
+    end
+
+    if state.scrollContentRightOffset ~= desiredRightOffset then
+        state.scrollContentRightOffset = desiredRightOffset
+        applyViewportPadding()
+    end
+
+    if not showScrollbar then
+        current = 0
+    end
+
+    local setValue = scrollbar.SetValue
+    if setValue then
+        setValue(scrollbar, current)
+    end
+
+    local setVerticalScroll = scrollContainer.SetVerticalScroll
+    if setVerticalScroll then
+        setVerticalScroll(scrollContainer, current)
     end
 end
 
