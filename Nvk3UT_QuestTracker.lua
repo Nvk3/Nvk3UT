@@ -395,6 +395,28 @@ local function ApplyImmediateTrackedQuest(journalIndex)
     state.trackedQuestIndex = journalIndex
 end
 
+local function RequestRefresh()
+    if not state.isInitialized then
+        return
+    end
+    if state.pendingRefresh then
+        return
+    end
+
+    state.pendingRefresh = true
+
+    local function execute()
+        state.pendingRefresh = false
+        QuestTracker.Refresh()
+    end
+
+    if zo_callLater then
+        zo_callLater(execute, REFRESH_DEBOUNCE_MS)
+    else
+        execute()
+    end
+end
+
 local function TrackQuestByJournalIndex(journalIndex)
     local numeric = tonumber(journalIndex)
     if not numeric or numeric <= 0 then
@@ -489,28 +511,6 @@ local function BuildFontString(descriptor, fallback)
     end
 
     return string.format("%s|%d|%s", face, size, outline or DEFAULT_FONT_OUTLINE)
-end
-
-local function RequestRefresh()
-    if not state.isInitialized then
-        return
-    end
-    if state.pendingRefresh then
-        return
-    end
-
-    state.pendingRefresh = true
-
-    local function execute()
-        state.pendingRefresh = false
-        QuestTracker.Refresh()
-    end
-
-    if zo_callLater then
-        zo_callLater(execute, REFRESH_DEBOUNCE_MS)
-    else
-        execute()
-    end
 end
 
 local function ResetLayoutState()
