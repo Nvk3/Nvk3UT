@@ -56,7 +56,7 @@ local DEFAULT_WINDOW = {
 }
 
 local DEFAULT_LAYOUT = {
-    autoGrowV = true,
+    autoGrowV = false,
     autoGrowH = false,
     minWidth = MIN_WIDTH,
     minHeight = MIN_HEIGHT,
