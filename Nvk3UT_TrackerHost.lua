@@ -104,6 +104,18 @@ local state = {
     },
     previousDefaultQuestTrackerHidden = nil,
     initializing = false,
+    lamPreviewForceVisible = false,
+    statusUpdateHooked = false,
+}
+
+local lamPreview = {
+    active = false,
+    windowSettingOnOpen = nil,
+    statusSettingOnOpen = nil,
+    wasWindowVisibleBeforeLAM = nil,
+    wasStatusTextVisibleBeforeLAM = nil,
+    windowPreviewApplied = false,
+    statusPreviewApplied = false,
 }
 
 local ensureSceneFragments
@@ -146,6 +158,172 @@ end
 
 local function getSavedVars()
     return Nvk3UT and Nvk3UT.sv
+end
+
+local function getStatusLabel()
+    local ui = Nvk3UT and Nvk3UT.UI
+    if not ui or not ui.GetStatusLabel then
+        return nil
+    end
+
+    local ok, label = pcall(ui.GetStatusLabel)
+    if ok then
+        return label
+    end
+
+    return nil
+end
+
+local function isWindowOptionEnabled()
+    if state.window and state.window.visible ~= nil then
+        return state.window.visible ~= false
+    end
+
+    local sv = getSavedVars()
+    local general = sv and sv.General
+    local window = general and general.window
+    if window and window.visible ~= nil then
+        return window.visible ~= false
+    end
+
+    return true
+end
+
+local function isStatusOptionEnabled()
+    local sv = getSavedVars()
+    local general = sv and sv.General
+    if general and general.showStatus ~= nil then
+        return general.showStatus ~= false
+    end
+
+    return true
+end
+
+local function ensureStatusUpdateHook()
+    if state.statusUpdateHooked then
+        return true
+    end
+
+    local ui = Nvk3UT and Nvk3UT.UI
+    if not ui then
+        return false
+    end
+
+    local original = ui.UpdateStatus
+    if type(original) ~= "function" then
+        return false
+    end
+
+    state.statusUpdateHooked = true
+
+    ui.UpdateStatus = function(...)
+        if lamPreview.statusPreviewApplied then
+            local sv = getSavedVars()
+            local general = sv and sv.General
+            local previous = nil
+            if general then
+                previous = general.showStatus
+                general.showStatus = true
+            end
+
+            local ok, err = pcall(original, ...)
+
+            if general then
+                general.showStatus = previous
+            end
+
+            if lamPreview.statusPreviewApplied then
+                local label = getStatusLabel()
+                if label then
+                    label:SetHidden(false)
+                end
+            end
+
+            if not ok then
+                error(err)
+            end
+
+            return
+        end
+
+        return original(...)
+    end
+
+    return true
+end
+
+local function disableStatusPreview(restoreWithStoredState)
+    if not lamPreview.statusPreviewApplied then
+        return
+    end
+
+    lamPreview.statusPreviewApplied = false
+
+    local ui = Nvk3UT and Nvk3UT.UI
+    if ui and ui.UpdateStatus then
+        ui.UpdateStatus()
+    end
+
+    if not restoreWithStoredState then
+        return
+    end
+
+    local label = getStatusLabel()
+    if not label then
+        return
+    end
+
+    if lamPreview.wasStatusTextVisibleBeforeLAM == nil then
+        return
+    end
+
+    local currentSetting = isStatusOptionEnabled()
+    if lamPreview.statusSettingOnOpen ~= nil and currentSetting ~= lamPreview.statusSettingOnOpen then
+        return
+    end
+
+    label:SetHidden(not lamPreview.wasStatusTextVisibleBeforeLAM)
+end
+
+local function enableStatusPreview()
+    if lamPreview.statusPreviewApplied then
+        return
+    end
+
+    if not lamPreview.active then
+        return
+    end
+
+    if not ensureStatusUpdateHook() then
+        return
+    end
+
+    local label = getStatusLabel()
+    if not label then
+        return
+    end
+
+    lamPreview.statusPreviewApplied = true
+
+    label:SetHidden(false)
+
+    local ui = Nvk3UT and Nvk3UT.UI
+    if ui and ui.UpdateStatus then
+        ui.UpdateStatus()
+    end
+end
+
+local function updateStatusPreviewAvailability(previewActive)
+    if not lamPreview.active then
+        return
+    end
+
+    if previewActive then
+        enableStatusPreview()
+        return
+    end
+
+    disableStatusPreview(false)
 end
 
 local function migrateAppearanceSettings(target)
@@ -1380,14 +1558,27 @@ local function applyWindowVisibility()
 
     local userHidden = state.window and state.window.visible == false
     local suppressed = state.initializing == true
-    local shouldHide = suppressed or userHidden
+    local previewActive = state.lamPreviewForceVisible == true and not userHidden
+    local shouldHide = (suppressed or userHidden) and not previewActive
 
     if state.fragment and state.fragment.SetHiddenForReason then
-        state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, suppressed)
-        state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, userHidden)
+        if previewActive then
+            state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, false)
+            state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, false)
+        else
+            state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, suppressed)
+            state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, userHidden)
+        end
     end
 
     state.root:SetHidden(shouldHide)
+
+    if lamPreview.active then
+        updateStatusPreviewAvailability(previewActive)
+        if previewActive then
+            lamPreview.windowPreviewApplied = true
+        end
+    end
 end
 
 local function refreshWindowLayout(targetOffset)
@@ -1886,7 +2077,90 @@ function TrackerHost.ApplyAppearance()
     notifyContentChanged()
 end
 
+function TrackerHost.OnLamPanelOpened()
+    lamPreview.active = true
+    lamPreview.windowSettingOnOpen = isWindowOptionEnabled()
+    lamPreview.statusSettingOnOpen = isStatusOptionEnabled()
+
+    if state.root then
+        lamPreview.wasWindowVisibleBeforeLAM = not state.root:IsHidden()
+    else
+        lamPreview.wasWindowVisibleBeforeLAM = nil
+    end
+
+    local label = getStatusLabel()
+    if label then
+        lamPreview.wasStatusTextVisibleBeforeLAM = not label:IsHidden()
+    else
+        lamPreview.wasStatusTextVisibleBeforeLAM = nil
+    end
+
+    if not lamPreview.windowSettingOnOpen then
+        state.lamPreviewForceVisible = false
+        lamPreview.windowPreviewApplied = false
+        disableStatusPreview(false)
+        return
+    end
+
+    state.lamPreviewForceVisible = true
+
+    if TrackerHost.ApplyWindowBars then
+        TrackerHost.ApplyWindowBars()
+    end
+
+    if TrackerHost.ApplyAppearance then
+        TrackerHost.ApplyAppearance()
+    end
+
+    if TrackerHost.Refresh then
+        TrackerHost.Refresh()
+    end
+
+    local userHidden = state.window and state.window.visible == false
+    updateStatusPreviewAvailability(not userHidden)
+end
+
+function TrackerHost.OnLamPanelClosed()
+    if not lamPreview.active then
+        return
+    end
+
+    lamPreview.active = false
+
+    disableStatusPreview(true)
+
+    state.lamPreviewForceVisible = false
+
+    applyWindowVisibility()
+
+    local currentWindowSetting = isWindowOptionEnabled()
+    if
+        lamPreview.windowPreviewApplied
+        and lamPreview.wasWindowVisibleBeforeLAM ~= nil
+        and lamPreview.windowSettingOnOpen ~= nil
+        and currentWindowSetting == lamPreview.windowSettingOnOpen
+        and state.root
+    then
+        state.root:SetHidden(not lamPreview.wasWindowVisibleBeforeLAM)
+    end
+
+    lamPreview.windowPreviewApplied = false
+    lamPreview.windowSettingOnOpen = nil
+    lamPreview.statusSettingOnOpen = nil
+    lamPreview.wasWindowVisibleBeforeLAM = nil
+    lamPreview.wasStatusTextVisibleBeforeLAM = nil
+end
+
 function TrackerHost.Shutdown()
+    disableStatusPreview(true)
+    lamPreview.active = false
+    lamPreview.statusSettingOnOpen = nil
+    lamPreview.windowSettingOnOpen = nil
+    lamPreview.wasStatusTextVisibleBeforeLAM = nil
+    lamPreview.wasWindowVisibleBeforeLAM = nil
+    lamPreview.windowPreviewApplied = false
+    state.lamPreviewForceVisible = false
+
     if state.previousDefaultQuestTrackerHidden ~= nil and ZO_QuestTracker and ZO_QuestTracker.SetHidden then
         ZO_QuestTracker:SetHidden(state.previousDefaultQuestTrackerHidden)
     end

@@ -441,6 +441,71 @@ local function acquireLam()
     return nil
 end
 
+local function registerLamCallbacks(LAM, panelName, panel)
+    if not (CALLBACK_MANAGER and LAM and panelName) then
+        return
+    end
+
+    if L._lamCallbacksRegistered then
+        return
+    end
+
+    L._lamCallbacksRegistered = true
+    L._panelName = panelName
+    L._panelDefinition = panel
+
+    local function matchesPanel(control)
+        if not control then
+            return false
+        end
+
+        if L._panelControl and control == L._panelControl then
+            return true
+        end
+
+        if control.GetName then
+            local name = control:GetName()
+            if name and name == L._panelName then
+                L._panelControl = control
+                return true
+            end
+        end
+
+        local expected = L._panelName and _G[L._panelName]
+        if expected and control == expected then
+            L._panelControl = expected
+            return true
+        end
+
+        if control.data and L._panelDefinition and control.data == L._panelDefinition then
+            L._panelControl = control
+            return true
+        end
+
+        return false
+    end
+
+    CALLBACK_MANAGER:RegisterCallback("LAM-PanelOpened", function(control)
+        if not matchesPanel(control) then
+            return
+        end
+
+        if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.OnLamPanelOpened then
+            pcall(Nvk3UT.TrackerHost.OnLamPanelOpened, control)
+        end
+    end)
+
+    CALLBACK_MANAGER:RegisterCallback("LAM-PanelClosed", function(control)
+        if not matchesPanel(control) then
+            return
+        end
+
+        if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.OnLamPanelClosed then
+            pcall(Nvk3UT.TrackerHost.OnLamPanelClosed, control)
+        end
+    end)
+end
+
 local function registerPanel(displayTitle)
     local LAM = acquireLam()
     if not LAM then
@@ -1324,6 +1389,8 @@ local function registerPanel(displayTitle)
 
     LAM:RegisterAddonPanel(panelName, panel)
     LAM:RegisterOptionControls(panelName, options)
+
+    registerLamCallbacks(LAM, panelName, panel)
 
     L._registered = true
     return true
