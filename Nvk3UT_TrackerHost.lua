@@ -711,6 +711,10 @@ local function updateSectionLayout()
         return
     end
 
+    if not state.questContainer or not state.achievementContainer then
+        createContainers()
+    end
+
     anchorContainers()
 end
 
@@ -812,6 +816,8 @@ local function applyWindowSettings()
     if not state.root then
         return
     end
+
+    createContainers()
 
     applyLayoutConstraints()
     updateSectionLayout()
@@ -1014,6 +1020,9 @@ local function createScrollContainer()
     if scrollContent.SetAlpha then
         scrollContent:SetAlpha(1)
     end
+    if scrollContainer.SetScrollChild then
+        scrollContainer:SetScrollChild(scrollContent)
+    end
 
     local scrollbar = WINDOW_MANAGER:CreateControl(SCROLLBAR_NAME, state.root, CT_SCROLLBAR)
     scrollbar:SetMouseEnabled(true)
@@ -1059,34 +1068,44 @@ local function createContainers()
 
     local parent = state.scrollContent or state.root
 
-    if parent and not state.questContainer then
-        local questContainer = WINDOW_MANAGER:CreateControl(QUEST_CONTAINER_NAME, parent, CT_CONTROL)
-        questContainer:SetMouseEnabled(false)
-        if questContainer.SetResizeToFitDescendents then
-            questContainer:SetResizeToFitDescendents(true)
+    if parent then
+        local questContainer = state.questContainer or _G[QUEST_CONTAINER_NAME]
+        if not questContainer then
+            questContainer = WINDOW_MANAGER:CreateControl(QUEST_CONTAINER_NAME, parent, CT_CONTROL)
+        else
+            questContainer:SetParent(parent)
         end
-        questContainer:SetHandler("OnMouseWheel", function(_, delta)
-            adjustScroll(delta)
-        end)
-        state.questContainer = questContainer
-        Nvk3UT.UI.QuestContainer = questContainer
-    elseif state.questContainer and state.questContainer.GetParent and state.questContainer:GetParent() ~= parent then
-        state.questContainer:SetParent(parent)
+        if questContainer then
+            questContainer:SetMouseEnabled(false)
+            if questContainer.SetResizeToFitDescendents then
+                questContainer:SetResizeToFitDescendents(true)
+            end
+            questContainer:SetHandler("OnMouseWheel", function(_, delta)
+                adjustScroll(delta)
+            end)
+            state.questContainer = questContainer
+            Nvk3UT.UI.QuestContainer = questContainer
+        end
     end
 
-    if parent and not state.achievementContainer then
-        local achievementContainer = WINDOW_MANAGER:CreateControl(ACHIEVEMENT_CONTAINER_NAME, parent, CT_CONTROL)
-        achievementContainer:SetMouseEnabled(false)
-        if achievementContainer.SetResizeToFitDescendents then
-            achievementContainer:SetResizeToFitDescendents(true)
+    if parent then
+        local achievementContainer = state.achievementContainer or _G[ACHIEVEMENT_CONTAINER_NAME]
+        if not achievementContainer then
+            achievementContainer = WINDOW_MANAGER:CreateControl(ACHIEVEMENT_CONTAINER_NAME, parent, CT_CONTROL)
+        else
+            achievementContainer:SetParent(parent)
         end
-        achievementContainer:SetHandler("OnMouseWheel", function(_, delta)
-            adjustScroll(delta)
-        end)
-        state.achievementContainer = achievementContainer
-        Nvk3UT.UI.AchievementContainer = achievementContainer
-    elseif state.achievementContainer and state.achievementContainer.GetParent and state.achievementContainer:GetParent() ~= parent then
-        state.achievementContainer:SetParent(parent)
+        if achievementContainer then
+            achievementContainer:SetMouseEnabled(false)
+            if achievementContainer.SetResizeToFitDescendents then
+                achievementContainer:SetResizeToFitDescendents(true)
+            end
+            achievementContainer:SetHandler("OnMouseWheel", function(_, delta)
+                adjustScroll(delta)
+            end)
+            state.achievementContainer = achievementContainer
+            Nvk3UT.UI.AchievementContainer = achievementContainer
+        end
     end
 
     anchorContainers()
