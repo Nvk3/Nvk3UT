@@ -290,9 +290,36 @@ local function CollectCategoryKeysForQuest(journalIndex)
     return keys, found
 end
 
-local function UpdateTrackedQuestCache()
+local function GetFocusedQuestIndex()
+    if QUEST_JOURNAL_MANAGER and QUEST_JOURNAL_MANAGER.GetFocusedQuestIndex then
+        local ok, focused = SafeCall(function(manager)
+            return manager:GetFocusedQuestIndex()
+        end, QUEST_JOURNAL_MANAGER)
+        if ok then
+            local numeric = tonumber(focused)
+            if numeric and numeric > 0 then
+                return numeric
+            end
+        end
+    end
+
+    return nil
+end
+
+local function UpdateTrackedQuestCache(forcedIndex)
     local trackedIndex = nil
-    if GetTrackedQuestIndex then
+    if forcedIndex ~= nil then
+        local numeric = tonumber(forcedIndex)
+        if numeric and numeric > 0 then
+            trackedIndex = numeric
+        end
+    end
+
+    if not trackedIndex then
+        trackedIndex = GetFocusedQuestIndex()
+    end
+
+    if (not trackedIndex or trackedIndex <= 0) and GetTrackedQuestIndex then
         local ok, current = SafeCall(GetTrackedQuestIndex)
         if ok then
             local numeric = tonumber(current)
@@ -432,23 +459,24 @@ local function EnsureTrackedQuestVisible(journalIndex)
     AutoExpandQuestForTracking(journalIndex)
 end
 
-local function SyncTrackedQuestState()
+local function SyncTrackedQuestState(forcedIndex)
     local previousTracked = state.trackedQuestIndex
 
-    UpdateTrackedQuestCache()
+    UpdateTrackedQuestCache(forcedIndex)
 
-    if state.trackedQuestIndex then
-        EnsureTrackedQuestVisible(state.trackedQuestIndex)
+    local currentTracked = state.trackedQuestIndex
+    if currentTracked then
+        EnsureTrackedQuestVisible(currentTracked)
     end
 
     if not state.isInitialized then
         return
     end
 
-    local hasTracked = state.trackedQuestIndex ~= nil
+    local hasTracked = currentTracked ~= nil
     local hadTracked = previousTracked ~= nil
 
-    if previousTracked ~= state.trackedQuestIndex or hasTracked or hadTracked then
+    if previousTracked ~= currentTracked or hasTracked or hadTracked then
         RequestRefresh()
     end
 end
@@ -530,6 +558,10 @@ end
 local function AdoptTrackedQuestOnInit()
     local journalIndex = state.trackedQuestIndex
 
+    if not journalIndex or journalIndex <= 0 then
+        journalIndex = GetFocusedQuestIndex()
+    end
+
     if (not journalIndex or journalIndex <= 0) and GetTrackedQuestIndex then
         local ok, current = SafeCall(GetTrackedQuestIndex)
         if ok then
@@ -581,8 +613,29 @@ local function OnTrackedQuestUpdate(_, trackingType)
     SyncTrackedQuestState()
 end
 
-local function OnPlayerActivated()
+local function OnFocusedTrackerAssistChanged(_, assistedData)
+    local questIndex = assistedData and assistedData.arg1
+    if questIndex ~= nil then
+        local numeric = tonumber(questIndex)
+        if numeric and numeric > 0 then
+            SyncTrackedQuestState(numeric)
+            return
+        end
+    end
+
     SyncTrackedQuestState()
+end
+
+local function OnPlayerActivated()
+    local function execute()
+        SyncTrackedQuestState()
+    end
+
+    if zo_callLater then
+        zo_callLater(execute, 20)
+    else
+        execute()
+    end
 end
 
 local function RegisterTrackingEvents()
@@ -590,12 +643,14 @@ local function RegisterTrackingEvents()
         return
     end
 
-    if not EVENT_MANAGER then
-        return
+    if EVENT_MANAGER then
+        EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. "TrackUpdate", EVENT_TRACKING_UPDATE, OnTrackedQuestUpdate)
+        EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. "PlayerActivated", EVENT_PLAYER_ACTIVATED, OnPlayerActivated)
     end
 
-    EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. "TrackUpdate", EVENT_TRACKING_UPDATE, OnTrackedQuestUpdate)
-    EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. "PlayerActivated", EVENT_PLAYER_ACTIVATED, OnPlayerActivated)
+    if FOCUSED_QUEST_TRACKER and FOCUSED_QUEST_TRACKER.RegisterCallback then
+        FOCUSED_QUEST_TRACKER:RegisterCallback("QuestTrackerAssistStateChanged", OnFocusedTrackerAssistChanged)
+    end
 
     state.trackingEventsRegistered = true
 end
@@ -608,6 +663,10 @@ local function UnregisterTrackingEvents()
     if EVENT_MANAGER then
         EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "TrackUpdate", EVENT_TRACKING_UPDATE)
         EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "PlayerActivated", EVENT_PLAYER_ACTIVATED)
+    end
+
+    if FOCUSED_QUEST_TRACKER and FOCUSED_QUEST_TRACKER.UnregisterCallback then
+        FOCUSED_QUEST_TRACKER:UnregisterCallback("QuestTrackerAssistStateChanged", OnFocusedTrackerAssistChanged)
     end
 
     state.trackingEventsRegistered = false
