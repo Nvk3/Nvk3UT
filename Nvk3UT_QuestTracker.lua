@@ -80,6 +80,7 @@ local state = {
     trackedQuestIndex = nil,
     trackedCategoryKeys = {},
     trackingEventsRegistered = false,
+    suppressForceExpandFor = nil,
 }
 
 local function ApplyLabelDefaults(label)
@@ -336,116 +337,58 @@ local function GetFocusedQuestIndex()
 end
 
 local function UpdateTrackedQuestCache(forcedIndex)
-    local forcedTrackedIndex = nil
-    local trackedIndex = nil
-    if forcedIndex ~= nil then
-        local numeric = tonumber(forcedIndex)
-        if numeric and numeric > 0 then
-            trackedIndex = numeric
-            forcedTrackedIndex = numeric
-        end
-    end
-
-    if not trackedIndex then
-        trackedIndex = GetFocusedQuestIndex()
-    end
-
-    local function adoptTrackedFromJournal()
-        if not GetTrackedQuestIndex then
+    local function normalize(index)
+        local numeric = tonumber(index)
+        if not numeric or numeric <= 0 then
             return nil
         end
 
-        local ok, current = SafeCall(GetTrackedQuestIndex)
-        if not ok then
-            return nil
-        end
-
-        local numeric = tonumber(current)
-        if numeric and numeric > 0 then
+        if DoesJournalQuestExist(numeric) then
             return numeric
         end
 
         return nil
     end
 
-    if not trackedIndex or trackedIndex <= 0 then
-        trackedIndex = adoptTrackedFromJournal()
+    local trackedIndex = normalize(forcedIndex)
+
+    if not trackedIndex and GetTrackedQuestIndex then
+        local ok, current = SafeCall(GetTrackedQuestIndex)
+        if ok then
+            trackedIndex = normalize(current)
+        end
+    end
+
+    if not trackedIndex then
+        trackedIndex = normalize(GetFocusedQuestIndex())
     end
 
     local trackedCategories = {}
-    local fallbackTrackedIndex = nil
-    local fallbackCategories = nil
-    local trackedIndexIsTracked = false
 
-    if trackedIndex and IsJournalQuestTracked then
-        local ok, tracked = SafeCall(IsJournalQuestTracked, trackedIndex)
-        if ok and tracked then
-            trackedIndexIsTracked = true
-        end
-    end
+    if trackedIndex then
+        trackedCategories = CollectCategoryKeysForQuest(trackedIndex)
+    else
+        ForEachQuest(function(quest)
+            if trackedIndex or not (quest and quest.flags and quest.flags.tracked) then
+                return
+            end
 
-    ForEachQuest(function(quest, category)
-        if quest.flags and quest.flags.tracked then
-            if not fallbackTrackedIndex then
-                fallbackTrackedIndex = quest.journalIndex
-                fallbackCategories = {}
+            local fallbackIndex = normalize(quest.journalIndex) or tonumber(quest.journalIndex)
+            if not fallbackIndex or fallbackIndex <= 0 then
+                return
             end
-            if fallbackTrackedIndex == quest.journalIndex and fallbackCategories then
-                if category and category.key then
-                    fallbackCategories[category.key] = true
-                end
-                if category and category.parent and category.parent.key then
-                    fallbackCategories[category.parent.key] = true
-                end
-            end
-        end
-        if trackedIndex and quest.journalIndex == trackedIndex then
-            if category and category.key then
-                trackedCategories[category.key] = true
-            end
-            if category and category.parent and category.parent.key then
-                trackedCategories[category.parent.key] = true
-            end
-            if quest.flags and quest.flags.tracked then
-                trackedIndexIsTracked = true
-            end
-        end
-    end)
 
-    if forcedTrackedIndex and trackedIndex == forcedTrackedIndex and not trackedIndexIsTracked then
-        local adopted = adoptTrackedFromJournal()
-        if adopted and adopted ~= trackedIndex then
-            trackedIndex = adopted
+            trackedIndex = fallbackIndex
             trackedCategories = CollectCategoryKeysForQuest(trackedIndex)
-            trackedIndexIsTracked = true
-        elseif not adopted then
-            trackedIndex = nil
-            trackedCategories = {}
-            trackedIndexIsTracked = false
-        end
+        end)
     end
 
-    if trackedIndex and not trackedIndexIsTracked then
-        local questExists = DoesJournalQuestExist(trackedIndex)
-        if not questExists then
-            trackedIndex = nil
-            trackedCategories = {}
-            trackedIndexIsTracked = false
-        end
-    end
-
-    if trackedIndex and next(trackedCategories) == nil then
-        local keys = CollectCategoryKeysForQuest(trackedIndex)
-        trackedCategories = keys or {}
-    end
-
-    if not trackedIndex and fallbackTrackedIndex then
-        trackedIndex = fallbackTrackedIndex
-        trackedCategories = fallbackCategories or CollectCategoryKeysForQuest(trackedIndex) or {}
+    if type(trackedCategories) ~= "table" then
+        trackedCategories = {}
     end
 
     state.trackedQuestIndex = trackedIndex
-    state.trackedCategoryKeys = trackedCategories or {}
+    state.trackedCategoryKeys = trackedCategories
 end
 
 local function EnsureQuestTrackedState(journalIndex)
@@ -552,8 +495,17 @@ local function SyncTrackedQuestState(forcedIndex, forceExpand)
     UpdateTrackedQuestCache(forcedIndex)
 
     local currentTracked = state.trackedQuestIndex
+    local shouldForceExpand = forceExpand == true
+
+    if currentTracked and state.suppressForceExpandFor and state.suppressForceExpandFor == currentTracked then
+        shouldForceExpand = false
+        state.suppressForceExpandFor = nil
+    elseif not currentTracked or state.suppressForceExpandFor ~= currentTracked then
+        state.suppressForceExpandFor = nil
+    end
+
     if currentTracked then
-        EnsureTrackedQuestVisible(currentTracked, forceExpand)
+        EnsureTrackedQuestVisible(currentTracked, shouldForceExpand)
     end
 
     if not state.isInitialized then
@@ -612,7 +564,7 @@ end
 
 RequestRefresh = RequestRefreshInternal
 
-local function TrackQuestByJournalIndex(journalIndex)
+local function TrackQuestByJournalIndex(journalIndex, options)
     local numeric = tonumber(journalIndex)
     if not numeric or numeric <= 0 then
         return
@@ -622,8 +574,15 @@ local function TrackQuestByJournalIndex(journalIndex)
         return
     end
 
-    AutoExpandQuestForTracking(numeric)
-    EnsureTrackedCategoriesExpanded(numeric)
+    options = options or {}
+
+    if options.skipAutoExpand then
+        state.suppressForceExpandFor = numeric
+    else
+        state.suppressForceExpandFor = nil
+        AutoExpandQuestForTracking(numeric, options.forceExpand)
+        EnsureTrackedCategoriesExpanded(numeric, options.forceExpand)
+    end
 
     ApplyImmediateTrackedQuest(numeric)
 
@@ -669,7 +628,7 @@ local function AdoptTrackedQuestOnInit()
         ApplyImmediateTrackedQuest(journalIndex)
     end
 
-    EnsureTrackedQuestVisible(journalIndex)
+    EnsureTrackedQuestVisible(journalIndex, true)
 
     if state.opts.autoTrack == false then
         return
@@ -684,7 +643,7 @@ local function AdoptTrackedQuestOnInit()
     end
 
     if currentTracked ~= journalIndex then
-        TrackQuestByJournalIndex(journalIndex)
+        TrackQuestByJournalIndex(journalIndex, { forceExpand = true })
         return
     end
 
@@ -1091,17 +1050,15 @@ local function AcquireQuestControl()
                     return
                 end
 
-                local wasTracked = state.trackedQuestIndex and state.trackedQuestIndex == journalIndex
+                local nextExpanded = not IsQuestExpanded(journalIndex)
 
-                TrackQuestByJournalIndex(journalIndex)
+                TrackQuestByJournalIndex(journalIndex, { skipAutoExpand = true })
 
-                if wasTracked then
-                    ToggleQuestExpansion(journalIndex)
+                local changed = SetQuestExpanded(journalIndex, nextExpanded)
+                if changed then
+                    QuestTracker.Refresh()
                 else
-                    local changed = SetQuestExpanded(journalIndex, true)
-                    if changed then
-                        QuestTracker.Refresh()
-                    end
+                    RequestRefresh()
                 end
             elseif button == MOUSE_BUTTON_INDEX_RIGHT then
                 if not ctrl.data or not ctrl.data.quest then
@@ -1504,6 +1461,7 @@ function QuestTracker.Shutdown()
     state.trackedQuestIndex = nil
     state.trackedCategoryKeys = {}
     state.trackingEventsRegistered = false
+    state.suppressForceExpandFor = nil
     NotifyHostContentChanged()
 end
 
