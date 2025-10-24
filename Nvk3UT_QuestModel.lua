@@ -182,6 +182,7 @@ local CollectQuestEntries
 local ForceRebuild
 local NormalizeQuestCategoryData
 local GetCategoryKey
+local GetCategoryParentCopy
 
 local function BuildSnapshotFromSaved()
     local sv = EnsureSavedVars()
@@ -1225,7 +1226,7 @@ local function NotifySubscribers(self)
     end
 end
 
-local function GetCategoryParentCopy(category)
+GetCategoryParentCopy = function(category)
     if not category then
         return nil
     end
