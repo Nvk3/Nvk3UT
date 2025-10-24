@@ -820,7 +820,6 @@ local function anchorContainers()
     end
 
     local headerVisible = isBarVisible(headerBar)
-    local footerVisible = isBarVisible(footerBar)
 
     if headerBar then
         headerBar:ClearAnchors()
@@ -850,11 +849,6 @@ local function anchorContainers()
         else
             footerBar:SetAnchor(TOPLEFT, scrollContent, TOPLEFT, 0, 0)
             footerBar:SetAnchor(TOPRIGHT, scrollContent, TOPRIGHT, 0, 0)
-        end
-
-        if footerVisible then
-            footerBar:SetAnchor(BOTTOMLEFT, scrollContent, BOTTOMLEFT, 0, 0)
-            footerBar:SetAnchor(BOTTOMRIGHT, scrollContent, BOTTOMRIGHT, 0, 0)
         end
     end
 
@@ -1288,7 +1282,6 @@ local function createContainers()
         end
     end
 
-    anchorContainers()
     applyWindowBars()
     refreshScroll()
 end
