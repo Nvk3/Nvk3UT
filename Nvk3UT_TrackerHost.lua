@@ -802,44 +802,59 @@ local function anchorContainers()
     local contentStack = state.contentStack
     local footerBar = state.footerBar
 
-    if scrollContent and headerBar then
+    if not scrollContent then
+        return
+    end
+
+    local function isBarVisible(bar)
+        if not bar then
+            return false
+        end
+
+        if bar.IsHidden and bar:IsHidden() then
+            return false
+        end
+
+        local height = bar.GetHeight and bar:GetHeight() or 0
+        return height > 0.5
+    end
+
+    local headerVisible = isBarVisible(headerBar)
+    local footerVisible = isBarVisible(footerBar)
+
+    if headerBar then
         headerBar:ClearAnchors()
         headerBar:SetAnchor(TOPLEFT, scrollContent, TOPLEFT, 0, 0)
         headerBar:SetAnchor(TOPRIGHT, scrollContent, TOPRIGHT, 0, 0)
     end
 
-    if scrollContent and footerBar then
-        footerBar:ClearAnchors()
-        if contentStack then
-            footerBar:SetAnchor(TOPLEFT, contentStack, BOTTOMLEFT, 0, 0)
-            footerBar:SetAnchor(TOPRIGHT, contentStack, BOTTOMRIGHT, 0, 0)
-        elseif headerBar then
-            footerBar:SetAnchor(TOPLEFT, headerBar, BOTTOMLEFT, 0, 0)
-            footerBar:SetAnchor(TOPRIGHT, headerBar, BOTTOMRIGHT, 0, 0)
-        else
-            footerBar:SetAnchor(TOPLEFT, scrollContent, TOPLEFT, 0, 0)
-            footerBar:SetAnchor(TOPRIGHT, scrollContent, TOPRIGHT, 0, 0)
-        end
-        footerBar:SetAnchor(BOTTOMLEFT, scrollContent, BOTTOMLEFT, 0, 0)
-        footerBar:SetAnchor(BOTTOMRIGHT, scrollContent, BOTTOMRIGHT, 0, 0)
-    end
-
-    if scrollContent and contentStack then
+    if contentStack then
         contentStack:ClearAnchors()
-        if headerBar then
+        if headerVisible and headerBar then
             contentStack:SetAnchor(TOPLEFT, headerBar, BOTTOMLEFT, 0, 0)
             contentStack:SetAnchor(TOPRIGHT, headerBar, BOTTOMRIGHT, 0, 0)
         else
             contentStack:SetAnchor(TOPLEFT, scrollContent, TOPLEFT, 0, 0)
             contentStack:SetAnchor(TOPRIGHT, scrollContent, TOPRIGHT, 0, 0)
         end
+    end
 
-        if footerBar then
-            contentStack:SetAnchor(BOTTOMLEFT, footerBar, TOPLEFT, 0, 0)
-            contentStack:SetAnchor(BOTTOMRIGHT, footerBar, TOPRIGHT, 0, 0)
+    if footerBar then
+        footerBar:ClearAnchors()
+        if contentStack then
+            footerBar:SetAnchor(TOPLEFT, contentStack, BOTTOMLEFT, 0, 0)
+            footerBar:SetAnchor(TOPRIGHT, contentStack, BOTTOMRIGHT, 0, 0)
+        elseif headerVisible and headerBar then
+            footerBar:SetAnchor(TOPLEFT, headerBar, BOTTOMLEFT, 0, 0)
+            footerBar:SetAnchor(TOPRIGHT, headerBar, BOTTOMRIGHT, 0, 0)
         else
-            contentStack:SetAnchor(BOTTOMLEFT, scrollContent, BOTTOMLEFT, 0, 0)
-            contentStack:SetAnchor(BOTTOMRIGHT, scrollContent, BOTTOMRIGHT, 0, 0)
+            footerBar:SetAnchor(TOPLEFT, scrollContent, TOPLEFT, 0, 0)
+            footerBar:SetAnchor(TOPRIGHT, scrollContent, TOPRIGHT, 0, 0)
+        end
+
+        if footerVisible then
+            footerBar:SetAnchor(BOTTOMLEFT, scrollContent, BOTTOMLEFT, 0, 0)
+            footerBar:SetAnchor(BOTTOMRIGHT, scrollContent, BOTTOMRIGHT, 0, 0)
         end
     end
 
@@ -899,6 +914,8 @@ applyWindowBars = function()
         end
         footerBar:SetMouseEnabled(footerHeight > 0)
     end
+
+    anchorContainers()
 end
 
 applyViewportPadding = function()
