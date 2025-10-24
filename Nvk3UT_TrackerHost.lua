@@ -12,6 +12,7 @@ local ACHIEVEMENT_CONTAINER_NAME = addonName .. "_AchievementContainer"
 local SCROLL_CONTAINER_NAME = addonName .. "_ScrollContainer"
 local SCROLL_CONTENT_NAME = SCROLL_CONTAINER_NAME .. "_Content"
 local SCROLLBAR_NAME = SCROLL_CONTAINER_NAME .. "_ScrollBar"
+local PLAYER_ACTIVATED_EVENT_NAMESPACE = addonName .. "_TrackerHost_PlayerActivated"
 
 local MIN_WIDTH = 260
 local MIN_HEIGHT = 240
@@ -76,6 +77,8 @@ local state = {
         achievementMissing = false,
     },
     previousDefaultQuestTrackerHidden = nil,
+    visibilitySuppressed = true,
+    hasShown = false,
 }
 
 local function clamp(value, minimum, maximum)
@@ -711,7 +714,7 @@ local function applyWindowVisibility()
         return
     end
 
-    local shouldHide = state.window.visible == false
+    local shouldHide = state.visibilitySuppressed or state.window.visible == false
     state.root:SetHidden(shouldHide)
 end
 
@@ -809,6 +812,12 @@ local function createBackdrop()
     if control.SetExcludeFromResizeToFitExtents then
         control:SetExcludeFromResizeToFitExtents(true)
     end
+    if control.SetCenterColor then
+        control:SetCenterColor(0, 0, 0, 0)
+    end
+    if control.SetEdgeColor then
+        control:SetEdgeColor(0, 0, 0, 0)
+    end
     if control.SetEdgeTexture then
         local appearance = state.appearance or ensureAppearanceSettings()
         local thickness = math.max(1, appearance.edgeThickness or DEFAULT_APPEARANCE.edgeThickness)
@@ -833,6 +842,7 @@ local function createRootControl()
         return
     end
 
+    control:SetHidden(true)
     control:SetMouseEnabled(true)
     control:SetMovable(true)
     control:SetClampedToScreen(true)
@@ -896,12 +906,18 @@ local function createScrollContainer()
     scrollContainer:SetClampedToScreen(false)
     scrollContainer:SetAnchor(TOPLEFT, state.root, TOPLEFT, 0, 0)
     scrollContainer:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, 0, 0)
+    if scrollContainer.SetBackgroundColor then
+        scrollContainer:SetBackgroundColor(0, 0, 0, 0)
+    end
 
     local scrollContent = WINDOW_MANAGER:CreateControl(SCROLL_CONTENT_NAME, scrollContainer, CT_CONTROL)
     scrollContent:SetMouseEnabled(false)
     scrollContent:SetAnchor(TOPLEFT, scrollContainer, TOPLEFT, 0, 0)
     scrollContent:SetAnchor(TOPRIGHT, scrollContainer, TOPRIGHT, 0, 0)
     scrollContent:SetResizeToFitDescendents(true)
+    if scrollContent.SetAlpha then
+        scrollContent:SetAlpha(1)
+    end
 
     local scrollbar = WINDOW_MANAGER:CreateControl(SCROLLBAR_NAME, state.root, CT_SCROLLBAR)
     scrollbar:SetMouseEnabled(true)
@@ -1091,6 +1107,60 @@ local function initTrackers(debugEnabled)
     end
 end
 
+local function finalizeInitialShow()
+    if not state.root or state.hasShown then
+        return
+    end
+
+    if EVENT_MANAGER then
+        EVENT_MANAGER:UnregisterForEvent(PLAYER_ACTIVATED_EVENT_NAMESPACE, EVENT_PLAYER_ACTIVATED)
+    end
+
+    state.visibilitySuppressed = true
+    applyWindowVisibility()
+    if TrackerHost.Refresh then
+        pcall(TrackerHost.Refresh)
+    end
+
+    if TrackerHost.RefreshScroll then
+        pcall(TrackerHost.RefreshScroll)
+    else
+        refreshScroll()
+    end
+
+    state.visibilitySuppressed = false
+    applyWindowVisibility()
+
+    if not (state.window and state.window.visible == false) then
+        state.root:SetHidden(false)
+    end
+
+    state.hasShown = true
+    debugLog("Initialized after PlayerActivated")
+end
+
+local function triggerInitialShow()
+    if state.hasShown then
+        return
+    end
+
+    if zo_callLater then
+        zo_callLater(function()
+            finalizeInitialShow()
+        end, 0)
+    else
+        finalizeInitialShow()
+    end
+end
+
+local function onPlayerActivated()
+    if EVENT_MANAGER then
+        EVENT_MANAGER:UnregisterForEvent(PLAYER_ACTIVATED_EVENT_NAMESPACE, EVENT_PLAYER_ACTIVATED)
+    end
+
+    triggerInitialShow()
+end
+
 function TrackerHost.Init()
     if state.initialized then
         return
@@ -1099,6 +1169,9 @@ function TrackerHost.Init()
     if not getSavedVars() then
         return
     end
+
+    state.visibilitySuppressed = true
+    state.hasShown = false
 
     state.window = ensureWindowSettings()
     state.appearance = ensureAppearanceSettings()
@@ -1127,6 +1200,15 @@ function TrackerHost.Init()
     state.initialized = true
 
     TrackerHost.ApplyAppearance()
+
+    if EVENT_MANAGER then
+        EVENT_MANAGER:UnregisterForEvent(PLAYER_ACTIVATED_EVENT_NAMESPACE, EVENT_PLAYER_ACTIVATED)
+        EVENT_MANAGER:RegisterForEvent(PLAYER_ACTIVATED_EVENT_NAMESPACE, EVENT_PLAYER_ACTIVATED, onPlayerActivated)
+    end
+
+    if IsPlayerActivated and IsPlayerActivated() then
+        triggerInitialShow()
+    end
 end
 
 function TrackerHost.ApplySettings()
@@ -1280,6 +1362,12 @@ function TrackerHost.Shutdown()
     state.features = nil
     state.initialized = false
     state.previousDefaultQuestTrackerHidden = nil
+    state.visibilitySuppressed = true
+    state.hasShown = false
+
+    if EVENT_MANAGER then
+        EVENT_MANAGER:UnregisterForEvent(PLAYER_ACTIVATED_EVENT_NAMESPACE, EVENT_PLAYER_ACTIVATED)
+    end
 end
 
 Nvk3UT.TrackerHost = TrackerHost
