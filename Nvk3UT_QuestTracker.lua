@@ -67,6 +67,7 @@ local state = {
     contentHeight = 0,
     trackedQuestIndex = nil,
     trackedCategoryKeys = {},
+    trackingEventsRegistered = false,
 }
 
 local function ApplyLabelDefaults(label)
@@ -431,6 +432,27 @@ local function EnsureTrackedQuestVisible(journalIndex)
     AutoExpandQuestForTracking(journalIndex)
 end
 
+local function SyncTrackedQuestState()
+    local previousTracked = state.trackedQuestIndex
+
+    UpdateTrackedQuestCache()
+
+    if state.trackedQuestIndex then
+        EnsureTrackedQuestVisible(state.trackedQuestIndex)
+    end
+
+    if not state.isInitialized then
+        return
+    end
+
+    local hasTracked = state.trackedQuestIndex ~= nil
+    local hadTracked = previousTracked ~= nil
+
+    if previousTracked ~= state.trackedQuestIndex or hasTracked or hadTracked then
+        RequestRefresh()
+    end
+end
+
 local function FocusQuestInJournal(journalIndex)
     if not (QUEST_JOURNAL_KEYBOARD and QUEST_JOURNAL_KEYBOARD.FocusQuestWithIndex) then
         return
@@ -549,6 +571,46 @@ local function AdoptTrackedQuestOnInit()
     EnsureQuestTrackedState(journalIndex)
     ClearOtherTrackedQuests(journalIndex)
     EnsureExclusiveAssistedQuest(journalIndex)
+end
+
+local function OnTrackedQuestUpdate(_, trackingType)
+    if trackingType and trackingType ~= TRACK_TYPE_QUEST then
+        return
+    end
+
+    SyncTrackedQuestState()
+end
+
+local function OnPlayerActivated()
+    SyncTrackedQuestState()
+end
+
+local function RegisterTrackingEvents()
+    if state.trackingEventsRegistered then
+        return
+    end
+
+    if not EVENT_MANAGER then
+        return
+    end
+
+    EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. "TrackUpdate", EVENT_TRACKING_UPDATE, OnTrackedQuestUpdate)
+    EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. "PlayerActivated", EVENT_PLAYER_ACTIVATED, OnPlayerActivated)
+
+    state.trackingEventsRegistered = true
+end
+
+local function UnregisterTrackingEvents()
+    if not state.trackingEventsRegistered then
+        return
+    end
+
+    if EVENT_MANAGER then
+        EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "TrackUpdate", EVENT_TRACKING_UPDATE)
+        EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "PlayerActivated", EVENT_PLAYER_ACTIVATED)
+    end
+
+    state.trackingEventsRegistered = false
 end
 
 local function NotifyHostContentChanged()
@@ -1208,6 +1270,8 @@ function QuestTracker.Init(parentControl, opts)
         DebugLog("QuestModel is not available")
     end
 
+    RegisterTrackingEvents()
+
     state.isInitialized = true
     RefreshVisibility()
     AdoptTrackedQuestOnInit()
@@ -1229,6 +1293,7 @@ function QuestTracker.Shutdown()
     state.subscription = nil
 
     UnregisterCombatEvents()
+    UnregisterTrackingEvents()
 
     if state.categoryPool then
         state.categoryPool:ReleaseAllObjects()
@@ -1258,6 +1323,7 @@ function QuestTracker.Shutdown()
     state.contentHeight = 0
     state.trackedQuestIndex = nil
     state.trackedCategoryKeys = {}
+    state.trackingEventsRegistered = false
     NotifyHostContentChanged()
 end
 
