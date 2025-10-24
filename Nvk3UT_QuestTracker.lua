@@ -890,6 +890,20 @@ local function SetQuestExpanded(journalIndex, expanded)
     return true
 end
 
+local function ToggleQuestExpansion(journalIndex)
+    if not journalIndex then
+        return false
+    end
+
+    local expanded = IsQuestExpanded(journalIndex)
+    local changed = SetQuestExpanded(journalIndex, not expanded)
+    if changed then
+        QuestTracker.Refresh()
+    end
+
+    return changed
+end
+
 local function FormatConditionText(condition)
     if not condition then
         return ""
@@ -969,10 +983,7 @@ local function AcquireQuestControl()
                     return
                 end
                 local journalIndex = questData.journalIndex
-                local changed = SetQuestExpanded(journalIndex, not IsQuestExpanded(journalIndex))
-                if changed then
-                    QuestTracker.Refresh()
-                end
+                ToggleQuestExpansion(journalIndex)
             end)
         end
         control:SetHandler("OnMouseUp", function(ctrl, button, upInside)
@@ -994,20 +1005,26 @@ local function AcquireQuestControl()
                 end
 
                 if toggleMouseOver then
-                    local changed = SetQuestExpanded(journalIndex, not IsQuestExpanded(journalIndex))
-                    if changed then
-                        QuestTracker.Refresh()
-                    end
+                    ToggleQuestExpansion(journalIndex)
                     return
                 end
 
                 if state.opts.autoTrack == false then
-                    local changed = SetQuestExpanded(journalIndex, not IsQuestExpanded(journalIndex))
+                    ToggleQuestExpansion(journalIndex)
+                    return
+                end
+
+                local wasTracked = state.trackedQuestIndex and state.trackedQuestIndex == journalIndex
+
+                TrackQuestByJournalIndex(journalIndex)
+
+                if wasTracked then
+                    ToggleQuestExpansion(journalIndex)
+                else
+                    local changed = SetQuestExpanded(journalIndex, true)
                     if changed then
                         QuestTracker.Refresh()
                     end
-                else
-                    TrackQuestByJournalIndex(journalIndex)
                 end
             elseif button == MOUSE_BUTTON_INDEX_RIGHT then
                 if not ctrl.data or not ctrl.data.quest then
