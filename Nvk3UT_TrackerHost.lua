@@ -363,15 +363,23 @@ local function ensureWindowSettings()
     end
     if window.locked == nil then
         window.locked = DEFAULT_WINDOW.locked
+    else
+        window.locked = window.locked == true
     end
     if window.visible == nil then
         window.visible = DEFAULT_WINDOW.visible
+    else
+        window.visible = window.visible ~= false
     end
     if window.clamp == nil then
         window.clamp = DEFAULT_WINDOW.clamp
+    else
+        window.clamp = window.clamp ~= false
     end
     if window.onTop == nil then
         window.onTop = DEFAULT_WINDOW.onTop
+    else
+        window.onTop = window.onTop == true
     end
 
     return window
@@ -1313,9 +1321,7 @@ function TrackerHost.Init()
         end, ACTIVATION_FALLBACK_DELAY_MS)
     end
 
-    if IsPlayerActivated and IsPlayerActivated() then
-        triggerInitialShow()
-    end
+    triggerInitialShow()
 end
 
 function TrackerHost.ApplySettings()
