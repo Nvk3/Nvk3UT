@@ -22,6 +22,7 @@ local FormatCategoryHeaderText =
 
 local ICON_EXPANDED = "\226\150\190" -- ▼
 local ICON_COLLAPSED = "\226\150\182" -- ▶
+local ICON_TRACKED = "\226\152\133" -- ★
 
 local CATEGORY_INDENT_X = 0
 local QUEST_INDENT_X = 18
@@ -400,7 +401,7 @@ local function AutoExpandQuestForTracking(journalIndex)
         return
     end
 
-    if state.saved.questExpanded[journalIndex] == true then
+    if state.saved.questExpanded[journalIndex] ~= nil then
         return
     end
 
@@ -419,6 +420,15 @@ local function EnsureTrackedCategoriesExpanded(journalIndex)
             state.saved.catExpanded[key] = true
         end
     end
+end
+
+local function EnsureTrackedQuestVisible(journalIndex)
+    if not journalIndex then
+        return
+    end
+
+    EnsureTrackedCategoriesExpanded(journalIndex)
+    AutoExpandQuestForTracking(journalIndex)
 end
 
 local function FocusQuestInJournal(journalIndex)
@@ -493,6 +503,52 @@ local function TrackQuestByJournalIndex(journalIndex)
     EnsureExclusiveAssistedQuest(numeric)
 
     RequestRefresh()
+end
+
+local function AdoptTrackedQuestOnInit()
+    local journalIndex = state.trackedQuestIndex
+
+    if (not journalIndex or journalIndex <= 0) and GetTrackedQuestIndex then
+        local ok, current = SafeCall(GetTrackedQuestIndex)
+        if ok then
+            local numeric = tonumber(current)
+            if numeric and numeric > 0 then
+                journalIndex = numeric
+            end
+        end
+    end
+
+    if not journalIndex or journalIndex <= 0 then
+        return
+    end
+
+    if not state.trackedQuestIndex then
+        ApplyImmediateTrackedQuest(journalIndex)
+    end
+
+    EnsureTrackedQuestVisible(journalIndex)
+
+    if state.opts.autoTrack == false then
+        return
+    end
+
+    local currentTracked = nil
+    if GetTrackedQuestIndex then
+        local ok, current = SafeCall(GetTrackedQuestIndex)
+        if ok then
+            currentTracked = tonumber(current)
+        end
+    end
+
+    if currentTracked ~= journalIndex then
+        TrackQuestByJournalIndex(journalIndex)
+        return
+    end
+
+    ForceAssistTrackedQuest(journalIndex)
+    EnsureQuestTrackedState(journalIndex)
+    ClearOtherTrackedQuests(journalIndex)
+    EnsureExclusiveAssistedQuest(journalIndex)
 end
 
 local function NotifyHostContentChanged()
@@ -628,9 +684,17 @@ local function UpdateCategoryToggle(control, expanded)
 end
 
 local function UpdateQuestToggle(control, expanded)
-    if control.toggle then
-        control.toggle:SetText(expanded and ICON_EXPANDED or ICON_COLLAPSED)
+    if not (control and control.toggle) then
+        return
     end
+
+    local icon = expanded and ICON_EXPANDED or ICON_COLLAPSED
+    local questData = control.data and control.data.quest
+    if questData and state.trackedQuestIndex and questData.journalIndex == state.trackedQuestIndex then
+        icon = ICON_TRACKED
+    end
+
+    control.toggle:SetText(icon)
 end
 
 local function IsCategoryExpanded(categoryKey)
@@ -928,6 +992,9 @@ local function EnsurePools()
     state.questPool:SetCustomResetBehavior(function(control)
         resetControl(control)
         control.baseColor = nil
+        if control.toggle then
+            control.toggle:SetText(ICON_COLLAPSED)
+        end
     end)
     state.conditionPool:SetCustomResetBehavior(resetControl)
 end
@@ -1089,6 +1156,9 @@ end
 local function OnSnapshotUpdated(snapshot)
     state.snapshot = snapshot
     UpdateTrackedQuestCache()
+    if state.trackedQuestIndex then
+        EnsureTrackedQuestVisible(state.trackedQuestIndex)
+    end
     if state.isInitialized then
         Rebuild()
     end
@@ -1140,6 +1210,7 @@ function QuestTracker.Init(parentControl, opts)
 
     state.isInitialized = true
     RefreshVisibility()
+    AdoptTrackedQuestOnInit()
     Rebuild()
 end
 
