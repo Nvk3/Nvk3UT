@@ -4,7 +4,7 @@
             <Dimensions y="26" />
             <Controls>
                 <Texture name="$(parent)Toggle"
-                         textureFile="EsoUI/Art/Buttons/plus_up.dds"
+                         textureFile="EsoUI/Art/Buttons/tree_closed_up.dds"
                          textureSampleProcessingWeight="1">
                     <Anchor point="TOPLEFT" relativePoint="TOPLEFT" offsetX="0" offsetY="0" />
                     <Dimensions x="20" y="20" />

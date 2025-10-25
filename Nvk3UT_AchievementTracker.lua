@@ -19,8 +19,16 @@ local FormatCategoryHeaderText =
         return text
     end
 
-local CATEGORY_TOGGLE_TEXTURE_EXPANDED = "EsoUI/Art/Buttons/minus_up.dds"
-local CATEGORY_TOGGLE_TEXTURE_COLLAPSED = "EsoUI/Art/Buttons/plus_up.dds"
+local CATEGORY_TOGGLE_TEXTURES = {
+    expanded = {
+        up = "EsoUI/Art/Buttons/tree_open_up.dds",
+        over = "EsoUI/Art/Buttons/tree_open_over.dds",
+    },
+    collapsed = {
+        up = "EsoUI/Art/Buttons/tree_closed_up.dds",
+        over = "EsoUI/Art/Buttons/tree_closed_over.dds",
+    },
+}
 
 local ENTRY_TOGGLE_ICON_EXPANDED = "\226\150\190" -- ▼
 local ENTRY_TOGGLE_ICON_COLLAPSED = "\226\150\182" -- ▶
@@ -539,15 +547,30 @@ local function IsEntryExpanded(achievementId)
     return expanded ~= false
 end
 
+local function SelectCategoryToggleTexture(expanded, isMouseOver)
+    local textures = expanded and CATEGORY_TOGGLE_TEXTURES.expanded or CATEGORY_TOGGLE_TEXTURES.collapsed
+    if isMouseOver then
+        return textures.over
+    end
+    return textures.up
+end
+
 local function UpdateCategoryToggle(control, expanded)
     if not control or not control.toggle then
         return
     end
     control.toggle:SetHidden(false)
     if control.toggle.SetTexture then
-        local texture = expanded and CATEGORY_TOGGLE_TEXTURE_EXPANDED or CATEGORY_TOGGLE_TEXTURE_COLLAPSED
+        local isMouseOver = false
+        if control.IsMouseOver and control:IsMouseOver() then
+            isMouseOver = true
+        elseif control.toggle.IsMouseOver and control.toggle:IsMouseOver() then
+            isMouseOver = true
+        end
+        local texture = SelectCategoryToggleTexture(expanded, isMouseOver)
         control.toggle:SetTexture(texture)
     end
+    control.isExpanded = expanded and true or false
 end
 
 local function UpdateAchievementToggle(control, expanded, hasObjectives)
@@ -613,8 +636,9 @@ local function AcquireCategoryControl()
         control.label = control:GetNamedChild("Label")
         control.toggle = control:GetNamedChild("Toggle")
         if control.toggle and control.toggle.SetTexture then
-            control.toggle:SetTexture(CATEGORY_TOGGLE_TEXTURE_COLLAPSED)
+            control.toggle:SetTexture(SelectCategoryToggleTexture(false, false))
         end
+        control.isExpanded = false
         control:SetHandler("OnMouseUp", function(ctrl, button, upInside)
             if not upInside or button ~= LEFT_MOUSE_BUTTON then
                 return
@@ -630,11 +654,21 @@ local function AcquireCategoryControl()
             if ctrl.label then
                 ctrl.label:SetColor(unpack(COLOR_ROW_HOVER))
             end
+            local expanded = ctrl.isExpanded
+            if expanded == nil then
+                expanded = IsCategoryExpanded()
+            end
+            UpdateCategoryToggle(ctrl, expanded)
         end)
         control:SetHandler("OnMouseExit", function(ctrl)
             if ctrl.label and ctrl.baseColor then
                 ctrl.label:SetColor(unpack(ctrl.baseColor))
             end
+            local expanded = ctrl.isExpanded
+            if expanded == nil then
+                expanded = IsCategoryExpanded()
+            end
+            UpdateCategoryToggle(ctrl, expanded)
         end)
         control.initialized = true
     end
@@ -705,11 +739,12 @@ local function EnsurePools()
         control.baseColor = nil
         if control.toggle then
             if control.toggle.SetTexture then
-                control.toggle:SetTexture(CATEGORY_TOGGLE_TEXTURE_COLLAPSED)
+                control.toggle:SetTexture(SelectCategoryToggleTexture(false, false))
             elseif control.toggle.SetText then
                 control.toggle:SetText(ENTRY_TOGGLE_ICON_COLLAPSED)
             end
         end
+        control.isExpanded = nil
     end)
 
     state.achievementPool:SetCustomResetBehavior(function(control)
