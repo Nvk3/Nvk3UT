@@ -1047,6 +1047,22 @@ local function registerPanel(displayTitle)
 
             controls[#controls + 1] = {
                 type = "checkbox",
+                name = "Quests beim Anklicken verfolgen",
+                tooltip = "Aktiviert die automatische Verfolgung im Questjournal, wenn ein Eintrag im Tracker angeklickt wird. Deaktiviert lässt das Klicken lediglich die Anzeige im Tracker beeinflussen.",
+                getFunc = function()
+                    local settings = getQuestSettings()
+                    return settings.autoTrack ~= false
+                end,
+                setFunc = function(value)
+                    local settings = getQuestSettings()
+                    settings.autoTrack = value ~= false
+                    applyQuestSettings()
+                end,
+                default = true,
+            }
+
+            controls[#controls + 1] = {
+                type = "checkbox",
                 name = "Show counts in category headers",
                 tooltip = "If enabled, category headers display the number of contained entries, e.g., 'Repeatable (12)'. Disable to hide the counts.",
                 getFunc = function()

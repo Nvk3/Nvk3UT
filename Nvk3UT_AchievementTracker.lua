@@ -50,6 +50,10 @@ local LEFT_MOUSE_BUTTON = MOUSE_BUTTON_INDEX_LEFT or 1
 local DEFAULT_FONT_OUTLINE = "soft-shadow-thin"
 local REFRESH_DEBOUNCE_MS = 80
 
+local COLOR_CATEGORY_COLLAPSED = { 0.75, 0.75, 0.75, 1 }
+local COLOR_CATEGORY_EXPANDED = { 1, 0.95, 0.6, 1 }
+local COLOR_ROW_HOVER = { 1, 1, 0.6, 1 }
+
 local state = {
     isInitialized = false,
     opts = {},
@@ -173,8 +177,13 @@ local function RefreshControlMetrics(control)
     end
 end
 
+local function IsDebugLoggingEnabled()
+    local sv = Nvk3UT and Nvk3UT.sv
+    return sv and sv.debug == true
+end
+
 local function DebugLog(...)
-    if not state.opts.debug then
+    if not IsDebugLoggingEnabled() then
         return
     end
 
@@ -183,6 +192,77 @@ local function DebugLog(...)
     elseif print then
         print("[" .. MODULE_NAME .. "]", ...)
     end
+end
+
+local function EscapeDebugString(value)
+    return tostring(value):gsub('"', '\\"')
+end
+
+local function AppendDebugField(parts, key, value, treatAsString)
+    if not key or key == "" then
+        return
+    end
+
+    if value == nil then
+        parts[#parts + 1] = string.format("%s=nil", key)
+        return
+    end
+
+    local valueType = type(value)
+    if valueType == "boolean" then
+        parts[#parts + 1] = string.format("%s=%s", key, value and "true" or "false")
+    elseif valueType == "number" then
+        parts[#parts + 1] = string.format("%s=%s", key, tostring(value))
+    elseif treatAsString or valueType == "string" then
+        parts[#parts + 1] = string.format('%s="%s"', key, EscapeDebugString(value))
+    else
+        parts[#parts + 1] = string.format("%s=%s", key, tostring(value))
+    end
+end
+
+local function EmitDebugAction(action, trigger, entityType, fieldList)
+    if not IsDebugLoggingEnabled() then
+        return
+    end
+
+    local parts = { "[NVK]" }
+    AppendDebugField(parts, "action", action or "unknown")
+    AppendDebugField(parts, "trigger", trigger or "unknown")
+    AppendDebugField(parts, "type", entityType or "unknown")
+
+    if type(fieldList) == "table" then
+        for index = 1, #fieldList do
+            local entry = fieldList[index]
+            if entry and entry.key then
+                AppendDebugField(parts, entry.key, entry.value, entry.string)
+            end
+        end
+    end
+
+    local message = table.concat(parts, " ")
+    if d then
+        d(message)
+    elseif print then
+        print(message)
+    end
+end
+
+local function LogCategoryExpansion(action, trigger, beforeExpanded, afterExpanded, source)
+    if not IsDebugLoggingEnabled() then
+        return
+    end
+
+    local fields = {
+        { key = "id", value = "root" },
+        { key = "before.expanded", value = beforeExpanded },
+        { key = "after.expanded", value = afterExpanded },
+    }
+
+    if source then
+        fields[#fields + 1] = { key = "source", value = source, string = true }
+    end
+
+    EmitDebugAction(action, trigger, "category", fields)
 end
 
 local function NotifyHostContentChanged()
@@ -408,13 +488,6 @@ local function UpdateContentSize()
     state.contentHeight = totalHeight
 end
 
-local function SetCategoryExpanded(expanded)
-    if not state.saved then
-        return
-    end
-    state.saved.categoryExpanded = expanded and true or false
-end
-
 local function IsCategoryExpanded()
     if not state.saved then
         return true
@@ -423,6 +496,25 @@ local function IsCategoryExpanded()
         state.saved.categoryExpanded = true
     end
     return state.saved.categoryExpanded ~= false
+end
+
+local function SetCategoryExpanded(expanded, context)
+    if not state.saved then
+        return
+    end
+    local beforeExpanded = IsCategoryExpanded()
+    state.saved.categoryExpanded = expanded and true or false
+    local afterExpanded = IsCategoryExpanded()
+
+    if beforeExpanded ~= afterExpanded then
+        LogCategoryExpansion(
+            afterExpanded and "expand" or "collapse",
+            (context and context.trigger) or "unknown",
+            beforeExpanded,
+            afterExpanded,
+            (context and context.source) or "AchievementTracker:SetCategoryExpanded"
+        )
+    end
 end
 
 local function SetEntryExpanded(achievementId, expanded)
@@ -519,8 +611,21 @@ local function AcquireCategoryControl()
                 return
             end
             local expanded = not IsCategoryExpanded()
-            SetCategoryExpanded(expanded)
+            SetCategoryExpanded(expanded, {
+                trigger = "click",
+                source = "AchievementTracker:OnCategoryClick",
+            })
             AchievementTracker.Refresh()
+        end)
+        control:SetHandler("OnMouseEnter", function(ctrl)
+            if ctrl.label then
+                ctrl.label:SetColor(unpack(COLOR_ROW_HOVER))
+            end
+        end)
+        control:SetHandler("OnMouseExit", function(ctrl)
+            if ctrl.label and ctrl.baseColor then
+                ctrl.label:SetColor(unpack(ctrl.baseColor))
+            end
         end)
         control.initialized = true
     end
@@ -588,6 +693,10 @@ local function EnsurePools()
 
     state.categoryPool:SetCustomResetBehavior(function(control)
         resetControl(control)
+        control.baseColor = nil
+        if control.toggle then
+            control.toggle:SetText(ICON_COLLAPSED)
+        end
     end)
 
     state.achievementPool:SetCustomResetBehavior(function(control)
@@ -728,6 +837,11 @@ local function LayoutCategory()
     control.label:SetText(FormatCategoryHeaderText("Errungenschaften", total or 0, "achievement"))
 
     local expanded = IsCategoryExpanded()
+    local baseColor = expanded and COLOR_CATEGORY_EXPANDED or COLOR_CATEGORY_COLLAPSED
+    control.baseColor = baseColor
+    if control.label then
+        control.label:SetColor(unpack(baseColor))
+    end
     UpdateCategoryToggle(control, expanded)
     ApplyRowMetrics(
         control,

@@ -22,6 +22,7 @@ local FormatCategoryHeaderText =
 
 local ICON_EXPANDED = "\226\150\190" -- ▼
 local ICON_COLLAPSED = "\226\150\182" -- ▶
+local ICON_TRACKED = "\226\152\133" -- ★
 
 local CATEGORY_INDENT_X = 0
 local QUEST_INDENT_X = 18
@@ -46,6 +47,20 @@ local DEFAULT_FONTS = {
 local DEFAULT_FONT_OUTLINE = "soft-shadow-thin"
 local REFRESH_DEBOUNCE_MS = 80
 
+local COLOR_QUEST_DEFAULT = { 0.75, 0.75, 0.75, 1 }
+local COLOR_QUEST_TRACKED = { 1, 0.95, 0.6, 1 }
+local COLOR_QUEST_ASSISTED = COLOR_QUEST_TRACKED
+local COLOR_QUEST_WATCHED = { 0.9, 0.9, 0.9, 1 }
+local COLOR_CATEGORY_COLLAPSED = COLOR_QUEST_DEFAULT
+local COLOR_CATEGORY_EXPANDED = COLOR_QUEST_TRACKED
+local COLOR_ROW_HOVER = { 1, 1, 0.6, 1 }
+
+local RequestRefresh -- forward declaration for functions that trigger refreshes
+local SetCategoryExpanded -- forward declaration for expansion helpers used before assignment
+local SetQuestExpanded
+local ForEachQuest -- forward declaration for quest iteration used by debug helpers
+local ForEachQuestIndex -- forward declaration for quest index iteration used by debug helpers
+
 local state = {
     isInitialized = false,
     opts = {},
@@ -64,6 +79,14 @@ local state = {
     pendingRefresh = false,
     contentWidth = 0,
     contentHeight = 0,
+    trackedQuestIndex = nil,
+    trackedCategoryKeys = {},
+    trackingEventsRegistered = false,
+    suppressForceExpandFor = nil,
+    pendingSelection = nil,
+    lastTrackedBeforeSync = nil,
+    syncingTrackedState = false,
+    pendingDeselection = false,
 }
 
 local function ApplyLabelDefaults(label)
@@ -170,8 +193,39 @@ local function RefreshControlMetrics(control)
     end
 end
 
+NVK_DEBUG_DESELECT = NVK_DEBUG_DESELECT or false
+
+local function DebugDeselect(context, details)
+    if not NVK_DEBUG_DESELECT then
+        return
+    end
+
+    local parts = { string.format("[%s][DESELECT] %s", MODULE_NAME, tostring(context)) }
+
+    if type(details) == "table" then
+        for key, value in pairs(details) do
+            parts[#parts + 1] = string.format("%s=%s", tostring(key), tostring(value))
+        end
+    elseif details ~= nil then
+        parts[#parts + 1] = tostring(details)
+    end
+
+    local message = table.concat(parts, " | ")
+
+    if d then
+        d(message)
+    elseif print then
+        print(message)
+    end
+end
+
+local function IsDebugLoggingEnabled()
+    local sv = Nvk3UT and Nvk3UT.sv
+    return sv and sv.debug == true
+end
+
 local function DebugLog(...)
-    if not state.opts.debug then
+    if not IsDebugLoggingEnabled() then
         return
     end
 
@@ -180,6 +234,1077 @@ local function DebugLog(...)
     elseif print then
         print("[" .. MODULE_NAME .. "]", ...)
     end
+end
+
+local function EscapeDebugString(value)
+    return tostring(value):gsub('"', '\\"')
+end
+
+local function AppendDebugField(parts, key, value, treatAsString)
+    if key == nil or key == "" then
+        return
+    end
+
+    if value == nil then
+        parts[#parts + 1] = string.format("%s=nil", key)
+        return
+    end
+
+    local valueType = type(value)
+    if valueType == "boolean" then
+        parts[#parts + 1] = string.format("%s=%s", key, value and "true" or "false")
+    elseif valueType == "number" then
+        parts[#parts + 1] = string.format("%s=%s", key, tostring(value))
+    elseif treatAsString or valueType == "string" then
+        parts[#parts + 1] = string.format('%s="%s"', key, EscapeDebugString(value))
+    else
+        parts[#parts + 1] = string.format("%s=%s", key, tostring(value))
+    end
+end
+
+local function EmitDebugAction(action, trigger, entityType, fieldList)
+    if not IsDebugLoggingEnabled() then
+        return
+    end
+
+    local parts = { "[NVK]" }
+    AppendDebugField(parts, "action", action or "unknown")
+    AppendDebugField(parts, "trigger", trigger or "unknown")
+    AppendDebugField(parts, "type", entityType or "unknown")
+
+    if type(fieldList) == "table" then
+        for index = 1, #fieldList do
+            local entry = fieldList[index]
+            if entry and entry.key then
+                AppendDebugField(parts, entry.key, entry.value, entry.string)
+            end
+        end
+    end
+
+    local message = table.concat(parts, " ")
+    if d then
+        d(message)
+    elseif print then
+        print(message)
+    end
+end
+
+local function ResolveQuestDebugInfo(journalIndex)
+    local info = { id = journalIndex or "-" }
+
+    if not journalIndex then
+        return info
+    end
+
+    local questName
+    local categoryKey
+    local categoryName
+
+    ForEachQuest(function(quest, category)
+        if quest and quest.journalIndex == journalIndex then
+            questName = quest.name or questName
+            if category then
+                categoryKey = category.key or categoryKey
+                categoryName = category.name or categoryName
+            end
+        end
+    end)
+
+    if (not questName or questName == "") and GetJournalQuestName then
+        local ok, name = SafeCall(GetJournalQuestName, journalIndex)
+        if ok and type(name) == "string" and name ~= "" then
+            questName = name
+        end
+    end
+
+    info.name = questName
+    info.categoryId = categoryKey
+    info.categoryName = categoryName
+
+    return info
+end
+
+local function ResolveCategoryDebugInfo(categoryKey)
+    local info = { id = categoryKey or "-" }
+
+    if not categoryKey then
+        return info
+    end
+
+    if state.snapshot and state.snapshot.categories then
+        local ordered = state.snapshot.categories.ordered
+        if type(ordered) == "table" then
+            for index = 1, #ordered do
+                local category = ordered[index]
+                if category then
+                    if category.key == categoryKey then
+                        info.name = category.name or info.name
+                        return info
+                    end
+                    if category.parent and category.parent.key == categoryKey then
+                        info.name = category.parent.name or info.name
+                        return info
+                    end
+                end
+            end
+        end
+    end
+
+    ForEachQuest(function(_, category)
+        if not category then
+            return
+        end
+        if category.key == categoryKey then
+            info.name = category.name or info.name
+        elseif category.parent and category.parent.key == categoryKey then
+            info.name = category.parent.name or info.name
+        end
+    end)
+
+    return info
+end
+
+local function LogQuestSelectionChange(action, trigger, journalIndex, beforeSelectedId, afterSelectedId, source, extraFields)
+    if not IsDebugLoggingEnabled() then
+        return
+    end
+
+    local info = ResolveQuestDebugInfo(journalIndex)
+    local fields = {
+        { key = "id", value = info.id },
+    }
+
+    if info.name then
+        fields[#fields + 1] = { key = "name", value = info.name, string = true }
+    end
+    if info.categoryId then
+        fields[#fields + 1] = { key = "categoryId", value = info.categoryId }
+    end
+    if info.categoryName then
+        fields[#fields + 1] = { key = "categoryName", value = info.categoryName, string = true }
+    end
+
+    fields[#fields + 1] = { key = "before.selectedId", value = beforeSelectedId }
+    fields[#fields + 1] = { key = "after.selectedId", value = afterSelectedId }
+
+    if type(extraFields) == "table" then
+        for index = 1, #extraFields do
+            fields[#fields + 1] = extraFields[index]
+        end
+    end
+
+    if source then
+        fields[#fields + 1] = { key = "source", value = source, string = true }
+    end
+
+    EmitDebugAction(action, trigger, "quest", fields)
+end
+
+local function LogQuestExpansion(action, trigger, journalIndex, beforeExpanded, afterExpanded, source, extraFields)
+    if not IsDebugLoggingEnabled() then
+        return
+    end
+
+    local info = ResolveQuestDebugInfo(journalIndex)
+    local fields = {
+        { key = "id", value = info.id },
+    }
+
+    if info.name then
+        fields[#fields + 1] = { key = "name", value = info.name, string = true }
+    end
+    if info.categoryId then
+        fields[#fields + 1] = { key = "categoryId", value = info.categoryId }
+    end
+    if info.categoryName then
+        fields[#fields + 1] = { key = "categoryName", value = info.categoryName, string = true }
+    end
+
+    fields[#fields + 1] = { key = "before.expanded", value = beforeExpanded }
+    fields[#fields + 1] = { key = "after.expanded", value = afterExpanded }
+
+    if type(extraFields) == "table" then
+        for index = 1, #extraFields do
+            fields[#fields + 1] = extraFields[index]
+        end
+    end
+
+    if source then
+        fields[#fields + 1] = { key = "source", value = source, string = true }
+    end
+
+    EmitDebugAction(action, trigger, "quest", fields)
+end
+
+local function LogCategoryExpansion(action, trigger, categoryKey, beforeExpanded, afterExpanded, source, extraFields)
+    if not IsDebugLoggingEnabled() then
+        return
+    end
+
+    local info = ResolveCategoryDebugInfo(categoryKey)
+    local fields = {
+        { key = "id", value = info.id },
+    }
+
+    if info.name then
+        fields[#fields + 1] = { key = "name", value = info.name, string = true }
+    end
+
+    fields[#fields + 1] = { key = "before.expanded", value = beforeExpanded }
+    fields[#fields + 1] = { key = "after.expanded", value = afterExpanded }
+
+    if type(extraFields) == "table" then
+        for index = 1, #extraFields do
+            fields[#fields + 1] = extraFields[index]
+        end
+    end
+
+    if source then
+        fields[#fields + 1] = { key = "source", value = source, string = true }
+    end
+
+    EmitDebugAction(action, trigger, "category", fields)
+end
+
+local function SafeCall(func, ...)
+    if type(func) ~= "function" then
+        return false, nil
+    end
+
+    local ok, result = pcall(func, ...)
+    if not ok then
+        DebugLog("Call failed", tostring(result))
+        return false, nil
+    end
+
+    return true, result
+end
+
+ForEachQuest = function(callback)
+    if type(callback) ~= "function" then
+        return
+    end
+
+    if not state.snapshot or not state.snapshot.categories then
+        return
+    end
+
+    local ordered = state.snapshot.categories.ordered
+    if type(ordered) ~= "table" then
+        return
+    end
+
+    for index = 1, #ordered do
+        local category = ordered[index]
+        if category and type(category.quests) == "table" then
+            for questIndex = 1, #category.quests do
+                local quest = category.quests[questIndex]
+                if quest then
+                    callback(quest, category)
+                end
+            end
+        end
+    end
+end
+
+ForEachQuestIndex = function(callback)
+    if type(callback) ~= "function" then
+        return
+    end
+
+    local visited = {}
+
+    ForEachQuest(function(quest, category)
+        if quest and quest.journalIndex then
+            visited[quest.journalIndex] = true
+            callback(quest.journalIndex, quest, category)
+        end
+    end)
+
+    if not GetNumJournalQuests then
+        return
+    end
+
+    local total = GetNumJournalQuests() or 0
+    local maxIndex = MAX_JOURNAL_QUESTS or total
+    if maxIndex and maxIndex > total then
+        total = maxIndex
+    end
+
+    for index = 1, total do
+        if not visited[index] then
+            local isValid = true
+            if IsValidJournalQuestIndex then
+                isValid = IsValidJournalQuestIndex(index)
+            elseif GetJournalQuestName then
+                local name = GetJournalQuestName(index)
+                isValid = name ~= nil and name ~= ""
+            end
+
+            if isValid then
+                callback(index, nil, nil)
+            end
+        end
+    end
+end
+
+local function CollectCategoryKeysForQuest(journalIndex)
+    local keys = {}
+    if not journalIndex then
+        return keys, false
+    end
+
+    local found = false
+    ForEachQuest(function(quest, category)
+        if quest.journalIndex == journalIndex then
+            found = true
+            if category and category.key then
+                keys[category.key] = true
+            end
+            if category and category.parent and category.parent.key then
+                keys[category.parent.key] = true
+            end
+        end
+    end)
+
+    return keys, found
+end
+
+local function DoesJournalQuestExist(journalIndex)
+    if not (journalIndex and GetJournalQuestName) then
+        return false
+    end
+
+    local ok, name = SafeCall(GetJournalQuestName, journalIndex)
+    if not ok then
+        return false
+    end
+
+    if type(name) ~= "string" then
+        return false
+    end
+
+    return name ~= ""
+end
+
+local function GetFocusedQuestIndex()
+    if QUEST_JOURNAL_MANAGER and QUEST_JOURNAL_MANAGER.GetFocusedQuestIndex then
+        local ok, focused = SafeCall(function(manager)
+            return manager:GetFocusedQuestIndex()
+        end, QUEST_JOURNAL_MANAGER)
+        if ok then
+            local numeric = tonumber(focused)
+            if numeric and numeric > 0 then
+                return numeric
+            end
+        end
+    end
+
+    return nil
+end
+
+local function UpdateTrackedQuestCache(forcedIndex)
+    local function normalize(index)
+        local numeric = tonumber(index)
+        if not numeric or numeric <= 0 then
+            return nil
+        end
+
+        if DoesJournalQuestExist(numeric) then
+            return numeric
+        end
+
+        return nil
+    end
+
+    local trackedIndex = normalize(forcedIndex)
+    local allowFocusFallback = not state.pendingDeselection
+
+    if not trackedIndex and GetTrackedQuestIndex then
+        local ok, current = SafeCall(GetTrackedQuestIndex)
+        if ok then
+            trackedIndex = normalize(current)
+        end
+    end
+
+    if not trackedIndex and allowFocusFallback then
+        trackedIndex = normalize(GetFocusedQuestIndex())
+    end
+
+    if not trackedIndex and not state.pendingDeselection then
+        local cachedIndex = normalize(state.trackedQuestIndex)
+        if cachedIndex then
+            trackedIndex = cachedIndex
+        end
+    end
+
+    local trackedCategories = {}
+
+    if trackedIndex then
+        trackedCategories = CollectCategoryKeysForQuest(trackedIndex)
+    else
+        ForEachQuest(function(quest)
+            if trackedIndex or not (quest and quest.flags and quest.flags.tracked) then
+                return
+            end
+
+            local fallbackIndex = normalize(quest.journalIndex) or tonumber(quest.journalIndex)
+            if not fallbackIndex or fallbackIndex <= 0 then
+                return
+            end
+
+            trackedIndex = fallbackIndex
+            trackedCategories = CollectCategoryKeysForQuest(trackedIndex)
+        end)
+    end
+
+    if type(trackedCategories) ~= "table" then
+        trackedCategories = {}
+    end
+
+    if trackedIndex then
+        state.pendingDeselection = false
+    end
+
+    state.trackedQuestIndex = trackedIndex
+    state.trackedCategoryKeys = trackedCategories
+end
+
+local function EnsureQuestTrackedState(journalIndex)
+    if not (journalIndex and IsJournalQuestTracked and SetTracked) then
+        return
+    end
+
+    if IsJournalQuestTracked(journalIndex) then
+        return
+    end
+
+    if not SafeCall(SetTracked, TRACK_TYPE_QUEST, journalIndex, true) then
+        SafeCall(SetTracked, TRACK_TYPE_QUEST, journalIndex)
+    end
+end
+
+local function ClearOtherTrackedQuests(journalIndex)
+    if not IsJournalQuestTracked then
+        return
+    end
+
+    ForEachQuestIndex(function(index)
+        if index and index ~= journalIndex and IsJournalQuestTracked(index) then
+            local cleared = false
+            if SetTracked then
+                cleared = SafeCall(SetTracked, TRACK_TYPE_QUEST, index, false)
+                if not cleared then
+                    cleared = SafeCall(SetTracked, TRACK_TYPE_QUEST, index)
+                end
+            end
+            if not cleared and QUEST_JOURNAL_MANAGER and QUEST_JOURNAL_MANAGER.StopTrackingQuest then
+                SafeCall(function(manager, questIndex)
+                    manager:StopTrackingQuest(questIndex)
+                end, QUEST_JOURNAL_MANAGER, index)
+            end
+        end
+    end)
+end
+
+local function EnsureExclusiveAssistedQuest(journalIndex)
+    local numeric = tonumber(journalIndex)
+    if not numeric or numeric <= 0 then
+        return
+    end
+
+    if AssistJournalQuest then
+        SafeCall(AssistJournalQuest, numeric)
+        return
+    end
+
+    if not (type(SetTrackedIsAssisted) == "function" and TRACK_TYPE_QUEST) then
+        return
+    end
+
+    ForEachQuestIndex(function(index)
+        if not index then
+            return
+        end
+
+        local isTarget = index == numeric
+        local shouldAssist = isTarget and true or false
+
+        if isTarget then
+            SafeCall(SetTrackedIsAssisted, TRACK_TYPE_QUEST, index, shouldAssist)
+        elseif type(GetTrackedIsAssisted) == "function" then
+            local ok, assisted = SafeCall(GetTrackedIsAssisted, TRACK_TYPE_QUEST, index)
+            if ok and assisted then
+                SafeCall(SetTrackedIsAssisted, TRACK_TYPE_QUEST, index, false)
+            end
+        end
+    end)
+end
+
+local function ApplyImmediateTrackedQuest(journalIndex)
+    if not journalIndex then
+        return
+    end
+
+    state.lastTrackedBeforeSync = state.trackedQuestIndex
+    local keys = CollectCategoryKeysForQuest(journalIndex)
+    state.trackedCategoryKeys = keys
+    state.trackedQuestIndex = journalIndex
+    state.pendingDeselection = false
+end
+
+local function AutoExpandQuestForTracking(journalIndex, forceExpand, context)
+    if not (state.saved and journalIndex) then
+        return
+    end
+
+    if not forceExpand and state.saved.questExpanded[journalIndex] ~= nil then
+        return
+    end
+
+    DebugDeselect("AutoExpandQuestForTracking", {
+        journalIndex = journalIndex,
+        forceExpand = tostring(forceExpand),
+        previous = tostring(state.saved.questExpanded[journalIndex]),
+    })
+    local logContext = {
+        trigger = (context and context.trigger) or "auto",
+        source = (context and context.source) or "QuestTracker:AutoExpandQuestForTracking",
+    }
+    SetQuestExpanded(journalIndex, true, logContext)
+end
+
+local function EnsureTrackedCategoriesExpanded(journalIndex, forceExpand, context)
+    if not (state.saved and journalIndex) then
+        return
+    end
+
+    local keys = CollectCategoryKeysForQuest(journalIndex)
+
+    local logContext
+    local debugContext
+    local debugEnabled = IsDebugLoggingEnabled()
+
+    for key in pairs(keys) do
+        if key then
+            local savedValue = state.saved.catExpanded[key]
+            local manualCollapsed = savedValue == false
+            if manualCollapsed then
+                if debugEnabled then
+                    DebugLog(
+                        "Respecting manual category collapse",
+                        "category", key,
+                        "journalIndex", journalIndex,
+                        "trigger", (context and context.trigger) or "auto"
+                    )
+                end
+            elseif forceExpand or savedValue == nil then
+                if not logContext then
+                    logContext = {
+                        trigger = (context and context.trigger) or "auto",
+                        source = (context and context.source) or "QuestTracker:EnsureTrackedCategoriesExpanded",
+                    }
+                    if debugEnabled then
+                        debugContext = {
+                            trigger = logContext.trigger,
+                            source = logContext.source,
+                            manualCollapseRespected = true,
+                        }
+                    end
+                end
+                SetCategoryExpanded(key, true, debugEnabled and debugContext or logContext)
+            end
+        end
+    end
+end
+
+local function EnsureTrackedQuestVisible(journalIndex, forceExpand, context)
+    if not journalIndex then
+        return
+    end
+
+    DebugDeselect("EnsureTrackedQuestVisible", {
+        journalIndex = journalIndex,
+        forceExpand = tostring(forceExpand),
+    })
+    local logContext = {
+        trigger = (context and context.trigger) or "auto",
+        source = (context and context.source) or "QuestTracker:EnsureTrackedQuestVisible",
+    }
+    EnsureTrackedCategoriesExpanded(journalIndex, forceExpand, logContext)
+    AutoExpandQuestForTracking(journalIndex, forceExpand, logContext)
+end
+
+local function SyncTrackedQuestState(forcedIndex, forceExpand, context)
+    if state.syncingTrackedState then
+        DebugDeselect("SyncTrackedQuestState:reentry", {
+            forcedIndex = forcedIndex,
+            forceExpand = tostring(forceExpand),
+        })
+        return
+    end
+
+    context = context or {}
+    state.syncingTrackedState = true
+
+    repeat
+        local previousTracked = state.lastTrackedBeforeSync
+        if previousTracked == nil then
+            previousTracked = state.trackedQuestIndex
+        end
+
+        UpdateTrackedQuestCache(forcedIndex)
+        state.lastTrackedBeforeSync = nil
+
+        local currentTracked = state.trackedQuestIndex
+        local shouldForceExpand = forceExpand == true
+        local pending = state.pendingSelection
+        local pendingApplied = false
+        local expansionChanged = false
+        local skipVisibilityUpdate = false
+
+        DebugDeselect("SyncTrackedQuestState:enter", {
+            forcedIndex = forcedIndex,
+            forceExpand = tostring(forceExpand),
+            previousTracked = tostring(previousTracked),
+            currentTracked = tostring(currentTracked),
+            pendingIndex = pending and pending.index,
+            pendingDeselection = tostring(state.pendingDeselection),
+        })
+
+        if previousTracked and (not currentTracked or currentTracked == previousTracked) and IsJournalQuestTracked then
+            local ok, trackedState = SafeCall(IsJournalQuestTracked, previousTracked)
+            if ok and not trackedState then
+                DebugDeselect("SyncTrackedQuestState:deselect-detected", {
+                    previousTracked = previousTracked,
+                    currentTracked = tostring(currentTracked),
+                    forcedIndex = forcedIndex,
+                    pendingDeselection = tostring(state.pendingDeselection),
+                })
+                if currentTracked == previousTracked then
+                    state.trackedQuestIndex = nil
+                    state.trackedCategoryKeys = {}
+                    currentTracked = nil
+                end
+                state.pendingDeselection = true
+                shouldForceExpand = false
+                skipVisibilityUpdate = true
+            end
+        end
+
+        local trigger = context.trigger
+        if not trigger and pending and pending.trigger then
+            trigger = pending.trigger
+        end
+        if not trigger then
+            if context.isExternal then
+                trigger = "external"
+            else
+                trigger = "unknown"
+            end
+        end
+
+        local source = context.source or (pending and pending.source) or "QuestTracker:SyncTrackedQuestState"
+        local isExternalFlag = context.isExternal
+        if isExternalFlag == nil and trigger == "external" then
+            isExternalFlag = true
+        end
+
+        if pending and currentTracked == pending.index then
+            local wasExpandedBefore = IsQuestExpanded(currentTracked)
+            pendingApplied = true
+            local pendingContext = {
+                trigger = pending.trigger or trigger,
+                source = pending.source or source,
+            }
+            expansionChanged = SetQuestExpanded(currentTracked, pending.expanded, pendingContext) or expansionChanged
+
+            if pending.forceExpand ~= nil then
+                shouldForceExpand = pending.forceExpand and true or false
+            elseif pending.expanded then
+                shouldForceExpand = true
+            else
+                shouldForceExpand = false
+            end
+
+            DebugDeselect("SyncTrackedQuestState:pending-applied", {
+                index = currentTracked,
+                expandedBefore = tostring(wasExpandedBefore),
+                expandedAfter = tostring(IsQuestExpanded(currentTracked)),
+                shouldForceExpand = tostring(shouldForceExpand),
+            })
+        end
+
+        state.pendingSelection = nil
+
+        if currentTracked and state.suppressForceExpandFor and state.suppressForceExpandFor == currentTracked then
+            if not (pendingApplied and shouldForceExpand) then
+                shouldForceExpand = false
+            end
+            state.suppressForceExpandFor = nil
+        elseif not currentTracked or state.suppressForceExpandFor ~= currentTracked then
+            state.suppressForceExpandFor = nil
+        end
+
+        if currentTracked then
+            state.pendingDeselection = false
+        end
+
+        if currentTracked and not skipVisibilityUpdate and previousTracked and currentTracked == previousTracked and not pendingApplied and not forcedIndex then
+            if IsJournalQuestTracked then
+                local ok, trackedState = SafeCall(IsJournalQuestTracked, currentTracked)
+                if ok and not trackedState then
+                    skipVisibilityUpdate = true
+                    shouldForceExpand = false
+                    DebugDeselect("SyncTrackedQuestState:skip-visibility", {
+                        index = currentTracked,
+                        trackedState = tostring(trackedState),
+                    })
+                end
+            end
+        end
+
+        if currentTracked and not skipVisibilityUpdate then
+            DebugDeselect("SyncTrackedQuestState:ensure-visible", {
+                index = currentTracked,
+                shouldForceExpand = tostring(shouldForceExpand),
+            })
+            local visibilityContext = {
+                trigger = trigger,
+                source = source,
+            }
+            EnsureTrackedQuestVisible(currentTracked, shouldForceExpand, visibilityContext)
+        else
+            DebugDeselect("SyncTrackedQuestState:skip-ensure-visible", {
+                index = tostring(currentTracked),
+                skipVisibilityUpdate = tostring(skipVisibilityUpdate),
+            })
+        end
+
+        if previousTracked ~= currentTracked then
+            if previousTracked then
+                local deselectFields
+                if IsDebugLoggingEnabled() then
+                    deselectFields = {
+                        { key = "inDeselect", value = state.pendingDeselection },
+                    }
+                    if isExternalFlag ~= nil then
+                        deselectFields[#deselectFields + 1] = { key = "isExternal", value = isExternalFlag }
+                    end
+                end
+                LogQuestSelectionChange(
+                    "deselect",
+                    trigger,
+                    previousTracked,
+                    previousTracked,
+                    currentTracked,
+                    source,
+                    deselectFields
+                )
+            end
+
+            if currentTracked then
+                local selectFields
+                if IsDebugLoggingEnabled() and isExternalFlag ~= nil then
+                    selectFields = {
+                        { key = "isExternal", value = isExternalFlag },
+                    }
+                end
+                LogQuestSelectionChange(
+                    "select",
+                    trigger,
+                    currentTracked,
+                    previousTracked,
+                    currentTracked,
+                    source,
+                    selectFields
+                )
+            end
+        end
+
+        if not state.isInitialized then
+            break
+        end
+
+        local hasTracked = currentTracked ~= nil
+        local hadTracked = previousTracked ~= nil
+
+        if RequestRefresh and (previousTracked ~= currentTracked or hasTracked or hadTracked or pendingApplied or expansionChanged) then
+            RequestRefresh()
+        end
+    until true
+
+    state.syncingTrackedState = false
+end
+
+local function FocusQuestInJournal(journalIndex)
+    if not (QUEST_JOURNAL_KEYBOARD and QUEST_JOURNAL_KEYBOARD.FocusQuestWithIndex) then
+        return
+    end
+
+    SafeCall(function(journal, index)
+        journal:FocusQuestWithIndex(index)
+    end, QUEST_JOURNAL_KEYBOARD, journalIndex)
+end
+
+local function ForceAssistTrackedQuest(journalIndex)
+    if not (FOCUSED_QUEST_TRACKER and FOCUSED_QUEST_TRACKER.ForceAssist) then
+        return
+    end
+
+    SafeCall(function(tracker, index)
+        tracker:ForceAssist(index)
+    end, FOCUSED_QUEST_TRACKER, journalIndex)
+end
+
+local function RequestRefreshInternal()
+    if not state.isInitialized then
+        return
+    end
+    if state.pendingRefresh then
+        return
+    end
+
+    state.pendingRefresh = true
+
+    local function execute()
+        state.pendingRefresh = false
+        QuestTracker.Refresh()
+    end
+
+    if zo_callLater then
+        zo_callLater(execute, REFRESH_DEBOUNCE_MS)
+    else
+        execute()
+    end
+end
+
+RequestRefresh = RequestRefreshInternal
+
+local function TrackQuestByJournalIndex(journalIndex, options)
+    local numeric = tonumber(journalIndex)
+    if not numeric or numeric <= 0 then
+        return false
+    end
+
+    if state.opts.autoTrack == false then
+        return false
+    end
+
+    options = options or {}
+
+    local actionContext = {
+        trigger = options.trigger or "auto",
+        source = options.source or "QuestTracker:TrackQuestByJournalIndex",
+    }
+
+    state.pendingDeselection = false
+
+    DebugDeselect("TrackQuestByJournalIndex", {
+        journalIndex = numeric,
+        forceExpand = tostring(options.forceExpand),
+        skipAutoExpand = tostring(options.skipAutoExpand),
+        pendingSelection = state.pendingSelection and state.pendingSelection.index,
+    })
+
+    if options.skipAutoExpand then
+        state.suppressForceExpandFor = numeric
+    else
+        if options.forceExpand == false then
+            state.suppressForceExpandFor = numeric
+        else
+            state.suppressForceExpandFor = nil
+        end
+        AutoExpandQuestForTracking(numeric, options.forceExpand, actionContext)
+        EnsureTrackedCategoriesExpanded(numeric, options.forceExpand, actionContext)
+    end
+
+    if options.applyImmediate ~= false then
+        ApplyImmediateTrackedQuest(numeric)
+    end
+
+    if SetTrackedQuestIndex then
+        SafeCall(SetTrackedQuestIndex, numeric)
+    elseif QUEST_JOURNAL_MANAGER and QUEST_JOURNAL_MANAGER.SetTrackedQuestIndex then
+        SafeCall(function(manager, index)
+            manager:SetTrackedQuestIndex(index)
+        end, QUEST_JOURNAL_MANAGER, numeric)
+    end
+
+    FocusQuestInJournal(numeric)
+    ForceAssistTrackedQuest(numeric)
+    EnsureQuestTrackedState(numeric)
+    ClearOtherTrackedQuests(numeric)
+    EnsureExclusiveAssistedQuest(numeric)
+
+    local shouldRequestRefresh = options.requestRefresh
+    if shouldRequestRefresh == nil then
+        shouldRequestRefresh = true
+    end
+
+    if shouldRequestRefresh then
+        RequestRefresh()
+    end
+
+    return true
+end
+
+local function AdoptTrackedQuestOnInit()
+    local journalIndex = state.trackedQuestIndex
+
+    if not journalIndex or journalIndex <= 0 then
+        journalIndex = GetFocusedQuestIndex()
+    end
+
+    if (not journalIndex or journalIndex <= 0) and GetTrackedQuestIndex then
+        local ok, current = SafeCall(GetTrackedQuestIndex)
+        if ok then
+            local numeric = tonumber(current)
+            if numeric and numeric > 0 then
+                journalIndex = numeric
+            end
+        end
+    end
+
+    if not journalIndex or journalIndex <= 0 then
+        return
+    end
+
+    if not state.trackedQuestIndex then
+        ApplyImmediateTrackedQuest(journalIndex)
+    end
+
+    EnsureTrackedQuestVisible(journalIndex, true, {
+        trigger = "init",
+        source = "QuestTracker:AdoptTrackedQuestOnInit",
+    })
+
+    if state.opts.autoTrack == false then
+        return
+    end
+
+    local currentTracked = nil
+    if GetTrackedQuestIndex then
+        local ok, current = SafeCall(GetTrackedQuestIndex)
+        if ok then
+            currentTracked = tonumber(current)
+        end
+    end
+
+    if currentTracked ~= journalIndex then
+        TrackQuestByJournalIndex(journalIndex, {
+            forceExpand = true,
+            trigger = "init",
+            source = "QuestTracker:AdoptTrackedQuestOnInit",
+        })
+        return
+    end
+
+    ForceAssistTrackedQuest(journalIndex)
+    EnsureQuestTrackedState(journalIndex)
+    ClearOtherTrackedQuests(journalIndex)
+    EnsureExclusiveAssistedQuest(journalIndex)
+end
+
+local function OnTrackedQuestUpdate(_, trackingType, context)
+    if trackingType and trackingType ~= TRACK_TYPE_QUEST then
+        return
+    end
+
+    local resolvedContext = context or {}
+
+    if not resolvedContext.trigger then
+        if state.pendingSelection and state.pendingSelection.trigger then
+            resolvedContext.trigger = state.pendingSelection.trigger
+        elseif resolvedContext.isExternal == false then
+            resolvedContext.trigger = "unknown"
+        else
+            resolvedContext.trigger = "external"
+        end
+    end
+
+    if resolvedContext.isExternal == nil then
+        resolvedContext.isExternal = resolvedContext.trigger ~= "click"
+    end
+
+    if not resolvedContext.source then
+        resolvedContext.source = "QuestTracker:OnTrackedQuestUpdate"
+    end
+
+    local forcedIndex = resolvedContext.forcedIndex
+
+    SyncTrackedQuestState(forcedIndex, true, resolvedContext)
+end
+
+local function OnFocusedTrackerAssistChanged(_, assistedData)
+    local questIndex = assistedData and assistedData.arg1
+    if questIndex ~= nil then
+        local numeric = tonumber(questIndex)
+        if numeric and numeric > 0 then
+            SyncTrackedQuestState(numeric, true, {
+                trigger = "external",
+                source = "QuestTracker:OnFocusedTrackerAssistChanged",
+                isExternal = true,
+            })
+            return
+        end
+    end
+
+    SyncTrackedQuestState(nil, true, {
+        trigger = "external",
+        source = "QuestTracker:OnFocusedTrackerAssistChanged",
+        isExternal = true,
+    })
+end
+
+local function OnPlayerActivated()
+    local function execute()
+        SyncTrackedQuestState(nil, true, {
+            trigger = "init",
+            source = "QuestTracker:OnPlayerActivated",
+            isExternal = true,
+        })
+    end
+
+    if zo_callLater then
+        zo_callLater(execute, 20)
+    else
+        execute()
+    end
+end
+
+local function RegisterTrackingEvents()
+    if state.trackingEventsRegistered then
+        return
+    end
+
+    if EVENT_MANAGER then
+        EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. "TrackUpdate", EVENT_TRACKING_UPDATE, OnTrackedQuestUpdate)
+        EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. "PlayerActivated", EVENT_PLAYER_ACTIVATED, OnPlayerActivated)
+    end
+
+    if FOCUSED_QUEST_TRACKER and FOCUSED_QUEST_TRACKER.RegisterCallback then
+        FOCUSED_QUEST_TRACKER:RegisterCallback("QuestTrackerAssistStateChanged", OnFocusedTrackerAssistChanged)
+    end
+
+    state.trackingEventsRegistered = true
+end
+
+local function UnregisterTrackingEvents()
+    if not state.trackingEventsRegistered then
+        return
+    end
+
+    if EVENT_MANAGER then
+        EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "TrackUpdate", EVENT_TRACKING_UPDATE)
+        EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "PlayerActivated", EVENT_PLAYER_ACTIVATED)
+    end
+
+    if FOCUSED_QUEST_TRACKER and FOCUSED_QUEST_TRACKER.UnregisterCallback then
+        FOCUSED_QUEST_TRACKER:UnregisterCallback("QuestTrackerAssistStateChanged", OnFocusedTrackerAssistChanged)
+    end
+
+    state.trackingEventsRegistered = false
 end
 
 local function NotifyHostContentChanged()
@@ -251,28 +1376,6 @@ local function BuildFontString(descriptor, fallback)
     return string.format("%s|%d|%s", face, size, outline or DEFAULT_FONT_OUTLINE)
 end
 
-local function RequestRefresh()
-    if not state.isInitialized then
-        return
-    end
-    if state.pendingRefresh then
-        return
-    end
-
-    state.pendingRefresh = true
-
-    local function execute()
-        state.pendingRefresh = false
-        QuestTracker.Refresh()
-    end
-
-    if zo_callLater then
-        zo_callLater(execute, REFRESH_DEBOUNCE_MS)
-    else
-        execute()
-    end
-end
-
 local function ResetLayoutState()
     state.orderedControls = {}
     state.lastAnchoredControl = nil
@@ -337,22 +1440,36 @@ local function UpdateCategoryToggle(control, expanded)
 end
 
 local function UpdateQuestToggle(control, expanded)
-    if control.toggle then
-        control.toggle:SetText(expanded and ICON_EXPANDED or ICON_COLLAPSED)
+    if not (control and control.toggle) then
+        return
     end
+
+    local icon = expanded and ICON_EXPANDED or ICON_COLLAPSED
+    local questData = control.data and control.data.quest
+    if questData and state.trackedQuestIndex and questData.journalIndex == state.trackedQuestIndex then
+        icon = ICON_TRACKED
+    end
+
+    control.toggle:SetText(icon)
 end
 
 local function IsCategoryExpanded(categoryKey)
-    if not state.saved or not categoryKey then
+    if not categoryKey then
         return state.opts.autoExpand ~= false
     end
 
-    local savedValue = state.saved.catExpanded[categoryKey]
-    if savedValue == nil then
-        return state.opts.autoExpand ~= false
+    if state.saved then
+        local savedValue = state.saved.catExpanded[categoryKey]
+        if savedValue ~= nil then
+            return savedValue
+        end
     end
 
-    return savedValue
+    if state.trackedCategoryKeys and state.trackedCategoryKeys[categoryKey] then
+        return true
+    end
+
+    return state.opts.autoExpand ~= false
 end
 
 local function IsQuestExpanded(journalIndex)
@@ -368,16 +1485,109 @@ local function IsQuestExpanded(journalIndex)
     return savedValue
 end
 
-local function SetCategoryExpanded(categoryKey, expanded)
-    if state.saved and categoryKey then
-        state.saved.catExpanded[categoryKey] = not not expanded
+SetCategoryExpanded = function(categoryKey, expanded, context)
+    if not (state.saved and categoryKey) then
+        return false
     end
+
+    local beforeExpanded = IsCategoryExpanded and IsCategoryExpanded(categoryKey)
+    local newValue = not not expanded
+    local oldValue = state.saved.catExpanded[categoryKey]
+    if oldValue == newValue then
+        return false
+    end
+
+    state.saved.catExpanded[categoryKey] = newValue
+    DebugDeselect("SetCategoryExpanded", {
+        categoryKey = categoryKey,
+        previous = tostring(oldValue),
+        newValue = tostring(newValue),
+    })
+    local manualCollapseRespected
+    if context and context.manualCollapseRespected ~= nil then
+        manualCollapseRespected = context.manualCollapseRespected and true or false
+    elseif context and context.trigger == "click" then
+        manualCollapseRespected = true
+    end
+    local extraFields
+    if IsDebugLoggingEnabled() then
+        if manualCollapseRespected ~= nil then
+            extraFields = extraFields or {}
+            extraFields[#extraFields + 1] = {
+                key = "manualCollapseRespected",
+                value = manualCollapseRespected,
+            }
+        end
+    end
+    LogCategoryExpansion(
+        newValue and "expand" or "collapse",
+        (context and context.trigger) or "unknown",
+        categoryKey,
+        beforeExpanded,
+        newValue,
+        (context and context.source) or "QuestTracker:SetCategoryExpanded",
+        extraFields
+    )
+    return true
 end
 
-local function SetQuestExpanded(journalIndex, expanded)
-    if state.saved and journalIndex then
-        state.saved.questExpanded[journalIndex] = not not expanded
+SetQuestExpanded = function(journalIndex, expanded, context)
+    if not (state.saved and journalIndex) then
+        return false
     end
+
+    local beforeExpanded = IsQuestExpanded and IsQuestExpanded(journalIndex)
+    local newValue = not not expanded
+    local oldValue = state.saved.questExpanded[journalIndex]
+    if oldValue == newValue then
+        return false
+    end
+
+    state.saved.questExpanded[journalIndex] = newValue
+    DebugDeselect("SetQuestExpanded", {
+        journalIndex = journalIndex,
+        previous = tostring(oldValue),
+        newValue = tostring(newValue),
+    })
+    LogQuestExpansion(
+        newValue and "expand" or "collapse",
+        (context and context.trigger) or "unknown",
+        journalIndex,
+        beforeExpanded,
+        newValue,
+        (context and context.source) or "QuestTracker:SetQuestExpanded"
+    )
+    return true
+end
+
+local function ToggleQuestExpansion(journalIndex, context)
+    if not journalIndex then
+        return false
+    end
+
+    local expanded = IsQuestExpanded(journalIndex)
+    local toggleContext = context or {}
+    if toggleContext.trigger == nil then
+        toggleContext = {
+            trigger = "unknown",
+            source = toggleContext.source,
+        }
+    elseif toggleContext.source == nil then
+        toggleContext = {
+            trigger = toggleContext.trigger,
+            source = nil,
+        }
+    end
+    if not toggleContext.source then
+        toggleContext.source = "QuestTracker:ToggleQuestExpansion"
+    end
+
+    local changed = SetQuestExpanded(journalIndex, not expanded, toggleContext)
+    if changed then
+        QuestTracker.Refresh()
+    end
+
+    return changed
 end
 
 local function FormatConditionText(condition)
@@ -415,8 +1625,23 @@ local function AcquireCategoryControl()
                 return
             end
             local expanded = not IsCategoryExpanded(catKey)
-            SetCategoryExpanded(catKey, expanded)
-            QuestTracker.Refresh()
+            local changed = SetCategoryExpanded(catKey, expanded, {
+                trigger = "click",
+                source = "QuestTracker:OnCategoryClick",
+            })
+            if changed then
+                QuestTracker.Refresh()
+            end
+        end)
+        control:SetHandler("OnMouseEnter", function(ctrl)
+            if ctrl.label then
+                ctrl.label:SetColor(unpack(COLOR_ROW_HOVER))
+            end
+        end)
+        control:SetHandler("OnMouseExit", function(ctrl)
+            if ctrl.label and ctrl.baseColor then
+                ctrl.label:SetColor(unpack(ctrl.baseColor))
+            end
         end)
         control.initialized = true
     end
@@ -433,6 +1658,26 @@ local function AcquireQuestControl()
     if not control.initialized then
         control.label = control:GetNamedChild("Label")
         control.toggle = control:GetNamedChild("Toggle")
+        if control.toggle and control.toggle.SetMouseEnabled then
+            control.toggle:SetMouseEnabled(true)
+        end
+        if control.toggle then
+            control.toggle:SetHandler("OnMouseUp", function(toggleCtrl, button, upInside)
+                if not upInside or button ~= MOUSE_BUTTON_INDEX_LEFT then
+                    return
+                end
+                local parent = toggleCtrl:GetParent()
+                local questData = parent and parent.data and parent.data.quest
+                if not questData then
+                    return
+                end
+                local journalIndex = questData.journalIndex
+                ToggleQuestExpansion(journalIndex, {
+                    trigger = "click",
+                    source = "QuestTracker:OnToggleClick",
+                })
+            end)
+        end
         control:SetHandler("OnMouseUp", function(ctrl, button, upInside)
             if not upInside then
                 return
@@ -443,9 +1688,66 @@ local function AcquireQuestControl()
                     return
                 end
                 local journalIndex = questData.journalIndex
-                local expanded = not IsQuestExpanded(journalIndex)
-                SetQuestExpanded(journalIndex, expanded)
-                QuestTracker.Refresh()
+                local toggleMouseOver = false
+                if ctrl.toggle then
+                    local toggleIsMouseOver = ctrl.toggle.IsMouseOver
+                    if type(toggleIsMouseOver) == "function" then
+                        toggleMouseOver = toggleIsMouseOver(ctrl.toggle)
+                    end
+                end
+
+                if toggleMouseOver then
+                    ToggleQuestExpansion(journalIndex, {
+                        trigger = "click",
+                        source = "QuestTracker:OnRowClickToggle",
+                    })
+                    return
+                end
+
+                if state.opts.autoTrack == false then
+                    ToggleQuestExpansion(journalIndex, {
+                        trigger = "click",
+                        source = "QuestTracker:OnRowClickManualToggle",
+                    })
+                    return
+                end
+
+                local nextExpanded = not IsQuestExpanded(journalIndex)
+                state.pendingSelection = {
+                    index = journalIndex,
+                    expanded = nextExpanded,
+                    forceExpand = nextExpanded,
+                    trigger = "click",
+                    source = "QuestTracker:OnRowClick",
+                }
+
+                local trackOptions = {
+                    forceExpand = nextExpanded,
+                    requestRefresh = false,
+                    trigger = "click",
+                    source = "QuestTracker:OnRowClick",
+                }
+
+                local tracked = TrackQuestByJournalIndex(journalIndex, trackOptions)
+
+                if tracked then
+                    OnTrackedQuestUpdate(nil, TRACK_TYPE_QUEST, {
+                        trigger = "click",
+                        source = "QuestTracker:OnRowClick",
+                        forcedIndex = journalIndex,
+                    })
+                else
+                    state.pendingSelection = nil
+                    local changed = SetQuestExpanded(journalIndex, nextExpanded, {
+                        trigger = "click",
+                        source = "QuestTracker:OnRowClickFallback",
+                    })
+                    if changed then
+                        QuestTracker.Refresh()
+                    else
+                        RequestRefresh()
+                    end
+                end
             elseif button == MOUSE_BUTTON_INDEX_RIGHT then
                 if not ctrl.data or not ctrl.data.quest then
                     return
@@ -462,10 +1764,18 @@ local function AcquireQuestControl()
 
                 local assistLabel = assisted and "Stop Assisting" or "Assist"
                 AddCustomMenuItem(assistLabel, function()
-                    if SetTrackedIsAssisted then
-                        SetTrackedIsAssisted(TRACK_TYPE_QUEST, journalIndex, not assisted)
-                    elseif AssistJournalQuest and not assisted then
-                        AssistJournalQuest(journalIndex)
+                    local numericIndex = tonumber(journalIndex)
+                    if not numericIndex then
+                        return
+                    end
+
+                    if AssistJournalQuest and not assisted then
+                        SafeCall(AssistJournalQuest, numericIndex)
+                        return
+                    end
+
+                    if type(SetTrackedIsAssisted) == "function" and TRACK_TYPE_QUEST then
+                        SafeCall(SetTrackedIsAssisted, TRACK_TYPE_QUEST, numericIndex, assisted and false or true)
                     end
                 end)
 
@@ -494,7 +1804,7 @@ local function AcquireQuestControl()
         end)
         control:SetHandler("OnMouseEnter", function(ctrl)
             if ctrl.label then
-                ctrl.label:SetColor(1, 1, 0.6, 1)
+                ctrl.label:SetColor(unpack(COLOR_ROW_HOVER))
             end
         end)
         control:SetHandler("OnMouseExit", function(ctrl)
@@ -566,12 +1876,15 @@ local function EnsurePools()
         control:SetHidden(true)
         control.data = nil
         control.currentIndent = nil
+        control.baseColor = nil
+        if control.toggle then
+            control.toggle:SetText(ICON_COLLAPSED)
+        end
     end
 
     state.categoryPool:SetCustomResetBehavior(resetControl)
     state.questPool:SetCustomResetBehavior(function(control)
         resetControl(control)
-        control.baseColor = nil
     end)
     state.conditionPool:SetCustomResetBehavior(resetControl)
 end
@@ -593,15 +1906,14 @@ local function LayoutQuest(quest)
     local control = AcquireQuestControl()
     control.data = { quest = quest }
     control.label:SetText(quest.name or "")
-    local baseColor = { 1, 1, 1, 1 }
-    if quest.flags then
-        if quest.flags.assisted then
-            baseColor = { 1, 0.95, 0.6, 1 }
-        elseif quest.flags.tracked then
-            baseColor = { 0.9, 0.9, 0.9, 1 }
-        else
-            baseColor = { 0.75, 0.75, 0.75, 1 }
-        end
+    local baseColor = COLOR_QUEST_DEFAULT
+    local flags = quest.flags or {}
+    if state.trackedQuestIndex and quest.journalIndex == state.trackedQuestIndex then
+        baseColor = COLOR_QUEST_TRACKED
+    elseif flags.assisted then
+        baseColor = COLOR_QUEST_ASSISTED
+    elseif flags.tracked then
+        baseColor = COLOR_QUEST_WATCHED
     end
     control.baseColor = baseColor
     if control.label then
@@ -647,6 +1959,11 @@ local function LayoutCategory(category)
     local count = #category.quests
     control.label:SetText(FormatCategoryHeaderText(category.name or "", count, "quest"))
     local expanded = IsCategoryExpanded(category.key)
+    local baseColor = expanded and COLOR_CATEGORY_EXPANDED or COLOR_CATEGORY_COLLAPSED
+    control.baseColor = baseColor
+    if control.label then
+        control.label:SetColor(unpack(baseColor))
+    end
     UpdateCategoryToggle(control, expanded)
     ApplyRowMetrics(
         control,
@@ -733,6 +2050,13 @@ end
 
 local function OnSnapshotUpdated(snapshot)
     state.snapshot = snapshot
+    UpdateTrackedQuestCache()
+    if state.trackedQuestIndex then
+        EnsureTrackedQuestVisible(state.trackedQuestIndex, nil, {
+            trigger = "refresh",
+            source = "QuestTracker:OnSnapshotUpdated",
+        })
+    end
     if state.isInitialized then
         Rebuild()
     end
@@ -755,6 +2079,10 @@ function QuestTracker.Init(parentControl, opts)
     EnsureSavedVars()
     state.opts = {}
     state.fonts = {}
+    state.pendingSelection = nil
+    state.lastTrackedBeforeSync = nil
+    state.syncingTrackedState = false
+    state.pendingDeselection = false
 
     QuestTracker.ApplyTheme(state.saved or {})
     QuestTracker.ApplySettings(state.saved or {})
@@ -777,12 +2105,16 @@ function QuestTracker.Init(parentControl, opts)
     if Nvk3UT.QuestModel and Nvk3UT.QuestModel.Subscribe then
         Nvk3UT.QuestModel.Subscribe(state.subscription)
         state.snapshot = Nvk3UT.QuestModel.GetSnapshot and Nvk3UT.QuestModel.GetSnapshot() or state.snapshot
+        UpdateTrackedQuestCache()
     else
         DebugLog("QuestModel is not available")
     end
 
+    RegisterTrackingEvents()
+
     state.isInitialized = true
     RefreshVisibility()
+    AdoptTrackedQuestOnInit()
     Rebuild()
 end
 
@@ -801,6 +2133,7 @@ function QuestTracker.Shutdown()
     state.subscription = nil
 
     UnregisterCombatEvents()
+    UnregisterTrackingEvents()
 
     if state.categoryPool then
         state.categoryPool:ReleaseAllObjects()
@@ -828,6 +2161,14 @@ function QuestTracker.Shutdown()
     state.pendingRefresh = false
     state.contentWidth = 0
     state.contentHeight = 0
+    state.trackedQuestIndex = nil
+    state.trackedCategoryKeys = {}
+    state.trackingEventsRegistered = false
+    state.suppressForceExpandFor = nil
+    state.pendingSelection = nil
+    state.lastTrackedBeforeSync = nil
+    state.syncingTrackedState = false
+    state.pendingDeselection = false
     NotifyHostContentChanged()
 end
 
@@ -844,6 +2185,7 @@ function QuestTracker.ApplySettings(settings)
 
     state.opts.hideInCombat = settings.hideInCombat and true or false
     state.opts.autoExpand = settings.autoExpand ~= false
+    state.opts.autoTrack = settings.autoTrack ~= false
     state.opts.active = (settings.active ~= false)
 
     if state.isInitialized then
