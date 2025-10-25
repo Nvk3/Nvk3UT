@@ -148,6 +148,10 @@ local startWindowDrag
 local stopWindowDrag
 local getCurrentScrollOffset
 
+local function getSavedVars()
+    return Nvk3UT and Nvk3UT.sv
+end
+
 local function clamp(value, minimum, maximum)
     if value == nil then
         return minimum
@@ -242,10 +246,6 @@ local function getDefaultColor(trackerType, role)
     local b = color.b or DEFAULT_COLOR_FALLBACK.b
     local a = color.a or DEFAULT_COLOR_FALLBACK.a
     return r, g, b, a
-end
-
-local function getSavedVars()
-    return Nvk3UT and Nvk3UT.sv
 end
 
 local function isWindowOptionEnabled()
