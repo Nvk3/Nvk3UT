@@ -26,6 +26,7 @@ local MAX_BAR_HEIGHT = 250
 
 local FRAGMENT_REASON_SUPPRESSED = addonName .. "_HostSuppressed"
 local FRAGMENT_REASON_USER = addonName .. "_HostHiddenBySettings"
+local FRAGMENT_REASON_SCENE = addonName .. "_HostSceneHidden"
 
 local DEFAULT_APPEARANCE = {
     enabled = true,
@@ -127,6 +128,52 @@ local state = {
     initializing = false,
     lamPreviewForceVisible = false,
 }
+
+local function isSceneShowing(scene)
+    if not (scene and scene.IsShowing) then
+        return false
+    end
+
+    local ok, showing = pcall(scene.IsShowing, scene)
+    return ok and showing == true
+end
+
+local function isHudSceneShowing()
+    local checkedAny = false
+
+    local function pushScenes(list, scene)
+        if scene then
+            list[#list + 1] = scene
+        end
+    end
+
+    local scenes = {}
+    pushScenes(scenes, HUD_SCENE)
+    pushScenes(scenes, HUD_UI_SCENE)
+
+    if SCENE_MANAGER and SCENE_MANAGER.GetScene then
+        pushScenes(scenes, SCENE_MANAGER:GetScene("hud"))
+        pushScenes(scenes, SCENE_MANAGER:GetScene("hudui"))
+    end
+
+    local seen = {}
+    for index = 1, #scenes do
+        local scene = scenes[index]
+        if scene and not seen[scene] then
+            seen[scene] = true
+            checkedAny = true
+            if isSceneShowing(scene) then
+                return true
+            end
+        end
+    end
+
+    if not checkedAny then
+        return true
+    end
+
+    return false
+end
 
 local lamPreview = {
     active = false,
@@ -1495,16 +1542,19 @@ local function applyWindowVisibility()
 
     local userHidden = state.window and state.window.visible == false
     local suppressed = state.initializing == true
+    local sceneHidden = not isHudSceneShowing()
     local previewActive = state.lamPreviewForceVisible == true and not userHidden
-    local shouldHide = (suppressed or userHidden) and not previewActive
+    local shouldHide = (suppressed or userHidden or sceneHidden) and not previewActive
 
     if state.fragment and state.fragment.SetHiddenForReason then
         if previewActive then
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, false)
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, false)
+            state.fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, false)
         else
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, suppressed)
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, userHidden)
+            state.fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, sceneHidden)
         end
     end
 
@@ -2266,6 +2316,7 @@ function TrackerHost.Shutdown()
     if state.fragment and state.fragment.SetHiddenForReason then
         state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, true)
         state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, true)
+        state.fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, true)
     end
     state.fragment = nil
     state.fragmentRetryScheduled = false
