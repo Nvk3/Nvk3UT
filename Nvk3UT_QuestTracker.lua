@@ -20,9 +20,12 @@ local FormatCategoryHeaderText =
         return text
     end
 
-local ICON_EXPANDED = "\226\150\190" -- ▼
-local ICON_COLLAPSED = "\226\150\182" -- ▶
-local ICON_TRACKED = "\226\152\133" -- ★
+local CATEGORY_TOGGLE_TEXTURE_EXPANDED = "EsoUI/Art/Buttons/minus_up.dds"
+local CATEGORY_TOGGLE_TEXTURE_COLLAPSED = "EsoUI/Art/Buttons/plus_up.dds"
+
+local QUEST_TOGGLE_ICON_EXPANDED = "\226\150\190" -- ▼
+local QUEST_TOGGLE_ICON_COLLAPSED = "\226\150\182" -- ▶
+local QUEST_TOGGLE_ICON_TRACKED = "\226\152\133" -- ★
 
 local CATEGORY_INDENT_X = 0
 local QUEST_INDENT_X = 18
@@ -1434,8 +1437,9 @@ local function UpdateContentSize()
 end
 
 local function UpdateCategoryToggle(control, expanded)
-    if control.toggle then
-        control.toggle:SetText(expanded and ICON_EXPANDED or ICON_COLLAPSED)
+    if control and control.toggle and control.toggle.SetTexture then
+        local texture = expanded and CATEGORY_TOGGLE_TEXTURE_EXPANDED or CATEGORY_TOGGLE_TEXTURE_COLLAPSED
+        control.toggle:SetTexture(texture)
     end
 end
 
@@ -1444,10 +1448,10 @@ local function UpdateQuestToggle(control, expanded)
         return
     end
 
-    local icon = expanded and ICON_EXPANDED or ICON_COLLAPSED
+    local icon = expanded and QUEST_TOGGLE_ICON_EXPANDED or QUEST_TOGGLE_ICON_COLLAPSED
     local questData = control.data and control.data.quest
     if questData and state.trackedQuestIndex and questData.journalIndex == state.trackedQuestIndex then
-        icon = ICON_TRACKED
+        icon = QUEST_TOGGLE_ICON_TRACKED
     end
 
     control.toggle:SetText(icon)
@@ -1616,6 +1620,9 @@ local function AcquireCategoryControl()
     if not control.initialized then
         control.label = control:GetNamedChild("Label")
         control.toggle = control:GetNamedChild("Toggle")
+        if control.toggle and control.toggle.SetTexture then
+            control.toggle:SetTexture(CATEGORY_TOGGLE_TEXTURE_COLLAPSED)
+        end
         control:SetHandler("OnMouseUp", function(ctrl, button, upInside)
             if not upInside or button ~= MOUSE_BUTTON_INDEX_LEFT then
                 return
@@ -1878,7 +1885,11 @@ local function EnsurePools()
         control.currentIndent = nil
         control.baseColor = nil
         if control.toggle then
-            control.toggle:SetText(ICON_COLLAPSED)
+            if control.toggle.SetTexture then
+                control.toggle:SetTexture(CATEGORY_TOGGLE_TEXTURE_COLLAPSED)
+            elseif control.toggle.SetText then
+                control.toggle:SetText(QUEST_TOGGLE_ICON_COLLAPSED)
+            end
         end
     end
 

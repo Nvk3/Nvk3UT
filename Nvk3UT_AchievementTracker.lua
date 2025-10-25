@@ -19,8 +19,11 @@ local FormatCategoryHeaderText =
         return text
     end
 
-local ICON_EXPANDED = "\226\150\190" -- ▼
-local ICON_COLLAPSED = "\226\150\182" -- ▶
+local CATEGORY_TOGGLE_TEXTURE_EXPANDED = "EsoUI/Art/Buttons/minus_up.dds"
+local CATEGORY_TOGGLE_TEXTURE_COLLAPSED = "EsoUI/Art/Buttons/plus_up.dds"
+
+local ENTRY_TOGGLE_ICON_EXPANDED = "\226\150\190" -- ▼
+local ENTRY_TOGGLE_ICON_COLLAPSED = "\226\150\182" -- ▶
 
 local CATEGORY_INDENT_X = 0
 local ACHIEVEMENT_INDENT_X = 18
@@ -541,7 +544,10 @@ local function UpdateCategoryToggle(control, expanded)
         return
     end
     control.toggle:SetHidden(false)
-    control.toggle:SetText(expanded and ICON_EXPANDED or ICON_COLLAPSED)
+    if control.toggle.SetTexture then
+        local texture = expanded and CATEGORY_TOGGLE_TEXTURE_EXPANDED or CATEGORY_TOGGLE_TEXTURE_COLLAPSED
+        control.toggle:SetTexture(texture)
+    end
 end
 
 local function UpdateAchievementToggle(control, expanded, hasObjectives)
@@ -554,7 +560,7 @@ local function UpdateAchievementToggle(control, expanded, hasObjectives)
         return
     end
     control.toggle:SetHidden(false)
-    control.toggle:SetText(expanded and ICON_EXPANDED or ICON_COLLAPSED)
+    control.toggle:SetText(expanded and ENTRY_TOGGLE_ICON_EXPANDED or ENTRY_TOGGLE_ICON_COLLAPSED)
 end
 
 local function FormatObjectiveText(objective)
@@ -606,6 +612,9 @@ local function AcquireCategoryControl()
     if not control.initialized then
         control.label = control:GetNamedChild("Label")
         control.toggle = control:GetNamedChild("Toggle")
+        if control.toggle and control.toggle.SetTexture then
+            control.toggle:SetTexture(CATEGORY_TOGGLE_TEXTURE_COLLAPSED)
+        end
         control:SetHandler("OnMouseUp", function(ctrl, button, upInside)
             if not upInside or button ~= LEFT_MOUSE_BUTTON then
                 return
@@ -695,7 +704,11 @@ local function EnsurePools()
         resetControl(control)
         control.baseColor = nil
         if control.toggle then
-            control.toggle:SetText(ICON_COLLAPSED)
+            if control.toggle.SetTexture then
+                control.toggle:SetTexture(CATEGORY_TOGGLE_TEXTURE_COLLAPSED)
+            elseif control.toggle.SetText then
+                control.toggle:SetText(ENTRY_TOGGLE_ICON_COLLAPSED)
+            end
         end
     end)
 
