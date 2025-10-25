@@ -52,21 +52,15 @@ local TOGGLE_LABEL_PADDING_X = 4
 local CATEGORY_TOGGLE_WIDTH = 20
 
 local DEFAULT_FONTS = {
-    category = "ZoFontGameBold",
-    quest = "ZoFontGame",
-    condition = "ZoFontGameSmall",
-    toggle = "ZoFontGame",
+    category = "$(BOLD_FONT)|20|soft-shadow-thick",
+    quest = "$(BOLD_FONT)|16|soft-shadow-thick",
+    condition = "$(BOLD_FONT)|14|soft-shadow-thick",
+    toggle = "$(BOLD_FONT)|20|soft-shadow-thick",
 }
 
-local DEFAULT_FONT_OUTLINE = "soft-shadow-thin"
+local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
 local REFRESH_DEBOUNCE_MS = 80
 
-local COLOR_QUEST_DEFAULT = { 0.75, 0.75, 0.75, 1 }
-local COLOR_QUEST_TRACKED = { 1, 0.95, 0.6, 1 }
-local COLOR_QUEST_ASSISTED = COLOR_QUEST_TRACKED
-local COLOR_QUEST_WATCHED = { 0.9, 0.9, 0.9, 1 }
-local COLOR_CATEGORY_COLLAPSED = COLOR_QUEST_DEFAULT
-local COLOR_CATEGORY_EXPANDED = COLOR_QUEST_TRACKED
 local COLOR_ROW_HOVER = { 1, 1, 0.6, 1 }
 
 local RequestRefresh -- forward declaration for functions that trigger refreshes
@@ -214,6 +208,35 @@ local function EmitDebugAction(action, trigger, entityType, fieldList)
         d(message)
     elseif print then
         print(message)
+    end
+end
+
+local function GetQuestTrackerColor(role)
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if host and host.GetTrackerColor then
+        return host.GetTrackerColor("questTracker", role)
+    end
+    return 1, 1, 1, 1
+end
+
+local function ApplyBaseColor(control, r, g, b, a)
+    if not control then
+        return
+    end
+
+    local color = control.baseColor
+    if type(color) ~= "table" then
+        color = {}
+        control.baseColor = color
+    end
+
+    color[1] = r or 1
+    color[2] = g or 1
+    color[3] = b or 1
+    color[4] = a or 1
+
+    if control.label and control.label.SetColor then
+        control.label:SetColor(color[1], color[2], color[3], color[4])
     end
 end
 
@@ -2860,6 +2883,10 @@ local function LayoutCondition(condition)
     local control = AcquireConditionControl()
     control.data = { condition = condition }
     control.label:SetText(FormatConditionText(condition))
+    if control.label then
+        local r, g, b, a = GetQuestTrackerColor("objectiveText")
+        control.label:SetColor(r, g, b, a)
+    end
     ApplyRowMetrics(control, CONDITION_INDENT_X, 0, 0, 0, CONDITION_MIN_HEIGHT)
     control:SetHidden(false)
     AnchorControl(control, CONDITION_INDENT_X)
@@ -2869,24 +2896,13 @@ local function LayoutQuest(quest)
     local control = AcquireQuestControl()
     control.data = { quest = quest }
     control.label:SetText(quest.name or "")
-    local baseColor = COLOR_QUEST_DEFAULT
-    local flags = quest.flags or {}
-    local questKey = NormalizeQuestKey(quest.journalIndex)
-    local selectedKey = state.selectedQuestKey
-    if selectedKey and questKey and questKey == selectedKey then
-        baseColor = COLOR_QUEST_TRACKED
-    elseif state.trackedQuestIndex and quest.journalIndex == state.trackedQuestIndex then
-        baseColor = COLOR_QUEST_TRACKED
-    elseif flags.assisted then
-        baseColor = COLOR_QUEST_ASSISTED
-    elseif flags.tracked then
-        baseColor = COLOR_QUEST_WATCHED
-    end
-    control.baseColor = baseColor
-    if control.label then
-        control.label:SetColor(unpack(baseColor))
-    end
 
+    local flags = quest.flags or {}
+    local colorRole = flags.assisted and "activeTitle" or "entryTitle"
+    local r, g, b, a = GetQuestTrackerColor(colorRole)
+    ApplyBaseColor(control, r, g, b, a)
+
+    local questKey = NormalizeQuestKey(quest.journalIndex)
     local expanded = IsQuestExpanded(quest.journalIndex)
     if IsDebugLoggingEnabled() then
         DebugLog(string.format(
@@ -2940,11 +2956,8 @@ local function LayoutCategory(category)
             tostring(expanded)
         ))
     end
-    local baseColor = expanded and COLOR_CATEGORY_EXPANDED or COLOR_CATEGORY_COLLAPSED
-    control.baseColor = baseColor
-    if control.label then
-        control.label:SetColor(unpack(baseColor))
-    end
+    local r, g, b, a = GetQuestTrackerColor("categoryTitle")
+    ApplyBaseColor(control, r, g, b, a)
     UpdateCategoryToggle(control, expanded)
     ApplyRowMetrics(
         control,

@@ -51,20 +51,18 @@ local TOGGLE_LABEL_PADDING_X = 4
 local CATEGORY_TOGGLE_WIDTH = 20
 
 local DEFAULT_FONTS = {
-    category = "ZoFontGameBold",
-    achievement = "ZoFontGame",
-    objective = "ZoFontGameSmall",
-    toggle = "ZoFontGame",
+    category = "$(BOLD_FONT)|20|soft-shadow-thick",
+    achievement = "$(BOLD_FONT)|16|soft-shadow-thick",
+    objective = "$(BOLD_FONT)|14|soft-shadow-thick",
+    toggle = "$(BOLD_FONT)|20|soft-shadow-thick",
 }
 
 local unpack = table.unpack or unpack
 local LEFT_MOUSE_BUTTON = MOUSE_BUTTON_INDEX_LEFT or 1
 
-local DEFAULT_FONT_OUTLINE = "soft-shadow-thin"
+local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
 local REFRESH_DEBOUNCE_MS = 80
 
-local COLOR_CATEGORY_COLLAPSED = { 0.75, 0.75, 0.75, 1 }
-local COLOR_CATEGORY_EXPANDED = { 1, 0.95, 0.6, 1 }
 local COLOR_ROW_HOVER = { 1, 1, 0.6, 1 }
 
 local state = {
@@ -106,6 +104,35 @@ local function ApplyToggleDefaults(toggle)
     end
 
     toggle:SetVerticalAlignment(TEXT_ALIGN_TOP)
+end
+
+local function GetAchievementTrackerColor(role)
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if host and host.GetTrackerColor then
+        return host.GetTrackerColor("achievementTracker", role)
+    end
+    return 1, 1, 1, 1
+end
+
+local function ApplyBaseColor(control, r, g, b, a)
+    if not control then
+        return
+    end
+
+    local color = control.baseColor
+    if type(color) ~= "table" then
+        color = {}
+        control.baseColor = color
+    end
+
+    color[1] = r or 1
+    color[2] = g or 1
+    color[3] = b or 1
+    color[4] = a or 1
+
+    if control.label and control.label.SetColor then
+        control.label:SetColor(color[1], color[2], color[3], color[4])
+    end
 end
 
 local function GetToggleWidth(toggle, fallback)
@@ -822,6 +849,10 @@ local function LayoutObjective(achievement, objective)
         objective = objective,
     }
     control.label:SetText(text)
+    if control.label then
+        local r, g, b, a = GetAchievementTrackerColor("objectiveText")
+        control.label:SetColor(r, g, b, a)
+    end
     ApplyRowMetrics(control, OBJECTIVE_INDENT_X, 0, 0, 0, OBJECTIVE_MIN_HEIGHT)
     control:SetHidden(false)
     AnchorControl(control, OBJECTIVE_INDENT_X)
@@ -835,6 +866,10 @@ local function LayoutAchievement(achievement)
         hasObjectives = hasObjectives,
     }
     control.label:SetText(achievement.name or "")
+    if control.label then
+        local r, g, b, a = GetAchievementTrackerColor("entryTitle")
+        control.label:SetColor(r, g, b, a)
+    end
 
     local expanded = hasObjectives and IsEntryExpanded(achievement.id)
     UpdateAchievementIconSlot(control)
@@ -928,11 +963,8 @@ local function LayoutCategory()
     control.label:SetText(FormatCategoryHeaderText("Errungenschaften", total or 0, "achievement"))
 
     local expanded = IsCategoryExpanded()
-    local baseColor = expanded and COLOR_CATEGORY_EXPANDED or COLOR_CATEGORY_COLLAPSED
-    control.baseColor = baseColor
-    if control.label then
-        control.label:SetColor(unpack(baseColor))
-    end
+    local r, g, b, a = GetAchievementTrackerColor("categoryTitle")
+    ApplyBaseColor(control, r, g, b, a)
     UpdateCategoryToggle(control, expanded)
     ApplyRowMetrics(
         control,

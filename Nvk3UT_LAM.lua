@@ -7,6 +7,7 @@ local L = {}
 Nvk3UT.LAM = L
 
 local FONT_FACE_CHOICES = {
+    { name = "Bold (Game Default)", face = "$(BOLD_FONT)" },
     { name = "Univers 67 (Game)", face = "EsoUI/Common/Fonts/univers67.otf" },
     { name = "Univers 57 (Game)", face = "EsoUI/Common/Fonts/univers57.otf" },
     { name = "Futura (Antique)", face = "EsoUI/Common/Fonts/ProseAntiquePSMT.otf" },
@@ -23,8 +24,8 @@ local OUTLINE_CHOICES = {
 }
 
 local DEFAULT_FONT_SIZE = {
-    quest = { category = 20, title = 18, line = 16 },
-    achievement = { category = 20, title = 18, line = 16 },
+    quest = { category = 20, title = 16, line = 14 },
+    achievement = { category = 20, title = 16, line = 14 },
 }
 
 local DEFAULT_WINDOW = {
@@ -260,12 +261,58 @@ local function getAchievementSettings()
     return sv.AchievementTracker
 end
 
+local function getTrackerColor(trackerType, role)
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if host and host.GetTrackerColor then
+        return host.GetTrackerColor(trackerType, role)
+    end
+    if host and host.GetDefaultTrackerColor then
+        return host.GetDefaultTrackerColor(trackerType, role)
+    end
+    return 1, 1, 1, 1
+end
+
+local function getDefaultTrackerColor(trackerType, role)
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if host and host.GetDefaultTrackerColor then
+        return host.GetDefaultTrackerColor(trackerType, role)
+    end
+    return getTrackerColor(trackerType, role)
+end
+
+local function setTrackerColor(trackerType, role, r, g, b, a)
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if host and host.SetTrackerColor then
+        host.SetTrackerColor(trackerType, role, r, g, b, a)
+        if host.EnsureAppearanceDefaults then
+            host.EnsureAppearanceDefaults()
+        end
+        return
+    end
+
+    local sv = getSavedVars()
+    if not sv then
+        return
+    end
+
+    sv.appearance = sv.appearance or {}
+    sv.appearance[trackerType] = sv.appearance[trackerType] or {}
+    local tracker = sv.appearance[trackerType]
+    tracker.colors = tracker.colors or {}
+    tracker.colors[role] = {
+        r = r or 1,
+        g = g or 1,
+        b = b or 1,
+        a = a or 1,
+    }
+end
+
 local function ensureFont(settings, key, defaults)
     settings.fonts[key] = settings.fonts[key] or {}
     local font = settings.fonts[key]
     font.face = font.face or defaults.face or FONT_FACE_CHOICES[1].face
     font.size = font.size or defaults.size or 16
-    font.outline = font.outline or defaults.outline or "soft-shadow-thin"
+    font.outline = font.outline or defaults.outline or "soft-shadow-thick"
     return font
 end
 
@@ -340,7 +387,7 @@ end
 local function questFontDefaults(key)
     local defaults = DEFAULT_FONT_SIZE.quest
     local face = FONT_FACE_CHOICES[1].face
-    local outline = "soft-shadow-thin"
+    local outline = "soft-shadow-thick"
     local size = defaults[key] or 16
     return { face = face, size = size, outline = outline }
 end
@@ -348,7 +395,7 @@ end
 local function achievementFontDefaults(key)
     local defaults = DEFAULT_FONT_SIZE.achievement
     local face = FONT_FACE_CHOICES[1].face
-    local outline = "soft-shadow-thin"
+    local outline = "soft-shadow-thick"
     local size = defaults[key] or 16
     return { face = face, size = size, outline = outline }
 end
@@ -1077,6 +1124,72 @@ local function registerPanel(displayTitle)
                 default = true,
             }
 
+            controls[#controls + 1] = { type = "header", name = "Quest Tracker Colors" }
+
+            controls[#controls + 1] = {
+                type = "colorpicker",
+                name = "Category / Section Title Color",
+                tooltip = "Adjusts the color of zone headers and category titles in the quest tracker.",
+                getFunc = function()
+                    return getTrackerColor("questTracker", "categoryTitle")
+                end,
+                setFunc = function(r, g, b, a)
+                    setTrackerColor("questTracker", "categoryTitle", r, g, b, a or 1)
+                    refreshQuestTracker()
+                end,
+                default = function()
+                    return getDefaultTrackerColor("questTracker", "categoryTitle")
+                end,
+            }
+
+            controls[#controls + 1] = {
+                type = "colorpicker",
+                name = "Quest / Achievement Name Color",
+                tooltip = "Sets the color used for quest titles within the quest tracker.",
+                getFunc = function()
+                    return getTrackerColor("questTracker", "entryTitle")
+                end,
+                setFunc = function(r, g, b, a)
+                    setTrackerColor("questTracker", "entryTitle", r, g, b, a or 1)
+                    refreshQuestTracker()
+                end,
+                default = function()
+                    return getDefaultTrackerColor("questTracker", "entryTitle")
+                end,
+            }
+
+            controls[#controls + 1] = {
+                type = "colorpicker",
+                name = "Objective / Step Text Color",
+                tooltip = "Controls the color for objective and step lines beneath each quest.",
+                getFunc = function()
+                    return getTrackerColor("questTracker", "objectiveText")
+                end,
+                setFunc = function(r, g, b, a)
+                    setTrackerColor("questTracker", "objectiveText", r, g, b, a or 1)
+                    refreshQuestTracker()
+                end,
+                default = function()
+                    return getDefaultTrackerColor("questTracker", "objectiveText")
+                end,
+            }
+
+            controls[#controls + 1] = {
+                type = "colorpicker",
+                name = "Active / Focused Entry Color",
+                tooltip = "Defines the color for the currently assisted quest entry.",
+                getFunc = function()
+                    return getTrackerColor("questTracker", "activeTitle")
+                end,
+                setFunc = function(r, g, b, a)
+                    setTrackerColor("questTracker", "activeTitle", r, g, b, a or 1)
+                    refreshQuestTracker()
+                end,
+                default = function()
+                    return getDefaultTrackerColor("questTracker", "activeTitle")
+                end,
+            }
+
             controls[#controls + 1] = { type = "header", name = "Quest-Tracker Schriftarten" }
 
             local fontGroups = {
@@ -1174,6 +1287,72 @@ local function registerPanel(displayTitle)
                     updateTooltips(value)
                 end,
                 default = true,
+            }
+
+            controls[#controls + 1] = { type = "header", name = "Achievement Tracker Colors" }
+
+            controls[#controls + 1] = {
+                type = "colorpicker",
+                name = "Category / Section Title Color",
+                tooltip = "Adjusts the color of section headers in the achievement tracker.",
+                getFunc = function()
+                    return getTrackerColor("achievementTracker", "categoryTitle")
+                end,
+                setFunc = function(r, g, b, a)
+                    setTrackerColor("achievementTracker", "categoryTitle", r, g, b, a or 1)
+                    refreshAchievementTracker()
+                end,
+                default = function()
+                    return getDefaultTrackerColor("achievementTracker", "categoryTitle")
+                end,
+            }
+
+            controls[#controls + 1] = {
+                type = "colorpicker",
+                name = "Quest / Achievement Name Color",
+                tooltip = "Sets the color used for achievement titles in the tracker.",
+                getFunc = function()
+                    return getTrackerColor("achievementTracker", "entryTitle")
+                end,
+                setFunc = function(r, g, b, a)
+                    setTrackerColor("achievementTracker", "entryTitle", r, g, b, a or 1)
+                    refreshAchievementTracker()
+                end,
+                default = function()
+                    return getDefaultTrackerColor("achievementTracker", "entryTitle")
+                end,
+            }
+
+            controls[#controls + 1] = {
+                type = "colorpicker",
+                name = "Objective / Step Text Color",
+                tooltip = "Controls the color of objective lines shown beneath tracked achievements.",
+                getFunc = function()
+                    return getTrackerColor("achievementTracker", "objectiveText")
+                end,
+                setFunc = function(r, g, b, a)
+                    setTrackerColor("achievementTracker", "objectiveText", r, g, b, a or 1)
+                    refreshAchievementTracker()
+                end,
+                default = function()
+                    return getDefaultTrackerColor("achievementTracker", "objectiveText")
+                end,
+            }
+
+            controls[#controls + 1] = {
+                type = "colorpicker",
+                name = "Active / Focused Entry Color",
+                tooltip = "Reserved for future use. Defines the color for a focused achievement entry when applicable.",
+                getFunc = function()
+                    return getTrackerColor("achievementTracker", "activeTitle")
+                end,
+                setFunc = function(r, g, b, a)
+                    setTrackerColor("achievementTracker", "activeTitle", r, g, b, a or 1)
+                    refreshAchievementTracker()
+                end,
+                default = function()
+                    return getDefaultTrackerColor("achievementTracker", "activeTitle")
+                end,
             }
 
             controls[#controls + 1] = { type = "header", name = "Erfolgstracker Schriftarten" }
