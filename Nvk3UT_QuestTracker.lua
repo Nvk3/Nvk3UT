@@ -67,6 +67,7 @@ local COLOR_ROW_HOVER = { 1, 1, 0.6, 1 }
 local RequestRefresh -- forward declaration for functions that trigger refreshes
 local SetCategoryExpanded -- forward declaration for expansion helpers used before assignment
 local SetQuestExpanded
+local IsQuestExpanded -- forward declaration so earlier functions can query quest expansion state
 local ForEachQuest -- forward declaration for quest iteration used by debug helpers
 local ForEachQuestIndex -- forward declaration for quest index iteration used by debug helpers
 
@@ -1527,7 +1528,7 @@ local function IsCategoryExpanded(categoryKey)
     return state.opts.autoExpand ~= false
 end
 
-local function IsQuestExpanded(journalIndex)
+IsQuestExpanded = function(journalIndex)
     if not state.saved or not journalIndex then
         return state.opts.autoExpand ~= false
     end
