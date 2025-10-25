@@ -629,6 +629,13 @@ local function UpdateTrackedQuestCache(forcedIndex)
         trackedIndex = normalize(GetFocusedQuestIndex())
     end
 
+    if not trackedIndex and not state.pendingDeselection then
+        local cachedIndex = normalize(state.trackedQuestIndex)
+        if cachedIndex then
+            trackedIndex = cachedIndex
+        end
+    end
+
     local trackedCategories = {}
 
     if trackedIndex then
