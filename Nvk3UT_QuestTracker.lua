@@ -82,6 +82,7 @@ local state = {
     trackingEventsRegistered = false,
     suppressForceExpandFor = nil,
     pendingSelection = nil,
+    lastTrackedBeforeSync = nil,
 }
 
 local function ApplyLabelDefaults(label)
@@ -448,6 +449,7 @@ local function ApplyImmediateTrackedQuest(journalIndex)
         return
     end
 
+    state.lastTrackedBeforeSync = state.trackedQuestIndex
     local keys = CollectCategoryKeysForQuest(journalIndex)
     state.trackedCategoryKeys = keys
     state.trackedQuestIndex = journalIndex
@@ -491,9 +493,13 @@ local function EnsureTrackedQuestVisible(journalIndex, forceExpand)
 end
 
 local function SyncTrackedQuestState(forcedIndex, forceExpand)
-    local previousTracked = state.trackedQuestIndex
+    local previousTracked = state.lastTrackedBeforeSync
+    if previousTracked == nil then
+        previousTracked = state.trackedQuestIndex
+    end
 
     UpdateTrackedQuestCache(forcedIndex)
+    state.lastTrackedBeforeSync = nil
 
     local currentTracked = state.trackedQuestIndex
     local shouldForceExpand = forceExpand == true
@@ -600,7 +606,11 @@ local function TrackQuestByJournalIndex(journalIndex, options)
     if options.skipAutoExpand then
         state.suppressForceExpandFor = numeric
     else
-        state.suppressForceExpandFor = nil
+        if options.forceExpand == false then
+            state.suppressForceExpandFor = numeric
+        else
+            state.suppressForceExpandFor = nil
+        end
         AutoExpandQuestForTracking(numeric, options.forceExpand)
         EnsureTrackedCategoriesExpanded(numeric, options.forceExpand)
     end
@@ -1090,14 +1100,15 @@ local function AcquireQuestControl()
                 }
 
                 local trackOptions = {
-                    skipAutoExpand = true,
-                    applyImmediate = false,
+                    forceExpand = nextExpanded,
                     requestRefresh = false,
                 }
 
                 local tracked = TrackQuestByJournalIndex(journalIndex, trackOptions)
 
-                if not tracked then
+                if tracked then
+                    SyncTrackedQuestState(nil, nextExpanded)
+                else
                     state.pendingSelection = nil
                     local changed = SetQuestExpanded(journalIndex, nextExpanded)
                     if changed then
@@ -1427,6 +1438,7 @@ function QuestTracker.Init(parentControl, opts)
     state.opts = {}
     state.fonts = {}
     state.pendingSelection = nil
+    state.lastTrackedBeforeSync = nil
 
     QuestTracker.ApplyTheme(state.saved or {})
     QuestTracker.ApplySettings(state.saved or {})
@@ -1510,6 +1522,7 @@ function QuestTracker.Shutdown()
     state.trackingEventsRegistered = false
     state.suppressForceExpandFor = nil
     state.pendingSelection = nil
+    state.lastTrackedBeforeSync = nil
     NotifyHostContentChanged()
 end
 
