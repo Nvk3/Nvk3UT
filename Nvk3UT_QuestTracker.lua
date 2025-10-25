@@ -1449,6 +1449,15 @@ local function AutoExpandQuestForTracking(journalIndex, forceExpand, context)
         source = (context and context.source) or "QuestTracker:AutoExpandQuestForTracking",
     }
 
+    if context then
+        if context.stateSource ~= nil then
+            logContext.stateSource = context.stateSource
+        end
+        if context.forceWrite then
+            logContext.forceWrite = true
+        end
+    end
+
     SetQuestExpanded(journalIndex, true, logContext)
 end
 
@@ -1504,12 +1513,19 @@ local function EnsureTrackedQuestVisible(journalIndex, forceExpand, context)
         trigger = (context and context.trigger) or "auto",
         source = (context and context.source) or "QuestTracker:EnsureTrackedQuestVisible",
     }
+    if context and context.stateSource ~= nil then
+        logContext.stateSource = context.stateSource
+    end
     local isExternal = context and context.isExternal
+    local isNewTarget = context and context.isNewTarget
     if isExternal then
         LogExternalSelect(journalIndex)
         ExpandCategoriesForExternalSelect(journalIndex)
     else
         EnsureTrackedCategoriesExpanded(journalIndex, forceExpand, logContext)
+    end
+    if isExternal and isNewTarget then
+        logContext.forceWrite = true
     end
     AutoExpandQuestForTracking(journalIndex, forceExpand, logContext)
     if isExternal then
@@ -1662,6 +1678,8 @@ local function SyncTrackedQuestState(forcedIndex, forceExpand, context)
             end
         end
 
+        local isNewTarget = currentTracked and currentTracked ~= previousTracked
+
         if currentTracked and not skipVisibilityUpdate then
             DebugDeselect("SyncTrackedQuestState:ensure-visible", {
                 index = currentTracked,
@@ -1671,6 +1689,7 @@ local function SyncTrackedQuestState(forcedIndex, forceExpand, context)
                 trigger = trigger,
                 source = source,
                 isExternal = isExternalFlag,
+                isNewTarget = isNewTarget,
             }
             EnsureTrackedQuestVisible(currentTracked, shouldForceExpand, visibilityContext)
         else
