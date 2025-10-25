@@ -73,8 +73,6 @@ local RequestRefresh -- forward declaration for functions that trigger refreshes
 local SetCategoryExpanded -- forward declaration for expansion helpers used before assignment
 local SetQuestExpanded
 local IsQuestExpanded -- forward declaration so earlier functions can query quest expansion state
-local ForEachQuest -- forward declaration for quest iteration used by debug helpers
-local ForEachQuestIndex -- forward declaration for quest index iteration used by debug helpers
 local HandleQuestRowClick -- forward declaration for quest row click orchestration
 local FlushPendingTrackedQuestUpdate -- forward declaration for deferred tracking updates
 local ProcessTrackedQuestUpdate -- forward declaration for deferred tracking processing
@@ -295,6 +293,102 @@ local function QuestKeyToJournalIndex(questKey)
     end
 
     return nil
+end
+
+local function ForEachQuest(callback)
+    if type(callback) ~= "function" then
+        return
+    end
+
+    if not state.snapshot or not state.snapshot.categories then
+        return
+    end
+
+    local ordered = state.snapshot.categories.ordered
+    if type(ordered) ~= "table" then
+        return
+    end
+
+    for index = 1, #ordered do
+        local category = ordered[index]
+        if category and type(category.quests) == "table" then
+            for questIndex = 1, #category.quests do
+                local quest = category.quests[questIndex]
+                if quest then
+                    callback(quest, category)
+                end
+            end
+        end
+    end
+end
+
+local function ForEachQuestIndex(callback)
+    if type(callback) ~= "function" then
+        return
+    end
+
+    local visited = {}
+
+    ForEachQuest(function(quest, category)
+        if quest and quest.journalIndex then
+            visited[quest.journalIndex] = true
+            callback(quest.journalIndex, quest, category)
+        end
+    end)
+
+    if not GetNumJournalQuests then
+        return
+    end
+
+    local total = GetNumJournalQuests() or 0
+    local maxIndex = MAX_JOURNAL_QUESTS or total
+    if maxIndex and maxIndex > total then
+        total = maxIndex
+    end
+
+    for index = 1, total do
+        if not visited[index] then
+            local isValid = true
+            if IsValidJournalQuestIndex then
+                isValid = IsValidJournalQuestIndex(index)
+            elseif GetJournalQuestName then
+                local name = GetJournalQuestName(index)
+                isValid = name ~= nil and name ~= ""
+            end
+
+            if isValid then
+                callback(index, nil, nil)
+            end
+        end
+    end
+end
+
+local function CollectCategoryKeysForQuest(journalIndex)
+    local keys = {}
+    if not journalIndex then
+        return keys, false
+    end
+
+    local found = false
+    ForEachQuest(function(quest, category)
+        if quest.journalIndex == journalIndex then
+            found = true
+            if category and category.key then
+                local normalized = NormalizeCategoryKey(category.key)
+                if normalized then
+                    keys[normalized] = true
+                end
+            end
+            if category and category.parent and category.parent.key then
+                local normalizedParent = NormalizeCategoryKey(category.parent.key)
+                if normalizedParent then
+                    keys[normalizedParent] = true
+                end
+            end
+        end
+    end)
+
+    return keys, found
 end
 
 local function ResolveStateSource(context, fallback)
@@ -948,102 +1042,6 @@ local function SafeCall(func, ...)
     end
 
     return true, result
-end
-
-ForEachQuest = function(callback)
-    if type(callback) ~= "function" then
-        return
-    end
-
-    if not state.snapshot or not state.snapshot.categories then
-        return
-    end
-
-    local ordered = state.snapshot.categories.ordered
-    if type(ordered) ~= "table" then
-        return
-    end
-
-    for index = 1, #ordered do
-        local category = ordered[index]
-        if category and type(category.quests) == "table" then
-            for questIndex = 1, #category.quests do
-                local quest = category.quests[questIndex]
-                if quest then
-                    callback(quest, category)
-                end
-            end
-        end
-    end
-end
-
-ForEachQuestIndex = function(callback)
-    if type(callback) ~= "function" then
-        return
-    end
-
-    local visited = {}
-
-    ForEachQuest(function(quest, category)
-        if quest and quest.journalIndex then
-            visited[quest.journalIndex] = true
-            callback(quest.journalIndex, quest, category)
-        end
-    end)
-
-    if not GetNumJournalQuests then
-        return
-    end
-
-    local total = GetNumJournalQuests() or 0
-    local maxIndex = MAX_JOURNAL_QUESTS or total
-    if maxIndex and maxIndex > total then
-        total = maxIndex
-    end
-
-    for index = 1, total do
-        if not visited[index] then
-            local isValid = true
-            if IsValidJournalQuestIndex then
-                isValid = IsValidJournalQuestIndex(index)
-            elseif GetJournalQuestName then
-                local name = GetJournalQuestName(index)
-                isValid = name ~= nil and name ~= ""
-            end
-
-            if isValid then
-                callback(index, nil, nil)
-            end
-        end
-    end
-end
-
-local function CollectCategoryKeysForQuest(journalIndex)
-    local keys = {}
-    if not journalIndex then
-        return keys, false
-    end
-
-    local found = false
-    ForEachQuest(function(quest, category)
-        if quest.journalIndex == journalIndex then
-            found = true
-            if category and category.key then
-                local normalized = NormalizeCategoryKey(category.key)
-                if normalized then
-                    keys[normalized] = true
-                end
-            end
-            if category and category.parent and category.parent.key then
-                local normalizedParent = NormalizeCategoryKey(category.parent.key)
-                if normalizedParent then
-                    keys[normalizedParent] = true
-                end
-            end
-        end
-    end)
-
-    return keys, found
 end
 
 local function LogExternalSelect(questId)
