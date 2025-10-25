@@ -127,6 +127,7 @@ local state = {
     previousDefaultQuestTrackerHidden = nil,
     initializing = false,
     lamPreviewForceVisible = false,
+    sceneCallbacks = nil,
 }
 
 local function isSceneShowing(scene)
@@ -190,6 +191,7 @@ local setScrollOffset
 local updateScrollContentAnchors
 local anchorContainers
 local applyWindowBars
+local applyWindowVisibility
 local createContainers
 local startWindowDrag
 local stopWindowDrag
@@ -1792,6 +1794,33 @@ local function createBackdrop()
     state.backdrop = control
 end
 
+local function ensureSceneStateCallback(scene)
+    if not (scene and scene.RegisterCallback) then
+        return
+    end
+
+    state.sceneCallbacks = state.sceneCallbacks or {}
+    if state.sceneCallbacks[scene] then
+        return
+    end
+
+    local function onStateChange()
+        if not state.root then
+            return
+        end
+
+        applyWindowVisibility()
+    end
+
+    local ok, message = pcall(scene.RegisterCallback, scene, "StateChange", onStateChange)
+    if not ok then
+        debugLog("Failed to register scene callback", message)
+        return
+    end
+
+    state.sceneCallbacks[scene] = onStateChange
+end
+
 local function attachFragmentToScene(scene)
     if not (scene and state.fragment and scene.AddFragment) then
         return false
@@ -1814,6 +1843,7 @@ local function attachFragmentToScene(scene)
     end
 
     state.fragmentScenes[scene] = true
+    ensureSceneStateCallback(scene)
     return true
 end
 
@@ -2312,6 +2342,15 @@ function TrackerHost.Shutdown()
         end
     end
     state.fragmentScenes = nil
+
+    if state.sceneCallbacks then
+        for scene, callback in pairs(state.sceneCallbacks) do
+            if scene and scene.UnregisterCallback and callback then
+                pcall(scene.UnregisterCallback, scene, "StateChange", callback)
+            end
+        end
+    end
+    state.sceneCallbacks = nil
 
     if state.fragment and state.fragment.SetHiddenForReason then
         state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, true)
