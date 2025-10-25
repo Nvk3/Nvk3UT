@@ -69,6 +69,27 @@ local DEFAULT_WINDOW_BARS = {
     footerHeightPx = 100,
 }
 
+local DEFAULT_TRACKER_COLORS = {
+    questTracker = {
+        colors = {
+            categoryTitle = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
+            objectiveText = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
+            entryTitle = { r = 1, g = 1, b = 0, a = 1 },
+            activeTitle = { r = 1, g = 1, b = 1, a = 1 },
+        },
+    },
+    achievementTracker = {
+        colors = {
+            categoryTitle = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
+            objectiveText = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
+            entryTitle = { r = 1, g = 1, b = 0, a = 1 },
+            activeTitle = { r = 1, g = 1, b = 1, a = 1 },
+        },
+    },
+}
+
+local DEFAULT_COLOR_FALLBACK = { r = 1, g = 1, b = 1, a = 1 }
+
 local LEFT_MOUSE_BUTTON = _G.MOUSE_BUTTON_INDEX_LEFT or 1
 
 local state = {
@@ -127,6 +148,10 @@ local startWindowDrag
 local stopWindowDrag
 local getCurrentScrollOffset
 
+local function getSavedVars()
+    return Nvk3UT and Nvk3UT.sv
+end
+
 local function clamp(value, minimum, maximum)
     if value == nil then
         return minimum
@@ -152,8 +177,75 @@ local function cloneTable(value)
     return copy
 end
 
-local function getSavedVars()
-    return Nvk3UT and Nvk3UT.sv
+local function normalizeColorComponent(value, fallback)
+    local numeric = tonumber(value)
+    if numeric == nil then
+        numeric = fallback ~= nil and fallback or 1
+    end
+    return clamp(numeric, 0, 1)
+end
+
+local function ensureColorComponents(color, defaults)
+    local target = color
+    if type(target) ~= "table" then
+        target = {}
+    end
+
+    local defaultColor = defaults or DEFAULT_COLOR_FALLBACK
+    target.r = normalizeColorComponent(target.r, defaultColor.r)
+    target.g = normalizeColorComponent(target.g, defaultColor.g)
+    target.b = normalizeColorComponent(target.b, defaultColor.b)
+    target.a = normalizeColorComponent(target.a, defaultColor.a)
+
+    return target
+end
+
+local function ensureTrackerColorConfig(sv, trackerType)
+    if not (sv and trackerType) then
+        return nil
+    end
+
+    sv.appearance = sv.appearance or {}
+    local tracker = sv.appearance[trackerType]
+    if type(tracker) ~= "table" then
+        tracker = {}
+        sv.appearance[trackerType] = tracker
+    end
+
+    tracker.colors = tracker.colors or {}
+
+    local defaults = DEFAULT_TRACKER_COLORS[trackerType]
+    if defaults and defaults.colors then
+        for role, defaultColor in pairs(defaults.colors) do
+            tracker.colors[role] = ensureColorComponents(tracker.colors[role], defaultColor)
+        end
+    end
+
+    return tracker
+end
+
+local function ensureAppearanceColorDefaults()
+    local sv = getSavedVars()
+    if not sv then
+        return nil
+    end
+
+    for trackerType in pairs(DEFAULT_TRACKER_COLORS) do
+        ensureTrackerColorConfig(sv, trackerType)
+    end
+
+    return sv.appearance
+end
+
+local function getDefaultColor(trackerType, role)
+    local defaults = DEFAULT_TRACKER_COLORS[trackerType]
+    local colors = defaults and defaults.colors or nil
+    local color = colors and colors[role] or DEFAULT_COLOR_FALLBACK
+    local r = color.r or DEFAULT_COLOR_FALLBACK.r
+    local g = color.g or DEFAULT_COLOR_FALLBACK.g
+    local b = color.b or DEFAULT_COLOR_FALLBACK.b
+    local a = color.a or DEFAULT_COLOR_FALLBACK.a
+    return r, g, b, a
 end
 
 local function isWindowOptionEnabled()
@@ -1878,6 +1970,7 @@ function TrackerHost.Init()
     state.appearance = ensureAppearanceSettings()
     state.layout = ensureLayoutSettings()
     state.features = ensureFeatureSettings()
+    TrackerHost.EnsureAppearanceDefaults()
 
     createRootControl()
     createContainers()
@@ -1986,6 +2079,56 @@ function TrackerHost.ApplyAppearance()
 
     applyAppearance()
     notifyContentChanged()
+end
+
+function TrackerHost.EnsureAppearanceDefaults()
+    return ensureAppearanceColorDefaults()
+end
+
+function TrackerHost.GetDefaultTrackerColor(trackerType, role)
+    return getDefaultColor(trackerType, role)
+end
+
+function TrackerHost.GetTrackerColor(trackerType, role)
+    local fallbackR, fallbackG, fallbackB, fallbackA = getDefaultColor(trackerType, role)
+    local appearance = ensureAppearanceColorDefaults()
+    local tracker = appearance and appearance[trackerType]
+    local colors = tracker and tracker.colors
+    local color = colors and colors[role]
+    if not color then
+        return fallbackR, fallbackG, fallbackB, fallbackA
+    end
+
+    local r = normalizeColorComponent(color.r, fallbackR)
+    local g = normalizeColorComponent(color.g, fallbackG)
+    local b = normalizeColorComponent(color.b, fallbackB)
+    local a = normalizeColorComponent(color.a, fallbackA)
+    return r, g, b, a
+end
+
+function TrackerHost.SetTrackerColor(trackerType, role, r, g, b, a)
+    if type(trackerType) ~= "string" or type(role) ~= "string" then
+        return
+    end
+
+    local sv = getSavedVars()
+    if not sv then
+        return
+    end
+
+    local tracker = ensureTrackerColorConfig(sv, trackerType)
+    if not tracker then
+        return
+    end
+
+    tracker.colors = tracker.colors or {}
+    local defaultR, defaultG, defaultB, defaultA = getDefaultColor(trackerType, role)
+    local color = tracker.colors[role] or {}
+    color.r = normalizeColorComponent(r, defaultR)
+    color.g = normalizeColorComponent(g, defaultG)
+    color.b = normalizeColorComponent(b, defaultB)
+    color.a = normalizeColorComponent(a, defaultA)
+    tracker.colors[role] = color
 end
 
 function TrackerHost.OnLamPanelOpened()

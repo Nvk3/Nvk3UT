@@ -116,8 +116,45 @@ function M.ShouldShowCategoryCounts(context)
   return resolveShowCategoryCountsOverride(context)
 end
 
+local function extractLeadingIcons(text)
+  if type(text) ~= "string" or text == "" then
+    return "", text
+  end
+
+  local prefix = ""
+  local remainder = text
+
+  while true do
+    local iconTag, after = remainder:match("^(|t[^|]-|t%s*)(.*)$")
+    if not iconTag then
+      break
+    end
+
+    prefix = prefix .. iconTag
+    remainder = after
+  end
+
+  return prefix, remainder
+end
+
 function M.FormatCategoryHeaderText(baseText, count, showCounts)
   local text = baseText or ""
+  local iconPrefix = ""
+
+  if type(text) == "string" and text ~= "" then
+    iconPrefix, text = extractLeadingIcons(text)
+
+    if text ~= "" then
+      if type(zo_strupper) == "function" then
+        text = zo_strupper(text)
+      else
+        text = string.upper(text)
+      end
+    end
+
+    text = iconPrefix .. text
+  end
+
   local show = resolveShowCategoryCountsOverride(showCounts)
   local numericCount = tonumber(count)
   if show and numericCount and numericCount >= 0 then

@@ -1,20 +1,42 @@
 Nvk3UT = Nvk3UT or {}
 local UI = Nvk3UT.UI
 
+local DEFAULT_FONT_FACE_BOLD = "$(BOLD_FONT)"
+local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
+
 local DEFAULT_QUEST_FONTS = {
-    category = { face = "EsoUI/Common/Fonts/univers67.otf", size = 20, outline = "soft-shadow-thick" },
-    title = { face = "EsoUI/Common/Fonts/univers67.otf", size = 18, outline = "soft-shadow-thin" },
-    line = { face = "EsoUI/Common/Fonts/univers57.otf", size = 16, outline = "soft-shadow-thin" },
+    category = { face = DEFAULT_FONT_FACE_BOLD, size = 20, outline = DEFAULT_FONT_OUTLINE },
+    title = { face = DEFAULT_FONT_FACE_BOLD, size = 16, outline = DEFAULT_FONT_OUTLINE },
+    line = { face = DEFAULT_FONT_FACE_BOLD, size = 14, outline = DEFAULT_FONT_OUTLINE },
 }
 
 local DEFAULT_ACHIEVEMENT_FONTS = {
-    category = { face = "EsoUI/Common/Fonts/univers67.otf", size = 20, outline = "soft-shadow-thick" },
-    title = { face = "EsoUI/Common/Fonts/univers67.otf", size = 18, outline = "soft-shadow-thin" },
-    line = { face = "EsoUI/Common/Fonts/univers57.otf", size = 16, outline = "soft-shadow-thin" },
+    category = { face = DEFAULT_FONT_FACE_BOLD, size = 20, outline = DEFAULT_FONT_OUTLINE },
+    title = { face = DEFAULT_FONT_FACE_BOLD, size = 16, outline = DEFAULT_FONT_OUTLINE },
+    line = { face = DEFAULT_FONT_FACE_BOLD, size = 14, outline = DEFAULT_FONT_OUTLINE },
+}
+
+local DEFAULT_TRACKER_APPEARANCE = {
+    questTracker = {
+        colors = {
+            categoryTitle = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
+            objectiveText = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
+            entryTitle = { r = 1, g = 1, b = 0, a = 1 },
+            activeTitle = { r = 1, g = 1, b = 1, a = 1 },
+        },
+    },
+    achievementTracker = {
+        colors = {
+            categoryTitle = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
+            objectiveText = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
+            entryTitle = { r = 1, g = 1, b = 0, a = 1 },
+            activeTitle = { r = 1, g = 1, b = 1, a = 1 },
+        },
+    },
 }
 
 local defaults = {
-    version = 3,
+    version = 4,
     debug = false,
     General = {
         showStatus = true,
@@ -76,6 +98,7 @@ local defaults = {
             todo = true,
         },
     },
+    appearance = DEFAULT_TRACKER_APPEARANCE,
 }
 
 local function MergeDefaults(target, source)
@@ -121,6 +144,7 @@ local function AdoptLegacySettings(saved)
 
     saved.QuestTracker = MergeDefaults(saved.QuestTracker, defaults.QuestTracker)
     saved.AchievementTracker = MergeDefaults(saved.AchievementTracker, defaults.AchievementTracker)
+    saved.appearance = MergeDefaults(saved.appearance, defaults.appearance)
 
     saved.ui = saved.General
     saved.features = saved.General.features
