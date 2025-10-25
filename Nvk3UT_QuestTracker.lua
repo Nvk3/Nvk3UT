@@ -517,13 +517,41 @@ local function LogStateWrite(entity, key, expanded, source, priority)
     end
 end
 
+local function EnsureActiveSavedState()
+    if not state.saved then
+        return nil
+    end
+
+    local active = state.saved.active
+    if type(active) ~= "table" then
+        active = {
+            questKey = nil,
+            source = "init",
+            ts = 0,
+        }
+        state.saved.active = active
+    end
+
+    if active.questKey ~= nil then
+        active.questKey = NormalizeQuestKey(active.questKey)
+    end
+
+    if type(active.source) ~= "string" or active.source == "" then
+        active.source = "init"
+    end
+
+    active.ts = tonumber(active.ts) or 0
+
+    return active
+end
+
 local function SyncSelectedQuestFromSaved()
     if not state.saved then
         state.selectedQuestKey = nil
         return nil
     end
 
-    local active = state.saved.active
+    local active = EnsureActiveSavedState()
     local questKey = active and active.questKey or nil
     if questKey ~= nil then
         questKey = NormalizeQuestKey(questKey)
@@ -650,7 +678,7 @@ local function WriteActiveQuest(questKey, source, options)
     source = source or "auto"
     options = options or {}
     local normalized = questKey and NormalizeQuestKey(questKey) or nil
-    local prev = state.saved.active
+    local prev = EnsureActiveSavedState()
     local priorityOverride = options.priorityOverride
     local priority = priorityOverride or PRIORITY[source] or 0
     local prevPriority = prev and (PRIORITY[prev.source] or 0) or 0
@@ -737,7 +765,7 @@ local function PrimeInitialSavedState()
         end
     end
 
-    local active = state.saved.active
+    local active = EnsureActiveSavedState()
     local activeTs = (active and active.ts) or 0
     if activeTs < initTimestamp then
         WriteActiveQuest(active and active.questKey or nil, "init", { timestamp = initTimestamp })
@@ -1357,7 +1385,8 @@ local function UpdateTrackedQuestCache(forcedIndex, context)
     end
 
     if not trackedIndex and not state.pendingDeselection then
-        local savedActive = state.saved and state.saved.active and state.saved.active.questKey
+        local active = EnsureActiveSavedState()
+        local savedActive = active and active.questKey
         trackedIndex = normalize(savedActive)
     end
 
@@ -2237,23 +2266,12 @@ local function EnsureSavedVars()
 
     saved.cat = saved.cat or {}
     saved.quest = saved.quest or {}
-    if type(saved.active) ~= "table" then
-        saved.active = {
-            questKey = nil,
-            source = "init",
-            ts = 0,
-        }
-    else
-        if saved.active.questKey ~= nil then
-            saved.active.questKey = NormalizeQuestKey(saved.active.questKey)
-        end
-        saved.active.source = saved.active.source or "init"
-        saved.active.ts = saved.active.ts or 0
-    end
+
+    state.saved = saved
+    EnsureActiveSavedState()
 
     EnsureSavedDefaults(saved)
 
-    state.saved = saved
     ApplyActiveQuestFromSaved()
 end
 

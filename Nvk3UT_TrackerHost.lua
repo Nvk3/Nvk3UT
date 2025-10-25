@@ -26,6 +26,7 @@ local MAX_BAR_HEIGHT = 250
 
 local FRAGMENT_REASON_SUPPRESSED = addonName .. "_HostSuppressed"
 local FRAGMENT_REASON_USER = addonName .. "_HostHiddenBySettings"
+local FRAGMENT_REASON_SCENE = addonName .. "_HostSceneHidden"
 
 local DEFAULT_APPEARANCE = {
     enabled = true,
@@ -126,7 +127,54 @@ local state = {
     previousDefaultQuestTrackerHidden = nil,
     initializing = false,
     lamPreviewForceVisible = false,
+    sceneCallbacks = nil,
 }
+
+local function isSceneShowing(scene)
+    if not (scene and scene.IsShowing) then
+        return false
+    end
+
+    local ok, showing = pcall(scene.IsShowing, scene)
+    return ok and showing == true
+end
+
+local function isHudSceneShowing()
+    local checkedAny = false
+
+    local function pushScenes(list, scene)
+        if scene then
+            list[#list + 1] = scene
+        end
+    end
+
+    local scenes = {}
+    pushScenes(scenes, HUD_SCENE)
+    pushScenes(scenes, HUD_UI_SCENE)
+
+    if SCENE_MANAGER and SCENE_MANAGER.GetScene then
+        pushScenes(scenes, SCENE_MANAGER:GetScene("hud"))
+        pushScenes(scenes, SCENE_MANAGER:GetScene("hudui"))
+    end
+
+    local seen = {}
+    for index = 1, #scenes do
+        local scene = scenes[index]
+        if scene and not seen[scene] then
+            seen[scene] = true
+            checkedAny = true
+            if isSceneShowing(scene) then
+                return true
+            end
+        end
+    end
+
+    if not checkedAny then
+        return true
+    end
+
+    return false
+end
 
 local lamPreview = {
     active = false,
@@ -143,6 +191,7 @@ local setScrollOffset
 local updateScrollContentAnchors
 local anchorContainers
 local applyWindowBars
+local applyWindowVisibility
 local createContainers
 local startWindowDrag
 local stopWindowDrag
@@ -1490,21 +1539,24 @@ end
 
 local function applyWindowVisibility()
     if not state.root then
-        return
+        return true
     end
 
     local userHidden = state.window and state.window.visible == false
     local suppressed = state.initializing == true
+    local sceneHidden = not isHudSceneShowing()
     local previewActive = state.lamPreviewForceVisible == true and not userHidden
-    local shouldHide = (suppressed or userHidden) and not previewActive
+    local shouldHide = (suppressed or userHidden or sceneHidden) and not previewActive
 
     if state.fragment and state.fragment.SetHiddenForReason then
         if previewActive then
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, false)
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, false)
+            state.fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, false)
         else
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, suppressed)
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, userHidden)
+            state.fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, sceneHidden)
         end
     end
 
@@ -1513,6 +1565,8 @@ local function applyWindowVisibility()
     if lamPreview.active and previewActive then
         lamPreview.windowPreviewApplied = true
     end
+
+    return shouldHide
 end
 
 local function refreshWindowLayout(targetOffset)
@@ -1742,6 +1796,38 @@ local function createBackdrop()
     state.backdrop = control
 end
 
+local function ensureSceneStateCallback(scene)
+    if not (scene and scene.RegisterCallback) then
+        return
+    end
+
+    state.sceneCallbacks = state.sceneCallbacks or {}
+    if state.sceneCallbacks[scene] then
+        return
+    end
+
+    local function onStateChange()
+        if not state.root then
+            return
+        end
+
+        local wasHidden = state.root:IsHidden()
+        local shouldHide = applyWindowVisibility()
+
+        if wasHidden and shouldHide == false then
+            notifyContentChanged()
+        end
+    end
+
+    local ok, message = pcall(scene.RegisterCallback, scene, "StateChange", onStateChange)
+    if not ok then
+        debugLog("Failed to register scene callback", message)
+        return
+    end
+
+    state.sceneCallbacks[scene] = onStateChange
+end
+
 local function attachFragmentToScene(scene)
     if not (scene and state.fragment and scene.AddFragment) then
         return false
@@ -1764,6 +1850,7 @@ local function attachFragmentToScene(scene)
     end
 
     state.fragmentScenes[scene] = true
+    ensureSceneStateCallback(scene)
     return true
 end
 
@@ -2263,9 +2350,19 @@ function TrackerHost.Shutdown()
     end
     state.fragmentScenes = nil
 
+    if state.sceneCallbacks then
+        for scene, callback in pairs(state.sceneCallbacks) do
+            if scene and scene.UnregisterCallback and callback then
+                pcall(scene.UnregisterCallback, scene, "StateChange", callback)
+            end
+        end
+    end
+    state.sceneCallbacks = nil
+
     if state.fragment and state.fragment.SetHiddenForReason then
         state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, true)
         state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, true)
+        state.fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, true)
     end
     state.fragment = nil
     state.fragmentRetryScheduled = false
