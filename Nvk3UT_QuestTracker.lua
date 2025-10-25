@@ -83,6 +83,8 @@ local state = {
     suppressForceExpandFor = nil,
     pendingSelection = nil,
     lastTrackedBeforeSync = nil,
+    syncingTrackedState = false,
+    pendingDeselection = false,
 }
 
 local function ApplyLabelDefaults(label)
@@ -198,6 +200,32 @@ local function DebugLog(...)
         d(string.format("[%s]", MODULE_NAME), ...)
     elseif print then
         print("[" .. MODULE_NAME .. "]", ...)
+    end
+end
+
+NVK_DEBUG_DESELECT = NVK_DEBUG_DESELECT or false
+
+local function DebugDeselect(context, details)
+    if not NVK_DEBUG_DESELECT then
+        return
+    end
+
+    local parts = { string.format("[%s][DESELECT] %s", MODULE_NAME, tostring(context)) }
+
+    if type(details) == "table" then
+        for key, value in pairs(details) do
+            parts[#parts + 1] = string.format("%s=%s", tostring(key), tostring(value))
+        end
+    elseif details ~= nil then
+        parts[#parts + 1] = tostring(details)
+    end
+
+    local message = table.concat(parts, " | ")
+
+    if d then
+        d(message)
+    elseif print then
+        print(message)
     end
 end
 
@@ -353,6 +381,7 @@ local function UpdateTrackedQuestCache(forcedIndex)
     end
 
     local trackedIndex = normalize(forcedIndex)
+    local allowFocusFallback = not state.pendingDeselection
 
     if not trackedIndex and GetTrackedQuestIndex then
         local ok, current = SafeCall(GetTrackedQuestIndex)
@@ -361,7 +390,7 @@ local function UpdateTrackedQuestCache(forcedIndex)
         end
     end
 
-    if not trackedIndex then
+    if not trackedIndex and allowFocusFallback then
         trackedIndex = normalize(GetFocusedQuestIndex())
     end
 
@@ -387,6 +416,10 @@ local function UpdateTrackedQuestCache(forcedIndex)
 
     if type(trackedCategories) ~= "table" then
         trackedCategories = {}
+    end
+
+    if trackedIndex then
+        state.pendingDeselection = false
     end
 
     state.trackedQuestIndex = trackedIndex
@@ -453,6 +486,7 @@ local function ApplyImmediateTrackedQuest(journalIndex)
     local keys = CollectCategoryKeysForQuest(journalIndex)
     state.trackedCategoryKeys = keys
     state.trackedQuestIndex = journalIndex
+    state.pendingDeselection = false
 end
 
 local function AutoExpandQuestForTracking(journalIndex, forceExpand)
@@ -464,6 +498,11 @@ local function AutoExpandQuestForTracking(journalIndex, forceExpand)
         return
     end
 
+    DebugDeselect("AutoExpandQuestForTracking", {
+        journalIndex = journalIndex,
+        forceExpand = tostring(forceExpand),
+        previous = tostring(state.saved.questExpanded[journalIndex]),
+    })
     SetQuestExpanded(journalIndex, true)
 end
 
@@ -488,74 +527,146 @@ local function EnsureTrackedQuestVisible(journalIndex, forceExpand)
         return
     end
 
+    DebugDeselect("EnsureTrackedQuestVisible", {
+        journalIndex = journalIndex,
+        forceExpand = tostring(forceExpand),
+    })
     EnsureTrackedCategoriesExpanded(journalIndex, forceExpand)
     AutoExpandQuestForTracking(journalIndex, forceExpand)
 end
 
 local function SyncTrackedQuestState(forcedIndex, forceExpand)
-    local previousTracked = state.lastTrackedBeforeSync
-    if previousTracked == nil then
-        previousTracked = state.trackedQuestIndex
-    end
-
-    UpdateTrackedQuestCache(forcedIndex)
-    state.lastTrackedBeforeSync = nil
-
-    local currentTracked = state.trackedQuestIndex
-    local shouldForceExpand = forceExpand == true
-    local pending = state.pendingSelection
-    local pendingApplied = false
-    local expansionChanged = false
-    local skipVisibilityUpdate = false
-
-    if pending and currentTracked == pending.index then
-        pendingApplied = true
-        expansionChanged = SetQuestExpanded(currentTracked, pending.expanded) or expansionChanged
-
-        if pending.forceExpand ~= nil then
-            shouldForceExpand = pending.forceExpand and true or false
-        elseif pending.expanded then
-            shouldForceExpand = true
-        else
-            shouldForceExpand = false
-        end
-    end
-
-    state.pendingSelection = nil
-
-    if currentTracked and state.suppressForceExpandFor and state.suppressForceExpandFor == currentTracked then
-        if not (pendingApplied and shouldForceExpand) then
-            shouldForceExpand = false
-        end
-        state.suppressForceExpandFor = nil
-    elseif not currentTracked or state.suppressForceExpandFor ~= currentTracked then
-        state.suppressForceExpandFor = nil
-    end
-
-    if currentTracked and not skipVisibilityUpdate and previousTracked and currentTracked == previousTracked and not pendingApplied and not forcedIndex then
-        if IsJournalQuestTracked then
-            local ok, trackedState = SafeCall(IsJournalQuestTracked, currentTracked)
-            if ok and not trackedState then
-                skipVisibilityUpdate = true
-                shouldForceExpand = false
-            end
-        end
-    end
-
-    if currentTracked and not skipVisibilityUpdate then
-        EnsureTrackedQuestVisible(currentTracked, shouldForceExpand)
-    end
-
-    if not state.isInitialized then
+    if state.syncingTrackedState then
+        DebugDeselect("SyncTrackedQuestState:reentry", {
+            forcedIndex = forcedIndex,
+            forceExpand = tostring(forceExpand),
+        })
         return
     end
 
-    local hasTracked = currentTracked ~= nil
-    local hadTracked = previousTracked ~= nil
+    state.syncingTrackedState = true
 
-    if RequestRefresh and (previousTracked ~= currentTracked or hasTracked or hadTracked or pendingApplied or expansionChanged) then
-        RequestRefresh()
-    end
+    repeat
+        local previousTracked = state.lastTrackedBeforeSync
+        if previousTracked == nil then
+            previousTracked = state.trackedQuestIndex
+        end
+
+        UpdateTrackedQuestCache(forcedIndex)
+        state.lastTrackedBeforeSync = nil
+
+        local currentTracked = state.trackedQuestIndex
+        local shouldForceExpand = forceExpand == true
+        local pending = state.pendingSelection
+        local pendingApplied = false
+        local expansionChanged = false
+        local skipVisibilityUpdate = false
+
+        DebugDeselect("SyncTrackedQuestState:enter", {
+            forcedIndex = forcedIndex,
+            forceExpand = tostring(forceExpand),
+            previousTracked = tostring(previousTracked),
+            currentTracked = tostring(currentTracked),
+            pendingIndex = pending and pending.index,
+            pendingDeselection = tostring(state.pendingDeselection),
+        })
+
+        if previousTracked and (not currentTracked or currentTracked == previousTracked) and IsJournalQuestTracked then
+            local ok, trackedState = SafeCall(IsJournalQuestTracked, previousTracked)
+            if ok and not trackedState then
+                DebugDeselect("SyncTrackedQuestState:deselect-detected", {
+                    previousTracked = previousTracked,
+                    currentTracked = tostring(currentTracked),
+                    forcedIndex = forcedIndex,
+                    pendingDeselection = tostring(state.pendingDeselection),
+                })
+                if currentTracked == previousTracked then
+                    state.trackedQuestIndex = nil
+                    state.trackedCategoryKeys = {}
+                    currentTracked = nil
+                end
+                state.pendingDeselection = true
+                shouldForceExpand = false
+                skipVisibilityUpdate = true
+            end
+        end
+
+        if pending and currentTracked == pending.index then
+            local wasExpandedBefore = IsQuestExpanded(currentTracked)
+            pendingApplied = true
+            expansionChanged = SetQuestExpanded(currentTracked, pending.expanded) or expansionChanged
+
+            if pending.forceExpand ~= nil then
+                shouldForceExpand = pending.forceExpand and true or false
+            elseif pending.expanded then
+                shouldForceExpand = true
+            else
+                shouldForceExpand = false
+            end
+
+            DebugDeselect("SyncTrackedQuestState:pending-applied", {
+                index = currentTracked,
+                expandedBefore = tostring(wasExpandedBefore),
+                expandedAfter = tostring(IsQuestExpanded(currentTracked)),
+                shouldForceExpand = tostring(shouldForceExpand),
+            })
+        end
+
+        state.pendingSelection = nil
+
+        if currentTracked and state.suppressForceExpandFor and state.suppressForceExpandFor == currentTracked then
+            if not (pendingApplied and shouldForceExpand) then
+                shouldForceExpand = false
+            end
+            state.suppressForceExpandFor = nil
+        elseif not currentTracked or state.suppressForceExpandFor ~= currentTracked then
+            state.suppressForceExpandFor = nil
+        end
+
+        if currentTracked then
+            state.pendingDeselection = false
+        end
+
+        if currentTracked and not skipVisibilityUpdate and previousTracked and currentTracked == previousTracked and not pendingApplied and not forcedIndex then
+            if IsJournalQuestTracked then
+                local ok, trackedState = SafeCall(IsJournalQuestTracked, currentTracked)
+                if ok and not trackedState then
+                    skipVisibilityUpdate = true
+                    shouldForceExpand = false
+                    DebugDeselect("SyncTrackedQuestState:skip-visibility", {
+                        index = currentTracked,
+                        trackedState = tostring(trackedState),
+                    })
+                end
+            end
+        end
+
+        if currentTracked and not skipVisibilityUpdate then
+            DebugDeselect("SyncTrackedQuestState:ensure-visible", {
+                index = currentTracked,
+                shouldForceExpand = tostring(shouldForceExpand),
+            })
+            EnsureTrackedQuestVisible(currentTracked, shouldForceExpand)
+        else
+            DebugDeselect("SyncTrackedQuestState:skip-ensure-visible", {
+                index = tostring(currentTracked),
+                skipVisibilityUpdate = tostring(skipVisibilityUpdate),
+            })
+        end
+
+        if not state.isInitialized then
+            break
+        end
+
+        local hasTracked = currentTracked ~= nil
+        local hadTracked = previousTracked ~= nil
+
+        if RequestRefresh and (previousTracked ~= currentTracked or hasTracked or hadTracked or pendingApplied or expansionChanged) then
+            RequestRefresh()
+        end
+    until true
+
+    state.syncingTrackedState = false
 end
 
 local function FocusQuestInJournal(journalIndex)
@@ -613,6 +724,15 @@ local function TrackQuestByJournalIndex(journalIndex, options)
     end
 
     options = options or {}
+
+    state.pendingDeselection = false
+
+    DebugDeselect("TrackQuestByJournalIndex", {
+        journalIndex = numeric,
+        forceExpand = tostring(options.forceExpand),
+        skipAutoExpand = tostring(options.skipAutoExpand),
+        pendingSelection = state.pendingSelection and state.pendingSelection.index,
+    })
 
     if options.skipAutoExpand then
         state.suppressForceExpandFor = numeric
@@ -957,11 +1077,17 @@ SetCategoryExpanded = function(categoryKey, expanded)
     end
 
     local newValue = not not expanded
-    if state.saved.catExpanded[categoryKey] == newValue then
+    local oldValue = state.saved.catExpanded[categoryKey]
+    if oldValue == newValue then
         return false
     end
 
     state.saved.catExpanded[categoryKey] = newValue
+    DebugDeselect("SetCategoryExpanded", {
+        categoryKey = categoryKey,
+        previous = tostring(oldValue),
+        newValue = tostring(newValue),
+    })
     return true
 end
 
@@ -971,11 +1097,17 @@ SetQuestExpanded = function(journalIndex, expanded)
     end
 
     local newValue = not not expanded
-    if state.saved.questExpanded[journalIndex] == newValue then
+    local oldValue = state.saved.questExpanded[journalIndex]
+    if oldValue == newValue then
         return false
     end
 
     state.saved.questExpanded[journalIndex] = newValue
+    DebugDeselect("SetQuestExpanded", {
+        journalIndex = journalIndex,
+        previous = tostring(oldValue),
+        newValue = tostring(newValue),
+    })
     return true
 end
 
@@ -1450,6 +1582,8 @@ function QuestTracker.Init(parentControl, opts)
     state.fonts = {}
     state.pendingSelection = nil
     state.lastTrackedBeforeSync = nil
+    state.syncingTrackedState = false
+    state.pendingDeselection = false
 
     QuestTracker.ApplyTheme(state.saved or {})
     QuestTracker.ApplySettings(state.saved or {})
@@ -1534,6 +1668,8 @@ function QuestTracker.Shutdown()
     state.suppressForceExpandFor = nil
     state.pendingSelection = nil
     state.lastTrackedBeforeSync = nil
+    state.syncingTrackedState = false
+    state.pendingDeselection = false
     NotifyHostContentChanged()
 end
 
