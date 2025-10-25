@@ -32,7 +32,13 @@ local CATEGORY_TOGGLE_TEXTURES = {
 
 local CATEGORY_INDENT_X = 0
 local ACHIEVEMENT_INDENT_X = 18
-local OBJECTIVE_INDENT_X = 36
+local ACHIEVEMENT_ICON_SLOT_WIDTH = 18
+local ACHIEVEMENT_ICON_SLOT_HEIGHT = 18
+local ACHIEVEMENT_ICON_SLOT_PADDING_X = 6
+local ACHIEVEMENT_LABEL_INDENT_X = ACHIEVEMENT_INDENT_X + ACHIEVEMENT_ICON_SLOT_WIDTH + ACHIEVEMENT_ICON_SLOT_PADDING_X
+-- keep objective text inset relative to achievement titles after adding the persistent icon slot
+local OBJECTIVE_RELATIVE_INDENT = 18
+local OBJECTIVE_INDENT_X = ACHIEVEMENT_LABEL_INDENT_X + OBJECTIVE_RELATIVE_INDENT
 local VERTICAL_PADDING = 3
 
 local CATEGORY_KEY = "achievements"
@@ -43,9 +49,6 @@ local OBJECTIVE_MIN_HEIGHT = 20
 local ROW_TEXT_PADDING_Y = 8
 local TOGGLE_LABEL_PADDING_X = 4
 local CATEGORY_TOGGLE_WIDTH = 20
-local ACHIEVEMENT_ICON_SLOT_WIDTH = 18
-local ACHIEVEMENT_ICON_SLOT_HEIGHT = 18
-local ACHIEVEMENT_ICON_SLOT_PADDING_X = 6
 
 local DEFAULT_FONTS = {
     category = "ZoFontGameBold",
@@ -696,7 +699,7 @@ local function AcquireAchievementControl()
         if control.iconSlot then
             control.iconSlot:SetDimensions(ACHIEVEMENT_ICON_SLOT_WIDTH, ACHIEVEMENT_ICON_SLOT_HEIGHT)
             control.iconSlot:ClearAnchors()
-            control.iconSlot:SetAnchor(LEFT, control, LEFT, 0, 0)
+            control.iconSlot:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
             if control.iconSlot.SetTexture then
                 control.iconSlot:SetTexture(nil)
             end

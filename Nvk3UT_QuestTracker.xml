@@ -25,7 +25,7 @@
                 <Texture name="$(parent)IconSlot"
                          textureSampleProcessingWeight="1">
                     <Anchor point="TOPLEFT" relativePoint="TOPLEFT" offsetX="0" offsetY="0" />
-                    <Dimensions x="20" y="20" />
+                    <Dimensions x="18" y="18" />
                 </Texture>
                 <Label name="$(parent)Label"
                        font="ZoFontGame"

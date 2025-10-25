@@ -35,7 +35,13 @@ local QUEST_SELECTED_ICON_TEXTURE = "EsoUI/Art/Journal/journal_Quest_Selected.dd
 
 local CATEGORY_INDENT_X = 0
 local QUEST_INDENT_X = 18
-local CONDITION_INDENT_X = 36
+local QUEST_ICON_SLOT_WIDTH = 18
+local QUEST_ICON_SLOT_HEIGHT = 18
+local QUEST_ICON_SLOT_PADDING_X = 6
+local QUEST_LABEL_INDENT_X = QUEST_INDENT_X + QUEST_ICON_SLOT_WIDTH + QUEST_ICON_SLOT_PADDING_X
+-- keep objective indentation ahead of quest titles even with the persistent icon slot
+local CONDITION_RELATIVE_INDENT = 18
+local CONDITION_INDENT_X = QUEST_LABEL_INDENT_X + CONDITION_RELATIVE_INDENT
 local VERTICAL_PADDING = 3
 
 local CATEGORY_MIN_HEIGHT = 26
@@ -44,9 +50,6 @@ local CONDITION_MIN_HEIGHT = 20
 local ROW_TEXT_PADDING_Y = 8
 local TOGGLE_LABEL_PADDING_X = 4
 local CATEGORY_TOGGLE_WIDTH = 20
-local QUEST_ICON_SLOT_WIDTH = 18
-local QUEST_ICON_SLOT_HEIGHT = 18
-local QUEST_ICON_SLOT_PADDING_X = 6
 
 local DEFAULT_FONTS = {
     category = "ZoFontGameBold",
@@ -1734,7 +1737,7 @@ local function AcquireQuestControl()
         if control.iconSlot then
             control.iconSlot:SetDimensions(QUEST_ICON_SLOT_WIDTH, QUEST_ICON_SLOT_HEIGHT)
             control.iconSlot:ClearAnchors()
-            control.iconSlot:SetAnchor(LEFT, control, LEFT, 0, 0)
+            control.iconSlot:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
             if control.iconSlot.SetTexture then
                 control.iconSlot:SetTexture(nil)
             end
