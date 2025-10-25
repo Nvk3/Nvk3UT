@@ -122,6 +122,103 @@ local PRIORITY = {
     init = 1,
 }
 
+NVK_DEBUG_DESELECT = NVK_DEBUG_DESELECT or false
+
+local function IsDebugLoggingEnabled()
+    local sv = Nvk3UT and Nvk3UT.sv
+    return sv and sv.debug == true
+end
+
+local function DebugLog(...)
+    local isEnabled = type(IsDebugLoggingEnabled) == "function" and IsDebugLoggingEnabled()
+    if not isEnabled then
+        return
+    end
+
+    if d then
+        d(string.format("[%s]", MODULE_NAME), ...)
+    elseif print then
+        print("[" .. MODULE_NAME .. "]", ...)
+    end
+end
+
+local function DebugDeselect(context, details)
+    if not NVK_DEBUG_DESELECT then
+        return
+    end
+
+    local parts = { string.format("[%s][DESELECT] %s", MODULE_NAME, tostring(context)) }
+
+    if type(details) == "table" then
+        for key, value in pairs(details) do
+            parts[#parts + 1] = string.format("%s=%s", tostring(key), tostring(value))
+        end
+    elseif details ~= nil then
+        parts[#parts + 1] = tostring(details)
+    end
+
+    local message = table.concat(parts, " | ")
+
+    if d then
+        d(message)
+    elseif print then
+        print(message)
+    end
+end
+
+local function EscapeDebugString(value)
+    return tostring(value):gsub('"', '\\"')
+end
+
+local function AppendDebugField(parts, key, value, treatAsString)
+    if key == nil or key == "" then
+        return
+    end
+
+    if value == nil then
+        parts[#parts + 1] = string.format("%s=nil", key)
+        return
+    end
+
+    local valueType = type(value)
+    if valueType == "boolean" then
+        parts[#parts + 1] = string.format("%s=%s", key, value and "true" or "false")
+    elseif valueType == "number" then
+        parts[#parts + 1] = string.format("%s=%s", key, tostring(value))
+    elseif treatAsString or valueType == "string" then
+        parts[#parts + 1] = string.format('%s="%s"', key, EscapeDebugString(value))
+    else
+        parts[#parts + 1] = string.format("%s=%s", key, tostring(value))
+    end
+end
+
+local function EmitDebugAction(action, trigger, entityType, fieldList)
+    if not (type(IsDebugLoggingEnabled) == "function" and IsDebugLoggingEnabled()) then
+        return
+    end
+
+    local parts = { "[NVK]" }
+    AppendDebugField(parts, "action", action or "unknown")
+    AppendDebugField(parts, "trigger", trigger or "unknown")
+    AppendDebugField(parts, "type", entityType or "unknown")
+
+    if type(fieldList) == "table" then
+        for index = 1, #fieldList do
+            local entry = fieldList[index]
+            if entry and entry.key then
+                AppendDebugField(parts, entry.key, entry.value, entry.string)
+            end
+        end
+    end
+
+    local message = table.concat(parts, " ")
+    if d then
+        d(message)
+    elseif print then
+        print(message)
+    end
+end
+
 local function GetCurrentTimeSeconds()
     if GetFrameTimeSeconds then
         local ok, now = pcall(GetFrameTimeSeconds)
@@ -228,7 +325,8 @@ local function ResolveStateSource(context, fallback)
 end
 
 local function LogStateWrite(entity, key, expanded, source, priority)
-    if not IsDebugLoggingEnabled() then
+    local debugCheck = IsDebugLoggingEnabled
+    if type(debugCheck) ~= "function" or not debugCheck() then
         return
     end
 
@@ -658,102 +756,6 @@ local function RefreshControlMetrics(control)
         )
     elseif rowType == "condition" then
         ApplyRowMetrics(control, indent, 0, 0, 0, CONDITION_MIN_HEIGHT)
-    end
-end
-
-NVK_DEBUG_DESELECT = NVK_DEBUG_DESELECT or false
-
-local function DebugDeselect(context, details)
-    if not NVK_DEBUG_DESELECT then
-        return
-    end
-
-    local parts = { string.format("[%s][DESELECT] %s", MODULE_NAME, tostring(context)) }
-
-    if type(details) == "table" then
-        for key, value in pairs(details) do
-            parts[#parts + 1] = string.format("%s=%s", tostring(key), tostring(value))
-        end
-    elseif details ~= nil then
-        parts[#parts + 1] = tostring(details)
-    end
-
-    local message = table.concat(parts, " | ")
-
-    if d then
-        d(message)
-    elseif print then
-        print(message)
-    end
-end
-
-local function IsDebugLoggingEnabled()
-    local sv = Nvk3UT and Nvk3UT.sv
-    return sv and sv.debug == true
-end
-
-local function DebugLog(...)
-    if not IsDebugLoggingEnabled() then
-        return
-    end
-
-    if d then
-        d(string.format("[%s]", MODULE_NAME), ...)
-    elseif print then
-        print("[" .. MODULE_NAME .. "]", ...)
-    end
-end
-
-local function EscapeDebugString(value)
-    return tostring(value):gsub('"', '\\"')
-end
-
-local function AppendDebugField(parts, key, value, treatAsString)
-    if key == nil or key == "" then
-        return
-    end
-
-    if value == nil then
-        parts[#parts + 1] = string.format("%s=nil", key)
-        return
-    end
-
-    local valueType = type(value)
-    if valueType == "boolean" then
-        parts[#parts + 1] = string.format("%s=%s", key, value and "true" or "false")
-    elseif valueType == "number" then
-        parts[#parts + 1] = string.format("%s=%s", key, tostring(value))
-    elseif treatAsString or valueType == "string" then
-        parts[#parts + 1] = string.format('%s="%s"', key, EscapeDebugString(value))
-    else
-        parts[#parts + 1] = string.format("%s=%s", key, tostring(value))
-    end
-end
-
-local function EmitDebugAction(action, trigger, entityType, fieldList)
-    if not IsDebugLoggingEnabled() then
-        return
-    end
-
-    local parts = { "[NVK]" }
-    AppendDebugField(parts, "action", action or "unknown")
-    AppendDebugField(parts, "trigger", trigger or "unknown")
-    AppendDebugField(parts, "type", entityType or "unknown")
-
-    if type(fieldList) == "table" then
-        for index = 1, #fieldList do
-            local entry = fieldList[index]
-            if entry and entry.key then
-                AppendDebugField(parts, entry.key, entry.value, entry.string)
-            end
-        end
-    end
-
-    local message = table.concat(parts, " ")
-    if d then
-        d(message)
-    elseif print then
-        print(message)
     end
 end
 
