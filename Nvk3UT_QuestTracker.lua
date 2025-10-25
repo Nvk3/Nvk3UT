@@ -224,40 +224,6 @@ local function GetQuestTrackerColor(role)
     return 1, 1, 1, 1
 end
 
-local function DetermineQuestColorRole(quest)
-    if not quest then
-        return "entryTitle"
-    end
-
-    local questKey = NormalizeQuestKey(quest.journalIndex)
-    local selected = false
-    if questKey and state.selectedQuestKey then
-        selected = questKey == state.selectedQuestKey
-    end
-
-    local tracked = false
-    if state.trackedQuestIndex and quest.journalIndex then
-        tracked = quest.journalIndex == state.trackedQuestIndex
-    end
-
-    local flags = quest.flags or {}
-    local assisted = flags.assisted == true
-    local watched = flags.tracked == true
-
-    if assisted or selected or tracked then
-        return "activeTitle"
-    end
-
-    -- Keep the legacy watcher branch in place even though it currently maps to the
-    -- default entry color so future enhancements can differentiate it again without
-    -- having to rediscover the selection logic.
-    if watched then
-        return "entryTitle"
-    end
-
-    return "entryTitle"
-end
-
 local function ApplyBaseColor(control, r, g, b, a)
     if not control then
         return
@@ -338,6 +304,40 @@ local function NormalizeQuestKey(journalIndex)
     end
 
     return tostring(journalIndex)
+end
+
+local function DetermineQuestColorRole(quest)
+    if not quest then
+        return "entryTitle"
+    end
+
+    local questKey = NormalizeQuestKey(quest.journalIndex)
+    local selected = false
+    if questKey and state.selectedQuestKey then
+        selected = questKey == state.selectedQuestKey
+    end
+
+    local tracked = false
+    if state.trackedQuestIndex and quest.journalIndex then
+        tracked = quest.journalIndex == state.trackedQuestIndex
+    end
+
+    local flags = quest.flags or {}
+    local assisted = flags.assisted == true
+    local watched = flags.tracked == true
+
+    if assisted or selected or tracked then
+        return "activeTitle"
+    end
+
+    -- Keep the legacy watcher branch in place even though it currently maps to the
+    -- default entry color so future enhancements can differentiate it again without
+    -- having to rediscover the selection logic.
+    if watched then
+        return "entryTitle"
+    end
+
+    return "entryTitle"
 end
 
 local function QuestKeyToJournalIndex(questKey)
