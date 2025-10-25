@@ -1539,7 +1539,7 @@ end
 
 local function applyWindowVisibility()
     if not state.root then
-        return
+        return true
     end
 
     local userHidden = state.window and state.window.visible == false
@@ -1565,6 +1565,8 @@ local function applyWindowVisibility()
     if lamPreview.active and previewActive then
         lamPreview.windowPreviewApplied = true
     end
+
+    return shouldHide
 end
 
 local function refreshWindowLayout(targetOffset)
@@ -1809,7 +1811,12 @@ local function ensureSceneStateCallback(scene)
             return
         end
 
-        applyWindowVisibility()
+        local wasHidden = state.root:IsHidden()
+        local shouldHide = applyWindowVisibility()
+
+        if wasHidden and shouldHide == false then
+            notifyContentChanged()
+        end
     end
 
     local ok, message = pcall(scene.RegisterCallback, scene, "StateChange", onStateChange)
