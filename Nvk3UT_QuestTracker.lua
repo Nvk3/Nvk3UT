@@ -294,7 +294,7 @@ local function ApplyActiveQuestFromSaved()
     return journalIndex
 end
 
-local function WriteCategoryState(categoryKey, expanded, source)
+local function WriteCategoryState(categoryKey, expanded, source, options)
     if not state.saved then
         return false
     end
@@ -305,12 +305,14 @@ local function WriteCategoryState(categoryKey, expanded, source)
     end
 
     source = source or "auto"
+    options = options or {}
     state.saved.cat = state.saved.cat or {}
 
     local prev = state.saved.cat[key]
     local priority = PRIORITY[source] or 0
     local prevPriority = prev and PRIORITY[prev.source] or 0
-    local now = GetCurrentTimeSeconds()
+    local overrideTimestamp = tonumber(options.timestamp)
+    local now = overrideTimestamp or GetCurrentTimeSeconds()
     local prevTs = (prev and prev.ts) or 0
 
     if prev and prevPriority > priority then
@@ -332,7 +334,7 @@ local function WriteCategoryState(categoryKey, expanded, source)
     return true
 end
 
-local function WriteQuestState(questKey, expanded, source)
+local function WriteQuestState(questKey, expanded, source, options)
     if not state.saved then
         return false
     end
@@ -343,12 +345,14 @@ local function WriteQuestState(questKey, expanded, source)
     end
 
     source = source or "auto"
+    options = options or {}
     state.saved.quest = state.saved.quest or {}
 
     local prev = state.saved.quest[key]
     local priority = PRIORITY[source] or 0
     local prevPriority = prev and PRIORITY[prev.source] or 0
-    local now = GetCurrentTimeSeconds()
+    local overrideTimestamp = tonumber(options.timestamp)
+    local now = overrideTimestamp or GetCurrentTimeSeconds()
     local prevTs = (prev and prev.ts) or 0
 
     if prev and prevPriority > priority then
@@ -370,7 +374,7 @@ local function WriteQuestState(questKey, expanded, source)
     return true
 end
 
-local function WriteActiveQuest(questKey, source)
+local function WriteActiveQuest(questKey, source, options)
     if not state.saved then
         return false
     end
@@ -380,7 +384,9 @@ local function WriteActiveQuest(questKey, source)
     local prev = state.saved.active
     local priority = PRIORITY[source] or 0
     local prevPriority = prev and PRIORITY[prev.source] or 0
-    local now = GetCurrentTimeSeconds()
+    options = options or {}
+    local overrideTimestamp = tonumber(options.timestamp)
+    local now = overrideTimestamp or GetCurrentTimeSeconds()
     local prevTs = (prev and prev.ts) or 0
 
     if prev and prevPriority > priority then
@@ -404,12 +410,86 @@ local function WriteActiveQuest(questKey, source)
     return true
 end
 
+local function PrimeInitialSavedState()
+    if not state.saved then
+        return
+    end
+
+    if not state.snapshot or not state.snapshot.categories then
+        return
+    end
+
+    local ordered = state.snapshot.categories.ordered
+    if type(ordered) ~= "table" then
+        return
+    end
+
+    state.saved.initializedAt = state.saved.initializedAt or GetCurrentTimeSeconds()
+    local initTimestamp = tonumber(state.saved.initializedAt) or GetCurrentTimeSeconds()
+
+    local primedCategories = 0
+    local primedQuests = 0
+
+    for index = 1, #ordered do
+        local category = ordered[index]
+        if category then
+            local catKey = NormalizeCategoryKey(category.key)
+            if catKey then
+                local entry = state.saved.cat and state.saved.cat[catKey]
+                local entryTs = (entry and entry.ts) or 0
+                if entryTs < initTimestamp or not entry then
+                    if WriteCategoryState(catKey, true, "init", { timestamp = initTimestamp }) then
+                        primedCategories = primedCategories + 1
+                    end
+                end
+            end
+
+            if type(category.quests) == "table" then
+                for questIndex = 1, #category.quests do
+                    local quest = category.quests[questIndex]
+                    if quest then
+                        local questKey = NormalizeQuestKey(quest.journalIndex)
+                        if questKey then
+                            local entry = state.saved.quest and state.saved.quest[questKey]
+                            local entryTs = (entry and entry.ts) or 0
+                            if entryTs < initTimestamp or not entry then
+                                if WriteQuestState(questKey, true, "init", { timestamp = initTimestamp }) then
+                                    primedQuests = primedQuests + 1
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    local active = state.saved.active
+    local activeTs = (active and active.ts) or 0
+    if activeTs < initTimestamp then
+        WriteActiveQuest(active and active.questKey or nil, "init", { timestamp = initTimestamp })
+    end
+
+    if IsDebugLoggingEnabled() and (primedCategories > 0 or primedQuests > 0) then
+        DebugLog(string.format(
+            "STATE_PRIME timestamp=%.3f categories=%d quests=%d",
+            initTimestamp,
+            primedCategories,
+            primedQuests
+        ))
+    end
+end
+
 local function EnsureSavedDefaults(saved)
     saved.defaults = saved.defaults or {}
-    if saved.defaults.categoryExpanded ~= nil then
+    if saved.defaults.categoryExpanded == nil then
+        saved.defaults.categoryExpanded = true
+    else
         saved.defaults.categoryExpanded = saved.defaults.categoryExpanded and true or false
     end
-    if saved.defaults.questExpanded ~= nil then
+    if saved.defaults.questExpanded == nil then
+        saved.defaults.questExpanded = true
+    else
         saved.defaults.questExpanded = saved.defaults.questExpanded and true or false
     end
 end
@@ -2827,6 +2907,8 @@ local function Rebuild()
         end
         return
     end
+
+    PrimeInitialSavedState()
 
     for index = 1, #state.snapshot.categories.ordered do
         local category = state.snapshot.categories.ordered[index]
