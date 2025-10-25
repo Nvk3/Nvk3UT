@@ -968,7 +968,8 @@ local function LayoutCategory()
     control.label:SetText(FormatCategoryHeaderText("Errungenschaften", total or 0, "achievement"))
 
     local expanded = IsCategoryExpanded()
-    local r, g, b, a = GetAchievementTrackerColor("categoryTitle")
+    local colorRole = expanded and "activeTitle" or "categoryTitle"
+    local r, g, b, a = GetAchievementTrackerColor(colorRole)
     ApplyBaseColor(control, r, g, b, a)
     UpdateCategoryToggle(control, expanded)
     ApplyRowMetrics(

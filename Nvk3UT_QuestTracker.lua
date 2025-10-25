@@ -3001,7 +3001,8 @@ local function LayoutCategory(category)
             tostring(expanded)
         ))
     end
-    local r, g, b, a = GetQuestTrackerColor("categoryTitle")
+    local colorRole = expanded and "activeTitle" or "categoryTitle"
+    local r, g, b, a = GetQuestTrackerColor(colorRole)
     ApplyBaseColor(control, r, g, b, a)
     UpdateCategoryToggle(control, expanded)
     ApplyRowMetrics(
