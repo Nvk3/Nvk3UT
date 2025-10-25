@@ -31,7 +31,7 @@ local CATEGORY_TOGGLE_TEXTURES = {
     },
 }
 
-local QUEST_SELECTED_ICON_TEXTURE = "EsoUI/Art/Journal/journal_Quest_Icon.dds"
+local QUEST_SELECTED_ICON_TEXTURE = "EsoUI/Art/Journal/journal_Quest_Selected.dds"
 
 local CATEGORY_INDENT_X = 0
 local QUEST_INDENT_X = 18

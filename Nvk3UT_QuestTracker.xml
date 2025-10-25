@@ -24,7 +24,7 @@
             <Controls>
                 <Texture name="$(parent)Toggle"
                          hidden="true"
-                         textureFile="EsoUI/Art/Journal/journal_Quest_Icon.dds"
+                         textureFile="EsoUI/Art/Journal/journal_Quest_Selected.dds"
                          textureSampleProcessingWeight="1">
                     <Anchor point="TOPLEFT" relativePoint="TOPLEFT" offsetX="0" offsetY="0" />
                     <Dimensions x="20" y="20" />
