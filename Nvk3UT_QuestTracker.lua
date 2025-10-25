@@ -706,17 +706,37 @@ local function ClearOtherTrackedQuests(journalIndex)
 end
 
 local function EnsureExclusiveAssistedQuest(journalIndex)
-    if SetTrackedIsAssisted then
-        ForEachQuestIndex(function(index)
-            if index == journalIndex then
-                SafeCall(SetTrackedIsAssisted, TRACK_TYPE_QUEST, index, true)
-            elseif GetTrackedIsAssisted and GetTrackedIsAssisted(TRACK_TYPE_QUEST, index) then
+    local numeric = tonumber(journalIndex)
+    if not numeric or numeric <= 0 then
+        return
+    end
+
+    if AssistJournalQuest then
+        SafeCall(AssistJournalQuest, numeric)
+        return
+    end
+
+    if not (type(SetTrackedIsAssisted) == "function" and TRACK_TYPE_QUEST) then
+        return
+    end
+
+    ForEachQuestIndex(function(index)
+        if not index then
+            return
+        end
+
+        local isTarget = index == numeric
+        local shouldAssist = isTarget and true or false
+
+        if isTarget then
+            SafeCall(SetTrackedIsAssisted, TRACK_TYPE_QUEST, index, shouldAssist)
+        elseif type(GetTrackedIsAssisted) == "function" then
+            local ok, assisted = SafeCall(GetTrackedIsAssisted, TRACK_TYPE_QUEST, index)
+            if ok and assisted then
                 SafeCall(SetTrackedIsAssisted, TRACK_TYPE_QUEST, index, false)
             end
-        end)
-    elseif AssistJournalQuest then
-        SafeCall(AssistJournalQuest, journalIndex)
-    end
+        end
+    end)
 end
 
 local function ApplyImmediateTrackedQuest(journalIndex)
@@ -1742,10 +1762,18 @@ local function AcquireQuestControl()
 
                 local assistLabel = assisted and "Stop Assisting" or "Assist"
                 AddCustomMenuItem(assistLabel, function()
-                    if SetTrackedIsAssisted then
-                        SetTrackedIsAssisted(TRACK_TYPE_QUEST, journalIndex, not assisted)
-                    elseif AssistJournalQuest and not assisted then
-                        AssistJournalQuest(journalIndex)
+                    local numericIndex = tonumber(journalIndex)
+                    if not numericIndex then
+                        return
+                    end
+
+                    if AssistJournalQuest and not assisted then
+                        SafeCall(AssistJournalQuest, numericIndex)
+                        return
+                    end
+
+                    if type(SetTrackedIsAssisted) == "function" and TRACK_TYPE_QUEST then
+                        SafeCall(SetTrackedIsAssisted, TRACK_TYPE_QUEST, numericIndex, assisted and false or true)
                     end
                 end)
 
