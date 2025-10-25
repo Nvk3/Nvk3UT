@@ -75,6 +75,9 @@ local SetQuestExpanded
 local IsQuestExpanded -- forward declaration so earlier functions can query quest expansion state
 local ForEachQuest -- forward declaration for quest iteration used by debug helpers
 local ForEachQuestIndex -- forward declaration for quest index iteration used by debug helpers
+local HandleQuestRowClick -- forward declaration for quest row click orchestration
+local FlushPendingTrackedQuestUpdate -- forward declaration for deferred tracking updates
+local ProcessTrackedQuestUpdate -- forward declaration for deferred tracking processing
 
 local state = {
     isInitialized = false,
@@ -103,6 +106,8 @@ local state = {
     syncingTrackedState = false,
     pendingDeselection = false,
     pendingExternalReveal = nil,
+    pendingTrackedUpdate = nil,
+    isClickSelectInProgress = false,
 }
 
 local function ApplyLabelDefaults(label)
@@ -648,6 +653,42 @@ local function ExpandCategoriesForExternalSelect(journalIndex)
                 if changed then
                     expandedAny = true
                     LogExpandCategory(key, "external-select")
+                end
+            end
+        end
+    end
+
+    if (not found) or not keys or next(keys) == nil then
+        LogMissingCategory(journalIndex)
+    end
+
+    if expandedAny and RequestRefresh then
+        RequestRefresh()
+    end
+
+    return expandedAny, found
+end
+
+local function ExpandCategoriesForClickSelect(journalIndex)
+    if not (state.saved and journalIndex) then
+        return false, false
+    end
+
+    local keys, found = CollectCategoryKeysForQuest(journalIndex)
+    local expandedAny = false
+
+    if keys then
+        local context = {
+            trigger = "click-select",
+            source = "QuestTracker:ExpandCategoriesForClickSelect",
+        }
+
+        for key in pairs(keys) do
+            if key and SetCategoryExpanded then
+                local changed = SetCategoryExpanded(key, true, context)
+                if changed then
+                    expandedAny = true
+                    LogExpandCategory(key, "click-select")
                 end
             end
         end
@@ -1314,6 +1355,94 @@ local function TrackQuestByJournalIndex(journalIndex, options)
     return true
 end
 
+HandleQuestRowClick = function(journalIndex)
+    local questId = tonumber(journalIndex)
+    if not questId or questId <= 0 then
+        return
+    end
+
+    if state.isClickSelectInProgress then
+        if IsDebugLoggingEnabled() then
+            DebugLog(string.format("CLICK_SELECT_SKIPPED questId=%s reason=in-progress", tostring(questId)))
+        end
+        return
+    end
+
+    state.isClickSelectInProgress = true
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format("CLICK_SELECT_START questId=%s", tostring(questId)))
+    end
+
+    state.pendingSelection = nil
+
+    local previousQuest = state.trackedQuestIndex
+    local previousQuestString = previousQuest and tostring(previousQuest) or "nil"
+
+    ApplyImmediateTrackedQuest(questId)
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format("SET_ACTIVE questId=%s prev=%s", tostring(questId), previousQuestString))
+    end
+
+    RequestRefresh()
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format("UI_SELECT questId=%s", tostring(questId)))
+    end
+
+    local nextExpanded = not IsQuestExpanded(questId)
+    state.pendingSelection = {
+        index = questId,
+        expanded = nextExpanded,
+        forceExpand = nextExpanded,
+        trigger = "click",
+        source = "QuestTracker:HandleQuestRowClick",
+    }
+
+    SetQuestExpanded(questId, nextExpanded, {
+        trigger = "click-select",
+        source = "QuestTracker:HandleQuestRowClick",
+    })
+
+    ExpandCategoriesForClickSelect(questId)
+
+    EnsureQuestRowVisible(questId, { allowQueue = false })
+
+    state.isClickSelectInProgress = false
+
+    FlushPendingTrackedQuestUpdate()
+
+    local trackOptions = {
+        forceExpand = nextExpanded,
+        trigger = "click",
+        source = "QuestTracker:OnRowClick",
+        skipAutoExpand = true,
+        applyImmediate = false,
+        requestRefresh = false,
+    }
+
+    local tracked = TrackQuestByJournalIndex(questId, trackOptions)
+
+    if tracked then
+        ProcessTrackedQuestUpdate(TRACK_TYPE_QUEST, {
+            trigger = "click",
+            source = "QuestTracker:HandleQuestRowClick",
+            forcedIndex = questId,
+            forceExpand = nextExpanded,
+            isExternal = false,
+        })
+    else
+        state.pendingSelection = nil
+    end
+
+    RequestRefresh()
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format("CLICK_SELECT_END questId=%s", tostring(questId)))
+    end
+end
+
 local function AdoptTrackedQuestOnInit()
     local journalIndex = state.trackedQuestIndex
 
@@ -1371,7 +1500,7 @@ local function AdoptTrackedQuestOnInit()
     EnsureExclusiveAssistedQuest(journalIndex)
 end
 
-local function OnTrackedQuestUpdate(_, trackingType, context)
+ProcessTrackedQuestUpdate = function(trackingType, context)
     if trackingType and trackingType ~= TRACK_TYPE_QUEST then
         return
     end
@@ -1399,6 +1528,28 @@ local function OnTrackedQuestUpdate(_, trackingType, context)
     local forcedIndex = resolvedContext.forcedIndex
 
     SyncTrackedQuestState(forcedIndex, true, resolvedContext)
+end
+
+local function OnTrackedQuestUpdate(_, trackingType, context)
+    if state.isClickSelectInProgress then
+        state.pendingTrackedUpdate = {
+            trackingType = trackingType,
+            context = context,
+        }
+        return
+    end
+
+    ProcessTrackedQuestUpdate(trackingType, context)
+end
+
+FlushPendingTrackedQuestUpdate = function()
+    local pending = state.pendingTrackedUpdate
+    if not pending then
+        return
+    end
+
+    state.pendingTrackedUpdate = nil
+    ProcessTrackedQuestUpdate(pending.trackingType, pending.context)
 end
 
 local function OnFocusedTrackerAssistChanged(_, assistedData)
@@ -1953,42 +2104,7 @@ local function AcquireQuestControl()
                     return
                 end
 
-                local nextExpanded = not IsQuestExpanded(journalIndex)
-                state.pendingSelection = {
-                    index = journalIndex,
-                    expanded = nextExpanded,
-                    forceExpand = nextExpanded,
-                    trigger = "click",
-                    source = "QuestTracker:OnRowClick",
-                }
-
-                local trackOptions = {
-                    forceExpand = nextExpanded,
-                    requestRefresh = false,
-                    trigger = "click",
-                    source = "QuestTracker:OnRowClick",
-                }
-
-                local tracked = TrackQuestByJournalIndex(journalIndex, trackOptions)
-
-                if tracked then
-                    OnTrackedQuestUpdate(nil, TRACK_TYPE_QUEST, {
-                        trigger = "click",
-                        source = "QuestTracker:OnRowClick",
-                        forcedIndex = journalIndex,
-                    })
-                else
-                    state.pendingSelection = nil
-                    local changed = SetQuestExpanded(journalIndex, nextExpanded, {
-                        trigger = "click",
-                        source = "QuestTracker:OnRowClickFallback",
-                    })
-                    if changed then
-                        QuestTracker.Refresh()
-                    else
-                        RequestRefresh()
-                    end
-                end
+                HandleQuestRowClick(journalIndex)
             elseif button == MOUSE_BUTTON_INDEX_RIGHT then
                 if not ctrl.data or not ctrl.data.quest then
                     return
