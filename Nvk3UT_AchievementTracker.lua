@@ -177,8 +177,13 @@ local function RefreshControlMetrics(control)
     end
 end
 
+local function IsDebugLoggingEnabled()
+    local sv = Nvk3UT and Nvk3UT.sv
+    return sv and sv.debug == true
+end
+
 local function DebugLog(...)
-    if not state.opts.debug then
+    if not IsDebugLoggingEnabled() then
         return
     end
 
@@ -187,10 +192,6 @@ local function DebugLog(...)
     elseif print then
         print("[" .. MODULE_NAME .. "]", ...)
     end
-end
-
-local function IsDebugLoggingEnabled()
-    return state.opts and state.opts.debug
 end
 
 local function EscapeDebugString(value)

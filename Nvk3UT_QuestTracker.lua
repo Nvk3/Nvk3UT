@@ -191,18 +191,6 @@ local function RefreshControlMetrics(control)
     end
 end
 
-local function DebugLog(...)
-    if not state.opts.debug then
-        return
-    end
-
-    if d then
-        d(string.format("[%s]", MODULE_NAME), ...)
-    elseif print then
-        print("[" .. MODULE_NAME .. "]", ...)
-    end
-end
-
 NVK_DEBUG_DESELECT = NVK_DEBUG_DESELECT or false
 
 local function DebugDeselect(context, details)
@@ -230,7 +218,20 @@ local function DebugDeselect(context, details)
 end
 
 local function IsDebugLoggingEnabled()
-    return state.opts and state.opts.debug
+    local sv = Nvk3UT and Nvk3UT.sv
+    return sv and sv.debug == true
+end
+
+local function DebugLog(...)
+    if not IsDebugLoggingEnabled() then
+        return
+    end
+
+    if d then
+        d(string.format("[%s]", MODULE_NAME), ...)
+    elseif print then
+        print("[" .. MODULE_NAME .. "]", ...)
+    end
 end
 
 local function EscapeDebugString(value)
