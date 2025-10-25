@@ -753,17 +753,37 @@ local function EnsureTrackedCategoriesExpanded(journalIndex, forceExpand, contex
     local keys = CollectCategoryKeysForQuest(journalIndex)
 
     local logContext
+    local debugContext
+    local debugEnabled = IsDebugLoggingEnabled()
 
     for key in pairs(keys) do
         if key then
-            if forceExpand or state.saved.catExpanded[key] == nil then
+            local savedValue = state.saved.catExpanded[key]
+            local manualCollapsed = savedValue == false
+            if manualCollapsed then
+                if debugEnabled then
+                    DebugLog(
+                        "Respecting manual category collapse",
+                        "category", key,
+                        "journalIndex", journalIndex,
+                        "trigger", (context and context.trigger) or "auto"
+                    )
+                end
+            elseif forceExpand or savedValue == nil then
                 if not logContext then
                     logContext = {
                         trigger = (context and context.trigger) or "auto",
                         source = (context and context.source) or "QuestTracker:EnsureTrackedCategoriesExpanded",
                     }
+                    if debugEnabled then
+                        debugContext = {
+                            trigger = logContext.trigger,
+                            source = logContext.source,
+                            manualCollapseRespected = true,
+                        }
+                    end
                 end
-                SetCategoryExpanded(key, true, logContext)
+                SetCategoryExpanded(key, true, debugEnabled and debugContext or logContext)
             end
         end
     end
@@ -1454,13 +1474,30 @@ SetCategoryExpanded = function(categoryKey, expanded, context)
         previous = tostring(oldValue),
         newValue = tostring(newValue),
     })
+    local manualCollapseRespected
+    if context and context.manualCollapseRespected ~= nil then
+        manualCollapseRespected = context.manualCollapseRespected and true or false
+    elseif context and context.trigger == "click" then
+        manualCollapseRespected = true
+    end
+    local extraFields
+    if IsDebugLoggingEnabled() then
+        if manualCollapseRespected ~= nil then
+            extraFields = extraFields or {}
+            extraFields[#extraFields + 1] = {
+                key = "manualCollapseRespected",
+                value = manualCollapseRespected,
+            }
+        end
+    end
     LogCategoryExpansion(
         newValue and "expand" or "collapse",
         (context and context.trigger) or "unknown",
         categoryKey,
         beforeExpanded,
         newValue,
-        (context and context.source) or "QuestTracker:SetCategoryExpanded"
+        (context and context.source) or "QuestTracker:SetCategoryExpanded",
+        extraFields
     )
     return true
 end
