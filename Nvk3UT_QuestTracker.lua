@@ -58,6 +58,8 @@ local COLOR_ROW_HOVER = { 1, 1, 0.6, 1 }
 local RequestRefresh -- forward declaration for functions that trigger refreshes
 local SetCategoryExpanded -- forward declaration for expansion helpers used before assignment
 local SetQuestExpanded
+local ForEachQuest -- forward declaration for quest iteration used by debug helpers
+local ForEachQuestIndex -- forward declaration for quest index iteration used by debug helpers
 
 local state = {
     isInitialized = false,
@@ -478,7 +480,7 @@ local function SafeCall(func, ...)
     return true, result
 end
 
-local function ForEachQuest(callback)
+ForEachQuest = function(callback)
     if type(callback) ~= "function" then
         return
     end
@@ -505,7 +507,7 @@ local function ForEachQuest(callback)
     end
 end
 
-local function ForEachQuestIndex(callback)
+ForEachQuestIndex = function(callback)
     if type(callback) ~= "function" then
         return
     end
