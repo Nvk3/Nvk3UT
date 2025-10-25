@@ -31,9 +31,7 @@ local CATEGORY_TOGGLE_TEXTURES = {
     },
 }
 
-local QUEST_TOGGLE_ICON_EXPANDED = "\226\150\190" -- ▼
-local QUEST_TOGGLE_ICON_COLLAPSED = "\226\150\182" -- ▶
-local QUEST_TOGGLE_ICON_TRACKED = "\226\152\133" -- ★
+local QUEST_SELECTED_ICON_TEXTURE = "EsoUI/Art/Journal/journal_Quest_Icon.dds"
 
 local CATEGORY_INDENT_X = 0
 local QUEST_INDENT_X = 18
@@ -46,7 +44,7 @@ local CONDITION_MIN_HEIGHT = 20
 local ROW_TEXT_PADDING_Y = 8
 local TOGGLE_LABEL_PADDING_X = 4
 local CATEGORY_TOGGLE_WIDTH = 20
-local QUEST_TOGGLE_WIDTH = 18
+local QUEST_TOGGLE_WIDTH = 20
 
 local DEFAULT_FONTS = {
     category = "ZoFontGameBold",
@@ -123,10 +121,16 @@ local function ApplyToggleDefaults(toggle)
 end
 
 local function GetToggleWidth(toggle, fallback)
-    if toggle and toggle.GetWidth then
-        local width = toggle:GetWidth()
-        if width and width > 0 then
-            return width
+    if toggle then
+        if toggle.IsHidden and toggle:IsHidden() then
+            return 0
+        end
+
+        if toggle.GetWidth then
+            local width = toggle:GetWidth()
+            if width and width > 0 then
+                return width
+            end
         end
     end
 
@@ -1474,13 +1478,34 @@ local function UpdateQuestToggle(control, expanded)
         return
     end
 
-    local icon = expanded and QUEST_TOGGLE_ICON_EXPANDED or QUEST_TOGGLE_ICON_COLLAPSED
     local questData = control.data and control.data.quest
-    if questData and state.trackedQuestIndex and questData.journalIndex == state.trackedQuestIndex then
-        icon = QUEST_TOGGLE_ICON_TRACKED
+    local isSelected = false
+    if questData and state.trackedQuestIndex then
+        isSelected = questData.journalIndex == state.trackedQuestIndex
     end
 
-    control.toggle:SetText(icon)
+    if control.toggle.SetHidden then
+        control.toggle:SetHidden(not isSelected)
+    end
+
+    if control.toggle.SetTexture and isSelected then
+        control.toggle:SetTexture(QUEST_SELECTED_ICON_TEXTURE)
+        if control.toggle.SetColor then
+            control.toggle:SetColor(1, 1, 1, 1)
+        end
+    elseif control.toggle.SetTexture then
+        control.toggle:SetTexture(QUEST_SELECTED_ICON_TEXTURE)
+    end
+
+    if control.label and control.label.ClearAnchors and control.label.SetAnchor then
+        control.label:ClearAnchors()
+        if isSelected and control.toggle then
+            control.label:SetAnchor(TOPLEFT, control.toggle, TOPRIGHT, TOGGLE_LABEL_PADDING_X, 0)
+        else
+            control.label:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+        end
+        control.label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+    end
 end
 
 local function IsCategoryExpanded(categoryKey)
@@ -1923,19 +1948,35 @@ local function EnsurePools()
         control.data = nil
         control.currentIndent = nil
         control.baseColor = nil
-        if control.toggle then
-            if control.toggle.SetTexture then
-                control.toggle:SetTexture(SelectCategoryToggleTexture(false, false))
-            elseif control.toggle.SetText then
-                control.toggle:SetText(QUEST_TOGGLE_ICON_COLLAPSED)
-            end
-        end
         control.isExpanded = nil
     end
 
-    state.categoryPool:SetCustomResetBehavior(resetControl)
+    state.categoryPool:SetCustomResetBehavior(function(control)
+        resetControl(control)
+        if control.toggle then
+            if control.toggle.SetTexture then
+                control.toggle:SetTexture(SelectCategoryToggleTexture(false, false))
+            end
+            if control.toggle.SetHidden then
+                control.toggle:SetHidden(false)
+            end
+        end
+    end)
     state.questPool:SetCustomResetBehavior(function(control)
         resetControl(control)
+        if control.label and control.label.ClearAnchors and control.label.SetAnchor then
+            control.label:ClearAnchors()
+            control.label:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+            control.label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+        end
+        if control.toggle then
+            if control.toggle.SetHidden then
+                control.toggle:SetHidden(true)
+            end
+            if control.toggle.SetTexture then
+                control.toggle:SetTexture(QUEST_SELECTED_ICON_TEXTURE)
+            end
+        end
     end)
     state.conditionPool:SetCustomResetBehavior(resetControl)
 end
@@ -1973,11 +2014,15 @@ local function LayoutQuest(quest)
 
     local expanded = IsQuestExpanded(quest.journalIndex)
     UpdateQuestToggle(control, expanded)
+    local leftPadding = TOGGLE_LABEL_PADDING_X
+    if control.toggle and control.toggle.IsHidden and control.toggle:IsHidden() then
+        leftPadding = 0
+    end
     ApplyRowMetrics(
         control,
         QUEST_INDENT_X,
         GetToggleWidth(control.toggle, QUEST_TOGGLE_WIDTH),
-        TOGGLE_LABEL_PADDING_X,
+        leftPadding,
         0,
         QUEST_MIN_HEIGHT
     )

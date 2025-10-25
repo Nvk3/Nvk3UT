@@ -22,14 +22,13 @@
         <Control name="QuestHeader_Template" virtual="true" mouseEnabled="true">
             <Dimensions y="24" />
             <Controls>
-                <Label name="$(parent)Toggle"
-                       font="ZoFontGame"
-                       horizontalAlignment="CENTER"
-                       verticalAlignment="TOP"
-                       text="\226\150\182">
+                <Texture name="$(parent)Toggle"
+                         hidden="true"
+                         textureFile="EsoUI/Art/Journal/journal_Quest_Icon.dds"
+                         textureSampleProcessingWeight="1">
                     <Anchor point="TOPLEFT" relativePoint="TOPLEFT" offsetX="0" offsetY="0" />
-                    <Dimensions x="18" />
-                </Label>
+                    <Dimensions x="20" y="20" />
+                </Texture>
                 <Label name="$(parent)Label"
                        font="ZoFontGame"
                        horizontalAlignment="LEFT"

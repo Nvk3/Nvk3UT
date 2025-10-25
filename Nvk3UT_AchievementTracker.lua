@@ -30,9 +30,6 @@ local CATEGORY_TOGGLE_TEXTURES = {
     },
 }
 
-local ENTRY_TOGGLE_ICON_EXPANDED = "\226\150\190" -- ▼
-local ENTRY_TOGGLE_ICON_COLLAPSED = "\226\150\182" -- ▶
-
 local CATEGORY_INDENT_X = 0
 local ACHIEVEMENT_INDENT_X = 18
 local OBJECTIVE_INDENT_X = 36
@@ -46,7 +43,7 @@ local OBJECTIVE_MIN_HEIGHT = 20
 local ROW_TEXT_PADDING_Y = 8
 local TOGGLE_LABEL_PADDING_X = 4
 local CATEGORY_TOGGLE_WIDTH = 20
-local ACHIEVEMENT_TOGGLE_WIDTH = 18
+local ACHIEVEMENT_TOGGLE_WIDTH = 0
 
 local DEFAULT_FONTS = {
     category = "ZoFontGameBold",
@@ -107,10 +104,16 @@ local function ApplyToggleDefaults(toggle)
 end
 
 local function GetToggleWidth(toggle, fallback)
-    if toggle and toggle.GetWidth then
-        local width = toggle:GetWidth()
-        if width and width > 0 then
-            return width
+    if toggle then
+        if toggle.IsHidden and toggle:IsHidden() then
+            return 0
+        end
+
+        if toggle.GetWidth then
+            local width = toggle:GetWidth()
+            if width and width > 0 then
+                return width
+            end
         end
     end
 
@@ -577,13 +580,14 @@ local function UpdateAchievementToggle(control, expanded, hasObjectives)
     if not control or not control.toggle then
         return
     end
-    if not hasObjectives then
+
+    if control.toggle.SetHidden then
         control.toggle:SetHidden(true)
-        control.toggle:SetText("")
-        return
     end
-    control.toggle:SetHidden(false)
-    control.toggle:SetText(expanded and ENTRY_TOGGLE_ICON_EXPANDED or ENTRY_TOGGLE_ICON_COLLAPSED)
+
+    if control.toggle.SetText then
+        control.toggle:SetText("")
+    end
 end
 
 local function FormatObjectiveText(objective)
@@ -740,8 +744,9 @@ local function EnsurePools()
         if control.toggle then
             if control.toggle.SetTexture then
                 control.toggle:SetTexture(SelectCategoryToggleTexture(false, false))
-            elseif control.toggle.SetText then
-                control.toggle:SetText(ENTRY_TOGGLE_ICON_COLLAPSED)
+            end
+            if control.toggle.SetHidden then
+                control.toggle:SetHidden(false)
             end
         end
         control.isExpanded = nil
@@ -750,8 +755,12 @@ local function EnsurePools()
     state.achievementPool:SetCustomResetBehavior(function(control)
         resetControl(control)
         if control.toggle then
-            control.toggle:SetText("")
-            control.toggle:SetHidden(false)
+            if control.toggle.SetText then
+                control.toggle:SetText("")
+            end
+            if control.toggle.SetHidden then
+                control.toggle:SetHidden(true)
+            end
         end
     end)
 
@@ -795,11 +804,12 @@ local function LayoutAchievement(achievement)
 
     local expanded = hasObjectives and IsEntryExpanded(achievement.id)
     UpdateAchievementToggle(control, expanded, hasObjectives)
+    local leftPadding = 0
     ApplyRowMetrics(
         control,
         ACHIEVEMENT_INDENT_X,
         GetToggleWidth(control.toggle, ACHIEVEMENT_TOGGLE_WIDTH),
-        TOGGLE_LABEL_PADDING_X,
+        leftPadding,
         0,
         ACHIEVEMENT_MIN_HEIGHT
     )
