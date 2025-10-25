@@ -409,6 +409,42 @@ local function IsFavoriteAchievement(achievementId)
     return false
 end
 
+local function HasAnyFavoriteAchievements()
+    local Fav = Nvk3UT and Nvk3UT.FavoritesData
+    if not (Fav and Fav.Iterate) then
+        return false
+    end
+
+    local function scopeHasFavorites(scope)
+        if not scope then
+            return false
+        end
+
+        for id, isFavorite in Fav.Iterate(scope) do
+            if id and isFavorite then
+                return true
+            end
+        end
+
+        return false
+    end
+
+    local scope = BuildFavoritesScope()
+    if scopeHasFavorites(scope) then
+        return true
+    end
+
+    if scope ~= "account" and scopeHasFavorites("account") then
+        return true
+    end
+
+    if scope ~= "character" and scopeHasFavorites("character") then
+        return true
+    end
+
+    return false
+end
+
 local function IsRecentAchievement(achievementId)
     if not achievementId then
         return false
@@ -962,6 +998,10 @@ local function LayoutCategory()
     end
 
     local total = #visibleEntries
+
+    if not HasAnyFavoriteAchievements() then
+        return
+    end
 
     local control = AcquireCategoryControl()
     control.data = { categoryKey = CATEGORY_KEY }
