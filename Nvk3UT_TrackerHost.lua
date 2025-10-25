@@ -1461,6 +1461,75 @@ local function scheduleDeferredRefresh(targetOffset)
     end, 0)
 end
 
+local function scrollControlIntoView(control)
+    if not control then
+        return false, false
+    end
+
+    local scrollContainer = state.scrollContainer
+    local scrollContent = state.scrollContent
+    if not (scrollContainer and scrollContent) then
+        return false, false
+    end
+
+    if control.IsHidden and control:IsHidden() then
+        return false, false
+    end
+
+    if not (control.GetTop and control.GetBottom) then
+        return false, false
+    end
+
+    if not (scrollContent.GetTop and scrollContainer.GetHeight) then
+        return false, false
+    end
+
+    local controlTop = control:GetTop()
+    local controlBottom = control:GetBottom()
+    local contentTop = scrollContent:GetTop()
+    local containerHeight = scrollContainer:GetHeight()
+
+    if not (controlTop and controlBottom and contentTop and containerHeight) then
+        return false, false
+    end
+
+    if containerHeight <= 0 then
+        return false, false
+    end
+
+    local desiredOffset = state.desiredScrollOffset
+    if desiredOffset == nil then
+        desiredOffset = state.scrollOffset or 0
+    end
+    desiredOffset = desiredOffset or 0
+
+    local relativeTop = controlTop - contentTop
+    local relativeBottom = controlBottom - contentTop
+
+    local targetOffset = desiredOffset
+    if targetOffset > relativeTop then
+        targetOffset = relativeTop
+    end
+
+    if (relativeBottom - targetOffset) > containerHeight then
+        targetOffset = relativeBottom - containerHeight
+    end
+
+    if targetOffset < 0 then
+        targetOffset = 0
+    end
+
+    local actualOffset = state.scrollOffset or 0
+    if math.abs(actualOffset - targetOffset) < 0.1 then
+        return true, false
+    end
+
+    setScrollOffset(targetOffset)
+    scheduleDeferredRefresh(targetOffset)
+
+    return true, true
+end
+
 local function notifyContentChanged()
     if not state.root then
         return
@@ -2112,5 +2181,6 @@ Nvk3UT.TrackerHost = TrackerHost
 
 TrackerHost.RefreshScroll = refreshScroll
 TrackerHost.NotifyContentChanged = notifyContentChanged
+TrackerHost.ScrollControlIntoView = scrollControlIntoView
 
 return TrackerHost

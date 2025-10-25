@@ -102,6 +102,7 @@ local state = {
     lastTrackedBeforeSync = nil,
     syncingTrackedState = false,
     pendingDeselection = false,
+    pendingExternalReveal = nil,
 }
 
 local function ApplyLabelDefaults(label)
@@ -591,6 +592,139 @@ local function CollectCategoryKeysForQuest(journalIndex)
     return keys, found
 end
 
+local function LogExternalSelect(questId)
+    if not IsDebugLoggingEnabled() then
+        return
+    end
+
+    DebugLog(string.format("EXTERNAL_SELECT questId=%s", tostring(questId)))
+end
+
+local function LogExpandCategory(categoryId, reason)
+    if not IsDebugLoggingEnabled() then
+        return
+    end
+
+    DebugLog(string.format(
+        "EXPAND_CATEGORY categoryId=%s reason=%s",
+        tostring(categoryId),
+        reason or "external-select"
+    ))
+end
+
+local function LogMissingCategory(questId)
+    if not IsDebugLoggingEnabled() then
+        return
+    end
+
+    DebugLog(string.format("WARN missing-category questId=%s", tostring(questId)))
+end
+
+local function LogScrollIntoView(questId)
+    if not IsDebugLoggingEnabled() then
+        return
+    end
+
+    DebugLog(string.format("SCROLL_INTO_VIEW questId=%s", tostring(questId)))
+end
+
+local function ExpandCategoriesForExternalSelect(journalIndex)
+    if not (state.saved and journalIndex) then
+        return false, false
+    end
+
+    local keys, found = CollectCategoryKeysForQuest(journalIndex)
+    local expandedAny = false
+
+    if keys then
+        local context = {
+            trigger = "external-select",
+            source = "QuestTracker:ExpandCategoriesForExternalSelect",
+        }
+
+        for key in pairs(keys) do
+            if key and SetCategoryExpanded then
+                local changed = SetCategoryExpanded(key, true, context)
+                if changed then
+                    expandedAny = true
+                    LogExpandCategory(key, "external-select")
+                end
+            end
+        end
+    end
+
+    if (not found) or not keys or next(keys) == nil then
+        LogMissingCategory(journalIndex)
+    end
+
+    if expandedAny and RequestRefresh then
+        RequestRefresh()
+    end
+
+    return expandedAny, found
+end
+
+local function FindQuestControlByJournalIndex(journalIndex)
+    if not journalIndex then
+        return nil
+    end
+
+    for index = 1, #state.orderedControls do
+        local control = state.orderedControls[index]
+        if control and control.rowType == "quest" then
+            local questData = control.data and control.data.quest
+            if questData and questData.journalIndex == journalIndex then
+                return control
+            end
+        end
+    end
+
+    return nil
+end
+
+local function EnsureQuestRowVisible(journalIndex, options)
+    options = options or {}
+    local allowQueue = options.allowQueue ~= false
+
+    local control = FindQuestControlByJournalIndex(journalIndex)
+    if not control or (control.IsHidden and control:IsHidden()) then
+        if allowQueue and journalIndex then
+            state.pendingExternalReveal = { questId = journalIndex }
+        end
+        return false
+    end
+
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if not (host and host.ScrollControlIntoView) then
+        if allowQueue and journalIndex then
+            state.pendingExternalReveal = { questId = journalIndex }
+        end
+        return false
+    end
+
+    local ok, ensured = pcall(host.ScrollControlIntoView, control)
+    if not ok or not ensured then
+        if allowQueue and journalIndex then
+            state.pendingExternalReveal = { questId = journalIndex }
+        end
+        return false
+    end
+
+    LogScrollIntoView(journalIndex)
+
+    return true
+end
+
+local function ProcessPendingExternalReveal()
+    local pending = state.pendingExternalReveal
+    if not pending then
+        return
+    end
+
+    state.pendingExternalReveal = nil
+    EnsureQuestRowVisible(pending.questId, { allowQueue = false })
+end
+
 local function DoesJournalQuestExist(journalIndex)
     if not (journalIndex and GetJournalQuestName) then
         return false
@@ -852,8 +986,17 @@ local function EnsureTrackedQuestVisible(journalIndex, forceExpand, context)
         trigger = (context and context.trigger) or "auto",
         source = (context and context.source) or "QuestTracker:EnsureTrackedQuestVisible",
     }
-    EnsureTrackedCategoriesExpanded(journalIndex, forceExpand, logContext)
+    local isExternal = context and context.isExternal
+    if isExternal then
+        LogExternalSelect(journalIndex)
+        ExpandCategoriesForExternalSelect(journalIndex)
+    else
+        EnsureTrackedCategoriesExpanded(journalIndex, forceExpand, logContext)
+    end
     AutoExpandQuestForTracking(journalIndex, forceExpand, logContext)
+    if isExternal then
+        EnsureQuestRowVisible(journalIndex, { allowQueue = true })
+    end
 end
 
 local function SyncTrackedQuestState(forcedIndex, forceExpand, context)
@@ -993,6 +1136,7 @@ local function SyncTrackedQuestState(forcedIndex, forceExpand, context)
             local visibilityContext = {
                 trigger = trigger,
                 source = source,
+                isExternal = isExternalFlag,
             }
             EnsureTrackedQuestVisible(currentTracked, shouldForceExpand, visibilityContext)
         else
@@ -2127,6 +2271,7 @@ local function Rebuild()
 
     UpdateContentSize()
     NotifyHostContentChanged()
+    ProcessPendingExternalReveal()
 end
 
 local function RefreshVisibility()
@@ -2200,6 +2345,7 @@ function QuestTracker.Init(parentControl, opts)
     state.lastTrackedBeforeSync = nil
     state.syncingTrackedState = false
     state.pendingDeselection = false
+    state.pendingExternalReveal = nil
 
     QuestTracker.ApplyTheme(state.saved or {})
     QuestTracker.ApplySettings(state.saved or {})
@@ -2286,6 +2432,7 @@ function QuestTracker.Shutdown()
     state.lastTrackedBeforeSync = nil
     state.syncingTrackedState = false
     state.pendingDeselection = false
+    state.pendingExternalReveal = nil
     NotifyHostContentChanged()
 end
 
