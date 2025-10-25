@@ -22,13 +22,18 @@
         <Control name="AchievementHeader_Template" virtual="true" mouseEnabled="true">
             <Dimensions y="24" />
             <Controls>
+                <Texture name="$(parent)IconSlot"
+                         textureSampleProcessingWeight="1">
+                    <Anchor point="LEFT" relativePoint="LEFT" offsetX="0" offsetY="0" />
+                    <Dimensions x="20" y="20" />
+                </Texture>
                 <Label name="$(parent)Label"
                        font="ZoFontGame"
                        horizontalAlignment="LEFT"
                        verticalAlignment="TOP"
                        wrapMode="ELLIPSIS">
-                    <Anchor point="TOPLEFT" relativePoint="TOPLEFT" offsetX="0" offsetY="0" />
-                    <Anchor point="TOPRIGHT" relativePoint="TOPRIGHT" offsetX="0" />
+                    <Anchor point="TOPLEFT" relativeTo="$(parent)IconSlot" relativePoint="TOPRIGHT" offsetX="0" offsetY="0" />
+                    <Anchor point="TOPRIGHT" relativePoint="TOPRIGHT" offsetX="0" offsetY="0" />
                 </Label>
             </Controls>
         </Control>
