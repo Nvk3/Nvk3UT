@@ -3,14 +3,12 @@
         <Control name="CategoryHeader_Template" virtual="true" mouseEnabled="true">
             <Dimensions y="26" />
             <Controls>
-                <Label name="$(parent)Toggle"
-                       font="ZoFontGame"
-                       horizontalAlignment="CENTER"
-                       verticalAlignment="TOP"
-                       text="\226\150\190">
+                <Texture name="$(parent)Toggle"
+                         textureFile="EsoUI/Art/Buttons/tree_closed_up.dds"
+                         textureSampleProcessingWeight="1">
                     <Anchor point="TOPLEFT" relativePoint="TOPLEFT" offsetX="0" offsetY="0" />
-                    <Dimensions x="20" />
-                </Label>
+                    <Dimensions x="20" y="20" />
+                </Texture>
                 <Label name="$(parent)Label"
                        font="ZoFontGameBold"
                        horizontalAlignment="LEFT"
@@ -24,21 +22,18 @@
         <Control name="QuestHeader_Template" virtual="true" mouseEnabled="true">
             <Dimensions y="24" />
             <Controls>
-                <Label name="$(parent)Toggle"
-                       font="ZoFontGame"
-                       horizontalAlignment="CENTER"
-                       verticalAlignment="TOP"
-                       text="\226\150\182">
+                <Texture name="$(parent)IconSlot"
+                         textureSampleProcessingWeight="1">
                     <Anchor point="TOPLEFT" relativePoint="TOPLEFT" offsetX="0" offsetY="0" />
-                    <Dimensions x="18" />
-                </Label>
+                    <Dimensions x="18" y="18" />
+                </Texture>
                 <Label name="$(parent)Label"
                        font="ZoFontGame"
                        horizontalAlignment="LEFT"
                        verticalAlignment="TOP"
                        wrapMode="ELLIPSIS">
-                    <Anchor point="TOPLEFT" relativeTo="$(parent)Toggle" relativePoint="TOPRIGHT" offsetX="4" />
-                    <Anchor point="TOPRIGHT" relativePoint="TOPRIGHT" offsetX="0" />
+                    <Anchor point="TOPLEFT" relativeTo="$(parent)IconSlot" relativePoint="TOPRIGHT" offsetX="0" offsetY="0" />
+                    <Anchor point="TOPRIGHT" relativePoint="TOPRIGHT" offsetX="0" offsetY="0" />
                 </Label>
             </Controls>
         </Control>

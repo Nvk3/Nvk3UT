@@ -19,12 +19,26 @@ local FormatCategoryHeaderText =
         return text
     end
 
-local ICON_EXPANDED = "\226\150\190" -- ▼
-local ICON_COLLAPSED = "\226\150\182" -- ▶
+local CATEGORY_TOGGLE_TEXTURES = {
+    expanded = {
+        up = "EsoUI/Art/Buttons/tree_open_up.dds",
+        over = "EsoUI/Art/Buttons/tree_open_over.dds",
+    },
+    collapsed = {
+        up = "EsoUI/Art/Buttons/tree_closed_up.dds",
+        over = "EsoUI/Art/Buttons/tree_closed_over.dds",
+    },
+}
 
 local CATEGORY_INDENT_X = 0
 local ACHIEVEMENT_INDENT_X = 18
-local OBJECTIVE_INDENT_X = 36
+local ACHIEVEMENT_ICON_SLOT_WIDTH = 18
+local ACHIEVEMENT_ICON_SLOT_HEIGHT = 18
+local ACHIEVEMENT_ICON_SLOT_PADDING_X = 6
+local ACHIEVEMENT_LABEL_INDENT_X = ACHIEVEMENT_INDENT_X + ACHIEVEMENT_ICON_SLOT_WIDTH + ACHIEVEMENT_ICON_SLOT_PADDING_X
+-- keep objective text inset relative to achievement titles after adding the persistent icon slot
+local OBJECTIVE_RELATIVE_INDENT = 18
+local OBJECTIVE_INDENT_X = ACHIEVEMENT_LABEL_INDENT_X + OBJECTIVE_RELATIVE_INDENT
 local VERTICAL_PADDING = 3
 
 local CATEGORY_KEY = "achievements"
@@ -35,7 +49,6 @@ local OBJECTIVE_MIN_HEIGHT = 20
 local ROW_TEXT_PADDING_Y = 8
 local TOGGLE_LABEL_PADDING_X = 4
 local CATEGORY_TOGGLE_WIDTH = 20
-local ACHIEVEMENT_TOGGLE_WIDTH = 18
 
 local DEFAULT_FONTS = {
     category = "ZoFontGameBold",
@@ -96,10 +109,16 @@ local function ApplyToggleDefaults(toggle)
 end
 
 local function GetToggleWidth(toggle, fallback)
-    if toggle and toggle.GetWidth then
-        local width = toggle:GetWidth()
-        if width and width > 0 then
-            return width
+    if toggle then
+        if toggle.IsHidden and toggle:IsHidden() then
+            return 0
+        end
+
+        if toggle.GetWidth then
+            local width = toggle:GetWidth()
+            if width and width > 0 then
+                return width
+            end
         end
     end
 
@@ -167,8 +186,8 @@ local function RefreshControlMetrics(control)
         ApplyRowMetrics(
             control,
             indent,
-            GetToggleWidth(control.toggle, ACHIEVEMENT_TOGGLE_WIDTH),
-            TOGGLE_LABEL_PADDING_X,
+            ACHIEVEMENT_ICON_SLOT_WIDTH,
+            ACHIEVEMENT_ICON_SLOT_PADDING_X,
             0,
             ACHIEVEMENT_MIN_HEIGHT
         )
@@ -536,25 +555,46 @@ local function IsEntryExpanded(achievementId)
     return expanded ~= false
 end
 
+local function SelectCategoryToggleTexture(expanded, isMouseOver)
+    local textures = expanded and CATEGORY_TOGGLE_TEXTURES.expanded or CATEGORY_TOGGLE_TEXTURES.collapsed
+    if isMouseOver then
+        return textures.over
+    end
+    return textures.up
+end
+
 local function UpdateCategoryToggle(control, expanded)
     if not control or not control.toggle then
         return
     end
     control.toggle:SetHidden(false)
-    control.toggle:SetText(expanded and ICON_EXPANDED or ICON_COLLAPSED)
+    if control.toggle.SetTexture then
+        local isMouseOver = false
+        if control.IsMouseOver and control:IsMouseOver() then
+            isMouseOver = true
+        elseif control.toggle.IsMouseOver and control.toggle:IsMouseOver() then
+            isMouseOver = true
+        end
+        local texture = SelectCategoryToggleTexture(expanded, isMouseOver)
+        control.toggle:SetTexture(texture)
+    end
+    control.isExpanded = expanded and true or false
 end
 
-local function UpdateAchievementToggle(control, expanded, hasObjectives)
-    if not control or not control.toggle then
+local function UpdateAchievementIconSlot(control)
+    if not control or not control.iconSlot then
         return
     end
-    if not hasObjectives then
-        control.toggle:SetHidden(true)
-        control.toggle:SetText("")
-        return
+
+    if control.iconSlot.SetTexture then
+        control.iconSlot:SetTexture(nil)
     end
-    control.toggle:SetHidden(false)
-    control.toggle:SetText(expanded and ICON_EXPANDED or ICON_COLLAPSED)
+    if control.iconSlot.SetAlpha then
+        control.iconSlot:SetAlpha(0)
+    end
+    if control.iconSlot.SetHidden then
+        control.iconSlot:SetHidden(false)
+    end
 end
 
 local function FormatObjectiveText(objective)
@@ -606,6 +646,10 @@ local function AcquireCategoryControl()
     if not control.initialized then
         control.label = control:GetNamedChild("Label")
         control.toggle = control:GetNamedChild("Toggle")
+        if control.toggle and control.toggle.SetTexture then
+            control.toggle:SetTexture(SelectCategoryToggleTexture(false, false))
+        end
+        control.isExpanded = false
         control:SetHandler("OnMouseUp", function(ctrl, button, upInside)
             if not upInside or button ~= LEFT_MOUSE_BUTTON then
                 return
@@ -621,11 +665,21 @@ local function AcquireCategoryControl()
             if ctrl.label then
                 ctrl.label:SetColor(unpack(COLOR_ROW_HOVER))
             end
+            local expanded = ctrl.isExpanded
+            if expanded == nil then
+                expanded = IsCategoryExpanded()
+            end
+            UpdateCategoryToggle(ctrl, expanded)
         end)
         control:SetHandler("OnMouseExit", function(ctrl)
             if ctrl.label and ctrl.baseColor then
                 ctrl.label:SetColor(unpack(ctrl.baseColor))
             end
+            local expanded = ctrl.isExpanded
+            if expanded == nil then
+                expanded = IsCategoryExpanded()
+            end
+            UpdateCategoryToggle(ctrl, expanded)
         end)
         control.initialized = true
     end
@@ -641,7 +695,30 @@ local function AcquireAchievementControl()
     local control = state.achievementPool:AcquireObject()
     if not control.initialized then
         control.label = control:GetNamedChild("Label")
-        control.toggle = control:GetNamedChild("Toggle")
+        control.iconSlot = control:GetNamedChild("IconSlot")
+        if control.iconSlot then
+            control.iconSlot:SetDimensions(ACHIEVEMENT_ICON_SLOT_WIDTH, ACHIEVEMENT_ICON_SLOT_HEIGHT)
+            control.iconSlot:ClearAnchors()
+            control.iconSlot:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+            if control.iconSlot.SetTexture then
+                control.iconSlot:SetTexture(nil)
+            end
+            if control.iconSlot.SetAlpha then
+                control.iconSlot:SetAlpha(0)
+            end
+            if control.iconSlot.SetHidden then
+                control.iconSlot:SetHidden(false)
+            end
+        end
+        if control.label then
+            control.label:ClearAnchors()
+            if control.iconSlot then
+                control.label:SetAnchor(TOPLEFT, control.iconSlot, TOPRIGHT, ACHIEVEMENT_ICON_SLOT_PADDING_X, 0)
+            else
+                control.label:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+            end
+            control.label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+        end
         control:SetHandler("OnMouseUp", function(ctrl, button, upInside)
             if not upInside or button ~= LEFT_MOUSE_BUTTON then
                 return
@@ -658,9 +735,7 @@ local function AcquireAchievementControl()
     end
     control.rowType = "achievement"
     ApplyLabelDefaults(control.label)
-    ApplyToggleDefaults(control.toggle)
     ApplyFont(control.label, state.fonts.achievement)
-    ApplyFont(control.toggle, state.fonts.toggle)
     return control
 end
 
@@ -695,15 +770,31 @@ local function EnsurePools()
         resetControl(control)
         control.baseColor = nil
         if control.toggle then
-            control.toggle:SetText(ICON_COLLAPSED)
+            if control.toggle.SetTexture then
+                control.toggle:SetTexture(SelectCategoryToggleTexture(false, false))
+            end
+            if control.toggle.SetHidden then
+                control.toggle:SetHidden(false)
+            end
         end
+        control.isExpanded = nil
     end)
 
     state.achievementPool:SetCustomResetBehavior(function(control)
         resetControl(control)
-        if control.toggle then
-            control.toggle:SetText("")
-            control.toggle:SetHidden(false)
+        if control.label and control.label.SetText then
+            control.label:SetText("")
+        end
+        if control.iconSlot then
+            if control.iconSlot.SetTexture then
+                control.iconSlot:SetTexture(nil)
+            end
+            if control.iconSlot.SetAlpha then
+                control.iconSlot:SetAlpha(0)
+            end
+            if control.iconSlot.SetHidden then
+                control.iconSlot:SetHidden(false)
+            end
         end
     end)
 
@@ -746,12 +837,12 @@ local function LayoutAchievement(achievement)
     control.label:SetText(achievement.name or "")
 
     local expanded = hasObjectives and IsEntryExpanded(achievement.id)
-    UpdateAchievementToggle(control, expanded, hasObjectives)
+    UpdateAchievementIconSlot(control)
     ApplyRowMetrics(
         control,
         ACHIEVEMENT_INDENT_X,
-        GetToggleWidth(control.toggle, ACHIEVEMENT_TOGGLE_WIDTH),
-        TOGGLE_LABEL_PADDING_X,
+        ACHIEVEMENT_ICON_SLOT_WIDTH,
+        ACHIEVEMENT_ICON_SLOT_PADDING_X,
         0,
         ACHIEVEMENT_MIN_HEIGHT
     )

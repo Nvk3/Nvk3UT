@@ -20,13 +20,28 @@ local FormatCategoryHeaderText =
         return text
     end
 
-local ICON_EXPANDED = "\226\150\190" -- ▼
-local ICON_COLLAPSED = "\226\150\182" -- ▶
-local ICON_TRACKED = "\226\152\133" -- ★
+local CATEGORY_TOGGLE_TEXTURES = {
+    expanded = {
+        up = "EsoUI/Art/Buttons/tree_open_up.dds",
+        over = "EsoUI/Art/Buttons/tree_open_over.dds",
+    },
+    collapsed = {
+        up = "EsoUI/Art/Buttons/tree_closed_up.dds",
+        over = "EsoUI/Art/Buttons/tree_closed_over.dds",
+    },
+}
+
+local QUEST_SELECTED_ICON_TEXTURE = "EsoUI/Art/Journal/journal_Quest_Selected.dds"
 
 local CATEGORY_INDENT_X = 0
 local QUEST_INDENT_X = 18
-local CONDITION_INDENT_X = 36
+local QUEST_ICON_SLOT_WIDTH = 18
+local QUEST_ICON_SLOT_HEIGHT = 18
+local QUEST_ICON_SLOT_PADDING_X = 6
+local QUEST_LABEL_INDENT_X = QUEST_INDENT_X + QUEST_ICON_SLOT_WIDTH + QUEST_ICON_SLOT_PADDING_X
+-- keep objective indentation ahead of quest titles even with the persistent icon slot
+local CONDITION_RELATIVE_INDENT = 18
+local CONDITION_INDENT_X = QUEST_LABEL_INDENT_X + CONDITION_RELATIVE_INDENT
 local VERTICAL_PADDING = 3
 
 local CATEGORY_MIN_HEIGHT = 26
@@ -35,7 +50,6 @@ local CONDITION_MIN_HEIGHT = 20
 local ROW_TEXT_PADDING_Y = 8
 local TOGGLE_LABEL_PADDING_X = 4
 local CATEGORY_TOGGLE_WIDTH = 20
-local QUEST_TOGGLE_WIDTH = 18
 
 local DEFAULT_FONTS = {
     category = "ZoFontGameBold",
@@ -58,6 +72,7 @@ local COLOR_ROW_HOVER = { 1, 1, 0.6, 1 }
 local RequestRefresh -- forward declaration for functions that trigger refreshes
 local SetCategoryExpanded -- forward declaration for expansion helpers used before assignment
 local SetQuestExpanded
+local IsQuestExpanded -- forward declaration so earlier functions can query quest expansion state
 local ForEachQuest -- forward declaration for quest iteration used by debug helpers
 local ForEachQuestIndex -- forward declaration for quest index iteration used by debug helpers
 
@@ -112,10 +127,16 @@ local function ApplyToggleDefaults(toggle)
 end
 
 local function GetToggleWidth(toggle, fallback)
-    if toggle and toggle.GetWidth then
-        local width = toggle:GetWidth()
-        if width and width > 0 then
-            return width
+    if toggle then
+        if toggle.IsHidden and toggle:IsHidden() then
+            return 0
+        end
+
+        if toggle.GetWidth then
+            local width = toggle:GetWidth()
+            if width and width > 0 then
+                return width
+            end
         end
     end
 
@@ -183,8 +204,8 @@ local function RefreshControlMetrics(control)
         ApplyRowMetrics(
             control,
             indent,
-            GetToggleWidth(control.toggle, QUEST_TOGGLE_WIDTH),
-            TOGGLE_LABEL_PADDING_X,
+            QUEST_ICON_SLOT_WIDTH,
+            QUEST_ICON_SLOT_PADDING_X,
             0,
             QUEST_MIN_HEIGHT
         )
@@ -1433,24 +1454,63 @@ local function UpdateContentSize()
     state.contentHeight = totalHeight
 end
 
-local function UpdateCategoryToggle(control, expanded)
-    if control.toggle then
-        control.toggle:SetText(expanded and ICON_EXPANDED or ICON_COLLAPSED)
+local function SelectCategoryToggleTexture(expanded, isMouseOver)
+    local textures = expanded and CATEGORY_TOGGLE_TEXTURES.expanded or CATEGORY_TOGGLE_TEXTURES.collapsed
+    if isMouseOver then
+        return textures.over
     end
+    return textures.up
 end
 
-local function UpdateQuestToggle(control, expanded)
-    if not (control and control.toggle) then
+local function UpdateCategoryToggle(control, expanded)
+    if not (control and control.toggle and control.toggle.SetTexture) then
         return
     end
 
-    local icon = expanded and ICON_EXPANDED or ICON_COLLAPSED
-    local questData = control.data and control.data.quest
-    if questData and state.trackedQuestIndex and questData.journalIndex == state.trackedQuestIndex then
-        icon = ICON_TRACKED
+    local isMouseOver = false
+    if control.IsMouseOver and control:IsMouseOver() then
+        isMouseOver = true
+    elseif control.toggle and control.toggle.IsMouseOver and control.toggle:IsMouseOver() then
+        isMouseOver = true
     end
 
-    control.toggle:SetText(icon)
+    local texture = SelectCategoryToggleTexture(expanded, isMouseOver)
+    control.toggle:SetTexture(texture)
+    control.isExpanded = expanded and true or false
+end
+
+local function UpdateQuestIconSlot(control)
+    if not (control and control.iconSlot) then
+        return
+    end
+
+    local questData = control.data and control.data.quest
+    local isSelected = false
+    if questData and state.trackedQuestIndex then
+        isSelected = questData.journalIndex == state.trackedQuestIndex
+    end
+
+    if isSelected then
+        if control.iconSlot.SetTexture then
+            control.iconSlot:SetTexture(QUEST_SELECTED_ICON_TEXTURE)
+        end
+        if control.iconSlot.SetAlpha then
+            control.iconSlot:SetAlpha(1)
+        end
+        if control.iconSlot.SetHidden then
+            control.iconSlot:SetHidden(false)
+        end
+    else
+        if control.iconSlot.SetTexture then
+            control.iconSlot:SetTexture(nil)
+        end
+        if control.iconSlot.SetAlpha then
+            control.iconSlot:SetAlpha(0)
+        end
+        if control.iconSlot.SetHidden then
+            control.iconSlot:SetHidden(false)
+        end
+    end
 end
 
 local function IsCategoryExpanded(categoryKey)
@@ -1472,7 +1532,7 @@ local function IsCategoryExpanded(categoryKey)
     return state.opts.autoExpand ~= false
 end
 
-local function IsQuestExpanded(journalIndex)
+IsQuestExpanded = function(journalIndex)
     if not state.saved or not journalIndex then
         return state.opts.autoExpand ~= false
     end
@@ -1616,6 +1676,10 @@ local function AcquireCategoryControl()
     if not control.initialized then
         control.label = control:GetNamedChild("Label")
         control.toggle = control:GetNamedChild("Toggle")
+        if control.toggle and control.toggle.SetTexture then
+            control.toggle:SetTexture(SelectCategoryToggleTexture(false, false))
+        end
+        control.isExpanded = false
         control:SetHandler("OnMouseUp", function(ctrl, button, upInside)
             if not upInside or button ~= MOUSE_BUTTON_INDEX_LEFT then
                 return
@@ -1637,11 +1701,23 @@ local function AcquireCategoryControl()
             if ctrl.label then
                 ctrl.label:SetColor(unpack(COLOR_ROW_HOVER))
             end
+            local expanded = ctrl.isExpanded
+            if expanded == nil then
+                local catKey = ctrl.data and ctrl.data.categoryKey
+                expanded = IsCategoryExpanded(catKey)
+            end
+            UpdateCategoryToggle(ctrl, expanded)
         end)
         control:SetHandler("OnMouseExit", function(ctrl)
             if ctrl.label and ctrl.baseColor then
                 ctrl.label:SetColor(unpack(ctrl.baseColor))
             end
+            local expanded = ctrl.isExpanded
+            if expanded == nil then
+                local catKey = ctrl.data and ctrl.data.categoryKey
+                expanded = IsCategoryExpanded(catKey)
+            end
+            UpdateCategoryToggle(ctrl, expanded)
         end)
         control.initialized = true
     end
@@ -1657,12 +1733,24 @@ local function AcquireQuestControl()
     local control, key = state.questPool:AcquireObject()
     if not control.initialized then
         control.label = control:GetNamedChild("Label")
-        control.toggle = control:GetNamedChild("Toggle")
-        if control.toggle and control.toggle.SetMouseEnabled then
-            control.toggle:SetMouseEnabled(true)
-        end
-        if control.toggle then
-            control.toggle:SetHandler("OnMouseUp", function(toggleCtrl, button, upInside)
+        control.iconSlot = control:GetNamedChild("IconSlot")
+        if control.iconSlot then
+            control.iconSlot:SetDimensions(QUEST_ICON_SLOT_WIDTH, QUEST_ICON_SLOT_HEIGHT)
+            control.iconSlot:ClearAnchors()
+            control.iconSlot:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+            if control.iconSlot.SetTexture then
+                control.iconSlot:SetTexture(nil)
+            end
+            if control.iconSlot.SetAlpha then
+                control.iconSlot:SetAlpha(0)
+            end
+            if control.iconSlot.SetHidden then
+                control.iconSlot:SetHidden(false)
+            end
+            if control.iconSlot.SetMouseEnabled then
+                control.iconSlot:SetMouseEnabled(true)
+            end
+            control.iconSlot:SetHandler("OnMouseUp", function(toggleCtrl, button, upInside)
                 if not upInside or button ~= MOUSE_BUTTON_INDEX_LEFT then
                     return
                 end
@@ -1678,6 +1766,15 @@ local function AcquireQuestControl()
                 })
             end)
         end
+        if control.label then
+            control.label:ClearAnchors()
+            if control.iconSlot then
+                control.label:SetAnchor(TOPLEFT, control.iconSlot, TOPRIGHT, QUEST_ICON_SLOT_PADDING_X, 0)
+            else
+                control.label:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+            end
+            control.label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+        end
         control:SetHandler("OnMouseUp", function(ctrl, button, upInside)
             if not upInside then
                 return
@@ -1689,10 +1786,10 @@ local function AcquireQuestControl()
                 end
                 local journalIndex = questData.journalIndex
                 local toggleMouseOver = false
-                if ctrl.toggle then
-                    local toggleIsMouseOver = ctrl.toggle.IsMouseOver
+                if ctrl.iconSlot then
+                    local toggleIsMouseOver = ctrl.iconSlot.IsMouseOver
                     if type(toggleIsMouseOver) == "function" then
-                        toggleMouseOver = toggleIsMouseOver(ctrl.toggle)
+                        toggleMouseOver = toggleIsMouseOver(ctrl.iconSlot)
                     end
                 end
 
@@ -1816,9 +1913,7 @@ local function AcquireQuestControl()
     end
     control.rowType = "quest"
     ApplyLabelDefaults(control.label)
-    ApplyToggleDefaults(control.toggle)
     ApplyFont(control.label, state.fonts.quest)
-    ApplyFont(control.toggle, state.fonts.toggle)
     return control, key
 end
 
@@ -1877,14 +1972,36 @@ local function EnsurePools()
         control.data = nil
         control.currentIndent = nil
         control.baseColor = nil
-        if control.toggle then
-            control.toggle:SetText(ICON_COLLAPSED)
-        end
+        control.isExpanded = nil
     end
 
-    state.categoryPool:SetCustomResetBehavior(resetControl)
+    state.categoryPool:SetCustomResetBehavior(function(control)
+        resetControl(control)
+        if control.toggle then
+            if control.toggle.SetTexture then
+                control.toggle:SetTexture(SelectCategoryToggleTexture(false, false))
+            end
+            if control.toggle.SetHidden then
+                control.toggle:SetHidden(false)
+            end
+        end
+    end)
     state.questPool:SetCustomResetBehavior(function(control)
         resetControl(control)
+        if control.label and control.label.SetText then
+            control.label:SetText("")
+        end
+        if control.iconSlot then
+            if control.iconSlot.SetTexture then
+                control.iconSlot:SetTexture(nil)
+            end
+            if control.iconSlot.SetAlpha then
+                control.iconSlot:SetAlpha(0)
+            end
+            if control.iconSlot.SetHidden then
+                control.iconSlot:SetHidden(false)
+            end
+        end
     end)
     state.conditionPool:SetCustomResetBehavior(resetControl)
 end
@@ -1921,12 +2038,12 @@ local function LayoutQuest(quest)
     end
 
     local expanded = IsQuestExpanded(quest.journalIndex)
-    UpdateQuestToggle(control, expanded)
+    UpdateQuestIconSlot(control)
     ApplyRowMetrics(
         control,
         QUEST_INDENT_X,
-        GetToggleWidth(control.toggle, QUEST_TOGGLE_WIDTH),
-        TOGGLE_LABEL_PADDING_X,
+        QUEST_ICON_SLOT_WIDTH,
+        QUEST_ICON_SLOT_PADDING_X,
         0,
         QUEST_MIN_HEIGHT
     )
