@@ -1632,6 +1632,22 @@ local function SyncTrackedQuestState(forcedIndex, forceExpand, context)
             state.pendingDeselection = false
         end
 
+        if currentTracked
+            and isExternalFlag
+            and previousTracked == currentTracked
+            and not pendingApplied
+            and (not pending or pending.index ~= currentTracked)
+        then
+            shouldForceExpand = false
+            skipVisibilityUpdate = true
+            DebugDeselect("SyncTrackedQuestState:external-refresh-skip-expand", {
+                index = tostring(currentTracked),
+                previousTracked = tostring(previousTracked),
+                pendingApplied = tostring(pendingApplied),
+                pendingIndex = pending and tostring(pending.index) or "nil",
+            })
+        end
+
         if currentTracked and not skipVisibilityUpdate and previousTracked and currentTracked == previousTracked and not pendingApplied and not forcedIndex then
             if IsJournalQuestTracked then
                 local ok, trackedState = SafeCall(IsJournalQuestTracked, currentTracked)
