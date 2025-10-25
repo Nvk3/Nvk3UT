@@ -108,7 +108,368 @@ local state = {
     pendingExternalReveal = nil,
     pendingTrackedUpdate = nil,
     isClickSelectInProgress = false,
+    selectedQuestKey = nil,
+    isRebuildInProgress = false,
 }
+
+local STATE_VERSION = 1
+
+local PRIORITY = {
+    manual = 5,
+    ["click-select"] = 4,
+    ["external-select"] = 3,
+    auto = 2,
+    init = 1,
+}
+
+local function GetCurrentTimeSeconds()
+    if GetFrameTimeSeconds then
+        local ok, now = pcall(GetFrameTimeSeconds)
+        if ok and type(now) == "number" then
+            return now
+        end
+    end
+
+    if GetGameTimeMilliseconds then
+        local ok, ms = pcall(GetGameTimeMilliseconds)
+        if ok and type(ms) == "number" then
+            return ms / 1000
+        end
+    end
+
+    if os and os.clock then
+        return os.clock()
+    end
+
+    return 0
+end
+
+local function NormalizeCategoryKey(categoryKey)
+    if categoryKey == nil then
+        return nil
+    end
+
+    if type(categoryKey) == "string" then
+        return categoryKey
+    end
+
+    if type(categoryKey) == "number" then
+        return tostring(categoryKey)
+    end
+
+    return tostring(categoryKey)
+end
+
+local function NormalizeQuestKey(journalIndex)
+    if journalIndex == nil then
+        return nil
+    end
+
+    if type(journalIndex) == "string" then
+        local numeric = tonumber(journalIndex)
+        if numeric and numeric > 0 then
+            return tostring(numeric)
+        end
+        return journalIndex
+    end
+
+    if type(journalIndex) == "number" then
+        if journalIndex > 0 then
+            return tostring(journalIndex)
+        end
+        return nil
+    end
+
+    return tostring(journalIndex)
+end
+
+local function QuestKeyToJournalIndex(questKey)
+    if questKey == nil then
+        return nil
+    end
+
+    if type(questKey) == "table" and questKey.questKey then
+        questKey = questKey.questKey
+    end
+
+    local numeric = tonumber(questKey)
+    if numeric and numeric > 0 then
+        return numeric
+    end
+
+    return nil
+end
+
+local function ResolveStateSource(context, fallback)
+    if type(context) == "string" then
+        return ResolveStateSource({ trigger = context }, fallback)
+    end
+
+    if type(context) == "table" then
+        if context.stateSource then
+            return context.stateSource
+        end
+
+        local trigger = context.trigger
+        if trigger == "click" or trigger == "manual" then
+            return "manual"
+        elseif trigger == "click-select" then
+            return "click-select"
+        elseif trigger == "external-select" or trigger == "external" then
+            return "external-select"
+        elseif trigger == "init" then
+            return "init"
+        elseif trigger == "auto" or trigger == "refresh" or trigger == "unknown" then
+            return "auto"
+        end
+    end
+
+    return fallback or "auto"
+end
+
+local function LogStateWrite(entity, key, expanded, source, priority)
+    if not IsDebugLoggingEnabled() then
+        return
+    end
+
+    local formatted
+    if entity == "cat" then
+        formatted = string.format(
+            "STATE_WRITE cat=%s expanded=%s source=%s prio=%d",
+            tostring(key),
+            tostring(expanded),
+            tostring(source),
+            priority or 0
+        )
+    elseif entity == "quest" then
+        formatted = string.format(
+            "STATE_WRITE quest=%s expanded=%s source=%s prio=%d",
+            tostring(key),
+            tostring(expanded),
+            tostring(source),
+            priority or 0
+        )
+    elseif entity == "active" then
+        formatted = string.format(
+            "STATE_WRITE active=%s source=%s prio=%d",
+            tostring(key),
+            tostring(source),
+            priority or 0
+        )
+    end
+
+    if formatted then
+        DebugLog(formatted)
+    end
+end
+
+local function SyncSelectedQuestFromSaved()
+    if not state.saved then
+        state.selectedQuestKey = nil
+        return nil
+    end
+
+    local active = state.saved.active
+    local questKey = active and active.questKey or nil
+    if questKey ~= nil then
+        questKey = NormalizeQuestKey(questKey)
+    end
+
+    state.selectedQuestKey = questKey
+    return questKey
+end
+
+local function ApplyActiveQuestFromSaved()
+    local questKey = SyncSelectedQuestFromSaved()
+    local journalIndex = QuestKeyToJournalIndex(questKey)
+
+    state.trackedQuestIndex = journalIndex
+
+    if journalIndex then
+        state.trackedCategoryKeys = CollectCategoryKeysForQuest(journalIndex)
+    else
+        state.trackedCategoryKeys = {}
+    end
+
+    return journalIndex
+end
+
+local function WriteCategoryState(categoryKey, expanded, source)
+    if not state.saved then
+        return false
+    end
+
+    local key = NormalizeCategoryKey(categoryKey)
+    if not key then
+        return false
+    end
+
+    source = source or "auto"
+    state.saved.cat = state.saved.cat or {}
+
+    local prev = state.saved.cat[key]
+    local priority = PRIORITY[source] or 0
+    local prevPriority = prev and PRIORITY[prev.source] or 0
+    local now = GetCurrentTimeSeconds()
+    local prevTs = (prev and prev.ts) or 0
+
+    if prev and prevPriority > priority then
+        return false
+    end
+
+    if prev and prevPriority == priority and now < prevTs then
+        return false
+    end
+
+    state.saved.cat[key] = {
+        expanded = expanded and true or false,
+        source = source,
+        ts = now,
+    }
+
+    LogStateWrite("cat", key, expanded and true or false, source, priority)
+
+    return true
+end
+
+local function WriteQuestState(questKey, expanded, source)
+    if not state.saved then
+        return false
+    end
+
+    local key = NormalizeQuestKey(questKey)
+    if not key then
+        return false
+    end
+
+    source = source or "auto"
+    state.saved.quest = state.saved.quest or {}
+
+    local prev = state.saved.quest[key]
+    local priority = PRIORITY[source] or 0
+    local prevPriority = prev and PRIORITY[prev.source] or 0
+    local now = GetCurrentTimeSeconds()
+    local prevTs = (prev and prev.ts) or 0
+
+    if prev and prevPriority > priority then
+        return false
+    end
+
+    if prev and prevPriority == priority and now < prevTs then
+        return false
+    end
+
+    state.saved.quest[key] = {
+        expanded = expanded and true or false,
+        source = source,
+        ts = now,
+    }
+
+    LogStateWrite("quest", key, expanded and true or false, source, priority)
+
+    return true
+end
+
+local function WriteActiveQuest(questKey, source)
+    if not state.saved then
+        return false
+    end
+
+    source = source or "auto"
+    local normalized = questKey and NormalizeQuestKey(questKey) or nil
+    local prev = state.saved.active
+    local priority = PRIORITY[source] or 0
+    local prevPriority = prev and PRIORITY[prev.source] or 0
+    local now = GetCurrentTimeSeconds()
+    local prevTs = (prev and prev.ts) or 0
+
+    if prev and prevPriority > priority then
+        return false
+    end
+
+    if prev and prevPriority == priority and now < prevTs then
+        return false
+    end
+
+    state.saved.active = {
+        questKey = normalized,
+        source = source,
+        ts = now,
+    }
+
+    LogStateWrite("active", normalized, nil, source, priority)
+
+    ApplyActiveQuestFromSaved()
+
+    return true
+end
+
+local function EnsureSavedDefaults(saved)
+    saved.defaults = saved.defaults or {}
+    if saved.defaults.categoryExpanded ~= nil then
+        saved.defaults.categoryExpanded = saved.defaults.categoryExpanded and true or false
+    end
+    if saved.defaults.questExpanded ~= nil then
+        saved.defaults.questExpanded = saved.defaults.questExpanded and true or false
+    end
+end
+
+local function MigrateLegacySavedState(saved)
+    if type(saved) ~= "table" then
+        return
+    end
+
+    saved.cat = saved.cat or {}
+    saved.quest = saved.quest or {}
+
+    local legacyCategories = saved.catExpanded
+    if type(legacyCategories) == "table" then
+        for key, value in pairs(legacyCategories) do
+            local normalized = NormalizeCategoryKey(key)
+            if normalized then
+                saved.cat[normalized] = {
+                    expanded = value and true or false,
+                    source = "init",
+                    ts = 0,
+                }
+            end
+        end
+    end
+
+    saved.catExpanded = nil
+
+    local legacyQuests = saved.questExpanded
+    if type(legacyQuests) == "table" then
+        for key, value in pairs(legacyQuests) do
+            local normalized = NormalizeQuestKey(key)
+            if normalized then
+                saved.quest[normalized] = {
+                    expanded = value and true or false,
+                    source = "init",
+                    ts = 0,
+                }
+            end
+        end
+    end
+
+    saved.questExpanded = nil
+
+    if type(saved.active) ~= "table" then
+        saved.active = {
+            questKey = nil,
+            source = "init",
+            ts = 0,
+        }
+    else
+        if saved.active.questKey ~= nil then
+            saved.active.questKey = NormalizeQuestKey(saved.active.questKey)
+        end
+        saved.active.source = saved.active.source or "init"
+        saved.active.ts = saved.active.ts or 0
+    end
+
+    EnsureSavedDefaults(saved)
+end
 
 local function ApplyLabelDefaults(label)
     if not label or not label.SetHorizontalAlignment then
@@ -586,10 +947,16 @@ local function CollectCategoryKeysForQuest(journalIndex)
         if quest.journalIndex == journalIndex then
             found = true
             if category and category.key then
-                keys[category.key] = true
+                local normalized = NormalizeCategoryKey(category.key)
+                if normalized then
+                    keys[normalized] = true
+                end
             end
             if category and category.parent and category.parent.key then
-                keys[category.parent.key] = true
+                local normalizedParent = NormalizeCategoryKey(category.parent.key)
+                if normalizedParent then
+                    keys[normalizedParent] = true
+                end
             end
         end
     end)
@@ -799,7 +1166,7 @@ local function GetFocusedQuestIndex()
     return nil
 end
 
-local function UpdateTrackedQuestCache(forcedIndex)
+local function UpdateTrackedQuestCache(forcedIndex, context)
     local function normalize(index)
         local numeric = tonumber(index)
         if not numeric or numeric <= 0 then
@@ -828,42 +1195,34 @@ local function UpdateTrackedQuestCache(forcedIndex)
     end
 
     if not trackedIndex and not state.pendingDeselection then
-        local cachedIndex = normalize(state.trackedQuestIndex)
-        if cachedIndex then
-            trackedIndex = cachedIndex
-        end
+        local savedActive = state.saved and state.saved.active and state.saved.active.questKey
+        trackedIndex = normalize(savedActive)
     end
 
-    local trackedCategories = {}
-
-    if trackedIndex then
-        trackedCategories = CollectCategoryKeysForQuest(trackedIndex)
-    else
+    if not trackedIndex then
         ForEachQuest(function(quest)
-            if trackedIndex or not (quest and quest.flags and quest.flags.tracked) then
+            if trackedIndex then
+                return
+            end
+
+            if not (quest and quest.flags and quest.flags.tracked) then
                 return
             end
 
             local fallbackIndex = normalize(quest.journalIndex) or tonumber(quest.journalIndex)
-            if not fallbackIndex or fallbackIndex <= 0 then
-                return
+            if fallbackIndex and fallbackIndex > 0 then
+                trackedIndex = fallbackIndex
             end
-
-            trackedIndex = fallbackIndex
-            trackedCategories = CollectCategoryKeysForQuest(trackedIndex)
         end)
-    end
-
-    if type(trackedCategories) ~= "table" then
-        trackedCategories = {}
     end
 
     if trackedIndex then
         state.pendingDeselection = false
+        local sourceTag = ResolveStateSource(context, "auto")
+        WriteActiveQuest(trackedIndex, sourceTag)
+    else
+        ApplyActiveQuestFromSaved()
     end
-
-    state.trackedQuestIndex = trackedIndex
-    state.trackedCategoryKeys = trackedCategories
 end
 
 local function EnsureQuestTrackedState(journalIndex)
@@ -937,16 +1296,22 @@ local function EnsureExclusiveAssistedQuest(journalIndex)
     end)
 end
 
-local function ApplyImmediateTrackedQuest(journalIndex)
+local function ApplyImmediateTrackedQuest(journalIndex, stateSource)
     if not journalIndex then
-        return
+        return false
     end
 
     state.lastTrackedBeforeSync = state.trackedQuestIndex
-    local keys = CollectCategoryKeysForQuest(journalIndex)
-    state.trackedCategoryKeys = keys
-    state.trackedQuestIndex = journalIndex
+
+    local sourceTag = stateSource or "auto"
+    local changed = WriteActiveQuest(journalIndex, sourceTag)
+    if not changed then
+        ApplyActiveQuestFromSaved()
+    end
+
     state.pendingDeselection = false
+
+    return changed
 end
 
 local function AutoExpandQuestForTracking(journalIndex, forceExpand, context)
@@ -954,19 +1319,24 @@ local function AutoExpandQuestForTracking(journalIndex, forceExpand, context)
         return
     end
 
-    if not forceExpand and state.saved.questExpanded[journalIndex] ~= nil then
-        return
-    end
+    local questKey = NormalizeQuestKey(journalIndex)
 
     DebugDeselect("AutoExpandQuestForTracking", {
         journalIndex = journalIndex,
         forceExpand = tostring(forceExpand),
-        previous = tostring(state.saved.questExpanded[journalIndex]),
+        previous = tostring(
+            state.saved
+                and state.saved.quest
+                and state.saved.quest[questKey]
+                and state.saved.quest[questKey].expanded
+        ),
     })
+
     local logContext = {
         trigger = (context and context.trigger) or "auto",
         source = (context and context.source) or "QuestTracker:AutoExpandQuestForTracking",
     }
+
     SetQuestExpanded(journalIndex, true, logContext)
 end
 
@@ -976,39 +1346,26 @@ local function EnsureTrackedCategoriesExpanded(journalIndex, forceExpand, contex
     end
 
     local keys = CollectCategoryKeysForQuest(journalIndex)
+    local logContext = {
+        trigger = (context and context.trigger) or "auto",
+        source = (context and context.source) or "QuestTracker:EnsureTrackedCategoriesExpanded",
+    }
 
-    local logContext
-    local debugContext
     local debugEnabled = IsDebugLoggingEnabled()
 
     for key in pairs(keys) do
         if key then
-            local savedValue = state.saved.catExpanded[key]
-            local manualCollapsed = savedValue == false
-            if manualCollapsed then
-                if debugEnabled then
-                    DebugLog(
-                        "Respecting manual category collapse",
-                        "category", key,
-                        "journalIndex", journalIndex,
-                        "trigger", (context and context.trigger) or "auto"
-                    )
-                end
-            elseif forceExpand or savedValue == nil then
-                if not logContext then
-                    logContext = {
-                        trigger = (context and context.trigger) or "auto",
-                        source = (context and context.source) or "QuestTracker:EnsureTrackedCategoriesExpanded",
-                    }
-                    if debugEnabled then
-                        debugContext = {
-                            trigger = logContext.trigger,
-                            source = logContext.source,
-                            manualCollapseRespected = true,
-                        }
-                    end
-                end
-                SetCategoryExpanded(key, true, debugEnabled and debugContext or logContext)
+            local changed = SetCategoryExpanded(key, true, logContext)
+            if debugEnabled and not changed then
+                DebugLog(
+                    "Category expand skipped",
+                    "category",
+                    key,
+                    "journalIndex",
+                    journalIndex,
+                    "trigger",
+                    logContext.trigger
+                )
             end
         end
     end
@@ -1058,7 +1415,7 @@ local function SyncTrackedQuestState(forcedIndex, forceExpand, context)
             previousTracked = state.trackedQuestIndex
         end
 
-        UpdateTrackedQuestCache(forcedIndex)
+        UpdateTrackedQuestCache(forcedIndex, context)
         state.lastTrackedBeforeSync = nil
 
         local currentTracked = state.trackedQuestIndex
@@ -1240,6 +1597,12 @@ local function SyncTrackedQuestState(forcedIndex, forceExpand, context)
         end
     until true
 
+    if state.pendingDeselection and not state.trackedQuestIndex then
+        local clearSource = ResolveStateSource(context, "auto")
+        WriteActiveQuest(nil, clearSource)
+        state.pendingDeselection = false
+    end
+
     state.syncingTrackedState = false
 end
 
@@ -1304,6 +1667,10 @@ local function TrackQuestByJournalIndex(journalIndex, options)
         source = options.source or "QuestTracker:TrackQuestByJournalIndex",
     }
 
+    if options.stateSource then
+        actionContext.stateSource = options.stateSource
+    end
+
     state.pendingDeselection = false
 
     DebugDeselect("TrackQuestByJournalIndex", {
@@ -1326,7 +1693,7 @@ local function TrackQuestByJournalIndex(journalIndex, options)
     end
 
     if options.applyImmediate ~= false then
-        ApplyImmediateTrackedQuest(numeric)
+        ApplyImmediateTrackedQuest(numeric, ResolveStateSource(actionContext, "auto"))
     end
 
     if SetTrackedQuestIndex then
@@ -1379,7 +1746,7 @@ HandleQuestRowClick = function(journalIndex)
     local previousQuest = state.trackedQuestIndex
     local previousQuestString = previousQuest and tostring(previousQuest) or "nil"
 
-    ApplyImmediateTrackedQuest(questId)
+    ApplyImmediateTrackedQuest(questId, "click-select")
 
     if IsDebugLoggingEnabled() then
         DebugLog(string.format("SET_ACTIVE questId=%s prev=%s", tostring(questId), previousQuestString))
@@ -1420,6 +1787,7 @@ HandleQuestRowClick = function(journalIndex)
         skipAutoExpand = true,
         applyImmediate = false,
         requestRefresh = false,
+        stateSource = "click-select",
     }
 
     local tracked = TrackQuestByJournalIndex(questId, trackOptions)
@@ -1431,6 +1799,7 @@ HandleQuestRowClick = function(journalIndex)
             forcedIndex = questId,
             forceExpand = nextExpanded,
             isExternal = false,
+            stateSource = "click-select",
         })
     else
         state.pendingSelection = nil
@@ -1465,7 +1834,7 @@ local function AdoptTrackedQuestOnInit()
     end
 
     if not state.trackedQuestIndex then
-        ApplyImmediateTrackedQuest(journalIndex)
+        ApplyImmediateTrackedQuest(journalIndex, "init")
     end
 
     EnsureTrackedQuestVisible(journalIndex, true, {
@@ -1641,11 +2010,34 @@ end
 
 local function EnsureSavedVars()
     Nvk3UT.sv = Nvk3UT.sv or {}
-    Nvk3UT.sv.QuestTracker = Nvk3UT.sv.QuestTracker or {}
-    local saved = Nvk3UT.sv.QuestTracker
-    saved.catExpanded = saved.catExpanded or {}
-    saved.questExpanded = saved.questExpanded or {}
+    local saved = Nvk3UT.sv.QuestTracker or {}
+    Nvk3UT.sv.QuestTracker = saved
+
+    if type(saved.stateVersion) ~= "number" or saved.stateVersion < STATE_VERSION then
+        MigrateLegacySavedState(saved)
+        saved.stateVersion = STATE_VERSION
+    end
+
+    saved.cat = saved.cat or {}
+    saved.quest = saved.quest or {}
+    if type(saved.active) ~= "table" then
+        saved.active = {
+            questKey = nil,
+            source = "init",
+            ts = 0,
+        }
+    else
+        if saved.active.questKey ~= nil then
+            saved.active.questKey = NormalizeQuestKey(saved.active.questKey)
+        end
+        saved.active.source = saved.active.source or "init"
+        saved.active.ts = saved.active.ts or 0
+    end
+
+    EnsureSavedDefaults(saved)
+
     state.saved = saved
+    ApplyActiveQuestFromSaved()
 end
 
 local function ApplyFont(label, font)
@@ -1781,8 +2173,13 @@ local function UpdateQuestIconSlot(control)
 
     local questData = control.data and control.data.quest
     local isSelected = false
-    if questData and state.trackedQuestIndex then
-        isSelected = questData.journalIndex == state.trackedQuestIndex
+    if questData then
+        local questKey = NormalizeQuestKey(questData.journalIndex)
+        if questKey and state.selectedQuestKey then
+            isSelected = questKey == state.selectedQuestKey
+        elseif state.trackedQuestIndex then
+            isSelected = questData.journalIndex == state.trackedQuestIndex
+        end
     end
 
     if isSelected then
@@ -1808,62 +2205,80 @@ local function UpdateQuestIconSlot(control)
     end
 end
 
-local function IsCategoryExpanded(categoryKey)
-    if not categoryKey then
-        return state.opts.autoExpand ~= false
-    end
-
-    if state.saved then
-        local savedValue = state.saved.catExpanded[categoryKey]
-        if savedValue ~= nil then
-            return savedValue
-        end
-    end
-
-    if state.trackedCategoryKeys and state.trackedCategoryKeys[categoryKey] then
-        return true
+local function GetDefaultCategoryExpanded()
+    if state.saved and state.saved.defaults and state.saved.defaults.categoryExpanded ~= nil then
+        return state.saved.defaults.categoryExpanded and true or false
     end
 
     return state.opts.autoExpand ~= false
 end
 
+local function GetDefaultQuestExpanded()
+    if state.saved and state.saved.defaults and state.saved.defaults.questExpanded ~= nil then
+        return state.saved.defaults.questExpanded and true or false
+    end
+
+    return state.opts.autoExpand ~= false
+end
+
+local function IsCategoryExpanded(categoryKey)
+    local key = NormalizeCategoryKey(categoryKey)
+    if not key then
+        return GetDefaultCategoryExpanded()
+    end
+
+    if state.saved and state.saved.cat then
+        local entry = state.saved.cat[key]
+        if entry and entry.expanded ~= nil then
+            return entry.expanded and true or false
+        end
+    end
+
+    return GetDefaultCategoryExpanded()
+end
+
 IsQuestExpanded = function(journalIndex)
-    if not state.saved or not journalIndex then
-        return state.opts.autoExpand ~= false
+    local key = NormalizeQuestKey(journalIndex)
+    if not key then
+        return GetDefaultQuestExpanded()
     end
 
-    local savedValue = state.saved.questExpanded[journalIndex]
-    if savedValue == nil then
-        return state.opts.autoExpand ~= false
+    if state.saved and state.saved.quest then
+        local entry = state.saved.quest[key]
+        if entry and entry.expanded ~= nil then
+            return entry.expanded and true or false
+        end
     end
 
-    return savedValue
+    return GetDefaultQuestExpanded()
 end
 
 SetCategoryExpanded = function(categoryKey, expanded, context)
-    if not (state.saved and categoryKey) then
+    local key = NormalizeCategoryKey(categoryKey)
+    if not key then
         return false
     end
 
-    local beforeExpanded = IsCategoryExpanded and IsCategoryExpanded(categoryKey)
-    local newValue = not not expanded
-    local oldValue = state.saved.catExpanded[categoryKey]
-    if oldValue == newValue then
+    local beforeExpanded = IsCategoryExpanded(key)
+    local stateSource = ResolveStateSource(context, expanded and "auto" or "auto")
+    local changed = WriteCategoryState(key, expanded, stateSource)
+    if not changed then
         return false
     end
 
-    state.saved.catExpanded[categoryKey] = newValue
     DebugDeselect("SetCategoryExpanded", {
-        categoryKey = categoryKey,
-        previous = tostring(oldValue),
-        newValue = tostring(newValue),
+        categoryKey = key,
+        previous = tostring(beforeExpanded),
+        newValue = tostring(expanded),
     })
+
     local manualCollapseRespected
     if context and context.manualCollapseRespected ~= nil then
         manualCollapseRespected = context.manualCollapseRespected and true or false
     elseif context and context.trigger == "click" then
         manualCollapseRespected = true
     end
+
     local extraFields
     if IsDebugLoggingEnabled() then
         if manualCollapseRespected ~= nil then
@@ -1874,44 +2289,50 @@ SetCategoryExpanded = function(categoryKey, expanded, context)
             }
         end
     end
+
     LogCategoryExpansion(
-        newValue and "expand" or "collapse",
+        expanded and "expand" or "collapse",
         (context and context.trigger) or "unknown",
-        categoryKey,
+        key,
         beforeExpanded,
-        newValue,
+        expanded,
         (context and context.source) or "QuestTracker:SetCategoryExpanded",
         extraFields
     )
+
     return true
 end
 
 SetQuestExpanded = function(journalIndex, expanded, context)
-    if not (state.saved and journalIndex) then
+    local key = NormalizeQuestKey(journalIndex)
+    if not key then
         return false
     end
 
-    local beforeExpanded = IsQuestExpanded and IsQuestExpanded(journalIndex)
-    local newValue = not not expanded
-    local oldValue = state.saved.questExpanded[journalIndex]
-    if oldValue == newValue then
+    local beforeExpanded = IsQuestExpanded(key)
+    local stateSource = ResolveStateSource(context, expanded and "auto" or "auto")
+    local changed = WriteQuestState(key, expanded, stateSource)
+    if not changed then
         return false
     end
 
-    state.saved.questExpanded[journalIndex] = newValue
     DebugDeselect("SetQuestExpanded", {
-        journalIndex = journalIndex,
-        previous = tostring(oldValue),
-        newValue = tostring(newValue),
+        journalIndex = key,
+        previous = tostring(beforeExpanded),
+        newValue = tostring(expanded),
     })
+
+    local numericIndex = QuestKeyToJournalIndex(key) or key
+
     LogQuestExpansion(
-        newValue and "expand" or "collapse",
+        expanded and "expand" or "collapse",
         (context and context.trigger) or "unknown",
-        journalIndex,
+        numericIndex,
         beforeExpanded,
-        newValue,
+        expanded,
         (context and context.source) or "QuestTracker:SetQuestExpanded"
     )
+
     return true
 end
 
@@ -2285,7 +2706,11 @@ local function LayoutQuest(quest)
     control.label:SetText(quest.name or "")
     local baseColor = COLOR_QUEST_DEFAULT
     local flags = quest.flags or {}
-    if state.trackedQuestIndex and quest.journalIndex == state.trackedQuestIndex then
+    local questKey = NormalizeQuestKey(quest.journalIndex)
+    local selectedKey = state.selectedQuestKey
+    if selectedKey and questKey and questKey == selectedKey then
+        baseColor = COLOR_QUEST_TRACKED
+    elseif state.trackedQuestIndex and quest.journalIndex == state.trackedQuestIndex then
         baseColor = COLOR_QUEST_TRACKED
     elseif flags.assisted then
         baseColor = COLOR_QUEST_ASSISTED
@@ -2298,6 +2723,13 @@ local function LayoutQuest(quest)
     end
 
     local expanded = IsQuestExpanded(quest.journalIndex)
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format(
+            "BUILD_APPLY quest=%s expanded=%s",
+            tostring(questKey or quest.journalIndex),
+            tostring(expanded)
+        ))
+    end
     UpdateQuestIconSlot(control)
     ApplyRowMetrics(
         control,
@@ -2336,6 +2768,13 @@ local function LayoutCategory(category)
     local count = #category.quests
     control.label:SetText(FormatCategoryHeaderText(category.name or "", count, "quest"))
     local expanded = IsCategoryExpanded(category.key)
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format(
+            "BUILD_APPLY cat=%s expanded=%s",
+            tostring(category.key),
+            tostring(expanded)
+        ))
+    end
     local baseColor = expanded and COLOR_CATEGORY_EXPANDED or COLOR_CATEGORY_COLLAPSED
     control.baseColor = baseColor
     if control.label then
@@ -2365,6 +2804,13 @@ local function Rebuild()
         return
     end
 
+    if IsDebugLoggingEnabled() then
+        DebugLog("REBUILD_START")
+    end
+
+    state.isRebuildInProgress = true
+    ApplyActiveQuestFromSaved()
+
     EnsurePools()
 
     ReleaseAll(state.categoryPool)
@@ -2375,6 +2821,10 @@ local function Rebuild()
     if not state.snapshot or not state.snapshot.categories or not state.snapshot.categories.ordered then
         UpdateContentSize()
         NotifyHostContentChanged()
+        state.isRebuildInProgress = false
+        if IsDebugLoggingEnabled() then
+            DebugLog("REBUILD_END")
+        end
         return
     end
 
@@ -2388,6 +2838,12 @@ local function Rebuild()
     UpdateContentSize()
     NotifyHostContentChanged()
     ProcessPendingExternalReveal()
+
+    state.isRebuildInProgress = false
+
+    if IsDebugLoggingEnabled() then
+        DebugLog("REBUILD_END")
+    end
 end
 
 local function RefreshVisibility()
@@ -2428,7 +2884,10 @@ end
 
 local function OnSnapshotUpdated(snapshot)
     state.snapshot = snapshot
-    UpdateTrackedQuestCache()
+    UpdateTrackedQuestCache(nil, {
+        trigger = "refresh",
+        source = "QuestTracker:OnSnapshotUpdated",
+    })
     if state.trackedQuestIndex then
         EnsureTrackedQuestVisible(state.trackedQuestIndex, nil, {
             trigger = "refresh",
@@ -2484,7 +2943,10 @@ function QuestTracker.Init(parentControl, opts)
     if Nvk3UT.QuestModel and Nvk3UT.QuestModel.Subscribe then
         Nvk3UT.QuestModel.Subscribe(state.subscription)
         state.snapshot = Nvk3UT.QuestModel.GetSnapshot and Nvk3UT.QuestModel.GetSnapshot() or state.snapshot
-        UpdateTrackedQuestCache()
+        UpdateTrackedQuestCache(nil, {
+            trigger = "init",
+            source = "QuestTracker:Init",
+        })
     else
         DebugLog("QuestModel is not available")
     end
@@ -2549,6 +3011,8 @@ function QuestTracker.Shutdown()
     state.syncingTrackedState = false
     state.pendingDeselection = false
     state.pendingExternalReveal = nil
+    state.selectedQuestKey = nil
+    state.isRebuildInProgress = false
     NotifyHostContentChanged()
 end
 
