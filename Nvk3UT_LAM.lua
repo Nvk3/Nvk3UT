@@ -289,6 +289,11 @@ local function getDefaultTrackerColor(trackerType, role)
     return getTrackerColor(trackerType, role)
 end
 
+local function getTrackerColorDefaultTable(trackerType, role)
+    local r, g, b, a = getDefaultTrackerColor(trackerType, role)
+    return { r = r, g = g, b = b, a = a }
+end
+
 local function setTrackerColor(trackerType, role, r, g, b, a)
     local host = Nvk3UT and Nvk3UT.TrackerHost
     if host and host.SetTrackerColor then
@@ -1144,9 +1149,7 @@ local function registerPanel(displayTitle)
                     setTrackerColor("questTracker", "categoryTitle", r, g, b, a or 1)
                     refreshQuestTracker()
                 end,
-                default = function()
-                    return getDefaultTrackerColor("questTracker", "categoryTitle")
-                end,
+                default = getTrackerColorDefaultTable("questTracker", "categoryTitle"),
             }
 
             controls[#controls + 1] = {
@@ -1160,9 +1163,7 @@ local function registerPanel(displayTitle)
                     setTrackerColor("questTracker", "entryTitle", r, g, b, a or 1)
                     refreshQuestTracker()
                 end,
-                default = function()
-                    return getDefaultTrackerColor("questTracker", "entryTitle")
-                end,
+                default = getTrackerColorDefaultTable("questTracker", "entryTitle"),
             }
 
             controls[#controls + 1] = {
@@ -1176,9 +1177,7 @@ local function registerPanel(displayTitle)
                     setTrackerColor("questTracker", "objectiveText", r, g, b, a or 1)
                     refreshQuestTracker()
                 end,
-                default = function()
-                    return getDefaultTrackerColor("questTracker", "objectiveText")
-                end,
+                default = getTrackerColorDefaultTable("questTracker", "objectiveText"),
             }
 
             controls[#controls + 1] = {
@@ -1192,9 +1191,7 @@ local function registerPanel(displayTitle)
                     setTrackerColor("questTracker", "activeTitle", r, g, b, a or 1)
                     refreshQuestTracker()
                 end,
-                default = function()
-                    return getDefaultTrackerColor("questTracker", "activeTitle")
-                end,
+                default = getTrackerColorDefaultTable("questTracker", "activeTitle"),
             }
 
             controls[#controls + 1] = { type = "header", name = "Quest-Tracker Schriftarten" }
@@ -1309,9 +1306,7 @@ local function registerPanel(displayTitle)
                     setTrackerColor("achievementTracker", "categoryTitle", r, g, b, a or 1)
                     refreshAchievementTracker()
                 end,
-                default = function()
-                    return getDefaultTrackerColor("achievementTracker", "categoryTitle")
-                end,
+                default = getTrackerColorDefaultTable("achievementTracker", "categoryTitle"),
             }
 
             controls[#controls + 1] = {
@@ -1325,9 +1320,7 @@ local function registerPanel(displayTitle)
                     setTrackerColor("achievementTracker", "entryTitle", r, g, b, a or 1)
                     refreshAchievementTracker()
                 end,
-                default = function()
-                    return getDefaultTrackerColor("achievementTracker", "entryTitle")
-                end,
+                default = getTrackerColorDefaultTable("achievementTracker", "entryTitle"),
             }
 
             controls[#controls + 1] = {
@@ -1341,9 +1334,7 @@ local function registerPanel(displayTitle)
                     setTrackerColor("achievementTracker", "objectiveText", r, g, b, a or 1)
                     refreshAchievementTracker()
                 end,
-                default = function()
-                    return getDefaultTrackerColor("achievementTracker", "objectiveText")
-                end,
+                default = getTrackerColorDefaultTable("achievementTracker", "objectiveText"),
             }
 
             controls[#controls + 1] = {
@@ -1357,9 +1348,7 @@ local function registerPanel(displayTitle)
                     setTrackerColor("achievementTracker", "activeTitle", r, g, b, a or 1)
                     refreshAchievementTracker()
                 end,
-                default = function()
-                    return getDefaultTrackerColor("achievementTracker", "activeTitle")
-                end,
+                default = getTrackerColorDefaultTable("achievementTracker", "activeTitle"),
             }
 
             controls[#controls + 1] = { type = "header", name = "Erfolgstracker Schriftarten" }

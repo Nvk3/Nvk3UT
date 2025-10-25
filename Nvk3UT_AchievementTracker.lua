@@ -108,8 +108,13 @@ end
 
 local function GetAchievementTrackerColor(role)
     local host = Nvk3UT and Nvk3UT.TrackerHost
-    if host and host.GetTrackerColor then
-        return host.GetTrackerColor("achievementTracker", role)
+    if host then
+        if host.EnsureAppearanceDefaults then
+            host.EnsureAppearanceDefaults()
+        end
+        if host.GetTrackerColor then
+            return host.GetTrackerColor("achievementTracker", role)
+        end
     end
     return 1, 1, 1, 1
 end
