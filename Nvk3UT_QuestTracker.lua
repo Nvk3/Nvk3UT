@@ -115,7 +115,7 @@ local STATE_VERSION = 1
 local PRIORITY = {
     manual = 5,
     ["click-select"] = 4,
-    ["external-select"] = 3,
+    ["external-select"] = 4,
     auto = 2,
     init = 1,
 }
@@ -501,27 +501,34 @@ local function WriteCategoryState(categoryKey, expanded, source, options)
     state.saved.cat = state.saved.cat or {}
 
     local prev = state.saved.cat[key]
-    local priority = PRIORITY[source] or 0
-    local prevPriority = prev and PRIORITY[prev.source] or 0
+    local priorityOverride = options.priorityOverride
+    local priority = priorityOverride or PRIORITY[source] or 0
+    local prevPriority = prev and (PRIORITY[prev.source] or 0) or 0
     local overrideTimestamp = tonumber(options.timestamp)
     local now = overrideTimestamp or GetCurrentTimeSeconds()
     local prevTs = (prev and prev.ts) or 0
+    local forceWrite = options.force == true
+    local allowTimestampRegression = options.allowTimestampRegression == true
 
-    if prev and prevPriority > priority then
-        return false
+    if prev and not forceWrite then
+        if prevPriority > priority then
+            return false
+        end
+
+        if prevPriority == priority and not allowTimestampRegression and now < prevTs then
+            return false
+        end
     end
 
-    if prev and prevPriority == priority and now < prevTs then
-        return false
-    end
+    local newExpanded = expanded and true or false
 
     state.saved.cat[key] = {
-        expanded = expanded and true or false,
+        expanded = newExpanded,
         source = source,
         ts = now,
     }
 
-    LogStateWrite("cat", key, expanded and true or false, source, priority)
+    LogStateWrite("cat", key, newExpanded, source, priority)
 
     return true
 end
@@ -541,27 +548,34 @@ local function WriteQuestState(questKey, expanded, source, options)
     state.saved.quest = state.saved.quest or {}
 
     local prev = state.saved.quest[key]
-    local priority = PRIORITY[source] or 0
-    local prevPriority = prev and PRIORITY[prev.source] or 0
+    local priorityOverride = options.priorityOverride
+    local priority = priorityOverride or PRIORITY[source] or 0
+    local prevPriority = prev and (PRIORITY[prev.source] or 0) or 0
     local overrideTimestamp = tonumber(options.timestamp)
     local now = overrideTimestamp or GetCurrentTimeSeconds()
     local prevTs = (prev and prev.ts) or 0
+    local forceWrite = options.force == true
+    local allowTimestampRegression = options.allowTimestampRegression == true
 
-    if prev and prevPriority > priority then
-        return false
+    if prev and not forceWrite then
+        if prevPriority > priority then
+            return false
+        end
+
+        if prevPriority == priority and not allowTimestampRegression and now < prevTs then
+            return false
+        end
     end
 
-    if prev and prevPriority == priority and now < prevTs then
-        return false
-    end
+    local newExpanded = expanded and true or false
 
     state.saved.quest[key] = {
-        expanded = expanded and true or false,
+        expanded = newExpanded,
         source = source,
         ts = now,
     }
 
-    LogStateWrite("quest", key, expanded and true or false, source, priority)
+    LogStateWrite("quest", key, newExpanded, source, priority)
 
     return true
 end
@@ -572,21 +586,26 @@ local function WriteActiveQuest(questKey, source, options)
     end
 
     source = source or "auto"
+    options = options or {}
     local normalized = questKey and NormalizeQuestKey(questKey) or nil
     local prev = state.saved.active
-    local priority = PRIORITY[source] or 0
-    local prevPriority = prev and PRIORITY[prev.source] or 0
-    options = options or {}
+    local priorityOverride = options.priorityOverride
+    local priority = priorityOverride or PRIORITY[source] or 0
+    local prevPriority = prev and (PRIORITY[prev.source] or 0) or 0
     local overrideTimestamp = tonumber(options.timestamp)
     local now = overrideTimestamp or GetCurrentTimeSeconds()
     local prevTs = (prev and prev.ts) or 0
+    local forceWrite = options.force == true
+    local allowTimestampRegression = options.allowTimestampRegression == true
 
-    if prev and prevPriority > priority then
-        return false
-    end
+    if prev and not forceWrite then
+        if prevPriority > priority then
+            return false
+        end
 
-    if prev and prevPriority == priority and now < prevTs then
-        return false
+        if prevPriority == priority and not allowTimestampRegression and now < prevTs then
+            return false
+        end
     end
 
     state.saved.active = {
@@ -1092,6 +1111,7 @@ local function ExpandCategoriesForExternalSelect(journalIndex)
         local context = {
             trigger = "external-select",
             source = "QuestTracker:ExpandCategoriesForExternalSelect",
+            forceWrite = true,
         }
 
         for key in pairs(keys) do
@@ -1299,7 +1319,11 @@ local function UpdateTrackedQuestCache(forcedIndex, context)
     if trackedIndex then
         state.pendingDeselection = false
         local sourceTag = ResolveStateSource(context, "auto")
-        WriteActiveQuest(trackedIndex, sourceTag)
+        local writeOptions
+        if context and context.isExternal then
+            writeOptions = { force = true }
+        end
+        WriteActiveQuest(trackedIndex, sourceTag, writeOptions)
     else
         ApplyActiveQuestFromSaved()
     end
@@ -2341,7 +2365,12 @@ SetCategoryExpanded = function(categoryKey, expanded, context)
 
     local beforeExpanded = IsCategoryExpanded(key)
     local stateSource = ResolveStateSource(context, expanded and "auto" or "auto")
-    local changed = WriteCategoryState(key, expanded, stateSource)
+    local writeOptions
+    if context and context.forceWrite and expanded and not beforeExpanded then
+        writeOptions = { force = true }
+    end
+
+    local changed = WriteCategoryState(key, expanded, stateSource, writeOptions)
     if not changed then
         return false
     end
@@ -2391,7 +2420,12 @@ SetQuestExpanded = function(journalIndex, expanded, context)
 
     local beforeExpanded = IsQuestExpanded(key)
     local stateSource = ResolveStateSource(context, expanded and "auto" or "auto")
-    local changed = WriteQuestState(key, expanded, stateSource)
+    local writeOptions
+    if context and context.forceWrite and expanded and not beforeExpanded then
+        writeOptions = { force = true }
+    end
+
+    local changed = WriteQuestState(key, expanded, stateSource, writeOptions)
     if not changed then
         return false
     end
