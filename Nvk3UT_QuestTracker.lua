@@ -1182,7 +1182,9 @@ local function OnTrackedQuestUpdate(_, trackingType, context)
         resolvedContext.source = "QuestTracker:OnTrackedQuestUpdate"
     end
 
-    SyncTrackedQuestState(nil, true, resolvedContext)
+    local forcedIndex = resolvedContext.forcedIndex
+
+    SyncTrackedQuestState(forcedIndex, true, resolvedContext)
 end
 
 local function OnFocusedTrackerAssistChanged(_, assistedData)
@@ -1666,6 +1668,7 @@ local function AcquireQuestControl()
                     OnTrackedQuestUpdate(nil, TRACK_TYPE_QUEST, {
                         trigger = "click",
                         source = "QuestTracker:OnRowClick",
+                        forcedIndex = journalIndex,
                     })
                 else
                     state.pendingSelection = nil
