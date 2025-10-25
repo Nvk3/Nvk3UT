@@ -488,6 +488,16 @@ local function UpdateContentSize()
     state.contentHeight = totalHeight
 end
 
+local function IsCategoryExpanded()
+    if not state.saved then
+        return true
+    end
+    if state.saved.categoryExpanded == nil then
+        state.saved.categoryExpanded = true
+    end
+    return state.saved.categoryExpanded ~= false
+end
+
 local function SetCategoryExpanded(expanded, context)
     if not state.saved then
         return
@@ -505,16 +515,6 @@ local function SetCategoryExpanded(expanded, context)
             (context and context.source) or "AchievementTracker:SetCategoryExpanded"
         )
     end
-end
-
-local function IsCategoryExpanded()
-    if not state.saved then
-        return true
-    end
-    if state.saved.categoryExpanded == nil then
-        state.saved.categoryExpanded = true
-    end
-    return state.saved.categoryExpanded ~= false
 end
 
 local function SetEntryExpanded(achievementId, expanded)
