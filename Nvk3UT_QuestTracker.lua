@@ -1423,6 +1423,14 @@ local function AutoExpandQuestForTracking(journalIndex, forceExpand, context)
         return
     end
 
+    if forceExpand == false then
+        DebugDeselect("AutoExpandQuestForTracking:skipped", {
+            journalIndex = journalIndex,
+            forceExpand = tostring(forceExpand),
+        })
+        return
+    end
+
     local questKey = NormalizeQuestKey(journalIndex)
 
     DebugDeselect("AutoExpandQuestForTracking", {
@@ -1446,6 +1454,14 @@ end
 
 local function EnsureTrackedCategoriesExpanded(journalIndex, forceExpand, context)
     if not (state.saved and journalIndex) then
+        return
+    end
+
+    if forceExpand == false then
+        DebugDeselect("EnsureTrackedCategoriesExpanded:skipped", {
+            journalIndex = journalIndex,
+            forceExpand = tostring(forceExpand),
+        })
         return
     end
 
