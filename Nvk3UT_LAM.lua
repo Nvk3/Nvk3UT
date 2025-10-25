@@ -261,7 +261,15 @@ local function getAchievementSettings()
     return sv.AchievementTracker
 end
 
+local function ensureTrackerAppearance()
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if host and host.EnsureAppearanceDefaults then
+        host.EnsureAppearanceDefaults()
+    end
+end
+
 local function getTrackerColor(trackerType, role)
+    ensureTrackerAppearance()
     local host = Nvk3UT and Nvk3UT.TrackerHost
     if host and host.GetTrackerColor then
         return host.GetTrackerColor(trackerType, role)
@@ -273,6 +281,7 @@ local function getTrackerColor(trackerType, role)
 end
 
 local function getDefaultTrackerColor(trackerType, role)
+    ensureTrackerAppearance()
     local host = Nvk3UT and Nvk3UT.TrackerHost
     if host and host.GetDefaultTrackerColor then
         return host.GetDefaultTrackerColor(trackerType, role)
@@ -284,9 +293,7 @@ local function setTrackerColor(trackerType, role, r, g, b, a)
     local host = Nvk3UT and Nvk3UT.TrackerHost
     if host and host.SetTrackerColor then
         host.SetTrackerColor(trackerType, role, r, g, b, a)
-        if host.EnsureAppearanceDefaults then
-            host.EnsureAppearanceDefaults()
-        end
+        ensureTrackerAppearance()
         return
     end
 

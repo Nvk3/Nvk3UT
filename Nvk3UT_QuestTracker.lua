@@ -219,6 +219,40 @@ local function GetQuestTrackerColor(role)
     return 1, 1, 1, 1
 end
 
+local function DetermineQuestColorRole(quest)
+    if not quest then
+        return "entryTitle"
+    end
+
+    local questKey = NormalizeQuestKey(quest.journalIndex)
+    local selected = false
+    if questKey and state.selectedQuestKey then
+        selected = questKey == state.selectedQuestKey
+    end
+
+    local tracked = false
+    if state.trackedQuestIndex and quest.journalIndex then
+        tracked = quest.journalIndex == state.trackedQuestIndex
+    end
+
+    local flags = quest.flags or {}
+    local assisted = flags.assisted == true
+    local watched = flags.tracked == true
+
+    if assisted or selected or tracked then
+        return "activeTitle"
+    end
+
+    -- Keep the legacy watcher branch in place even though it currently maps to the
+    -- default entry color so future enhancements can differentiate it again without
+    -- having to rediscover the selection logic.
+    if watched then
+        return "entryTitle"
+    end
+
+    return "entryTitle"
+end
+
 local function ApplyBaseColor(control, r, g, b, a)
     if not control then
         return
@@ -2218,11 +2252,18 @@ local function EnsureSavedVars()
     ApplyActiveQuestFromSaved()
 end
 
-local function ApplyFont(label, font)
+local function ApplyFont(label, font, fallback)
     if not label or not label.SetFont then
         return
     end
-    label:SetFont(font)
+    local resolved = font
+    if resolved == nil or resolved == "" then
+        resolved = fallback
+    end
+    if resolved == nil or resolved == "" then
+        return
+    end
+    label:SetFont(resolved)
 end
 
 local function ResolveFont(fontId)
@@ -2628,8 +2669,8 @@ local function AcquireCategoryControl()
     control.rowType = "category"
     ApplyLabelDefaults(control.label)
     ApplyToggleDefaults(control.toggle)
-    ApplyFont(control.label, state.fonts.category)
-    ApplyFont(control.toggle, state.fonts.toggle)
+    ApplyFont(control.label, state.fonts.category, DEFAULT_FONTS.category)
+    ApplyFont(control.toggle, state.fonts.toggle, DEFAULT_FONTS.toggle)
     return control, key
 end
 
@@ -2782,7 +2823,7 @@ local function AcquireQuestControl()
     end
     control.rowType = "quest"
     ApplyLabelDefaults(control.label)
-    ApplyFont(control.label, state.fonts.quest)
+    ApplyFont(control.label, state.fonts.quest, DEFAULT_FONTS.quest)
     return control, key
 end
 
@@ -2794,7 +2835,7 @@ local function AcquireConditionControl()
     end
     control.rowType = "condition"
     ApplyLabelDefaults(control.label)
-    ApplyFont(control.label, state.fonts.condition)
+    ApplyFont(control.label, state.fonts.condition, DEFAULT_FONTS.condition)
     return control, key
 end
 
@@ -2897,8 +2938,7 @@ local function LayoutQuest(quest)
     control.data = { quest = quest }
     control.label:SetText(quest.name or "")
 
-    local flags = quest.flags or {}
-    local colorRole = flags.assisted and "activeTitle" or "entryTitle"
+    local colorRole = DetermineQuestColorRole(quest)
     local r, g, b, a = GetQuestTrackerColor(colorRole)
     ApplyBaseColor(control, r, g, b, a)
 
