@@ -506,6 +506,7 @@ local function SyncTrackedQuestState(forcedIndex, forceExpand)
     local pending = state.pendingSelection
     local pendingApplied = false
     local expansionChanged = false
+    local skipVisibilityUpdate = false
 
     if pending and currentTracked == pending.index then
         pendingApplied = true
@@ -531,7 +532,17 @@ local function SyncTrackedQuestState(forcedIndex, forceExpand)
         state.suppressForceExpandFor = nil
     end
 
-    if currentTracked then
+    if currentTracked and not skipVisibilityUpdate and previousTracked and currentTracked == previousTracked and not pendingApplied and not forcedIndex then
+        if IsJournalQuestTracked then
+            local ok, trackedState = SafeCall(IsJournalQuestTracked, currentTracked)
+            if ok and not trackedState then
+                skipVisibilityUpdate = true
+                shouldForceExpand = false
+            end
+        end
+    end
+
+    if currentTracked and not skipVisibilityUpdate then
         EnsureTrackedQuestVisible(currentTracked, shouldForceExpand)
     end
 
