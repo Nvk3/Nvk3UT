@@ -1118,7 +1118,7 @@ local function AcquireQuestControl()
                 local tracked = TrackQuestByJournalIndex(journalIndex, trackOptions)
 
                 if tracked then
-                    SyncTrackedQuestState(nil, nextExpanded)
+                    OnTrackedQuestUpdate(nil, TRACK_TYPE_QUEST)
                 else
                     state.pendingSelection = nil
                     local changed = SetQuestExpanded(journalIndex, nextExpanded)
