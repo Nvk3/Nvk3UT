@@ -2423,4 +2423,39 @@ TrackerHost.RefreshScroll = refreshScroll
 TrackerHost.NotifyContentChanged = notifyContentChanged
 TrackerHost.ScrollControlIntoView = scrollControlIntoView
 
+function TrackerHost.EnsureVisible(options)
+    options = options or {}
+
+    if not state.initialized then
+        TrackerHost.Init()
+    end
+
+    state.window = ensureWindowSettings()
+    if state.window.visible == false then
+        state.window.visible = true
+    end
+
+    applyWindowVisibility()
+    refreshWindowLayout()
+
+    if state.root and state.root.SetHidden then
+        state.root:SetHidden(false)
+    end
+
+    if options.bringToFront and state.root and state.root.BringWindowToTop then
+        pcall(state.root.BringWindowToTop, state.root)
+    end
+
+    if options.focus == "achievements" and state.achievementContainer and state.achievementContainer.SetHidden then
+        state.achievementContainer:SetHidden(false)
+    end
+
+    local isVisible = true
+    if state.root and state.root.IsHidden then
+        isVisible = not state.root:IsHidden()
+    end
+
+    return isVisible ~= false
+end
+
 return TrackerHost

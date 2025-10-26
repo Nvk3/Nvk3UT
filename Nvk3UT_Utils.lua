@@ -71,6 +71,121 @@ function M.GetIconTagForTexture(path, size)
   return string.format("|t%d:%d:%s|t ", iconSize, iconSize, normalized)
 end
 
+local MENU_OPTION_LABEL = (_G and _G.MENU_ADD_OPTION_LABEL) or 1
+
+local function evaluateMenuGate(flag, anchorControl)
+  if flag == nil then
+    return true
+  end
+
+  local flagType = type(flag)
+  if flagType == "function" then
+    local ok, result = pcall(flag, anchorControl)
+    if not ok then
+      if M and M.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then
+        M.d("[Nvk3UT][Utils][ContextMenu] gate failed", tostring(result))
+      end
+      return false
+    end
+    return result ~= false
+  end
+
+  if flagType == "boolean" then
+    return flag
+  end
+
+  return true
+end
+
+local function SafeGetMenuItemCount()
+  if type(ZO_Menu_GetNumMenuItems) == "function" then
+    local ok, count = pcall(ZO_Menu_GetNumMenuItems)
+    if ok and type(count) == "number" then
+      return count
+    end
+  end
+
+  return nil
+end
+
+local function SafeSetMenuItemEnabled(index, enabled)
+  if type(SetMenuItemEnabled) ~= "function" or type(index) ~= "number" then
+    return false
+  end
+
+  local ok = pcall(SetMenuItemEnabled, index, enabled ~= false)
+  return ok == true
+end
+
+local function wrapMenuCallback(callback)
+  if type(callback) ~= "function" then
+    return function() end
+  end
+
+  return function(...)
+    if type(ClearMenu) == "function" then
+      pcall(ClearMenu)
+    end
+
+    local ok, err = pcall(callback, ...)
+    if not ok and M and M.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then
+      M.d("[Nvk3UT][Utils][ContextMenu] callback failed", tostring(err))
+    end
+  end
+end
+
+function M.ShowContextMenu(anchorControl, entries)
+  if not anchorControl or type(entries) ~= "table" then
+    return false
+  end
+
+  if not (ClearMenu and AddCustomMenuItem and ShowMenu) then
+    return false
+  end
+
+  ClearMenu()
+
+  local added = 0
+  for _, entry in ipairs(entries) do
+    if type(entry) == "table" then
+      local label = entry.label
+      local callback = entry.callback
+      if type(label) == "string" and label ~= "" and type(callback) == "function" then
+        local visible = evaluateMenuGate(entry.visible, anchorControl)
+        if visible then
+          local isEnabled = evaluateMenuGate(entry.enabled, anchorControl)
+          local disabled = not isEnabled
+          local itemType = entry.itemType or MENU_OPTION_LABEL
+          local itemId = entry.itemId
+          local icon = entry.icon
+          local beforeCount = SafeGetMenuItemCount() or 0
+          AddCustomMenuItem(
+            label,
+            wrapMenuCallback(callback),
+            itemType,
+            itemId,
+            icon
+          )
+          local afterCount = SafeGetMenuItemCount()
+          local itemIndex = afterCount or (beforeCount + 1)
+          if itemIndex then
+            SafeSetMenuItemEnabled(itemIndex, not disabled)
+          end
+          added = added + 1
+        end
+      end
+    end
+  end
+
+  if added > 0 then
+    ShowMenu(anchorControl)
+    return true
+  end
+
+  ClearMenu()
+  return false
+end
+
 local function resolveShowCategoryCountsOverride(override)
   if type(override) == "boolean" then
     return override
