@@ -67,6 +67,36 @@ local function SafeCallMulti(func, ...)
     return tableUnpack(results)
 end
 
+local function FormatDisplayString(text)
+    if text == nil then
+        return nil
+    end
+
+    if type(text) ~= "string" then
+        return text
+    end
+
+    if text == "" then
+        return ""
+    end
+
+    if type(ZO_CachedStrFormat) == "function" then
+        local ok, formatted = pcall(ZO_CachedStrFormat, "<<1>>", text)
+        if ok and formatted ~= nil then
+            return formatted
+        end
+    end
+
+    if type(zo_strformat) == "function" then
+        local ok, formatted = pcall(zo_strformat, "<<1>>", text)
+        if ok and formatted ~= nil then
+            return formatted
+        end
+    end
+
+    return text
+end
+
 local function NormalizeAchievementId(value)
     if type(value) == "number" then
         return value
@@ -122,6 +152,8 @@ local function BuildObjectiveData(achievementId)
             criterionIndex
         )
 
+        description = FormatDisplayString(description)
+
         objectives[#objectives + 1] = {
             description = description,
             current = numCompleted,
@@ -144,7 +176,7 @@ local function DetermineCategoryInfo(categoryIndex, subCategoryIndex, achievemen
     if GetAchievementCategoryInfo then
         local infoName = SafeCallMulti(GetAchievementCategoryInfo, categoryIndex)
         if infoName ~= nil then
-            categoryName = infoName
+            categoryName = FormatDisplayString(infoName)
         end
     end
 
@@ -152,7 +184,7 @@ local function DetermineCategoryInfo(categoryIndex, subCategoryIndex, achievemen
     if subCategoryIndex and GetAchievementSubCategoryInfo then
         local infoName = SafeCallMulti(GetAchievementSubCategoryInfo, categoryIndex, subCategoryIndex)
         if infoName ~= nil then
-            subCategoryName = infoName
+            subCategoryName = FormatDisplayString(infoName)
         end
     end
 
@@ -258,6 +290,9 @@ local function BuildAchievementEntry(self, achievementId)
             completedTimestamp = infoTimeStamp or infoDate
         end
     end
+
+    name = FormatDisplayString(name)
+    description = FormatDisplayString(description)
 
     local current
     local maximum
