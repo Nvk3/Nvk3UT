@@ -128,25 +128,49 @@ local function CollectActiveObjectives(journalIndex, questIsComplete)
     end
 
     for stepIndex = 1, numSteps do
-        local stepText, _, numConditions, isVisible, isStepComplete = GetJournalQuestStepInfo(journalIndex, stepIndex)
-        numConditions = tonumber(numConditions) or 0
-
+        local stepText, visibility, _, trackerOverrideText, stepNumConditions = GetJournalQuestStepInfo(journalIndex, stepIndex)
+        local sanitizedOverrideText = StripProgressDecorations(trackerOverrideText)
         local sanitizedStepText = StripProgressDecorations(stepText)
-        if not fallbackStepText and sanitizedStepText then
-            fallbackStepText = sanitizedStepText
+        local fallbackObjectiveCandidate = nil
+
+        local stepIsVisible = true
+        if visibility ~= nil then
+            local hiddenConstant = rawget(_G, "QUEST_STEP_VISIBILITY_HIDDEN")
+            if hiddenConstant ~= nil then
+                stepIsVisible = (visibility ~= hiddenConstant)
+            else
+                stepIsVisible = (visibility ~= false)
+            end
         end
 
-        local stepIsVisible = (isVisible ~= false)
         if questIsComplete and not stepIsVisible then
             -- Completed quests sometimes hide their final step even though the journal still shows the hand-in objective.
             stepIsVisible = true
         end
 
         if stepIsVisible then
+            local fallbackStepCandidate = sanitizedOverrideText or sanitizedStepText
+            if not fallbackStepText and fallbackStepCandidate then
+                fallbackStepText = fallbackStepCandidate
+            end
+
+            fallbackObjectiveCandidate = NormalizeObjectiveDisplayText(trackerOverrideText) or NormalizeObjectiveDisplayText(stepText)
+            if not fallbackObjectiveText and fallbackObjectiveCandidate then
+                fallbackObjectiveText = fallbackObjectiveCandidate
+            end
+
             local addedObjectiveForStep = false
 
-            if numConditions > 0 and type(GetJournalQuestConditionInfo) == "function" then
-                for conditionIndex = 1, numConditions do
+            local totalConditions = tonumber(stepNumConditions) or 0
+            if type(GetJournalQuestNumConditions) == "function" then
+                local countedConditions = GetJournalQuestNumConditions(journalIndex, stepIndex)
+                if type(countedConditions) == "number" and countedConditions > totalConditions then
+                    totalConditions = countedConditions
+                end
+            end
+
+            if totalConditions > 0 and type(GetJournalQuestConditionInfo) == "function" then
+                for conditionIndex = 1, totalConditions do
                     local conditionText, current, maxValue, isFailCondition, isConditionComplete, _, isConditionVisible = GetJournalQuestConditionInfo(journalIndex, stepIndex, conditionIndex)
                     local formattedCondition = NormalizeObjectiveDisplayText(conditionText)
                     local isVisibleCondition = (isConditionVisible ~= false)
@@ -174,11 +198,16 @@ local function CollectActiveObjectives(journalIndex, questIsComplete)
                 end
             end
 
-            if not addedObjectiveForStep then
-                local fallbackObjective = NormalizeObjectiveDisplayText(stepText)
-                if fallbackObjective then
-                    fallbackObjectiveText = fallbackObjective
-                end
+            if not addedObjectiveForStep and fallbackObjectiveCandidate and not seen[fallbackObjectiveCandidate] then
+                seen[fallbackObjectiveCandidate] = true
+                objectiveList[#objectiveList + 1] = {
+                    displayText = fallbackObjectiveCandidate,
+                    current = 0,
+                    max = 0,
+                    complete = false,
+                    isTurnIn = false,
+                }
+                addedObjectiveForStep = true
             end
         end
     end
