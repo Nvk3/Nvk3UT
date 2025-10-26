@@ -3112,10 +3112,10 @@ local function AcquireQuestControl()
         control.iconSlot = control:GetNamedChild("IconSlot")
         control.objectiveContainer = control:GetNamedChild("Objectives")
         if control.SetResizeToFitDescendents then
-            control:SetResizeToFitDescendents(false)
+            control:SetResizeToFitDescendents(true)
         end
         if control.objectiveContainer and control.objectiveContainer.SetResizeToFitDescendents then
-            control.objectiveContainer:SetResizeToFitDescendents(false)
+            control.objectiveContainer:SetResizeToFitDescendents(true)
         end
         if control.objectiveContainer and control.objectiveContainer.SetHeight then
             control.objectiveContainer:SetHeight(0)
@@ -3304,9 +3304,18 @@ local function EnsurePools()
         if control.label and control.label.SetText then
             control.label:SetText("")
         end
+        if control.SetResizeToFitDescendents then
+            control:SetResizeToFitDescendents(true)
+        end
         if control.objectiveContainer then
             if control.objectiveContainer.SetHidden then
                 control.objectiveContainer:SetHidden(true)
+            end
+            if control.objectiveContainer.SetResizeToFitDescendents then
+                control.objectiveContainer:SetResizeToFitDescendents(true)
+            end
+            if control.objectiveContainer.SetHeight then
+                control.objectiveContainer:SetHeight(0)
             end
             local childCount = control.objectiveContainer:GetNumChildren() or 0
             for childIndex = 1, childCount do
@@ -3366,32 +3375,6 @@ local function EnsureQuestNode(journalIndex)
     return node
 end
 
-local function CalculateObjectiveStackHeight(controls, visibleCount)
-    if not controls or visibleCount == nil or visibleCount <= 0 then
-        return 0
-    end
-
-    local height = 0
-    for index = 1, visibleCount do
-        local objectiveControl = controls[index]
-        local lineHeight = CONDITION_MIN_HEIGHT
-        if objectiveControl and objectiveControl.GetHeight then
-            local measured = objectiveControl:GetHeight()
-            if measured and measured > 0 then
-                lineHeight = measured
-            end
-        end
-
-        if index == 1 then
-            height = height + OBJECTIVE_TOP_PADDING + lineHeight
-        else
-            height = height + VERTICAL_PADDING + lineHeight
-        end
-    end
-
-    return height
-end
-
 local function ApplyObjectivesToNode(node, objectives, expanded)
     if not node then
         return false
@@ -3437,7 +3420,10 @@ local function ApplyObjectivesToNode(node, objectives, expanded)
         if container.SetHeight then
             container:SetHeight(0)
         end
-        return true, 0
+        if container.SetResizeToFitDescendents then
+            container:SetResizeToFitDescendents(true)
+        end
+        return true
     end
 
     local previous = nil
@@ -3514,13 +3500,11 @@ local function ApplyObjectivesToNode(node, objectives, expanded)
     if container.SetHidden then
         container:SetHidden(false)
     end
-
-    local objectiveHeight = CalculateObjectiveStackHeight(controls, objectiveCount)
-    if container.SetHeight then
-        container:SetHeight(objectiveHeight)
+    if container.SetResizeToFitDescendents then
+        container:SetResizeToFitDescendents(true)
     end
 
-    return true, objectiveHeight
+    return true
 end
 
 local function ApplyQuestEntryToNode(node, questEntry, categoryControl)
@@ -3552,16 +3536,11 @@ local function ApplyQuestEntryToNode(node, questEntry, categoryControl)
     local expanded = IsQuestExpanded(questEntry.journalIndex)
     node.isExpanded = expanded and true or false
 
-    local _, objectiveHeight = ApplyObjectivesToNode(node, questEntry.objectives, expanded)
-    RefreshControlMetrics(questControl)
-
-    local baseHeight = questControl.baseHeight or QUEST_MIN_HEIGHT
-    local totalHeight = baseHeight
-    if expanded and objectiveHeight and objectiveHeight > 0 then
-        totalHeight = totalHeight + objectiveHeight
+    local objectivesApplied = ApplyObjectivesToNode(node, questEntry.objectives, expanded)
+    if not objectivesApplied then
+        return false
     end
-
-    questControl:SetHeight(totalHeight)
+    RefreshControlMetrics(questControl)
 
     return true
 end
