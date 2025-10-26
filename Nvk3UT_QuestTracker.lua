@@ -84,8 +84,9 @@ local state = {
     orderedControls = {},
     lastAnchoredControl = nil,
     snapshot = nil,
+    categoryControls = {},
+    questControls = {},
     combatHidden = false,
-    subscription = nil,
     pendingRefresh = false,
     contentWidth = 0,
     contentHeight = 0,
@@ -451,6 +452,173 @@ local function CollectCategoryKeysForQuest(journalIndex)
     end)
 
     return keys, found
+end
+
+local DEFAULT_CATEGORY_KEY = "__nvk3ut_misc__"
+
+local function BuildQuestConditionsFromRecord(record)
+    local conditions = {}
+
+    if record and type(record.objectives) == "table" then
+        for index = 1, #record.objectives do
+            local objective = record.objectives[index]
+            local displayText = objective and objective.displayText
+            if type(displayText) ~= "string" or displayText == "" then
+                displayText = objective and objective.text
+            end
+            if type(displayText) == "string" and displayText ~= "" then
+                conditions[#conditions + 1] = {
+                    text = displayText,
+                    displayText = displayText,
+                    current = objective.current,
+                    max = objective.max,
+                    isVisible = true,
+                    isComplete = objective.complete == true and objective.isTurnIn ~= true,
+                    isFailCondition = false,
+                    isTurnIn = objective.isTurnIn == true,
+                    forceDisplay = objective.isTurnIn == true or objective.complete ~= true,
+                }
+            end
+        end
+    end
+
+    return conditions
+end
+
+local function BuildQuestEntryFromRecord(record)
+    if not record then
+        return nil
+    end
+
+    local conditions = BuildQuestConditionsFromRecord(record)
+    local steps = {}
+    steps[1] = {
+        isVisible = true,
+        conditions = conditions,
+    }
+
+    local flags = {
+        tracked = record.tracked == true,
+        assisted = record.assisted == true,
+    }
+
+    return {
+        journalIndex = record.journalIndex,
+        name = record.name,
+        headerText = record.headerText,
+        objectives = record.objectives,
+        steps = steps,
+        flags = flags,
+        isComplete = record.isComplete == true,
+        categoryKey = record.categoryKey,
+        categoryName = record.categoryName,
+        parentKey = record.parentKey,
+        parentName = record.parentName,
+        lastUpdateMs = record.lastUpdateMs,
+    }
+end
+
+local function ResolveCategoryFallbackName(record)
+    if record and type(record.categoryName) == "string" and record.categoryName ~= "" then
+        return record.categoryName
+    end
+
+    if record and type(record.parentName) == "string" and record.parentName ~= "" then
+        return record.parentName
+    end
+
+    return "Miscellaneous"
+end
+
+local function BuildLocalSnapshot()
+    local snapshot = { categories = { ordered = {}, byKey = {} } }
+
+    local questSource = LocalQuestDB and LocalQuestDB.quests
+    if type(questSource) ~= "table" then
+        return snapshot
+    end
+
+    local categoriesByKey = {}
+    for journalIndex, record in pairs(questSource) do
+        local questEntry = BuildQuestEntryFromRecord(record)
+        if questEntry then
+            local categoryKey = NormalizeCategoryKey(record.categoryKey) or NormalizeCategoryKey(record.parentKey) or DEFAULT_CATEGORY_KEY
+            local category = categoriesByKey[categoryKey]
+            if not category then
+                local parentKey = NormalizeCategoryKey(record.parentKey)
+                local parentName = record.parentName
+                local categoryName = ResolveCategoryFallbackName(record)
+                category = {
+                    key = categoryKey,
+                    name = categoryName,
+                    quests = {},
+                    groupKey = parentKey,
+                    groupName = parentName,
+                    type = nil,
+                    groupOrder = nil,
+                }
+                if parentKey and parentName then
+                    category.parent = {
+                        key = parentKey,
+                        name = parentName,
+                    }
+                end
+                categoriesByKey[categoryKey] = category
+            end
+            category.quests[#category.quests + 1] = questEntry
+        end
+    end
+
+    local ordered = {}
+    for key, category in pairs(categoriesByKey) do
+        category.key = key
+        ordered[#ordered + 1] = category
+    end
+
+    table.sort(ordered, function(a, b)
+        local nameA = string.lower(a.name or "")
+        local nameB = string.lower(b.name or "")
+        if nameA == nameB then
+            return (a.key or "") < (b.key or "")
+        end
+        return nameA < nameB
+    end)
+
+    for index = 1, #ordered do
+        local category = ordered[index]
+        table.sort(category.quests, function(left, right)
+            local nameA = string.lower(left.name or "")
+            local nameB = string.lower(right.name or "")
+            if nameA == nameB then
+                return (left.journalIndex or 0) < (right.journalIndex or 0)
+            end
+            return nameA < nameB
+        end)
+    end
+
+    snapshot.categories.ordered = ordered
+    snapshot.categories.byKey = categoriesByKey
+
+    return snapshot
+end
+
+local function FindQuestCategoryIndex(snapshot, journalIndex)
+    if not snapshot or not snapshot.categories or not snapshot.categories.ordered then
+        return nil, nil
+    end
+
+    local ordered = snapshot.categories.ordered
+    for categoryIndex = 1, #ordered do
+        local category = ordered[categoryIndex]
+        for questIndex = 1, #category.quests do
+            local quest = category.quests[questIndex]
+            if quest and quest.journalIndex == journalIndex then
+                return categoryIndex, questIndex
+            end
+        end
+    end
+
+    return nil, nil
 end
 
 local function ResolveStateSource(context, fallback)
@@ -1562,6 +1730,14 @@ local function FindQuestControlByJournalIndex(journalIndex)
         return nil
     end
 
+    if state.questControls then
+        local numeric = tonumber(journalIndex) or journalIndex
+        local control = state.questControls[numeric]
+        if control then
+            return control
+        end
+    end
+
     for index = 1, #state.orderedControls do
         local control = state.orderedControls[index]
         if control and control.rowType == "quest" then
@@ -2624,6 +2800,8 @@ end
 local function ResetLayoutState()
     state.orderedControls = {}
     state.lastAnchoredControl = nil
+    state.categoryControls = {}
+    state.questControls = {}
 end
 
 local function ReleaseAll(pool)
@@ -2938,20 +3116,20 @@ local function FormatConditionText(condition)
         return ""
     end
 
-    local text = condition.text or ""
-    local current = condition.current
-    local maxValue = condition.max
-
-    local hasCurrent = current ~= nil and current ~= ""
-    local hasMax = maxValue ~= nil and maxValue ~= ""
-
-    if hasCurrent and hasMax then
-        return zo_strformat("<<1>> (<<2>>/<<3>>)", text, current, maxValue)
-    elseif hasCurrent then
-        return zo_strformat("<<1>> (<<2>>)", text, current)
-    else
-        return text
+    local text = condition.displayText or condition.text
+    if type(text) ~= "string" or text == "" then
+        return ""
     end
+
+    if condition.isTurnIn then
+        text = string.format("* %s", text)
+    end
+
+    if zo_strformat then
+        return zo_strformat("<<1>>", text)
+    end
+
+    return text
 end
 
 local function AcquireCategoryControl()
@@ -3005,6 +3183,7 @@ local function AcquireCategoryControl()
         control.initialized = true
     end
     control.rowType = "category"
+    control.poolKey = key
     ApplyLabelDefaults(control.label)
     ApplyToggleDefaults(control.toggle)
     ApplyFont(control.label, state.fonts.category, DEFAULT_FONTS.category)
@@ -3114,6 +3293,7 @@ local function AcquireQuestControl()
         control.initialized = true
     end
     control.rowType = "quest"
+    control.poolKey = key
     ApplyLabelDefaults(control.label)
     ApplyFont(control.label, state.fonts.quest, DEFAULT_FONTS.quest)
     return control, key
@@ -3126,6 +3306,7 @@ local function AcquireConditionControl()
         control.initialized = true
     end
     control.rowType = "condition"
+    control.poolKey = key
     ApplyLabelDefaults(control.label)
     ApplyFont(control.label, state.fonts.condition, DEFAULT_FONTS.condition)
     return control, key
@@ -3134,6 +3315,11 @@ end
 local function ShouldDisplayCondition(condition)
     if not condition then
         return false
+    end
+
+    if condition.forceDisplay then
+        local text = condition.displayText or condition.text
+        return type(text) == "string" and text ~= ""
     end
 
     if condition.isVisible == false then
@@ -3148,7 +3334,7 @@ local function ShouldDisplayCondition(condition)
         return false
     end
 
-    local text = condition.text
+    local text = condition.displayText or condition.text
     if not text or text == "" then
         return false
     end
@@ -3255,6 +3441,10 @@ local function LayoutQuest(quest)
     control:SetHidden(false)
     AnchorControl(control, QUEST_INDENT_X)
 
+    if quest and quest.journalIndex then
+        state.questControls[quest.journalIndex] = control
+    end
+
     if expanded then
         for stepIndex = 1, #quest.steps do
             local step = quest.steps[stepIndex]
@@ -3278,6 +3468,10 @@ local function LayoutCategory(category)
         categoryType = category.type,
         groupOrder = category.groupOrder,
     }
+    local normalizedKey = NormalizeCategoryKey(category.key)
+    if normalizedKey then
+        state.categoryControls[normalizedKey] = control
+    end
     local count = #category.quests
     control.label:SetText(FormatCategoryHeaderText(category.name or "", count, "quest"))
     local expanded = IsCategoryExpanded(category.key)
@@ -3308,6 +3502,175 @@ local function LayoutCategory(category)
             LayoutQuest(category.quests[index])
         end
     end
+end
+
+local function ReleaseRowControl(control)
+    if not control then
+        return
+    end
+
+    local rowType = control.rowType
+    if rowType == "category" then
+        local normalized = control.data and NormalizeCategoryKey(control.data.categoryKey)
+        if normalized then
+            state.categoryControls[normalized] = nil
+        end
+        if state.categoryPool and control.poolKey then
+            state.categoryPool:ReleaseObject(control.poolKey)
+        end
+    elseif rowType == "quest" then
+        local questData = control.data and control.data.quest
+        if questData and questData.journalIndex then
+            state.questControls[questData.journalIndex] = nil
+        end
+        if state.questPool and control.poolKey then
+            state.questPool:ReleaseObject(control.poolKey)
+        end
+    else
+        if state.conditionPool and control.poolKey then
+            state.conditionPool:ReleaseObject(control.poolKey)
+        end
+    end
+end
+
+local function TrimOrderedControlsToCategory(keepCategoryCount)
+    if keepCategoryCount <= 0 then
+        ReleaseAll(state.categoryPool)
+        ReleaseAll(state.questPool)
+        ReleaseAll(state.conditionPool)
+        ResetLayoutState()
+        return
+    end
+
+    local categoryCounter = 0
+    local releaseStartIndex = nil
+
+    for index = 1, #state.orderedControls do
+        local control = state.orderedControls[index]
+        if control and control.rowType == "category" then
+            categoryCounter = categoryCounter + 1
+            if categoryCounter > keepCategoryCount then
+                releaseStartIndex = index
+                break
+            end
+        end
+    end
+
+    if releaseStartIndex then
+        for index = #state.orderedControls, releaseStartIndex, -1 do
+            ReleaseRowControl(state.orderedControls[index])
+            table.remove(state.orderedControls, index)
+        end
+    end
+
+    state.lastAnchoredControl = state.orderedControls[#state.orderedControls]
+end
+
+local function RelayoutFromCategoryIndex(startCategoryIndex)
+    ApplyActiveQuestFromSaved()
+    EnsurePools()
+
+    if not state.snapshot or not state.snapshot.categories or not state.snapshot.categories.ordered then
+        ReleaseAll(state.categoryPool)
+        ReleaseAll(state.questPool)
+        ReleaseAll(state.conditionPool)
+        ResetLayoutState()
+        UpdateContentSize()
+        NotifyHostContentChanged()
+        ProcessPendingExternalReveal()
+        return
+    end
+
+    if startCategoryIndex <= 1 then
+        ReleaseAll(state.categoryPool)
+        ReleaseAll(state.questPool)
+        ReleaseAll(state.conditionPool)
+        ResetLayoutState()
+        startCategoryIndex = 1
+    else
+        TrimOrderedControlsToCategory(startCategoryIndex - 1)
+    end
+
+    PrimeInitialSavedState()
+
+    for index = startCategoryIndex, #state.snapshot.categories.ordered do
+        local category = state.snapshot.categories.ordered[index]
+        if category and category.quests and #category.quests > 0 then
+            LayoutCategory(category)
+        end
+    end
+
+    UpdateContentSize()
+    NotifyHostContentChanged()
+    ProcessPendingExternalReveal()
+end
+
+local function ApplySnapshotFromLocalDB(snapshot, context)
+    state.snapshot = snapshot
+
+    local trackingContext = {
+        trigger = (context and context.trigger) or "refresh",
+        source = (context and context.source) or "QuestTracker:ApplyLocalSnapshot",
+    }
+
+    UpdateTrackedQuestCache(nil, trackingContext)
+
+    if state.trackedQuestIndex then
+        EnsureTrackedQuestVisible(state.trackedQuestIndex, nil, trackingContext)
+    end
+
+    NotifyStatusRefresh()
+end
+
+function QuestTracker.RedrawQuestTrackerFromLocalDB(context)
+    local snapshot = BuildLocalSnapshot()
+    ApplySnapshotFromLocalDB(snapshot, context)
+
+    if not state.isInitialized then
+        return
+    end
+
+    RelayoutFromCategoryIndex(1)
+end
+
+function QuestTracker.RedrawSingleQuestFromLocalDB(journalIndex, context)
+    local snapshot = BuildLocalSnapshot()
+
+    local oldCategoryIndex = nil
+    if state.snapshot then
+        oldCategoryIndex = select(1, FindQuestCategoryIndex(state.snapshot, journalIndex))
+    end
+
+    local newCategoryIndex = select(1, FindQuestCategoryIndex(snapshot, journalIndex))
+
+    ApplySnapshotFromLocalDB(snapshot, context)
+
+    if not state.isInitialized then
+        return
+    end
+
+    local startCategoryIndex
+    if oldCategoryIndex and newCategoryIndex then
+        startCategoryIndex = math.min(oldCategoryIndex, newCategoryIndex)
+    elseif oldCategoryIndex then
+        startCategoryIndex = oldCategoryIndex
+    elseif newCategoryIndex then
+        startCategoryIndex = newCategoryIndex
+    else
+        startCategoryIndex = 1
+    end
+
+    local totalCategories = (snapshot.categories and snapshot.categories.ordered) and #snapshot.categories.ordered or 0
+    if startCategoryIndex < 1 then
+        startCategoryIndex = 1
+    end
+    if totalCategories > 0 and startCategoryIndex > totalCategories then
+        startCategoryIndex = totalCategories
+    elseif totalCategories == 0 then
+        startCategoryIndex = 1
+    end
+
+    RelayoutFromCategoryIndex(startCategoryIndex)
 end
 
 local function Rebuild()
@@ -3395,24 +3758,6 @@ local function UnregisterCombatEvents()
     EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "Combat", EVENT_PLAYER_COMBAT_STATE)
 end
 
-local function OnSnapshotUpdated(snapshot)
-    state.snapshot = snapshot
-    UpdateTrackedQuestCache(nil, {
-        trigger = "refresh",
-        source = "QuestTracker:OnSnapshotUpdated",
-    })
-    if state.trackedQuestIndex then
-        EnsureTrackedQuestVisible(state.trackedQuestIndex, nil, {
-            trigger = "refresh",
-            source = "QuestTracker:OnSnapshotUpdated",
-        })
-    end
-    if state.isInitialized then
-        Rebuild()
-    end
-    NotifyStatusRefresh()
-end
-
 function QuestTracker.Init(parentControl, opts)
     if state.isInitialized then
         return
@@ -3449,27 +3794,15 @@ function QuestTracker.Init(parentControl, opts)
         UnregisterCombatEvents()
     end
 
-    state.subscription = function(snapshot)
-        OnSnapshotUpdated(snapshot)
-    end
-
-    if Nvk3UT.QuestModel and Nvk3UT.QuestModel.Subscribe then
-        Nvk3UT.QuestModel.Subscribe(state.subscription)
-        state.snapshot = Nvk3UT.QuestModel.GetSnapshot and Nvk3UT.QuestModel.GetSnapshot() or state.snapshot
-        UpdateTrackedQuestCache(nil, {
-            trigger = "init",
-            source = "QuestTracker:Init",
-        })
-    else
-        DebugLog("QuestModel is not available")
-    end
-
     RegisterTrackingEvents()
 
     state.isInitialized = true
     RefreshVisibility()
+    QuestTracker.RedrawQuestTrackerFromLocalDB({
+        trigger = "init",
+        source = "QuestTracker:Init",
+    })
     AdoptTrackedQuestOnInit()
-    Rebuild()
 end
 
 function QuestTracker.Refresh()
@@ -3480,11 +3813,6 @@ function QuestTracker.Shutdown()
     if not state.isInitialized then
         return
     end
-
-    if state.subscription and Nvk3UT.QuestModel and Nvk3UT.QuestModel.Unsubscribe then
-        Nvk3UT.QuestModel.Unsubscribe(state.subscription)
-    end
-    state.subscription = nil
 
     UnregisterCombatEvents()
     UnregisterTrackingEvents()
@@ -3509,6 +3837,8 @@ function QuestTracker.Shutdown()
     state.snapshot = nil
     state.orderedControls = {}
     state.lastAnchoredControl = nil
+    state.categoryControls = {}
+    state.questControls = {}
     state.isInitialized = false
     state.opts = {}
     state.fonts = {}
