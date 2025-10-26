@@ -19,7 +19,7 @@
                 </Label>
             </Controls>
         </Control>
-        <Control name="QuestHeader_Template" virtual="true" mouseEnabled="true">
+        <Control name="QuestHeader_Template" virtual="true" mouseEnabled="true" resizeToFitDescendents="true">
             <Dimensions y="24" />
             <Controls>
                 <Texture name="$(parent)IconSlot"
@@ -35,6 +35,10 @@
                     <Anchor point="TOPLEFT" relativeTo="$(parent)IconSlot" relativePoint="TOPRIGHT" offsetX="0" offsetY="0" />
                     <Anchor point="TOPRIGHT" relativePoint="TOPRIGHT" offsetX="0" offsetY="0" />
                 </Label>
+                <Control name="$(parent)Objectives" resizeToFitDescendents="true">
+                    <Anchor point="TOPLEFT" relativeTo="$(parent)Label" relativePoint="BOTTOMLEFT" offsetX="18" offsetY="2" />
+                    <Anchor point="TOPRIGHT" relativeTo="$(parent)Label" relativePoint="BOTTOMRIGHT" offsetX="0" offsetY="2" />
+                </Control>
             </Controls>
         </Control>
         <Control name="QuestCondition_Template" virtual="true">

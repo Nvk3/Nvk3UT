@@ -29,7 +29,11 @@ local function ProcessNextPendingQuest()
         Nvk3UT_ProcessSingleQuestUpdate(nextIndex)
     else
         UpdateSingleQuest(nextIndex)
-        RedrawSingleQuestFromLocalDB(nextIndex)
+        if Nvk3UT and Nvk3UT.QuestTracker and Nvk3UT.QuestTracker.RefreshQuestObjectivesOnly then
+            Nvk3UT.QuestTracker:RefreshQuestObjectivesOnly(nextIndex)
+        else
+            RedrawSingleQuestFromLocalDB(nextIndex)
+        end
     end
 
     zo_callLater(ProcessNextPendingQuest, 0)
@@ -109,7 +113,11 @@ local function OnQuestRemoved(_, isCompleted, journalIndex, questName, ...)
     end
 
     RemoveQuestFromLocalQuestDB(journalIndex)
-    RedrawSingleQuestFromLocalDB(journalIndex)
+    if Nvk3UT and Nvk3UT.QuestTracker and Nvk3UT.QuestTracker.RefreshQuestObjectivesOnly then
+        Nvk3UT.QuestTracker:RefreshQuestObjectivesOnly(journalIndex)
+    else
+        RedrawSingleQuestFromLocalDB(journalIndex)
+    end
 end
 
 local function OnPlayerActivated(...)
