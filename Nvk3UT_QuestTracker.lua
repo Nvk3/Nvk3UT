@@ -1404,7 +1404,7 @@ local function ShowQuestContextMenu(control, journalIndex)
         local entry = entries[index]
         if entry and type(entry.label) == "string" and type(entry.callback) == "function" then
             if evaluateGate(entry.visible) then
-                local disabled = not evaluateGate(entry.enabled)
+                local enabled = evaluateGate(entry.enabled)
                 local itemType = (_G and _G.MENU_ADD_OPTION_LABEL) or 1
                 local originalCallback = entry.callback
                 local callback = originalCallback
@@ -1416,7 +1416,25 @@ local function ShowQuestContextMenu(control, journalIndex)
                         originalCallback(...)
                     end
                 end
-                AddCustomMenuItem(entry.label, callback, itemType, nil, nil, nil, nil, nil, disabled or false)
+                local beforeCount
+                if type(ZO_Menu_GetNumMenuItems) == "function" then
+                    local ok, count = pcall(ZO_Menu_GetNumMenuItems)
+                    if ok and type(count) == "number" then
+                        beforeCount = count
+                    end
+                end
+                AddCustomMenuItem(entry.label, callback, itemType)
+                local afterCount
+                if type(ZO_Menu_GetNumMenuItems) == "function" then
+                    local ok, count = pcall(ZO_Menu_GetNumMenuItems)
+                    if ok and type(count) == "number" then
+                        afterCount = count
+                    end
+                end
+                local itemIndex = afterCount or ((type(beforeCount) == "number" and beforeCount + 1) or nil)
+                if itemIndex and type(SetMenuItemEnabled) == "function" then
+                    pcall(SetMenuItemEnabled, itemIndex, enabled ~= false)
+                end
                 added = added + 1
             end
         end
