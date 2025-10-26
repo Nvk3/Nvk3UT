@@ -71,6 +71,8 @@ function M.GetIconTagForTexture(path, size)
   return string.format("|t%d:%d:%s|t ", iconSize, iconSize, normalized)
 end
 
+local MENU_OPTION_LABEL = (_G and _G.MENU_ADD_OPTION_LABEL) or 1
+
 local function evaluateMenuGate(flag, anchorControl)
   if flag == nil then
     return true
@@ -126,9 +128,20 @@ function M.ShowContextMenu(anchorControl, entries)
       local callback = entry.callback
       if type(label) == "string" and label ~= "" and type(callback) == "function" then
         local visible = evaluateMenuGate(entry.visible, anchorControl)
-        local enabled = evaluateMenuGate(entry.enabled, anchorControl)
-        if visible and enabled then
-          AddCustomMenuItem(label, wrapMenuCallback(callback))
+        if visible then
+          local isEnabled = evaluateMenuGate(entry.enabled, anchorControl)
+          local disabled = not isEnabled
+          local itemType = entry.itemType or MENU_OPTION_LABEL
+          local itemId = entry.itemId
+          local icon = entry.icon
+          AddCustomMenuItem(
+            label,
+            wrapMenuCallback(callback),
+            itemType,
+            itemId,
+            icon,
+            disabled and true or false
+          )
           added = added + 1
         end
       end

@@ -461,6 +461,17 @@ local function ResolveAchievementEntry(achievementsSystem, achievementId)
     return nil
 end
 
+local function GetAchievementsSystem()
+    local system
+    if SYSTEMS and SYSTEMS.GetObject then
+        local ok, result = pcall(SYSTEMS.GetObject, SYSTEMS, "achievements")
+        if ok then
+            system = result
+        end
+    end
+    return system or ACHIEVEMENTS
+end
+
 local function CanOpenAchievement(achievementId)
     local numeric = tonumber(achievementId)
     if not numeric or numeric <= 0 then
@@ -510,14 +521,7 @@ local function OpenAchievementInJournal(achievementId)
         end
     end
 
-    local achievementsSystem
-    if SYSTEMS and SYSTEMS.GetObject then
-        local ok, system = pcall(SYSTEMS.GetObject, SYSTEMS, "achievements")
-        if ok then
-            achievementsSystem = system
-        end
-    end
-    achievementsSystem = achievementsSystem or ACHIEVEMENTS
+    local achievementsSystem = GetAchievementsSystem()
     if not achievementsSystem then
         return false
     end
@@ -589,28 +593,94 @@ local function OpenAchievementInJournal(achievementId)
     return false
 end
 
+local function OpenAchievementInFavoritesWindow(achievementId)
+    local numeric = tonumber(achievementId)
+    if not numeric or numeric <= 0 then
+        return false
+    end
+
+    local function focusFavorites()
+        local achievementsSystem = GetAchievementsSystem()
+        if not achievementsSystem then
+            return false
+        end
+
+        local favoritesNode = achievementsSystem._nvkFavoritesNode
+        local tree = achievementsSystem.categoryTree
+
+        if favoritesNode then
+            if tree and tree.SelectNode then
+                tree:SelectNode(favoritesNode)
+            elseif achievementsSystem.SelectCategoryNode then
+                achievementsSystem:SelectCategoryNode(favoritesNode)
+            end
+        end
+
+        local focused = false
+        if achievementsSystem.ShowAchievement then
+            local ok, result = pcall(achievementsSystem.ShowAchievement, achievementsSystem, numeric)
+            if ok and result ~= false then
+                focused = true
+            end
+        elseif achievementsSystem.SelectAchievement then
+            local ok, result = pcall(achievementsSystem.SelectAchievement, achievementsSystem, numeric)
+            if ok and result ~= false then
+                focused = true
+            end
+        end
+
+        return focused
+    end
+
+    local alreadyShowing = SCENE_MANAGER and SCENE_MANAGER.IsShowing and SCENE_MANAGER:IsShowing("achievements")
+    if SCENE_MANAGER and SCENE_MANAGER.Show and not alreadyShowing then
+        SCENE_MANAGER:Show("achievements")
+    end
+
+    local delay = alreadyShowing and 0 or 60
+    if zo_callLater then
+        zo_callLater(function()
+            if not focusFavorites() then
+                OpenAchievementInJournal(achievementId)
+            end
+        end, delay)
+    else
+        if not focusFavorites() then
+            OpenAchievementInJournal(achievementId)
+        end
+    end
+
+    return true
+end
+
 local function BuildAchievementContextMenuEntries(data)
     local entries = {}
 
-    if data and data.achievementId then
-        if data.isFavorite then
-            entries[#entries + 1] = {
-                label = "Aus Favoriten entfernen",
-                callback = function()
-                    RemoveAchievementFromFavorites(data.achievementId)
-                end,
-            }
-        end
+    local achievementId = data and data.achievementId
 
-        if CanOpenAchievement(data.achievementId) then
-            entries[#entries + 1] = {
-                label = "In den Errungenschaften anzeigen",
-                callback = function()
-                    OpenAchievementInJournal(data.achievementId)
-                end,
-            }
-        end
-    end
+    entries[#entries + 1] = {
+        label = "Aus Favoriten entfernen",
+        enabled = function()
+            return IsFavoriteAchievement(achievementId)
+        end,
+        callback = function()
+            if achievementId and IsFavoriteAchievement(achievementId) then
+                RemoveAchievementFromFavorites(achievementId)
+            end
+        end,
+    }
+
+    entries[#entries + 1] = {
+        label = "Favoritenfenster öffnen",
+        enabled = function()
+            return CanOpenAchievement(achievementId)
+        end,
+        callback = function()
+            if achievementId and CanOpenAchievement(achievementId) then
+                OpenAchievementInFavoritesWindow(achievementId)
+            end
+        end,
+    }
 
     return entries
 end
@@ -636,11 +706,34 @@ local function ShowAchievementContextMenu(control, data)
     ClearMenu()
 
     local added = 0
+    local function evaluateGate(gate)
+        if gate == nil then
+            return true
+        end
+
+        local gateType = type(gate)
+        if gateType == "function" then
+            local ok, result = pcall(gate, control)
+            if not ok then
+                return false
+            end
+            return result ~= false
+        elseif gateType == "boolean" then
+            return gate
+        end
+
+        return true
+    end
+
     for index = 1, #entries do
         local entry = entries[index]
         if entry and type(entry.label) == "string" and type(entry.callback) == "function" then
-            AddCustomMenuItem(entry.label, entry.callback)
-            added = added + 1
+            if evaluateGate(entry.visible) then
+                local disabled = not evaluateGate(entry.enabled)
+                local itemType = (_G and _G.MENU_ADD_OPTION_LABEL) or 1
+                AddCustomMenuItem(entry.label, entry.callback, itemType, nil, nil, disabled)
+                added = added + 1
+            end
         end
     end
 

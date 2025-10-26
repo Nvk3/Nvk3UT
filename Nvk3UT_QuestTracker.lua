@@ -1321,32 +1321,41 @@ end
 local function BuildQuestContextMenuEntries(journalIndex)
     local entries = {}
 
-    if CanQuestBeShared(journalIndex) then
-        entries[#entries + 1] = {
-            label = "Quest teilen",
-            callback = function()
+    entries[#entries + 1] = {
+        label = "Quest teilen",
+        enabled = function()
+            return CanQuestBeShared(journalIndex)
+        end,
+        callback = function()
+            if CanQuestBeShared(journalIndex) then
                 ShareQuestWithGroup(journalIndex)
-            end,
-        }
-    end
+            end
+        end,
+    }
 
-    if CanQuestBeShownOnMap(journalIndex) then
-        entries[#entries + 1] = {
-            label = "Auf der Karte anzeigen",
-            callback = function()
+    entries[#entries + 1] = {
+        label = "Auf der Karte anzeigen",
+        enabled = function()
+            return CanQuestBeShownOnMap(journalIndex)
+        end,
+        callback = function()
+            if CanQuestBeShownOnMap(journalIndex) then
                 ShowQuestOnMap(journalIndex)
-            end,
-        }
-    end
+            end
+        end,
+    }
 
-    if CanQuestBeAbandoned(journalIndex) then
-        entries[#entries + 1] = {
-            label = "Quest aufgeben",
-            callback = function()
+    entries[#entries + 1] = {
+        label = "Quest aufgeben",
+        enabled = function()
+            return CanQuestBeAbandoned(journalIndex)
+        end,
+        callback = function()
+            if CanQuestBeAbandoned(journalIndex) then
                 ConfirmAbandonQuest(journalIndex)
-            end,
-        }
-    end
+            end
+        end,
+    }
 
     return entries
 end
@@ -1372,11 +1381,34 @@ local function ShowQuestContextMenu(control, journalIndex)
     ClearMenu()
 
     local added = 0
+    local function evaluateGate(gate)
+        if gate == nil then
+            return true
+        end
+
+        local gateType = type(gate)
+        if gateType == "function" then
+            local ok, result = pcall(gate, control)
+            if not ok then
+                return false
+            end
+            return result ~= false
+        elseif gateType == "boolean" then
+            return gate
+        end
+
+        return true
+    end
+
     for index = 1, #entries do
         local entry = entries[index]
         if entry and type(entry.label) == "string" and type(entry.callback) == "function" then
-            AddCustomMenuItem(entry.label, entry.callback)
-            added = added + 1
+            if evaluateGate(entry.visible) then
+                local disabled = not evaluateGate(entry.enabled)
+                local itemType = (_G and _G.MENU_ADD_OPTION_LABEL) or 1
+                AddCustomMenuItem(entry.label, entry.callback, itemType, nil, nil, disabled)
+                added = added + 1
+            end
         end
     end
 
@@ -2742,6 +2774,12 @@ SetCategoryExpanded = function(categoryKey, expanded, context)
         writeOptions = { force = true }
     end
 
+    if context and (context.trigger == "click" or context.trigger == "click-select") then
+        writeOptions = writeOptions or {}
+        writeOptions.force = true
+        writeOptions.allowTimestampRegression = true
+    end
+
     local changed = WriteCategoryState(key, expanded, stateSource, writeOptions)
     if not changed then
         return false
@@ -2795,6 +2833,12 @@ SetQuestExpanded = function(journalIndex, expanded, context)
     local writeOptions
     if context and context.forceWrite and expanded and not beforeExpanded then
         writeOptions = { force = true }
+    end
+
+    if context and (context.trigger == "click" or context.trigger == "click-select") then
+        writeOptions = writeOptions or {}
+        writeOptions.force = true
+        writeOptions.allowTimestampRegression = true
     end
 
     local changed = WriteQuestState(key, expanded, stateSource, writeOptions)
