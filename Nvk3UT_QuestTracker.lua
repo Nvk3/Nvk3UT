@@ -1153,6 +1153,236 @@ local function SafeCall(func, ...)
     return true, result
 end
 
+local function NormalizeJournalIndex(journalIndex)
+    local numeric = tonumber(journalIndex)
+    if not numeric or numeric <= 0 then
+        return nil
+    end
+    return numeric
+end
+
+local function QuestManagerCall(methodName, journalIndex)
+    if not QUEST_JOURNAL_MANAGER or type(methodName) ~= "string" then
+        return false, nil
+    end
+
+    local method = QUEST_JOURNAL_MANAGER[methodName]
+    if type(method) ~= "function" then
+        return false, nil
+    end
+
+    local ok, result = pcall(method, QUEST_JOURNAL_MANAGER, journalIndex)
+    if not ok then
+        DebugLog(string.format("QuestManager call failed (%s): %s", methodName, tostring(result)))
+        return false, nil
+    end
+
+    return true, result
+end
+
+local function IsPlayerInGroup()
+    if type(IsUnitGrouped) == "function" then
+        local ok, grouped = SafeCall(IsUnitGrouped, "player")
+        if ok then
+            return grouped == true
+        end
+    end
+
+    if type(GetGroupSize) == "function" then
+        local ok, size = SafeCall(GetGroupSize)
+        if ok then
+            local numeric = tonumber(size) or 0
+            return numeric > 1
+        end
+    end
+
+    return false
+end
+
+local function CanQuestBeShared(journalIndex)
+    local normalized = NormalizeJournalIndex(journalIndex)
+    if not normalized then
+        return false
+    end
+
+    if not IsPlayerInGroup() then
+        return false
+    end
+
+    local managerOk, managerResult = QuestManagerCall("CanShareQuest", normalized)
+    if managerOk then
+        return managerResult == true
+    end
+
+    managerOk, managerResult = QuestManagerCall("CanShareQuestInJournal", normalized)
+    if managerOk then
+        return managerResult == true
+    end
+
+    if type(GetIsQuestSharable) == "function" then
+        local ok, shareable = SafeCall(GetIsQuestSharable, normalized)
+        if ok then
+            return shareable == true
+        end
+    end
+
+    return false
+end
+
+local function ShareQuestWithGroup(journalIndex)
+    local normalized = NormalizeJournalIndex(journalIndex)
+    if not normalized then
+        return
+    end
+
+    local managerOk = QuestManagerCall("ShareQuest", normalized)
+    if managerOk then
+        return
+    end
+
+    if type(ShareQuest) == "function" then
+        SafeCall(ShareQuest, normalized)
+    end
+end
+
+local function CanQuestBeShownOnMap(journalIndex)
+    local normalized = NormalizeJournalIndex(journalIndex)
+    if not normalized then
+        return false
+    end
+
+    if type(DoesJournalQuestHaveWorldMapLocation) == "function" then
+        local ok, hasLocation = SafeCall(DoesJournalQuestHaveWorldMapLocation, normalized)
+        if ok and hasLocation then
+            return true
+        end
+    end
+
+    local managerOk, managerResult = QuestManagerCall("CanShowQuestOnMap", normalized)
+    if managerOk then
+        return managerResult == true
+    end
+
+    return false
+end
+
+local function ShowQuestOnMap(journalIndex)
+    local normalized = NormalizeJournalIndex(journalIndex)
+    if not normalized then
+        return
+    end
+
+    local managerOk = QuestManagerCall("ShowQuestOnMap", normalized)
+    if managerOk then
+        return
+    end
+
+    if type(ZO_WorldMap_ShowQuestOnMap) == "function" then
+        SafeCall(ZO_WorldMap_ShowQuestOnMap, normalized)
+    end
+end
+
+local function CanQuestBeAbandoned(journalIndex)
+    local normalized = NormalizeJournalIndex(journalIndex)
+    if not normalized then
+        return false
+    end
+
+    if type(IsJournalQuestAbandonable) == "function" then
+        local ok, abandonable = SafeCall(IsJournalQuestAbandonable, normalized)
+        if ok then
+            return abandonable == true
+        end
+    end
+
+    return true
+end
+
+local function ConfirmAbandonQuest(journalIndex)
+    local normalized = NormalizeJournalIndex(journalIndex)
+    if not normalized then
+        return
+    end
+
+    local managerOk = QuestManagerCall("ConfirmAbandonQuest", normalized)
+    if managerOk then
+        return
+    end
+
+    if type(AbandonQuest) == "function" then
+        SafeCall(AbandonQuest, normalized)
+    end
+end
+
+local function BuildQuestContextMenuEntries(journalIndex)
+    local entries = {}
+
+    if CanQuestBeShared(journalIndex) then
+        entries[#entries + 1] = {
+            label = "Quest teilen",
+            callback = function()
+                ShareQuestWithGroup(journalIndex)
+            end,
+        }
+    end
+
+    if CanQuestBeShownOnMap(journalIndex) then
+        entries[#entries + 1] = {
+            label = "Auf der Karte anzeigen",
+            callback = function()
+                ShowQuestOnMap(journalIndex)
+            end,
+        }
+    end
+
+    if CanQuestBeAbandoned(journalIndex) then
+        entries[#entries + 1] = {
+            label = "Quest aufgeben",
+            callback = function()
+                ConfirmAbandonQuest(journalIndex)
+            end,
+        }
+    end
+
+    return entries
+end
+
+local function ShowQuestContextMenu(control, journalIndex)
+    if not control then
+        return
+    end
+
+    local entries = BuildQuestContextMenuEntries(journalIndex)
+    if #entries == 0 then
+        return
+    end
+
+    if Utils and Utils.ShowContextMenu and Utils.ShowContextMenu(control, entries) then
+        return
+    end
+
+    if not (ClearMenu and AddCustomMenuItem and ShowMenu) then
+        return
+    end
+
+    ClearMenu()
+
+    local added = 0
+    for index = 1, #entries do
+        local entry = entries[index]
+        if entry and type(entry.label) == "string" and type(entry.callback) == "function" then
+            AddCustomMenuItem(entry.label, entry.callback)
+            added = added + 1
+        end
+    end
+
+    if added > 0 then
+        ShowMenu(control)
+    else
+        ClearMenu()
+    end
+end
+
 local function LogExternalSelect(questId)
     if not IsDebugLoggingEnabled() then
         return
@@ -2779,57 +3009,11 @@ local function AcquireQuestControl()
 
                 HandleQuestRowClick(journalIndex)
             elseif button == MOUSE_BUTTON_INDEX_RIGHT then
-                if not ctrl.data or not ctrl.data.quest then
+                local questData = ctrl.data and ctrl.data.quest
+                if not questData then
                     return
                 end
-                if not (ClearMenu and AddCustomMenuItem and ShowMenu) then
-                    return
-                end
-
-                ClearMenu()
-                local questData = ctrl.data.quest
-                local journalIndex = questData.journalIndex
-                local assisted = questData.flags and questData.flags.assisted
-                local tracked = questData.flags and questData.flags.tracked
-
-                local assistLabel = assisted and "Stop Assisting" or "Assist"
-                AddCustomMenuItem(assistLabel, function()
-                    local numericIndex = tonumber(journalIndex)
-                    if not numericIndex then
-                        return
-                    end
-
-                    if AssistJournalQuest and not assisted then
-                        SafeCall(AssistJournalQuest, numericIndex)
-                        return
-                    end
-
-                    if type(SetTrackedIsAssisted) == "function" and TRACK_TYPE_QUEST then
-                        SafeCall(SetTrackedIsAssisted, TRACK_TYPE_QUEST, numericIndex, assisted and false or true)
-                    end
-                end)
-
-                if tracked ~= false then
-                    AddCustomMenuItem("Untrack", function()
-                        if QUEST_JOURNAL_MANAGER and QUEST_JOURNAL_MANAGER.StopTrackingQuest then
-                            QUEST_JOURNAL_MANAGER:StopTrackingQuest(journalIndex)
-                        elseif SetTracked then
-                            local ok = pcall(SetTracked, TRACK_TYPE_QUEST, journalIndex, false)
-                            if not ok then
-                                SetTracked(TRACK_TYPE_QUEST, journalIndex)
-                            end
-                        end
-                    end)
-                end
-
-                AddCustomMenuItem("Show On Map", function()
-                    if QUEST_JOURNAL_MANAGER and QUEST_JOURNAL_MANAGER.ShowQuestOnMap then
-                        QUEST_JOURNAL_MANAGER:ShowQuestOnMap(journalIndex)
-                    elseif ZO_WorldMap_ShowQuestOnMap then
-                        ZO_WorldMap_ShowQuestOnMap(journalIndex)
-                    end
-                end)
-                ShowMenu(ctrl)
+                ShowQuestContextMenu(ctrl, questData.journalIndex)
             end
         end)
         control:SetHandler("OnMouseEnter", function(ctrl)

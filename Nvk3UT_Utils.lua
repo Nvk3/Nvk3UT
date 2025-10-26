@@ -71,6 +71,79 @@ function M.GetIconTagForTexture(path, size)
   return string.format("|t%d:%d:%s|t ", iconSize, iconSize, normalized)
 end
 
+local function evaluateMenuGate(flag, anchorControl)
+  if flag == nil then
+    return true
+  end
+
+  local flagType = type(flag)
+  if flagType == "function" then
+    local ok, result = pcall(flag, anchorControl)
+    if not ok then
+      if M and M.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then
+        M.d("[Nvk3UT][Utils][ContextMenu] gate failed", tostring(result))
+      end
+      return false
+    end
+    return result ~= false
+  end
+
+  if flagType == "boolean" then
+    return flag
+  end
+
+  return true
+end
+
+local function wrapMenuCallback(callback)
+  if type(callback) ~= "function" then
+    return function() end
+  end
+
+  return function(...)
+    local ok, err = pcall(callback, ...)
+    if not ok and M and M.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then
+      M.d("[Nvk3UT][Utils][ContextMenu] callback failed", tostring(err))
+    end
+  end
+end
+
+function M.ShowContextMenu(anchorControl, entries)
+  if not anchorControl or type(entries) ~= "table" then
+    return false
+  end
+
+  if not (ClearMenu and AddCustomMenuItem and ShowMenu) then
+    return false
+  end
+
+  ClearMenu()
+
+  local added = 0
+  for _, entry in ipairs(entries) do
+    if type(entry) == "table" then
+      local label = entry.label
+      local callback = entry.callback
+      if type(label) == "string" and label ~= "" and type(callback) == "function" then
+        local visible = evaluateMenuGate(entry.visible, anchorControl)
+        local enabled = evaluateMenuGate(entry.enabled, anchorControl)
+        if visible and enabled then
+          AddCustomMenuItem(label, wrapMenuCallback(callback))
+          added = added + 1
+        end
+      end
+    end
+  end
+
+  if added > 0 then
+    ShowMenu(anchorControl)
+    return true
+  end
+
+  ClearMenu()
+  return false
+end
+
 local function resolveShowCategoryCountsOverride(override)
   if type(override) == "boolean" then
     return override

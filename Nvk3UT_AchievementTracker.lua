@@ -59,6 +59,7 @@ local DEFAULT_FONTS = {
 
 local unpack = table.unpack or unpack
 local LEFT_MOUSE_BUTTON = MOUSE_BUTTON_INDEX_LEFT or 1
+local RIGHT_MOUSE_BUTTON = MOUSE_BUTTON_INDEX_RIGHT or 2
 
 local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
 local REFRESH_DEBOUNCE_MS = 80
@@ -407,6 +408,199 @@ local function IsFavoriteAchievement(achievementId)
     end
 
     return false
+end
+
+local function RemoveAchievementFromFavorites(achievementId)
+    local numeric = tonumber(achievementId)
+    if not numeric or numeric <= 0 then
+        return
+    end
+
+    local Fav = Nvk3UT and Nvk3UT.FavoritesData
+    if not (Fav and Fav.Remove) then
+        return
+    end
+
+    Fav.Remove(numeric, BuildFavoritesScope())
+
+    if AchievementTracker and AchievementTracker.RequestRefresh then
+        AchievementTracker.RequestRefresh()
+    end
+end
+
+local function CanOpenAchievement(achievementId)
+    local numeric = tonumber(achievementId)
+    if not numeric or numeric <= 0 then
+        return false
+    end
+
+    if type(GetAchievementInfo) ~= "function" then
+        return false
+    end
+
+    local ok, name = pcall(GetAchievementInfo, numeric)
+    if not ok then
+        return false
+    end
+
+    if type(name) == "string" then
+        return name ~= ""
+    end
+
+    return true
+end
+
+local function OpenAchievementInJournal(achievementId)
+    local numeric = tonumber(achievementId)
+    if not numeric or numeric <= 0 then
+        return false
+    end
+
+    if type(GetAchievementInfo) == "function" then
+        local ok, name = pcall(GetAchievementInfo, numeric)
+        if not ok or (type(name) == "string" and name == "") then
+            return false
+        end
+    end
+
+    if SCENE_MANAGER and SCENE_MANAGER.IsShowing and not SCENE_MANAGER:IsShowing("achievements") then
+        SCENE_MANAGER:Show("achievements")
+    end
+
+    local achievementsSystem
+    if SYSTEMS and SYSTEMS.GetObject then
+        local ok, system = pcall(SYSTEMS.GetObject, SYSTEMS, "achievements")
+        if ok then
+            achievementsSystem = system
+        end
+    end
+    achievementsSystem = achievementsSystem or ACHIEVEMENTS
+    if not achievementsSystem then
+        return false
+    end
+
+    if achievementsSystem.contentSearchEditBox and achievementsSystem.contentSearchEditBox.GetText then
+        if achievementsSystem.contentSearchEditBox:GetText() ~= "" then
+            achievementsSystem.contentSearchEditBox:SetText("")
+            if ACHIEVEMENTS_MANAGER and ACHIEVEMENTS_MANAGER.ClearSearch then
+                ACHIEVEMENTS_MANAGER:ClearSearch(true)
+            end
+        end
+    end
+
+    if type(GetCategoryInfoFromAchievementId) == "function" then
+        local ok, categoryIndex, subCategoryIndex = pcall(GetCategoryInfoFromAchievementId, numeric)
+        if ok and categoryIndex then
+            if achievementsSystem.OpenCategory then
+                local openOk, opened = pcall(achievementsSystem.OpenCategory, achievementsSystem, categoryIndex, subCategoryIndex)
+                if not openOk then
+                    opened = false
+                end
+                if not opened and achievementsSystem.SelectCategory then
+                    pcall(achievementsSystem.SelectCategory, achievementsSystem, categoryIndex, subCategoryIndex)
+                end
+            elseif achievementsSystem.SelectCategory then
+                pcall(achievementsSystem.SelectCategory, achievementsSystem, categoryIndex, subCategoryIndex)
+            end
+        end
+    end
+
+    if achievementsSystem.FocusAchievement then
+        local ok = pcall(achievementsSystem.FocusAchievement, achievementsSystem, numeric)
+        if ok then
+            return true
+        end
+    end
+
+    if achievementsSystem.achievementsById then
+        local entry = achievementsSystem.achievementsById[numeric]
+        if entry then
+            if entry.Expand then
+                entry:Expand()
+            end
+            if entry.Select then
+                entry:Select()
+            end
+            if entry.GetControl and achievementsSystem.contentList and ZO_Scroll_ScrollControlIntoCentralView then
+                local control = entry:GetControl()
+                if control then
+                    ZO_Scroll_ScrollControlIntoCentralView(achievementsSystem.contentList, control)
+                end
+            end
+            return true
+        end
+    end
+
+    if ACHIEVEMENTS_MANAGER and ACHIEVEMENTS_MANAGER.SelectAchievement then
+        local ok = pcall(ACHIEVEMENTS_MANAGER.SelectAchievement, ACHIEVEMENTS_MANAGER, numeric)
+        if ok then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function BuildAchievementContextMenuEntries(data)
+    local entries = {}
+
+    if data and data.achievementId then
+        if data.isFavorite then
+            entries[#entries + 1] = {
+                label = "Aus Favoriten entfernen",
+                callback = function()
+                    RemoveAchievementFromFavorites(data.achievementId)
+                end,
+            }
+        end
+
+        if CanOpenAchievement(data.achievementId) then
+            entries[#entries + 1] = {
+                label = "In den Errungenschaften anzeigen",
+                callback = function()
+                    OpenAchievementInJournal(data.achievementId)
+                end,
+            }
+        end
+    end
+
+    return entries
+end
+
+local function ShowAchievementContextMenu(control, data)
+    if not control then
+        return
+    end
+
+    local entries = BuildAchievementContextMenuEntries(data)
+    if #entries == 0 then
+        return
+    end
+
+    if Utils and Utils.ShowContextMenu and Utils.ShowContextMenu(control, entries) then
+        return
+    end
+
+    if not (ClearMenu and AddCustomMenuItem and ShowMenu) then
+        return
+    end
+
+    ClearMenu()
+
+    local added = 0
+    for index = 1, #entries do
+        local entry = entries[index]
+        if entry and type(entry.label) == "string" and type(entry.callback) == "function" then
+            AddCustomMenuItem(entry.label, entry.callback)
+            added = added + 1
+        end
+    end
+
+    if added > 0 then
+        ShowMenu(control)
+    else
+        ClearMenu()
+    end
 end
 
 local function HasAnyFavoriteAchievements()
@@ -788,16 +982,24 @@ local function AcquireAchievementControl()
             control.label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
         end
         control:SetHandler("OnMouseUp", function(ctrl, button, upInside)
-            if not upInside or button ~= LEFT_MOUSE_BUTTON then
+            if not upInside then
                 return
             end
-            if not ctrl.data or not ctrl.data.achievementId or not ctrl.data.hasObjectives then
-                return
+
+            if button == LEFT_MOUSE_BUTTON then
+                if not ctrl.data or not ctrl.data.achievementId or not ctrl.data.hasObjectives then
+                    return
+                end
+                local achievementId = ctrl.data.achievementId
+                local expanded = not IsEntryExpanded(achievementId)
+                SetEntryExpanded(achievementId, expanded)
+                AchievementTracker.Refresh()
+            elseif button == RIGHT_MOUSE_BUTTON then
+                if not ctrl.data or not ctrl.data.achievementId then
+                    return
+                end
+                ShowAchievementContextMenu(ctrl, ctrl.data)
             end
-            local achievementId = ctrl.data.achievementId
-            local expanded = not IsEntryExpanded(achievementId)
-            SetEntryExpanded(achievementId, expanded)
-            AchievementTracker.Refresh()
         end)
         control.initialized = true
     end
@@ -902,9 +1104,11 @@ end
 local function LayoutAchievement(achievement)
     local control = AcquireAchievementControl()
     local hasObjectives = achievement.objectives and #achievement.objectives > 0
+    local isFavorite = IsFavoriteAchievement(achievement.id)
     control.data = {
         achievementId = achievement.id,
         hasObjectives = hasObjectives,
+        isFavorite = isFavorite,
     }
     control.label:SetText(achievement.name or "")
     if control.label then
