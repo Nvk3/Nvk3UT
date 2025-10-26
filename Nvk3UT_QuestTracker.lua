@@ -3125,10 +3125,10 @@ local function AcquireQuestControl()
         control.iconSlot = control:GetNamedChild("IconSlot")
         control.objectiveContainer = control:GetNamedChild("Objectives")
         if control.SetResizeToFitDescendents then
-            control:SetResizeToFitDescendents(true)
+            control:SetResizeToFitDescendents(false)
         end
         if control.objectiveContainer and control.objectiveContainer.SetResizeToFitDescendents then
-            control.objectiveContainer:SetResizeToFitDescendents(true)
+            control.objectiveContainer:SetResizeToFitDescendents(false)
         end
         if control.objectiveContainer and control.objectiveContainer.SetHeight then
             control.objectiveContainer:SetHeight(0)
@@ -3319,7 +3319,7 @@ local function EnsurePools()
             control.label:SetText("")
         end
         if control.SetResizeToFitDescendents then
-            control:SetResizeToFitDescendents(true)
+            control:SetResizeToFitDescendents(false)
         end
         control.objectivesHeight = 0
         if control.SetHeight then
@@ -3330,7 +3330,7 @@ local function EnsurePools()
                 control.objectiveContainer:SetHidden(true)
             end
             if control.objectiveContainer.SetResizeToFitDescendents then
-                control.objectiveContainer:SetResizeToFitDescendents(true)
+                control.objectiveContainer:SetResizeToFitDescendents(false)
             end
             if control.objectiveContainer.SetHeight then
                 control.objectiveContainer:SetHeight(0)
