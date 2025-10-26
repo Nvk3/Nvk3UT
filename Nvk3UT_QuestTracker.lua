@@ -652,7 +652,7 @@ local function FindCategoryIndexByKey(snapshot, categoryKey)
     return nil
 end
 
-local function RelayoutFromSnapshotIndex(startCategoryIndex, context)
+local function RelayoutFromSnapshotIndex(_, context)
     if not state.isInitialized then
         return
     end
@@ -662,17 +662,33 @@ local function RelayoutFromSnapshotIndex(startCategoryIndex, context)
         return
     end
 
-    local index = startCategoryIndex or 1
-    if index < 1 then
-        index = 1
-    end
-
-    RelayoutFromCategoryIndex(index)
+    QuestTracker:RestackAllCategories()
+    UpdateContentSize()
+    NotifyHostContentChanged()
 end
 
 local function RelayoutCategoryByKey(categoryKey, context)
-    local index = FindCategoryIndexByKey(state.snapshot, categoryKey)
-    RelayoutFromSnapshotIndex(index, context)
+    if not categoryKey then
+        RelayoutFromSnapshotIndex(1, context)
+        return
+    end
+
+    local normalized = NormalizeCategoryKey and NormalizeCategoryKey(categoryKey) or categoryKey
+    local entry = categoriesByKey[normalized] or categoriesByKey[categoryKey]
+    if not entry then
+        QuestTracker.RedrawQuestTrackerFromLocalDB(context)
+        return
+    end
+
+    entry.isExpanded = IsCategoryExpanded and IsCategoryExpanded(categoryKey) or false
+    if entry.control then
+        entry.control.isExpanded = entry.isExpanded
+    end
+
+    QuestTracker:RestackCategory(entry.storageKey or normalized)
+    QuestTracker:RestackAllCategories()
+    UpdateContentSize()
+    NotifyHostContentChanged()
 end
 
 local function RelayoutCategoriesByKeySet(categoryKeys, context)
@@ -681,15 +697,25 @@ local function RelayoutCategoriesByKeySet(categoryKeys, context)
         return
     end
 
-    local minIndex = nil
+    local touched = false
     for key in pairs(categoryKeys) do
-        local index = FindCategoryIndexByKey(state.snapshot, key)
-        if index and (not minIndex or index < minIndex) then
-            minIndex = index
+        local normalized = NormalizeCategoryKey and NormalizeCategoryKey(key) or key
+        local entry = categoriesByKey[normalized] or categoriesByKey[key]
+        if entry then
+            entry.isExpanded = IsCategoryExpanded and IsCategoryExpanded(key) or false
+            if entry.control then
+                entry.control.isExpanded = entry.isExpanded
+            end
+            QuestTracker:RestackCategory(entry.storageKey or normalized)
+            touched = true
         end
     end
 
-    RelayoutFromSnapshotIndex(minIndex or 1, context)
+    if touched then
+        QuestTracker:RestackAllCategories()
+        UpdateContentSize()
+        NotifyHostContentChanged()
+    end
 end
 
 local function RelayoutQuestByJournalIndex(journalIndex, context)
@@ -834,19 +860,18 @@ local function WriteCategoryState(categoryKey, expanded, source, options)
 end
 
 function QuestTracker:UpdateQuestControlHeight(node)
-    if not node then
-        return 0
+    local questControl = node and node.questControl
+    if not questControl then
+        return
     end
 
-    local questControl = node.questControl
-    if not questControl or not questControl.GetTop then
-        return 0
+    local questTop = 0
+    if questControl.GetTop then
+        questTop = questControl:GetTop() or 0
     end
 
-    local questTop = questControl:GetTop() or 0
-
-    local titleLabel = questControl.titleLabel or questControl.label
     local titleBottom = questTop
+    local titleLabel = questControl.titleLabel or questControl.label
     if titleLabel and titleLabel.GetBottom then
         titleBottom = titleLabel:GetBottom() or questTop
     elseif questControl.baseHeight then
@@ -855,28 +880,28 @@ function QuestTracker:UpdateQuestControlHeight(node)
         titleBottom = questTop + QUEST_MIN_HEIGHT
     end
 
-    local container = questControl.objectiveContainer or questControl.objectivesContainer
-    local lastObjective = node.objectiveControls and node.objectiveControls[#node.objectiveControls]
     local objectivesBottom = questTop
+    local container = questControl.objectiveContainer or questControl.objectivesContainer
+    local lastObjective = node and node.objectiveControls and node.objectiveControls[#node.objectiveControls]
     if lastObjective and lastObjective.GetBottom then
         objectivesBottom = lastObjective:GetBottom() or questTop
     elseif container and container.GetBottom then
         objectivesBottom = container:GetBottom() or questTop
     end
 
-    local bottom = titleBottom
-    if objectivesBottom > bottom then
-        bottom = objectivesBottom
+    local contentBottom = titleBottom
+    if objectivesBottom > contentBottom then
+        contentBottom = objectivesBottom
     end
 
     local paddingBottom = self.questBottomPadding or 4
-    local totalHeight = math.max(QUEST_MIN_HEIGHT, bottom - questTop + paddingBottom)
+    local newHeight = math.max(QUEST_MIN_HEIGHT, contentBottom - questTop + paddingBottom)
 
     if questControl.SetHeight then
-        questControl:SetHeight(totalHeight)
+        questControl:SetHeight(newHeight)
     end
 
-    if container and container.GetTop and container.SetHeight then
+    if container and container.SetHeight and container.GetTop then
         local containerTop = container:GetTop() or questTop
         local containerHeight = 0
         if lastObjective and lastObjective.GetBottom then
@@ -888,8 +913,6 @@ function QuestTracker:UpdateQuestControlHeight(node)
         node.objectivesHeight = containerHeight
         questControl.objectivesHeight = containerHeight
     end
-
-    return totalHeight
 end
 
 UpdateQuestControlHeight = function(node)
@@ -904,31 +927,24 @@ function QuestTracker:RestackCategory(categoryKey)
     end
 
     local control = entry.control
-    RefreshControlMetrics(control)
-
-    local questArea = entry.questListArea or control.questListArea
-    if not questArea then
+    local questListArea = entry.questListArea or control.questListArea
+    if not questListArea then
         return
     end
 
     local expanded = entry.isExpanded
-    if expanded == nil then
-        expanded = IsCategoryExpanded and IsCategoryExpanded(entry.key or categoryKey)
+    if expanded == nil and entry.key then
+        expanded = IsCategoryExpanded and IsCategoryExpanded(entry.key)
     end
     expanded = expanded and true or false
     entry.isExpanded = expanded
     control.isExpanded = expanded
 
-    if questArea.SetHidden then
-        questArea:SetHidden(not expanded)
-    end
-
-    local quests = entry.quests or {}
-    local spacing = QUEST_VERTICAL_SPACING or 0
+    local spacing = self.questVerticalSpacing or QUEST_VERTICAL_SPACING or 0
     local prevQuestCtrl = nil
     local lastVisible = nil
 
-    for _, journalIndex in ipairs(quests) do
+    for _, journalIndex in ipairs(entry.quests or {}) do
         local node = questNodesByIndex[journalIndex]
         local questControl = node and node.questControl
         if questControl then
@@ -943,24 +959,28 @@ function QuestTracker:RestackCategory(categoryKey)
                 if prevQuestCtrl then
                     questControl:SetAnchor(TOPLEFT, prevQuestCtrl, BOTTOMLEFT, 0, spacing)
                 else
-                    questControl:SetAnchor(TOPLEFT, questArea, TOPLEFT, 0, 0)
+                    questControl:SetAnchor(TOPLEFT, questListArea, TOPLEFT, 0, 0)
                 end
-                questControl:SetAnchor(RIGHT, questArea, RIGHT, 0, 0)
+                questControl:SetAnchor(RIGHT, questListArea, RIGHT, 0, 0)
                 prevQuestCtrl = questControl
                 lastVisible = questControl
             end
         end
     end
 
-    local questHeight = 0
-    if expanded and lastVisible and lastVisible.GetBottom and questArea.GetTop then
-        local bottom = lastVisible:GetBottom() or 0
-        local top = questArea:GetTop() or 0
-        questHeight = math.max(0, bottom - top)
+    if questListArea.SetHidden then
+        questListArea:SetHidden(not expanded)
     end
 
-    if questArea.SetHeight then
-        questArea:SetHeight(expanded and questHeight or 0)
+    local totalQuestHeight = 0
+    if expanded and lastVisible and lastVisible.GetBottom and questListArea.GetTop then
+        local bottom = lastVisible:GetBottom() or 0
+        local top = questListArea:GetTop() or 0
+        totalQuestHeight = math.max(0, bottom - top)
+    end
+
+    if questListArea.SetHeight then
+        questListArea:SetHeight(expanded and totalQuestHeight or 0)
     end
 
     local headerLabel = control.headerLabel or control.label
@@ -969,14 +989,21 @@ function QuestTracker:RestackCategory(categoryKey)
         headerHeight = math.max(headerHeight, headerLabel:GetHeight() or 0)
     end
 
-    local totalHeight = headerHeight
-    if expanded and questHeight > 0 then
-        totalHeight = headerHeight + CATEGORY_HEADER_TO_QUEST_PADDING + questHeight
+    local padding = self.headerToQuestPadding or CATEGORY_HEADER_TO_QUEST_PADDING or 0
+    local categoryHeight = headerHeight
+    if expanded and totalQuestHeight > 0 then
+        categoryHeight = headerHeight + padding + totalQuestHeight
     end
+    categoryHeight = math.max(CATEGORY_MIN_HEIGHT, categoryHeight)
+
     if control.SetHeight then
-        control:SetHeight(math.max(CATEGORY_MIN_HEIGHT, totalHeight))
+        control:SetHeight(categoryHeight)
     end
 
+    local colorRole = entry.isExpanded and "activeTitle" or "categoryTitle"
+    local r, g, b, a = GetQuestTrackerColor(colorRole)
+    ApplyBaseColor(control, r, g, b, a)
+    UpdateCategoryToggle(control, entry.isExpanded)
     UpdateCategoryHeaderDisplay(entry)
 end
 
@@ -986,24 +1013,8 @@ function QuestTracker:RestackAllCategories()
         return
     end
 
-    for index = #categoriesDisplayOrder, 1, -1 do
-        local key = categoriesDisplayOrder[index]
-        local normalized = NormalizeCategoryKey and NormalizeCategoryKey(key) or key
-        local entry = categoriesByKey[normalized] or categoriesByKey[key]
-        if not (entry and entry.control) then
-            if normalized then
-                categoriesByKey[normalized] = nil
-            end
-            if key and key ~= normalized then
-                categoriesByKey[key] = nil
-            end
-            table.remove(categoriesDisplayOrder, index)
-        end
-    end
-
-    local catSpacing = CATEGORY_VERTICAL_SPACING or 0
+    local catSpacing = self.categoryVerticalSpacing or CATEGORY_VERTICAL_SPACING or 0
     local prevCategory = nil
-    local lastVisible = nil
 
     for _, key in ipairs(categoriesDisplayOrder) do
         local normalized = NormalizeCategoryKey and NormalizeCategoryKey(key) or key
@@ -1018,16 +1029,15 @@ function QuestTracker:RestackAllCategories()
             end
             control:SetAnchor(RIGHT, container, RIGHT, 0, 0)
             prevCategory = control
-            lastVisible = control
         end
     end
 
-    if lastVisible and lastVisible.GetBottom and container.GetTop then
-        local totalHeight = math.max(0, (lastVisible:GetBottom() or 0) - (container:GetTop() or 0))
+    if prevCategory and prevCategory.GetBottom and container.GetTop then
+        local fullHeight = math.max(0, (prevCategory:GetBottom() or 0) - (container:GetTop() or 0))
         if container.SetHeight then
-            container:SetHeight(totalHeight)
+            container:SetHeight(fullHeight)
         end
-        state.contentHeight = totalHeight
+        state.contentHeight = fullHeight
     else
         if container.SetHeight then
             container:SetHeight(0)
@@ -3912,6 +3922,340 @@ local function UpdateCategoryHeaderDisplay(entry)
     label:SetText(FormatCategoryHeaderText(entry.name or "", count, "quest"))
 end
 
+local function RemoveQuestFromEntry(entry, journalIndex)
+    if not (entry and entry.quests and journalIndex) then
+        return
+    end
+
+    for index = #entry.quests, 1, -1 do
+        if entry.quests[index] == journalIndex then
+            table.remove(entry.quests, index)
+        end
+    end
+end
+
+local function EnsureQuestInEntry(entry, journalIndex)
+    if not (entry and entry.quests and journalIndex) then
+        return
+    end
+
+    for index = 1, #entry.quests do
+        if entry.quests[index] == journalIndex then
+            return
+        end
+    end
+
+    entry.quests[#entry.quests + 1] = journalIndex
+end
+
+local function ApplyRecordToQuestNode(tracker, node, record, entry, options)
+    if not (tracker and node and record) then
+        return false
+    end
+
+    local questControl = node.questControl
+    if not questControl then
+        return false
+    end
+
+    local questEntry = BuildQuestEntryFromRecord(record)
+    if not questEntry then
+        return false
+    end
+
+    questControl.data = questControl.data or {}
+    questControl.data.quest = questEntry
+
+    node.journalIndex = questEntry.journalIndex
+    local normalizedCategory = NormalizeCategoryKey and NormalizeCategoryKey(record.categoryKey) or record.categoryKey
+    node.categoryKey = normalizedCategory
+    node.storageKey = normalizedCategory or record.categoryKey
+    node.categoryControl = entry and entry.control or node.categoryControl
+
+    if questControl.label then
+        questControl.label:SetText(questEntry.name or "")
+    end
+    if questControl.titleLabel then
+        questControl.titleLabel:SetText(questEntry.name or "")
+    end
+
+    local colorRole = DetermineQuestColorRole and DetermineQuestColorRole(questEntry)
+    if colorRole then
+        local r, g, b, a = GetQuestTrackerColor(colorRole)
+        ApplyBaseColor(questControl, r, g, b, a)
+    end
+    UpdateQuestIconSlot(questControl)
+
+    local container = questControl.objectiveContainer or questControl.objectivesContainer
+    if not container then
+        return false
+    end
+
+    local controls = node.objectiveControls
+    if type(controls) ~= "table" then
+        controls = {}
+        node.objectiveControls = controls
+    end
+
+    for index = #controls, 1, -1 do
+        local ctrl = controls[index]
+        if ctrl and ctrl.SetHidden then
+            ctrl:SetHidden(true)
+        end
+        controls[index] = nil
+    end
+
+    local objectives = questEntry.objectives or {}
+    local isExpanded = IsQuestExpanded and IsQuestExpanded(questEntry.journalIndex)
+    node.isExpanded = isExpanded and true or false
+
+    if not isExpanded or #objectives == 0 then
+        if container.SetHidden then
+            container:SetHidden(true)
+        end
+        if container.SetHeight then
+            container:SetHeight(0)
+        end
+        node.objectivesHeight = 0
+        questControl.objectivesHeight = 0
+        tracker:UpdateQuestControlHeight(node)
+    else
+        local prev = nil
+        local firstYOffset = tracker.objectiveLineTopPadding or OBJECTIVE_TOP_PADDING or 2
+        local spacing = tracker.objectiveLineSpacing or VERTICAL_PADDING or 0
+        local indent = (questControl.currentIndent or QUEST_INDENT_X) + CONDITION_RELATIVE_INDENT
+
+        for index, objective in ipairs(objectives) do
+            local ctrl = container:GetChild(index)
+            if not ctrl then
+                local baseName = questControl:GetName() or string.format("Nvk3UTQuest%d", questEntry.journalIndex or index)
+                baseName = tostring(baseName):gsub("[^%w_]", "_")
+                local controlName = string.format("%sObjective%d", baseName, index)
+                ctrl = CreateControlFromVirtual(controlName, container, "QuestCondition_Template")
+            end
+
+            controls[index] = ctrl
+
+            if ctrl then
+                if (not ctrl.label or not ctrl.label.SetText) and ctrl.GetNamedChild then
+                    ctrl.label = ctrl:GetNamedChild("Label")
+                end
+
+                ctrl.rowType = "objective"
+                ctrl.currentIndent = indent
+                ctrl:ClearAnchors()
+                if prev then
+                    ctrl:SetAnchor(TOPLEFT, prev, BOTTOMLEFT, 0, spacing)
+                else
+                    ctrl:SetAnchor(TOPLEFT, container, TOPLEFT, 0, firstYOffset)
+                end
+                ctrl:SetAnchor(RIGHT, container, RIGHT, 0, 0)
+
+                local lineText = objective.displayText or ""
+                if objective.isTurnIn then
+                    lineText = "* " .. lineText
+                end
+
+                if ctrl.label then
+                    ApplyFont(ctrl.label, state.fonts.condition, DEFAULT_FONTS.condition)
+                    ctrl.label:SetText(lineText)
+                    local r, g, b, a = GetQuestTrackerColor("objectiveText")
+                    ctrl.label:SetColor(r, g, b, a)
+                end
+
+                ApplyRowMetrics(ctrl, indent, 0, 0, 0, CONDITION_MIN_HEIGHT)
+                ctrl:SetHidden(false)
+                prev = ctrl
+            end
+        end
+
+        local childCount = container.GetNumChildren and container:GetNumChildren() or 0
+        for index = #objectives + 1, childCount do
+            local extra = container:GetChild(index)
+            if extra and extra.SetHidden then
+                extra:SetHidden(true)
+            end
+        end
+
+        local containerTop = container.GetTop and container:GetTop() or 0
+        local bottom = containerTop
+        if prev and prev.GetBottom then
+            bottom = prev:GetBottom() or containerTop
+        end
+        local containerHeight = math.max(0, bottom - containerTop)
+
+        if container.SetHidden then
+            container:SetHidden(false)
+        end
+        if container.SetHeight then
+            container:SetHeight(containerHeight)
+        end
+
+        node.objectivesHeight = containerHeight
+        questControl.objectivesHeight = containerHeight
+        tracker:UpdateQuestControlHeight(node)
+    end
+
+    if entry then
+        EnsureQuestInEntry(entry, questEntry.journalIndex)
+        UpdateCategoryHeaderDisplay(entry)
+    end
+
+    if entry and entry.control and entry.control.SetHidden then
+        entry.control:SetHidden(false)
+    end
+    if entry and entry.isExpanded ~= nil and node.questControl then
+        node.questControl:SetHidden(not entry.isExpanded)
+    end
+
+    if not (options and options.deferRestack) then
+        local keyForRestack = nil
+        if entry then
+            keyForRestack = entry.storageKey or entry.key or node.categoryKey
+        else
+            keyForRestack = node.categoryKey
+        end
+        if keyForRestack then
+            tracker:RestackCategory(keyForRestack)
+        end
+        tracker:RestackAllCategories()
+    end
+
+    return true
+end
+
+local function BuildQuestRow(tracker, entry, questEntry)
+    if not (tracker and entry and questEntry) then
+        return nil
+    end
+
+    local questControl = AcquireQuestControl()
+    if entry.questListArea and questControl.SetParent then
+        questControl:SetParent(entry.questListArea)
+    end
+    questControl.rowType = "quest"
+    questControl.currentIndent = QUEST_INDENT_X
+    questControl:SetHidden(not entry.isExpanded)
+
+    ApplyRowMetrics(
+        questControl,
+        QUEST_INDENT_X,
+        QUEST_ICON_SLOT_WIDTH,
+        QUEST_ICON_SLOT_PADDING_X,
+        0,
+        QUEST_MIN_HEIGHT
+    )
+
+    state.questControls[questEntry.journalIndex] = questControl
+    state.orderedControls[#state.orderedControls + 1] = questControl
+
+    local node = EnsureQuestNode(questEntry.journalIndex)
+    node.questControl = questControl
+    node.categoryControl = entry.control
+    node.categoryKey = entry.storageKey
+    node.storageKey = entry.storageKey
+
+    entry.quests[#entry.quests + 1] = questEntry.journalIndex
+
+    local recordTable = LocalQuestDB and LocalQuestDB.quests
+    local record = recordTable and recordTable[questEntry.journalIndex]
+    if not record then
+        record = {
+            journalIndex = questEntry.journalIndex,
+            name = questEntry.name,
+            objectives = questEntry.objectives,
+            categoryKey = questEntry.categoryKey,
+            parentKey = questEntry.parentKey,
+        }
+    end
+
+    ApplyRecordToQuestNode(tracker, node, record, entry, { deferRestack = true })
+
+    return questControl
+end
+
+local function BuildCategoryFromSnapshot(tracker, category)
+    if not (tracker and category and category.quests and #category.quests > 0) then
+        return nil
+    end
+
+    local control = AcquireCategoryControl()
+    local normalizedKey = NormalizeCategoryKey and NormalizeCategoryKey(category.key) or category.key
+    control.currentIndent = CATEGORY_INDENT_X
+    control.data = {
+        categoryKey = category.key,
+        parentKey = category.parent and category.parent.key or nil,
+        parentName = category.parent and category.parent.name or nil,
+    }
+    control:SetHidden(false)
+
+    local entry = {
+        key = normalizedKey,
+        storageKey = normalizedKey or category.key,
+        control = control,
+        questListArea = control.questListArea,
+        quests = {},
+        headerLabel = control.headerLabel or control.label,
+        name = category.name,
+    }
+
+    entry.isExpanded = IsCategoryExpanded and IsCategoryExpanded(category.key) or false
+    control.isExpanded = entry.isExpanded
+
+    if control.questListArea then
+        control.questListArea:SetHidden(not entry.isExpanded)
+        control.questListArea:SetHeight(0)
+    end
+
+    categoriesByKey[entry.storageKey] = entry
+    categoriesDisplayOrder[#categoriesDisplayOrder + 1] = entry.storageKey
+    state.categoryControls[entry.storageKey] = control
+    state.orderedControls[#state.orderedControls + 1] = control
+
+    UpdateCategoryToggle(control, entry.isExpanded)
+    ApplyRowMetrics(
+        control,
+        CATEGORY_INDENT_X,
+        GetToggleWidth(control.toggle, CATEGORY_TOGGLE_WIDTH),
+        TOGGLE_LABEL_PADDING_X,
+        0,
+        CATEGORY_MIN_HEIGHT
+    )
+
+    control.label:SetText(FormatCategoryHeaderText(category.name or "", #category.quests, "quest"))
+    control.categoryEntry = entry
+
+    for _, questEntry in ipairs(category.quests) do
+        BuildQuestRow(tracker, entry, questEntry)
+    end
+
+    UpdateCategoryHeaderDisplay(entry)
+    tracker:RestackCategory(entry.storageKey)
+
+    return entry
+end
+
+function QuestTracker:RebuildFromSnapshot(snapshot)
+    EnsurePools()
+    ReleaseAll(state.categoryPool)
+    ReleaseAll(state.questPool)
+    ReleaseAll(state.conditionPool)
+    ResetLayoutState()
+
+    PrimeInitialSavedState()
+    ApplyActiveQuestFromSaved()
+
+    local ordered = snapshot and snapshot.categories and snapshot.categories.ordered or {}
+    for index = 1, #ordered do
+        BuildCategoryFromSnapshot(self, ordered[index])
+    end
+
+    self:RestackAllCategories()
+    UpdateContentSize()
+    NotifyHostContentChanged()
+    ProcessPendingExternalReveal()
+end
+
 local function LayoutCategory(category)
     local control = AcquireCategoryControl()
     local normalizedKey = NormalizeCategoryKey(category.key)
@@ -4095,38 +4439,17 @@ local function TrimOrderedControlsToCategory(keepCategoryCount)
     state.lastAnchoredControl = state.orderedControls[#state.orderedControls]
 end
 
-RelayoutFromCategoryIndex = function(startCategoryIndex)
-    ApplyActiveQuestFromSaved()
-    EnsurePools()
-
-    if not state.snapshot or not state.snapshot.categories or not state.snapshot.categories.ordered then
-        ReleaseAll(state.categoryPool)
-        ReleaseAll(state.questPool)
-        ReleaseAll(state.conditionPool)
-        ResetLayoutState()
-        UpdateContentSize()
-        NotifyHostContentChanged()
-        ProcessPendingExternalReveal()
+RelayoutFromCategoryIndex = function()
+    if not state.isInitialized then
         return
     end
 
-    if startCategoryIndex <= 1 then
-        ReleaseAll(state.categoryPool)
-        ReleaseAll(state.questPool)
-        ReleaseAll(state.conditionPool)
-        ResetLayoutState()
-        startCategoryIndex = 1
-    else
-        TrimOrderedControlsToCategory(startCategoryIndex - 1)
-    end
-
-    PrimeInitialSavedState()
-
-    for index = startCategoryIndex, #state.snapshot.categories.ordered do
-        local category = state.snapshot.categories.ordered[index]
-        if category and category.quests and #category.quests > 0 then
-            LayoutCategory(category)
-        end
+    if not state.snapshot then
+        QuestTracker.RedrawQuestTrackerFromLocalDB({
+            trigger = "missing-snapshot",
+            source = "QuestTracker:RelayoutFromCategoryIndex",
+        })
+        return
     end
 
     QuestTracker:RestackAllCategories()
@@ -4164,7 +4487,7 @@ function QuestTracker.RedrawQuestTrackerFromLocalDB(context)
         return
     end
 
-    RelayoutFromCategoryIndex(1)
+    QuestTracker:RebuildFromSnapshot(snapshot)
 end
 
 -- NOTE: Incremental redraw for one quest row.
@@ -4181,47 +4504,45 @@ function QuestTracker:RefreshQuestObjectivesOnly(journalIndex)
 
     if not node or not node.questControl then
         if record then
-            local categoryKey = record.categoryKey
-            if categoryKey and IsCategoryExpanded and IsCategoryExpanded(categoryKey) == false then
-                return true
-            end
+            QuestTracker.RedrawQuestTrackerFromLocalDB({
+                trigger = "missing-node",
+                source = "QuestTracker:RefreshQuestObjectivesOnly",
+            })
         end
         return false
     end
 
-    local questControl = node.questControl
-    local storageKey = node.storageKey or node.categoryKey
+    local storageKey = node.categoryKey or node.storageKey
+    local entry = nil
+    if storageKey then
+        local normalized = NormalizeCategoryKey and NormalizeCategoryKey(storageKey) or storageKey
+        entry = categoriesByKey[normalized] or categoriesByKey[storageKey]
+    end
 
     if not record then
+        local questControl = node.questControl
         if questControl then
-            ReleaseRowControl(questControl)
+            if questControl.SetHidden then
+                questControl:SetHidden(true)
+            end
             RemoveOrderedControl(questControl)
-        end
-        questNodesByIndex[numeric] = nil
-
-        local entry = nil
-        if storageKey then
-            local normalizedStorage = NormalizeCategoryKey and NormalizeCategoryKey(storageKey) or storageKey
-            entry = categoriesByKey[normalizedStorage] or categoriesByKey[storageKey]
-        end
-
-        if entry and entry.quests then
-            for index = #entry.quests, 1, -1 do
-                if entry.quests[index] == numeric then
-                    table.remove(entry.quests, index)
-                end
+            if state.questPool and questControl.poolKey then
+                state.questPool:ReleaseObject(questControl.poolKey)
             end
+            state.questControls[numeric] = nil
+            node.questControl = nil
+        end
+
+        if entry then
+            RemoveQuestFromEntry(entry, numeric)
             UpdateCategoryHeaderDisplay(entry)
-            if entry.quests and #entry.quests == 0 and entry.control then
-                ReleaseRowControl(entry.control)
-                RemoveOrderedControl(entry.control)
-                entry = nil
+            if entry.control and entry.control.SetHidden then
+                entry.control:SetHidden(#entry.quests == 0)
             end
-        end
-
-        if entry and (entry.storageKey or storageKey) then
             self:RestackCategory(entry.storageKey or storageKey)
         end
+
+        questNodesByIndex[numeric] = nil
         self:RestackAllCategories()
         UpdateContentSize()
         NotifyHostContentChanged()
@@ -4230,197 +4551,33 @@ function QuestTracker:RefreshQuestObjectivesOnly(journalIndex)
 
     local normalizedCategory = NormalizeCategoryKey and NormalizeCategoryKey(record.categoryKey) or record.categoryKey
     if node.categoryKey and normalizedCategory and node.categoryKey ~= normalizedCategory then
+        QuestTracker.RedrawQuestTrackerFromLocalDB({
+            trigger = "category-change",
+            source = "QuestTracker:RefreshQuestObjectivesOnly",
+        })
+        return true
+    end
+
+    if not entry then
+        entry = categoriesByKey[normalizedCategory] or categoriesByKey[record.categoryKey]
+        if not entry then
+            QuestTracker.RedrawQuestTrackerFromLocalDB({
+                trigger = "missing-category",
+                source = "QuestTracker:RefreshQuestObjectivesOnly",
+            })
+            return false
+        end
+    end
+
+    if entry.control and entry.control.SetHidden then
+        entry.control:SetHidden(false)
+    end
+
+    local applied = ApplyRecordToQuestNode(self, node, record, entry, nil)
+    if not applied then
         return false
     end
 
-    local questEntry = BuildQuestEntryFromRecord(record)
-    if not questEntry then
-        return false
-    end
-
-    questControl.data = questControl.data or {}
-    questControl.data.quest = questEntry
-    node.categoryKey = normalizedCategory
-    node.storageKey = node.categoryKey or record.categoryKey
-    node.journalIndex = questEntry.journalIndex
-
-    if questControl.label then
-        questControl.label:SetText(questEntry.name or "")
-    end
-    if questControl.titleLabel then
-        questControl.titleLabel:SetText(questEntry.name or "")
-    end
-
-    local colorRole = DetermineQuestColorRole and DetermineQuestColorRole(questEntry)
-    if colorRole then
-        local r, g, b, a = GetQuestTrackerColor(colorRole)
-        ApplyBaseColor(questControl, r, g, b, a)
-    end
-    UpdateQuestIconSlot(questControl)
-
-    local container = questControl.objectiveContainer or questControl.objectivesContainer
-    local controls = node.objectiveControls
-    if type(controls) ~= "table" then
-        controls = {}
-        node.objectiveControls = controls
-    end
-
-    if container and container.GetNumChildren and next(controls) == nil then
-        local childCount = container:GetNumChildren() or 0
-        for childIndex = 1, childCount do
-            local child = container:GetChild(childIndex)
-            if child then
-                controls[childIndex] = child
-                if (not child.label or not child.label.SetText) and child.GetNamedChild then
-                    child.label = child:GetNamedChild("Label")
-                end
-            end
-        end
-    end
-
-    local objectives = questEntry.objectives or {}
-    local isExpanded = IsQuestExpanded and IsQuestExpanded(questEntry.journalIndex)
-    node.isExpanded = isExpanded and true or false
-
-    if not container then
-        return false
-    end
-
-    local indent = (questControl.currentIndent or QUEST_INDENT_X) + CONDITION_RELATIVE_INDENT
-    local spacing = QUEST_VERTICAL_SPACING or 0
-    local firstPadding = OBJECTIVE_TOP_PADDING or 0
-
-    if not isExpanded or #objectives == 0 then
-        for index = 1, #controls do
-            local ctrl = controls[index]
-            if ctrl and ctrl.SetHidden then
-                ctrl:SetHidden(true)
-            end
-        end
-        for index = #controls, 1, -1 do
-            controls[index] = nil
-        end
-        if container.SetHidden then
-            container:SetHidden(true)
-        end
-        if container.SetHeight then
-            container:SetHeight(0)
-        end
-        node.objectivesHeight = 0
-        questControl.objectivesHeight = 0
-    else
-        local previous = nil
-        for index = 1, #objectives do
-            local objective = objectives[index]
-            local ctrl = controls[index]
-
-            if not ctrl and container.GetChild then
-                ctrl = container:GetChild(index)
-            end
-
-            if not ctrl then
-                local baseName = questControl:GetName()
-                if not baseName or baseName == "" then
-                    baseName = string.format("Nvk3UTQuest%d", numeric)
-                end
-                baseName = tostring(baseName):gsub("[^%w_]", "_")
-                local controlName = string.format("%sObjective%d", baseName, index)
-                ctrl = CreateControlFromVirtual(controlName, container, "QuestCondition_Template")
-            end
-
-            controls[index] = ctrl
-
-            if ctrl then
-                if (not ctrl.label or not ctrl.label.SetText) and ctrl.GetNamedChild then
-                    ctrl.label = ctrl:GetNamedChild("Label")
-                end
-
-                ctrl.rowType = "objective"
-                ctrl.currentIndent = indent
-                ctrl:ClearAnchors()
-                if previous then
-                    ctrl:SetAnchor(TOPLEFT, previous, BOTTOMLEFT, 0, spacing)
-                else
-                    ctrl:SetAnchor(TOPLEFT, container, TOPLEFT, 0, firstPadding)
-                end
-                ctrl:SetAnchor(RIGHT, container, RIGHT, 0, 0)
-
-                local lineText = objective.displayText or ""
-                if objective.isTurnIn then
-                    lineText = "* " .. lineText
-                end
-
-                if ctrl.label then
-                    ApplyFont(ctrl.label, state.fonts.condition, DEFAULT_FONTS.condition)
-                    ctrl.label:SetText(lineText)
-                    local r, g, b, a = GetQuestTrackerColor("objectiveText")
-                    ctrl.label:SetColor(r, g, b, a)
-                end
-
-                ApplyRowMetrics(ctrl, indent, 0, 0, 0, CONDITION_MIN_HEIGHT)
-                ctrl:SetHidden(false)
-                previous = ctrl
-            end
-        end
-
-        for index = #objectives + 1, #controls do
-            local ctrl = controls[index]
-            if ctrl and ctrl.SetHidden then
-                ctrl:SetHidden(true)
-            end
-        end
-        for index = #controls, #objectives + 1, -1 do
-            controls[index] = nil
-        end
-
-        if container.SetHidden then
-            container:SetHidden(false)
-        end
-
-        local containerTop = container.GetTop and container:GetTop() or 0
-        local bottom = containerTop
-        local lastCtrl = controls[#objectives]
-        if lastCtrl and lastCtrl.GetBottom then
-            bottom = lastCtrl:GetBottom() or containerTop
-        end
-        local containerHeight = math.max(0, bottom - containerTop)
-        if container.SetHeight then
-            container:SetHeight(containerHeight)
-        end
-        node.objectivesHeight = containerHeight
-        questControl.objectivesHeight = containerHeight
-    end
-
-    if UpdateQuestControlHeight then
-        UpdateQuestControlHeight(node)
-    end
-
-    local entry = nil
-    local resolvedKey = node.storageKey or normalizedCategory
-    if resolvedKey then
-        local normalized = NormalizeCategoryKey and NormalizeCategoryKey(resolvedKey) or resolvedKey
-        entry = categoriesByKey[normalized] or categoriesByKey[resolvedKey]
-    end
-
-    if entry then
-        node.categoryControl = entry.control
-        if entry.quests then
-            local found = false
-            for index = 1, #entry.quests do
-                if entry.quests[index] == numeric then
-                    found = true
-                    break
-                end
-            end
-            if not found then
-                entry.quests[#entry.quests + 1] = numeric
-            end
-        end
-        UpdateCategoryHeaderDisplay(entry)
-        self:RestackCategory(entry.storageKey or resolvedKey)
-    end
-
-    self:RestackAllCategories()
     UpdateContentSize()
     NotifyHostContentChanged()
 
