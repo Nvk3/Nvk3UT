@@ -724,7 +724,7 @@ local function ShowAchievementContextMenu(control, data)
                         originalCallback(...)
                     end
                 end
-                AddCustomMenuItem(entry.label, callback, itemType, nil, nil, disabled and true or nil)
+                AddCustomMenuItem(entry.label, callback, itemType, nil, nil, nil, nil, nil, disabled or false)
                 added = added + 1
             end
         end

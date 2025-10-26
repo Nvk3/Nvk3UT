@@ -144,7 +144,10 @@ function M.ShowContextMenu(anchorControl, entries)
             itemType,
             itemId,
             icon,
-            disabled and true or nil
+            nil,
+            nil,
+            nil,
+            disabled or false
           )
           added = added + 1
         end
