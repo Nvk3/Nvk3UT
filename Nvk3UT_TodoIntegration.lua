@@ -9,8 +9,6 @@ local U = Nvk3UT and Nvk3UT.Utils
 
 local NVK3_TODO = 84002
 local TODO_LOOKUP_KEY = "NVK3UT_TODO_ROOT"
-local todoProvide_lastTs = 0
-local todoProvide_lastCount = 0
 
 local function sanitizePlainName(name)
   if U and U.StripLeadingIconTag then
@@ -252,51 +250,9 @@ local function Override_ZO_GetAchievementIds()
     if categoryIndex == NVK3_TODO then
       if subcategoryIndex then
         local __res = Todo.ListOpenForTop(subcategoryIndex, considerSearchResults)
-        local U = Nvk3UT and Nvk3UT.Utils
-        local __now = (U and U.now and U.now() or 0)
-        if
-          U
-          and U.d
-          and Nvk3UT
-          and Nvk3UT.sv
-          and Nvk3UT.sv.debug
-          and ((__now - todoProvide_lastTs) > 0.5 or #__res ~= todoProvide_lastCount)
-        then
-          todoProvide_lastTs = __now
-          todoProvide_lastCount = #__res
-          U.d(
-            "[Nvk3UT][ToDo][Provide] list",
-            "data={count:",
-            #__res,
-            ", searchFiltered:",
-            tostring(considerSearchResults and true or false),
-            "}"
-          )
-        end
         return __res
       else
         local __res = Todo.ListAllOpen(0, considerSearchResults)
-        local U = Nvk3UT and Nvk3UT.Utils
-        local __now = (U and U.now and U.now() or 0)
-        if
-          U
-          and U.d
-          and Nvk3UT
-          and Nvk3UT.sv
-          and Nvk3UT.sv.debug
-          and ((__now - todoProvide_lastTs) > 0.5 or #__res ~= todoProvide_lastCount)
-        then
-          todoProvide_lastTs = __now
-          todoProvide_lastCount = #__res
-          U.d(
-            "[Nvk3UT][ToDo][Provide] list",
-            "data={count:",
-            #__res,
-            ", searchFiltered:",
-            tostring(considerSearchResults and true or false),
-            "}"
-          )
-        end
         return __res
       end
     end

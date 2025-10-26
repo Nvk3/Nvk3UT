@@ -1034,8 +1034,11 @@ function FullSync()
             questCount = questCount + 1
         end
 
-        d(string.format("[Nvk3UT] FullSync() completed. LocalQuestDB.version = %d", LocalQuestDB.version))
-        d(string.format("[Nvk3UT] Quests synced: %d", questCount))
+        d(string.format(
+            "[Nvk3UT] FullSync() -> quests=%d, version=%d",
+            questCount,
+            LocalQuestDB.version
+        ))
     end
 
 end

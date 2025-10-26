@@ -33,10 +33,6 @@ local function BuildSearchMap()
     if not results or not next(results) then
         return nil
     end
-    local U = Nvk3UT and Nvk3UT.Utils
-    if U and U.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then
-        U.d("[Nvk3UT][ToDo][Build] done")
-    end
     if Nvk3UT and Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then
         Nvk3UT.UI.UpdateStatus()
     end
@@ -56,7 +52,6 @@ local function SortByName(ids)
 end
 
 function M.ListAllOpen(maxCount, respectSearch)
-    local U = Nvk3UT and Nvk3UT.Utils; if U and U.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then U.d("[Nvk3UT][ToDo][Build] start", "data={reason:M.ListAllOpen}") end
     local res = {}
     local searchMap = respectSearch and BuildSearchMap() or nil
     local numCats = GetNumAchievementCategories()
@@ -78,7 +73,6 @@ function M.ListAllOpen(maxCount, respectSearch)
 end
 
 function M.ListOpenForTop(topIndex, respectSearch)
-    local U = Nvk3UT and Nvk3UT.Utils; if U and U.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then U.d("[Nvk3UT][ToDo][Build] start", "data={reason:M.ListOpenForTop}") end
     local res = {}
     if not topIndex then return res end
     local searchMap = respectSearch and BuildSearchMap() or nil

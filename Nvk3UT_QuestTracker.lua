@@ -104,7 +104,6 @@ local state = {
     pendingTrackedUpdate = nil,
     isClickSelectInProgress = false,
     selectedQuestKey = nil,
-    isRebuildInProgress = false,
 }
 
 local STATE_VERSION = 1
@@ -188,30 +187,7 @@ local function AppendDebugField(parts, key, value, treatAsString)
 end
 
 local function EmitDebugAction(action, trigger, entityType, fieldList)
-    if not (type(IsDebugLoggingEnabled) == "function" and IsDebugLoggingEnabled()) then
-        return
-    end
-
-    local parts = { "[NVK]" }
-    AppendDebugField(parts, "action", action or "unknown")
-    AppendDebugField(parts, "trigger", trigger or "unknown")
-    AppendDebugField(parts, "type", entityType or "unknown")
-
-    if type(fieldList) == "table" then
-        for index = 1, #fieldList do
-            local entry = fieldList[index]
-            if entry and entry.key then
-                AppendDebugField(parts, entry.key, entry.value, entry.string)
-            end
-        end
-    end
-
-    local message = table.concat(parts, " ")
-    if d then
-        d(message)
-    elseif print then
-        print(message)
-    end
+    -- Debug action emission disabled to avoid noisy chat spam.
 end
 
 local function GetQuestTrackerColor(role)
@@ -630,6 +606,76 @@ local function FindQuestCategoryIndex(snapshot, journalIndex)
     return nil, nil
 end
 
+local function FindCategoryIndexByKey(snapshot, categoryKey)
+    if not snapshot or not snapshot.categories or not snapshot.categories.ordered then
+        return nil
+    end
+
+    local normalized = NormalizeCategoryKey(categoryKey)
+    if not normalized then
+        return nil
+    end
+
+    local ordered = snapshot.categories.ordered
+    for index = 1, #ordered do
+        local category = ordered[index]
+        if category and NormalizeCategoryKey(category.key) == normalized then
+            return index
+        end
+    end
+
+    return nil
+end
+
+local function RelayoutFromSnapshotIndex(startCategoryIndex, context)
+    if not state.isInitialized then
+        return
+    end
+
+    if not state.snapshot then
+        QuestTracker.RedrawQuestTrackerFromLocalDB(context)
+        return
+    end
+
+    local index = startCategoryIndex or 1
+    if index < 1 then
+        index = 1
+    end
+
+    RelayoutFromCategoryIndex(index)
+end
+
+local function RelayoutCategoryByKey(categoryKey, context)
+    local index = FindCategoryIndexByKey(state.snapshot, categoryKey)
+    RelayoutFromSnapshotIndex(index, context)
+end
+
+local function RelayoutCategoriesByKeySet(categoryKeys, context)
+    if not categoryKeys then
+        RelayoutFromSnapshotIndex(1, context)
+        return
+    end
+
+    local minIndex = nil
+    for key in pairs(categoryKeys) do
+        local index = FindCategoryIndexByKey(state.snapshot, key)
+        if index and (not minIndex or index < minIndex) then
+            minIndex = index
+        end
+    end
+
+    RelayoutFromSnapshotIndex(minIndex or 1, context)
+end
+
+local function RelayoutQuestByJournalIndex(journalIndex, context)
+    local categoryIndex = nil
+    if state.snapshot then
+        categoryIndex = select(1, FindQuestCategoryIndex(state.snapshot, journalIndex))
+    end
+
+    RelayoutFromSnapshotIndex(categoryIndex, context)
+end
+
 local function ResolveStateSource(context, fallback)
     if type(context) == "string" then
         return ResolveStateSource({ trigger = context }, fallback)
@@ -658,40 +704,7 @@ local function ResolveStateSource(context, fallback)
 end
 
 local function LogStateWrite(entity, key, expanded, source, priority)
-    local debugCheck = IsDebugLoggingEnabled
-    if type(debugCheck) ~= "function" or not debugCheck() then
-        return
-    end
-
-    local formatted
-    if entity == "cat" then
-        formatted = string.format(
-            "STATE_WRITE cat=%s expanded=%s source=%s prio=%d",
-            tostring(key),
-            tostring(expanded),
-            tostring(source),
-            priority or 0
-        )
-    elseif entity == "quest" then
-        formatted = string.format(
-            "STATE_WRITE quest=%s expanded=%s source=%s prio=%d",
-            tostring(key),
-            tostring(expanded),
-            tostring(source),
-            priority or 0
-        )
-    elseif entity == "active" then
-        formatted = string.format(
-            "STATE_WRITE active=%s source=%s prio=%d",
-            tostring(key),
-            tostring(source),
-            priority or 0
-        )
-    end
-
-    if formatted then
-        DebugLog(formatted)
-    end
+    -- State write logging disabled to prevent chat spam.
 end
 
 local function EnsureActiveSavedState()
@@ -948,14 +961,6 @@ local function PrimeInitialSavedState()
         WriteActiveQuest(active and active.questKey or nil, "init", { timestamp = initTimestamp })
     end
 
-    if IsDebugLoggingEnabled() and (primedCategories > 0 or primedQuests > 0) then
-        DebugLog(string.format(
-            "STATE_PRIME timestamp=%.3f categories=%d quests=%d",
-            initTimestamp,
-            primedCategories,
-            primedQuests
-        ))
-    end
 end
 
 local function EnsureSavedDefaults(saved)
@@ -1215,105 +1220,15 @@ local function ResolveCategoryDebugInfo(categoryKey)
 end
 
 local function LogQuestSelectionChange(action, trigger, journalIndex, beforeSelectedId, afterSelectedId, source, extraFields)
-    if not IsDebugLoggingEnabled() then
-        return
-    end
-
-    local info = ResolveQuestDebugInfo(journalIndex)
-    local fields = {
-        { key = "id", value = info.id },
-    }
-
-    if info.name then
-        fields[#fields + 1] = { key = "name", value = info.name, string = true }
-    end
-    if info.categoryId then
-        fields[#fields + 1] = { key = "categoryId", value = info.categoryId }
-    end
-    if info.categoryName then
-        fields[#fields + 1] = { key = "categoryName", value = info.categoryName, string = true }
-    end
-
-    fields[#fields + 1] = { key = "before.selectedId", value = beforeSelectedId }
-    fields[#fields + 1] = { key = "after.selectedId", value = afterSelectedId }
-
-    if type(extraFields) == "table" then
-        for index = 1, #extraFields do
-            fields[#fields + 1] = extraFields[index]
-        end
-    end
-
-    if source then
-        fields[#fields + 1] = { key = "source", value = source, string = true }
-    end
-
-    EmitDebugAction(action, trigger, "quest", fields)
+    -- Quest selection logging disabled for performance.
 end
 
 local function LogQuestExpansion(action, trigger, journalIndex, beforeExpanded, afterExpanded, source, extraFields)
-    if not IsDebugLoggingEnabled() then
-        return
-    end
-
-    local info = ResolveQuestDebugInfo(journalIndex)
-    local fields = {
-        { key = "id", value = info.id },
-    }
-
-    if info.name then
-        fields[#fields + 1] = { key = "name", value = info.name, string = true }
-    end
-    if info.categoryId then
-        fields[#fields + 1] = { key = "categoryId", value = info.categoryId }
-    end
-    if info.categoryName then
-        fields[#fields + 1] = { key = "categoryName", value = info.categoryName, string = true }
-    end
-
-    fields[#fields + 1] = { key = "before.expanded", value = beforeExpanded }
-    fields[#fields + 1] = { key = "after.expanded", value = afterExpanded }
-
-    if type(extraFields) == "table" then
-        for index = 1, #extraFields do
-            fields[#fields + 1] = extraFields[index]
-        end
-    end
-
-    if source then
-        fields[#fields + 1] = { key = "source", value = source, string = true }
-    end
-
-    EmitDebugAction(action, trigger, "quest", fields)
+    -- Quest expansion logging disabled for performance.
 end
 
 local function LogCategoryExpansion(action, trigger, categoryKey, beforeExpanded, afterExpanded, source, extraFields)
-    if not IsDebugLoggingEnabled() then
-        return
-    end
-
-    local info = ResolveCategoryDebugInfo(categoryKey)
-    local fields = {
-        { key = "id", value = info.id },
-    }
-
-    if info.name then
-        fields[#fields + 1] = { key = "name", value = info.name, string = true }
-    end
-
-    fields[#fields + 1] = { key = "before.expanded", value = beforeExpanded }
-    fields[#fields + 1] = { key = "after.expanded", value = afterExpanded }
-
-    if type(extraFields) == "table" then
-        for index = 1, #extraFields do
-            fields[#fields + 1] = extraFields[index]
-        end
-    end
-
-    if source then
-        fields[#fields + 1] = { key = "source", value = source, string = true }
-    end
-
-    EmitDebugAction(action, trigger, "category", fields)
+    -- Category expansion logging disabled for performance.
 end
 
 SafeCall = function(func, ...)
@@ -1626,39 +1541,19 @@ local function ShowQuestContextMenu(control, journalIndex)
 end
 
 local function LogExternalSelect(questId)
-    if not IsDebugLoggingEnabled() then
-        return
-    end
-
-    DebugLog(string.format("EXTERNAL_SELECT questId=%s", tostring(questId)))
+    -- External select logging disabled to prevent chat spam.
 end
 
 local function LogExpandCategory(categoryId, reason)
-    if not IsDebugLoggingEnabled() then
-        return
-    end
-
-    DebugLog(string.format(
-        "EXPAND_CATEGORY categoryId=%s reason=%s",
-        tostring(categoryId),
-        reason or "external-select"
-    ))
+    -- Category expansion logging disabled to prevent chat spam.
 end
 
 local function LogMissingCategory(questId)
-    if not IsDebugLoggingEnabled() then
-        return
-    end
-
-    DebugLog(string.format("WARN missing-category questId=%s", tostring(questId)))
+    -- Missing category logging disabled to prevent chat spam.
 end
 
 local function LogScrollIntoView(questId)
-    if not IsDebugLoggingEnabled() then
-        return
-    end
-
-    DebugLog(string.format("SCROLL_INTO_VIEW questId=%s", tostring(questId)))
+    -- Scroll logging disabled to prevent chat spam.
 end
 
 local function ExpandCategoriesForExternalSelect(journalIndex)
@@ -1667,7 +1562,7 @@ local function ExpandCategoriesForExternalSelect(journalIndex)
     end
 
     local keys, found = CollectCategoryKeysForQuest(journalIndex)
-    local expandedAny = false
+    local expandedKeys = nil
 
     if keys then
         local context = {
@@ -1680,8 +1575,8 @@ local function ExpandCategoriesForExternalSelect(journalIndex)
             if key and SetCategoryExpanded then
                 local changed = SetCategoryExpanded(key, true, context)
                 if changed then
-                    expandedAny = true
-                    LogExpandCategory(key, "external-select")
+                    expandedKeys = expandedKeys or {}
+                    expandedKeys[key] = true
                 end
             end
         end
@@ -1691,11 +1586,14 @@ local function ExpandCategoriesForExternalSelect(journalIndex)
         LogMissingCategory(journalIndex)
     end
 
-    if expandedAny and RequestRefresh then
-        RequestRefresh()
+    if expandedKeys then
+        RelayoutCategoriesByKeySet(expandedKeys, {
+            trigger = "external-select",
+            source = "QuestTracker:ExpandCategoriesForExternalSelect",
+        })
     end
 
-    return expandedAny, found
+    return expandedKeys ~= nil, found
 end
 
 local function ExpandCategoriesForClickSelect(journalIndex)
@@ -1704,7 +1602,7 @@ local function ExpandCategoriesForClickSelect(journalIndex)
     end
 
     local keys, found = CollectCategoryKeysForQuest(journalIndex)
-    local expandedAny = false
+    local expandedKeys = nil
 
     if keys then
         local context = {
@@ -1716,8 +1614,8 @@ local function ExpandCategoriesForClickSelect(journalIndex)
             if key and SetCategoryExpanded then
                 local changed = SetCategoryExpanded(key, true, context)
                 if changed then
-                    expandedAny = true
-                    LogExpandCategory(key, "click-select")
+                    expandedKeys = expandedKeys or {}
+                    expandedKeys[key] = true
                 end
             end
         end
@@ -1727,11 +1625,14 @@ local function ExpandCategoriesForClickSelect(journalIndex)
         LogMissingCategory(journalIndex)
     end
 
-    if expandedAny and RequestRefresh then
-        RequestRefresh()
+    if expandedKeys then
+        RelayoutCategoriesByKeySet(expandedKeys, {
+            trigger = "click-select",
+            source = "QuestTracker:ExpandCategoriesForClickSelect",
+        })
     end
 
-    return expandedAny, found
+    return expandedKeys ~= nil, found
 end
 
 local function FindQuestControlByJournalIndex(journalIndex)
@@ -2051,22 +1952,9 @@ local function EnsureTrackedCategoriesExpanded(journalIndex, forceExpand, contex
         source = (context and context.source) or "QuestTracker:EnsureTrackedCategoriesExpanded",
     }
 
-    local debugEnabled = IsDebugLoggingEnabled()
-
     for key in pairs(keys) do
         if key then
             local changed = SetCategoryExpanded(key, true, logContext)
-            if debugEnabled and not changed then
-                DebugLog(
-                    "Category expand skipped",
-                    "category",
-                    key,
-                    "journalIndex",
-                    journalIndex,
-                    "trigger",
-                    logContext.trigger
-                )
-            end
         end
     end
 end
@@ -2318,8 +2206,13 @@ local function SyncTrackedQuestState(forcedIndex, forceExpand, context)
         local hasTracked = currentTracked ~= nil
         local hadTracked = previousTracked ~= nil
 
-        if RequestRefresh and (previousTracked ~= currentTracked or hasTracked or hadTracked or pendingApplied or expansionChanged) then
-            RequestRefresh()
+        if previousTracked ~= currentTracked or hasTracked or hadTracked or pendingApplied or expansionChanged then
+            if previousTracked then
+                RelayoutQuestByJournalIndex(previousTracked, context)
+            end
+            if currentTracked then
+                RelayoutQuestByJournalIndex(currentTracked, context)
+            end
         end
     until true
 
@@ -2388,6 +2281,8 @@ local function TrackQuestByJournalIndex(journalIndex, options)
 
     options = options or {}
 
+    local previousTracked = state.trackedQuestIndex
+
     local actionContext = {
         trigger = options.trigger or "auto",
         source = options.source or "QuestTracker:TrackQuestByJournalIndex",
@@ -2442,7 +2337,10 @@ local function TrackQuestByJournalIndex(journalIndex, options)
     end
 
     if shouldRequestRefresh then
-        RequestRefresh()
+        if previousTracked and previousTracked ~= numeric then
+            RelayoutQuestByJournalIndex(previousTracked, actionContext)
+        end
+        RelayoutQuestByJournalIndex(numeric, actionContext)
     end
 
     return true
@@ -2455,34 +2353,26 @@ HandleQuestRowClick = function(journalIndex)
     end
 
     if state.isClickSelectInProgress then
-        if IsDebugLoggingEnabled() then
-            DebugLog(string.format("CLICK_SELECT_SKIPPED questId=%s reason=in-progress", tostring(questId)))
-        end
         return
     end
 
     state.isClickSelectInProgress = true
 
-    if IsDebugLoggingEnabled() then
-        DebugLog(string.format("CLICK_SELECT_START questId=%s", tostring(questId)))
-    end
-
     state.pendingSelection = nil
 
     local previousQuest = state.trackedQuestIndex
-    local previousQuestString = previousQuest and tostring(previousQuest) or "nil"
 
     ApplyImmediateTrackedQuest(questId, "click-select")
 
-    if IsDebugLoggingEnabled() then
-        DebugLog(string.format("SET_ACTIVE questId=%s prev=%s", tostring(questId), previousQuestString))
-    end
+    local rowContext = {
+        trigger = "click-select",
+        source = "QuestTracker:HandleQuestRowClick",
+    }
 
-    RequestRefresh()
-
-    if IsDebugLoggingEnabled() then
-        DebugLog(string.format("UI_SELECT questId=%s", tostring(questId)))
+    if previousQuest and previousQuest ~= questId then
+        RelayoutQuestByJournalIndex(previousQuest, rowContext)
     end
+    RelayoutQuestByJournalIndex(questId, rowContext)
 
     local nextExpanded = not IsQuestExpanded(questId)
     state.pendingSelection = {
@@ -2531,11 +2421,10 @@ HandleQuestRowClick = function(journalIndex)
         state.pendingSelection = nil
     end
 
-    RequestRefresh()
-
-    if IsDebugLoggingEnabled() then
-        DebugLog(string.format("CLICK_SELECT_END questId=%s", tostring(questId)))
+    if previousQuest and previousQuest ~= questId then
+        RelayoutQuestByJournalIndex(previousQuest, rowContext)
     end
+    RelayoutQuestByJournalIndex(questId, rowContext)
 end
 
 local function AdoptTrackedQuestOnInit()
@@ -3112,7 +3001,7 @@ local function ToggleQuestExpansion(journalIndex, context)
 
     local changed = SetQuestExpanded(journalIndex, not expanded, toggleContext)
     if changed then
-        QuestTracker.Refresh()
+        RelayoutQuestByJournalIndex(journalIndex, toggleContext)
     end
 
     return changed
@@ -3162,7 +3051,10 @@ local function AcquireCategoryControl()
                 source = "QuestTracker:OnCategoryClick",
             })
             if changed then
-                QuestTracker.Refresh()
+                RelayoutCategoryByKey(catKey, {
+                    trigger = "click",
+                    source = "QuestTracker:OnCategoryClick",
+                })
             end
         end)
         control:SetHandler("OnMouseEnter", function(ctrl)
@@ -3429,13 +3321,6 @@ local function LayoutQuest(quest)
 
     local questKey = NormalizeQuestKey(quest.journalIndex)
     local expanded = IsQuestExpanded(quest.journalIndex)
-    if IsDebugLoggingEnabled() then
-        DebugLog(string.format(
-            "BUILD_APPLY quest=%s expanded=%s",
-            tostring(questKey or quest.journalIndex),
-            tostring(expanded)
-        ))
-    end
     UpdateQuestIconSlot(control)
     ApplyRowMetrics(
         control,
@@ -3482,13 +3367,6 @@ local function LayoutCategory(category)
     local count = #category.quests
     control.label:SetText(FormatCategoryHeaderText(category.name or "", count, "quest"))
     local expanded = IsCategoryExpanded(category.key)
-    if IsDebugLoggingEnabled() then
-        DebugLog(string.format(
-            "BUILD_APPLY cat=%s expanded=%s",
-            tostring(category.key),
-            tostring(expanded)
-        ))
-    end
     local colorRole = expanded and "activeTitle" or "categoryTitle"
     local r, g, b, a = GetQuestTrackerColor(colorRole)
     ApplyBaseColor(control, r, g, b, a)
@@ -3629,6 +3507,10 @@ local function ApplySnapshotFromLocalDB(snapshot, context)
     NotifyStatusRefresh()
 end
 
+-- NOTE: Full rebuild of the entire quest tracker.
+-- This should only run during initialization or when FullSync()
+-- handles global quest events (EVENT_PLAYER_ACTIVATED and EVENT_QUEST_LIST_UPDATED).
+-- Do not call this from expand/select/assist changes or single-quest updates.
 function QuestTracker.RedrawQuestTrackerFromLocalDB(context)
     local snapshot = BuildLocalSnapshot()
     ApplySnapshotFromLocalDB(snapshot, context)
@@ -3640,6 +3522,10 @@ function QuestTracker.RedrawQuestTrackerFromLocalDB(context)
     RelayoutFromCategoryIndex(1)
 end
 
+-- NOTE: Incremental redraw for one quest row.
+-- This is what should run for quest updates, turn-in state changes,
+-- assist/focus changes, expand/collapse toggles, etc.
+-- Never trigger a full tracker rebuild from those actions.
 function QuestTracker.RedrawSingleQuestFromLocalDB(journalIndex, context)
     local snapshot = BuildLocalSnapshot()
 
@@ -3678,55 +3564,6 @@ function QuestTracker.RedrawSingleQuestFromLocalDB(journalIndex, context)
     end
 
     RelayoutFromCategoryIndex(startCategoryIndex)
-end
-
-local function Rebuild()
-    if not state.container then
-        return
-    end
-
-    if IsDebugLoggingEnabled() then
-        DebugLog("REBUILD_START")
-    end
-
-    state.isRebuildInProgress = true
-    ApplyActiveQuestFromSaved()
-
-    EnsurePools()
-
-    ReleaseAll(state.categoryPool)
-    ReleaseAll(state.questPool)
-    ReleaseAll(state.conditionPool)
-    ResetLayoutState()
-
-    if not state.snapshot or not state.snapshot.categories or not state.snapshot.categories.ordered then
-        UpdateContentSize()
-        NotifyHostContentChanged()
-        state.isRebuildInProgress = false
-        if IsDebugLoggingEnabled() then
-            DebugLog("REBUILD_END")
-        end
-        return
-    end
-
-    PrimeInitialSavedState()
-
-    for index = 1, #state.snapshot.categories.ordered do
-        local category = state.snapshot.categories.ordered[index]
-        if category and category.quests and #category.quests > 0 then
-            LayoutCategory(category)
-        end
-    end
-
-    UpdateContentSize()
-    NotifyHostContentChanged()
-    ProcessPendingExternalReveal()
-
-    state.isRebuildInProgress = false
-
-    if IsDebugLoggingEnabled() then
-        DebugLog("REBUILD_END")
-    end
 end
 
 local function RefreshVisibility()
@@ -3817,7 +3654,10 @@ function QuestTracker.HandlePlayerActivated()
 end
 
 function QuestTracker.Refresh()
-    Rebuild()
+    QuestTracker.RedrawQuestTrackerFromLocalDB({
+        trigger = "manual-refresh",
+        source = "QuestTracker.Refresh",
+    })
 end
 
 function QuestTracker.Shutdown()
@@ -3866,7 +3706,6 @@ function QuestTracker.Shutdown()
     state.pendingDeselection = false
     state.pendingExternalReveal = nil
     state.selectedQuestKey = nil
-    state.isRebuildInProgress = false
     NotifyHostContentChanged()
 end
 
