@@ -519,16 +519,23 @@ local function BuildQuestEntryFromRecord(record)
     }
 end
 
+local DEFAULT_CATEGORY_NAME = "Miscellaneous"
+
 local function ResolveCategoryFallbackName(record)
     if record and type(record.categoryName) == "string" and record.categoryName ~= "" then
         return record.categoryName
     end
 
-    if record and type(record.parentName) == "string" and record.parentName ~= "" then
-        return record.parentName
+    if record and type(record.categoryKey) == "string" and record.categoryKey ~= "" then
+        local readable = record.categoryKey:gsub("_", " ")
+        readable = readable:gsub("%s+", " ")
+        if type(zo_strformat) == "function" then
+            return zo_strformat("<<1>>", readable)
+        end
+        return readable
     end
 
-    return "Miscellaneous"
+    return DEFAULT_CATEGORY_NAME
 end
 
 local function BuildLocalSnapshot()
@@ -543,7 +550,7 @@ local function BuildLocalSnapshot()
     for journalIndex, record in pairs(questSource) do
         local questEntry = BuildQuestEntryFromRecord(record)
         if questEntry then
-            local categoryKey = NormalizeCategoryKey(record.categoryKey) or NormalizeCategoryKey(record.parentKey) or DEFAULT_CATEGORY_KEY
+            local categoryKey = NormalizeCategoryKey(record.categoryKey) or DEFAULT_CATEGORY_KEY
             local category = categoriesByKey[categoryKey]
             if not category then
                 local parentKey = NormalizeCategoryKey(record.parentKey)
