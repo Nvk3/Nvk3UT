@@ -1276,35 +1276,9 @@ local function ShowQuestOnMap(journalIndex)
         return
     end
 
-    -- Prefer the same code path the base quest journal keybind uses so the
-    -- map pin logic stays in sync with vanilla behavior.
-    local managerOk = QuestManagerCall("ShowOnMap", normalized)
-    if managerOk then
-        return
-    end
-
-    local manager = QUEST_JOURNAL_MANAGER
-    if manager and type(manager.ShowOnMap) == "function" then
-        local ok = SafeCall(manager.ShowOnMap, manager, normalized)
-        if ok then
-            return
-        end
-    end
-
     if type(ZO_WorldMap_ShowQuestOnMap) == "function" then
-        if SCENE_MANAGER and type(SCENE_MANAGER.Show) == "function" then
-            local shouldShow = true
-            if type(SCENE_MANAGER.IsShowing) == "function" then
-                local ok, showing = pcall(SCENE_MANAGER.IsShowing, SCENE_MANAGER, "worldMap")
-                if ok and showing == true then
-                    shouldShow = false
-                end
-            end
-            if shouldShow then
-                SafeCall(SCENE_MANAGER.Show, SCENE_MANAGER, "worldMap")
-            end
-        end
-
+        -- Delegate to the vanilla quest journal logic so the map focuses the
+        -- selected quest exactly like the base UI.
         SafeCall(ZO_WorldMap_ShowQuestOnMap, normalized)
     end
 end
