@@ -462,9 +462,14 @@ local function BuildQuestConditionsFromRecord(record)
     if record and type(record.objectives) == "table" then
         for index = 1, #record.objectives do
             local objective = record.objectives[index]
-            if objective and type(objective.text) == "string" and objective.text ~= "" then
+            local displayText = objective and objective.displayText
+            if type(displayText) ~= "string" or displayText == "" then
+                displayText = objective and objective.text
+            end
+            if type(displayText) == "string" and displayText ~= "" then
                 conditions[#conditions + 1] = {
-                    text = objective.text,
+                    text = displayText,
+                    displayText = displayText,
                     current = objective.current,
                     max = objective.max,
                     isVisible = true,
@@ -3111,7 +3116,7 @@ local function FormatConditionText(condition)
         return ""
     end
 
-    local text = condition.text
+    local text = condition.displayText or condition.text
     if type(text) ~= "string" or text == "" then
         return ""
     end
@@ -3313,7 +3318,7 @@ local function ShouldDisplayCondition(condition)
     end
 
     if condition.forceDisplay then
-        local text = condition.text
+        local text = condition.displayText or condition.text
         return type(text) == "string" and text ~= ""
     end
 
@@ -3329,7 +3334,7 @@ local function ShouldDisplayCondition(condition)
         return false
     end
 
-    local text = condition.text
+    local text = condition.displayText or condition.text
     if not text or text == "" then
         return false
     end

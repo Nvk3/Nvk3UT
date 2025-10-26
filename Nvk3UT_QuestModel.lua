@@ -25,6 +25,73 @@ local function StripProgressDecorations(text)
     return sanitized
 end
 
+local function NormalizeObjectiveDisplayText(text)
+    if type(text) ~= "string" then
+        return nil
+    end
+
+    local displayText = text
+    if zo_strformat then
+        displayText = zo_strformat("<<1>>", displayText)
+    end
+
+    displayText = displayText:gsub("\r\n", "\n")
+    displayText = displayText:gsub("\r", "\n")
+    displayText = displayText:gsub("\t", " ")
+    displayText = displayText:gsub("\n+", " ")
+    displayText = displayText:gsub("^%s+", "")
+    displayText = displayText:gsub("%s+$", "")
+
+    if displayText == "" then
+        return nil
+    end
+
+    return displayText
+end
+
+local function ShouldUseHeaderText(candidate, objectives)
+    if type(candidate) ~= "string" then
+        return nil
+    end
+
+    local headerText = candidate
+    headerText = headerText:gsub("%s+", " ")
+    headerText = headerText:gsub("^%s+", "")
+    headerText = headerText:gsub("%s+$", "")
+
+    if headerText == "" then
+        return nil
+    end
+
+    if #headerText > 140 then
+        return nil
+    end
+
+    local sentenceCount = 0
+    headerText:gsub("[%.%!%?]", function()
+        sentenceCount = sentenceCount + 1
+    end)
+    if sentenceCount >= 2 and #headerText > 80 then
+        return nil
+    end
+
+    if objectives and type(objectives) == "table" then
+        local headerLower = string.lower(headerText)
+        for index = 1, #objectives do
+            local objective = objectives[index]
+            local displayText = objective and objective.displayText
+            if type(displayText) == "string" then
+                local comparison = string.lower(displayText)
+                if comparison == headerLower then
+                    return nil
+                end
+            end
+        end
+    end
+
+    return headerText
+end
+
 local function AcquireTimestampMs()
     if type(GetFrameTimeMilliseconds) == "function" then
         return GetFrameTimeMilliseconds()
@@ -86,13 +153,13 @@ local function CollectActiveObjectives(journalIndex, questIsComplete)
             if numConditions > 0 and type(GetJournalQuestConditionInfo) == "function" then
                 for conditionIndex = 1, numConditions do
                     local conditionText, current, maxValue, isFailCondition, isConditionComplete, _, isConditionVisible = GetJournalQuestConditionInfo(journalIndex, stepIndex, conditionIndex)
-                    local sanitizedCondition = StripProgressDecorations(conditionText)
+                    local formattedCondition = NormalizeObjectiveDisplayText(conditionText)
                     local isVisibleCondition = (isConditionVisible ~= false)
                     local isFail = (isFailCondition == true)
 
-                    if sanitizedCondition and isVisibleCondition and not isFail then
+                    if formattedCondition and isVisibleCondition and not isFail then
                         objectives[#objectives + 1] = {
-                            text = sanitizedCondition,
+                            displayText = formattedCondition,
                             current = tonumber(current) or 0,
                             max = tonumber(maxValue) or 0,
                             complete = isConditionComplete == true,
@@ -106,9 +173,10 @@ local function CollectActiveObjectives(journalIndex, questIsComplete)
                 return objectives, sanitizedStepText, stepType
             end
 
-            if sanitizedStepText then
+            local fallbackObjective = NormalizeObjectiveDisplayText(stepText)
+            if fallbackObjective then
                 objectives[1] = {
-                    text = sanitizedStepText,
+                    displayText = fallbackObjective,
                     current = 0,
                     max = 0,
                     complete = isComplete == true,
@@ -255,7 +323,7 @@ function BuildQuestRecordFromAPI(journalIndex)
             turnInText = StripProgressDecorations(turnInText)
             if turnInText then
                 objectives[1] = {
-                    text = turnInText,
+                    displayText = turnInText,
                     current = 0,
                     max = 0,
                     complete = false,
@@ -265,13 +333,16 @@ function BuildQuestRecordFromAPI(journalIndex)
         end
     end
 
+    local headerCandidate = sanitizedHeader or fallbackStepText
+    local headerText = ShouldUseHeaderText(headerCandidate, objectives)
+
     local categoryKey, categoryName, parentKey, parentName = DetermineCategoryInfo(journalIndex, questType, displayType, isRepeatable == true, isDaily == true)
 
     local record = {
         journalIndex = journalIndex,
         name = sanitizedName,
-        headerText = sanitizedHeader,
-        objectives = objectives,
+        headerText = headerText,
+        objectives = objectives, -- each entry stores displayText/current/max/complete/isTurnIn
         tracked = tracked,
         assisted = assisted,
         isComplete = isComplete,
