@@ -3112,10 +3112,13 @@ local function AcquireQuestControl()
         control.iconSlot = control:GetNamedChild("IconSlot")
         control.objectiveContainer = control:GetNamedChild("Objectives")
         if control.SetResizeToFitDescendents then
-            control:SetResizeToFitDescendents(true)
+            control:SetResizeToFitDescendents(false)
         end
         if control.objectiveContainer and control.objectiveContainer.SetResizeToFitDescendents then
-            control.objectiveContainer:SetResizeToFitDescendents(true)
+            control.objectiveContainer:SetResizeToFitDescendents(false)
+        end
+        if control.objectiveContainer and control.objectiveContainer.SetHeight then
+            control.objectiveContainer:SetHeight(0)
         end
         if control.iconSlot then
             control.iconSlot:SetDimensions(QUEST_ICON_SLOT_WIDTH, QUEST_ICON_SLOT_HEIGHT)
