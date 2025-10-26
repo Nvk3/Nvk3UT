@@ -2,40 +2,53 @@ local addonName = "Nvk3UT"
 
 local NS = addonName .. "_QuestEvents"
 
-local function OnQuestConditionChanged(_, journalIndex, ...)
+Nvk3UT_QuestUpdateScheduler = Nvk3UT_QuestUpdateScheduler or {
+    pending = {},
+    timerActive = false,
+    DEBOUNCE_MS = 100,
+}
+
+local scheduler = Nvk3UT_QuestUpdateScheduler
+
+local function QuestUpdateScheduler_Flush()
+    scheduler.timerActive = false
+
+    local toProcess = scheduler.pending
+    scheduler.pending = {}
+
+    for journalIndex in pairs(toProcess) do
+        UpdateSingleQuest(journalIndex)
+        RedrawSingleQuestFromLocalDB(journalIndex)
+    end
+end
+
+local function QuestUpdateScheduler_Request(journalIndex)
     if type(journalIndex) ~= "number" then
         return
     end
 
-    UpdateSingleQuest(journalIndex)
-    RedrawSingleQuestFromLocalDB(journalIndex)
+    scheduler.pending[journalIndex] = true
+
+    if not scheduler.timerActive then
+        scheduler.timerActive = true
+        zo_callLater(QuestUpdateScheduler_Flush, scheduler.DEBOUNCE_MS)
+    end
+end
+
+local function OnQuestConditionChanged(_, journalIndex, ...)
+    QuestUpdateScheduler_Request(journalIndex)
 end
 
 local function OnQuestAdvanced(_, journalIndex, ...)
-    if type(journalIndex) ~= "number" then
-        return
-    end
-
-    UpdateSingleQuest(journalIndex)
-    RedrawSingleQuestFromLocalDB(journalIndex)
+    QuestUpdateScheduler_Request(journalIndex)
 end
 
 local function OnQuestAdded(_, journalIndex, ...)
-    if type(journalIndex) ~= "number" then
-        return
-    end
-
-    UpdateSingleQuest(journalIndex)
-    RedrawSingleQuestFromLocalDB(journalIndex)
+    QuestUpdateScheduler_Request(journalIndex)
 end
 
 local function OnQuestToolUpdated(_, journalIndex, ...)
-    if type(journalIndex) ~= "number" then
-        return
-    end
-
-    UpdateSingleQuest(journalIndex)
-    RedrawSingleQuestFromLocalDB(journalIndex)
+    QuestUpdateScheduler_Request(journalIndex)
 end
 
 local function OnQuestRemoved(_, isCompleted, journalIndex, questName, ...)
@@ -43,6 +56,7 @@ local function OnQuestRemoved(_, isCompleted, journalIndex, questName, ...)
         return
     end
 
+    scheduler.pending[journalIndex] = nil
     RemoveQuestFromLocalQuestDB(journalIndex)
     RedrawSingleQuestFromLocalDB(journalIndex)
 end
