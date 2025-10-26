@@ -111,45 +111,33 @@ local function AcquireTimestampMs()
     return nil
 end
 
-local function ShouldConsiderStep(questIsComplete, isVisible, isOptional, isTracked)
-    if not isVisible then
-        return false
-    end
-
-    if questIsComplete then
-        return true
-    end
-
-    if isOptional and not isTracked then
-        return false
-    end
-
-    return true
-end
-
 local function CollectActiveObjectives(journalIndex, questIsComplete)
     if type(GetJournalQuestNumSteps) ~= "function" or type(GetJournalQuestStepInfo) ~= "function" then
-        return {}, nil, nil
+        return {}, nil
     end
+
+    -- Collect every visible condition across all steps so the tracker mirrors the journal "Objectives" list.
+    local objectiveList = {}
+    local seen = {}
+    local fallbackStepText = nil
 
     local numSteps = GetJournalQuestNumSteps(journalIndex)
     if type(numSteps) ~= "number" or numSteps <= 0 then
-        return {}, nil, nil
+        return objectiveList, fallbackStepText
     end
 
-    local fallbackStepText = nil
     for stepIndex = 1, numSteps do
-        local stepText, stepType, numConditions, isVisible, isComplete, isOptional, isTracked = GetJournalQuestStepInfo(journalIndex, stepIndex)
+        local stepText, _, numConditions, isVisible, isStepComplete = GetJournalQuestStepInfo(journalIndex, stepIndex)
         numConditions = tonumber(numConditions) or 0
-        local sanitizedStepText = StripProgressDecorations(stepText)
 
+        local sanitizedStepText = StripProgressDecorations(stepText)
         if not fallbackStepText and sanitizedStepText then
             fallbackStepText = sanitizedStepText
         end
 
-        local considerStep = ShouldConsiderStep(questIsComplete, isVisible == true, isOptional == true, isTracked == true)
-        if considerStep then
-            local objectives = {}
+        if isVisible ~= false then
+            local addedObjectiveForStep = false
+
             if numConditions > 0 and type(GetJournalQuestConditionInfo) == "function" then
                 for conditionIndex = 1, numConditions do
                     local conditionText, current, maxValue, isFailCondition, isConditionComplete, _, isConditionVisible = GetJournalQuestConditionInfo(journalIndex, stepIndex, conditionIndex)
@@ -158,36 +146,39 @@ local function CollectActiveObjectives(journalIndex, questIsComplete)
                     local isFail = (isFailCondition == true)
 
                     if formattedCondition and isVisibleCondition and not isFail then
-                        objectives[#objectives + 1] = {
-                            displayText = formattedCondition,
-                            current = tonumber(current) or 0,
-                            max = tonumber(maxValue) or 0,
-                            complete = isConditionComplete == true,
-                            isTurnIn = false,
-                        }
+                        addedObjectiveForStep = true
+
+                        if not seen[formattedCondition] then
+                            seen[formattedCondition] = true
+                            objectiveList[#objectiveList + 1] = {
+                                displayText = formattedCondition,
+                                current = tonumber(current) or 0,
+                                max = tonumber(maxValue) or 0,
+                                complete = isConditionComplete == true,
+                                isTurnIn = false,
+                            }
+                        end
                     end
                 end
             end
 
-            if #objectives > 0 then
-                return objectives, sanitizedStepText, stepType
-            end
-
-            local fallbackObjective = NormalizeObjectiveDisplayText(stepText)
-            if fallbackObjective then
-                objectives[1] = {
-                    displayText = fallbackObjective,
-                    current = 0,
-                    max = 0,
-                    complete = isComplete == true,
-                    isTurnIn = false,
-                }
-                return objectives, sanitizedStepText, stepType
+            if not addedObjectiveForStep then
+                local fallbackObjective = NormalizeObjectiveDisplayText(stepText)
+                if fallbackObjective and not seen[fallbackObjective] then
+                    seen[fallbackObjective] = true
+                    objectiveList[#objectiveList + 1] = {
+                        displayText = fallbackObjective,
+                        current = 0,
+                        max = 0,
+                        complete = isStepComplete == true,
+                        isTurnIn = false,
+                    }
+                end
             end
         end
     end
 
-    return {}, fallbackStepText, nil
+    return objectiveList, fallbackStepText
 end
 
 local function DetermineCategoryInfo(journalIndex, questType, displayType, isRepeatable, isDaily)
