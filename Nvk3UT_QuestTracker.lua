@@ -1255,16 +1255,17 @@ local function CanQuestBeShownOnMap(journalIndex)
         return false
     end
 
-    if type(DoesJournalQuestHaveWorldMapLocation) == "function" then
-        local ok, hasLocation = SafeCall(DoesJournalQuestHaveWorldMapLocation, normalized)
-        if ok and IsTruthy(hasLocation) then
-            return true
-        end
+    -- Mirror the base quest journal gating so availability matches the vanilla UI.
+    local managerOk, managerResult = QuestManagerCall("CanShowOnMap", normalized)
+    if managerOk then
+        return IsTruthy(managerResult)
     end
 
-    local managerOk, managerResult = QuestManagerCall("CanShowQuestOnMap", normalized)
-    if managerOk and IsTruthy(managerResult) then
-        return true
+    if type(DoesJournalQuestHaveWorldMapLocation) == "function" then
+        local ok, hasLocation = SafeCall(DoesJournalQuestHaveWorldMapLocation, normalized)
+        if ok then
+            return IsTruthy(hasLocation)
+        end
     end
 
     return false
@@ -1273,6 +1274,13 @@ end
 local function ShowQuestOnMap(journalIndex)
     local normalized = NormalizeJournalIndex(journalIndex)
     if not normalized then
+        return
+    end
+
+    -- Drive the same path the base quest journal uses before falling back to the
+    -- direct world map helper so we stay aligned with vanilla behavior.
+    local managerOk = QuestManagerCall("ShowOnMap", normalized)
+    if managerOk then
         return
     end
 
