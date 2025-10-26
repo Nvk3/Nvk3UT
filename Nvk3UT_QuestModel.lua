@@ -135,7 +135,13 @@ local function CollectActiveObjectives(journalIndex, questIsComplete)
             fallbackStepText = sanitizedStepText
         end
 
-        if isVisible ~= false then
+        local stepIsVisible = (isVisible ~= false)
+        if questIsComplete and not stepIsVisible then
+            -- Completed quests sometimes hide their final step even though the journal still shows the hand-in objective.
+            stepIsVisible = true
+        end
+
+        if stepIsVisible then
             local addedObjectiveForStep = false
 
             if numConditions > 0 and type(GetJournalQuestConditionInfo) == "function" then
@@ -143,6 +149,11 @@ local function CollectActiveObjectives(journalIndex, questIsComplete)
                     local conditionText, current, maxValue, isFailCondition, isConditionComplete, _, isConditionVisible = GetJournalQuestConditionInfo(journalIndex, stepIndex, conditionIndex)
                     local formattedCondition = NormalizeObjectiveDisplayText(conditionText)
                     local isVisibleCondition = (isConditionVisible ~= false)
+                    if questIsComplete and not isVisibleCondition then
+                        -- Some quests hide the final hand-in objective once the quest is flagged complete.
+                        -- We still want to surface those lines so the tracker mirrors the journal UI.
+                        isVisibleCondition = true
+                    end
                     local isFail = (isFailCondition == true)
 
                     if formattedCondition and isVisibleCondition and not isFail then
