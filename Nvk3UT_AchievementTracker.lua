@@ -1115,25 +1115,37 @@ local function UpdateAchievementIconSlot(control)
     end
 end
 
+local function ShouldShowObjectiveCounter(objective)
+    if not objective then
+        return false
+    end
+
+    local maxValue = tonumber(objective.max)
+    if not maxValue then
+        return false
+    end
+
+    if maxValue <= 1 then
+        return false
+    end
+
+    local current = objective.current
+    if current == nil or current == "" then
+        return false
+    end
+
+    return true
+end
+
 local function FormatObjectiveText(objective)
     local description = FormatDisplayString(objective.description)
     if description == "" then
         return ""
     end
 
-    local current = objective.current
-    local maxValue = objective.max
-
-    local hasCurrent = current ~= nil and current ~= ""
-    local hasMax = maxValue ~= nil and maxValue ~= ""
-
-    local text
-    if hasCurrent and hasMax then
-        text = string.format("%s (%s/%s)", description, tostring(current), tostring(maxValue))
-    elseif hasCurrent then
-        text = string.format("%s (%s)", description, tostring(current))
-    else
-        text = description
+    local text = description
+    if ShouldShowObjectiveCounter(objective) then
+        text = string.format("%s (%s/%s)", description, tostring(objective.current), tostring(objective.max))
     end
 
     return FormatDisplayString(text)
@@ -1145,6 +1157,16 @@ local function ShouldDisplayObjective(objective)
     end
 
     if objective.isVisible == false then
+        return false
+    end
+
+    if objective.isComplete then
+        return false
+    end
+
+    local current = tonumber(objective.current)
+    local maxValue = tonumber(objective.max)
+    if current and maxValue and maxValue > 0 and current >= maxValue then
         return false
     end
 
