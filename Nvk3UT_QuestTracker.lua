@@ -71,6 +71,7 @@ local IsQuestExpanded -- forward declaration so earlier functions can query ques
 local HandleQuestRowClick -- forward declaration for quest row click orchestration
 local FlushPendingTrackedQuestUpdate -- forward declaration for deferred tracking updates
 local ProcessTrackedQuestUpdate -- forward declaration for deferred tracking processing
+local RelayoutFromCategoryIndex -- forward declaration for category relayout helper
 local SafeCall -- forward declaration for safe wrapper utility
 
 local state = {
