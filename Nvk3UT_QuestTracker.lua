@@ -87,6 +87,10 @@ local RelayoutFromCategoryIndex -- forward declaration for category relayout hel
 local SafeCall -- forward declaration for safe wrapper utility
 local UpdateQuestControlHeight -- forward declaration for quest row sizing helper
 local ApplyCategoryExpansionVisuals -- forward declaration so expansion visuals can run before the helper is defined
+local function NoOp() end
+local UpdateContentSize = NoOp -- seeded so early restack calls are harmless until initialization completes
+local NotifyHostContentChanged = NoOp
+local ProcessPendingExternalReveal = NoOp
 
 local state = {
     isInitialized = false,
@@ -1989,7 +1993,7 @@ local function EnsureQuestRowVisible(journalIndex, options)
     return true
 end
 
-local function ProcessPendingExternalReveal()
+local function ProcessPendingExternalRevealImpl()
     local pending = state.pendingExternalReveal
     if not pending then
         return
@@ -1998,6 +2002,8 @@ local function ProcessPendingExternalReveal()
     state.pendingExternalReveal = nil
     EnsureQuestRowVisible(pending.questId, { allowQueue = false })
 end
+
+ProcessPendingExternalReveal = ProcessPendingExternalRevealImpl
 
 local function DoesJournalQuestExist(journalIndex)
     if not (journalIndex and GetJournalQuestName) then
@@ -2900,7 +2906,7 @@ local function UnregisterTrackingEvents()
     state.trackingEventsRegistered = false
 end
 
-local function NotifyHostContentChanged()
+local function NotifyHostContentChangedImpl()
     local host = Nvk3UT and Nvk3UT.TrackerHost
     if not (host and host.NotifyContentChanged) then
         return
@@ -2908,6 +2914,8 @@ local function NotifyHostContentChanged()
 
     pcall(host.NotifyContentChanged)
 end
+
+NotifyHostContentChanged = NotifyHostContentChangedImpl
 
 local function NotifyStatusRefresh()
     local ui = Nvk3UT and Nvk3UT.UI
@@ -3045,7 +3053,7 @@ local function AnchorControl(control, indentX)
     control.currentIndent = indentX
 end
 
-local function UpdateContentSize()
+local function UpdateContentSizeImpl()
     local maxWidth = 0
     local totalHeight = 0
     local visibleCategories = 0
@@ -3075,6 +3083,8 @@ local function UpdateContentSize()
     state.contentWidth = maxWidth
     state.contentHeight = totalHeight
 end
+
+UpdateContentSize = UpdateContentSizeImpl
 
 local function SelectCategoryToggleTexture(expanded, isMouseOver)
     local textures = expanded and CATEGORY_TOGGLE_TEXTURES.expanded or CATEGORY_TOGGLE_TEXTURES.collapsed
