@@ -1277,18 +1277,14 @@ local function ShowQuestOnMap(journalIndex)
         return
     end
 
-    -- Drive the same path the base quest journal uses before falling back to the
-    -- direct world map helper so we stay aligned with vanilla behavior.
-    local managerOk = QuestManagerCall("ShowOnMap", normalized)
-    if managerOk then
+    if type(ZO_WorldMap_ShowQuestOnMap) ~= "function" then
         return
     end
 
-    if type(ZO_WorldMap_ShowQuestOnMap) == "function" then
-        -- Delegate to the vanilla quest journal logic so the map focuses the
-        -- selected quest exactly like the base UI.
-        SafeCall(ZO_WorldMap_ShowQuestOnMap, normalized)
-    end
+    -- Mirror the reference tracker by delegating straight to the base-game
+    -- world map helper so the selected quest is highlighted using vanilla
+    -- logic.
+    SafeCall(ZO_WorldMap_ShowQuestOnMap, normalized)
 end
 
 local function CanQuestBeAbandoned(journalIndex)
