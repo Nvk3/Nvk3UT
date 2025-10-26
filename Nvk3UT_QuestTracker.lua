@@ -3452,7 +3452,7 @@ local function TrimOrderedControlsToCategory(keepCategoryCount)
     state.lastAnchoredControl = state.orderedControls[#state.orderedControls]
 end
 
-local function RelayoutFromCategoryIndex(startCategoryIndex)
+RelayoutFromCategoryIndex = function(startCategoryIndex)
     ApplyActiveQuestFromSaved()
     EnsurePools()
 
