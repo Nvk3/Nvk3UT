@@ -3448,11 +3448,12 @@ local function ApplyObjectivesToNode(node, objectives, expanded)
         objectiveControl:ClearAnchors()
         if previous then
             objectiveControl:SetAnchor(TOPLEFT, previous, BOTTOMLEFT, 0, VERTICAL_PADDING)
-            objectiveControl:SetAnchor(TOPRIGHT, previous, BOTTOMRIGHT, 0, VERTICAL_PADDING)
         else
             objectiveControl:SetAnchor(TOPLEFT, container, TOPLEFT, 0, OBJECTIVE_TOP_PADDING)
-            objectiveControl:SetAnchor(TOPRIGHT, container, TOPRIGHT, 0, OBJECTIVE_TOP_PADDING)
         end
+        -- Anchor the right edge to the container so every objective line uses the
+        -- same available width regardless of the previous row's measured width.
+        objectiveControl:SetAnchor(RIGHT, container, RIGHT, 0, 0)
 
         local lineText = objective and objective.displayText or ""
         if objective and objective.isTurnIn then
