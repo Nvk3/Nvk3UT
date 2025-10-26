@@ -120,6 +120,7 @@ local function CollectActiveObjectives(journalIndex, questIsComplete)
     local objectiveList = {}
     local seen = {}
     local fallbackStepText = nil
+    local fallbackObjectiveText = nil
 
     local numSteps = GetJournalQuestNumSteps(journalIndex)
     if type(numSteps) ~= "number" or numSteps <= 0 then
@@ -175,18 +176,21 @@ local function CollectActiveObjectives(journalIndex, questIsComplete)
 
             if not addedObjectiveForStep then
                 local fallbackObjective = NormalizeObjectiveDisplayText(stepText)
-                if fallbackObjective and not seen[fallbackObjective] then
-                    seen[fallbackObjective] = true
-                    objectiveList[#objectiveList + 1] = {
-                        displayText = fallbackObjective,
-                        current = 0,
-                        max = 0,
-                        complete = isStepComplete == true,
-                        isTurnIn = false,
-                    }
+                if fallbackObjective then
+                    fallbackObjectiveText = fallbackObjective
                 end
             end
         end
+    end
+
+    if #objectiveList == 0 and fallbackObjectiveText and not seen[fallbackObjectiveText] then
+        objectiveList[1] = {
+            displayText = fallbackObjectiveText,
+            current = 0,
+            max = 0,
+            complete = false,
+            isTurnIn = false,
+        }
     end
 
     return objectiveList, fallbackStepText
