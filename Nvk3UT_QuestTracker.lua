@@ -1328,7 +1328,7 @@ local function ApplyRowMetrics(control, indent, toggleWidth, leftPadding, rightP
     end
 end
 
-local function RefreshControlMetrics(control)
+RefreshControlMetrics = function(control)
     if not control or not control.label then
         return
     end
