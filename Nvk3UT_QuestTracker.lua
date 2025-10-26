@@ -1151,6 +1151,19 @@ local function RefreshControlMetrics(control)
             0,
             QUEST_MIN_HEIGHT
         )
+
+        local baseHeight = control.baseHeight or QUEST_MIN_HEIGHT
+        local objectiveHeight = control.objectivesHeight or 0
+        if control.objectiveContainer and control.objectiveContainer.GetHeight then
+            local containerHeight = control.objectiveContainer:GetHeight() or 0
+            if containerHeight > objectiveHeight then
+                objectiveHeight = containerHeight
+            end
+        end
+
+        if control.SetHeight then
+            control:SetHeight(baseHeight + math.max(0, objectiveHeight))
+        end
     elseif rowType == "condition" or rowType == "objective" then
         ApplyRowMetrics(control, indent, 0, 0, 0, CONDITION_MIN_HEIGHT)
     end
@@ -3120,6 +3133,7 @@ local function AcquireQuestControl()
         if control.objectiveContainer and control.objectiveContainer.SetHeight then
             control.objectiveContainer:SetHeight(0)
         end
+        control.objectivesHeight = 0
         if control.iconSlot then
             control.iconSlot:SetDimensions(QUEST_ICON_SLOT_WIDTH, QUEST_ICON_SLOT_HEIGHT)
             control.iconSlot:ClearAnchors()
@@ -3307,6 +3321,10 @@ local function EnsurePools()
         if control.SetResizeToFitDescendents then
             control:SetResizeToFitDescendents(true)
         end
+        control.objectivesHeight = 0
+        if control.SetHeight then
+            control:SetHeight(QUEST_MIN_HEIGHT)
+        end
         if control.objectiveContainer then
             if control.objectiveContainer.SetHidden then
                 control.objectiveContainer:SetHidden(true)
@@ -3406,6 +3424,7 @@ local function ApplyObjectivesToNode(node, objectives, expanded)
     end
 
     local objectiveCount = type(objectives) == "table" and #objectives or 0
+    local baseHeight = questControl.baseHeight or (questControl:GetHeight() or QUEST_MIN_HEIGHT)
 
     if not expanded or objectiveCount == 0 then
         for index = 1, #controls do
@@ -3423,11 +3442,16 @@ local function ApplyObjectivesToNode(node, objectives, expanded)
         if container.SetResizeToFitDescendents then
             container:SetResizeToFitDescendents(true)
         end
+        questControl.objectivesHeight = 0
+        if questControl.SetHeight then
+            questControl:SetHeight(baseHeight)
+        end
         return true
     end
 
     local previous = nil
     local indent = (questControl.currentIndent or QUEST_INDENT_X) + CONDITION_RELATIVE_INDENT
+    local objectiveHeightTotal = 0
 
     for index = 1, objectiveCount do
         local objective = objectives[index]
@@ -3487,6 +3511,14 @@ local function ApplyObjectivesToNode(node, objectives, expanded)
 
         ApplyRowMetrics(objectiveControl, indent, 0, 0, 0, CONDITION_MIN_HEIGHT)
         objectiveControl:SetHidden(false)
+
+        local height = objectiveControl.GetHeight and objectiveControl:GetHeight() or CONDITION_MIN_HEIGHT
+        if index == 1 then
+            objectiveHeightTotal = OBJECTIVE_TOP_PADDING + height
+        else
+            objectiveHeightTotal = objectiveHeightTotal + VERTICAL_PADDING + height
+        end
+
         previous = objectiveControl
     end
 
@@ -3497,11 +3529,21 @@ local function ApplyObjectivesToNode(node, objectives, expanded)
         end
     end
 
+    objectiveHeightTotal = math.max(0, objectiveHeightTotal)
+
     if container.SetHidden then
         container:SetHidden(false)
     end
     if container.SetResizeToFitDescendents then
-        container:SetResizeToFitDescendents(true)
+        container:SetResizeToFitDescendents(false)
+    end
+    if container.SetHeight then
+        container:SetHeight(objectiveHeightTotal)
+    end
+
+    questControl.objectivesHeight = objectiveHeightTotal
+    if questControl.SetHeight then
+        questControl:SetHeight(baseHeight + objectiveHeightTotal)
     end
 
     return true
@@ -3781,6 +3823,7 @@ function QuestTracker:RefreshQuestObjectivesOnly(journalIndex)
             if questControl.SetHeight then
                 questControl:SetHeight(0)
             end
+            questControl.objectivesHeight = 0
             questControl.data = questControl.data or {}
             questControl.data.quest = nil
         end
