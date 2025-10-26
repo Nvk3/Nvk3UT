@@ -428,6 +428,39 @@ local function RemoveAchievementFromFavorites(achievementId)
     end
 end
 
+local function ResolveAchievementEntry(achievementsSystem, achievementId)
+    if not achievementsSystem or not achievementsSystem.achievementsById then
+        return nil
+    end
+
+    local candidates = {}
+    if achievementId ~= nil then
+        candidates[#candidates + 1] = achievementId
+    end
+
+    local numericId = tonumber(achievementId)
+    if numericId and numericId ~= achievementId then
+        candidates[#candidates + 1] = numericId
+    end
+
+    local stringId = tostring(achievementId)
+    if stringId ~= achievementId then
+        candidates[#candidates + 1] = stringId
+    end
+
+    for index = 1, #candidates do
+        local key = candidates[index]
+        if key ~= nil then
+            local entry = achievementsSystem.achievementsById[key]
+            if entry then
+                return entry
+            end
+        end
+    end
+
+    return nil
+end
+
 local function CanOpenAchievement(achievementId)
     local numeric = tonumber(achievementId)
     if not numeric or numeric <= 0 then
@@ -451,6 +484,7 @@ local function CanOpenAchievement(achievementId)
 end
 
 local function OpenAchievementInJournal(achievementId)
+    local originalId = achievementId
     local numeric = tonumber(achievementId)
     if not numeric or numeric <= 0 then
         return false
@@ -465,6 +499,15 @@ local function OpenAchievementInJournal(achievementId)
 
     if SCENE_MANAGER and SCENE_MANAGER.IsShowing and not SCENE_MANAGER:IsShowing("achievements") then
         SCENE_MANAGER:Show("achievements")
+    end
+
+    local manager = ACHIEVEMENTS_MANAGER
+
+    if manager and manager.ShowAchievement then
+        local ok, result = pcall(manager.ShowAchievement, manager, numeric)
+        if ok and result ~= false then
+            return true
+        end
     end
 
     local achievementsSystem
@@ -482,8 +525,8 @@ local function OpenAchievementInJournal(achievementId)
     if achievementsSystem.contentSearchEditBox and achievementsSystem.contentSearchEditBox.GetText then
         if achievementsSystem.contentSearchEditBox:GetText() ~= "" then
             achievementsSystem.contentSearchEditBox:SetText("")
-            if ACHIEVEMENTS_MANAGER and ACHIEVEMENTS_MANAGER.ClearSearch then
-                ACHIEVEMENTS_MANAGER:ClearSearch(true)
+            if manager and manager.ClearSearch then
+                manager:ClearSearch(true)
             end
         end
     end
@@ -512,28 +555,33 @@ local function OpenAchievementInJournal(achievementId)
         end
     end
 
-    if achievementsSystem.achievementsById then
-        local entry = achievementsSystem.achievementsById[numeric]
-        if entry then
-            if entry.Expand then
-                entry:Expand()
+    local entry = ResolveAchievementEntry(achievementsSystem, originalId)
+    if entry then
+        if entry.Expand then
+            entry:Expand()
+        end
+        if entry.Select then
+            entry:Select()
+        end
+        if entry.GetControl and achievementsSystem.contentList and ZO_Scroll_ScrollControlIntoCentralView then
+            local control = entry:GetControl()
+            if control then
+                ZO_Scroll_ScrollControlIntoCentralView(achievementsSystem.contentList, control)
             end
-            if entry.Select then
-                entry:Select()
-            end
-            if entry.GetControl and achievementsSystem.contentList and ZO_Scroll_ScrollControlIntoCentralView then
-                local control = entry:GetControl()
-                if control then
-                    ZO_Scroll_ScrollControlIntoCentralView(achievementsSystem.contentList, control)
-                end
-            end
+        end
+        return true
+    end
+
+    if manager and manager.SelectAchievement then
+        local ok, result = pcall(manager.SelectAchievement, manager, numeric)
+        if ok and result ~= false then
             return true
         end
     end
 
-    if ACHIEVEMENTS_MANAGER and ACHIEVEMENTS_MANAGER.SelectAchievement then
-        local ok = pcall(ACHIEVEMENTS_MANAGER.SelectAchievement, ACHIEVEMENTS_MANAGER, numeric)
-        if ok then
+    if manager and manager.ShowAchievement then
+        local ok, result = pcall(manager.ShowAchievement, manager, numeric)
+        if ok and result ~= false then
             return true
         end
     end

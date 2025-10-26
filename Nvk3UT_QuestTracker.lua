@@ -1153,6 +1153,10 @@ local function SafeCall(func, ...)
     return true, result
 end
 
+local function IsTruthy(value)
+    return value ~= nil and value ~= false
+end
+
 local function NormalizeJournalIndex(journalIndex)
     local numeric = tonumber(journalIndex)
     if not numeric or numeric <= 0 then
@@ -1210,19 +1214,19 @@ local function CanQuestBeShared(journalIndex)
     end
 
     local managerOk, managerResult = QuestManagerCall("CanShareQuest", normalized)
-    if managerOk then
-        return managerResult == true
+    if managerOk and IsTruthy(managerResult) then
+        return true
     end
 
     managerOk, managerResult = QuestManagerCall("CanShareQuestInJournal", normalized)
-    if managerOk then
-        return managerResult == true
+    if managerOk and IsTruthy(managerResult) then
+        return true
     end
 
     if type(GetIsQuestSharable) == "function" then
         local ok, shareable = SafeCall(GetIsQuestSharable, normalized)
-        if ok then
-            return shareable == true
+        if ok and IsTruthy(shareable) then
+            return true
         end
     end
 
@@ -1253,14 +1257,14 @@ local function CanQuestBeShownOnMap(journalIndex)
 
     if type(DoesJournalQuestHaveWorldMapLocation) == "function" then
         local ok, hasLocation = SafeCall(DoesJournalQuestHaveWorldMapLocation, normalized)
-        if ok and hasLocation then
+        if ok and IsTruthy(hasLocation) then
             return true
         end
     end
 
     local managerOk, managerResult = QuestManagerCall("CanShowQuestOnMap", normalized)
-    if managerOk then
-        return managerResult == true
+    if managerOk and IsTruthy(managerResult) then
+        return true
     end
 
     return false
@@ -1291,7 +1295,7 @@ local function CanQuestBeAbandoned(journalIndex)
     if type(IsJournalQuestAbandonable) == "function" then
         local ok, abandonable = SafeCall(IsJournalQuestAbandonable, normalized)
         if ok then
-            return abandonable == true
+            return IsTruthy(abandonable)
         end
     end
 
