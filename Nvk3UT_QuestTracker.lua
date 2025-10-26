@@ -71,6 +71,7 @@ local IsQuestExpanded -- forward declaration so earlier functions can query ques
 local HandleQuestRowClick -- forward declaration for quest row click orchestration
 local FlushPendingTrackedQuestUpdate -- forward declaration for deferred tracking updates
 local ProcessTrackedQuestUpdate -- forward declaration for deferred tracking processing
+local SafeCall -- forward declaration for safe wrapper utility
 
 local state = {
     isInitialized = false,
@@ -1315,7 +1316,7 @@ local function LogCategoryExpansion(action, trigger, categoryKey, beforeExpanded
     EmitDebugAction(action, trigger, "category", fields)
 end
 
-local function SafeCall(func, ...)
+SafeCall = function(func, ...)
     if type(func) ~= "function" then
         return false, nil
     end
