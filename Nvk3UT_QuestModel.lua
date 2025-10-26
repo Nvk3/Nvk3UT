@@ -871,8 +871,10 @@ local function NormalizeNameForKey(name)
     end
 
     local normalized = tostring(name)
+    normalized = normalized:gsub("|[cC]%x%x%x%x%x%x%x%x", "")
+    normalized = normalized:gsub("|[rR]", "")
     normalized = normalized:gsub("%s+", " ")
-    normalized = normalized:gsub("[^%w%s]", "")
+    normalized = normalized:gsub("[^%w%s\128-\255]", "")
     normalized = normalized:lower()
     normalized = normalized:gsub("%s", "_")
     normalized = normalized:gsub("_+", "_")
@@ -884,6 +886,59 @@ local function NormalizeNameForKey(name)
     end
 
     return normalized
+end
+
+local function RegisterCategoryName(lookup, name, entry)
+    if not lookup or not entry then
+        return
+    end
+
+    if not name or name == "" then
+        return
+    end
+
+    local bucket = lookup[name]
+    if not bucket then
+        bucket = {}
+        lookup[name] = bucket
+    end
+
+    bucket[#bucket + 1] = entry
+end
+
+local function RegisterCategoryLookupVariants(lookup, name, entry)
+    if not lookup or not entry then
+        return
+    end
+
+    RegisterCategoryName(lookup, name, entry)
+
+    local normalized = NormalizeNameForKey(name)
+    if normalized and normalized ~= name then
+        RegisterCategoryName(lookup, normalized, entry)
+    end
+end
+
+local function FetchCategoryCandidates(lookup, name)
+    if not lookup then
+        return nil
+    end
+
+    if not name or name == "" then
+        return nil
+    end
+
+    local candidates = lookup[name]
+    if candidates then
+        return candidates
+    end
+
+    local normalized = NormalizeNameForKey(name)
+    if normalized then
+        return lookup[normalized]
+    end
+
+    return nil
 end
 
 local function BuildLeafKey(groupEntry, identifier, name, orderSuffix)
@@ -1158,12 +1213,7 @@ local function BuildBaseCategoryCacheFromData(questList, categoryList)
         categoriesByKey[entry.key] = entry
 
         local categoryName = ExtractCategoryName(rawCategory)
-        if categoryName and categoryName ~= "" then
-            if not categoriesByName[categoryName] then
-                categoriesByName[categoryName] = {}
-            end
-            categoriesByName[categoryName][#categoriesByName[categoryName] + 1] = entry
-        end
+        RegisterCategoryLookupVariants(categoriesByName, categoryName, entry)
     end
 
     local questCategoriesByJournalIndex = {}
@@ -1174,8 +1224,8 @@ local function BuildBaseCategoryCacheFromData(questList, categoryList)
         local categoryName = ExtractQuestCategoryName(questData)
         local categoryEntry = nil
 
-        if categoryName and categoriesByName[categoryName] then
-            local possible = categoriesByName[categoryName]
+        local possible = FetchCategoryCandidates(categoriesByName, categoryName)
+        if categoryName and possible then
             if #possible == 1 then
                 categoryEntry = possible[1]
             else
