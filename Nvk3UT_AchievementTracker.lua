@@ -19,6 +19,37 @@ local FormatCategoryHeaderText =
         return text
     end
 
+local function FormatDisplayString(text)
+    if text == nil then
+        return ""
+    end
+
+    local value = text
+    if type(value) ~= "string" then
+        value = tostring(value)
+    end
+
+    if value == "" then
+        return ""
+    end
+
+    if type(ZO_CachedStrFormat) == "function" then
+        local ok, formatted = pcall(ZO_CachedStrFormat, "<<1>>", value)
+        if ok and formatted ~= nil then
+            return formatted
+        end
+    end
+
+    if type(zo_strformat) == "function" then
+        local ok, formatted = pcall(zo_strformat, "<<1>>", value)
+        if ok and formatted ~= nil then
+            return formatted
+        end
+    end
+
+    return value
+end
+
 local CATEGORY_TOGGLE_TEXTURES = {
     expanded = {
         up = "EsoUI/Art/Buttons/tree_open_up.dds",
@@ -1085,7 +1116,7 @@ local function UpdateAchievementIconSlot(control)
 end
 
 local function FormatObjectiveText(objective)
-    local description = objective.description or ""
+    local description = FormatDisplayString(objective.description)
     if description == "" then
         return ""
     end
@@ -1105,10 +1136,7 @@ local function FormatObjectiveText(objective)
         text = description
     end
 
-    if zo_strformat then
-        return zo_strformat("<<1>>", text)
-    end
-    return text
+    return FormatDisplayString(text)
 end
 
 local function ShouldDisplayObjective(objective)
@@ -1335,7 +1363,7 @@ local function LayoutAchievement(achievement)
         hasObjectives = hasObjectives,
         isFavorite = isFavorite,
     }
-    control.label:SetText(achievement.name or "")
+    control.label:SetText(FormatDisplayString(achievement.name))
     local r, g, b, a = GetAchievementTrackerColor("entryTitle")
     ApplyBaseColor(control, r, g, b, a)
 
