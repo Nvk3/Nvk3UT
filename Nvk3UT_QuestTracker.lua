@@ -12,6 +12,7 @@ QuestTracker.__index = QuestTracker
 QuestTracker.questNodesByIndex = Nvk3UT_QuestTracker.questNodesByIndex
 QuestTracker.categoriesByKey = Nvk3UT_QuestTracker.categoriesByKey
 QuestTracker.categoriesDisplayOrder = Nvk3UT_QuestTracker.categoriesDisplayOrder
+QuestTracker._postLayoutScheduled = QuestTracker._postLayoutScheduled or false
 
 local MODULE_NAME = addonName .. "QuestTracker"
 local EVENT_NAMESPACE = MODULE_NAME .. "_Event"
@@ -1037,6 +1038,52 @@ function QuestTracker:RestackAllCategories()
     local containerWidth = container.GetWidth and container:GetWidth() or 0
     if containerWidth and containerWidth > 0 then
         state.contentWidth = containerWidth
+    end
+end
+
+function QuestTracker:PostLayoutPass()
+    if not state.isInitialized then
+        return
+    end
+
+    self._postLayoutScheduled = false
+
+    if questNodesByIndex then
+        for _, node in pairs(questNodesByIndex) do
+            self:UpdateQuestControlHeight(node)
+        end
+    end
+
+    if categoriesByKey then
+        for _, storageKey in ipairs(categoriesDisplayOrder) do
+            if storageKey then
+                self:RestackCategory(storageKey)
+            end
+        end
+    end
+
+    self:RestackAllCategories()
+    UpdateContentSize()
+    NotifyHostContentChanged()
+    ProcessPendingExternalReveal()
+end
+
+function QuestTracker:SchedulePostLayoutPass()
+    if self._postLayoutScheduled then
+        return
+    end
+
+    local function execute()
+        self._postLayoutScheduled = false
+        self:PostLayoutPass()
+    end
+
+    self._postLayoutScheduled = true
+
+    if zo_callLater then
+        zo_callLater(execute, 0)
+    else
+        execute()
     end
 end
 
@@ -4244,7 +4291,6 @@ local function BuildCategoryFromSnapshot(tracker, category)
 
     UpdateCategoryHeaderDisplay(entry)
     ApplyCategoryExpansionVisuals(entry)
-    tracker:RestackCategory(entry.storageKey)
 
     return entry
 end
@@ -4264,10 +4310,7 @@ function QuestTracker:RebuildFromSnapshot(snapshot)
         BuildCategoryFromSnapshot(self, ordered[index])
     end
 
-    self:RestackAllCategories()
-    UpdateContentSize()
-    NotifyHostContentChanged()
-    ProcessPendingExternalReveal()
+    self:SchedulePostLayoutPass()
 end
 
 local function ReleaseRowControl(control)
@@ -4630,6 +4673,8 @@ function QuestTracker.Shutdown()
     if not state.isInitialized then
         return
     end
+
+    QuestTracker._postLayoutScheduled = false
 
     UnregisterCombatEvents()
     UnregisterTrackingEvents()
