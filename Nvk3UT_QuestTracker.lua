@@ -3445,19 +3445,6 @@ local function LayoutQuest(quest)
         state.questControls[quest.journalIndex] = control
     end
 
-    if quest and type(quest.headerText) == "string" and quest.headerText ~= "" then
-        LayoutCondition({
-            text = quest.headerText,
-            current = 0,
-            max = 0,
-            isVisible = true,
-            isComplete = false,
-            isFailCondition = false,
-            isTurnIn = false,
-            forceDisplay = true,
-        })
-    end
-
     if expanded then
         for stepIndex = 1, #quest.steps do
             local step = quest.steps[stepIndex]
