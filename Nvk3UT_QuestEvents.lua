@@ -4,21 +4,61 @@ local NS = addonName .. "_QuestEvents"
 
 Nvk3UT_QuestUpdateScheduler = Nvk3UT_QuestUpdateScheduler or {
     pending = {},
+    queue = {},
+    queueSet = {},
+    processing = false,
     timerActive = false,
     DEBOUNCE_MS = 100,
 }
 
 local scheduler = Nvk3UT_QuestUpdateScheduler
 
+local function ProcessNextPendingQuest()
+    local queue = scheduler.queue
+    local nextIndex = queue and queue[1]
+
+    if not nextIndex then
+        scheduler.processing = false
+        return
+    end
+
+    table.remove(queue, 1)
+    scheduler.queueSet[nextIndex] = nil
+
+    if type(Nvk3UT_ProcessSingleQuestUpdate) == "function" then
+        Nvk3UT_ProcessSingleQuestUpdate(nextIndex)
+    else
+        UpdateSingleQuest(nextIndex)
+        RedrawSingleQuestFromLocalDB(nextIndex)
+    end
+
+    zo_callLater(ProcessNextPendingQuest, 0)
+end
+
 local function QuestUpdateScheduler_Flush()
     scheduler.timerActive = false
 
-    local toProcess = scheduler.pending
+    local pending = scheduler.pending
     scheduler.pending = {}
 
-    for journalIndex in pairs(toProcess) do
-        UpdateSingleQuest(journalIndex)
-        RedrawSingleQuestFromLocalDB(journalIndex)
+    local queue = scheduler.queue
+    if type(queue) ~= "table" then
+        queue = {}
+        scheduler.queue = queue
+    end
+
+    local queueSet = scheduler.queueSet
+
+    for journalIndex in pairs(pending) do
+        if not queueSet[journalIndex] then
+            queue[#queue + 1] = journalIndex
+            queueSet[journalIndex] = true
+        end
+    end
+
+    if (not scheduler.processing) and (#queue > 0) then
+        scheduler.processing = true
+        ProcessNextPendingQuest()
     end
 end
 
@@ -57,6 +97,17 @@ local function OnQuestRemoved(_, isCompleted, journalIndex, questName, ...)
     end
 
     scheduler.pending[journalIndex] = nil
+    if scheduler.queueSet[journalIndex] then
+        scheduler.queueSet[journalIndex] = nil
+
+        local queue = scheduler.queue
+        for index = #queue, 1, -1 do
+            if queue[index] == journalIndex then
+                table.remove(queue, index)
+            end
+        end
+    end
+
     RemoveQuestFromLocalQuestDB(journalIndex)
     RedrawSingleQuestFromLocalDB(journalIndex)
 end

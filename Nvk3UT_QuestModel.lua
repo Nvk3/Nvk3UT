@@ -1064,10 +1064,104 @@ function UpdateSingleQuest(journalIndex)
 
     LocalQuestDB.version = (LocalQuestDB.version or 0) + 1
 
-    if d then
-        d(string.format("[Nvk3UT] UpdateSingleQuest(%s) -> version %s", tostring(journalIndex), tostring(LocalQuestDB.version)))
+end
+
+local function BuildVisibleQuestSnapshot(record)
+    if not record then
+        return nil
     end
 
+    local snapshot = {
+        name = record.name,
+        categoryKey = record.categoryKey,
+        categoryName = record.categoryName,
+        objectives = {},
+    }
+
+    local objectives = record.objectives or {}
+    for index = 1, #objectives do
+        local objective = objectives[index]
+        snapshot.objectives[index] = {
+            displayText = objective and objective.displayText or nil,
+            isTurnIn = not not (objective and objective.isTurnIn),
+        }
+    end
+
+    return snapshot
+end
+
+local function AreVisibleQuestDetailsUnchanged(oldSnapshot, newSnapshot)
+    if (not oldSnapshot) or (not newSnapshot) then
+        return false
+    end
+
+    if oldSnapshot.name ~= newSnapshot.name then
+        return false
+    end
+
+    if oldSnapshot.categoryKey ~= newSnapshot.categoryKey then
+        return false
+    end
+
+    if oldSnapshot.categoryName ~= newSnapshot.categoryName then
+        return false
+    end
+
+    local oldObjectives = oldSnapshot.objectives or {}
+    local newObjectives = newSnapshot.objectives or {}
+
+    if #oldObjectives ~= #newObjectives then
+        return false
+    end
+
+    for index = 1, #oldObjectives do
+        local oldObjective = oldObjectives[index]
+        local newObjective = newObjectives[index]
+
+        if (not oldObjective) or (not newObjective) then
+            return false
+        end
+
+        if oldObjective.displayText ~= newObjective.displayText then
+            return false
+        end
+
+        if oldObjective.isTurnIn ~= newObjective.isTurnIn then
+            return false
+        end
+    end
+
+    return true
+end
+
+function Nvk3UT_ProcessSingleQuestUpdate(journalIndex)
+    if type(journalIndex) ~= "number" then
+        return
+    end
+
+    LocalQuestDB = LocalQuestDB or { quests = {}, version = 0 }
+
+    local questsTable = LocalQuestDB.quests or {}
+    local oldRecord = questsTable[journalIndex]
+    local oldSnapshot = BuildVisibleQuestSnapshot(oldRecord)
+
+    UpdateSingleQuest(journalIndex)
+
+    questsTable = LocalQuestDB.quests or {}
+    local newRecord = questsTable[journalIndex]
+
+    if not newRecord then
+        RedrawSingleQuestFromLocalDB(journalIndex)
+        return
+    end
+
+    local newSnapshot = BuildVisibleQuestSnapshot(newRecord)
+
+    if AreVisibleQuestDetailsUnchanged(oldSnapshot, newSnapshot) then
+        return
+    end
+
+    RedrawSingleQuestFromLocalDB(journalIndex)
 end
 
 function RemoveQuestFromLocalQuestDB(journalIndex)
@@ -1075,10 +1169,6 @@ function RemoveQuestFromLocalQuestDB(journalIndex)
 
     LocalQuestDB.quests[journalIndex] = nil
     LocalQuestDB.version = (LocalQuestDB.version or 0) + 1
-
-    if d then
-        d(string.format("[Nvk3UT] RemoveQuestFromLocalQuestDB(%s) -> version %s", tostring(journalIndex), tostring(LocalQuestDB.version)))
-    end
 
 end
 
