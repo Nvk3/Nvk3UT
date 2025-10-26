@@ -67,6 +67,9 @@ local REFRESH_DEBOUNCE_MS = 80
 local COLOR_ROW_HOVER = { 1, 1, 0.6, 1 }
 local FOCUS_HIGHLIGHT_DURATION_MS = 1600
 
+local FAVORITES_LOOKUP_KEY = "NVK3UT_FAVORITES_ROOT"
+local FAVORITES_CATEGORY_ID = "Nvk3UT_Favorites"
+
 local state = {
     isInitialized = false,
     opts = {},
@@ -463,6 +466,57 @@ local function ResolveAchievementEntry(achievementsSystem, achievementId)
     return nil
 end
 
+local function FocusAchievementInSystem(achievementsSystem, manager, achievementId, originalId)
+    if not achievementsSystem then
+        return false
+    end
+
+    local numericId = tonumber(achievementId)
+    local lookupId = originalId or achievementId
+
+    if numericId and achievementsSystem.FocusAchievement then
+        local ok = pcall(achievementsSystem.FocusAchievement, achievementsSystem, numericId)
+        if ok then
+            return true
+        end
+    end
+
+    local entry = ResolveAchievementEntry(achievementsSystem, lookupId)
+    if entry then
+        if entry.Expand then
+            entry:Expand()
+        end
+        if entry.Select then
+            entry:Select()
+        end
+        if entry.GetControl and achievementsSystem.contentList and ZO_Scroll_ScrollControlIntoCentralView then
+            local control = entry:GetControl()
+            if control then
+                ZO_Scroll_ScrollControlIntoCentralView(achievementsSystem.contentList, control)
+            end
+        end
+        return true
+    end
+
+    if manager and numericId then
+        if manager.SelectAchievement then
+            local ok, result = pcall(manager.SelectAchievement, manager, numericId)
+            if ok and result ~= false then
+                return true
+            end
+        end
+
+        if manager.ShowAchievement then
+            local ok, result = pcall(manager.ShowAchievement, manager, numericId)
+            if ok and result ~= false then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
 local function GetAchievementsSystem()
     local system
     if SYSTEMS and SYSTEMS.GetObject then
@@ -554,39 +608,51 @@ local function OpenAchievementInJournal(achievementId)
         end
     end
 
-    if achievementsSystem.FocusAchievement then
-        local ok = pcall(achievementsSystem.FocusAchievement, achievementsSystem, numeric)
-        if ok then
-            return true
-        end
-    end
-
-    local entry = ResolveAchievementEntry(achievementsSystem, originalId)
-    if entry then
-        if entry.Expand then
-            entry:Expand()
-        end
-        if entry.Select then
-            entry:Select()
-        end
-        if entry.GetControl and achievementsSystem.contentList and ZO_Scroll_ScrollControlIntoCentralView then
-            local control = entry:GetControl()
-            if control then
-                ZO_Scroll_ScrollControlIntoCentralView(achievementsSystem.contentList, control)
-            end
-        end
+    if FocusAchievementInSystem(achievementsSystem, manager, numeric, originalId) then
         return true
     end
 
-    if manager and manager.SelectAchievement then
-        local ok, result = pcall(manager.SelectAchievement, manager, numeric)
+    return false
+end
+
+local function SelectFavoritesCategory(achievementsSystem)
+    if not achievementsSystem then
+        return false
+    end
+
+    -- Drive the same favorites node that our UI exposes so manual clicks and
+    -- context menu navigation share a single code path.
+    local tree = achievementsSystem.categoryTree
+    local node = achievementsSystem._nvkFavoritesNode
+    if not node then
+        local lookup = achievementsSystem.nodeLookupData
+        if lookup then
+            node = lookup[FAVORITES_LOOKUP_KEY]
+        end
+    end
+
+    if node and tree and tree.SelectNode then
+        local ok, result = pcall(tree.SelectNode, tree, node)
         if ok and result ~= false then
             return true
         end
     end
 
-    if manager and manager.ShowAchievement then
-        local ok, result = pcall(manager.ShowAchievement, manager, numeric)
+    local data = achievementsSystem._nvkFavoritesData
+    if data and achievementsSystem.SelectCategory then
+        local ok, result = pcall(
+            achievementsSystem.SelectCategory,
+            achievementsSystem,
+            data.categoryIndex,
+            data.subCategoryIndex
+        )
+        if ok and result ~= false then
+            return true
+        end
+    end
+
+    if achievementsSystem.SelectCategory then
+        local ok, result = pcall(achievementsSystem.SelectCategory, achievementsSystem, FAVORITES_CATEGORY_ID)
         if ok and result ~= false then
             return true
         end
@@ -595,45 +661,52 @@ local function OpenAchievementInJournal(achievementId)
     return false
 end
 
-local function CanOpenFavoritesWindow(achievementId)
+local function CanShowInAchievements(achievementId)
+    return CanOpenAchievement(achievementId)
+end
+
+local function ShowAchievementInAchievements(achievementId)
+    local originalId = achievementId
     local numeric = tonumber(achievementId)
     if not numeric or numeric <= 0 then
         return false
     end
 
-    local host = Nvk3UT and Nvk3UT.TrackerHost
-    local tracker = Nvk3UT and Nvk3UT.AchievementTracker
-
-    if not (host and host.EnsureVisible and tracker) then
+    if not SCENE_MANAGER or type(SCENE_MANAGER.Show) ~= "function" then
         return false
     end
 
-    if type(tracker.FocusAchievement) ~= "function" then
-        return false
+    -- Let the base Achievements scene handle visibility before steering it to
+    -- our custom favorites category.
+    SCENE_MANAGER:Show("achievements")
+
+    local function focusAchievement()
+        local achievementsSystem = GetAchievementsSystem()
+        if not achievementsSystem then
+            return
+        end
+
+        SelectFavoritesCategory(achievementsSystem)
+
+        local manager = ACHIEVEMENTS_MANAGER
+        local function attemptFocus()
+            FocusAchievementInSystem(achievementsSystem, manager, numeric, originalId)
+        end
+
+        if type(zo_callLater) == "function" then
+            zo_callLater(attemptFocus, 20)
+        else
+            attemptFocus()
+        end
+    end
+
+    if type(zo_callLater) == "function" then
+        zo_callLater(focusAchievement, 30)
+    else
+        focusAchievement()
     end
 
     return true
-end
-
-local function OpenAchievementInFavoritesWindow(achievementId)
-    local numeric = tonumber(achievementId)
-    if not numeric or numeric <= 0 then
-        return false
-    end
-
-    local host = Nvk3UT and Nvk3UT.TrackerHost
-    local tracker = Nvk3UT and Nvk3UT.AchievementTracker
-
-    if host and host.EnsureVisible and tracker and type(tracker.FocusAchievement) == "function" then
-        local okVisible, result = pcall(host.EnsureVisible, { focus = "achievements", bringToFront = true })
-        pcall(tracker.FocusAchievement, numeric)
-        if okVisible then
-            return result ~= false
-        end
-        return false
-    end
-
-    return OpenAchievementInJournal(achievementId)
 end
 
 local function BuildAchievementContextMenuEntries(data)
@@ -654,13 +727,13 @@ local function BuildAchievementContextMenuEntries(data)
     }
 
     entries[#entries + 1] = {
-        label = "Favoritenfenster öffnen",
+        label = "In den Errungenschaften anzeigen",
         enabled = function()
-            return CanOpenFavoritesWindow(achievementId)
+            return CanShowInAchievements(achievementId)
         end,
         callback = function()
-            if achievementId and CanOpenFavoritesWindow(achievementId) then
-                OpenAchievementInFavoritesWindow(achievementId)
+            if achievementId and CanShowInAchievements(achievementId) then
+                ShowAchievementInAchievements(achievementId)
             end
         end,
     }
