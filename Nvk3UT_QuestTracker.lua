@@ -3380,6 +3380,19 @@ local function ApplyObjectivesToNode(node, objectives, expanded)
         node.objectiveControls = controls
     end
 
+    if next(controls) == nil and container and container.GetNumChildren then
+        local childCount = container:GetNumChildren() or 0
+        for childIndex = 1, childCount do
+            local child = container:GetChild(childIndex)
+            if child then
+                controls[childIndex] = child
+                if (not child.label or not child.label.SetText) and child.GetNamedChild then
+                    child.label = child:GetNamedChild("Label")
+                end
+            end
+        end
+    end
+
     local objectiveCount = type(objectives) == "table" and #objectives or 0
 
     if not expanded or objectiveCount == 0 then
@@ -3401,14 +3414,34 @@ local function ApplyObjectivesToNode(node, objectives, expanded)
     for index = 1, objectiveCount do
         local objective = objectives[index]
         local objectiveControl = controls[index]
+
+        if not objectiveControl and container and container.GetChild then
+            objectiveControl = container:GetChild(index)
+            if objectiveControl then
+                controls[index] = objectiveControl
+            end
+        end
+
         if not objectiveControl then
-            local baseName = questControl:GetName() or "QuestNode"
+            local baseName = questControl:GetName()
+            if not baseName or baseName == "" then
+                local journalIndex = node.journalIndex or index
+                baseName = string.format("Nvk3UTQuest%d", journalIndex)
+            end
+            baseName = tostring(baseName):gsub("[^%w_]", "_")
             local controlName = string.format("%sObjective%d", baseName, index)
             objectiveControl = CreateControlFromVirtual(controlName, container, "QuestCondition_Template")
-            objectiveControl.label = objectiveControl:GetNamedChild("Label")
-            ApplyLabelDefaults(objectiveControl.label)
+            if not objectiveControl then
+                return false
+            end
             controls[index] = objectiveControl
         end
+
+        if (not objectiveControl.label or not objectiveControl.label.SetText) and objectiveControl.GetNamedChild then
+            objectiveControl.label = objectiveControl:GetNamedChild("Label")
+        end
+
+        ApplyLabelDefaults(objectiveControl.label)
 
         objectiveControl.rowType = "objective"
         objectiveControl.currentIndent = indent
