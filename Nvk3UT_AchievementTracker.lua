@@ -65,6 +65,7 @@ local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
 local REFRESH_DEBOUNCE_MS = 80
 
 local COLOR_ROW_HOVER = { 1, 1, 0.6, 1 }
+local FOCUS_HIGHLIGHT_DURATION_MS = 1600
 
 local state = {
     isInitialized = false,
@@ -83,6 +84,7 @@ local state = {
     pendingRefresh = false,
     contentWidth = 0,
     contentHeight = 0,
+    pendingFocusAchievementId = nil,
 }
 
 local function ApplyLabelDefaults(label)
@@ -593,64 +595,45 @@ local function OpenAchievementInJournal(achievementId)
     return false
 end
 
+local function CanOpenFavoritesWindow(achievementId)
+    local numeric = tonumber(achievementId)
+    if not numeric or numeric <= 0 then
+        return false
+    end
+
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    local tracker = Nvk3UT and Nvk3UT.AchievementTracker
+
+    if not (host and host.EnsureVisible and tracker) then
+        return false
+    end
+
+    if type(tracker.FocusAchievement) ~= "function" then
+        return false
+    end
+
+    return true
+end
+
 local function OpenAchievementInFavoritesWindow(achievementId)
     local numeric = tonumber(achievementId)
     if not numeric or numeric <= 0 then
         return false
     end
 
-    local function focusFavorites()
-        local achievementsSystem = GetAchievementsSystem()
-        if not achievementsSystem then
-            return false
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    local tracker = Nvk3UT and Nvk3UT.AchievementTracker
+
+    if host and host.EnsureVisible and tracker and type(tracker.FocusAchievement) == "function" then
+        local okVisible, result = pcall(host.EnsureVisible, { focus = "achievements", bringToFront = true })
+        pcall(tracker.FocusAchievement, numeric)
+        if okVisible then
+            return result ~= false
         end
-
-        local favoritesNode = achievementsSystem._nvkFavoritesNode
-        local tree = achievementsSystem.categoryTree
-
-        if favoritesNode then
-            if tree and tree.SelectNode then
-                tree:SelectNode(favoritesNode)
-            elseif achievementsSystem.SelectCategoryNode then
-                achievementsSystem:SelectCategoryNode(favoritesNode)
-            end
-        end
-
-        local focused = false
-        if achievementsSystem.ShowAchievement then
-            local ok, result = pcall(achievementsSystem.ShowAchievement, achievementsSystem, numeric)
-            if ok and result ~= false then
-                focused = true
-            end
-        elseif achievementsSystem.SelectAchievement then
-            local ok, result = pcall(achievementsSystem.SelectAchievement, achievementsSystem, numeric)
-            if ok and result ~= false then
-                focused = true
-            end
-        end
-
-        return focused
+        return false
     end
 
-    local alreadyShowing = SCENE_MANAGER and SCENE_MANAGER.IsShowing and SCENE_MANAGER:IsShowing("achievements")
-    if SCENE_MANAGER and SCENE_MANAGER.Show and not alreadyShowing then
-        SCENE_MANAGER:Show("achievements")
-    end
-
-    local delay = alreadyShowing and 0 or 60
-    if zo_callLater then
-        zo_callLater(function()
-            if not focusFavorites() then
-                OpenAchievementInJournal(achievementId)
-            end
-        end, delay)
-    else
-        if not focusFavorites() then
-            OpenAchievementInJournal(achievementId)
-        end
-    end
-
-    return true
+    return OpenAchievementInJournal(achievementId)
 end
 
 local function BuildAchievementContextMenuEntries(data)
@@ -673,10 +656,10 @@ local function BuildAchievementContextMenuEntries(data)
     entries[#entries + 1] = {
         label = "Favoritenfenster öffnen",
         enabled = function()
-            return CanOpenAchievement(achievementId)
+            return CanOpenFavoritesWindow(achievementId)
         end,
         callback = function()
-            if achievementId and CanOpenAchievement(achievementId) then
+            if achievementId and CanOpenFavoritesWindow(achievementId) then
                 OpenAchievementInFavoritesWindow(achievementId)
             end
         end,
@@ -731,7 +714,17 @@ local function ShowAchievementContextMenu(control, data)
             if evaluateGate(entry.visible) then
                 local disabled = not evaluateGate(entry.enabled)
                 local itemType = (_G and _G.MENU_ADD_OPTION_LABEL) or 1
-                AddCustomMenuItem(entry.label, entry.callback, itemType, nil, nil, disabled)
+                local originalCallback = entry.callback
+                local callback = originalCallback
+                if type(originalCallback) == "function" then
+                    callback = function(...)
+                        if type(ClearMenu) == "function" then
+                            pcall(ClearMenu)
+                        end
+                        originalCallback(...)
+                    end
+                end
+                AddCustomMenuItem(entry.label, callback, itemType, nil, nil, disabled and true or nil)
                 added = added + 1
             end
         end
@@ -1252,10 +1245,8 @@ local function LayoutAchievement(achievement)
         isFavorite = isFavorite,
     }
     control.label:SetText(achievement.name or "")
-    if control.label then
-        local r, g, b, a = GetAchievementTrackerColor("entryTitle")
-        control.label:SetColor(r, g, b, a)
-    end
+    local r, g, b, a = GetAchievementTrackerColor("entryTitle")
+    ApplyBaseColor(control, r, g, b, a)
 
     local expanded = hasObjectives and IsEntryExpanded(achievement.id)
     UpdateAchievementIconSlot(control)
@@ -1376,6 +1367,71 @@ local function LayoutCategory()
     end
 end
 
+local function HighlightControl(control)
+    if not (control and control.label and control.baseColor) then
+        return
+    end
+
+    local label = control.label
+    if not label.SetColor then
+        return
+    end
+
+    local baseColor = {
+        control.baseColor[1] or 1,
+        control.baseColor[2] or 1,
+        control.baseColor[3] or 1,
+        control.baseColor[4] or 1,
+    }
+
+    label:SetColor(unpack(COLOR_ROW_HOVER))
+
+    if zo_callLater then
+        zo_callLater(function()
+            if label and label.SetColor then
+                label:SetColor(baseColor[1], baseColor[2], baseColor[3], baseColor[4])
+            end
+        end, FOCUS_HIGHLIGHT_DURATION_MS)
+    else
+        label:SetColor(baseColor[1], baseColor[2], baseColor[3], baseColor[4])
+    end
+end
+
+local function FocusAchievementRowInternal(achievementId)
+    local numeric = tonumber(achievementId)
+    if not numeric or numeric <= 0 then
+        return false
+    end
+
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    for index = 1, #state.orderedControls do
+        local control = state.orderedControls[index]
+        if control and control.rowType == "achievement" then
+            local data = control.data
+            if data and data.achievementId and tonumber(data.achievementId) == numeric then
+                if host and host.ScrollControlIntoView then
+                    pcall(host.ScrollControlIntoView, control)
+                end
+                HighlightControl(control)
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+local function ApplyPendingFocus()
+    local pending = state.pendingFocusAchievementId
+    if not pending then
+        return
+    end
+
+    if FocusAchievementRowInternal(pending) then
+        state.pendingFocusAchievementId = nil
+    end
+end
+
 local function Rebuild()
     if not state.container then
         return
@@ -1393,6 +1449,7 @@ local function Rebuild()
 
     UpdateContentSize()
     NotifyHostContentChanged()
+    ApplyPendingFocus()
 end
 
 local function OnSnapshotUpdated(snapshot)
@@ -1489,6 +1546,7 @@ function AchievementTracker.Shutdown()
     state.lastAnchoredControl = nil
     state.fonts = {}
     state.opts = {}
+    state.pendingFocusAchievementId = nil
 
     state.isInitialized = false
     state.pendingRefresh = false
@@ -1549,6 +1607,31 @@ function AchievementTracker.ApplyTheme(settings)
     state.fonts = MergeFonts(state.opts.fonts)
 
     RequestRefresh()
+end
+
+function AchievementTracker.FocusAchievement(achievementId)
+    local numeric = tonumber(achievementId)
+    if not numeric or numeric <= 0 then
+        return false
+    end
+
+    EnsureSavedVars()
+
+    SetCategoryExpanded(true, {
+        trigger = "external",
+        source = "AchievementTracker:FocusAchievement",
+    })
+
+    state.pendingFocusAchievementId = numeric
+
+    local focused = FocusAchievementRowInternal(numeric)
+    if focused then
+        state.pendingFocusAchievementId = nil
+        return true
+    end
+
+    RequestRefresh()
+    return false
 end
 
 function AchievementTracker.RequestRefresh()

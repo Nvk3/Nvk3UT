@@ -1406,7 +1406,17 @@ local function ShowQuestContextMenu(control, journalIndex)
             if evaluateGate(entry.visible) then
                 local disabled = not evaluateGate(entry.enabled)
                 local itemType = (_G and _G.MENU_ADD_OPTION_LABEL) or 1
-                AddCustomMenuItem(entry.label, entry.callback, itemType, nil, nil, disabled)
+                local originalCallback = entry.callback
+                local callback = originalCallback
+                if type(originalCallback) == "function" then
+                    callback = function(...)
+                        if type(ClearMenu) == "function" then
+                            pcall(ClearMenu)
+                        end
+                        originalCallback(...)
+                    end
+                end
+                AddCustomMenuItem(entry.label, callback, itemType, nil, nil, disabled and true or nil)
                 added = added + 1
             end
         end
@@ -2762,6 +2772,10 @@ IsQuestExpanded = function(journalIndex)
 end
 
 SetCategoryExpanded = function(categoryKey, expanded, context)
+    if not state.saved then
+        EnsureSavedVars()
+    end
+
     local key = NormalizeCategoryKey(categoryKey)
     if not key then
         return false
@@ -2823,6 +2837,10 @@ SetCategoryExpanded = function(categoryKey, expanded, context)
 end
 
 SetQuestExpanded = function(journalIndex, expanded, context)
+    if not state.saved then
+        EnsureSavedVars()
+    end
+
     local key = NormalizeQuestKey(journalIndex)
     if not key then
         return false

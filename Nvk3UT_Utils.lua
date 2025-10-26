@@ -103,6 +103,10 @@ local function wrapMenuCallback(callback)
   end
 
   return function(...)
+    if type(ClearMenu) == "function" then
+      pcall(ClearMenu)
+    end
+
     local ok, err = pcall(callback, ...)
     if not ok and M and M.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then
       M.d("[Nvk3UT][Utils][ContextMenu] callback failed", tostring(err))
@@ -140,7 +144,7 @@ function M.ShowContextMenu(anchorControl, entries)
             itemType,
             itemId,
             icon,
-            disabled and true or false
+            disabled and true or nil
           )
           added = added + 1
         end
