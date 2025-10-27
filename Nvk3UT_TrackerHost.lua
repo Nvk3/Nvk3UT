@@ -95,6 +95,17 @@ local DEFAULT_COLOR_FALLBACK = { r = 1, g = 1, b = 1, a = 1 }
 
 local LEFT_MOUSE_BUTTON = _G.MOUSE_BUTTON_INDEX_LEFT or 1
 
+local string_format = string.format
+local math_abs = math.abs
+local math_max = math.max
+local math_min = math.min
+local math_floor = math.floor
+local tostring = tostring
+local type = type
+local pairs = pairs
+local callLater = zo_callLater
+local removeCallLater = zo_removeCallLater
+
 local state = {
     initialized = false,
     root = nil,
@@ -134,6 +145,26 @@ local state = {
     heartbeatAttached = false,
 }
 
+local function clearArray(array)
+    if not array then
+        return
+    end
+
+    for index = #array, 1, -1 do
+        array[index] = nil
+    end
+end
+
+local function clearTable(tbl)
+    if not tbl then
+        return
+    end
+
+    for key in pairs(tbl) do
+        tbl[key] = nil
+    end
+end
+
 local function isDebugLoggingEnabled()
     local sv = Nvk3UT and Nvk3UT.sv
     return sv and sv.debug == true
@@ -145,7 +176,7 @@ local function debugLog(...)
     end
 
     if d then
-        d(string.format("[%s]", addonName .. "TrackerHost"), ...)
+        d(string_format("[%s]", addonName .. "TrackerHost"), ...)
     elseif print then
         print("[" .. addonName .. "TrackerHost]", ...)
     end
@@ -192,16 +223,16 @@ local function clearUpdateManager()
 
     local manager = state.updateManager
 
-    if manager.updateDebounceHandle and zo_removeCallLater then
-        zo_removeCallLater(manager.updateDebounceHandle)
+    if manager.updateDebounceHandle and removeCallLater then
+        removeCallLater(manager.updateDebounceHandle)
     end
 
     manager.updateDebounceHandle = nil
     manager.questsStructureDirty = false
     manager.achievementsStructureDirty = false
     manager.layoutDirty = false
-    manager.rowsToRefresh = {}
-    manager.queuedRows = {}
+    clearArray(manager.rowsToRefresh)
+    clearTable(manager.queuedRows)
     manager.updateDebounceActive = false
     manager.updateDebounceReason = nil
     manager.updateDebounceReleased = true
@@ -229,19 +260,35 @@ local function extractReason(context, defaultReason)
     return defaultReason
 end
 
-local function scheduleTrackerUpdateProcessing(options)
+local function releaseTrackerDebounce()
+    local manager = state.updateManager
+    if not manager then
+        return
+    end
+
+    manager.updateDebounceHandle = nil
+    if manager.updateDebounceActive and isDebugLoggingEnabled() then
+        debugLog(
+            string_format(
+                "Tracker update debounce fired reason=%s",
+                tostring(manager.updateDebounceReason or "")
+            )
+        )
+    end
+
+    manager.updateDebounceActive = false
+    manager.updateDebounceReleased = true
+end
+
+local function scheduleTrackerUpdateProcessing(useDebounce, context, reasonHint)
     local manager = ensureUpdateManager()
-    options = options or {}
+    local reason = extractReason(context, reasonHint or "update")
 
-    local useDebounce = options.debounce ~= false
-    local context = options.context
-    local reason = extractReason(context, options.reasonHint or "update")
-
-    if useDebounce then
+    if useDebounce ~= false then
         local wasPending = manager.updateDebounceActive and manager.updateDebounceHandle ~= nil
 
-        if manager.updateDebounceHandle and zo_removeCallLater then
-            zo_removeCallLater(manager.updateDebounceHandle)
+        if manager.updateDebounceHandle and removeCallLater then
+            removeCallLater(manager.updateDebounceHandle)
         end
 
         manager.updateDebounceHandle = nil
@@ -252,7 +299,7 @@ local function scheduleTrackerUpdateProcessing(options)
         if isDebugLoggingEnabled() then
             local windowState = wasPending and "extended" or "started"
             debugLog(
-                string.format(
+                string_format(
                     "Tracker update debounced (quests/achievements) 100ms window %s reason=%s",
                     windowState,
                     tostring(reason or "")
@@ -260,24 +307,8 @@ local function scheduleTrackerUpdateProcessing(options)
             )
         end
 
-        local function releaseTrackerDebounce()
-            manager.updateDebounceHandle = nil
-            if manager.updateDebounceActive and isDebugLoggingEnabled() then
-                debugLog(
-                    string.format(
-                        "Tracker update debounce fired reason=%s",
-                        tostring(manager.updateDebounceReason or reason or "")
-                    )
-                )
-            end
-            manager.updateDebounceActive = false
-            manager.updateDebounceReleased = true
-        end
-
-        if zo_callLater then
-            manager.updateDebounceHandle = zo_callLater(function()
-                releaseTrackerDebounce()
-            end, TRACKER_UPDATE_DEBOUNCE_MS)
+        if callLater then
+            manager.updateDebounceHandle = callLater(releaseTrackerDebounce, TRACKER_UPDATE_DEBOUNCE_MS)
         else
             releaseTrackerDebounce()
         end
@@ -288,7 +319,7 @@ local function scheduleTrackerUpdateProcessing(options)
     if manager.updateDebounceActive then
         if isDebugLoggingEnabled() then
             debugLog(
-                string.format(
+                string_format(
                     "Piggybacking on pending tracker debounce reason=%s",
                     tostring(manager.updateDebounceReason or reason or "")
                 )
@@ -301,7 +332,7 @@ local function scheduleTrackerUpdateProcessing(options)
     manager.updateDebounceReason = reason
 
     if isDebugLoggingEnabled() then
-        debugLog(string.format("Tracker update ready without debounce reason=%s", tostring(reason or "")))
+        debugLog(string_format("Tracker update ready without debounce reason=%s", tostring(reason or "")))
     end
 end
 
@@ -312,7 +343,7 @@ local function markQuestsStructureDirty(context)
 
     if isDebugLoggingEnabled() then
         debugLog(
-            string.format(
+            string_format(
                 "FLAG questsStructureDirty already=%s reason=%s",
                 tostring(alreadyDirty),
                 extractReason(context, "unknown") or "unknown"
@@ -320,7 +351,7 @@ local function markQuestsStructureDirty(context)
         )
     end
 
-    scheduleTrackerUpdateProcessing({ debounce = true, context = context, reasonHint = "questUpdate" })
+    scheduleTrackerUpdateProcessing(true, context, "questUpdate")
 end
 
 local function markAchievementsStructureDirty(context)
@@ -330,7 +361,7 @@ local function markAchievementsStructureDirty(context)
 
     if isDebugLoggingEnabled() then
         debugLog(
-            string.format(
+            string_format(
                 "FLAG achievementsStructureDirty already=%s reason=%s",
                 tostring(alreadyDirty),
                 extractReason(context, "unknown") or "unknown"
@@ -338,7 +369,7 @@ local function markAchievementsStructureDirty(context)
         )
     end
 
-    scheduleTrackerUpdateProcessing({ debounce = true, context = context, reasonHint = "achievementUpdate" })
+    scheduleTrackerUpdateProcessing(true, context, "achievementUpdate")
 end
 
 local function markLayoutDirty(context)
@@ -348,7 +379,7 @@ local function markLayoutDirty(context)
 
     if isDebugLoggingEnabled() then
         debugLog(
-            string.format(
+            string_format(
                 "FLAG layoutDirty already=%s reason=%s",
                 tostring(alreadyDirty),
                 extractReason(context, "unknown") or "unknown"
@@ -356,7 +387,7 @@ local function markLayoutDirty(context)
         )
     end
 
-    scheduleTrackerUpdateProcessing({ debounce = false, context = context, reasonHint = "layoutUpdate" })
+    scheduleTrackerUpdateProcessing(false, context, "layoutUpdate")
 end
 
 local function queueRowForRefresh(row, context, rowType)
@@ -365,25 +396,23 @@ local function queueRowForRefresh(row, context, rowType)
     end
 
     local manager = ensureUpdateManager()
-    if manager.queuedRows[row] then
+    if manager.queuedRows[row] ~= nil then
         return false
     end
 
     local reason = extractReason(context, "row")
-    manager.queuedRows[row] = true
-    manager.rowsToRefresh[#manager.rowsToRefresh + 1] = {
-        row = row,
-        reason = reason,
-    }
+    manager.queuedRows[row] = reason
+    local queue = manager.rowsToRefresh
+    queue[#queue + 1] = row
 
     if isDebugLoggingEnabled() then
         local identifier = row.questKey or row.achievementKey or "unknown"
-        debugLog(string.format("QUEUE row=%s reason=%s", tostring(identifier), tostring(reason or "")))
+        debugLog(string_format("QUEUE row=%s reason=%s", tostring(identifier), tostring(reason or "")))
     end
 
     local useDebounce = rowType == "quest" or rowType == "achievement"
     local hint = rowType == "quest" and "questRow" or rowType == "achievement" and "achievementRow" or "row"
-    scheduleTrackerUpdateProcessing({ debounce = useDebounce, context = context, reasonHint = hint })
+    scheduleTrackerUpdateProcessing(useDebounce, context, hint)
     return true
 end
 
@@ -451,7 +480,7 @@ local function heartbeatUpdate(_, _elapsed)
     local debounceActive = manager.updateDebounceActive
 
     if isDebugLoggingEnabled() then
-        debugLog(string.format(
+        debugLog(string_format(
             "HEARTBEAT coordinator frames=%d ready=%s active=%s queue=%d flags[q=%s,a=%s,l=%s] reason=%s",
             frames,
             tostring(debounceReady),
@@ -695,7 +724,7 @@ local function migrateAppearanceSettings(target)
         end
         if source.padding ~= nil and target.padding == nil then
             local padding = tonumber(source.padding) or DEFAULT_APPEARANCE.padding
-            target.padding = math.max(0, math.floor(padding + 0.5))
+            target.padding = math_max(0, math_floor(padding + 0.5))
             used = true
         end
         return used
@@ -739,17 +768,17 @@ local function ensureAppearanceSettings()
     if thickness == nil then
         thickness = DEFAULT_APPEARANCE.edgeThickness
     end
-    appearance.edgeThickness = math.max(1, math.floor(thickness + 0.5))
+    appearance.edgeThickness = math_max(1, math_floor(thickness + 0.5))
     local padding = tonumber(appearance.padding)
     if padding == nil then
         padding = DEFAULT_APPEARANCE.padding
     end
-    appearance.padding = math.max(0, math.floor(padding + 0.5))
+    appearance.padding = math_max(0, math_floor(padding + 0.5))
     local cornerRadius = tonumber(appearance.cornerRadius)
     if cornerRadius == nil then
         cornerRadius = DEFAULT_APPEARANCE.cornerRadius
     end
-    appearance.cornerRadius = math.max(0, math.floor(cornerRadius + 0.5))
+    appearance.cornerRadius = math_max(0, math_floor(cornerRadius + 0.5))
     if type(appearance.theme) ~= "string" or appearance.theme == "" then
         appearance.theme = DEFAULT_APPEARANCE.theme
     else
@@ -855,25 +884,25 @@ local function ensureLayoutSettings()
     if not minWidth then
         minWidth = DEFAULT_LAYOUT.minWidth
     end
-    minWidth = math.max(MIN_WIDTH, math.floor(minWidth + 0.5))
+    minWidth = math_max(MIN_WIDTH, math_floor(minWidth + 0.5))
 
     local maxWidth = tonumber(layout.maxWidth)
     if not maxWidth then
         maxWidth = DEFAULT_LAYOUT.maxWidth
     end
-    maxWidth = math.max(minWidth, math.floor(maxWidth + 0.5))
+    maxWidth = math_max(minWidth, math_floor(maxWidth + 0.5))
 
     local minHeight = tonumber(layout.minHeight)
     if not minHeight then
         minHeight = DEFAULT_LAYOUT.minHeight
     end
-    minHeight = math.max(MIN_HEIGHT, math.floor(minHeight + 0.5))
+    minHeight = math_max(MIN_HEIGHT, math_floor(minHeight + 0.5))
 
     local maxHeight = tonumber(layout.maxHeight)
     if not maxHeight then
         maxHeight = DEFAULT_LAYOUT.maxHeight
     end
-    maxHeight = math.max(minHeight, math.floor(maxHeight + 0.5))
+    maxHeight = math_max(minHeight, math_floor(maxHeight + 0.5))
 
     layout.minWidth = minWidth
     layout.maxWidth = maxWidth
@@ -898,14 +927,14 @@ local function ensureWindowBarSettings()
     if headerHeight == nil then
         headerHeight = DEFAULT_WINDOW_BARS.headerHeightPx
     end
-    headerHeight = clamp(math.floor(headerHeight + 0.5), 0, MAX_BAR_HEIGHT)
+    headerHeight = clamp(math_floor(headerHeight + 0.5), 0, MAX_BAR_HEIGHT)
     bars.headerHeightPx = headerHeight
 
     local footerHeight = tonumber(bars.footerHeightPx)
     if footerHeight == nil then
         footerHeight = DEFAULT_WINDOW_BARS.footerHeightPx
     end
-    footerHeight = clamp(math.floor(footerHeight + 0.5), 0, MAX_BAR_HEIGHT)
+    footerHeight = clamp(math_floor(footerHeight + 0.5), 0, MAX_BAR_HEIGHT)
     bars.footerHeightPx = footerHeight
 
     return bars
@@ -982,11 +1011,11 @@ local function clampWindowToScreen(width, height)
         return
     end
 
-    local maxLeft = math.max(0, rootWidth - width)
-    local maxTop = math.max(0, rootHeight - height)
+    local maxLeft = math_max(0, rootWidth - width)
+    local maxTop = math_max(0, rootHeight - height)
 
-    window.left = math.min(math.max(window.left or 0, 0), maxLeft)
-    window.top = math.min(math.max(window.top or 0, 0), maxTop)
+    window.left = math_min(math_max(window.left or 0, 0), maxLeft)
+    window.top = math_min(math_max(window.top or 0, 0), maxTop)
 end
 
 local function saveWindowPosition()
@@ -997,8 +1026,8 @@ local function saveWindowPosition()
     local left = state.root:GetLeft() or state.window.left or 0
     local top = state.root:GetTop() or state.window.top or 0
 
-    state.window.left = math.floor(left + 0.5)
-    state.window.top = math.floor(top + 0.5)
+    state.window.left = math_floor(left + 0.5)
+    state.window.top = math_floor(top + 0.5)
 end
 
 local function saveWindowSize()
@@ -1011,14 +1040,14 @@ local function saveWindowSize()
 
     local minWidth = layout.minWidth or MIN_WIDTH
     local minHeight = layout.minHeight or MIN_HEIGHT
-    local maxWidth = layout.maxWidth or math.max(minWidth, state.root:GetWidth() or minWidth)
-    local maxHeight = layout.maxHeight or math.max(minHeight, state.root:GetHeight() or minHeight)
+    local maxWidth = layout.maxWidth or math_max(minWidth, state.root:GetWidth() or minWidth)
+    local maxHeight = layout.maxHeight or math_max(minHeight, state.root:GetHeight() or minHeight)
 
     local width = clamp(state.root:GetWidth() or state.window.width or minWidth, minWidth, maxWidth)
     local height = clamp(state.root:GetHeight() or state.window.height or minHeight, minHeight, maxHeight)
 
-    state.window.width = math.floor(width + 0.5)
-    state.window.height = math.floor(height + 0.5)
+    state.window.width = math_floor(width + 0.5)
+    state.window.height = math_floor(height + 0.5)
 end
 
 startWindowDrag = function()
@@ -1048,7 +1077,7 @@ local function debugLog(...)
         return
     end
 
-    local prefix = string.format("[%s]", addonName .. ".TrackerHost")
+    local prefix = string_format("[%s]", addonName .. ".TrackerHost")
     if d then
         d(prefix, ...)
     elseif print then
@@ -1062,8 +1091,8 @@ setScrollOffset = function(rawOffset, skipScrollbarUpdate)
         rawOffset = 0
     end
 
-    maxOffset = math.max(0, maxOffset)
-    rawOffset = math.max(0, rawOffset)
+    maxOffset = math_max(0, maxOffset)
+    rawOffset = math_max(0, rawOffset)
 
     local previousActual = state.scrollOffset or 0
     local previousDesired = state.desiredScrollOffset or previousActual
@@ -1076,13 +1105,13 @@ setScrollOffset = function(rawOffset, skipScrollbarUpdate)
     state.desiredScrollOffset = rawOffset
     state.scrollOffset = offset
 
-    local actualChanged = math.abs(previousActual - offset) >= 0.01
-    local desiredChanged = math.abs(previousDesired - rawOffset) >= 0.01
+    local actualChanged = math_abs(previousActual - offset) >= 0.01
+    local desiredChanged = math_abs(previousDesired - rawOffset) >= 0.01
 
     if not (actualChanged or desiredChanged) then
         if not skipScrollbarUpdate and state.scrollbar and state.scrollbar.SetValue then
             local current = state.scrollbar.GetValue and state.scrollbar:GetValue() or 0
-            if math.abs(current - offset) >= 0.01 then
+            if math_abs(current - offset) >= 0.01 then
                 state.updatingScrollbar = true
                 state.scrollbar:SetValue(offset)
                 state.updatingScrollbar = false
@@ -1095,7 +1124,7 @@ setScrollOffset = function(rawOffset, skipScrollbarUpdate)
 
     if not skipScrollbarUpdate and state.scrollbar and state.scrollbar.SetValue then
         local current = state.scrollbar.GetValue and state.scrollbar:GetValue() or 0
-        if math.abs(current - offset) >= 0.01 then
+        if math_abs(current - offset) >= 0.01 then
             state.updatingScrollbar = true
             state.scrollbar:SetValue(offset)
             state.updatingScrollbar = false
@@ -1200,11 +1229,11 @@ measureTrackerContent = function(container, trackerModule)
     if (width <= 0 or height <= 0) then
         local holder = container.holder
         if holder and holder.GetWidth then
-            width = math.max(width, holder:GetWidth() or 0)
-            height = math.max(height, holder:GetHeight() or 0)
+            width = math_max(width, holder:GetWidth() or 0)
+            height = math_max(height, holder:GetHeight() or 0)
         else
-            width = math.max(width, container.GetWidth and container:GetWidth() or 0)
-            height = math.max(height, container.GetHeight and container:GetHeight() or 0)
+            width = math_max(width, container.GetWidth and container:GetWidth() or 0)
+            height = math_max(height, container.GetHeight and container:GetHeight() or 0)
         end
     end
 
@@ -1262,12 +1291,12 @@ local function measureContentSize()
         end
     end
 
-    headerHeight = math.max(0, tonumber(headerHeight) or 0)
-    footerHeight = math.max(0, tonumber(footerHeight) or 0)
+    headerHeight = math_max(0, tonumber(headerHeight) or 0)
+    footerHeight = math_max(0, tonumber(footerHeight) or 0)
 
     totalHeight = totalHeight + headerHeight + footerHeight
 
-    maxWidth = math.max(maxWidth, headerWidth, footerWidth, questWidth, achievementWidth)
+    maxWidth = math_max(maxWidth, headerWidth, footerWidth, questWidth, achievementWidth)
 
     return maxWidth, totalHeight
 end
@@ -1302,7 +1331,7 @@ local function updateWindowGeometry()
     local appearance = state.appearance or ensureAppearanceSettings()
     state.appearance = appearance
 
-    local padding = math.max(0, tonumber(appearance and appearance.padding) or 0)
+    local padding = math_max(0, tonumber(appearance and appearance.padding) or 0)
     local contentWidth, contentHeight = measureContentSize()
 
     local minWidth = layout.minWidth or MIN_WIDTH
@@ -1317,12 +1346,12 @@ local function updateWindowGeometry()
     targetHeight = clamp(targetHeight, minHeight, maxHeight)
 
     if layout.autoGrowH then
-        local desiredWidth = math.floor((contentWidth + (padding * 2)) + 0.5)
+        local desiredWidth = math_floor((contentWidth + (padding * 2)) + 0.5)
         targetWidth = clamp(desiredWidth, minWidth, maxWidth)
     end
 
     if layout.autoGrowV then
-        local desiredHeight = math.floor((contentHeight + (padding * 2)) + 0.5)
+        local desiredHeight = math_floor((contentHeight + (padding * 2)) + 0.5)
         targetHeight = clamp(desiredHeight, minHeight, maxHeight)
     end
 
@@ -1475,7 +1504,7 @@ applyViewportPadding = function()
         return
     end
 
-    local padding = math.max(0, tonumber(appearance and appearance.padding) or 0)
+    local padding = math_max(0, tonumber(appearance and appearance.padding) or 0)
 
     if state.scrollContainer then
         state.scrollContainer:ClearAnchors()
@@ -1525,11 +1554,11 @@ refreshScroll = function(targetOffset)
         Nvk3UT and Nvk3UT.AchievementTracker
     )
 
-    questHeight = math.max(0, tonumber(questHeight) or 0)
-    achievementHeight = math.max(0, tonumber(achievementHeight) or 0)
+    questHeight = math_max(0, tonumber(questHeight) or 0)
+    achievementHeight = math_max(0, tonumber(achievementHeight) or 0)
 
     local contentStackHeight = questHeight + achievementHeight
-    contentStackHeight = math.max(0, contentStackHeight)
+    contentStackHeight = math_max(0, contentStackHeight)
 
     if state.questContainer and state.questContainer.SetHeight then
         state.questContainer:SetHeight(questHeight)
@@ -1565,14 +1594,14 @@ refreshScroll = function(targetOffset)
     local bars = state.windowBars or ensureWindowBarSettings()
 
     if headerHeight <= 0 or not headerBar then
-        headerHeight = math.max(0, tonumber(bars and bars.headerHeightPx) or 0)
+        headerHeight = math_max(0, tonumber(bars and bars.headerHeightPx) or 0)
         if headerBar and headerBar.SetHeight then
             headerBar:SetHeight(headerHeight)
         end
     end
 
     if footerHeight <= 0 or not footerBar then
-        footerHeight = math.max(0, tonumber(bars and bars.footerHeightPx) or 0)
+        footerHeight = math_max(0, tonumber(bars and bars.footerHeightPx) or 0)
         if footerBar and footerBar.SetHeight then
             footerBar:SetHeight(footerHeight)
         end
@@ -1593,7 +1622,7 @@ refreshScroll = function(targetOffset)
     end
 
     local contentHeight = headerHeight + contentStackHeight + footerHeight
-    contentHeight = math.max(0, contentHeight)
+    contentHeight = math_max(0, contentHeight)
 
     if scrollContent.SetResizeToFitDescendents then
         scrollContent:SetResizeToFitDescendents(false)
@@ -1608,7 +1637,7 @@ refreshScroll = function(targetOffset)
         overshootPadding = SCROLL_OVERSHOOT_PADDING
     end
 
-    local maxOffset = math.max(contentHeight - viewportHeight + overshootPadding, 0)
+    local maxOffset = math_max(contentHeight - viewportHeight + overshootPadding, 0)
     local showScrollbar = maxOffset > 0.5
 
     local scrollbarWidth = (scrollbar.GetWidth and scrollbar:GetWidth()) or SCROLLBAR_WIDTH
@@ -1636,7 +1665,7 @@ refreshScroll = function(targetOffset)
         applyViewportPadding()
     end
 
-    local desiredOffset = math.max(0, previousDesired or 0)
+    local desiredOffset = math_max(0, previousDesired or 0)
     setScrollOffset(desiredOffset)
 end
 
@@ -2020,7 +2049,7 @@ local function scrollControlIntoView(control)
     end
 
     local actualOffset = state.scrollOffset or 0
-    if math.abs(actualOffset - targetOffset) < 0.1 then
+    if math_abs(actualOffset - targetOffset) < 0.1 then
         return true, false
     end
 
@@ -2047,33 +2076,36 @@ local function processRows(manager)
         return 0
     end
 
-    if isDebugLoggingEnabled() then
-        debugLog(string.format("PROCESS rows count=%d", #queue))
+    local debugEnabled = isDebugLoggingEnabled()
+    if debugEnabled then
+        debugLog(string_format("PROCESS rows count=%d", #queue))
     end
 
     local processed = 0
 
     for index = 1, #queue do
-        local entry = queue[index]
-        if entry then
-            local row = entry.row or entry
-            if row and type(row.Refresh) == "function" then
-                local ok, result = pcall(row.Refresh, row)
-                if not ok then
-                    debugLog("ROW_REFRESH_ERROR", tostring(result))
-                elseif isDebugLoggingEnabled() then
-                    local identifier = row.questKey or row.achievementKey or "unknown"
-                    debugLog(string.format("ROW refreshed=%s reason=%s", tostring(identifier), tostring(entry.reason or "")))
-                end
-                if ok then
-                    processed = processed + 1
-                end
+        local row = queue[index]
+        if row and type(row.Refresh) == "function" then
+            local ok, result = pcall(row.Refresh, row)
+            if not ok then
+                debugLog("ROW_REFRESH_ERROR", tostring(result))
+            elseif debugEnabled then
+                local identifier = row.questKey or row.achievementKey or "unknown"
+                local reason = manager.queuedRows[row]
+                debugLog(string_format("ROW refreshed=%s reason=%s", tostring(identifier), tostring(reason or "")))
+            end
+            if ok then
+                processed = processed + 1
             end
         end
     end
 
-    manager.rowsToRefresh = {}
-    manager.queuedRows = {}
+    if manager.rowsToRefresh then
+        clearArray(manager.rowsToRefresh)
+    end
+    if manager.queuedRows then
+        clearTable(manager.queuedRows)
+    end
 
     return processed
 end
@@ -2346,7 +2378,7 @@ local function createBackdrop()
     end
     if control.SetEdgeTexture then
         local appearance = state.appearance or ensureAppearanceSettings()
-        local thickness = math.max(1, appearance.edgeThickness or DEFAULT_APPEARANCE.edgeThickness)
+        local thickness = math_max(1, appearance.edgeThickness or DEFAULT_APPEARANCE.edgeThickness)
         control:SetEdgeTexture(
             DEFAULT_BACKDROP_TEXTURE.texture,
             DEFAULT_BACKDROP_TEXTURE.tileSize,
@@ -2541,7 +2573,7 @@ local function applyAppearance()
         local backgroundEnabled = appearance.enabled ~= false
         local alpha = clamp(appearance.alpha, 0, 1)
         local edgeAlpha = clamp(appearance.edgeAlpha, 0, 1)
-        local edgeThickness = math.max(1, appearance.edgeThickness or DEFAULT_APPEARANCE.edgeThickness)
+        local edgeThickness = math_max(1, appearance.edgeThickness or DEFAULT_APPEARANCE.edgeThickness)
         local borderEnabled = appearance.edgeEnabled ~= false and edgeAlpha > 0
 
         local shouldShow = backgroundEnabled or borderEnabled

@@ -14,8 +14,8 @@ local FormatCategoryHeaderText =
     or function(baseText, count, showCounts)
         local text = baseText or ""
         if showCounts ~= false and type(count) == "number" and count >= 0 then
-            local numericCount = math.floor(count + 0.5)
-            return string.format("%s (%d)", text, numericCount)
+            local numericCount = math_floor(count + 0.5)
+            return string_format("%s (%d)", text, numericCount)
         end
         return text
     end
@@ -50,6 +50,12 @@ local CONDITION_MIN_HEIGHT = 20
 local ROW_TEXT_PADDING_Y = 8
 local TOGGLE_LABEL_PADDING_X = 4
 local CATEGORY_TOGGLE_WIDTH = 20
+
+local string_format = string.format
+local math_floor = math.floor
+local tostring = tostring
+local type = type
+local pairs = pairs
 
 local STRUCTURE_REBUILD_BATCH_SIZE = 12
 local QUEST_REBUILD_TASK_NAME = MODULE_NAME .. "_StructureRebuild"
@@ -130,14 +136,18 @@ function QuestTrackerRow:Refresh(questData)
         self:SetQuest(resolvedData)
     end
 
-    if not (self.control and self.quest) then
+    local control = self.control
+    local quest = self.quest
+
+    if not (control and quest) then
         return
     end
 
-    ApplyQuestRowVisuals(self.control, self.quest)
+    ApplyQuestRowVisuals(control, quest)
 
-    if self.control and self.control.GetHeight then
-        self.lastHeight = self.control:GetHeight() or 0
+    local getHeight = control.GetHeight
+    if getHeight then
+        self.lastHeight = getHeight(control) or 0
     end
 
     return self.lastHeight
@@ -216,7 +226,7 @@ local function DebugLog(...)
     end
 
     if d then
-        d(string.format("[%s]", MODULE_NAME), ...)
+        d(string_format("[%s]", MODULE_NAME), ...)
     elseif print then
         print("[" .. MODULE_NAME .. "]", ...)
     end
@@ -227,11 +237,11 @@ local function DebugDeselect(context, details)
         return
     end
 
-    local parts = { string.format("[%s][DESELECT] %s", MODULE_NAME, tostring(context)) }
+    local parts = { string_format("[%s][DESELECT] %s", MODULE_NAME, tostring(context)) }
 
     if type(details) == "table" then
         for key, value in pairs(details) do
-            parts[#parts + 1] = string.format("%s=%s", tostring(key), tostring(value))
+            parts[#parts + 1] = string_format("%s=%s", tostring(key), tostring(value))
         end
     elseif details ~= nil then
         parts[#parts + 1] = tostring(details)
@@ -256,19 +266,19 @@ local function AppendDebugField(parts, key, value, treatAsString)
     end
 
     if value == nil then
-        parts[#parts + 1] = string.format("%s=nil", key)
+        parts[#parts + 1] = string_format("%s=nil", key)
         return
     end
 
     local valueType = type(value)
     if valueType == "boolean" then
-        parts[#parts + 1] = string.format("%s=%s", key, value and "true" or "false")
+        parts[#parts + 1] = string_format("%s=%s", key, value and "true" or "false")
     elseif valueType == "number" then
-        parts[#parts + 1] = string.format("%s=%s", key, tostring(value))
+        parts[#parts + 1] = string_format("%s=%s", key, tostring(value))
     elseif treatAsString or valueType == "string" then
-        parts[#parts + 1] = string.format('%s="%s"', key, EscapeDebugString(value))
+        parts[#parts + 1] = string_format('%s="%s"', key, EscapeDebugString(value))
     else
-        parts[#parts + 1] = string.format("%s=%s", key, tostring(value))
+        parts[#parts + 1] = string_format("%s=%s", key, tostring(value))
     end
 end
 
@@ -719,7 +729,7 @@ local function LogStateWrite(entity, key, expanded, source, priority)
 
     local formatted
     if entity == "cat" then
-        formatted = string.format(
+        formatted = string_format(
             "STATE_WRITE cat=%s expanded=%s source=%s prio=%d",
             tostring(key),
             tostring(expanded),
@@ -727,7 +737,7 @@ local function LogStateWrite(entity, key, expanded, source, priority)
             priority or 0
         )
     elseif entity == "quest" then
-        formatted = string.format(
+        formatted = string_format(
             "STATE_WRITE quest=%s expanded=%s source=%s prio=%d",
             tostring(key),
             tostring(expanded),
@@ -735,7 +745,7 @@ local function LogStateWrite(entity, key, expanded, source, priority)
             priority or 0
         )
     elseif entity == "active" then
-        formatted = string.format(
+        formatted = string_format(
             "STATE_WRITE active=%s source=%s prio=%d",
             tostring(key),
             tostring(source),
@@ -1003,7 +1013,7 @@ local function PrimeInitialSavedState()
     end
 
     if IsDebugLoggingEnabled() and (primedCategories > 0 or primedQuests > 0) then
-        DebugLog(string.format(
+        DebugLog(string_format(
             "STATE_PRIME timestamp=%.3f categories=%d quests=%d",
             initTimestamp,
             primedCategories,
@@ -1414,7 +1424,7 @@ local function QuestManagerCall(methodName, journalIndex)
 
     local ok, result = pcall(method, QUEST_JOURNAL_MANAGER, journalIndex)
     if not ok then
-        DebugLog(string.format("QuestManager call failed (%s): %s", methodName, tostring(result)))
+        DebugLog(string_format("QuestManager call failed (%s): %s", methodName, tostring(result)))
         return false, nil
     end
 
@@ -1690,7 +1700,7 @@ local function LogExternalSelect(questId)
         return
     end
 
-    DebugLog(string.format("EXTERNAL_SELECT questId=%s", tostring(questId)))
+    DebugLog(string_format("EXTERNAL_SELECT questId=%s", tostring(questId)))
 end
 
 local function LogExpandCategory(categoryId, reason)
@@ -1698,7 +1708,7 @@ local function LogExpandCategory(categoryId, reason)
         return
     end
 
-    DebugLog(string.format(
+    DebugLog(string_format(
         "EXPAND_CATEGORY categoryId=%s reason=%s",
         tostring(categoryId),
         reason or "external-select"
@@ -1710,7 +1720,7 @@ local function LogMissingCategory(questId)
         return
     end
 
-    DebugLog(string.format("WARN missing-category questId=%s", tostring(questId)))
+    DebugLog(string_format("WARN missing-category questId=%s", tostring(questId)))
 end
 
 local function LogScrollIntoView(questId)
@@ -1718,7 +1728,7 @@ local function LogScrollIntoView(questId)
         return
     end
 
-    DebugLog(string.format("SCROLL_INTO_VIEW questId=%s", tostring(questId)))
+    DebugLog(string_format("SCROLL_INTO_VIEW questId=%s", tostring(questId)))
 end
 
 local function ExpandCategoriesForExternalSelect(journalIndex)
@@ -2544,7 +2554,7 @@ HandleQuestRowClick = function(journalIndex)
 
     if state.isClickSelectInProgress then
         if IsDebugLoggingEnabled() then
-            DebugLog(string.format("CLICK_SELECT_SKIPPED questId=%s reason=in-progress", tostring(questId)))
+            DebugLog(string_format("CLICK_SELECT_SKIPPED questId=%s reason=in-progress", tostring(questId)))
         end
         return
     end
@@ -2552,7 +2562,7 @@ HandleQuestRowClick = function(journalIndex)
     state.isClickSelectInProgress = true
 
     if IsDebugLoggingEnabled() then
-        DebugLog(string.format("CLICK_SELECT_START questId=%s", tostring(questId)))
+        DebugLog(string_format("CLICK_SELECT_START questId=%s", tostring(questId)))
     end
 
     state.pendingSelection = nil
@@ -2563,7 +2573,7 @@ HandleQuestRowClick = function(journalIndex)
     ApplyImmediateTrackedQuest(questId, "click-select")
 
     if IsDebugLoggingEnabled() then
-        DebugLog(string.format("SET_ACTIVE questId=%s prev=%s", tostring(questId), previousQuestString))
+        DebugLog(string_format("SET_ACTIVE questId=%s prev=%s", tostring(questId), previousQuestString))
     end
 
     local questKey = NormalizeQuestKey(questId)
@@ -2588,7 +2598,7 @@ HandleQuestRowClick = function(journalIndex)
     end
 
     if IsDebugLoggingEnabled() then
-        DebugLog(string.format("UI_SELECT questId=%s", tostring(questId)))
+        DebugLog(string_format("UI_SELECT questId=%s", tostring(questId)))
     end
 
     local nextExpanded = not IsQuestExpanded(questId)
@@ -2639,7 +2649,7 @@ HandleQuestRowClick = function(journalIndex)
     end
 
     if IsDebugLoggingEnabled() then
-        DebugLog(string.format("CLICK_SELECT_END questId=%s", tostring(questId)))
+        DebugLog(string_format("CLICK_SELECT_END questId=%s", tostring(questId)))
     end
 end
 
@@ -2908,7 +2918,7 @@ local function BuildFontString(descriptor, fallback)
         return fallback
     end
 
-    return string.format("%s|%d|%s", face, size, outline or DEFAULT_FONT_OUTLINE)
+    return string_format("%s|%d|%s", face, size, outline or DEFAULT_FONT_OUTLINE)
 end
 
 local function ResetLayoutState()
@@ -2976,7 +2986,7 @@ local function ReturnCategoryControl(control)
     end
 
     if IsDebugLoggingEnabled() then
-        DebugLog(string.format("POOL_RETURN category key=%s", tostring(control.poolKey)))
+        DebugLog(string_format("POOL_RETURN category key=%s", tostring(control.poolKey)))
     end
 
     state.categoryPool:ReleaseObject(control.poolKey)
@@ -2988,7 +2998,7 @@ local function ReturnQuestControl(questKey, control)
     end
 
     if IsDebugLoggingEnabled() then
-        DebugLog(string.format("POOL_RETURN quest key=%s control=%s", tostring(questKey), tostring(control.poolKey)))
+        DebugLog(string_format("POOL_RETURN quest key=%s control=%s", tostring(questKey), tostring(control.poolKey)))
     end
 
     state.questPool:ReleaseObject(control.poolKey)
@@ -3021,7 +3031,7 @@ local function RequestCategoryControl(category)
     if control then
         state.reusableCategoryControls[normalizedKey] = nil
         if IsDebugLoggingEnabled() then
-            DebugLog(string.format("POOL_REUSE category=%s", tostring(normalizedKey)))
+            DebugLog(string_format("POOL_REUSE category=%s", tostring(normalizedKey)))
         end
     else
         control = AcquireCategoryControlFromPool()
@@ -3044,7 +3054,7 @@ local function RequestQuestControl(questKey)
     if control then
         state.reusableQuestControls[questKey] = nil
         if IsDebugLoggingEnabled() then
-            DebugLog(string.format("POOL_REUSE quest=%s", tostring(questKey)))
+            DebugLog(string_format("POOL_REUSE quest=%s", tostring(questKey)))
         end
     else
         control = AcquireQuestControlFromPool()
@@ -3089,9 +3099,11 @@ local function PerformLayoutPass()
     local visibleCount = 0
     local maxWidth = 0
     local lastVisible = nil
+    local orderedControls = state.orderedControls
+    local verticalPadding = VERTICAL_PADDING
 
-    for index = 1, #state.orderedControls do
-        local control = state.orderedControls[index]
+    for index = 1, #orderedControls do
+        local control = orderedControls[index]
         if control then
             RefreshControlMetrics(control)
 
@@ -3115,14 +3127,14 @@ local function PerformLayoutPass()
                 lastVisible = control
 
                 if visibleCount > 0 then
-                    yOffset = yOffset + VERTICAL_PADDING
+                    yOffset = yOffset + verticalPadding
                 end
             end
         end
     end
 
     if visibleCount > 0 then
-        yOffset = yOffset - VERTICAL_PADDING
+        yOffset = yOffset - verticalPadding
     else
         yOffset = 0
     end
@@ -3136,7 +3148,7 @@ local function PerformLayoutPass()
     end
 
     if IsDebugLoggingEnabled() then
-        DebugLog(string.format(
+        DebugLog(string_format(
             "LAYOUT_QUEST rows=%d height=%.2f",
             visibleCount,
             state.contentHeight or 0
@@ -3428,7 +3440,7 @@ local function FormatConditionText(condition)
     end
 
     if condition.isTurnIn then
-        text = string.format("* %s", text)
+        text = string_format("* %s", text)
     end
 
     if zo_strformat then
@@ -3663,7 +3675,9 @@ local function EnsurePools()
 
     local function resetControl(control)
         control:SetHidden(true)
-        control.data = nil
+        if control.data then
+            ClearTable(control.data)
+        end
         control.currentIndent = nil
         control.baseColor = nil
         control.isExpanded = nil
@@ -3732,7 +3746,16 @@ local function LayoutCondition(condition)
     end
 
     local control = AcquireConditionControl()
-    control.data = { condition = condition }
+    local data = control.data
+    if data then
+        data.condition = condition
+        data.quest = nil
+        data.categoryKey = nil
+        data.parentKey = nil
+    else
+        data = { condition = condition }
+        control.data = data
+    end
     control.label:SetText(FormatConditionText(condition))
     if control.label then
         local r, g, b, a = GetQuestTrackerColor("objectiveText")
@@ -3753,7 +3776,16 @@ local function ApplyQuestRowVisuals(control, quest)
         return
     end
 
-    control.data = { quest = quest }
+    local data = control.data
+    if data then
+        data.quest = quest
+        data.condition = nil
+        data.categoryKey = nil
+        data.parentKey = nil
+    else
+        data = { quest = quest }
+        control.data = data
+    end
 
     if control.label and control.label.SetText then
         control.label:SetText(quest.name or "")
@@ -3780,7 +3812,7 @@ local function LayoutQuest(quest)
     local control = RequestQuestControl(questKey)
     local expanded = IsQuestExpanded(quest.journalIndex)
     if IsDebugLoggingEnabled() then
-        DebugLog(string.format(
+        DebugLog(string_format(
             "BUILD_APPLY quest=%s expanded=%s",
             tostring(questKey or quest.journalIndex),
             tostring(expanded)
@@ -3835,15 +3867,18 @@ end
 
 local function LayoutCategory(category)
     local control = RequestCategoryControl(category)
-    control.data = {
-        categoryKey = category.key,
-        parentKey = category.parent and category.parent.key or nil,
-        parentName = category.parent and category.parent.name or nil,
-        groupKey = category.groupKey,
-        groupName = category.groupName,
-        categoryType = category.type,
-        groupOrder = category.groupOrder,
-    }
+    local data = control.data
+    if not data then
+        data = {}
+        control.data = data
+    end
+    data.categoryKey = category.key
+    data.parentKey = category.parent and category.parent.key or nil
+    data.parentName = category.parent and category.parent.name or nil
+    data.groupKey = category.groupKey
+    data.groupName = category.groupName
+    data.categoryType = category.type
+    data.groupOrder = category.groupOrder
     local normalizedKey = NormalizeCategoryKey(category.key)
     if normalizedKey then
         state.categoryControls[normalizedKey] = control
@@ -3852,7 +3887,7 @@ local function LayoutCategory(category)
     control.label:SetText(FormatCategoryHeaderText(category.name or "", count, "quest"))
     local expanded = IsCategoryExpanded(category.key)
     if IsDebugLoggingEnabled() then
-        DebugLog(string.format(
+        DebugLog(string_format(
             "BUILD_APPLY cat=%s expanded=%s",
             tostring(category.key),
             tostring(expanded)
@@ -4007,7 +4042,7 @@ local function RunQuestRebuildSynchronously(reason)
     job.async = nil
 
     if IsDebugLoggingEnabled() then
-        DebugLog(string.format("REBUILD_SYNC reason=%s", tostring(job.reason or "")))
+        DebugLog(string_format("REBUILD_SYNC reason=%s", tostring(job.reason or "")))
     end
 
     local ok, err = pcall(Rebuild)
@@ -4032,7 +4067,7 @@ local function StartQuestRebuildJob(reason)
     if job.active then
         job.restartRequested = true
         if IsDebugLoggingEnabled() then
-            DebugLog(string.format("REBUILD_RESTART reason=%s", tostring(job.reason or "")))
+            DebugLog(string_format("REBUILD_RESTART reason=%s", tostring(job.reason or "")))
         end
         return true
     end
@@ -4052,7 +4087,7 @@ local function StartQuestRebuildJob(reason)
     job.totalProcessed = 0
 
     if IsDebugLoggingEnabled() then
-        DebugLog(string.format("REBUILD_ASYNC_START reason=%s", tostring(job.reason or "")))
+        DebugLog(string_format("REBUILD_ASYNC_START reason=%s", tostring(job.reason or "")))
     end
 
     asyncTask:Then(function(task)
@@ -4068,7 +4103,7 @@ local function StartQuestRebuildJob(reason)
                 batches = 0,
                 onBatchReady = function(context)
                     if IsDebugLoggingEnabled() then
-                        DebugLog(string.format(
+                        DebugLog(string_format(
                             "REBUILD_BATCH quest batches=%d total=%d reason=%s",
                             context.batches or 0,
                             context.total or 0,
@@ -4090,7 +4125,7 @@ local function StartQuestRebuildJob(reason)
             ClearActiveRebuildContext()
 
             if IsDebugLoggingEnabled() then
-                DebugLog(string.format(
+                DebugLog(string_format(
                     "REBUILD_ITERATION_COMPLETE rows=%d restart=%s reason=%s",
                     job.totalProcessed or 0,
                     tostring(job.restartRequested),
@@ -4269,7 +4304,7 @@ function QuestTracker.ProcessStructureUpdate(context)
     if job.active then
         job.restartRequested = true
         if IsDebugLoggingEnabled() then
-            DebugLog(string.format(
+            DebugLog(string_format(
                 "REBUILD_RESTART_REQUEST reason=%s",
                 tostring(job.reason or "")
             ))

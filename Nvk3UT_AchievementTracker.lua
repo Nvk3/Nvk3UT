@@ -13,8 +13,8 @@ local FormatCategoryHeaderText =
     or function(baseText, count, showCounts)
         local text = baseText or ""
         if showCounts ~= false and type(count) == "number" and count >= 0 then
-            local numericCount = math.floor(count + 0.5)
-            return string.format("%s (%d)", text, numericCount)
+            local numericCount = math_floor(count + 0.5)
+            return string_format("%s (%d)", text, numericCount)
         end
         return text
     end
@@ -80,6 +80,13 @@ local OBJECTIVE_MIN_HEIGHT = 20
 local ROW_TEXT_PADDING_Y = 8
 local TOGGLE_LABEL_PADDING_X = 4
 local CATEGORY_TOGGLE_WIDTH = 20
+
+local string_format = string.format
+local math_floor = math.floor
+local math_max = math.max
+local tostring = tostring
+local type = type
+local pairs = pairs
 
 local STRUCTURE_REBUILD_BATCH_SIZE = 12
 local ACHIEVEMENT_REBUILD_TASK_NAME = MODULE_NAME .. "_StructureRebuild"
@@ -165,16 +172,20 @@ function AchievementTrackerRow:Refresh(achievementData)
         self:SetAchievement(resolvedData)
     end
 
-    if not (self.control and self.achievement) then
+    local control = self.control
+    local achievement = self.achievement
+
+    if not (control and achievement) then
         return false, false
     end
 
-    local hasObjectives, isExpanded, isFavorite = ApplyAchievementRowVisuals(self.control, self.achievement)
+    local hasObjectives, isExpanded, isFavorite = ApplyAchievementRowVisuals(control, achievement)
     self.hasObjectives = hasObjectives and true or false
     self.isExpanded = isExpanded and true or false
     self.isFavorite = isFavorite and true or false
-    if self.control and self.control.GetHeight then
-        self.lastHeight = self.control:GetHeight() or 0
+    local getHeight = control.GetHeight
+    if getHeight then
+        self.lastHeight = getHeight(control) or 0
     end
     return self.hasObjectives, self.isExpanded
 end
@@ -452,7 +463,7 @@ local function ApplyRowMetrics(control, indent, toggleWidth, leftPadding, rightP
     local textHeight = control.label:GetTextHeight() or 0
     local targetHeight = textHeight + ROW_TEXT_PADDING_Y
     if minHeight then
-        targetHeight = math.max(minHeight, targetHeight)
+        targetHeight = math_max(minHeight, targetHeight)
     end
 
     control:SetHeight(targetHeight)
@@ -509,7 +520,7 @@ local function DebugLog(...)
     end
 
     if d then
-        d(string.format("[%s]", MODULE_NAME), ...)
+        d(string_format("[%s]", MODULE_NAME), ...)
     elseif print then
         print("[" .. MODULE_NAME .. "]", ...)
     end
@@ -525,19 +536,19 @@ local function AppendDebugField(parts, key, value, treatAsString)
     end
 
     if value == nil then
-        parts[#parts + 1] = string.format("%s=nil", key)
+        parts[#parts + 1] = string_format("%s=nil", key)
         return
     end
 
     local valueType = type(value)
     if valueType == "boolean" then
-        parts[#parts + 1] = string.format("%s=%s", key, value and "true" or "false")
+        parts[#parts + 1] = string_format("%s=%s", key, value and "true" or "false")
     elseif valueType == "number" then
-        parts[#parts + 1] = string.format("%s=%s", key, tostring(value))
+        parts[#parts + 1] = string_format("%s=%s", key, tostring(value))
     elseif treatAsString or valueType == "string" then
-        parts[#parts + 1] = string.format('%s="%s"', key, EscapeDebugString(value))
+        parts[#parts + 1] = string_format('%s="%s"', key, EscapeDebugString(value))
     else
-        parts[#parts + 1] = string.format("%s=%s", key, tostring(value))
+        parts[#parts + 1] = string_format("%s=%s", key, tostring(value))
     end
 end
 
@@ -645,7 +656,7 @@ local function BuildFontString(descriptor, fallback)
         return fallback
     end
 
-    return string.format("%s|%d|%s", face, size, outline or DEFAULT_FONT_OUTLINE)
+    return string_format("%s|%d|%s", face, size, outline or DEFAULT_FONT_OUTLINE)
 end
 
 local function BuildFavoritesScope()
@@ -1251,7 +1262,7 @@ local function ReturnCategoryControl(control)
     end
 
     if IsDebugLoggingEnabled() then
-        DebugLog(string.format("POOL_RETURN category control=%s", tostring(control.poolKey)))
+        DebugLog(string_format("POOL_RETURN category control=%s", tostring(control.poolKey)))
     end
 
     state.categoryPool:ReleaseObject(control.poolKey)
@@ -1263,7 +1274,7 @@ local function ReturnAchievementControl(achievementKey, control)
     end
 
     if IsDebugLoggingEnabled() then
-        DebugLog(string.format("POOL_RETURN achievement key=%s control=%s", tostring(achievementKey), tostring(control.poolKey)))
+        DebugLog(string_format("POOL_RETURN achievement key=%s control=%s", tostring(achievementKey), tostring(control.poolKey)))
     end
 
     state.achievementPool:ReleaseObject(control.poolKey)
@@ -1316,7 +1327,7 @@ local function RequestAchievementControl(achievementKey)
     if control then
         state.reusableAchievementControls[achievementKey] = nil
         if IsDebugLoggingEnabled() then
-            DebugLog(string.format("POOL_REUSE achievement=%s", tostring(achievementKey)))
+            DebugLog(string_format("POOL_REUSE achievement=%s", tostring(achievementKey)))
         end
     else
         control = AcquireAchievementControlFromPool()
@@ -1362,9 +1373,11 @@ local function PerformLayoutPass()
     local visibleCount = 0
     local maxWidth = 0
     local lastVisible = nil
+    local orderedControls = state.orderedControls
+    local verticalPadding = VERTICAL_PADDING
 
-    for index = 1, #state.orderedControls do
-        local control = state.orderedControls[index]
+    for index = 1, #orderedControls do
+        local control = orderedControls[index]
         if control then
             RefreshControlMetrics(control)
 
@@ -1388,28 +1401,28 @@ local function PerformLayoutPass()
                 lastVisible = control
 
                 if visibleCount > 0 then
-                    yOffset = yOffset + VERTICAL_PADDING
+                    yOffset = yOffset + verticalPadding
                 end
             end
         end
     end
 
     if visibleCount > 0 then
-        yOffset = yOffset - VERTICAL_PADDING
+        yOffset = yOffset - verticalPadding
     else
         yOffset = 0
     end
 
     state.lastAnchoredControl = lastVisible
     state.contentWidth = maxWidth
-    state.contentHeight = math.max(0, yOffset)
+    state.contentHeight = math_max(0, yOffset)
 
     if container.SetHeight then
         container:SetHeight(state.contentHeight)
     end
 
     if IsDebugLoggingEnabled() then
-        DebugLog(string.format(
+        DebugLog(string_format(
             "LAYOUT_ACH rows=%d height=%.2f",
             visibleCount,
             state.contentHeight or 0
@@ -1551,7 +1564,7 @@ local function FormatObjectiveText(objective)
 
     local text = description
     if ShouldShowObjectiveCounter(objective) then
-        text = string.format("%s (%s/%s)", description, tostring(objective.current), tostring(objective.max))
+        text = string_format("%s (%s/%s)", description, tostring(objective.current), tostring(objective.max))
     end
 
     return FormatDisplayString(text)
@@ -1713,7 +1726,9 @@ local function EnsurePools()
 
     local function resetControl(control)
         control:SetHidden(true)
-        control.data = nil
+        if control.data then
+            ClearTable(control.data)
+        end
         control.currentIndent = nil
     end
 
@@ -1804,10 +1819,13 @@ local function LayoutObjective(achievement, objective)
     end
 
     local control = AcquireObjectiveControl()
-    control.data = {
-        achievementId = achievement.id,
-        objective = objective,
-    }
+    local data = control.data
+    if not data then
+        data = {}
+        control.data = data
+    end
+    data.achievementId = achievement.id
+    data.objective = objective
     control.label:SetText(text)
     if control.label then
         local r, g, b, a = GetAchievementTrackerColor("objectiveText")
@@ -1831,11 +1849,14 @@ local function ApplyAchievementRowVisuals(control, achievement)
     local hasObjectives = achievement.objectives and #achievement.objectives > 0
     local isFavorite = IsFavoriteAchievement(achievement.id)
 
-    control.data = {
-        achievementId = achievement.id,
-        hasObjectives = hasObjectives,
-        isFavorite = isFavorite,
-    }
+    local data = control.data
+    if not data then
+        data = {}
+        control.data = data
+    end
+    data.achievementId = achievement.id
+    data.hasObjectives = hasObjectives
+    data.isFavorite = isFavorite
 
     if control.label and control.label.SetText then
         control.label:SetText(FormatDisplayString(achievement.name))
@@ -1986,7 +2007,12 @@ local function LayoutCategory()
     end
 
     local control = RequestCategoryControl()
-    control.data = { categoryKey = CATEGORY_KEY }
+    local data = control.data
+    if not data then
+        data = {}
+        control.data = data
+    end
+    data.categoryKey = CATEGORY_KEY
     control.label:SetText(FormatCategoryHeaderText("Errungenschaften", total or 0, "achievement"))
 
     local expanded = IsCategoryExpanded()
@@ -2116,7 +2142,7 @@ local function RunAchievementRebuildSynchronously(reason)
     job.async = nil
 
     if IsDebugLoggingEnabled() then
-        DebugLog(string.format("REBUILD_SYNC reason=%s", tostring(job.reason or "")))
+        DebugLog(string_format("REBUILD_SYNC reason=%s", tostring(job.reason or "")))
     end
 
     local ok, err = pcall(Rebuild)
@@ -2141,7 +2167,7 @@ local function StartAchievementRebuildJob(reason)
     if job.active then
         job.restartRequested = true
         if IsDebugLoggingEnabled() then
-            DebugLog(string.format("REBUILD_RESTART reason=%s", tostring(job.reason or "")))
+            DebugLog(string_format("REBUILD_RESTART reason=%s", tostring(job.reason or "")))
         end
         return true
     end
@@ -2160,7 +2186,7 @@ local function StartAchievementRebuildJob(reason)
     job.totalProcessed = 0
 
     if IsDebugLoggingEnabled() then
-        DebugLog(string.format("REBUILD_ASYNC_START reason=%s", tostring(job.reason or "")))
+        DebugLog(string_format("REBUILD_ASYNC_START reason=%s", tostring(job.reason or "")))
     end
 
     asyncTask:Then(function(task)
@@ -2176,7 +2202,7 @@ local function StartAchievementRebuildJob(reason)
                 batches = 0,
                 onBatchReady = function(context)
                     if IsDebugLoggingEnabled() then
-                        DebugLog(string.format(
+                        DebugLog(string_format(
                             "REBUILD_BATCH achievement batches=%d total=%d reason=%s",
                             context.batches or 0,
                             context.total or 0,
@@ -2198,7 +2224,7 @@ local function StartAchievementRebuildJob(reason)
             ClearActiveRebuildContext()
 
             if IsDebugLoggingEnabled() then
-                DebugLog(string.format(
+                DebugLog(string_format(
                     "REBUILD_ITERATION_COMPLETE rows=%d restart=%s reason=%s",
                     job.totalProcessed or 0,
                     tostring(job.restartRequested),
@@ -2356,7 +2382,7 @@ function AchievementTracker.ProcessStructureUpdate(context)
     if job.active then
         job.restartRequested = true
         if IsDebugLoggingEnabled() then
-            DebugLog(string.format(
+            DebugLog(string_format(
                 "REBUILD_RESTART_REQUEST reason=%s",
                 tostring(job.reason or "")
             ))
