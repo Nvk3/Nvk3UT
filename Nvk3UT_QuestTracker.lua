@@ -70,6 +70,38 @@ local IsQuestExpanded -- forward declaration so earlier functions can query ques
 local HandleQuestRowClick -- forward declaration for quest row click orchestration
 local FlushPendingTrackedQuestUpdate -- forward declaration for deferred tracking updates
 local ProcessTrackedQuestUpdate -- forward declaration for deferred tracking processing
+local ApplyQuestRowVisuals -- forward declaration for the quest row refresh helper
+
+--[=[
+QuestTrackerRow encapsulates the data and controls for a single quest row. The
+instance keeps a stable reference to the quest it represents along with the UI
+control that renders it so we can refresh the row in isolation when needed.
+The structure mirrors the per-row update strategy used by Ravalox, preparing
+the tracker for targeted refreshes without changing existing behavior yet.
+]=]
+local QuestTrackerRow = {}
+QuestTrackerRow.__index = QuestTrackerRow
+
+function QuestTrackerRow:New(options)
+    local opts = options or {}
+    local instance = setmetatable({}, QuestTrackerRow)
+    instance.questKey = opts.questKey
+    instance.quest = opts.quest
+    instance.control = opts.control
+    return instance
+end
+
+function QuestTrackerRow:Refresh(questData)
+    if questData ~= nil then
+        self.quest = questData
+    end
+
+    if not (self.control and self.quest) then
+        return
+    end
+
+    ApplyQuestRowVisuals(self.control, self.quest)
+end
 
 local state = {
     isInitialized = false,
@@ -87,6 +119,7 @@ local state = {
     subscription = nil,
     categoryControls = {},
     questControls = {},
+    questRows = {}, -- registry of QuestTrackerRow instances keyed by normalized quest id
     combatHidden = false,
     pendingRefresh = false,
     contentWidth = 0,
@@ -2656,6 +2689,7 @@ local function ResetLayoutState()
     state.lastAnchoredControl = nil
     state.categoryControls = {}
     state.questControls = {}
+    state.questRows = {}
 end
 
 local function ReleaseAll(pool)
@@ -3265,14 +3299,36 @@ local function LayoutCondition(condition)
     AnchorControl(control, CONDITION_INDENT_X)
 end
 
-local function LayoutQuest(quest)
-    local control = AcquireQuestControl()
+local function ApplyQuestRowVisuals(control, quest)
+    if not (control and quest) then
+        return
+    end
+
     control.data = { quest = quest }
-    control.label:SetText(quest.name or "")
+
+    if control.label and control.label.SetText then
+        control.label:SetText(quest.name or "")
+    end
 
     local colorRole = DetermineQuestColorRole(quest)
     local r, g, b, a = GetQuestTrackerColor(colorRole)
     ApplyBaseColor(control, r, g, b, a)
+
+    UpdateQuestIconSlot(control)
+
+    ApplyRowMetrics(
+        control,
+        QUEST_INDENT_X,
+        QUEST_ICON_SLOT_WIDTH,
+        QUEST_ICON_SLOT_PADDING_X,
+        0,
+        QUEST_MIN_HEIGHT
+    )
+end
+
+local function LayoutQuest(quest)
+    local control = AcquireQuestControl()
+    ApplyQuestRowVisuals(control, quest)
 
     local questKey = NormalizeQuestKey(quest.journalIndex)
     local expanded = IsQuestExpanded(quest.journalIndex)
@@ -3283,20 +3339,19 @@ local function LayoutQuest(quest)
             tostring(expanded)
         ))
     end
-    UpdateQuestIconSlot(control)
-    ApplyRowMetrics(
-        control,
-        QUEST_INDENT_X,
-        QUEST_ICON_SLOT_WIDTH,
-        QUEST_ICON_SLOT_PADDING_X,
-        0,
-        QUEST_MIN_HEIGHT
-    )
     control:SetHidden(false)
     AnchorControl(control, QUEST_INDENT_X)
 
     if quest and quest.journalIndex then
         state.questControls[quest.journalIndex] = control
+    end
+
+    if questKey then
+        state.questRows[questKey] = QuestTrackerRow:New({
+            questKey = questKey,
+            quest = quest,
+            control = control,
+        })
     end
 
     if expanded then
@@ -3376,6 +3431,10 @@ local function ReleaseRowControl(control)
         local questData = control.data and control.data.quest
         if questData and questData.journalIndex then
             state.questControls[questData.journalIndex] = nil
+            local questKey = NormalizeQuestKey(questData.journalIndex)
+            if questKey then
+                state.questRows[questKey] = nil
+            end
         end
         if state.questPool and control.poolKey then
             state.questPool:ReleaseObject(control.poolKey)
@@ -3647,6 +3706,18 @@ function QuestTracker.Init(parentControl, opts)
     AdoptTrackedQuestOnInit()
 end
 
+-- Returns the registered QuestTrackerRow instance for the given quest journal
+-- index or normalized quest key. This allows callers to fetch a stable row
+-- object and refresh it without rebuilding the entire tracker.
+function QuestTracker.GetQuestRow(questId)
+    local questKey = NormalizeQuestKey(questId)
+    if not questKey then
+        return nil
+    end
+
+    return state.questRows[questKey]
+end
+
 function QuestTracker.Refresh()
     if not state.isInitialized then
         return
@@ -3695,6 +3766,7 @@ function QuestTracker.Shutdown()
     state.lastAnchoredControl = nil
     state.categoryControls = {}
     state.questControls = {}
+    state.questRows = {}
     state.isInitialized = false
     state.opts = {}
     state.fonts = {}
