@@ -4156,8 +4156,28 @@ local function ApplyQuestRowVisuals(control, quest)
         control.data = data
     end
 
+    local questName = quest and quest.name
+    if (questName == nil or questName == "") and quest and quest.journalIndex then
+        -- When the snapshot unexpectedly lacks the quest title we recover by
+        -- querying the journal directly.  The previous pooling refactor could
+        -- leave us with valid quest rows but empty titles, which manifested as
+        -- blank tracker lines.  Falling back to the live journal API ensures
+        -- the header always renders a title without re-running the entire
+        -- rebuild.
+        if GetJournalQuestName then
+            local ok, fallback = SafeCall(GetJournalQuestName, quest.journalIndex)
+            if ok and type(fallback) == "string" and fallback ~= "" then
+                questName = fallback
+            end
+        end
+    end
+
+    if type(questName) == "string" and questName ~= "" and zo_strformat then
+        questName = zo_strformat("<<1>>", questName)
+    end
+
     if control.label and control.label.SetText then
-        control.label:SetText(quest.name or "")
+        control.label:SetText(questName or "")
     end
 
     local colorRole = DetermineQuestColorRole(quest)
