@@ -74,6 +74,21 @@ local COLOR_ROW_HOVER = { 1, 1, 0.6, 1 }
 
 local EMPTY_TABLE = {}
 
+local function GenerateControlName(controlType)
+    local counters = state.controlNameCounters
+    if not counters then
+        counters = {}
+        state.controlNameCounters = counters
+    end
+
+    counters[controlType] = (counters[controlType] or 0) + 1
+
+    local container = state.container
+    local baseName = (container and container.GetName and container:GetName()) or MODULE_NAME
+
+    return string_format("%s_%s_%d", baseName, controlType or "control", counters[controlType])
+end
+
 local RequestRefresh -- forward declaration for functions that trigger refreshes
 local SetCategoryExpanded -- forward declaration for expansion helpers used before assignment
 local SetQuestExpanded
@@ -3011,7 +3026,11 @@ local function BeginStructureRebuild()
         end
     end
 
-    local poolsReady = EnsurePools and EnsurePools()
+    local poolsReady = false
+    if type(EnsurePools) == "function" then
+        poolsReady = EnsurePools()
+    end
+
     if not poolsReady then
         if IsDebugLoggingEnabled() then
             DebugLog("REBUILD_ABORT pools unavailable")
@@ -3097,8 +3116,12 @@ local function RequestCategoryControl(category)
         if IsDebugLoggingEnabled() then
             DebugLog(string_format("POOL_REUSE category=%s", tostring(normalizedKey)))
         end
-    else
+    elseif type(AcquireCategoryControlFromPool) == "function" then
         control = AcquireCategoryControlFromPool()
+    else
+        if IsDebugLoggingEnabled() then
+            DebugLog("POOL_ACQUIRE category missing helper")
+        end
     end
 
     if control then
@@ -3120,8 +3143,12 @@ local function RequestQuestControl(questKey)
         if IsDebugLoggingEnabled() then
             DebugLog(string_format("POOL_REUSE quest=%s", tostring(questKey)))
         end
-    else
+    elseif type(AcquireQuestControlFromPool) == "function" then
         control = AcquireQuestControlFromPool()
+    else
+        if IsDebugLoggingEnabled() then
+            DebugLog("POOL_ACQUIRE quest missing helper")
+        end
     end
 
     if control then
@@ -3515,7 +3542,14 @@ local function FormatConditionText(condition)
 end
 
 local function AcquireCategoryControlInternal(forceReset)
-    local ensured = forceReset and EnsurePools(true) or EnsurePools()
+    local ensured = false
+    if type(EnsurePools) == "function" then
+        if forceReset then
+            ensured = EnsurePools(true)
+        else
+            ensured = EnsurePools()
+        end
+    end
     if not ensured then
         return nil
     end
@@ -3538,7 +3572,8 @@ local function AcquireCategoryControlInternal(forceReset)
         if not (WINDOW_MANAGER and WINDOW_MANAGER.CreateControlFromVirtual) then
             return nil
         end
-        control = WINDOW_MANAGER:CreateControlFromVirtual(nil, state.container, "CategoryHeader_Template")
+        local name = GenerateControlName("CategoryHeader")
+        control = WINDOW_MANAGER:CreateControlFromVirtual(name, state.container, "CategoryHeader_Template")
         if IsDebugLoggingEnabled() then
             DebugLog("POOL_CREATE category")
         end
@@ -3629,7 +3664,14 @@ AcquireCategoryControlFromPool = function()
 end
 
 local function AcquireQuestControlInternal(forceReset)
-    local ensured = forceReset and EnsurePools(true) or EnsurePools()
+    local ensured = false
+    if type(EnsurePools) == "function" then
+        if forceReset then
+            ensured = EnsurePools(true)
+        else
+            ensured = EnsurePools()
+        end
+    end
     if not ensured then
         return nil
     end
@@ -3652,7 +3694,8 @@ local function AcquireQuestControlInternal(forceReset)
         if not (WINDOW_MANAGER and WINDOW_MANAGER.CreateControlFromVirtual) then
             return nil
         end
-        control = WINDOW_MANAGER:CreateControlFromVirtual(nil, state.container, "QuestHeader_Template")
+        local name = GenerateControlName("QuestHeader")
+        control = WINDOW_MANAGER:CreateControlFromVirtual(name, state.container, "QuestHeader_Template")
         if IsDebugLoggingEnabled() then
             DebugLog("POOL_CREATE quest")
         end
@@ -3792,7 +3835,7 @@ end
 
 
 local function AcquireConditionControl()
-    if not EnsurePools() then
+    if type(EnsurePools) ~= "function" or not EnsurePools() then
         return nil
     end
 
@@ -3814,7 +3857,8 @@ local function AcquireConditionControl()
         if not (WINDOW_MANAGER and WINDOW_MANAGER.CreateControlFromVirtual) then
             return nil
         end
-        control = WINDOW_MANAGER:CreateControlFromVirtual(nil, state.container, "QuestCondition_Template")
+        local name = GenerateControlName("QuestCondition")
+        control = WINDOW_MANAGER:CreateControlFromVirtual(name, state.container, "QuestCondition_Template")
     end
 
     if not control then
@@ -4277,9 +4321,14 @@ local function Rebuild()
 
     if not rebuildReady then
         state.isRebuildInProgress = false
-        QueueQuestStructureUpdate({ reason = "QuestTracker.BeginRebuildDeferred", trigger = "structure" })
+        state.lastStructureFailure = "pools"
+        if IsDebugLoggingEnabled() then
+            DebugLog("REBUILD_DEFER prerequisites unavailable")
+        end
         return
     end
+
+    state.lastStructureFailure = nil
 
     if not state.snapshot or not state.snapshot.categories or not state.snapshot.categories.ordered then
         FinalizeStructureRebuild()

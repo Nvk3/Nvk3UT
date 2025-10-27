@@ -111,6 +111,21 @@ local FOCUS_HIGHLIGHT_DURATION_MS = 1600
 local FAVORITES_LOOKUP_KEY = "NVK3UT_FAVORITES_ROOT"
 local FAVORITES_CATEGORY_ID = "Nvk3UT_Favorites"
 
+local function GenerateControlName(controlType)
+    local counters = state.controlNameCounters
+    if not counters then
+        counters = {}
+        state.controlNameCounters = counters
+    end
+
+    counters[controlType] = (counters[controlType] or 0) + 1
+
+    local container = state.container
+    local baseName = (container and container.GetName and container:GetName()) or MODULE_NAME
+
+    return string_format("%s_%s_%d", baseName, controlType or "control", counters[controlType])
+end
+
 local NormalizeAchievementKey -- forward declaration for achievement row registry keys
 local ApplyAchievementRowVisuals -- forward declaration for the achievement row refresh helper
 local ResolveAchievementRowData -- forward declaration for row data resolution
@@ -1394,7 +1409,11 @@ local function BeginStructureRebuild()
         end
     end
 
-    local poolsReady = EnsurePools and EnsurePools()
+    local poolsReady = false
+    if type(EnsurePools) == "function" then
+        poolsReady = EnsurePools()
+    end
+
     if not poolsReady then
         if IsDebugLoggingEnabled() then
             DebugLog("REBUILD_ABORT pools unavailable")
@@ -1480,8 +1499,12 @@ local function RequestCategoryControl()
         if IsDebugLoggingEnabled() then
             DebugLog("POOL_REUSE category")
         end
-    else
+    elseif type(AcquireCategoryControlFromPool) == "function" then
         control = AcquireCategoryControlFromPool()
+    else
+        if IsDebugLoggingEnabled() then
+            DebugLog("POOL_ACQUIRE category missing helper")
+        end
     end
 
     if control then
@@ -1500,8 +1523,12 @@ local function RequestAchievementControl(achievementKey)
         if IsDebugLoggingEnabled() then
             DebugLog(string_format("POOL_REUSE achievement=%s", tostring(achievementKey)))
         end
-    else
+    elseif type(AcquireAchievementControlFromPool) == "function" then
         control = AcquireAchievementControlFromPool()
+    else
+        if IsDebugLoggingEnabled() then
+            DebugLog("POOL_ACQUIRE achievement missing helper")
+        end
     end
 
     if control then
@@ -1769,7 +1796,14 @@ local function ShouldDisplayObjective(objective)
 end
 
 local function AcquireCategoryControlInternal(forceReset)
-    local ensured = forceReset and EnsurePools(true) or EnsurePools()
+    local ensured = false
+    if type(EnsurePools) == "function" then
+        if forceReset then
+            ensured = EnsurePools(true)
+        else
+            ensured = EnsurePools()
+        end
+    end
     if not ensured then
         return nil
     end
@@ -1792,7 +1826,8 @@ local function AcquireCategoryControlInternal(forceReset)
         if not (WINDOW_MANAGER and WINDOW_MANAGER.CreateControlFromVirtual) then
             return nil
         end
-        control = WINDOW_MANAGER:CreateControlFromVirtual(nil, state.container, "AchievementsCategoryHeader_Template")
+        local name = GenerateControlName("AchievementCategoryHeader")
+        control = WINDOW_MANAGER:CreateControlFromVirtual(name, state.container, "AchievementsCategoryHeader_Template")
         if IsDebugLoggingEnabled() then
             DebugLog("POOL_CREATE category")
         end
@@ -1876,7 +1911,14 @@ AcquireCategoryControlFromPool = function()
 end
 
 local function AcquireAchievementControlInternal(forceReset)
-    local ensured = forceReset and EnsurePools(true) or EnsurePools()
+    local ensured = false
+    if type(EnsurePools) == "function" then
+        if forceReset then
+            ensured = EnsurePools(true)
+        else
+            ensured = EnsurePools()
+        end
+    end
     if not ensured then
         return nil
     end
@@ -1899,7 +1941,8 @@ local function AcquireAchievementControlInternal(forceReset)
         if not (WINDOW_MANAGER and WINDOW_MANAGER.CreateControlFromVirtual) then
             return nil
         end
-        control = WINDOW_MANAGER:CreateControlFromVirtual(nil, state.container, "AchievementHeader_Template")
+        local name = GenerateControlName("AchievementHeader")
+        control = WINDOW_MANAGER:CreateControlFromVirtual(name, state.container, "AchievementHeader_Template")
         if IsDebugLoggingEnabled() then
             DebugLog("POOL_CREATE achievement")
         end
@@ -1989,7 +2032,7 @@ AcquireAchievementControlFromPool = function()
 end
 
 local function AcquireObjectiveControl()
-    if not EnsurePools() then
+    if type(EnsurePools) ~= "function" or not EnsurePools() then
         return nil
     end
 
@@ -2011,7 +2054,8 @@ local function AcquireObjectiveControl()
         if not (WINDOW_MANAGER and WINDOW_MANAGER.CreateControlFromVirtual) then
             return nil
         end
-        control = WINDOW_MANAGER:CreateControlFromVirtual(nil, state.container, "AchievementObjective_Template")
+        local name = GenerateControlName("AchievementObjective")
+        control = WINDOW_MANAGER:CreateControlFromVirtual(name, state.container, "AchievementObjective_Template")
     end
 
     if not control then
@@ -2382,9 +2426,14 @@ local function Rebuild()
 
     if not rebuildReady then
         state.isRebuildInProgress = false
-        QueueAchievementStructureUpdate({ reason = "AchievementTracker.BeginRebuildDeferred", trigger = "structure" })
+        state.lastStructureFailure = "pools"
+        if IsDebugLoggingEnabled() then
+            DebugLog("REBUILD_DEFER prerequisites unavailable")
+        end
         return
     end
+
+    state.lastStructureFailure = nil
 
     if not state.snapshot or not state.snapshot.achievements then
         FinalizeStructureRebuild()
