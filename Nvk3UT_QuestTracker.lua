@@ -4001,7 +4001,10 @@ local function ResetBaseControl(control)
     control._nvkActive = nil
 end
 
-function ResetCategoryControl(control)
+-- Assign the forward-declared reset helpers after all dependencies are in
+-- scope so earlier pooling helpers (like AcquireCategoryControlInternal)
+-- always invoke a real function instead of hitting a nil placeholder.
+ResetCategoryControl = function(control)
     ResetBaseControl(control)
     local toggle = control and control.toggle
     if toggle then
@@ -4014,7 +4017,7 @@ function ResetCategoryControl(control)
     end
 end
 
-function ResetQuestControl(control)
+ResetQuestControl = function(control)
     ResetBaseControl(control)
     if control and control.label and control.label.SetText then
         control.label:SetText("")
@@ -4033,7 +4036,7 @@ function ResetQuestControl(control)
     end
 end
 
-function ResetConditionControl(control)
+ResetConditionControl = function(control)
     ResetBaseControl(control)
     if control and control.label and control.label.SetText then
         control.label:SetText("")
