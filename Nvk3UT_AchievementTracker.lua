@@ -230,6 +230,7 @@ local state = {
     reusableAchievementControls = nil,
     rebuildJob = nil,
     activeRebuildContext = nil,
+    isRebuildInProgress = false,
 }
 
 ResolveAchievementRowData = function(achievementKey)
@@ -2164,12 +2165,14 @@ local function Rebuild()
         return
     end
 
+    state.isRebuildInProgress = true
     BeginStructureRebuild()
 
     if not state.snapshot or not state.snapshot.achievements then
         FinalizeStructureRebuild()
         NotifyHostContentChanged()
         ApplyPendingFocus()
+        state.isRebuildInProgress = false
         return
     end
 
@@ -2178,6 +2181,7 @@ local function Rebuild()
     FinalizeStructureRebuild()
     NotifyHostContentChanged()
     ApplyPendingFocus()
+    state.isRebuildInProgress = false
 end
 
 local function RunAchievementRebuildSynchronously(reason)
@@ -2193,8 +2197,11 @@ local function RunAchievementRebuildSynchronously(reason)
     end
 
     local ok, err = pcall(Rebuild)
-    if not ok and IsDebugLoggingEnabled() then
-        DebugLog("REBUILD_ERROR", tostring(err))
+    if not ok then
+        state.isRebuildInProgress = false
+        if IsDebugLoggingEnabled() then
+            DebugLog("REBUILD_ERROR", tostring(err))
+        end
     end
 
     QueueLayoutUpdate({
@@ -2264,8 +2271,11 @@ local function StartAchievementRebuildJob(reason)
             }
 
             local ok, err = pcall(Rebuild)
-            if not ok and IsDebugLoggingEnabled() then
-                DebugLog("REBUILD_ERROR", tostring(err))
+            if not ok then
+                state.isRebuildInProgress = false
+                if IsDebugLoggingEnabled() then
+                    DebugLog("REBUILD_ERROR", tostring(err))
+                end
             end
 
             ClearActiveRebuildContext()
@@ -2589,6 +2599,15 @@ end
 
 function AchievementTracker.RequestRefresh()
     RequestRefresh()
+end
+
+function AchievementTracker.IsStructureRebuildActive()
+    local job = state.rebuildJob
+    if job and job.active then
+        return true
+    end
+
+    return state.isRebuildInProgress == true
 end
 
 function AchievementTracker.SetActive(active)

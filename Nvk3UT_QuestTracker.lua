@@ -4110,8 +4110,11 @@ local function RunQuestRebuildSynchronously(reason)
     end
 
     local ok, err = pcall(Rebuild)
-    if not ok and IsDebugLoggingEnabled() then
-        DebugLog("REBUILD_ERROR", tostring(err))
+    if not ok then
+        state.isRebuildInProgress = false
+        if IsDebugLoggingEnabled() then
+            DebugLog("REBUILD_ERROR", tostring(err))
+        end
     end
 
     QueueLayoutUpdate({
@@ -4182,8 +4185,11 @@ local function StartQuestRebuildJob(reason)
             }
 
             local ok, err = pcall(Rebuild)
-            if not ok and IsDebugLoggingEnabled() then
-                DebugLog("REBUILD_ERROR", tostring(err))
+            if not ok then
+                state.isRebuildInProgress = false
+                if IsDebugLoggingEnabled() then
+                    DebugLog("REBUILD_ERROR", tostring(err))
+                end
             end
 
             ClearActiveRebuildContext()
@@ -4505,6 +4511,15 @@ end
 
 function QuestTracker.RequestRefresh()
     RequestRefresh()
+end
+
+function QuestTracker.IsStructureRebuildActive()
+    local job = state.rebuildJob
+    if job and job.active then
+        return true
+    end
+
+    return state.isRebuildInProgress == true
 end
 
 function QuestTracker.GetContentSize()

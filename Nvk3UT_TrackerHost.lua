@@ -208,6 +208,8 @@ local function ensureUpdateManager()
         rowsToRefreshBuffer = {},
         queuedRows = {},
         queuedRowsBuffer = {},
+        pendingQuestRowKeys = {},
+        pendingAchievementRowKeys = {},
         updateDebounceHandle = nil,
         updateDebounceActive = false,
         updateDebounceReason = nil,
@@ -238,11 +240,128 @@ local function clearUpdateManager()
     clearArray(manager.rowsToRefreshBuffer)
     clearTable(manager.queuedRows)
     clearTable(manager.queuedRowsBuffer)
+    clearTable(manager.pendingQuestRowKeys)
+    clearTable(manager.pendingAchievementRowKeys)
     manager.updateDebounceActive = false
     manager.updateDebounceReason = nil
     manager.updateDebounceReleased = true
     manager.framesSinceLastRefresh = FRAME_BATCH_THRESHOLD_FRAMES
     manager.initialRefreshDone = false
+end
+
+local function trackPendingRowRefresh(rowType, key, context)
+    if key == nil then
+        return
+    end
+
+    local manager = ensureUpdateManager()
+    local pendingMap
+    local reasonHint
+
+    if rowType == "quest" then
+        pendingMap = manager.pendingQuestRowKeys
+        reasonHint = "questRow"
+    else
+        pendingMap = manager.pendingAchievementRowKeys
+        reasonHint = "achievementRow"
+    end
+
+    if not pendingMap then
+        if rowType == "quest" then
+            manager.pendingQuestRowKeys = {}
+            pendingMap = manager.pendingQuestRowKeys
+        else
+            manager.pendingAchievementRowKeys = {}
+            pendingMap = manager.pendingAchievementRowKeys
+        end
+    end
+
+    local stored = {}
+    if type(context) == "table" then
+        stored.reason = extractReason(context, reasonHint)
+        stored.trigger = context.trigger
+        stored.source = context.source
+    else
+        stored.reason = extractReason(context, reasonHint)
+    end
+
+    pendingMap[key] = stored
+
+    if isDebugLoggingEnabled() then
+        debugLog(string_format(
+            "PENDING_%s_ROW key=%s reason=%s",
+            rowType,
+            tostring(key),
+            tostring(stored.reason or "")
+        ))
+    end
+end
+
+local function flushPendingRowRefreshes(manager, rowType)
+    local pendingMap
+    local tracker
+    local getRowMethod
+
+    if rowType == "quest" then
+        pendingMap = manager.pendingQuestRowKeys
+        if manager.questsStructureDirty then
+            return 0
+        end
+        tracker = Nvk3UT and Nvk3UT.QuestTracker
+        getRowMethod = tracker and tracker.GetQuestRow
+    else
+        pendingMap = manager.pendingAchievementRowKeys
+        if manager.achievementsStructureDirty then
+            return 0
+        end
+        tracker = Nvk3UT and Nvk3UT.AchievementTracker
+        getRowMethod = tracker and tracker.GetAchievementRow
+    end
+
+    if not (pendingMap and next(pendingMap)) then
+        return 0
+    end
+
+    local rebuildActive = false
+    if tracker and tracker.IsStructureRebuildActive then
+        local ok, active = safeCall(tracker.IsStructureRebuildActive)
+        rebuildActive = ok and active == true
+    end
+
+    if rebuildActive then
+        return 0
+    end
+
+    local queued = 0
+
+    for key, storedContext in pairs(pendingMap) do
+        local row = nil
+        if getRowMethod then
+            local ok, result = safeCall(getRowMethod, key)
+            if ok and result then
+                row = result
+            end
+        end
+
+        if row then
+            local context = {
+                reason = storedContext and storedContext.reason or extractReason(nil, rowType .. "Row"),
+                trigger = storedContext and storedContext.trigger,
+                source = storedContext and storedContext.source,
+                allowStructureFallback = false,
+            }
+            queueRowForRefresh(row, context, rowType)
+            queued = queued + 1
+        end
+
+        pendingMap[key] = nil
+    end
+
+    if queued > 0 and isDebugLoggingEnabled() then
+        debugLog(string_format("FLUSH_PENDING_%s_ROWS queued=%d", rowType, queued))
+    end
+
+    return queued
 end
 
 local function extractReason(context, defaultReason)
@@ -433,6 +552,32 @@ local function hasPendingWork(manager)
     local queue = manager.rowsToRefresh
     if queue and #queue > 0 then
         return true
+    end
+
+    local pendingQuest = manager.pendingQuestRowKeys
+    if pendingQuest and next(pendingQuest) then
+        local questTracker = Nvk3UT and Nvk3UT.QuestTracker
+        local rebuildActive = false
+        if questTracker and questTracker.IsStructureRebuildActive then
+            local ok, active = safeCall(questTracker.IsStructureRebuildActive)
+            rebuildActive = ok and active == true
+        end
+        if not rebuildActive then
+            return true
+        end
+    end
+
+    local pendingAchievement = manager.pendingAchievementRowKeys
+    if pendingAchievement and next(pendingAchievement) then
+        local achievementTracker = Nvk3UT and Nvk3UT.AchievementTracker
+        local rebuildActive = false
+        if achievementTracker and achievementTracker.IsStructureRebuildActive then
+            local ok, active = safeCall(achievementTracker.IsStructureRebuildActive)
+            rebuildActive = ok and active == true
+        end
+        if not rebuildActive then
+            return true
+        end
     end
 
     return false
@@ -2147,9 +2292,26 @@ function TrackerHost.QueueQuestRowRefresh(questKey, context)
         if type(context) == "table" and context.allowStructureFallback == false then
             allowFallback = false
         end
-        if allowFallback then
-            markQuestsStructureDirty({ reason = "missingQuestRow", source = context and context.source })
+
+        trackPendingRowRefresh("quest", questKey, context)
+
+        local rebuildActive = false
+        if questTracker and questTracker.IsStructureRebuildActive then
+            local okActive, active = safeCall(questTracker.IsStructureRebuildActive)
+            rebuildActive = okActive and active == true
         end
+
+        if allowFallback and not rebuildActive then
+            markQuestsStructureDirty({ reason = "missingQuestRow", source = context and context.source })
+        elseif isDebugLoggingEnabled() then
+            debugLog(string_format(
+                "QUEUE quest row pending key=%s fallback=%s rebuildActive=%s",
+                tostring(questKey),
+                tostring(allowFallback),
+                tostring(rebuildActive)
+            ))
+        end
+
         return false
     end
 
@@ -2168,9 +2330,26 @@ function TrackerHost.QueueAchievementRowRefresh(achievementId, context)
         if type(context) == "table" and context.allowStructureFallback == false then
             allowFallback = false
         end
-        if allowFallback then
-            markAchievementsStructureDirty({ reason = "missingAchievementRow", source = context and context.source })
+
+        trackPendingRowRefresh("achievement", achievementId, context)
+
+        local rebuildActive = false
+        if achievementTracker and achievementTracker.IsStructureRebuildActive then
+            local okActive, active = safeCall(achievementTracker.IsStructureRebuildActive)
+            rebuildActive = okActive and active == true
         end
+
+        if allowFallback and not rebuildActive then
+            markAchievementsStructureDirty({ reason = "missingAchievementRow", source = context and context.source })
+        elseif isDebugLoggingEnabled() then
+            debugLog(string_format(
+                "QUEUE achievement row pending key=%s fallback=%s rebuildActive=%s",
+                tostring(achievementId),
+                tostring(allowFallback),
+                tostring(rebuildActive)
+            ))
+        end
+
         return false
     end
 
@@ -2299,8 +2478,16 @@ function TrackerHost.ProcessTrackerUpdates()
         applyWindowVisibility()
     end
 
+    local pendingQueued = 0
+    pendingQueued = pendingQueued + flushPendingRowRefreshes(manager, "quest")
+    pendingQueued = pendingQueued + flushPendingRowRefreshes(manager, "achievement")
+
     local refreshedCount = processRows(manager)
     if refreshedCount > 0 then
+        layoutNeeded = true
+    end
+
+    if pendingQueued > 0 then
         layoutNeeded = true
     end
 
