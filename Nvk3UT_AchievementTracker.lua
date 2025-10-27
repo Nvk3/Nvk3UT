@@ -113,6 +113,7 @@ local FAVORITES_CATEGORY_ID = "Nvk3UT_Favorites"
 local NormalizeAchievementKey -- forward declaration for achievement row registry keys
 local ApplyAchievementRowVisuals -- forward declaration for the achievement row refresh helper
 local ResolveAchievementRowData -- forward declaration for row data resolution
+local EnsurePools -- forward declaration for achievement control pooling
 
 --[=[
 AchievementTrackerRow encapsulates the data and controls for a single
@@ -1734,7 +1735,7 @@ local function AcquireObjectiveControl()
     return control
 end
 
-local function EnsurePools()
+EnsurePools = function()
     if state.categoryPool then
         return
     end

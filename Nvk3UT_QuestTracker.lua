@@ -82,6 +82,7 @@ local FlushPendingTrackedQuestUpdate -- forward declaration for deferred trackin
 local ProcessTrackedQuestUpdate -- forward declaration for deferred tracking processing
 local ApplyQuestRowVisuals -- forward declaration for the quest row refresh helper
 local ResolveQuestRowData -- forward declaration for retrieving quest data during row refresh
+local EnsurePools -- forward declaration for quest control pooling
 
 --[=[
 QuestTrackerRow encapsulates the data and controls for a single quest row. The
@@ -3693,7 +3694,7 @@ local function AttachBackdrop()
     EnsureBackdrop()
 end
 
-local function EnsurePools()
+EnsurePools = function()
     if state.categoryPool then
         return
     end
