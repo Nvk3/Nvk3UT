@@ -95,6 +95,17 @@ function QuestTrackerRow:SetControl(control)
     self.control = control
 end
 
+function QuestTrackerRow:ClearControl()
+    self.control = nil
+    self.lastHeight = 0
+end
+
+function QuestTrackerRow:DetachControl()
+    local control = self.control
+    self:ClearControl()
+    return control
+end
+
 function QuestTrackerRow:SetQuest(questData)
     self.quest = questData
     if questData and questData.journalIndex then
@@ -152,7 +163,10 @@ local state = {
     subscription = nil,
     categoryControls = {},
     questControls = {},
+    questControlsByKey = {},
     questRows = {}, -- registry of QuestTrackerRow instances keyed by normalized quest id
+    reusableCategoryControls = nil,
+    reusableQuestControls = nil,
     combatHidden = false,
     contentWidth = 0,
     contentHeight = 0,
@@ -2841,17 +2855,147 @@ end
 local function ResetLayoutState()
     state.orderedControls = {}
     state.lastAnchoredControl = nil
-    state.categoryControls = {}
-    state.questControls = {}
-    state.questRows = {}
     state.contentWidth = 0
     state.contentHeight = 0
 end
 
-local function ReleaseAll(pool)
-    if pool then
-        pool:ReleaseAllObjects()
+local function ClearTable(tbl)
+    if not tbl then
+        return
     end
+
+    for key in pairs(tbl) do
+        tbl[key] = nil
+    end
+end
+
+local function BeginStructureRebuild()
+    EnsurePools()
+    ResetLayoutState()
+
+    if not state.reusableCategoryControls then
+        state.reusableCategoryControls = {}
+    else
+        ClearTable(state.reusableCategoryControls)
+    end
+
+    for key, control in pairs(state.categoryControls) do
+        if key and control then
+            control:SetHidden(true)
+            state.reusableCategoryControls[key] = control
+        end
+    end
+
+    if not state.reusableQuestControls then
+        state.reusableQuestControls = {}
+    else
+        ClearTable(state.reusableQuestControls)
+    end
+
+    for questKey, row in pairs(state.questRows) do
+        if row and row.DetachControl then
+            local detached = row:DetachControl()
+            if detached then
+                detached:SetHidden(true)
+                state.reusableQuestControls[questKey] = detached
+            end
+        end
+    end
+
+    state.categoryControls = {}
+    state.questControls = {}
+    state.questControlsByKey = {}
+
+    if state.conditionPool then
+        state.conditionPool:ReleaseAllObjects()
+    end
+end
+
+local function ReturnCategoryControl(control)
+    if not (control and state.categoryPool and control.poolKey) then
+        return
+    end
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format("POOL_RETURN category key=%s", tostring(control.poolKey)))
+    end
+
+    state.categoryPool:ReleaseObject(control.poolKey)
+end
+
+local function ReturnQuestControl(questKey, control)
+    if not (control and state.questPool and control.poolKey) then
+        return
+    end
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format("POOL_RETURN quest key=%s control=%s", tostring(questKey), tostring(control.poolKey)))
+    end
+
+    state.questPool:ReleaseObject(control.poolKey)
+end
+
+local function FinalizeStructureRebuild()
+    if state.reusableCategoryControls then
+        for key, control in pairs(state.reusableCategoryControls) do
+            ReturnCategoryControl(control)
+            state.reusableCategoryControls[key] = nil
+        end
+    end
+
+    if state.reusableQuestControls then
+        for questKey, control in pairs(state.reusableQuestControls) do
+            if state.questRows and state.questRows[questKey] then
+                state.questRows[questKey]:ClearControl()
+                state.questRows[questKey] = nil
+            end
+            ReturnQuestControl(questKey, control)
+            state.reusableQuestControls[questKey] = nil
+        end
+    end
+end
+
+local function RequestCategoryControl(category)
+    local normalizedKey = category and NormalizeCategoryKey and NormalizeCategoryKey(category.key)
+    local control = normalizedKey and state.reusableCategoryControls and state.reusableCategoryControls[normalizedKey] or nil
+
+    if control then
+        state.reusableCategoryControls[normalizedKey] = nil
+        if IsDebugLoggingEnabled() then
+            DebugLog(string.format("POOL_REUSE category=%s", tostring(normalizedKey)))
+        end
+    else
+        control = AcquireCategoryControlFromPool()
+    end
+
+    if control then
+        control.rowType = "category"
+    end
+
+    if normalizedKey then
+        state.categoryControls[normalizedKey] = control
+    end
+
+    return control
+end
+
+local function RequestQuestControl(questKey)
+    local control = questKey and state.reusableQuestControls and state.reusableQuestControls[questKey] or nil
+
+    if control then
+        state.reusableQuestControls[questKey] = nil
+        if IsDebugLoggingEnabled() then
+            DebugLog(string.format("POOL_REUSE quest=%s", tostring(questKey)))
+        end
+    else
+        control = AcquireQuestControlFromPool()
+    end
+
+    if control then
+        control.rowType = "quest"
+    end
+
+    return control
 end
 
 local function AnchorControl(control, indentX)
@@ -3235,7 +3379,7 @@ local function FormatConditionText(condition)
     return text
 end
 
-local function AcquireCategoryControl()
+local function AcquireCategoryControlFromPool()
     local control, key = state.categoryPool:AcquireObject()
     if not control.initialized then
         control.label = control:GetNamedChild("Label")
@@ -3294,7 +3438,7 @@ local function AcquireCategoryControl()
     return control, key
 end
 
-local function AcquireQuestControl()
+local function AcquireQuestControlFromPool()
     local control, key = state.questPool:AcquireObject()
     if not control.initialized then
         control.label = control:GetNamedChild("Label")
@@ -3477,6 +3621,19 @@ local function EnsurePools()
             end
         end
     end)
+    state.categoryPool:SetCustomFactoryBehavior(function(_, control)
+        control.__nvkPoolFresh = "category"
+    end)
+    state.categoryPool:SetCustomAcquireBehavior(function(control)
+        if IsDebugLoggingEnabled() then
+            if control.__nvkPoolFresh == "category" then
+                DebugLog("POOL_CREATE category")
+            else
+                DebugLog("POOL_TAKE category")
+            end
+        end
+        control.__nvkPoolFresh = nil
+    end)
     state.questPool:SetCustomResetBehavior(function(control)
         resetControl(control)
         if control.label and control.label.SetText then
@@ -3493,6 +3650,19 @@ local function EnsurePools()
                 control.iconSlot:SetHidden(false)
             end
         end
+    end)
+    state.questPool:SetCustomFactoryBehavior(function(_, control)
+        control.__nvkPoolFresh = "quest"
+    end)
+    state.questPool:SetCustomAcquireBehavior(function(control)
+        if IsDebugLoggingEnabled() then
+            if control.__nvkPoolFresh == "quest" then
+                DebugLog("POOL_CREATE quest")
+            else
+                DebugLog("POOL_TAKE quest")
+            end
+        end
+        control.__nvkPoolFresh = nil
     end)
     state.conditionPool:SetCustomResetBehavior(resetControl)
 end
@@ -3542,8 +3712,8 @@ local function ApplyQuestRowVisuals(control, quest)
 end
 
 local function LayoutQuest(quest)
-    local control = AcquireQuestControl()
     local questKey = NormalizeQuestKey(quest.journalIndex)
+    local control = RequestQuestControl(questKey)
     local expanded = IsQuestExpanded(quest.journalIndex)
     if IsDebugLoggingEnabled() then
         DebugLog(string.format(
@@ -3575,6 +3745,10 @@ local function LayoutQuest(quest)
         state.questControls[quest.journalIndex] = control
     end
 
+    if questKey then
+        state.questControlsByKey[questKey] = control
+    end
+
     if expanded then
         for stepIndex = 1, #quest.steps do
             local step = quest.steps[stepIndex]
@@ -3588,7 +3762,7 @@ local function LayoutQuest(quest)
 end
 
 local function LayoutCategory(category)
-    local control = AcquireCategoryControl()
+    local control = RequestCategoryControl(category)
     control.data = {
         categoryKey = category.key,
         parentKey = category.parent and category.parent.key or nil,
@@ -3634,107 +3808,8 @@ local function LayoutCategory(category)
     end
 end
 
-local function ReleaseRowControl(control)
-    if not control then
-        return
-    end
-
-    local rowType = control.rowType
-    if rowType == "category" then
-        local normalized = control.data and NormalizeCategoryKey(control.data.categoryKey)
-        if normalized then
-            state.categoryControls[normalized] = nil
-        end
-        if state.categoryPool and control.poolKey then
-            state.categoryPool:ReleaseObject(control.poolKey)
-        end
-    elseif rowType == "quest" then
-        local questData = control.data and control.data.quest
-        if questData and questData.journalIndex then
-            state.questControls[questData.journalIndex] = nil
-            local questKey = NormalizeQuestKey(questData.journalIndex)
-            if questKey then
-                state.questRows[questKey] = nil
-            end
-        end
-        if state.questPool and control.poolKey then
-            state.questPool:ReleaseObject(control.poolKey)
-        end
-    else
-        if state.conditionPool and control.poolKey then
-            state.conditionPool:ReleaseObject(control.poolKey)
-        end
-    end
-end
-
-local function TrimOrderedControlsToCategory(keepCategoryCount)
-    if keepCategoryCount <= 0 then
-        ReleaseAll(state.categoryPool)
-        ReleaseAll(state.questPool)
-        ReleaseAll(state.conditionPool)
-        ResetLayoutState()
-        return
-    end
-
-    local categoryCounter = 0
-    local releaseStartIndex = nil
-
-    for index = 1, #state.orderedControls do
-        local control = state.orderedControls[index]
-        if control and control.rowType == "category" then
-            categoryCounter = categoryCounter + 1
-            if categoryCounter > keepCategoryCount then
-                releaseStartIndex = index
-                break
-            end
-        end
-    end
-
-    if releaseStartIndex then
-        for index = #state.orderedControls, releaseStartIndex, -1 do
-            ReleaseRowControl(state.orderedControls[index])
-            table.remove(state.orderedControls, index)
-        end
-    end
-
-    state.lastAnchoredControl = state.orderedControls[#state.orderedControls]
-end
-
-local function RelayoutFromCategoryIndex(startCategoryIndex)
-    ApplyActiveQuestFromSaved()
-    EnsurePools()
-
-    if not state.snapshot or not state.snapshot.categories or not state.snapshot.categories.ordered then
-        ReleaseAll(state.categoryPool)
-        ReleaseAll(state.questPool)
-        ReleaseAll(state.conditionPool)
-        ResetLayoutState()
-        NotifyHostContentChanged()
-        ProcessPendingExternalReveal()
-        return
-    end
-
-    if startCategoryIndex <= 1 then
-        ReleaseAll(state.categoryPool)
-        ReleaseAll(state.questPool)
-        ReleaseAll(state.conditionPool)
-        ResetLayoutState()
-        startCategoryIndex = 1
-    else
-        TrimOrderedControlsToCategory(startCategoryIndex - 1)
-    end
-
-    PrimeInitialSavedState()
-
-    for index = startCategoryIndex, #state.snapshot.categories.ordered do
-        local category = state.snapshot.categories.ordered[index]
-        if category and category.quests and #category.quests > 0 then
-            LayoutCategory(category)
-        end
-    end
-
-    NotifyHostContentChanged()
-    ProcessPendingExternalReveal()
+local function RelayoutFromCategoryIndex(_)
+    Rebuild()
 end
 
 local function ApplySnapshot(snapshot, context)
@@ -3803,15 +3878,10 @@ local function Rebuild()
 
     state.isRebuildInProgress = true
     ApplyActiveQuestFromSaved()
-
-    EnsurePools()
-
-    ReleaseAll(state.categoryPool)
-    ReleaseAll(state.questPool)
-    ReleaseAll(state.conditionPool)
-    ResetLayoutState()
+    BeginStructureRebuild()
 
     if not state.snapshot or not state.snapshot.categories or not state.snapshot.categories.ordered then
+        FinalizeStructureRebuild()
         NotifyHostContentChanged()
         state.isRebuildInProgress = false
         if IsDebugLoggingEnabled() then
@@ -3829,6 +3899,7 @@ local function Rebuild()
         end
     end
 
+    FinalizeStructureRebuild()
     NotifyHostContentChanged()
     ProcessPendingExternalReveal()
 
@@ -4012,7 +4083,10 @@ function QuestTracker.Shutdown()
     state.lastAnchoredControl = nil
     state.categoryControls = {}
     state.questControls = {}
+    state.questControlsByKey = {}
     state.questRows = {}
+    state.reusableCategoryControls = nil
+    state.reusableQuestControls = nil
     state.isInitialized = false
     state.opts = {}
     state.fonts = {}

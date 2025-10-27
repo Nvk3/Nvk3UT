@@ -130,6 +130,17 @@ function AchievementTrackerRow:SetControl(control)
     self.control = control
 end
 
+function AchievementTrackerRow:ClearControl()
+    self.control = nil
+    self.lastHeight = 0
+end
+
+function AchievementTrackerRow:DetachControl()
+    local control = self.control
+    self:ClearControl()
+    return control
+end
+
 function AchievementTrackerRow:SetAchievement(achievementData)
     self.achievement = achievementData
     if NormalizeAchievementKey then
@@ -183,6 +194,9 @@ local state = {
     achievementPool = nil,
     objectivePool = nil,
     orderedControls = {},
+    categoryControls = {},
+    achievementControls = {},
+    achievementControlsByKey = {},
     achievementRows = {}, -- registry of AchievementTrackerRow instances keyed by normalized achievement id
     lastAnchoredControl = nil,
     snapshot = nil,
@@ -190,6 +204,8 @@ local state = {
     contentWidth = 0,
     contentHeight = 0,
     pendingFocusAchievementId = nil,
+    reusableCategoryControls = nil,
+    reusableAchievementControls = nil,
 }
 
 ResolveAchievementRowData = function(achievementKey)
@@ -1114,15 +1130,144 @@ end
 local function ResetLayoutState()
     state.orderedControls = {}
     state.lastAnchoredControl = nil
-    state.achievementRows = {}
     state.contentWidth = 0
     state.contentHeight = 0
 end
 
-local function ReleaseAll(pool)
-    if pool then
-        pool:ReleaseAllObjects()
+local function ClearTable(tbl)
+    if not tbl then
+        return
     end
+
+    for key in pairs(tbl) do
+        tbl[key] = nil
+    end
+end
+
+local function BeginStructureRebuild()
+    EnsurePools()
+    ResetLayoutState()
+
+    if not state.reusableCategoryControls then
+        state.reusableCategoryControls = {}
+    else
+        ClearTable(state.reusableCategoryControls)
+    end
+
+    for key, control in pairs(state.categoryControls) do
+        if key and control then
+            control:SetHidden(true)
+            state.reusableCategoryControls[key] = control
+        end
+    end
+
+    if not state.reusableAchievementControls then
+        state.reusableAchievementControls = {}
+    else
+        ClearTable(state.reusableAchievementControls)
+    end
+
+    for achievementKey, row in pairs(state.achievementRows) do
+        if row and row.DetachControl then
+            local detached = row:DetachControl()
+            if detached then
+                detached:SetHidden(true)
+                state.reusableAchievementControls[achievementKey] = detached
+            end
+        end
+    end
+
+    state.categoryControls = {}
+    state.achievementControls = {}
+    state.achievementControlsByKey = {}
+
+    if state.objectivePool then
+        state.objectivePool:ReleaseAllObjects()
+    end
+end
+
+local function ReturnCategoryControl(control)
+    if not (control and state.categoryPool and control.poolKey) then
+        return
+    end
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format("POOL_RETURN category control=%s", tostring(control.poolKey)))
+    end
+
+    state.categoryPool:ReleaseObject(control.poolKey)
+end
+
+local function ReturnAchievementControl(achievementKey, control)
+    if not (control and state.achievementPool and control.poolKey) then
+        return
+    end
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format("POOL_RETURN achievement key=%s control=%s", tostring(achievementKey), tostring(control.poolKey)))
+    end
+
+    state.achievementPool:ReleaseObject(control.poolKey)
+end
+
+local function FinalizeStructureRebuild()
+    if state.reusableCategoryControls then
+        for key, control in pairs(state.reusableCategoryControls) do
+            ReturnCategoryControl(control)
+            state.reusableCategoryControls[key] = nil
+        end
+    end
+
+    if state.reusableAchievementControls then
+        for achievementKey, control in pairs(state.reusableAchievementControls) do
+            local row = state.achievementRows and state.achievementRows[achievementKey]
+            if row and row.ClearControl then
+                row:ClearControl()
+                state.achievementRows[achievementKey] = nil
+            end
+            ReturnAchievementControl(achievementKey, control)
+            state.reusableAchievementControls[achievementKey] = nil
+        end
+    end
+end
+
+local function RequestCategoryControl()
+    local control = state.reusableCategoryControls and state.reusableCategoryControls[CATEGORY_KEY] or nil
+
+    if control then
+        state.reusableCategoryControls[CATEGORY_KEY] = nil
+        if IsDebugLoggingEnabled() then
+            DebugLog("POOL_REUSE category")
+        end
+    else
+        control = AcquireCategoryControlFromPool()
+    end
+
+    if control then
+        control.rowType = "category"
+        state.categoryControls[CATEGORY_KEY] = control
+    end
+
+    return control
+end
+
+local function RequestAchievementControl(achievementKey)
+    local control = achievementKey and state.reusableAchievementControls and state.reusableAchievementControls[achievementKey] or nil
+
+    if control then
+        state.reusableAchievementControls[achievementKey] = nil
+        if IsDebugLoggingEnabled() then
+            DebugLog(string.format("POOL_REUSE achievement=%s", tostring(achievementKey)))
+        end
+    else
+        control = AcquireAchievementControlFromPool()
+    end
+
+    if control then
+        control.rowType = "achievement"
+    end
+
+    return control
 end
 
 local function AnchorControl(control, indentX)
@@ -1380,7 +1525,7 @@ local function ShouldDisplayObjective(objective)
     return true
 end
 
-local function AcquireCategoryControl()
+local function AcquireCategoryControlFromPool()
     local control = state.categoryPool:AcquireObject()
     if not control.initialized then
         control.label = control:GetNamedChild("Label")
@@ -1430,7 +1575,7 @@ local function AcquireCategoryControl()
     return control
 end
 
-local function AcquireAchievementControl()
+local function AcquireAchievementControlFromPool()
     local control = state.achievementPool:AcquireObject()
     if not control.initialized then
         control.label = control:GetNamedChild("Label")
@@ -1527,6 +1672,21 @@ local function EnsurePools()
         control.isExpanded = nil
     end)
 
+    state.categoryPool:SetCustomFactoryBehavior(function(_, control)
+        control.__nvkPoolFresh = "category"
+    end)
+
+    state.categoryPool:SetCustomAcquireBehavior(function(control)
+        if IsDebugLoggingEnabled() then
+            if control.__nvkPoolFresh == "category" then
+                DebugLog("POOL_CREATE category")
+            else
+                DebugLog("POOL_TAKE category")
+            end
+        end
+        control.__nvkPoolFresh = nil
+    end)
+
     state.achievementPool:SetCustomResetBehavior(function(control)
         if control and control.data and control.data.achievementId then
             local key = NormalizeAchievementKey and NormalizeAchievementKey(control.data.achievementId)
@@ -1549,6 +1709,21 @@ local function EnsurePools()
                 control.iconSlot:SetHidden(false)
             end
         end
+    end)
+
+    state.achievementPool:SetCustomFactoryBehavior(function(_, control)
+        control.__nvkPoolFresh = "achievement"
+    end)
+
+    state.achievementPool:SetCustomAcquireBehavior(function(control)
+        if IsDebugLoggingEnabled() then
+            if control.__nvkPoolFresh == "achievement" then
+                DebugLog("POOL_CREATE achievement")
+            else
+                DebugLog("POOL_TAKE achievement")
+            end
+        end
+        control.__nvkPoolFresh = nil
     end)
 
     state.objectivePool:SetCustomResetBehavior(function(control)
@@ -1629,12 +1804,12 @@ local function ApplyAchievementRowVisuals(control, achievement)
 end
 
 local function LayoutAchievement(achievement)
-    local control = AcquireAchievementControl()
+    local achievementKey = NormalizeAchievementKey and NormalizeAchievementKey(achievement and achievement.id)
+    local control = RequestAchievementControl(achievementKey)
 
     local hasObjectives
     local expanded
 
-    local achievementKey = NormalizeAchievementKey and NormalizeAchievementKey(achievement and achievement.id)
     if achievementKey then
         local row = state.achievementRows[achievementKey]
         if not row then
@@ -1651,6 +1826,14 @@ local function LayoutAchievement(achievement)
 
     control:SetHidden(false)
     AnchorControl(control, ACHIEVEMENT_INDENT_X)
+
+    if achievement and achievement.id then
+        state.achievementControls[achievement.id] = control
+    end
+
+    if achievementKey then
+        state.achievementControlsByKey[achievementKey] = control
+    end
 
     if hasObjectives and expanded then
         for index = 1, #achievement.objectives do
@@ -1730,7 +1913,7 @@ local function LayoutCategory()
         return
     end
 
-    local control = AcquireCategoryControl()
+    local control = RequestCategoryControl()
     control.data = { categoryKey = CATEGORY_KEY }
     control.label:SetText(FormatCategoryHeaderText("Errungenschaften", total or 0, "achievement"))
 
@@ -1828,16 +2011,18 @@ local function Rebuild()
         return
     end
 
-    EnsurePools()
+    BeginStructureRebuild()
 
-    ReleaseAll(state.categoryPool)
-    ReleaseAll(state.achievementPool)
-    ReleaseAll(state.objectivePool)
-
-    ResetLayoutState()
+    if not state.snapshot or not state.snapshot.achievements then
+        FinalizeStructureRebuild()
+        NotifyHostContentChanged()
+        ApplyPendingFocus()
+        return
+    end
 
     LayoutCategory()
 
+    FinalizeStructureRebuild()
     NotifyHostContentChanged()
     ApplyPendingFocus()
 end
@@ -1961,9 +2146,15 @@ end
 function AchievementTracker.Shutdown()
     UnsubscribeFromModel()
 
-    ReleaseAll(state.categoryPool)
-    ReleaseAll(state.achievementPool)
-    ReleaseAll(state.objectivePool)
+    if state.categoryPool then
+        state.categoryPool:ReleaseAllObjects()
+    end
+    if state.achievementPool then
+        state.achievementPool:ReleaseAllObjects()
+    end
+    if state.objectivePool then
+        state.objectivePool:ReleaseAllObjects()
+    end
 
     state.categoryPool = nil
     state.achievementPool = nil
@@ -1973,8 +2164,13 @@ function AchievementTracker.Shutdown()
     state.control = nil
     state.snapshot = nil
     state.orderedControls = {}
+    state.categoryControls = {}
+    state.achievementControls = {}
+    state.achievementControlsByKey = {}
     state.lastAnchoredControl = nil
     state.achievementRows = {}
+    state.reusableCategoryControls = nil
+    state.reusableAchievementControls = nil
     state.fonts = {}
     state.opts = {}
     state.pendingFocusAchievementId = nil
