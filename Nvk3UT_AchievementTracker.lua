@@ -2234,10 +2234,10 @@ local function LayoutCategory()
                 if showFavorites then
                     allowed = true
                 end
-            else
-                hasTag = true
-                include = false
             end
+            -- Non-favorites no longer mark hasTag on their own; previously that
+            -- forced include=false and hid every achievement unless the user
+            -- explicitly favorited it, which is why the tracker appeared empty.
 
             if isRecent then
                 hasTag = true

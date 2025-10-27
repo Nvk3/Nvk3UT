@@ -4140,6 +4140,66 @@ local function LayoutCondition(condition)
     end
 end
 
+local function ResolveQuestNameFromSources(quest, existingLabelText)
+    if not quest then
+        return nil
+    end
+
+    local questName = quest.name
+    local function HasText(value)
+        return type(value) == "string" and value ~= ""
+    end
+
+    if not HasText(questName) and quest.journalIndex then
+        -- Recover the live quest title from the journal when the snapshot entry
+        -- was captured before the name populated. This mirrors the previous
+        -- behaviour but keeps the logic reusable for both layout and refresh
+        -- paths so pooled controls always receive a resolved title.
+        if GetJournalQuestName then
+            local ok, fallback = SafeCall(GetJournalQuestName, quest.journalIndex)
+            if ok and HasText(fallback) then
+                questName = fallback
+            end
+        end
+
+        if (not HasText(questName)) and GetJournalQuestInfo then
+            local ok, infoName = SafeCall(function(index)
+                local name = GetJournalQuestInfo(index)
+                return name
+            end, quest.journalIndex)
+            if ok and HasText(infoName) then
+                questName = infoName
+            end
+        end
+    end
+
+    if not HasText(questName) and quest.questId and GetQuestName then
+        -- Some quests only expose their title through the questId variant
+        -- during the login flow.  Consulting GetQuestName prevents the tracker
+        -- from rendering an empty header when the snapshot momentarily omits
+        -- the title, which previously left blank quest rows on first load.
+        local ok, fallback = SafeCall(GetQuestName, quest.questId)
+        if ok and HasText(fallback) then
+            questName = fallback
+        end
+    end
+
+    if not HasText(questName) and HasText(existingLabelText) then
+        -- When every live query fails we retain the last known label so the row
+        -- stays readable instead of flashing blank text during rapid rebuilds.
+        questName = existingLabelText
+    end
+
+    if HasText(questName) then
+        if zo_strformat then
+            questName = zo_strformat("<<1>>", questName)
+        end
+        quest.name = questName
+    end
+
+    return questName
+end
+
 local function ApplyQuestRowVisuals(control, quest)
     if not (control and quest) then
         return
@@ -4161,63 +4221,7 @@ local function ApplyQuestRowVisuals(control, quest)
         existingLabelText = control.label:GetText()
     end
 
-    local questName = quest and quest.name
-    if (questName == nil or questName == "") and quest and quest.journalIndex then
-        -- When the snapshot unexpectedly lacks the quest title we recover by
-        -- querying the live journal.  The pooling refactor keeps row controls
-        -- alive across rebuilds, so we must always be prepared to repaint the
-        -- header text from authoritative game APIs instead of leaving it
-        -- blank.
-        if GetJournalQuestName then
-            local ok, fallback = SafeCall(GetJournalQuestName, quest.journalIndex)
-            if ok and type(fallback) == "string" and fallback ~= "" then
-                questName = fallback
-            end
-        end
-
-        -- Some ESO builds return the name only via GetJournalQuestInfo for a
-        -- brief period during login.  Querying that path as a secondary
-        -- fallback keeps the tracker populated even when the lightweight
-        -- GetJournalQuestName helper is still empty.
-        if (questName == nil or questName == "") and GetJournalQuestInfo then
-            local ok, infoName = SafeCall(function(index)
-                local name = GetJournalQuestInfo(index)
-                return name
-            end, quest.journalIndex)
-            if ok and type(infoName) == "string" and infoName ~= "" then
-                questName = infoName
-            end
-        end
-    end
-
-    if (questName == nil or questName == "") and quest and quest.questId and GetQuestName then
-        -- Some quests only expose their title through the questId variant
-        -- during the login flow.  Consulting GetQuestName prevents the tracker
-        -- from rendering an empty header when the snapshot momentarily omits
-        -- the title, which previously left blank quest rows on first load.
-        local ok, fallback = SafeCall(GetQuestName, quest.questId)
-        if ok and type(fallback) == "string" and fallback ~= "" then
-            questName = fallback
-        end
-    end
-
-    if (questName == nil or questName == "") and type(existingLabelText) == "string" and existingLabelText ~= "" then
-        -- When every live query fails we retain the last known label so the row
-        -- stays readable instead of flashing blank text during rapid rebuilds.
-        questName = existingLabelText
-    end
-
-    if type(questName) == "string" and questName ~= "" then
-        if zo_strformat then
-            questName = zo_strformat("<<1>>", questName)
-        end
-        -- Persist the resolved title on the quest payload so subsequent row
-        -- refreshes (for example after pooling hand-offs) no longer have to
-        -- perform the journal lookups again.
-        if quest then
-            quest.name = questName
-        end
-    end
+    local questName = ResolveQuestNameFromSources(quest, existingLabelText)
 
     if control.label and control.label.SetText then
         control.label:SetText(questName or "")
@@ -4241,6 +4245,10 @@ end
 
 local function LayoutQuest(quest)
     local questKey = NormalizeQuestKey(quest.journalIndex)
+    -- Ensure the quest payload carries a resolved title before we touch pooled
+    -- controls.  Without this, early-login snapshots could hand us quests with
+    -- empty names which then rendered blank header rows.
+    ResolveQuestNameFromSources(quest)
     local control = RequestQuestControl(questKey)
     if not control then
         if state.questPool then
