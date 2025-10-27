@@ -249,6 +249,26 @@ local function clearUpdateManager()
     manager.initialRefreshDone = false
 end
 
+local function extractReason(context, defaultReason)
+    if type(context) == "string" and context ~= "" then
+        return context
+    end
+
+    if type(context) == "table" then
+        if type(context.reason) == "string" and context.reason ~= "" then
+            return context.reason
+        end
+        if type(context.source) == "string" and context.source ~= "" then
+            return context.source
+        end
+        if type(context.trigger) == "string" and context.trigger ~= "" then
+            return context.trigger
+        end
+    end
+
+    return defaultReason
+end
+
 local function trackPendingRowRefresh(rowType, key, context)
     if key == nil then
         return
@@ -362,26 +382,6 @@ local function flushPendingRowRefreshes(manager, rowType)
     end
 
     return queued
-end
-
-local function extractReason(context, defaultReason)
-    if type(context) == "string" and context ~= "" then
-        return context
-    end
-
-    if type(context) == "table" then
-        if type(context.reason) == "string" and context.reason ~= "" then
-            return context.reason
-        end
-        if type(context.source) == "string" and context.source ~= "" then
-            return context.source
-        end
-        if type(context.trigger) == "string" and context.trigger ~= "" then
-            return context.trigger
-        end
-    end
-
-    return defaultReason
 end
 
 local function releaseTrackerDebounce()
