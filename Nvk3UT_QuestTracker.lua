@@ -32,6 +32,7 @@ local CATEGORY_TOGGLE_TEXTURES = {
 }
 
 local QUEST_SELECTED_ICON_TEXTURE = "EsoUI/Art/Journal/journal_Quest_Selected.dds"
+local UNKNOWN_QUEST_NAME_STRING_ID = SI_QUEST_JOURNAL_UNKNOWN_QUEST_NAME
 
 local CATEGORY_INDENT_X = 0
 local QUEST_INDENT_X = 18
@@ -4184,10 +4185,27 @@ local function ResolveQuestNameFromSources(quest, existingLabelText)
         end
     end
 
-    if not HasText(questName) and HasText(existingLabelText) then
-        -- When every live query fails we retain the last known label so the row
-        -- stays readable instead of flashing blank text during rapid rebuilds.
-        questName = existingLabelText
+    local usedFallback = false
+
+    if not HasText(questName) then
+        local fallback = existingLabelText
+        if not HasText(fallback) and GetString and UNKNOWN_QUEST_NAME_STRING_ID then
+            local ok, unknown = SafeCall(function()
+                return GetString(UNKNOWN_QUEST_NAME_STRING_ID)
+            end)
+            if ok and HasText(unknown) then
+                fallback = unknown
+            end
+        end
+
+        if not HasText(fallback) then
+            fallback = "Unknown Quest"
+        end
+
+        if not HasText(questName) and HasText(fallback) then
+            questName = fallback
+            usedFallback = true
+        end
     end
 
     if HasText(questName) then
@@ -4195,6 +4213,14 @@ local function ResolveQuestNameFromSources(quest, existingLabelText)
             questName = zo_strformat("<<1>>", questName)
         end
         quest.name = questName
+        if usedFallback and IsDebugLoggingEnabled() then
+            DebugLog(string_format(
+                "QUEST_NAME_FALLBACK questId=%s journalIndex=%s name=%s",
+                tostring(quest.questId),
+                tostring(quest.journalIndex),
+                tostring(questName)
+            ))
+        end
     end
 
     return questName

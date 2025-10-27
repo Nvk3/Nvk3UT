@@ -2211,65 +2211,56 @@ local function LayoutCategory()
 
     for index = 1, #achievements do
         local achievement = achievements[index]
-        local include = true
-        local hasTag = false
-        local allowed = false
 
         if achievement and achievement.id then
             local achievementId = achievement.id
-            local isCompleted = achievement.flags and achievement.flags.isComplete
             local isFavorite = IsFavoriteAchievement(achievementId)
-            local isRecent = IsRecentAchievement(achievementId)
-            local isTodo = todoLookup and todoLookup[achievementId] or false
-
-            if isCompleted then
-                hasTag = true
-                if showCompleted then
-                    allowed = true
-                end
-            end
 
             if isFavorite then
-                hasTag = true
-                if showFavorites then
-                    allowed = true
+                local isCompleted = achievement.flags and achievement.flags.isComplete
+                local isRecent = IsRecentAchievement(achievementId)
+                local isTodo = todoLookup and todoLookup[achievementId] or false
+
+                local include = false
+                local passesCompleted = (not isCompleted) or showCompleted
+
+                if showFavorites and passesCompleted then
+                    include = true
+                end
+
+                if not include and isCompleted and showCompleted then
+                    include = true
+                end
+
+                if not include and isRecent and showRecent then
+                    include = true
+                end
+
+                if not include and isTodo and showTodo then
+                    include = true
+                end
+
+                if include then
+                    visibleEntries[#visibleEntries + 1] = achievement
+                elseif IsDebugLoggingEnabled() then
+                    DebugLog(string_format(
+                        "ACHIEVEMENT_FILTERED id=%s completed=%s recent=%s todo=%s",
+                        tostring(achievementId),
+                        tostring(isCompleted),
+                        tostring(isRecent),
+                        tostring(isTodo)
+                    ))
                 end
             end
-            -- Non-favorites no longer mark hasTag on their own; previously that
-            -- forced include=false and hid every achievement unless the user
-            -- explicitly favorited it, which is why the tracker appeared empty.
-
-            if isRecent then
-                hasTag = true
-                if showRecent then
-                    allowed = true
-                end
-            end
-
-            if isTodo then
-                hasTag = true
-                if showTodo then
-                    allowed = true
-                end
-            end
-
-            if hasTag then
-                include = allowed
-            end
-        end
-
-        if include or not hasTag then
-            visibleEntries[#visibleEntries + 1] = achievement
         end
     end
 
     local total = #visibleEntries
 
     if total == 0 then
-        -- Skip layout only when there are truly no visible entries.  The prior
-        -- favorite-only guard prevented recently completed or todo
-        -- achievements from ever rendering, leaving the tracker empty for
-        -- players without explicit favorites.
+        -- Skip layout when no favorites match the active section filters.  This
+        -- keeps the tracker header hidden instead of presenting an empty list
+        -- when players have not designated any favorites.
         return
     end
 
