@@ -91,9 +91,17 @@ function QuestTrackerRow:New(options)
     return instance
 end
 
+function QuestTrackerRow:SetControl(control)
+    self.control = control
+end
+
+function QuestTrackerRow:SetQuest(questData)
+    self.quest = questData
+end
+
 function QuestTrackerRow:Refresh(questData)
     if questData ~= nil then
-        self.quest = questData
+        self:SetQuest(questData)
     end
 
     if not (self.control and self.quest) then
@@ -1004,14 +1012,22 @@ local function RefreshControlMetrics(control)
             CATEGORY_MIN_HEIGHT
         )
     elseif rowType == "quest" then
-        ApplyRowMetrics(
-            control,
-            indent,
-            QUEST_ICON_SLOT_WIDTH,
-            QUEST_ICON_SLOT_PADDING_X,
-            0,
-            QUEST_MIN_HEIGHT
-        )
+        local questData = control.data and control.data.quest
+        local questKey = questData and NormalizeQuestKey(questData.journalIndex)
+        local row = questKey and state.questRows[questKey]
+        if row then
+            row:SetControl(control)
+            row:Refresh(questData)
+        else
+            ApplyRowMetrics(
+                control,
+                indent,
+                QUEST_ICON_SLOT_WIDTH,
+                QUEST_ICON_SLOT_PADDING_X,
+                0,
+                QUEST_MIN_HEIGHT
+            )
+        end
     elseif rowType == "condition" then
         ApplyRowMetrics(control, indent, 0, 0, 0, CONDITION_MIN_HEIGHT)
     end
@@ -3328,8 +3344,6 @@ end
 
 local function LayoutQuest(quest)
     local control = AcquireQuestControl()
-    ApplyQuestRowVisuals(control, quest)
-
     local questKey = NormalizeQuestKey(quest.journalIndex)
     local expanded = IsQuestExpanded(quest.journalIndex)
     if IsDebugLoggingEnabled() then
@@ -3339,19 +3353,27 @@ local function LayoutQuest(quest)
             tostring(expanded)
         ))
     end
+
+    local row
+    if questKey then
+        row = state.questRows[questKey]
+        if not row then
+            row = QuestTrackerRow:New({
+                questKey = questKey,
+            })
+            state.questRows[questKey] = row
+        end
+        row:SetControl(control)
+        row:Refresh(quest)
+    else
+        ApplyQuestRowVisuals(control, quest)
+    end
+
     control:SetHidden(false)
     AnchorControl(control, QUEST_INDENT_X)
 
     if quest and quest.journalIndex then
         state.questControls[quest.journalIndex] = control
-    end
-
-    if questKey then
-        state.questRows[questKey] = QuestTrackerRow:New({
-            questKey = questKey,
-            quest = quest,
-            control = control,
-        })
     end
 
     if expanded then
