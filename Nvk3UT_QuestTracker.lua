@@ -86,6 +86,10 @@ local function GenerateControlName(controlType)
     local container = state.container
     local baseName = (container and container.GetName and container:GetName()) or MODULE_NAME
 
+    -- Include a monotonically increasing suffix per control type so new pooled
+    -- controls always receive unique global names. Without this, CreateControl*
+    -- would collide with existing controls on rebuild, throwing an error and
+    -- restarting the structure job indefinitely.
     return string_format("%s_%s_%d", baseName, controlType or "control", counters[controlType])
 end
 
@@ -102,6 +106,8 @@ local EnsurePools -- forward declaration for quest control pooling
 local AcquireCategoryControlFromPool -- forward declaration for category pool access
 local AcquireQuestControlFromPool -- forward declaration for quest pool access
 local ReleaseConditionControls -- forward declaration for releasing pooled condition controls
+local TrackActiveControl -- forward declaration for tracking active controls per rebuild
+local ReleaseActiveControls -- forward declaration for releasing controls back to pools
 
 --[=[
 QuestTrackerRow encapsulates the data and controls for a single quest row. The
@@ -206,8 +212,8 @@ local state = {
     questControls = {},
     questControlsByKey = {},
     questRows = {}, -- registry of QuestTrackerRow instances keyed by normalized quest id
-    reusableCategoryControls = nil,
-    reusableQuestControls = nil,
+    activeControls = {}, -- active row controls currently attached to the tracker
+    controlNameCounters = {},
     combatHidden = false,
     contentWidth = 0,
     contentHeight = 0,
@@ -867,6 +873,15 @@ local function WriteCategoryState(categoryKey, expanded, source, options)
     state.saved.cat = state.saved.cat or {}
 
     local prev = state.saved.cat[key]
+    local newExpanded = expanded and true or false
+    -- Avoid marking the tracker dirty when the category state already matches
+    -- the requested value. Previously we rewrote the same state, which
+    -- re-queued rebuilds and fed the infinite loop triggered by the duplicate
+    -- control failure.
+    if prev and prev.expanded ~= nil and prev.expanded == newExpanded then
+        return false
+    end
+
     local priorityOverride = options.priorityOverride
     local priority = priorityOverride or PRIORITY[source] or 0
     local prevPriority = prev and (PRIORITY[prev.source] or 0) or 0
@@ -885,8 +900,6 @@ local function WriteCategoryState(categoryKey, expanded, source, options)
             return false
         end
     end
-
-    local newExpanded = expanded and true or false
 
     state.saved.cat[key] = {
         expanded = newExpanded,
@@ -914,6 +927,13 @@ local function WriteQuestState(questKey, expanded, source, options)
     state.saved.quest = state.saved.quest or {}
 
     local prev = state.saved.quest[key]
+    local newExpanded = expanded and true or false
+    -- Mirror the category guard so repeated quest expand requests do not keep
+    -- setting the dirty flag when nothing actually changed.
+    if prev and prev.expanded ~= nil and prev.expanded == newExpanded then
+        return false
+    end
+
     local priorityOverride = options.priorityOverride
     local priority = priorityOverride or PRIORITY[source] or 0
     local prevPriority = prev and (PRIORITY[prev.source] or 0) or 0
@@ -932,8 +952,6 @@ local function WriteQuestState(questKey, expanded, source, options)
             return false
         end
     end
-
-    local newExpanded = expanded and true or false
 
     state.saved.quest[key] = {
         expanded = newExpanded,
@@ -2983,6 +3001,26 @@ local function ClearTable(tbl)
     end
 end
 
+local function TrackActiveControl(control)
+    if not control then
+        return
+    end
+
+    if control._nvkActive then
+        return
+    end
+
+    control._nvkActive = true
+
+    local active = state.activeControls
+    if not active then
+        active = {}
+        state.activeControls = active
+    end
+
+    active[#active + 1] = control
+end
+
 local function BeginStructureRebuild()
     if not state.container then
         if IsDebugLoggingEnabled() then
@@ -2991,40 +3029,15 @@ local function BeginStructureRebuild()
         return false
     end
 
+    -- Release previously active controls before we start creating or reattaching
+    -- new ones. This prevents duplicate global control names from being created
+    -- on the next rebuild and is the core fix for the infinite rebuild loop that
+    -- was triggered by repeated duplicate-name failures.
+    if type(ReleaseActiveControls) == "function" then
+        ReleaseActiveControls()
+    end
+
     ResetLayoutState()
-
-    if not state.reusableCategoryControls then
-        state.reusableCategoryControls = {}
-    else
-        ClearTable(state.reusableCategoryControls)
-    end
-
-    if not state.reusableQuestControls then
-        state.reusableQuestControls = {}
-    else
-        ClearTable(state.reusableQuestControls)
-    end
-
-    for key, control in pairs(state.categoryControls) do
-        if key and control then
-            if control.SetHidden then
-                control:SetHidden(true)
-            end
-            state.reusableCategoryControls[key] = control
-        end
-    end
-
-    for questKey, row in pairs(state.questRows) do
-        if row and row.DetachControl then
-            local detached = row:DetachControl()
-            if detached then
-                if detached.SetHidden then
-                    detached:SetHidden(true)
-                end
-                state.reusableQuestControls[questKey] = detached
-            end
-        end
-    end
 
     local poolsReady = false
     if type(EnsurePools) == "function" then
@@ -3055,6 +3068,7 @@ local function ReturnCategoryControl(control)
     end
 
     ResetCategoryControl(control)
+    control._nvkActive = nil
 
     if IsDebugLoggingEnabled() then
         DebugLog("POOL_RETURN category")
@@ -3074,6 +3088,7 @@ local function ReturnQuestControl(questKey, control)
     end
 
     ResetQuestControl(control)
+    control._nvkActive = nil
 
     if IsDebugLoggingEnabled() then
         DebugLog(string_format("POOL_RETURN quest key=%s", tostring(questKey)))
@@ -3087,36 +3102,80 @@ local function ReturnQuestControl(questKey, control)
     end
 end
 
-local function FinalizeStructureRebuild()
-    if state.reusableCategoryControls then
-        for key, control in pairs(state.reusableCategoryControls) do
-            ReturnCategoryControl(control)
-            state.reusableCategoryControls[key] = nil
+ReleaseActiveControls = function()
+    -- Return every previously active control to its pool before the next
+    -- rebuild. This ensures the upcoming rebuild acquires controls from a clean
+    -- slate and avoids duplicate CreateControl* calls with conflicting global
+    -- names, which previously triggered the "duplicate control name" error and
+    -- the resulting infinite rebuild loop.
+    if ReleaseConditionControls then
+        ReleaseConditionControls()
+    end
+
+    if state.categoryControls then
+        for key, control in pairs(state.categoryControls) do
+            if control then
+                if control.SetHidden then
+                    control:SetHidden(true)
+                end
+                ReturnCategoryControl(control)
+            end
+            state.categoryControls[key] = nil
         end
     end
 
-    if state.reusableQuestControls then
-        for questKey, control in pairs(state.reusableQuestControls) do
-            if state.questRows and state.questRows[questKey] then
-                state.questRows[questKey]:ClearControl()
-                state.questRows[questKey] = nil
+    if state.questRows then
+        for questKey, row in pairs(state.questRows) do
+            if row and row.DetachControl then
+                local detached = row:DetachControl()
+                if detached then
+                    if detached.SetHidden then
+                        detached:SetHidden(true)
+                    end
+                    ReturnQuestControl(questKey, detached)
+                end
             end
-            ReturnQuestControl(questKey, control)
-            state.reusableQuestControls[questKey] = nil
+        end
+    end
+
+    if state.questControls then
+        ClearTable(state.questControls)
+    end
+
+    if state.questControlsByKey then
+        ClearTable(state.questControlsByKey)
+    end
+
+    local active = state.activeControls
+    if active then
+        ClearArray(active)
+    end
+end
+
+local function FinalizeStructureRebuild()
+    -- Drop quest row objects that no longer have a visible control after the
+    -- rebuild. This mirrors the previous reusable-control cleanup so stale
+    -- quests do not keep requesting controls or remain in the registry.
+    if state.questRows then
+        for questKey, row in pairs(state.questRows) do
+            local control = row and row.control
+            if not control or not state.questControlsByKey[questKey] then
+                if row and row.ClearControl then
+                    row:ClearControl()
+                end
+                if not state.questControlsByKey[questKey] then
+                    state.questRows[questKey] = nil
+                end
+            end
         end
     end
 end
 
 local function RequestCategoryControl(category)
     local normalizedKey = category and NormalizeCategoryKey and NormalizeCategoryKey(category.key)
-    local control = normalizedKey and state.reusableCategoryControls and state.reusableCategoryControls[normalizedKey] or nil
+    local control = nil
 
-    if control then
-        state.reusableCategoryControls[normalizedKey] = nil
-        if IsDebugLoggingEnabled() then
-            DebugLog(string_format("POOL_REUSE category=%s", tostring(normalizedKey)))
-        end
-    elseif type(AcquireCategoryControlFromPool) == "function" then
+    if type(AcquireCategoryControlFromPool) == "function" then
         control = AcquireCategoryControlFromPool()
     else
         if IsDebugLoggingEnabled() then
@@ -3124,9 +3183,12 @@ local function RequestCategoryControl(category)
         end
     end
 
-    if control then
-        control.rowType = "category"
+    if not control then
+        return nil
     end
+
+    control.rowType = "category"
+    TrackActiveControl(control)
 
     if normalizedKey then
         state.categoryControls[normalizedKey] = control
@@ -3136,14 +3198,9 @@ local function RequestCategoryControl(category)
 end
 
 local function RequestQuestControl(questKey)
-    local control = questKey and state.reusableQuestControls and state.reusableQuestControls[questKey] or nil
+    local control = nil
 
-    if control then
-        state.reusableQuestControls[questKey] = nil
-        if IsDebugLoggingEnabled() then
-            DebugLog(string_format("POOL_REUSE quest=%s", tostring(questKey)))
-        end
-    elseif type(AcquireQuestControlFromPool) == "function" then
+    if type(AcquireQuestControlFromPool) == "function" then
         control = AcquireQuestControlFromPool()
     else
         if IsDebugLoggingEnabled() then
@@ -3151,9 +3208,12 @@ local function RequestQuestControl(questKey)
         end
     end
 
-    if control then
-        control.rowType = "quest"
+    if not control then
+        return nil
     end
+
+    control.rowType = "quest"
+    TrackActiveControl(control)
 
     return control
 end
@@ -3929,6 +3989,7 @@ local function ResetBaseControl(control)
     control.currentIndent = nil
     control.baseColor = nil
     control.isExpanded = nil
+    control._nvkActive = nil
 end
 
 local function ResetCategoryControl(control)
@@ -4056,6 +4117,7 @@ local function LayoutCondition(condition)
         local r, g, b, a = GetQuestTrackerColor("objectiveText")
         control.label:SetColor(r, g, b, a)
     end
+    TrackActiveControl(control)
     ApplyRowMetrics(control, CONDITION_INDENT_X, 0, 0, 0, CONDITION_MIN_HEIGHT)
     control:SetHidden(false)
     AnchorControl(control, CONDITION_INDENT_X)
@@ -4306,7 +4368,7 @@ local function UnsubscribeFromModel()
 end
 
 
-local function Rebuild()
+local function ExecuteRebuild()
     if not state.container then
         return
     end
@@ -4315,17 +4377,15 @@ local function Rebuild()
         DebugLog("REBUILD_START")
     end
 
-    state.isRebuildInProgress = true
     ApplyActiveQuestFromSaved()
     local rebuildReady = BeginStructureRebuild()
 
     if not rebuildReady then
-        state.isRebuildInProgress = false
         state.lastStructureFailure = "pools"
         if IsDebugLoggingEnabled() then
             DebugLog("REBUILD_DEFER prerequisites unavailable")
         end
-        return
+        return false
     end
 
     state.lastStructureFailure = nil
@@ -4333,11 +4393,10 @@ local function Rebuild()
     if not state.snapshot or not state.snapshot.categories or not state.snapshot.categories.ordered then
         FinalizeStructureRebuild()
         NotifyHostContentChanged()
-        state.isRebuildInProgress = false
         if IsDebugLoggingEnabled() then
             DebugLog("REBUILD_END")
         end
-        return
+        return false
     end
 
     PrimeInitialSavedState()
@@ -4356,8 +4415,6 @@ local function Rebuild()
     NotifyHostContentChanged()
     ProcessPendingExternalReveal()
 
-    state.isRebuildInProgress = false
-
     if state.pendingAdoptOnInit then
         state.pendingAdoptOnInit = false
         AdoptTrackedQuestOnInit()
@@ -4366,6 +4423,33 @@ local function Rebuild()
     if IsDebugLoggingEnabled() then
         DebugLog("REBUILD_END")
     end
+
+    return true
+end
+
+local function Rebuild()
+    if state.isRebuildInProgress then
+        -- Guard against nested rebuild attempts so that one failing iteration
+        -- does not schedule another rebuild on top of itself. The previous
+        -- implementation re-entered endlessly when LibAsync restarted the job
+        -- after a duplicate-name failure.
+        if IsDebugLoggingEnabled() then
+            DebugLog("REBUILD_SKIP reentry")
+        end
+        return false
+    end
+
+    state.isRebuildInProgress = true
+
+    local ok, result = pcall(ExecuteRebuild)
+
+    state.isRebuildInProgress = false
+
+    if not ok then
+        error(result)
+    end
+
+    return result
 end
 
 local function RunQuestRebuildSynchronously(reason)
@@ -4679,6 +4763,10 @@ function QuestTracker.Shutdown()
     end
     ClearActiveRebuildContext()
 
+    if type(ReleaseActiveControls) == "function" then
+        ReleaseActiveControls()
+    end
+
     UnregisterCombatEvents()
     UnregisterTrackingEvents()
     UnsubscribeFromModel()
@@ -4710,8 +4798,8 @@ function QuestTracker.Shutdown()
     state.questControls = {}
     state.questControlsByKey = {}
     state.questRows = {}
-    state.reusableCategoryControls = nil
-    state.reusableQuestControls = nil
+    state.activeControls = {}
+    state.controlNameCounters = {}
     state.isInitialized = false
     state.opts = {}
     state.fonts = {}
