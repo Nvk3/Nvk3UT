@@ -22,6 +22,7 @@ local RESIZE_HANDLE_SIZE = 12
 local SCROLLBAR_WIDTH = 18
 local SCROLL_OVERSHOOT_PADDING = 100 -- allow scrolling so the last entry can sit around mid-window
 local FRAGMENT_RETRY_DELAY_MS = 200
+local QUEST_UPDATE_DEBOUNCE_MS = 100
 local MAX_BAR_HEIGHT = 250
 
 local FRAGMENT_REASON_SUPPRESSED = addonName .. "_HostSuppressed"
@@ -172,6 +173,9 @@ local function ensureUpdateManager()
         rowsToRefresh = {},
         queuedRows = {},
         processingScheduled = false,
+        processingHandle = nil,
+        questDebounceActive = false,
+        questDebounceReason = nil,
     }
 
     return state.updateManager
@@ -182,35 +186,21 @@ local function clearUpdateManager()
         return
     end
 
-    state.updateManager.questsStructureDirty = false
-    state.updateManager.achievementsStructureDirty = false
-    state.updateManager.layoutDirty = false
-    state.updateManager.rowsToRefresh = {}
-    state.updateManager.queuedRows = {}
-    state.updateManager.processingScheduled = false
-end
+    local manager = state.updateManager
 
-local function scheduleTrackerUpdateProcessing()
-    local manager = ensureUpdateManager()
-    if manager.processingScheduled then
-        return
+    if manager.processingHandle and zo_removeCallLater then
+        zo_removeCallLater(manager.processingHandle)
     end
 
-    manager.processingScheduled = true
-
-    local function execute()
-        manager.processingScheduled = false
-        if not state.initialized then
-            return
-        end
-        TrackerHost.ProcessTrackerUpdates()
-    end
-
-    if zo_callLater then
-        zo_callLater(execute, 0)
-    else
-        execute()
-    end
+    manager.processingHandle = nil
+    manager.questsStructureDirty = false
+    manager.achievementsStructureDirty = false
+    manager.layoutDirty = false
+    manager.rowsToRefresh = {}
+    manager.queuedRows = {}
+    manager.processingScheduled = false
+    manager.questDebounceActive = false
+    manager.questDebounceReason = nil
 end
 
 local function extractReason(context, defaultReason)
@@ -233,6 +223,94 @@ local function extractReason(context, defaultReason)
     return defaultReason
 end
 
+local function scheduleTrackerUpdateProcessing(options)
+    local manager = ensureUpdateManager()
+    options = options or {}
+
+    local questRelated = options.questRelated == true
+    local context = options.context
+    local reason = nil
+    if extractReason then
+        reason = extractReason(context, questRelated and "questUpdate" or "update")
+    end
+
+    local function execute()
+        manager.processingHandle = nil
+        manager.processingScheduled = false
+
+        if questRelated then
+            if manager.questDebounceActive and isDebugLoggingEnabled() then
+                debugLog(string.format("Quest update debounce fired reason=%s", tostring(manager.questDebounceReason or reason or "")))
+            end
+            manager.questDebounceActive = false
+            manager.questDebounceReason = nil
+        end
+
+        if not state.initialized then
+            return
+        end
+
+        TrackerHost.ProcessTrackerUpdates()
+    end
+
+    if questRelated then
+        local wasPending = manager.questDebounceActive and manager.processingHandle ~= nil
+
+        if manager.processingHandle and zo_removeCallLater then
+            zo_removeCallLater(manager.processingHandle)
+        end
+
+        manager.processingHandle = nil
+        manager.processingScheduled = false
+
+        manager.questDebounceActive = true
+        manager.questDebounceReason = reason
+
+        if isDebugLoggingEnabled() then
+            local windowState = wasPending and "extended" or "started"
+            debugLog(string.format("Quest update debounced (100ms window %s) reason=%s", windowState, tostring(reason or "")))
+        end
+
+        manager.processingScheduled = true
+
+        if zo_callLater then
+            manager.processingHandle = zo_callLater(function()
+                execute()
+            end, QUEST_UPDATE_DEBOUNCE_MS)
+        else
+            execute()
+        end
+
+        return
+    end
+
+    if manager.questDebounceActive then
+        if isDebugLoggingEnabled() then
+            debugLog(string.format("Piggybacking on pending quest debounce reason=%s", tostring(manager.questDebounceReason or reason or "")))
+        end
+        return
+    end
+
+    if manager.processingScheduled then
+        return
+    end
+
+    manager.processingScheduled = true
+
+    local delay = tonumber(options.delay) or 0
+    if delay < 0 then
+        delay = 0
+    end
+
+    if zo_callLater then
+        manager.processingHandle = zo_callLater(function()
+            execute()
+        end, delay)
+    else
+        execute()
+    end
+end
+
 local function markQuestsStructureDirty(context)
     local manager = ensureUpdateManager()
     local alreadyDirty = manager.questsStructureDirty
@@ -248,7 +326,7 @@ local function markQuestsStructureDirty(context)
         )
     end
 
-    scheduleTrackerUpdateProcessing()
+    scheduleTrackerUpdateProcessing({ questRelated = true, context = context })
 end
 
 local function markAchievementsStructureDirty(context)
@@ -266,7 +344,7 @@ local function markAchievementsStructureDirty(context)
         )
     end
 
-    scheduleTrackerUpdateProcessing()
+    scheduleTrackerUpdateProcessing({ context = context })
 end
 
 local function markLayoutDirty(context)
@@ -284,10 +362,10 @@ local function markLayoutDirty(context)
         )
     end
 
-    scheduleTrackerUpdateProcessing()
+    scheduleTrackerUpdateProcessing({ context = context })
 end
 
-local function queueRowForRefresh(row, context)
+local function queueRowForRefresh(row, context, rowType)
     if type(row) ~= "table" then
         return false
     end
@@ -309,7 +387,8 @@ local function queueRowForRefresh(row, context)
         debugLog(string.format("QUEUE row=%s reason=%s", tostring(identifier), tostring(reason or "")))
     end
 
-    scheduleTrackerUpdateProcessing()
+    local questRow = rowType == "quest"
+    scheduleTrackerUpdateProcessing({ questRelated = questRow, context = context })
     return true
 end
 
@@ -1918,7 +1997,7 @@ function TrackerHost.QueueQuestRowRefresh(questKey, context)
         return false
     end
 
-    return queueRowForRefresh(row, context)
+    return queueRowForRefresh(row, context, "quest")
 end
 
 function TrackerHost.QueueAchievementRowRefresh(achievementId, context)
@@ -1939,7 +2018,7 @@ function TrackerHost.QueueAchievementRowRefresh(achievementId, context)
         return false
     end
 
-    return queueRowForRefresh(row, context)
+    return queueRowForRefresh(row, context, "achievement")
 end
 
 function TrackerHost.MarkQuestsStructureDirty(context)
