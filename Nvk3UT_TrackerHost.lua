@@ -22,7 +22,7 @@ local RESIZE_HANDLE_SIZE = 12
 local SCROLLBAR_WIDTH = 18
 local SCROLL_OVERSHOOT_PADDING = 100 -- allow scrolling so the last entry can sit around mid-window
 local FRAGMENT_RETRY_DELAY_MS = 200
-local QUEST_UPDATE_DEBOUNCE_MS = 100
+local TRACKER_UPDATE_DEBOUNCE_MS = 100
 local FRAME_BATCH_THRESHOLD_FRAMES = 3
 local MAX_BAR_HEIGHT = 250
 
@@ -174,10 +174,10 @@ local function ensureUpdateManager()
         layoutDirty = false,
         rowsToRefresh = {},
         queuedRows = {},
-        questDebounceHandle = nil,
-        questDebounceActive = false,
-        questDebounceReason = nil,
-        questDebounceTriggered = false,
+        updateDebounceHandle = nil,
+        updateDebounceActive = false,
+        updateDebounceReason = nil,
+        updateDebounceReleased = true,
         framesSinceLastRefresh = FRAME_BATCH_THRESHOLD_FRAMES,
         initialRefreshDone = false,
     }
@@ -192,19 +192,19 @@ local function clearUpdateManager()
 
     local manager = state.updateManager
 
-    if manager.questDebounceHandle and zo_removeCallLater then
-        zo_removeCallLater(manager.questDebounceHandle)
+    if manager.updateDebounceHandle and zo_removeCallLater then
+        zo_removeCallLater(manager.updateDebounceHandle)
     end
 
-    manager.questDebounceHandle = nil
+    manager.updateDebounceHandle = nil
     manager.questsStructureDirty = false
     manager.achievementsStructureDirty = false
     manager.layoutDirty = false
     manager.rowsToRefresh = {}
     manager.queuedRows = {}
-    manager.questDebounceActive = false
-    manager.questDebounceReason = nil
-    manager.questDebounceTriggered = false
+    manager.updateDebounceActive = false
+    manager.updateDebounceReason = nil
+    manager.updateDebounceReleased = true
     manager.framesSinceLastRefresh = FRAME_BATCH_THRESHOLD_FRAMES
     manager.initialRefreshDone = false
 end
@@ -233,52 +233,75 @@ local function scheduleTrackerUpdateProcessing(options)
     local manager = ensureUpdateManager()
     options = options or {}
 
-    local questRelated = options.questRelated == true
+    local useDebounce = options.debounce ~= false
     local context = options.context
-    local reason = extractReason(context, questRelated and "questUpdate" or "update")
+    local reason = extractReason(context, options.reasonHint or "update")
 
-    if questRelated then
-        local wasPending = manager.questDebounceActive and manager.questDebounceHandle ~= nil
+    if useDebounce then
+        local wasPending = manager.updateDebounceActive and manager.updateDebounceHandle ~= nil
 
-        if manager.questDebounceHandle and zo_removeCallLater then
-            zo_removeCallLater(manager.questDebounceHandle)
+        if manager.updateDebounceHandle and zo_removeCallLater then
+            zo_removeCallLater(manager.updateDebounceHandle)
         end
 
-        manager.questDebounceHandle = nil
-        manager.questDebounceActive = true
-        manager.questDebounceTriggered = false
-        manager.questDebounceReason = reason
+        manager.updateDebounceHandle = nil
+        manager.updateDebounceActive = true
+        manager.updateDebounceReleased = false
+        manager.updateDebounceReason = reason
 
         if isDebugLoggingEnabled() then
             local windowState = wasPending and "extended" or "started"
-            debugLog(string.format("Quest update debounced (100ms window %s) reason=%s", windowState, tostring(reason or "")))
+            debugLog(
+                string.format(
+                    "Tracker update debounced (quests/achievements) 100ms window %s reason=%s",
+                    windowState,
+                    tostring(reason or "")
+                )
+            )
         end
 
-        local function releaseQuestDebounce()
-            manager.questDebounceHandle = nil
-            if manager.questDebounceActive and isDebugLoggingEnabled() then
-                debugLog(string.format("Quest update debounce fired reason=%s", tostring(manager.questDebounceReason or reason or "")))
+        local function releaseTrackerDebounce()
+            manager.updateDebounceHandle = nil
+            if manager.updateDebounceActive and isDebugLoggingEnabled() then
+                debugLog(
+                    string.format(
+                        "Tracker update debounce fired reason=%s",
+                        tostring(manager.updateDebounceReason or reason or "")
+                    )
+                )
             end
-            manager.questDebounceActive = false
-            manager.questDebounceTriggered = true
+            manager.updateDebounceActive = false
+            manager.updateDebounceReleased = true
         end
 
         if zo_callLater then
-            manager.questDebounceHandle = zo_callLater(function()
-                releaseQuestDebounce()
-            end, QUEST_UPDATE_DEBOUNCE_MS)
+            manager.updateDebounceHandle = zo_callLater(function()
+                releaseTrackerDebounce()
+            end, TRACKER_UPDATE_DEBOUNCE_MS)
         else
-            releaseQuestDebounce()
+            releaseTrackerDebounce()
         end
 
         return
     end
 
-    if manager.questDebounceActive then
+    if manager.updateDebounceActive then
         if isDebugLoggingEnabled() then
-            debugLog(string.format("Piggybacking on pending quest debounce reason=%s", tostring(manager.questDebounceReason or reason or "")))
+            debugLog(
+                string.format(
+                    "Piggybacking on pending tracker debounce reason=%s",
+                    tostring(manager.updateDebounceReason or reason or "")
+                )
+            )
         end
         return
+    end
+
+    manager.updateDebounceReleased = true
+    manager.updateDebounceReason = reason
+
+    if isDebugLoggingEnabled() then
+        debugLog(string.format("Tracker update ready without debounce reason=%s", tostring(reason or "")))
     end
 end
 
@@ -297,7 +320,7 @@ local function markQuestsStructureDirty(context)
         )
     end
 
-    scheduleTrackerUpdateProcessing({ questRelated = true, context = context })
+    scheduleTrackerUpdateProcessing({ debounce = true, context = context, reasonHint = "questUpdate" })
 end
 
 local function markAchievementsStructureDirty(context)
@@ -315,7 +338,7 @@ local function markAchievementsStructureDirty(context)
         )
     end
 
-    scheduleTrackerUpdateProcessing({ context = context })
+    scheduleTrackerUpdateProcessing({ debounce = true, context = context, reasonHint = "achievementUpdate" })
 end
 
 local function markLayoutDirty(context)
@@ -333,7 +356,7 @@ local function markLayoutDirty(context)
         )
     end
 
-    scheduleTrackerUpdateProcessing({ context = context })
+    scheduleTrackerUpdateProcessing({ debounce = false, context = context, reasonHint = "layoutUpdate" })
 end
 
 local function queueRowForRefresh(row, context, rowType)
@@ -358,8 +381,9 @@ local function queueRowForRefresh(row, context, rowType)
         debugLog(string.format("QUEUE row=%s reason=%s", tostring(identifier), tostring(reason or "")))
     end
 
-    local questRow = rowType == "quest"
-    scheduleTrackerUpdateProcessing({ questRelated = questRow, context = context })
+    local useDebounce = rowType == "quest" or rowType == "achievement"
+    local hint = rowType == "quest" and "questRow" or rowType == "achievement" and "achievementRow" or "row"
+    scheduleTrackerUpdateProcessing({ debounce = useDebounce, context = context, reasonHint = hint })
     return true
 end
 
@@ -385,12 +409,16 @@ local function canProcessThisFrame(manager)
         return false
     end
 
-    if manager.questDebounceActive then
+    if manager.updateDebounceActive then
         return false
     end
 
     if not manager.initialRefreshDone then
         return true
+    end
+
+    if not manager.updateDebounceReleased then
+        return false
     end
 
     local frames = manager.framesSinceLastRefresh or 0
@@ -419,18 +447,20 @@ local function heartbeatUpdate(_, _elapsed)
 
     local frames = manager.framesSinceLastRefresh or 0
     local queueCount = manager.rowsToRefresh and #manager.rowsToRefresh or 0
-    local questRelease = manager.questDebounceTriggered
+    local debounceReady = manager.updateDebounceReleased
+    local debounceActive = manager.updateDebounceActive
 
     if isDebugLoggingEnabled() then
         debugLog(string.format(
-            "HEARTBEAT coordinator frames=%d questRelease=%s queue=%d flags[q=%s,a=%s,l=%s] reason=%s",
+            "HEARTBEAT coordinator frames=%d ready=%s active=%s queue=%d flags[q=%s,a=%s,l=%s] reason=%s",
             frames,
-            tostring(questRelease),
+            tostring(debounceReady),
+            tostring(debounceActive),
             queueCount,
             tostring(manager.questsStructureDirty),
             tostring(manager.achievementsStructureDirty),
             tostring(manager.layoutDirty),
-            questRelease and tostring(manager.questDebounceReason or "") or ""
+            (debounceReady or debounceActive) and tostring(manager.updateDebounceReason or "") or ""
         ))
     end
 
@@ -2192,8 +2222,9 @@ function TrackerHost.ProcessTrackerUpdates()
         refreshWindowLayout()
     end
 
-    manager.questDebounceTriggered = false
-    manager.questDebounceReason = nil
+    manager.updateDebounceActive = false
+    manager.updateDebounceReleased = false
+    manager.updateDebounceReason = nil
     manager.framesSinceLastRefresh = 0
     manager.initialRefreshDone = true
 end
