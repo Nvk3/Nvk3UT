@@ -93,8 +93,6 @@ local LEFT_MOUSE_BUTTON = MOUSE_BUTTON_INDEX_LEFT or 1
 local RIGHT_MOUSE_BUTTON = MOUSE_BUTTON_INDEX_RIGHT or 2
 
 local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
-local REFRESH_DEBOUNCE_MS = 80
-
 local COLOR_ROW_HOVER = { 1, 1, 0.6, 1 }
 local FOCUS_HIGHLIGHT_DURATION_MS = 1600
 
@@ -103,6 +101,7 @@ local FAVORITES_CATEGORY_ID = "Nvk3UT_Favorites"
 
 local NormalizeAchievementKey -- forward declaration for achievement row registry keys
 local ApplyAchievementRowVisuals -- forward declaration for the achievement row refresh helper
+local ResolveAchievementRowData -- forward declaration for row data resolution
 
 --[=[
 AchievementTrackerRow encapsulates the data and controls for a single
@@ -141,8 +140,13 @@ function AchievementTrackerRow:SetAchievement(achievementData)
 end
 
 function AchievementTrackerRow:Refresh(achievementData)
-    if achievementData ~= nil then
-        self:SetAchievement(achievementData)
+    local resolvedData = achievementData
+    if resolvedData == nil and ResolveAchievementRowData then
+        resolvedData = ResolveAchievementRowData(self.achievementKey)
+    end
+
+    if resolvedData ~= nil then
+        self:SetAchievement(resolvedData)
     end
 
     if not (self.control and self.achievement) then
@@ -171,11 +175,71 @@ local state = {
     lastAnchoredControl = nil,
     snapshot = nil,
     subscription = nil,
-    pendingRefresh = false,
     contentWidth = 0,
     contentHeight = 0,
     pendingFocusAchievementId = nil,
 }
+
+ResolveAchievementRowData = function(achievementKey)
+    local key = NormalizeAchievementKey and NormalizeAchievementKey(achievementKey)
+    if not key then
+        return nil
+    end
+
+    local cachedRow = state.achievementRows and state.achievementRows[key]
+    if cachedRow and cachedRow.achievement then
+        return cachedRow.achievement
+    end
+
+    local snapshot = state.snapshot
+    local achievements = snapshot and snapshot.achievements
+    if not achievements then
+        return nil
+    end
+
+    for index = 1, #achievements do
+        local achievement = achievements[index]
+        if achievement then
+            local normalized = NormalizeAchievementKey and NormalizeAchievementKey(achievement.id)
+            if normalized == key then
+                return achievement
+            end
+        end
+    end
+
+    return nil
+end
+
+local function QueueAchievementStructureUpdate(context)
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if host and host.MarkAchievementsStructureDirty then
+        host.MarkAchievementsStructureDirty(context)
+    end
+end
+
+local function QueueLayoutUpdate(context)
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if host and host.MarkLayoutDirty then
+        host.MarkLayoutDirty(context)
+    end
+end
+
+local function QueueAchievementRowRefreshByKey(achievementKey, context)
+    local normalized = achievementKey
+    if NormalizeAchievementKey then
+        normalized = NormalizeAchievementKey(achievementKey) or achievementKey
+    end
+
+    if normalized == nil then
+        return false
+    end
+
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if host and host.QueueAchievementRowRefresh then
+        return host.QueueAchievementRowRefresh(normalized, context)
+    end
+    return false
+end
 
 local function ApplyLabelDefaults(label)
     if not label or not label.SetHorizontalAlignment then
@@ -1008,27 +1072,12 @@ local function BuildTodoLookup()
     return lookup
 end
 
-local function RequestRefresh()
+local function RequestRefresh(context)
     if not state.isInitialized then
         return
     end
 
-    if state.pendingRefresh then
-        return
-    end
-
-    state.pendingRefresh = true
-
-    local function execute()
-        state.pendingRefresh = false
-        AchievementTracker.Refresh()
-    end
-
-    if zo_callLater then
-        zo_callLater(execute, REFRESH_DEBOUNCE_MS)
-    else
-        execute()
-    end
+    QueueAchievementStructureUpdate(context or { reason = "AchievementTracker.RequestRefresh" })
 end
 
 local function RefreshVisibility()
@@ -1126,6 +1175,12 @@ local function SetCategoryExpanded(expanded, context)
             (context and context.source) or "AchievementTracker:SetCategoryExpanded"
         )
     end
+
+    QueueAchievementStructureUpdate({
+        reason = "AchievementTracker:SetCategoryExpanded",
+        trigger = context and context.trigger,
+        source = context and context.source,
+    })
 end
 
 local function SetEntryExpanded(achievementId, expanded)
@@ -1133,6 +1188,12 @@ local function SetEntryExpanded(achievementId, expanded)
         return
     end
     state.saved.entryExpanded[achievementId] = expanded and true or false
+
+    QueueAchievementStructureUpdate({
+        reason = "AchievementTracker:SetEntryExpanded",
+        trigger = "entry",
+        source = "AchievementTracker:SetEntryExpanded",
+    })
 end
 
 local function IsEntryExpanded(achievementId)
@@ -1717,7 +1778,14 @@ end
 
 local function OnSnapshotUpdated(snapshot)
     state.snapshot = snapshot
-    Rebuild()
+    if not state.isInitialized then
+        return
+    end
+
+    QueueAchievementStructureUpdate({
+        reason = "AchievementTracker:OnSnapshotUpdated",
+        trigger = "snapshot",
+    })
 end
 
 local function SubscribeToModel()
@@ -1775,8 +1843,13 @@ function AchievementTracker.Init(parentControl, opts)
 
     state.isInitialized = true
 
-    RefreshVisibility()
-    AchievementTracker.Refresh()
+    QueueLayoutUpdate({ reason = "AchievementTracker.Init", trigger = "init" })
+    QueueAchievementStructureUpdate({ reason = "AchievementTracker.Init", trigger = "init" })
+
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if host and host.ProcessTrackerUpdates then
+        host.ProcessTrackerUpdates()
+    end
 end
 
 -- Returns the registered AchievementTrackerRow instance for the given
@@ -1791,7 +1864,15 @@ function AchievementTracker.GetAchievementRow(achievementId)
     return state.achievementRows[key]
 end
 
-function AchievementTracker.Refresh()
+function AchievementTracker.Refresh(context)
+    if not state.isInitialized then
+        return
+    end
+
+    QueueAchievementStructureUpdate(context or { reason = "AchievementTracker.Refresh" })
+end
+
+function AchievementTracker.ProcessStructureUpdate()
     if not state.isInitialized then
         return
     end
@@ -1801,6 +1882,10 @@ function AchievementTracker.Refresh()
     end
 
     Rebuild()
+end
+
+function AchievementTracker.ProcessLayoutUpdate()
+    RefreshVisibility()
 end
 
 function AchievementTracker.Shutdown()
@@ -1825,7 +1910,6 @@ function AchievementTracker.Shutdown()
     state.pendingFocusAchievementId = nil
 
     state.isInitialized = false
-    state.pendingRefresh = false
     state.contentWidth = 0
     state.contentHeight = 0
     NotifyHostContentChanged()
@@ -1863,8 +1947,8 @@ function AchievementTracker.ApplySettings(settings)
         ApplyTooltipsSetting(settings.tooltips)
     end
 
-    RefreshVisibility()
-    RequestRefresh()
+    QueueLayoutUpdate({ reason = "AchievementTracker.ApplySettings", trigger = "setting" })
+    QueueAchievementStructureUpdate({ reason = "AchievementTracker.ApplySettings", trigger = "setting" })
 end
 
 function AchievementTracker.ApplyTheme(settings)
@@ -1882,7 +1966,7 @@ function AchievementTracker.ApplyTheme(settings)
 
     state.fonts = MergeFonts(state.opts.fonts)
 
-    RequestRefresh()
+    QueueAchievementStructureUpdate({ reason = "AchievementTracker.ApplyTheme", trigger = "theme" })
 end
 
 function AchievementTracker.FocusAchievement(achievementId)
@@ -1903,10 +1987,22 @@ function AchievementTracker.FocusAchievement(achievementId)
     local focused = FocusAchievementRowInternal(numeric)
     if focused then
         state.pendingFocusAchievementId = nil
+        QueueAchievementRowRefreshByKey(
+            NormalizeAchievementKey and NormalizeAchievementKey(numeric) or numeric,
+            {
+                reason = "AchievementTracker.FocusAchievement",
+                trigger = "external",
+                source = "AchievementTracker:FocusAchievement",
+            }
+        )
         return true
     end
 
-    RequestRefresh()
+    QueueAchievementStructureUpdate({
+        reason = "AchievementTracker.FocusAchievement",
+        trigger = "external",
+        source = "AchievementTracker:FocusAchievement",
+    })
     return false
 end
 
@@ -1916,7 +2012,7 @@ end
 
 function AchievementTracker.SetActive(active)
     state.opts.active = (active ~= false)
-    RefreshVisibility()
+    QueueLayoutUpdate({ reason = "AchievementTracker.SetActive", trigger = "setting" })
 end
 
 function AchievementTracker.RefreshVisibility()

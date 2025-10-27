@@ -128,7 +128,190 @@ local state = {
     initializing = false,
     lamPreviewForceVisible = false,
     sceneCallbacks = nil,
+    updateManager = nil,
 }
+
+local function isDebugLoggingEnabled()
+    local sv = Nvk3UT and Nvk3UT.sv
+    return sv and sv.debug == true
+end
+
+local function debugLog(...)
+    if not isDebugLoggingEnabled() then
+        return
+    end
+
+    if d then
+        d(string.format("[%s]", addonName .. "TrackerHost"), ...)
+    elseif print then
+        print("[" .. addonName .. "TrackerHost]", ...)
+    end
+end
+
+local function safeCall(func, ...)
+    if type(func) ~= "function" then
+        return false
+    end
+
+    local ok, result = pcall(func, ...)
+    if not ok then
+        debugLog("CALL_ERROR", tostring(result))
+    end
+    return ok, result
+end
+
+local function ensureUpdateManager()
+    if state.updateManager then
+        return state.updateManager
+    end
+
+    state.updateManager = {
+        questsStructureDirty = false,
+        achievementsStructureDirty = false,
+        layoutDirty = false,
+        rowsToRefresh = {},
+        queuedRows = {},
+        processingScheduled = false,
+    }
+
+    return state.updateManager
+end
+
+local function clearUpdateManager()
+    if not state.updateManager then
+        return
+    end
+
+    state.updateManager.questsStructureDirty = false
+    state.updateManager.achievementsStructureDirty = false
+    state.updateManager.layoutDirty = false
+    state.updateManager.rowsToRefresh = {}
+    state.updateManager.queuedRows = {}
+    state.updateManager.processingScheduled = false
+end
+
+local function scheduleTrackerUpdateProcessing()
+    local manager = ensureUpdateManager()
+    if manager.processingScheduled then
+        return
+    end
+
+    manager.processingScheduled = true
+
+    local function execute()
+        manager.processingScheduled = false
+        if not state.initialized then
+            return
+        end
+        TrackerHost.ProcessTrackerUpdates()
+    end
+
+    if zo_callLater then
+        zo_callLater(execute, 0)
+    else
+        execute()
+    end
+end
+
+local function extractReason(context, defaultReason)
+    if type(context) == "string" and context ~= "" then
+        return context
+    end
+
+    if type(context) == "table" then
+        if type(context.reason) == "string" and context.reason ~= "" then
+            return context.reason
+        end
+        if type(context.source) == "string" and context.source ~= "" then
+            return context.source
+        end
+        if type(context.trigger) == "string" and context.trigger ~= "" then
+            return context.trigger
+        end
+    end
+
+    return defaultReason
+end
+
+local function markQuestsStructureDirty(context)
+    local manager = ensureUpdateManager()
+    local alreadyDirty = manager.questsStructureDirty
+    manager.questsStructureDirty = true
+
+    if isDebugLoggingEnabled() then
+        debugLog(
+            string.format(
+                "FLAG questsStructureDirty already=%s reason=%s",
+                tostring(alreadyDirty),
+                extractReason(context, "unknown") or "unknown"
+            )
+        )
+    end
+
+    scheduleTrackerUpdateProcessing()
+end
+
+local function markAchievementsStructureDirty(context)
+    local manager = ensureUpdateManager()
+    local alreadyDirty = manager.achievementsStructureDirty
+    manager.achievementsStructureDirty = true
+
+    if isDebugLoggingEnabled() then
+        debugLog(
+            string.format(
+                "FLAG achievementsStructureDirty already=%s reason=%s",
+                tostring(alreadyDirty),
+                extractReason(context, "unknown") or "unknown"
+            )
+        )
+    end
+
+    scheduleTrackerUpdateProcessing()
+end
+
+local function markLayoutDirty(context)
+    local manager = ensureUpdateManager()
+    local alreadyDirty = manager.layoutDirty
+    manager.layoutDirty = true
+
+    if isDebugLoggingEnabled() then
+        debugLog(
+            string.format(
+                "FLAG layoutDirty already=%s reason=%s",
+                tostring(alreadyDirty),
+                extractReason(context, "unknown") or "unknown"
+            )
+        )
+    end
+
+    scheduleTrackerUpdateProcessing()
+end
+
+local function queueRowForRefresh(row, context)
+    if type(row) ~= "table" then
+        return false
+    end
+
+    local manager = ensureUpdateManager()
+    if manager.queuedRows[row] then
+        return false
+    end
+
+    local reason = extractReason(context, "row")
+    manager.queuedRows[row] = true
+    manager.rowsToRefresh[#manager.rowsToRefresh + 1] = {
+        row = row,
+        reason = reason,
+    }
+
+    if isDebugLoggingEnabled() then
+        local identifier = row.questKey or row.achievementKey or "unknown"
+        debugLog(string.format("QUEUE row=%s reason=%s", tostring(identifier), tostring(reason or "")))
+    end
+
+    scheduleTrackerUpdateProcessing()
+    return true
+end
 
 local function isSceneShowing(scene)
     if not (scene and scene.IsShowing) then
@@ -1687,6 +1870,163 @@ local function notifyContentChanged()
     scheduleDeferredRefresh(preservedOffset)
 end
 
+local function processRows(manager)
+    local queue = manager.rowsToRefresh
+    if not queue or #queue == 0 then
+        return
+    end
+
+    if isDebugLoggingEnabled() then
+        debugLog(string.format("PROCESS rows count=%d", #queue))
+    end
+
+    for index = 1, #queue do
+        local entry = queue[index]
+        if entry then
+            local row = entry.row or entry
+            if row and type(row.Refresh) == "function" then
+                local ok, result = pcall(row.Refresh, row)
+                if not ok then
+                    debugLog("ROW_REFRESH_ERROR", tostring(result))
+                elseif isDebugLoggingEnabled() then
+                    local identifier = row.questKey or row.achievementKey or "unknown"
+                    debugLog(string.format("ROW refreshed=%s reason=%s", tostring(identifier), tostring(entry.reason or "")))
+                end
+            end
+        end
+    end
+
+    manager.rowsToRefresh = {}
+    manager.queuedRows = {}
+end
+
+function TrackerHost.QueueQuestRowRefresh(questKey, context)
+    local questTracker = Nvk3UT and Nvk3UT.QuestTracker
+    if not (questTracker and questTracker.GetQuestRow) then
+        return false
+    end
+
+    local ok, row = safeCall(questTracker.GetQuestRow, questTracker, questKey)
+    if not ok or not row then
+        local allowFallback = true
+        if type(context) == "table" and context.allowStructureFallback == false then
+            allowFallback = false
+        end
+        if allowFallback then
+            markQuestsStructureDirty({ reason = "missingQuestRow", source = context and context.source })
+        end
+        return false
+    end
+
+    return queueRowForRefresh(row, context)
+end
+
+function TrackerHost.QueueAchievementRowRefresh(achievementId, context)
+    local achievementTracker = Nvk3UT and Nvk3UT.AchievementTracker
+    if not (achievementTracker and achievementTracker.GetAchievementRow) then
+        return false
+    end
+
+    local ok, row = safeCall(achievementTracker.GetAchievementRow, achievementTracker, achievementId)
+    if not ok or not row then
+        local allowFallback = true
+        if type(context) == "table" and context.allowStructureFallback == false then
+            allowFallback = false
+        end
+        if allowFallback then
+            markAchievementsStructureDirty({ reason = "missingAchievementRow", source = context and context.source })
+        end
+        return false
+    end
+
+    return queueRowForRefresh(row, context)
+end
+
+function TrackerHost.MarkQuestsStructureDirty(context)
+    markQuestsStructureDirty(context)
+end
+
+function TrackerHost.MarkAchievementsStructureDirty(context)
+    markAchievementsStructureDirty(context)
+end
+
+function TrackerHost.MarkLayoutDirty(context)
+    markLayoutDirty(context)
+end
+
+function TrackerHost.ProcessTrackerUpdates()
+    local manager = ensureUpdateManager()
+
+    if not state.initialized then
+        return
+    end
+
+    local questsDirty = manager.questsStructureDirty
+    local achievementsDirty = manager.achievementsStructureDirty
+    local layoutDirty = manager.layoutDirty
+
+    manager.questsStructureDirty = false
+    manager.achievementsStructureDirty = false
+    manager.layoutDirty = false
+
+    if questsDirty then
+        if isDebugLoggingEnabled() then
+            debugLog("PROCESS questsStructureDirty")
+        end
+        local questTracker = Nvk3UT and Nvk3UT.QuestTracker
+        if questTracker then
+            if questTracker.ProcessStructureUpdate then
+                safeCall(questTracker.ProcessStructureUpdate)
+            elseif questTracker.Refresh then
+                safeCall(questTracker.Refresh)
+            end
+        end
+    end
+
+    if achievementsDirty then
+        if isDebugLoggingEnabled() then
+            debugLog("PROCESS achievementsStructureDirty")
+        end
+        local achievementTracker = Nvk3UT and Nvk3UT.AchievementTracker
+        if achievementTracker then
+            if achievementTracker.ProcessStructureUpdate then
+                safeCall(achievementTracker.ProcessStructureUpdate)
+            elseif achievementTracker.Refresh then
+                safeCall(achievementTracker.Refresh)
+            end
+        end
+    end
+
+    if layoutDirty then
+        if isDebugLoggingEnabled() then
+            debugLog("PROCESS layoutDirty")
+        end
+
+        local questTracker = Nvk3UT and Nvk3UT.QuestTracker
+        if questTracker then
+            if questTracker.ProcessLayoutUpdate then
+                safeCall(questTracker.ProcessLayoutUpdate)
+            elseif questTracker.RefreshVisibility then
+                safeCall(questTracker.RefreshVisibility)
+            end
+        end
+
+        local achievementTracker = Nvk3UT and Nvk3UT.AchievementTracker
+        if achievementTracker then
+            if achievementTracker.ProcessLayoutUpdate then
+                safeCall(achievementTracker.ProcessLayoutUpdate)
+            elseif achievementTracker.RefreshVisibility then
+                safeCall(achievementTracker.RefreshVisibility)
+            end
+        end
+
+        applyWindowVisibility()
+        refreshWindowLayout()
+    end
+
+    processRows(manager)
+end
+
 local function applyWindowClamp()
     if not (state.root and state.window) then
         return
@@ -2052,6 +2392,7 @@ function TrackerHost.Init()
     end
 
     state.initializing = true
+    clearUpdateManager()
 
     state.window = ensureWindowSettings()
     state.appearance = ensureAppearanceSettings()
@@ -2087,6 +2428,8 @@ function TrackerHost.Init()
     notifyContentChanged()
 
     debugLog("Host window initialized")
+
+    TrackerHost.ProcessTrackerUpdates()
 end
 
 function TrackerHost.ApplySettings()
@@ -2415,6 +2758,7 @@ function TrackerHost.Shutdown()
     state.initialized = false
     state.previousDefaultQuestTrackerHidden = nil
     state.initializing = false
+    clearUpdateManager()
 end
 
 Nvk3UT.TrackerHost = TrackerHost

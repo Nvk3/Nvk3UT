@@ -59,8 +59,6 @@ local DEFAULT_FONTS = {
 }
 
 local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
-local REFRESH_DEBOUNCE_MS = 80
-
 local COLOR_ROW_HOVER = { 1, 1, 0.6, 1 }
 
 local RequestRefresh -- forward declaration for functions that trigger refreshes
@@ -71,6 +69,7 @@ local HandleQuestRowClick -- forward declaration for quest row click orchestrati
 local FlushPendingTrackedQuestUpdate -- forward declaration for deferred tracking updates
 local ProcessTrackedQuestUpdate -- forward declaration for deferred tracking processing
 local ApplyQuestRowVisuals -- forward declaration for the quest row refresh helper
+local ResolveQuestRowData -- forward declaration for retrieving quest data during row refresh
 
 --[=[
 QuestTrackerRow encapsulates the data and controls for a single quest row. The
@@ -97,11 +96,22 @@ end
 
 function QuestTrackerRow:SetQuest(questData)
     self.quest = questData
+    if questData and questData.journalIndex then
+        local normalized = NormalizeQuestKey and NormalizeQuestKey(questData.journalIndex)
+        if normalized then
+            self.questKey = normalized
+        end
+    end
 end
 
 function QuestTrackerRow:Refresh(questData)
-    if questData ~= nil then
-        self:SetQuest(questData)
+    local resolvedData = questData
+    if resolvedData == nil and ResolveQuestRowData then
+        resolvedData = ResolveQuestRowData(self.questKey)
+    end
+
+    if resolvedData ~= nil then
+        self:SetQuest(resolvedData)
     end
 
     if not (self.control and self.quest) then
@@ -129,7 +139,6 @@ local state = {
     questControls = {},
     questRows = {}, -- registry of QuestTrackerRow instances keyed by normalized quest id
     combatHidden = false,
-    pendingRefresh = false,
     contentWidth = 0,
     contentHeight = 0,
     trackedQuestIndex = nil,
@@ -145,6 +154,7 @@ local state = {
     isClickSelectInProgress = false,
     selectedQuestKey = nil,
     isRebuildInProgress = false,
+    pendingAdoptOnInit = false,
 }
 
 local STATE_VERSION = 1
@@ -252,6 +262,76 @@ local function EmitDebugAction(action, trigger, entityType, fieldList)
     elseif print then
         print(message)
     end
+end
+
+ResolveQuestRowData = function(questKey)
+    local normalized = NormalizeQuestKey(questKey)
+    if not normalized then
+        return nil
+    end
+
+    local numeric = QuestKeyToJournalIndex(normalized)
+    if numeric and state.questControls then
+        local control = state.questControls[numeric]
+        if control and control.data and control.data.quest then
+            return control.data.quest
+        end
+    end
+
+    local snapshot = state.snapshot
+    if not snapshot or not snapshot.categories or not snapshot.categories.ordered then
+        return nil
+    end
+
+    for categoryIndex = 1, #snapshot.categories.ordered do
+        local category = snapshot.categories.ordered[categoryIndex]
+        if category and category.quests then
+            for questIndex = 1, #category.quests do
+                local quest = category.quests[questIndex]
+                if quest and NormalizeQuestKey(quest.journalIndex) == normalized then
+                    return quest
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+local function QueueQuestStructureUpdate(context)
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if host and host.MarkQuestsStructureDirty then
+        host.MarkQuestsStructureDirty(context)
+    end
+end
+
+local function QueueLayoutUpdate(context)
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if host and host.MarkLayoutDirty then
+        host.MarkLayoutDirty(context)
+    end
+end
+
+local function QueueQuestRowRefreshByKey(questKey, context)
+    if not questKey then
+        return false
+    end
+
+    local normalized = questKey
+    if NormalizeQuestKey then
+        normalized = NormalizeQuestKey(questKey) or questKey
+    end
+
+    if normalized == nil then
+        return false
+    end
+
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if host and host.QueueQuestRowRefresh then
+        return host.QueueQuestRowRefresh(normalized, context)
+    end
+
+    return false
 end
 
 local function GetQuestTrackerColor(role)
@@ -1585,8 +1665,11 @@ local function ExpandCategoriesForExternalSelect(journalIndex)
         LogMissingCategory(journalIndex)
     end
 
-    if expandedAny and RequestRefresh then
-        RequestRefresh()
+    if expandedAny then
+        QueueQuestStructureUpdate({
+            reason = "QuestTracker:ExpandCategoriesForExternalSelect",
+            trigger = "external-select",
+        })
     end
 
     return expandedAny, found
@@ -1621,8 +1704,11 @@ local function ExpandCategoriesForClickSelect(journalIndex)
         LogMissingCategory(journalIndex)
     end
 
-    if expandedAny and RequestRefresh then
-        RequestRefresh()
+    if expandedAny then
+        QueueQuestStructureUpdate({
+            reason = "QuestTracker:ExpandCategoriesForClickSelect",
+            trigger = "click-select",
+        })
     end
 
     return expandedAny, found
@@ -2212,8 +2298,37 @@ local function SyncTrackedQuestState(forcedIndex, forceExpand, context)
         local hasTracked = currentTracked ~= nil
         local hadTracked = previousTracked ~= nil
 
-        if RequestRefresh and (previousTracked ~= currentTracked or hasTracked or hadTracked or pendingApplied or expansionChanged) then
-            RequestRefresh()
+        local needsRowRefresh = previousTracked ~= currentTracked or hasTracked or hadTracked or pendingApplied or expansionChanged
+
+        if expansionChanged then
+            QueueQuestStructureUpdate({
+                reason = "QuestTracker:SyncTrackedQuestState",
+                trigger = trigger,
+            })
+        end
+
+        if needsRowRefresh then
+            if previousTracked then
+                QueueQuestRowRefreshByKey(
+                    NormalizeQuestKey(previousTracked),
+                    {
+                        reason = "QuestTracker:TrackedQuestChanged",
+                        trigger = trigger,
+                        source = source,
+                    }
+                )
+            end
+
+            if currentTracked then
+                QueueQuestRowRefreshByKey(
+                    NormalizeQuestKey(currentTracked),
+                    {
+                        reason = "QuestTracker:TrackedQuestChanged",
+                        trigger = trigger,
+                        source = source,
+                    }
+                )
+            end
         end
     until true
 
@@ -2246,26 +2361,12 @@ local function ForceAssistTrackedQuest(journalIndex)
     end, FOCUSED_QUEST_TRACKER, journalIndex)
 end
 
-local function RequestRefreshInternal()
+local function RequestRefreshInternal(context)
     if not state.isInitialized then
         return
     end
-    if state.pendingRefresh then
-        return
-    end
 
-    state.pendingRefresh = true
-
-    local function execute()
-        state.pendingRefresh = false
-        QuestTracker.Refresh()
-    end
-
-    if zo_callLater then
-        zo_callLater(execute, REFRESH_DEBOUNCE_MS)
-    else
-        execute()
-    end
+    QueueQuestStructureUpdate(context or { reason = "QuestTracker.RequestRefresh" })
 end
 
 RequestRefresh = RequestRefreshInternal
@@ -2336,7 +2437,14 @@ local function TrackQuestByJournalIndex(journalIndex, options)
     end
 
     if shouldRequestRefresh then
-        RequestRefresh()
+        QueueQuestRowRefreshByKey(
+            NormalizeQuestKey(numeric),
+            {
+                reason = "QuestTracker:TrackQuestByJournalIndex",
+                trigger = options.trigger or "auto",
+                source = options.source,
+            }
+        )
     end
 
     return true
@@ -2372,7 +2480,26 @@ HandleQuestRowClick = function(journalIndex)
         DebugLog(string.format("SET_ACTIVE questId=%s prev=%s", tostring(questId), previousQuestString))
     end
 
-    RequestRefresh()
+    local questKey = NormalizeQuestKey(questId)
+    QueueQuestRowRefreshByKey(
+        questKey,
+        {
+            reason = "QuestTracker:HandleQuestRowClick",
+            trigger = "click",
+            source = "QuestTracker:HandleQuestRowClick",
+        }
+    )
+
+    if previousQuest then
+        QueueQuestRowRefreshByKey(
+            NormalizeQuestKey(previousQuest),
+            {
+                reason = "QuestTracker:HandleQuestRowClick",
+                trigger = "click",
+                source = "QuestTracker:HandleQuestRowClick",
+            }
+        )
+    end
 
     if IsDebugLoggingEnabled() then
         DebugLog(string.format("UI_SELECT questId=%s", tostring(questId)))
@@ -2424,8 +2551,6 @@ HandleQuestRowClick = function(journalIndex)
     else
         state.pendingSelection = nil
     end
-
-    RequestRefresh()
 
     if IsDebugLoggingEnabled() then
         DebugLog(string.format("CLICK_SELECT_END questId=%s", tostring(questId)))
@@ -2934,6 +3059,12 @@ SetCategoryExpanded = function(categoryKey, expanded, context)
         extraFields
     )
 
+    QueueQuestStructureUpdate({
+        reason = "QuestTracker:SetCategoryExpanded",
+        trigger = context and context.trigger,
+        source = context and context.source,
+    })
+
     return true
 end
 
@@ -2982,6 +3113,12 @@ SetQuestExpanded = function(journalIndex, expanded, context)
         (context and context.source) or "QuestTracker:SetQuestExpanded"
     )
 
+    QueueQuestStructureUpdate({
+        reason = "QuestTracker:SetQuestExpanded",
+        trigger = context and context.trigger,
+        source = context and context.source,
+    })
+
     return true
 end
 
@@ -3009,7 +3146,11 @@ local function ToggleQuestExpansion(journalIndex, context)
 
     local changed = SetQuestExpanded(journalIndex, not expanded, toggleContext)
     if changed then
-        QuestTracker.Refresh()
+        QueueQuestStructureUpdate({
+            reason = "QuestTracker:ToggleQuestExpansion",
+            trigger = toggleContext.trigger,
+            source = toggleContext.source,
+        })
     end
 
     return changed
@@ -3564,9 +3705,10 @@ local function OnSnapshotUpdated(snapshot)
         return
     end
 
-    if RequestRefresh then
-        RequestRefresh()
-    end
+    QueueQuestStructureUpdate({
+        reason = "QuestTracker:OnSnapshotUpdated",
+        trigger = "snapshot",
+    })
 end
 
 local function SubscribeToModel()
@@ -3662,7 +3804,7 @@ end
 
 local function OnCombatState(_, inCombat)
     state.combatHidden = inCombat
-    RefreshVisibility()
+    QueueLayoutUpdate({ reason = "QuestTracker.OnCombatState", trigger = "combat" })
 end
 
 local function RegisterCombatEvents()
@@ -3672,7 +3814,7 @@ local function RegisterCombatEvents()
 
     EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. "Combat", EVENT_PLAYER_COMBAT_STATE, OnCombatState)
     state.combatHidden = IsUnitInCombat and IsUnitInCombat("player") or false
-    RefreshVisibility()
+    QueueLayoutUpdate({ reason = "QuestTracker.RegisterCombatEvents", trigger = "combat" })
 end
 
 local function UnregisterCombatEvents()
@@ -3723,9 +3865,16 @@ function QuestTracker.Init(parentControl, opts)
     end
 
     state.isInitialized = true
-    RefreshVisibility()
-    QuestTracker.Refresh()
-    AdoptTrackedQuestOnInit()
+
+    QueueLayoutUpdate({ reason = "QuestTracker.Init", trigger = "init" })
+    QueueQuestStructureUpdate({ reason = "QuestTracker.Init", trigger = "init" })
+
+    state.pendingAdoptOnInit = true
+
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if host and host.ProcessTrackerUpdates then
+        host.ProcessTrackerUpdates()
+    end
 end
 
 -- Returns the registered QuestTrackerRow instance for the given quest journal
@@ -3740,21 +3889,38 @@ function QuestTracker.GetQuestRow(questId)
     return state.questRows[questKey]
 end
 
-function QuestTracker.Refresh()
+function QuestTracker.Refresh(context)
     if not state.isInitialized then
         return
     end
 
-    if not state.snapshot and Nvk3UT.QuestModel and Nvk3UT.QuestModel.GetSnapshot then
-        state.snapshot = Nvk3UT.QuestModel.GetSnapshot()
+    QueueQuestStructureUpdate(context or { reason = "QuestTracker.Refresh", trigger = "refresh" })
+end
+
+function QuestTracker.ProcessStructureUpdate()
+    if not state.isInitialized then
+        return
+    end
+
+    if Nvk3UT.QuestModel and Nvk3UT.QuestModel.GetSnapshot then
+        state.snapshot = Nvk3UT.QuestModel.GetSnapshot() or state.snapshot
     end
 
     ApplySnapshot(state.snapshot, {
         trigger = "refresh",
-        source = "QuestTracker.Refresh",
+        source = "QuestTracker.ProcessStructureUpdate",
     })
 
     Rebuild()
+
+    if state.pendingAdoptOnInit then
+        state.pendingAdoptOnInit = false
+        AdoptTrackedQuestOnInit()
+    end
+end
+
+function QuestTracker.ProcessLayoutUpdate()
+    RefreshVisibility()
 end
 
 function QuestTracker.Shutdown()
@@ -3792,7 +3958,6 @@ function QuestTracker.Shutdown()
     state.isInitialized = false
     state.opts = {}
     state.fonts = {}
-    state.pendingRefresh = false
     state.contentWidth = 0
     state.contentHeight = 0
     state.trackedQuestIndex = nil
@@ -3806,12 +3971,13 @@ function QuestTracker.Shutdown()
     state.pendingExternalReveal = nil
     state.selectedQuestKey = nil
     state.isRebuildInProgress = false
+    state.pendingAdoptOnInit = false
     NotifyHostContentChanged()
 end
 
 function QuestTracker.SetActive(active)
     state.opts.active = active
-    RefreshVisibility()
+    QueueLayoutUpdate({ reason = "QuestTracker.SetActive", trigger = "setting" })
     NotifyStatusRefresh()
 end
 
@@ -3834,8 +4000,8 @@ function QuestTracker.ApplySettings(settings)
         end
     end
 
-    RefreshVisibility()
-    RequestRefresh()
+    QueueLayoutUpdate({ reason = "QuestTracker.ApplySettings", trigger = "setting" })
+    QueueQuestStructureUpdate({ reason = "QuestTracker.ApplySettings", trigger = "setting" })
     NotifyStatusRefresh()
 end
 
@@ -3853,7 +4019,7 @@ function QuestTracker.ApplyTheme(settings)
     state.opts.fonts.toggle = state.opts.fonts.category or DEFAULT_FONTS.toggle
     state.fonts = MergeFonts(state.opts.fonts)
 
-    RequestRefresh()
+    QueueQuestStructureUpdate({ reason = "QuestTracker.ApplyTheme", trigger = "theme" })
 end
 
 function QuestTracker.IsActive()
