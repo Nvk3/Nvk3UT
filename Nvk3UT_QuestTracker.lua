@@ -4159,21 +4159,42 @@ local function ApplyQuestRowVisuals(control, quest)
     local questName = quest and quest.name
     if (questName == nil or questName == "") and quest and quest.journalIndex then
         -- When the snapshot unexpectedly lacks the quest title we recover by
-        -- querying the journal directly.  The previous pooling refactor could
-        -- leave us with valid quest rows but empty titles, which manifested as
-        -- blank tracker lines.  Falling back to the live journal API ensures
-        -- the header always renders a title without re-running the entire
-        -- rebuild.
+        -- querying the live journal.  The pooling refactor keeps row controls
+        -- alive across rebuilds, so we must always be prepared to repaint the
+        -- header text from authoritative game APIs instead of leaving it
+        -- blank.
         if GetJournalQuestName then
             local ok, fallback = SafeCall(GetJournalQuestName, quest.journalIndex)
             if ok and type(fallback) == "string" and fallback ~= "" then
                 questName = fallback
             end
         end
+
+        -- Some ESO builds return the name only via GetJournalQuestInfo for a
+        -- brief period during login.  Querying that path as a secondary
+        -- fallback keeps the tracker populated even when the lightweight
+        -- GetJournalQuestName helper is still empty.
+        if (questName == nil or questName == "") and GetJournalQuestInfo then
+            local ok, infoName = SafeCall(function(index)
+                local name = GetJournalQuestInfo(index)
+                return name
+            end, quest.journalIndex)
+            if ok and type(infoName) == "string" and infoName ~= "" then
+                questName = infoName
+            end
+        end
     end
 
-    if type(questName) == "string" and questName ~= "" and zo_strformat then
-        questName = zo_strformat("<<1>>", questName)
+    if type(questName) == "string" and questName ~= "" then
+        if zo_strformat then
+            questName = zo_strformat("<<1>>", questName)
+        end
+        -- Persist the resolved title on the quest payload so subsequent row
+        -- refreshes (for example after pooling hand-offs) no longer have to
+        -- perform the journal lookups again.
+        if quest then
+            quest.name = questName
+        end
     end
 
     if control.label and control.label.SetText then
