@@ -1135,42 +1135,6 @@ local function ShowAchievementContextMenu(control, data)
     end
 end
 
-local function HasAnyFavoriteAchievements()
-    local Fav = Nvk3UT and Nvk3UT.FavoritesData
-    if not (Fav and Fav.Iterate) then
-        return false
-    end
-
-    local function scopeHasFavorites(scope)
-        if not scope then
-            return false
-        end
-
-        for id, isFavorite in Fav.Iterate(scope) do
-            if id and isFavorite then
-                return true
-            end
-        end
-
-        return false
-    end
-
-    local scope = BuildFavoritesScope()
-    if scopeHasFavorites(scope) then
-        return true
-    end
-
-    if scope ~= "account" and scopeHasFavorites("account") then
-        return true
-    end
-
-    if scope ~= "character" and scopeHasFavorites("character") then
-        return true
-    end
-
-    return false
-end
-
 local function IsRecentAchievement(achievementId)
     if not achievementId then
         return false
@@ -2301,7 +2265,11 @@ local function LayoutCategory()
 
     local total = #visibleEntries
 
-    if not HasAnyFavoriteAchievements() then
+    if total == 0 then
+        -- Skip layout only when there are truly no visible entries.  The prior
+        -- favorite-only guard prevented recently completed or todo
+        -- achievements from ever rendering, leaving the tracker empty for
+        -- players without explicit favorites.
         return
     end
 

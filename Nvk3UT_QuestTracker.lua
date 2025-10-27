@@ -4156,6 +4156,11 @@ local function ApplyQuestRowVisuals(control, quest)
         control.data = data
     end
 
+    local existingLabelText = nil
+    if control.label and control.label.GetText then
+        existingLabelText = control.label:GetText()
+    end
+
     local questName = quest and quest.name
     if (questName == nil or questName == "") and quest and quest.journalIndex then
         -- When the snapshot unexpectedly lacks the quest title we recover by
@@ -4183,6 +4188,23 @@ local function ApplyQuestRowVisuals(control, quest)
                 questName = infoName
             end
         end
+    end
+
+    if (questName == nil or questName == "") and quest and quest.questId and GetQuestName then
+        -- Some quests only expose their title through the questId variant
+        -- during the login flow.  Consulting GetQuestName prevents the tracker
+        -- from rendering an empty header when the snapshot momentarily omits
+        -- the title, which previously left blank quest rows on first load.
+        local ok, fallback = SafeCall(GetQuestName, quest.questId)
+        if ok and type(fallback) == "string" and fallback ~= "" then
+            questName = fallback
+        end
+    end
+
+    if (questName == nil or questName == "") and type(existingLabelText) == "string" and existingLabelText ~= "" then
+        -- When every live query fails we retain the last known label so the row
+        -- stays readable instead of flashing blank text during rapid rebuilds.
+        questName = existingLabelText
     end
 
     if type(questName) == "string" and questName ~= "" then
