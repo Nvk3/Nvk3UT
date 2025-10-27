@@ -2156,7 +2156,15 @@ function TrackerHost.ProcessTrackerUpdates()
         local questTracker = Nvk3UT and Nvk3UT.QuestTracker
         if questTracker then
             if questTracker.ProcessStructureUpdate then
-                safeCall(questTracker.ProcessStructureUpdate)
+                local context = {
+                    reason = manager.updateDebounceReason or "TrackerHost",
+                    trigger = "coordinator",
+                    source = "TrackerHost",
+                }
+                local ok, handled = safeCall(questTracker.ProcessStructureUpdate, context)
+                if not ok or handled == false then
+                    manager.questsStructureDirty = true
+                end
             elseif questTracker.Refresh then
                 safeCall(questTracker.Refresh)
             end
@@ -2170,11 +2178,23 @@ function TrackerHost.ProcessTrackerUpdates()
         local achievementTracker = Nvk3UT and Nvk3UT.AchievementTracker
         if achievementTracker then
             if achievementTracker.ProcessStructureUpdate then
-                safeCall(achievementTracker.ProcessStructureUpdate)
+                local context = {
+                    reason = manager.updateDebounceReason or "TrackerHost",
+                    trigger = "coordinator",
+                    source = "TrackerHost",
+                }
+                local ok, handled = safeCall(achievementTracker.ProcessStructureUpdate, context)
+                if not ok or handled == false then
+                    manager.achievementsStructureDirty = true
+                end
             elseif achievementTracker.Refresh then
                 safeCall(achievementTracker.Refresh)
             end
         end
+    end
+
+    if manager.questsStructureDirty or manager.achievementsStructureDirty then
+        layoutNeeded = true
     end
 
     if layoutDirty then

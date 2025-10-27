@@ -81,6 +81,10 @@ local ROW_TEXT_PADDING_Y = 8
 local TOGGLE_LABEL_PADDING_X = 4
 local CATEGORY_TOGGLE_WIDTH = 20
 
+local STRUCTURE_REBUILD_BATCH_SIZE = 12
+local ACHIEVEMENT_REBUILD_TASK_NAME = MODULE_NAME .. "_StructureRebuild"
+local Async = LibAsync
+
 local DEFAULT_FONTS = {
     category = "$(BOLD_FONT)|20|soft-shadow-thick",
     achievement = "$(BOLD_FONT)|16|soft-shadow-thick",
@@ -206,6 +210,8 @@ local state = {
     pendingFocusAchievementId = nil,
     reusableCategoryControls = nil,
     reusableAchievementControls = nil,
+    rebuildJob = nil,
+    activeRebuildContext = nil,
 }
 
 ResolveAchievementRowData = function(achievementKey)
@@ -249,6 +255,59 @@ local function QueueLayoutUpdate(context)
     local host = Nvk3UT and Nvk3UT.TrackerHost
     if host and host.MarkLayoutDirty then
         host.MarkLayoutDirty(context)
+    end
+end
+
+local function GetAchievementRebuildJob()
+    state.rebuildJob = state.rebuildJob or {
+        active = false,
+        restartRequested = false,
+        batchSize = STRUCTURE_REBUILD_BATCH_SIZE,
+        totalProcessed = 0,
+        reason = nil,
+    }
+
+    return state.rebuildJob
+end
+
+local function ClearActiveRebuildContext()
+    state.activeRebuildContext = nil
+end
+
+local function ShouldAbortRebuild()
+    local job = state.rebuildJob
+    return job and job.active and job.restartRequested == true
+end
+
+local function ConsumeStructureBudget(amount)
+    local context = state.activeRebuildContext
+    if not context then
+        return
+    end
+
+    local processed = amount or 1
+    context.pending = (context.pending or 0) + processed
+    context.total = (context.total or 0) + processed
+
+    local job = state.rebuildJob
+    if job and job.active then
+        job.totalProcessed = (job.totalProcessed or 0) + processed
+    end
+
+    local batchSize = context.batchSize or STRUCTURE_REBUILD_BATCH_SIZE
+
+    if context.pending >= batchSize then
+        context.pending = 0
+        context.batches = (context.batches or 0) + 1
+
+        if context.onBatchReady then
+            context.onBatchReady(context)
+        end
+
+        local task = context.task
+        if task and task.Yield then
+            task:Yield()
+        end
     end
 end
 
@@ -1757,6 +1816,11 @@ local function LayoutObjective(achievement, objective)
     ApplyRowMetrics(control, OBJECTIVE_INDENT_X, 0, 0, 0, OBJECTIVE_MIN_HEIGHT)
     control:SetHidden(false)
     AnchorControl(control, OBJECTIVE_INDENT_X)
+    ConsumeStructureBudget(1)
+
+    if ShouldAbortRebuild() then
+        return
+    end
 end
 
 local function ApplyAchievementRowVisuals(control, achievement)
@@ -1826,6 +1890,11 @@ local function LayoutAchievement(achievement)
 
     control:SetHidden(false)
     AnchorControl(control, ACHIEVEMENT_INDENT_X)
+    ConsumeStructureBudget(1)
+
+    if ShouldAbortRebuild() then
+        return
+    end
 
     if achievement and achievement.id then
         state.achievementControls[achievement.id] = control
@@ -1838,6 +1907,9 @@ local function LayoutAchievement(achievement)
     if hasObjectives and expanded then
         for index = 1, #achievement.objectives do
             LayoutObjective(achievement, achievement.objectives[index])
+            if ShouldAbortRebuild() then
+                return
+            end
         end
     end
 end
@@ -1933,10 +2005,18 @@ local function LayoutCategory()
 
     control:SetHidden(false)
     AnchorControl(control, CATEGORY_INDENT_X)
+    ConsumeStructureBudget(1)
+
+    if ShouldAbortRebuild() then
+        return
+    end
 
     if expanded then
         for index = 1, #visibleEntries do
             LayoutAchievement(visibleEntries[index])
+            if ShouldAbortRebuild() then
+                return
+            end
         end
     end
 end
@@ -2027,6 +2107,136 @@ local function Rebuild()
     ApplyPendingFocus()
 end
 
+local function RunAchievementRebuildSynchronously(reason)
+    local job = GetAchievementRebuildJob()
+    job.totalProcessed = 0
+    job.reason = reason or job.reason or "achievementStructure"
+    job.restartRequested = false
+    job.active = false
+    job.async = nil
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format("REBUILD_SYNC reason=%s", tostring(job.reason or "")))
+    end
+
+    local ok, err = pcall(Rebuild)
+    if not ok and IsDebugLoggingEnabled() then
+        DebugLog("REBUILD_ERROR", tostring(err))
+    end
+
+    QueueLayoutUpdate({
+        reason = "AchievementTracker.StructureComplete",
+        trigger = "structureComplete",
+    })
+
+    return ok == true
+end
+
+local function StartAchievementRebuildJob(reason)
+    local job = GetAchievementRebuildJob()
+    job.batchSize = STRUCTURE_REBUILD_BATCH_SIZE
+    job.reason = reason or job.reason or "achievementStructure"
+    job.restartRequested = false
+
+    if job.active then
+        job.restartRequested = true
+        if IsDebugLoggingEnabled() then
+            DebugLog(string.format("REBUILD_RESTART reason=%s", tostring(job.reason or "")))
+        end
+        return true
+    end
+
+    if not Async or not Async.Create then
+        return RunAchievementRebuildSynchronously(job.reason)
+    end
+
+    local asyncTask = Async:Create(ACHIEVEMENT_REBUILD_TASK_NAME)
+    if not asyncTask then
+        return RunAchievementRebuildSynchronously(job.reason)
+    end
+
+    job.async = asyncTask
+    job.active = true
+    job.totalProcessed = 0
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format("REBUILD_ASYNC_START reason=%s", tostring(job.reason or "")))
+    end
+
+    asyncTask:Then(function(task)
+        repeat
+            job.restartRequested = false
+            job.totalProcessed = 0
+
+            state.activeRebuildContext = {
+                task = task,
+                batchSize = job.batchSize or STRUCTURE_REBUILD_BATCH_SIZE,
+                pending = 0,
+                total = 0,
+                batches = 0,
+                onBatchReady = function(context)
+                    if IsDebugLoggingEnabled() then
+                        DebugLog(string.format(
+                            "REBUILD_BATCH achievement batches=%d total=%d reason=%s",
+                            context.batches or 0,
+                            context.total or 0,
+                            tostring(job.reason or "")
+                        ))
+                    end
+                    QueueLayoutUpdate({
+                        reason = "AchievementTracker.StructureBatch",
+                        trigger = "structureBatch",
+                    })
+                end,
+            }
+
+            local ok, err = pcall(Rebuild)
+            if not ok and IsDebugLoggingEnabled() then
+                DebugLog("REBUILD_ERROR", tostring(err))
+            end
+
+            ClearActiveRebuildContext()
+
+            if IsDebugLoggingEnabled() then
+                DebugLog(string.format(
+                    "REBUILD_ITERATION_COMPLETE rows=%d restart=%s reason=%s",
+                    job.totalProcessed or 0,
+                    tostring(job.restartRequested),
+                    tostring(job.reason or "")
+                ))
+            end
+
+            QueueLayoutUpdate({
+                reason = "AchievementTracker.StructureIteration",
+                trigger = "structure",
+            })
+        until not job.restartRequested
+    end)
+    :Then(function()
+        if IsDebugLoggingEnabled() then
+            DebugLog("REBUILD_ASYNC_DONE")
+        end
+        QueueLayoutUpdate({
+            reason = "AchievementTracker.StructureComplete",
+            trigger = "structureComplete",
+        })
+    end)
+    :Finally(function()
+        ClearActiveRebuildContext()
+        job.active = false
+        job.async = nil
+
+        if job.restartRequested then
+            local restartReason = job.reason or "achievementStructure"
+            job.restartRequested = false
+            StartAchievementRebuildJob(restartReason)
+        end
+    end)
+    :Start()
+
+    return true
+end
+
 local function OnSnapshotUpdated(snapshot)
     state.snapshot = snapshot
     if not state.isInitialized then
@@ -2093,6 +2303,8 @@ function AchievementTracker.Init(parentControl, opts)
     state.snapshot = Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.GetSnapshot and Nvk3UT.AchievementModel.GetSnapshot()
 
     state.isInitialized = true
+    state.rebuildJob = nil
+    ClearActiveRebuildContext()
 
     QueueLayoutUpdate({ reason = "AchievementTracker.Init", trigger = "init" })
     QueueAchievementStructureUpdate({ reason = "AchievementTracker.Init", trigger = "init" })
@@ -2123,16 +2335,37 @@ function AchievementTracker.Refresh(context)
     QueueAchievementStructureUpdate(context or { reason = "AchievementTracker.Refresh" })
 end
 
-function AchievementTracker.ProcessStructureUpdate()
+function AchievementTracker.ProcessStructureUpdate(context)
     if not state.isInitialized then
-        return
+        return false
     end
 
     if Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.GetSnapshot then
         state.snapshot = Nvk3UT.AchievementModel.GetSnapshot() or state.snapshot
     end
 
-    Rebuild()
+    local job = GetAchievementRebuildJob()
+    local reason
+    if type(context) == "table" then
+        reason = context.reason or context.trigger
+    elseif type(context) == "string" then
+        reason = context
+    end
+    job.reason = reason or job.reason or "AchievementTracker.ProcessStructureUpdate"
+
+    if job.active then
+        job.restartRequested = true
+        if IsDebugLoggingEnabled() then
+            DebugLog(string.format(
+                "REBUILD_RESTART_REQUEST reason=%s",
+                tostring(job.reason or "")
+            ))
+        end
+        return true
+    end
+
+    local started = StartAchievementRebuildJob(job.reason)
+    return started == true
 end
 
 function AchievementTracker.RunLayoutPass()
@@ -2145,6 +2378,15 @@ end
 
 function AchievementTracker.Shutdown()
     UnsubscribeFromModel()
+
+    if state.rebuildJob then
+        local job = state.rebuildJob
+        if job.async and job.async.Cancel then
+            pcall(job.async.Cancel, job.async)
+        end
+        state.rebuildJob = nil
+    end
+    ClearActiveRebuildContext()
 
     if state.categoryPool then
         state.categoryPool:ReleaseAllObjects()
