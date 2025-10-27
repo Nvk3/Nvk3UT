@@ -87,6 +87,7 @@ local math_max = math.max
 local tostring = tostring
 local type = type
 local pairs = pairs
+local WINDOW_MANAGER = WINDOW_MANAGER
 
 local STRUCTURE_REBUILD_BATCH_SIZE = 12
 local ACHIEVEMENT_REBUILD_TASK_NAME = MODULE_NAME .. "_StructureRebuild"
@@ -215,6 +216,7 @@ local state = {
     categoryPool = nil,
     achievementPool = nil,
     objectivePool = nil,
+    objectiveActiveControls = {},
     orderedControls = {},
     categoryControls = {},
     achievementControls = {},
@@ -1212,6 +1214,16 @@ local function ResetLayoutState()
     state.contentHeight = 0
 end
 
+local function ClearArray(array)
+    if not array then
+        return
+    end
+
+    for index = #array, 1, -1 do
+        array[index] = nil
+    end
+end
+
 local function ClearTable(tbl)
     if not tbl then
         return
@@ -1223,6 +1235,13 @@ local function ClearTable(tbl)
 end
 
 local function BeginStructureRebuild()
+    if not state.container then
+        if IsDebugLoggingEnabled() then
+            DebugLog("REBUILD_ABORT no achievement container")
+        end
+        return false
+    end
+
     ResetLayoutState()
 
     if not state.reusableCategoryControls then
@@ -1258,49 +1277,53 @@ local function BeginStructureRebuild()
         end
     end
 
-    if not state.container then
-        state.categoryControls = {}
-        state.achievementControls = {}
-        state.achievementControlsByKey = {}
-        if state.objectivePool then
-            state.objectivePool:ReleaseAllObjects()
-        end
-        return
-    end
-
     EnsurePools()
 
     state.categoryControls = {}
     state.achievementControls = {}
     state.achievementControlsByKey = {}
 
-    if state.objectivePool then
-        state.objectivePool:ReleaseAllObjects()
-    end
+    ReleaseObjectiveControls()
+
+    return true
 end
 
 local function ReturnCategoryControl(control)
-    if not (control and state.categoryPool and control.poolKey) then
+    if not control then
         return
     end
 
+    ResetCategoryControl(control)
+
     if IsDebugLoggingEnabled() then
-        DebugLog(string_format("POOL_RETURN category control=%s", tostring(control.poolKey)))
+        DebugLog("POOL_RETURN category")
     end
 
-    state.categoryPool:ReleaseObject(control.poolKey)
+    local pool = state.categoryPool
+    if not pool then
+        state.categoryPool = { control }
+    else
+        pool[#pool + 1] = control
+    end
 end
 
 local function ReturnAchievementControl(achievementKey, control)
-    if not (control and state.achievementPool and control.poolKey) then
+    if not control then
         return
     end
 
+    ResetAchievementControl(control)
+
     if IsDebugLoggingEnabled() then
-        DebugLog(string_format("POOL_RETURN achievement key=%s control=%s", tostring(achievementKey), tostring(control.poolKey)))
+        DebugLog(string_format("POOL_RETURN achievement key=%s", tostring(achievementKey)))
     end
 
-    state.achievementPool:ReleaseObject(control.poolKey)
+    local pool = state.achievementPool
+    if not pool then
+        state.achievementPool = { control }
+    else
+        pool[#pool + 1] = control
+    end
 end
 
 local function FinalizeStructureRebuild()
@@ -1620,19 +1643,40 @@ local function ShouldDisplayObjective(objective)
     return true
 end
 
-AcquireCategoryControlFromPool = function()
-    if not state.categoryPool then
-        EnsurePools()
-    end
-
-    if not state.categoryPool then
-        if IsDebugLoggingEnabled() then
-            DebugLog("POOL_MISSING category")
-        end
+local function AcquireCategoryControlInternal(forceReset)
+    local ensured = forceReset and EnsurePools(true) or EnsurePools()
+    if not ensured then
         return nil
     end
 
-    local control = state.categoryPool:AcquireObject()
+    local pool = state.categoryPool
+    local control = nil
+
+    if pool and #pool > 0 then
+        control = pool[#pool]
+        pool[#pool] = nil
+        if IsDebugLoggingEnabled() then
+            DebugLog("POOL_TAKE category")
+        end
+        if control.SetParent then
+            control:SetParent(state.container)
+        end
+    end
+
+    if not control then
+        if not (WINDOW_MANAGER and WINDOW_MANAGER.CreateControlFromVirtual) then
+            return nil
+        end
+        control = WINDOW_MANAGER:CreateControlFromVirtual(nil, state.container, "AchievementsCategoryHeader_Template")
+        if IsDebugLoggingEnabled() then
+            DebugLog("POOL_CREATE category")
+        end
+    end
+
+    if not control then
+        return nil
+    end
+
     if not control.initialized then
         control.label = control:GetNamedChild("Label")
         control.toggle = control:GetNamedChild("Toggle")
@@ -1673,6 +1717,8 @@ AcquireCategoryControlFromPool = function()
         end)
         control.initialized = true
     end
+
+    ResetCategoryControl(control)
     control.rowType = "category"
     ApplyLabelDefaults(control.label)
     ApplyToggleDefaults(control.toggle)
@@ -1681,19 +1727,63 @@ AcquireCategoryControlFromPool = function()
     return control
 end
 
-AcquireAchievementControlFromPool = function()
-    if not state.achievementPool then
-        EnsurePools()
+
+AcquireCategoryControlFromPool = function()
+    local control = AcquireCategoryControlInternal(false)
+
+    if not control then
+        if IsDebugLoggingEnabled() then
+            DebugLog("POOL_RECOVER category start")
+        end
+        control = AcquireCategoryControlInternal(true)
+        if control and IsDebugLoggingEnabled() then
+            DebugLog("POOL_RECOVER category success")
+        elseif not control and IsDebugLoggingEnabled() then
+            DebugLog("POOL_RECOVER category failed")
+        end
     end
 
-    if not state.achievementPool then
-        if IsDebugLoggingEnabled() then
-            DebugLog("POOL_MISSING achievement")
-        end
+    if not control and IsDebugLoggingEnabled() then
+        DebugLog("POOL_MISSING category")
+    end
+
+    return control
+end
+
+local function AcquireAchievementControlInternal(forceReset)
+    local ensured = forceReset and EnsurePools(true) or EnsurePools()
+    if not ensured then
         return nil
     end
 
-    local control = state.achievementPool:AcquireObject()
+    local pool = state.achievementPool
+    local control = nil
+
+    if pool and #pool > 0 then
+        control = pool[#pool]
+        pool[#pool] = nil
+        if IsDebugLoggingEnabled() then
+            DebugLog("POOL_TAKE achievement")
+        end
+        if control.SetParent then
+            control:SetParent(state.container)
+        end
+    end
+
+    if not control then
+        if not (WINDOW_MANAGER and WINDOW_MANAGER.CreateControlFromVirtual) then
+            return nil
+        end
+        control = WINDOW_MANAGER:CreateControlFromVirtual(nil, state.container, "AchievementHeader_Template")
+        if IsDebugLoggingEnabled() then
+            DebugLog("POOL_CREATE achievement")
+        end
+    end
+
+    if not control then
+        return nil
+    end
+
     if not control.initialized then
         control.label = control:GetNamedChild("Label")
         control.iconSlot = control:GetNamedChild("IconSlot")
@@ -1742,120 +1832,83 @@ AcquireAchievementControlFromPool = function()
         end)
         control.initialized = true
     end
+
+    ResetAchievementControl(control)
     control.rowType = "achievement"
     ApplyLabelDefaults(control.label)
     ApplyFont(control.label, state.fonts.achievement)
     return control
 end
 
+
+AcquireAchievementControlFromPool = function()
+    local control = AcquireAchievementControlInternal(false)
+
+    if not control then
+        if IsDebugLoggingEnabled() then
+            DebugLog("POOL_RECOVER achievement start")
+        end
+        control = AcquireAchievementControlInternal(true)
+        if control and IsDebugLoggingEnabled() then
+            DebugLog("POOL_RECOVER achievement success")
+        elseif not control and IsDebugLoggingEnabled() then
+            DebugLog("POOL_RECOVER achievement failed")
+        end
+    end
+
+    if not control and IsDebugLoggingEnabled() then
+        DebugLog("POOL_MISSING achievement")
+    end
+
+    return control
+end
+
 local function AcquireObjectiveControl()
-    local control = state.objectivePool:AcquireObject()
+    if not EnsurePools() then
+        return nil
+    end
+
+    local pool = state.objectivePool
+    if not pool then
+        return nil
+    end
+
+    local control = nil
+    if #pool > 0 then
+        control = pool[#pool]
+        pool[#pool] = nil
+        if control.SetParent then
+            control:SetParent(state.container)
+        end
+    end
+
+    if not control then
+        if not (WINDOW_MANAGER and WINDOW_MANAGER.CreateControlFromVirtual) then
+            return nil
+        end
+        control = WINDOW_MANAGER:CreateControlFromVirtual(nil, state.container, "AchievementObjective_Template")
+    end
+
+    if not control then
+        return nil
+    end
+
     if not control.initialized then
         control.label = control:GetNamedChild("Label")
         control.initialized = true
     end
+
+    ResetObjectiveControl(control)
     control.rowType = "objective"
     ApplyLabelDefaults(control.label)
     ApplyFont(control.label, state.fonts.objective)
+
+    local active = state.objectiveActiveControls
+    active[#active + 1] = control
+
     return control
 end
 
-EnsurePools = function()
-    if not state.container then
-        return
-    end
-
-    local function resetControl(control)
-        control:SetHidden(true)
-        if control.data then
-            ClearTable(control.data)
-        end
-        control.currentIndent = nil
-    end
-
-    if not state.categoryPool then
-        local pool = ZO_ControlPool:New("AchievementsCategoryHeader_Template", state.container)
-        pool:SetCustomResetBehavior(function(control)
-            resetControl(control)
-            control.baseColor = nil
-            if control.toggle then
-                if control.toggle.SetTexture then
-                    control.toggle:SetTexture(SelectCategoryToggleTexture(false, false))
-                end
-                if control.toggle.SetHidden then
-                    control.toggle:SetHidden(false)
-                end
-            end
-            control.isExpanded = nil
-        end)
-        pool:SetCustomFactoryBehavior(function(_, control)
-            control.__nvkPoolFresh = "category"
-        end)
-        pool:SetCustomAcquireBehavior(function(control)
-            if IsDebugLoggingEnabled() then
-                if control.__nvkPoolFresh == "category" then
-                    DebugLog("POOL_CREATE category")
-                else
-                    DebugLog("POOL_TAKE category")
-                end
-            end
-            control.__nvkPoolFresh = nil
-        end)
-        state.categoryPool = pool
-    end
-
-    if not state.achievementPool then
-        local pool = ZO_ControlPool:New("AchievementHeader_Template", state.container)
-        pool:SetCustomResetBehavior(function(control)
-            if control and control.data and control.data.achievementId then
-                local key = NormalizeAchievementKey and NormalizeAchievementKey(control.data.achievementId)
-                if key and state.achievementRows then
-                    state.achievementRows[key] = nil
-                end
-            end
-            resetControl(control)
-            if control.label and control.label.SetText then
-                control.label:SetText("")
-            end
-            if control.iconSlot then
-                if control.iconSlot.SetTexture then
-                    control.iconSlot:SetTexture(nil)
-                end
-                if control.iconSlot.SetAlpha then
-                    control.iconSlot:SetAlpha(0)
-                end
-                if control.iconSlot.SetHidden then
-                    control.iconSlot:SetHidden(false)
-                end
-            end
-        end)
-        pool:SetCustomFactoryBehavior(function(_, control)
-            control.__nvkPoolFresh = "achievement"
-        end)
-        pool:SetCustomAcquireBehavior(function(control)
-            if IsDebugLoggingEnabled() then
-                if control.__nvkPoolFresh == "achievement" then
-                    DebugLog("POOL_CREATE achievement")
-                else
-                    DebugLog("POOL_TAKE achievement")
-                end
-            end
-            control.__nvkPoolFresh = nil
-        end)
-        state.achievementPool = pool
-    end
-
-    if not state.objectivePool then
-        local pool = ZO_ControlPool:New("AchievementObjective_Template", state.container)
-        pool:SetCustomResetBehavior(function(control)
-            resetControl(control)
-            if control.label then
-                control.label:SetText("")
-            end
-        end)
-        state.objectivePool = pool
-    end
-end
 
 local function LayoutObjective(achievement, objective)
     if not ShouldDisplayObjective(objective) then
@@ -2200,7 +2253,13 @@ local function Rebuild()
     end
 
     state.isRebuildInProgress = true
-    BeginStructureRebuild()
+    local rebuildReady = BeginStructureRebuild()
+
+    if not rebuildReady then
+        state.isRebuildInProgress = false
+        QueueAchievementStructureUpdate({ reason = "AchievementTracker.BeginRebuildDeferred", trigger = "structure" })
+        return
+    end
 
     if not state.snapshot or not state.snapshot.achievements then
         FinalizeStructureRebuild()
@@ -2506,18 +2565,21 @@ function AchievementTracker.Shutdown()
     ClearActiveRebuildContext()
 
     if state.categoryPool then
-        state.categoryPool:ReleaseAllObjects()
+        for index = 1, #state.categoryPool do
+            ResetCategoryControl(state.categoryPool[index])
+        end
     end
     if state.achievementPool then
-        state.achievementPool:ReleaseAllObjects()
+        for index = 1, #state.achievementPool do
+            ResetAchievementControl(state.achievementPool[index])
+        end
     end
-    if state.objectivePool then
-        state.objectivePool:ReleaseAllObjects()
-    end
+    ReleaseObjectiveControls()
 
     state.categoryPool = nil
     state.achievementPool = nil
     state.objectivePool = nil
+    state.objectiveActiveControls = {}
 
     state.container = nil
     state.control = nil

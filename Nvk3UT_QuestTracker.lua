@@ -56,6 +56,7 @@ local math_floor = math.floor
 local tostring = tostring
 local type = type
 local pairs = pairs
+local WINDOW_MANAGER = WINDOW_MANAGER
 
 local STRUCTURE_REBUILD_BATCH_SIZE = 12
 local QUEST_REBUILD_TASK_NAME = MODULE_NAME .. "_StructureRebuild"
@@ -180,6 +181,7 @@ local state = {
     categoryPool = nil,
     questPool = nil,
     conditionPool = nil,
+    conditionActiveControls = {},
     orderedControls = {},
     lastAnchoredControl = nil,
     snapshot = nil,
@@ -2945,6 +2947,16 @@ local function ResetLayoutState()
     state.contentHeight = 0
 end
 
+local function ClearArray(array)
+    if not array then
+        return
+    end
+
+    for index = #array, 1, -1 do
+        array[index] = nil
+    end
+end
+
 local function ClearTable(tbl)
     if not tbl then
         return
@@ -2956,6 +2968,13 @@ local function ClearTable(tbl)
 end
 
 local function BeginStructureRebuild()
+    if not state.container then
+        if IsDebugLoggingEnabled() then
+            DebugLog("REBUILD_ABORT no container")
+        end
+        return false
+    end
+
     ResetLayoutState()
 
     if not state.reusableCategoryControls then
@@ -2991,49 +3010,53 @@ local function BeginStructureRebuild()
         end
     end
 
-    if not state.container then
-        state.categoryControls = {}
-        state.questControls = {}
-        state.questControlsByKey = {}
-        if state.conditionPool then
-            state.conditionPool:ReleaseAllObjects()
-        end
-        return
-    end
-
     EnsurePools()
 
     state.categoryControls = {}
     state.questControls = {}
     state.questControlsByKey = {}
 
-    if state.conditionPool then
-        state.conditionPool:ReleaseAllObjects()
-    end
+    ReleaseConditionControls()
+
+    return true
 end
 
 local function ReturnCategoryControl(control)
-    if not (control and state.categoryPool and control.poolKey) then
+    if not control then
         return
     end
 
+    ResetCategoryControl(control)
+
     if IsDebugLoggingEnabled() then
-        DebugLog(string_format("POOL_RETURN category key=%s", tostring(control.poolKey)))
+        DebugLog("POOL_RETURN category")
     end
 
-    state.categoryPool:ReleaseObject(control.poolKey)
+    local pool = state.categoryPool
+    if not pool then
+        state.categoryPool = { control }
+    else
+        pool[#pool + 1] = control
+    end
 end
 
 local function ReturnQuestControl(questKey, control)
-    if not (control and state.questPool and control.poolKey) then
+    if not control then
         return
     end
 
+    ResetQuestControl(control)
+
     if IsDebugLoggingEnabled() then
-        DebugLog(string_format("POOL_RETURN quest key=%s control=%s", tostring(questKey), tostring(control.poolKey)))
+        DebugLog(string_format("POOL_RETURN quest key=%s", tostring(questKey)))
     end
 
-    state.questPool:ReleaseObject(control.poolKey)
+    local pool = state.questPool
+    if not pool then
+        state.questPool = { control }
+    else
+        pool[#pool + 1] = control
+    end
 end
 
 local function FinalizeStructureRebuild()
@@ -3482,19 +3505,40 @@ local function FormatConditionText(condition)
     return text
 end
 
-AcquireCategoryControlFromPool = function()
-    if not state.categoryPool then
-        EnsurePools()
+local function AcquireCategoryControlInternal(forceReset)
+    local ensured = forceReset and EnsurePools(true) or EnsurePools()
+    if not ensured then
+        return nil
     end
 
-    if not state.categoryPool then
+    local pool = state.categoryPool
+    local control = nil
+
+    if pool and #pool > 0 then
+        control = pool[#pool]
+        pool[#pool] = nil
         if IsDebugLoggingEnabled() then
-            DebugLog("POOL_MISSING category")
+            DebugLog("POOL_TAKE category")
         end
-        return nil, nil
+        if control.SetParent then
+            control:SetParent(state.container)
+        end
     end
 
-    local control, key = state.categoryPool:AcquireObject()
+    if not control then
+        if not (WINDOW_MANAGER and WINDOW_MANAGER.CreateControlFromVirtual) then
+            return nil
+        end
+        control = WINDOW_MANAGER:CreateControlFromVirtual(nil, state.container, "CategoryHeader_Template")
+        if IsDebugLoggingEnabled() then
+            DebugLog("POOL_CREATE category")
+        end
+    end
+
+    if not control then
+        return nil
+    end
+
     if not control.initialized then
         control.label = control:GetNamedChild("Label")
         control.toggle = control:GetNamedChild("Toggle")
@@ -3543,28 +3587,72 @@ AcquireCategoryControlFromPool = function()
         end)
         control.initialized = true
     end
+
+    ResetCategoryControl(control)
     control.rowType = "category"
-    control.poolKey = key
     ApplyLabelDefaults(control.label)
     ApplyToggleDefaults(control.toggle)
     ApplyFont(control.label, state.fonts.category, DEFAULT_FONTS.category)
     ApplyFont(control.toggle, state.fonts.toggle, DEFAULT_FONTS.toggle)
-    return control, key
+    return control
 end
 
-AcquireQuestControlFromPool = function()
-    if not state.questPool then
-        EnsurePools()
-    end
+AcquireCategoryControlFromPool = function()
+    local control = AcquireCategoryControlInternal(false)
 
-    if not state.questPool then
+    if not control then
         if IsDebugLoggingEnabled() then
-            DebugLog("POOL_MISSING quest")
+            DebugLog("POOL_RECOVER category start")
         end
-        return nil, nil
+        control = AcquireCategoryControlInternal(true)
+        if control and IsDebugLoggingEnabled() then
+            DebugLog("POOL_RECOVER category success")
+        elseif not control and IsDebugLoggingEnabled() then
+            DebugLog("POOL_RECOVER category failed")
+        end
     end
 
-    local control, key = state.questPool:AcquireObject()
+    if not control and IsDebugLoggingEnabled() then
+        DebugLog("POOL_MISSING category")
+    end
+
+    return control
+end
+
+local function AcquireQuestControlInternal(forceReset)
+    local ensured = forceReset and EnsurePools(true) or EnsurePools()
+    if not ensured then
+        return nil
+    end
+
+    local pool = state.questPool
+    local control = nil
+
+    if pool and #pool > 0 then
+        control = pool[#pool]
+        pool[#pool] = nil
+        if IsDebugLoggingEnabled() then
+            DebugLog("POOL_TAKE quest")
+        end
+        if control.SetParent then
+            control:SetParent(state.container)
+        end
+    end
+
+    if not control then
+        if not (WINDOW_MANAGER and WINDOW_MANAGER.CreateControlFromVirtual) then
+            return nil
+        end
+        control = WINDOW_MANAGER:CreateControlFromVirtual(nil, state.container, "QuestHeader_Template")
+        if IsDebugLoggingEnabled() then
+            DebugLog("POOL_CREATE quest")
+        end
+    end
+
+    if not control then
+        return nil
+    end
+
     if not control.initialized then
         control.label = control:GetNamedChild("Label")
         control.iconSlot = control:GetNamedChild("IconSlot")
@@ -3590,11 +3678,10 @@ AcquireQuestControlFromPool = function()
                 end
                 local parent = toggleCtrl:GetParent()
                 local questData = parent and parent.data and parent.data.quest
-                if not questData then
+                if not questData or not questData.journalIndex then
                     return
                 end
-                local journalIndex = questData.journalIndex
-                ToggleQuestExpansion(journalIndex, {
+                ToggleQuestExpansion(questData.journalIndex, {
                     trigger = "click",
                     source = "QuestTracker:OnToggleClick",
                 })
@@ -3664,24 +3751,81 @@ AcquireQuestControlFromPool = function()
         end)
         control.initialized = true
     end
+
+    ResetQuestControl(control)
     control.rowType = "quest"
-    control.poolKey = key
     ApplyLabelDefaults(control.label)
     ApplyFont(control.label, state.fonts.quest, DEFAULT_FONTS.quest)
-    return control, key
+    return control
 end
 
+AcquireQuestControlFromPool = function()
+    local control = AcquireQuestControlInternal(false)
+
+    if not control then
+        if IsDebugLoggingEnabled() then
+            DebugLog("POOL_RECOVER quest start")
+        end
+        control = AcquireQuestControlInternal(true)
+        if control and IsDebugLoggingEnabled() then
+            DebugLog("POOL_RECOVER quest success")
+        elseif not control and IsDebugLoggingEnabled() then
+            DebugLog("POOL_RECOVER quest failed")
+        end
+    end
+
+    if not control and IsDebugLoggingEnabled() then
+        DebugLog("POOL_MISSING quest")
+    end
+
+    return control
+end
+
+
 local function AcquireConditionControl()
-    local control, key = state.conditionPool:AcquireObject()
+    if not EnsurePools() then
+        return nil
+    end
+
+    local pool = state.conditionPool
+    if not pool then
+        return nil
+    end
+
+    local control = nil
+    if #pool > 0 then
+        control = pool[#pool]
+        pool[#pool] = nil
+        if control.SetParent then
+            control:SetParent(state.container)
+        end
+    end
+
+    if not control then
+        if not (WINDOW_MANAGER and WINDOW_MANAGER.CreateControlFromVirtual) then
+            return nil
+        end
+        control = WINDOW_MANAGER:CreateControlFromVirtual(nil, state.container, "QuestCondition_Template")
+    end
+
+    if not control then
+        return nil
+    end
+
     if not control.initialized then
         control.label = control:GetNamedChild("Label")
         control.initialized = true
     end
+
+    ResetConditionControl(control)
     control.rowType = "condition"
-    control.poolKey = key
     ApplyLabelDefaults(control.label)
     ApplyFont(control.label, state.fonts.condition, DEFAULT_FONTS.condition)
-    return control, key
+
+    local active = state.conditionActiveControls
+    active[#active + 1] = control
+
+    return control
 end
 
 local function ShouldDisplayCondition(condition)
@@ -3718,90 +3862,117 @@ local function AttachBackdrop()
     EnsureBackdrop()
 end
 
-EnsurePools = function()
-    if not state.container then
+local function ResetBaseControl(control)
+    if not control then
         return
     end
 
-    local function resetControl(control)
+    if control.SetHidden then
         control:SetHidden(true)
-        if control.data then
-            ClearTable(control.data)
+    end
+    if control.data then
+        ClearTable(control.data)
+    end
+    control.currentIndent = nil
+    control.baseColor = nil
+    control.isExpanded = nil
+end
+
+local function ResetCategoryControl(control)
+    ResetBaseControl(control)
+    local toggle = control and control.toggle
+    if toggle then
+        if toggle.SetTexture then
+            toggle:SetTexture(SelectCategoryToggleTexture(false, false))
         end
-        control.currentIndent = nil
-        control.baseColor = nil
-        control.isExpanded = nil
+        if toggle.SetHidden then
+            toggle:SetHidden(false)
+        end
+    end
+end
+
+local function ResetQuestControl(control)
+    ResetBaseControl(control)
+    if control and control.label and control.label.SetText then
+        control.label:SetText("")
+    end
+    local iconSlot = control and control.iconSlot
+    if iconSlot then
+        if iconSlot.SetTexture then
+            iconSlot:SetTexture(nil)
+        end
+        if iconSlot.SetAlpha then
+            iconSlot:SetAlpha(0)
+        end
+        if iconSlot.SetHidden then
+            iconSlot:SetHidden(false)
+        end
+    end
+end
+
+local function ResetConditionControl(control)
+    ResetBaseControl(control)
+    if control and control.label and control.label.SetText then
+        control.label:SetText("")
+    end
+end
+
+local function ReleaseConditionControls()
+    local active = state.conditionActiveControls
+    if not active then
+        return
     end
 
-    if not state.categoryPool then
-        local pool = ZO_ControlPool:New("CategoryHeader_Template", state.container)
-        pool:SetCustomResetBehavior(function(control)
-            resetControl(control)
-            if control.toggle then
-                if control.toggle.SetTexture then
-                    control.toggle:SetTexture(SelectCategoryToggleTexture(false, false))
-                end
-                if control.toggle.SetHidden then
-                    control.toggle:SetHidden(false)
-                end
-            end
-        end)
-        pool:SetCustomFactoryBehavior(function(_, control)
-            control.__nvkPoolFresh = "category"
-        end)
-        pool:SetCustomAcquireBehavior(function(control)
-            if IsDebugLoggingEnabled() then
-                if control.__nvkPoolFresh == "category" then
-                    DebugLog("POOL_CREATE category")
-                else
-                    DebugLog("POOL_TAKE category")
-                end
-            end
-            control.__nvkPoolFresh = nil
-        end)
-        state.categoryPool = pool
-    end
-
-    if not state.questPool then
-        local pool = ZO_ControlPool:New("QuestHeader_Template", state.container)
-        pool:SetCustomResetBehavior(function(control)
-            resetControl(control)
-            if control.label and control.label.SetText then
-                control.label:SetText("")
-            end
-            if control.iconSlot then
-                if control.iconSlot.SetTexture then
-                    control.iconSlot:SetTexture(nil)
-                end
-                if control.iconSlot.SetAlpha then
-                    control.iconSlot:SetAlpha(0)
-                end
-                if control.iconSlot.SetHidden then
-                    control.iconSlot:SetHidden(false)
-                end
-            end
-        end)
-        pool:SetCustomFactoryBehavior(function(_, control)
-            control.__nvkPoolFresh = "quest"
-        end)
-        pool:SetCustomAcquireBehavior(function(control)
-            if IsDebugLoggingEnabled() then
-                if control.__nvkPoolFresh == "quest" then
-                    DebugLog("POOL_CREATE quest")
-                else
-                    DebugLog("POOL_TAKE quest")
-                end
-            end
-            control.__nvkPoolFresh = nil
-        end)
-        state.questPool = pool
-    end
-
-    if not state.conditionPool then
-        local pool = ZO_ControlPool:New("QuestCondition_Template", state.container)
-        pool:SetCustomResetBehavior(resetControl)
+    local pool = state.conditionPool
+    if not pool then
+        pool = {}
         state.conditionPool = pool
     end
+
+    for index = #active, 1, -1 do
+        local control = active[index]
+        if control then
+            ResetConditionControl(control)
+            pool[#pool + 1] = control
+        end
+        active[index] = nil
+    end
+end
+
+EnsurePools = function(forceReset)
+    if not (state.container and WINDOW_MANAGER and WINDOW_MANAGER.CreateControlFromVirtual) then
+        return false
+    end
+
+    state.conditionActiveControls = state.conditionActiveControls or {}
+
+    if forceReset then
+        ReleaseConditionControls()
+
+        if state.categoryPool then
+            for index = 1, #state.categoryPool do
+                ResetCategoryControl(state.categoryPool[index])
+            end
+        end
+
+        if state.questPool then
+            for index = 1, #state.questPool do
+                ResetQuestControl(state.questPool[index])
+            end
+        end
+
+        if state.conditionPool then
+            for index = 1, #state.conditionPool do
+                ResetConditionControl(state.conditionPool[index])
+            end
+        end
+    end
+
+    state.categoryPool = state.categoryPool or {}
+    state.questPool = state.questPool or {}
+    state.conditionPool = state.conditionPool or {}
+
+    return true
 end
 
 local function LayoutCondition(condition)
@@ -4093,7 +4264,13 @@ local function Rebuild()
 
     state.isRebuildInProgress = true
     ApplyActiveQuestFromSaved()
-    BeginStructureRebuild()
+    local rebuildReady = BeginStructureRebuild()
+
+    if not rebuildReady then
+        state.isRebuildInProgress = false
+        QueueQuestStructureUpdate({ reason = "QuestTracker.BeginRebuildDeferred", trigger = "structure" })
+        return
+    end
 
     if not state.snapshot or not state.snapshot.categories or not state.snapshot.categories.ordered then
         FinalizeStructureRebuild()
@@ -4449,19 +4626,22 @@ function QuestTracker.Shutdown()
     UnsubscribeFromModel()
 
     if state.categoryPool then
-        state.categoryPool:ReleaseAllObjects()
+        for index = 1, #state.categoryPool do
+            ResetCategoryControl(state.categoryPool[index])
+        end
         state.categoryPool = nil
     end
 
     if state.questPool then
-        state.questPool:ReleaseAllObjects()
+        for index = 1, #state.questPool do
+            ResetQuestControl(state.questPool[index])
+        end
         state.questPool = nil
     end
 
-    if state.conditionPool then
-        state.conditionPool:ReleaseAllObjects()
-        state.conditionPool = nil
-    end
+    ReleaseConditionControls()
+    state.conditionPool = nil
+    state.conditionActiveControls = {}
 
     state.container = nil
     state.control = nil
