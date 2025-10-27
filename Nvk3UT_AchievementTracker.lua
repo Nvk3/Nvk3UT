@@ -179,6 +179,10 @@ function AchievementTrackerRow:Refresh(achievementData)
         return false, false
     end
 
+    if not (ApplyAchievementRowVisuals and achievement) then
+        return false, false
+    end
+
     local hasObjectives, isExpanded, isFavorite = ApplyAchievementRowVisuals(control, achievement)
     self.hasObjectives = hasObjectives and true or false
     self.isExpanded = isExpanded and true or false
@@ -1215,7 +1219,6 @@ local function ClearTable(tbl)
 end
 
 local function BeginStructureRebuild()
-    EnsurePools()
     ResetLayoutState()
 
     if not state.reusableCategoryControls then
@@ -1224,28 +1227,44 @@ local function BeginStructureRebuild()
         ClearTable(state.reusableCategoryControls)
     end
 
-    for key, control in pairs(state.categoryControls) do
-        if key and control then
-            control:SetHidden(true)
-            state.reusableCategoryControls[key] = control
-        end
-    end
-
     if not state.reusableAchievementControls then
         state.reusableAchievementControls = {}
     else
         ClearTable(state.reusableAchievementControls)
     end
 
+    for key, control in pairs(state.categoryControls) do
+        if key and control then
+            if control.SetHidden then
+                control:SetHidden(true)
+            end
+            state.reusableCategoryControls[key] = control
+        end
+    end
+
     for achievementKey, row in pairs(state.achievementRows) do
         if row and row.DetachControl then
             local detached = row:DetachControl()
             if detached then
-                detached:SetHidden(true)
+                if detached.SetHidden then
+                    detached:SetHidden(true)
+                end
                 state.reusableAchievementControls[achievementKey] = detached
             end
         end
     end
+
+    if not state.container then
+        state.categoryControls = {}
+        state.achievementControls = {}
+        state.achievementControlsByKey = {}
+        if state.objectivePool then
+            state.objectivePool:ReleaseAllObjects()
+        end
+        return
+    end
+
+    EnsurePools()
 
     state.categoryControls = {}
     state.achievementControls = {}
@@ -1720,6 +1739,10 @@ local function EnsurePools()
         return
     end
 
+    if not state.container then
+        return
+    end
+
     state.categoryPool = ZO_ControlPool:New("AchievementsCategoryHeader_Template", state.container)
     state.achievementPool = ZO_ControlPool:New("AchievementHeader_Template", state.container)
     state.objectivePool = ZO_ControlPool:New("AchievementObjective_Template", state.container)
@@ -1819,6 +1842,13 @@ local function LayoutObjective(achievement, objective)
     end
 
     local control = AcquireObjectiveControl()
+    if not control then
+        if IsDebugLoggingEnabled() then
+            DebugLog("LAYOUT objective missing control", tostring(achievement and achievement.id))
+        end
+        QueueAchievementStructureUpdate({ reason = "AchievementTracker.LayoutObjectiveMissingControl", trigger = "pool" })
+        return
+    end
     local data = control.data
     if not data then
         data = {}
@@ -1891,6 +1921,13 @@ end
 local function LayoutAchievement(achievement)
     local achievementKey = NormalizeAchievementKey and NormalizeAchievementKey(achievement and achievement.id)
     local control = RequestAchievementControl(achievementKey)
+    if not control then
+        if IsDebugLoggingEnabled() then
+            DebugLog("LAYOUT achievement missing control", tostring(achievementKey or (achievement and achievement.id)))
+        end
+        QueueAchievementStructureUpdate({ reason = "AchievementTracker.LayoutAchievementMissingControl", trigger = "pool" })
+        return
+    end
 
     local hasObjectives
     local expanded
@@ -2007,6 +2044,13 @@ local function LayoutCategory()
     end
 
     local control = RequestCategoryControl()
+    if not control then
+        if IsDebugLoggingEnabled() then
+            DebugLog("LAYOUT achievement category missing control")
+        end
+        QueueAchievementStructureUpdate({ reason = "AchievementTracker.LayoutCategoryMissingControl", trigger = "pool" })
+        return
+    end
     local data = control.data
     if not data then
         data = {}

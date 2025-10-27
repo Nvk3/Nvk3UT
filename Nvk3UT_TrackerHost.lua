@@ -103,6 +103,7 @@ local math_floor = math.floor
 local tostring = tostring
 local type = type
 local pairs = pairs
+local select = select
 local callLater = zo_callLater
 local removeCallLater = zo_removeCallLater
 
@@ -204,7 +205,9 @@ local function ensureUpdateManager()
         achievementsStructureDirty = false,
         layoutDirty = false,
         rowsToRefresh = {},
+        rowsToRefreshBuffer = {},
         queuedRows = {},
+        queuedRowsBuffer = {},
         updateDebounceHandle = nil,
         updateDebounceActive = false,
         updateDebounceReason = nil,
@@ -232,7 +235,9 @@ local function clearUpdateManager()
     manager.achievementsStructureDirty = false
     manager.layoutDirty = false
     clearArray(manager.rowsToRefresh)
+    clearArray(manager.rowsToRefreshBuffer)
     clearTable(manager.queuedRows)
+    clearTable(manager.queuedRowsBuffer)
     manager.updateDebounceActive = false
     manager.updateDebounceReason = nil
     manager.updateDebounceReleased = true
@@ -2071,40 +2076,60 @@ local function notifyContentChanged()
 end
 
 local function processRows(manager)
-    local queue = manager.rowsToRefresh
-    if not queue or #queue == 0 then
+    local activeQueue = manager.rowsToRefresh
+    if not activeQueue or #activeQueue == 0 then
         return 0
     end
 
     local debugEnabled = isDebugLoggingEnabled()
     if debugEnabled then
-        debugLog(string_format("PROCESS rows count=%d", #queue))
+        debugLog(string_format("PROCESS rows count=%d", #activeQueue))
     end
+
+    local processingQueue = activeQueue
+    local processingReasons = manager.queuedRows
+
+    local standbyQueue = manager.rowsToRefreshBuffer or {}
+    if #standbyQueue > 0 then
+        clearArray(standbyQueue)
+    end
+    manager.rowsToRefresh = standbyQueue
+    manager.rowsToRefreshBuffer = processingQueue
+
+    local standbyReasons = manager.queuedRowsBuffer or {}
+    if next(standbyReasons) ~= nil then
+        clearTable(standbyReasons)
+    end
+    manager.queuedRows = standbyReasons
+    manager.queuedRowsBuffer = processingReasons
 
     local processed = 0
 
-    for index = 1, #queue do
-        local row = queue[index]
+    for index = 1, #processingQueue do
+        local row = processingQueue[index]
+        processingQueue[index] = nil
+
         if row and type(row.Refresh) == "function" then
             local ok, result = pcall(row.Refresh, row)
             if not ok then
                 debugLog("ROW_REFRESH_ERROR", tostring(result))
             elseif debugEnabled then
                 local identifier = row.questKey or row.achievementKey or "unknown"
-                local reason = manager.queuedRows[row]
+                local reason = processingReasons and processingReasons[row]
                 debugLog(string_format("ROW refreshed=%s reason=%s", tostring(identifier), tostring(reason or "")))
             end
             if ok then
                 processed = processed + 1
             end
         end
+
+        if processingReasons then
+            processingReasons[row] = nil
+        end
     end
 
-    if manager.rowsToRefresh then
-        clearArray(manager.rowsToRefresh)
-    end
-    if manager.queuedRows then
-        clearTable(manager.queuedRows)
+    if processingReasons then
+        clearTable(processingReasons)
     end
 
     return processed
@@ -2116,7 +2141,7 @@ function TrackerHost.QueueQuestRowRefresh(questKey, context)
         return false
     end
 
-    local ok, row = safeCall(questTracker.GetQuestRow, questTracker, questKey)
+    local ok, row = safeCall(questTracker.GetQuestRow, questKey)
     if not ok or not row then
         local allowFallback = true
         if type(context) == "table" and context.allowStructureFallback == false then
@@ -2137,7 +2162,7 @@ function TrackerHost.QueueAchievementRowRefresh(achievementId, context)
         return false
     end
 
-    local ok, row = safeCall(achievementTracker.GetAchievementRow, achievementTracker, achievementId)
+    local ok, row = safeCall(achievementTracker.GetAchievementRow, achievementId)
     if not ok or not row then
         local allowFallback = true
         if type(context) == "table" and context.allowStructureFallback == false then
@@ -2167,7 +2192,16 @@ end
 function TrackerHost.ProcessTrackerUpdates()
     local manager = ensureUpdateManager()
 
-    if not state.initialized then
+    if not (state.initialized and manager) then
+        return
+    end
+
+    local root = state.root
+    if not root then
+        return
+    end
+
+    if root.IsHidden and root:IsHidden() then
         return
     end
 
@@ -2198,8 +2232,13 @@ function TrackerHost.ProcessTrackerUpdates()
                     manager.questsStructureDirty = true
                 end
             elseif questTracker.Refresh then
-                safeCall(questTracker.Refresh)
+                local ok = select(1, safeCall(questTracker.Refresh))
+                if not ok then
+                    manager.questsStructureDirty = true
+                end
             end
+        else
+            manager.questsStructureDirty = true
         end
     end
 
@@ -2220,8 +2259,13 @@ function TrackerHost.ProcessTrackerUpdates()
                     manager.achievementsStructureDirty = true
                 end
             elseif achievementTracker.Refresh then
-                safeCall(achievementTracker.Refresh)
+                local ok = select(1, safeCall(achievementTracker.Refresh))
+                if not ok then
+                    manager.achievementsStructureDirty = true
+                end
             end
+        else
+            manager.achievementsStructureDirty = true
         end
     end
 
@@ -2274,9 +2318,14 @@ function TrackerHost.ProcessTrackerUpdates()
         refreshWindowLayout()
     end
 
-    manager.updateDebounceActive = false
-    manager.updateDebounceReleased = false
-    manager.updateDebounceReason = nil
+    if manager.updateDebounceHandle then
+        manager.updateDebounceActive = true
+        manager.updateDebounceReleased = false
+    else
+        manager.updateDebounceActive = false
+        manager.updateDebounceReleased = true
+        manager.updateDebounceReason = nil
+    end
     manager.framesSinceLastRefresh = 0
     manager.initialRefreshDone = true
 end

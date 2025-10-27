@@ -143,6 +143,10 @@ function QuestTrackerRow:Refresh(questData)
         return
     end
 
+    if not (ApplyQuestRowVisuals and quest) then
+        return
+    end
+
     ApplyQuestRowVisuals(control, quest)
 
     local getHeight = control.GetHeight
@@ -2939,7 +2943,6 @@ local function ClearTable(tbl)
 end
 
 local function BeginStructureRebuild()
-    EnsurePools()
     ResetLayoutState()
 
     if not state.reusableCategoryControls then
@@ -2948,28 +2951,44 @@ local function BeginStructureRebuild()
         ClearTable(state.reusableCategoryControls)
     end
 
-    for key, control in pairs(state.categoryControls) do
-        if key and control then
-            control:SetHidden(true)
-            state.reusableCategoryControls[key] = control
-        end
-    end
-
     if not state.reusableQuestControls then
         state.reusableQuestControls = {}
     else
         ClearTable(state.reusableQuestControls)
     end
 
+    for key, control in pairs(state.categoryControls) do
+        if key and control then
+            if control.SetHidden then
+                control:SetHidden(true)
+            end
+            state.reusableCategoryControls[key] = control
+        end
+    end
+
     for questKey, row in pairs(state.questRows) do
         if row and row.DetachControl then
             local detached = row:DetachControl()
             if detached then
-                detached:SetHidden(true)
+                if detached.SetHidden then
+                    detached:SetHidden(true)
+                end
                 state.reusableQuestControls[questKey] = detached
             end
         end
     end
+
+    if not state.container then
+        state.categoryControls = {}
+        state.questControls = {}
+        state.questControlsByKey = {}
+        if state.conditionPool then
+            state.conditionPool:ReleaseAllObjects()
+        end
+        return
+    end
+
+    EnsurePools()
 
     state.categoryControls = {}
     state.questControls = {}
@@ -3669,6 +3688,10 @@ local function EnsurePools()
         return
     end
 
+    if not state.container then
+        return
+    end
+
     state.categoryPool = ZO_ControlPool:New("CategoryHeader_Template", state.container)
     state.questPool = ZO_ControlPool:New("QuestHeader_Template", state.container)
     state.conditionPool = ZO_ControlPool:New("QuestCondition_Template", state.container)
@@ -3746,6 +3769,13 @@ local function LayoutCondition(condition)
     end
 
     local control = AcquireConditionControl()
+    if not control then
+        if IsDebugLoggingEnabled() then
+            DebugLog("LAYOUT condition missing control")
+        end
+        QueueQuestStructureUpdate({ reason = "QuestTracker.LayoutConditionMissingControl", trigger = "pool" })
+        return
+    end
     local data = control.data
     if data then
         data.condition = condition
@@ -3810,6 +3840,13 @@ end
 local function LayoutQuest(quest)
     local questKey = NormalizeQuestKey(quest.journalIndex)
     local control = RequestQuestControl(questKey)
+    if not control then
+        if IsDebugLoggingEnabled() then
+            DebugLog("LAYOUT quest missing control", tostring(questKey))
+        end
+        QueueQuestStructureUpdate({ reason = "QuestTracker.LayoutQuestMissingControl", trigger = "pool" })
+        return
+    end
     local expanded = IsQuestExpanded(quest.journalIndex)
     if IsDebugLoggingEnabled() then
         DebugLog(string_format(
@@ -3867,6 +3904,13 @@ end
 
 local function LayoutCategory(category)
     local control = RequestCategoryControl(category)
+    if not control then
+        if IsDebugLoggingEnabled() then
+            DebugLog("LAYOUT category missing control", tostring(category and category.key))
+        end
+        QueueQuestStructureUpdate({ reason = "QuestTracker.LayoutCategoryMissingControl", trigger = "pool" })
+        return
+    end
     local data = control.data
     if not data then
         data = {}
