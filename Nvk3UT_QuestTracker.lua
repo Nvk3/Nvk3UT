@@ -4411,17 +4411,41 @@ local function ExecuteRebuild()
         end
     end
 
+    local builtRowCount = #state.orderedControls
+
     FinalizeStructureRebuild()
     NotifyHostContentChanged()
     ProcessPendingExternalReveal()
 
+    if builtRowCount == 0 then
+        -- It is valid for a rebuild to produce zero visible rows (for example
+        -- when the player has no active quests).  Previously this scenario was
+        -- treated as an implicit failure which bubbled up as REBUILD_ERROR and
+        -- left the tracker empty forever.  Instead we explicitly short-circuit
+        -- here, reset the layout metrics, and let the coordinator show an empty
+        -- tracker without throwing.
+        state.contentWidth = 0
+        state.contentHeight = 0
+        state.lastAnchoredControl = nil
+        if state.container and state.container.SetHeight then
+            state.container:SetHeight(0)
+        end
+        if IsDebugLoggingEnabled() then
+            DebugLog("REBUILD_END rows=0")
+        end
+        return true
+    end
+
     if state.pendingAdoptOnInit then
+        -- Only adopt the tracked quest once rows exist.  When the tracker is
+        -- empty we leave the flag set so the next successful rebuild can
+        -- perform the adoption instead of spinning in place.
         state.pendingAdoptOnInit = false
         AdoptTrackedQuestOnInit()
     end
 
     if IsDebugLoggingEnabled() then
-        DebugLog("REBUILD_END")
+        DebugLog(string_format("REBUILD_END rows=%d", builtRowCount))
     end
 
     return true
@@ -4446,10 +4470,17 @@ local function Rebuild()
     state.isRebuildInProgress = false
 
     if not ok then
-        error(result)
+        -- Propagate the failure to the caller without re-raising the Lua error.
+        -- The previous behaviour rethrew here which produced REBUILD_ERROR
+        -- spam and prevented the async job from ever settling.
+        if IsDebugLoggingEnabled() then
+            DebugLog("REBUILD_ERROR", tostring(result))
+        end
+        state.lastStructureFailure = "error"
+        return false
     end
 
-    return result
+    return result == true
 end
 
 local function RunQuestRebuildSynchronously(reason)
