@@ -1962,7 +1962,7 @@ local function LayoutAchievement(achievement)
         state.achievementControlsByKey[achievementKey] = control
     end
 
-    if hasObjectives and expanded then
+    if hasObjectives and expanded and type(achievement.objectives) == "table" then
         for index = 1, #achievement.objectives do
             LayoutObjective(achievement, achievement.objectives[index])
             if ShouldAbortRebuild() then

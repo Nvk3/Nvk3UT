@@ -71,6 +71,8 @@ local DEFAULT_FONTS = {
 local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
 local COLOR_ROW_HOVER = { 1, 1, 0.6, 1 }
 
+local EMPTY_TABLE = {}
+
 local RequestRefresh -- forward declaration for functions that trigger refreshes
 local SetCategoryExpanded -- forward declaration for expansion helpers used before assignment
 local SetQuestExpanded
@@ -334,9 +336,10 @@ ResolveQuestRowData = function(questKey)
 
     for categoryIndex = 1, #snapshot.categories.ordered do
         local category = snapshot.categories.ordered[categoryIndex]
-        if category and category.quests then
-            for questIndex = 1, #category.quests do
-                local quest = category.quests[questIndex]
+        local quests = category and category.quests
+        if type(quests) == "table" then
+            for questIndex = 1, #quests do
+                local quest = quests[questIndex]
                 if quest and NormalizeQuestKey(quest.journalIndex) == normalized then
                     return quest
                 end
@@ -685,12 +688,19 @@ local function FindQuestCategoryIndex(snapshot, journalIndex)
     end
 
     local ordered = snapshot.categories.ordered
+    if type(ordered) ~= "table" then
+        return nil, nil
+    end
+
     for categoryIndex = 1, #ordered do
         local category = ordered[categoryIndex]
-        for questIndex = 1, #category.quests do
-            local quest = category.quests[questIndex]
-            if quest and quest.journalIndex == journalIndex then
-                return categoryIndex, questIndex
+        local quests = category and category.quests
+        if type(quests) == "table" then
+            for questIndex = 1, #quests do
+                local quest = quests[questIndex]
+                if quest and quest.journalIndex == journalIndex then
+                    return categoryIndex, questIndex
+                end
             end
         end
     end
@@ -3887,14 +3897,20 @@ local function LayoutQuest(quest)
         state.questControlsByKey[questKey] = control
     end
 
-    if expanded then
+    if expanded and type(quest.steps) == "table" then
         for stepIndex = 1, #quest.steps do
             local step = quest.steps[stepIndex]
-            if step.isVisible ~= false then
-                for conditionIndex = 1, #step.conditions do
-                    LayoutCondition(step.conditions[conditionIndex])
-                    if ShouldAbortRebuild() then
-                        return
+            if step and step.isVisible ~= false then
+                local conditions = step.conditions
+                if type(conditions) == "table" then
+                    for conditionIndex = 1, #conditions do
+                        local condition = conditions[conditionIndex]
+                        if condition then
+                            LayoutCondition(condition)
+                            if ShouldAbortRebuild() then
+                                return
+                            end
+                        end
                     end
                 end
             end
@@ -3927,7 +3943,8 @@ local function LayoutCategory(category)
     if normalizedKey then
         state.categoryControls[normalizedKey] = control
     end
-    local count = #category.quests
+    local quests = type(category.quests) == "table" and category.quests or EMPTY_TABLE
+    local count = #quests
     control.label:SetText(FormatCategoryHeaderText(category.name or "", count, "quest"))
     local expanded = IsCategoryExpanded(category.key)
     if IsDebugLoggingEnabled() then
@@ -3957,9 +3974,9 @@ local function LayoutCategory(category)
         return
     end
 
-    if expanded then
+    if expanded and count > 0 then
         for index = 1, count do
-            LayoutQuest(category.quests[index])
+            LayoutQuest(quests[index])
             if ShouldAbortRebuild() then
                 return
             end
