@@ -101,6 +101,61 @@ local FOCUS_HIGHLIGHT_DURATION_MS = 1600
 local FAVORITES_LOOKUP_KEY = "NVK3UT_FAVORITES_ROOT"
 local FAVORITES_CATEGORY_ID = "Nvk3UT_Favorites"
 
+local NormalizeAchievementKey -- forward declaration for achievement row registry keys
+local ApplyAchievementRowVisuals -- forward declaration for the achievement row refresh helper
+
+--[=[
+AchievementTrackerRow encapsulates the data and controls for a single
+achievement entry row. The instance keeps a stable reference to the
+achievement it represents and the control that renders it so future updates
+can refresh the row in isolation, mirroring the per-row strategy used by
+Ravalox without altering behaviour yet.
+]=]
+local AchievementTrackerRow = {}
+AchievementTrackerRow.__index = AchievementTrackerRow
+
+function AchievementTrackerRow:New(options)
+    local opts = options or {}
+    local instance = setmetatable({}, AchievementTrackerRow)
+    instance.achievementKey = opts.achievementKey
+    instance.achievement = opts.achievement
+    instance.control = opts.control
+    instance.hasObjectives = false
+    instance.isExpanded = false
+    instance.isFavorite = false
+    return instance
+end
+
+function AchievementTrackerRow:SetControl(control)
+    self.control = control
+end
+
+function AchievementTrackerRow:SetAchievement(achievementData)
+    self.achievement = achievementData
+    if NormalizeAchievementKey then
+        local key = NormalizeAchievementKey(achievementData and achievementData.id)
+        if key then
+            self.achievementKey = key
+        end
+    end
+end
+
+function AchievementTrackerRow:Refresh(achievementData)
+    if achievementData ~= nil then
+        self:SetAchievement(achievementData)
+    end
+
+    if not (self.control and self.achievement) then
+        return false, false
+    end
+
+    local hasObjectives, isExpanded, isFavorite = ApplyAchievementRowVisuals(self.control, self.achievement)
+    self.hasObjectives = hasObjectives and true or false
+    self.isExpanded = isExpanded and true or false
+    self.isFavorite = isFavorite and true or false
+    return self.hasObjectives, self.isExpanded
+end
+
 local state = {
     isInitialized = false,
     opts = {},
@@ -112,6 +167,7 @@ local state = {
     achievementPool = nil,
     objectivePool = nil,
     orderedControls = {},
+    achievementRows = {}, -- registry of AchievementTrackerRow instances keyed by normalized achievement id
     lastAnchoredControl = nil,
     snapshot = nil,
     subscription = nil,
@@ -141,6 +197,23 @@ local function ApplyToggleDefaults(toggle)
     end
 
     toggle:SetVerticalAlignment(TEXT_ALIGN_TOP)
+end
+
+function NormalizeAchievementKey(value)
+    if value == nil then
+        return nil
+    end
+
+    local numeric = tonumber(value)
+    if numeric and numeric > 0 then
+        return tostring(numeric)
+    end
+
+    if type(value) == "string" and value ~= "" then
+        return value
+    end
+
+    return nil
 end
 
 local function GetAchievementTrackerColor(role)
@@ -971,6 +1044,7 @@ end
 local function ResetLayoutState()
     state.orderedControls = {}
     state.lastAnchoredControl = nil
+    state.achievementRows = {}
 end
 
 local function ReleaseAll(pool)
@@ -1326,6 +1400,12 @@ local function EnsurePools()
     end)
 
     state.achievementPool:SetCustomResetBehavior(function(control)
+        if control and control.data and control.data.achievementId then
+            local key = NormalizeAchievementKey and NormalizeAchievementKey(control.data.achievementId)
+            if key and state.achievementRows then
+                state.achievementRows[key] = nil
+            end
+        end
         resetControl(control)
         if control.label and control.label.SetText then
             control.label:SetText("")
@@ -1376,21 +1456,29 @@ local function LayoutObjective(achievement, objective)
     AnchorControl(control, OBJECTIVE_INDENT_X)
 end
 
-local function LayoutAchievement(achievement)
-    local control = AcquireAchievementControl()
+local function ApplyAchievementRowVisuals(control, achievement)
+    if not (control and achievement) then
+        return false, false, false
+    end
+
     local hasObjectives = achievement.objectives and #achievement.objectives > 0
     local isFavorite = IsFavoriteAchievement(achievement.id)
+
     control.data = {
         achievementId = achievement.id,
         hasObjectives = hasObjectives,
         isFavorite = isFavorite,
     }
-    control.label:SetText(FormatDisplayString(achievement.name))
+
+    if control.label and control.label.SetText then
+        control.label:SetText(FormatDisplayString(achievement.name))
+    end
+
     local r, g, b, a = GetAchievementTrackerColor("entryTitle")
     ApplyBaseColor(control, r, g, b, a)
 
-    local expanded = hasObjectives and IsEntryExpanded(achievement.id)
     UpdateAchievementIconSlot(control)
+
     ApplyRowMetrics(
         control,
         ACHIEVEMENT_INDENT_X,
@@ -1399,6 +1487,40 @@ local function LayoutAchievement(achievement)
         0,
         ACHIEVEMENT_MIN_HEIGHT
     )
+
+    local expanded = false
+    if hasObjectives then
+        expanded = IsEntryExpanded(achievement.id) and true or false
+    end
+
+    if control.data then
+        control.data.isExpanded = expanded
+    end
+
+    return hasObjectives, expanded, isFavorite
+end
+
+local function LayoutAchievement(achievement)
+    local control = AcquireAchievementControl()
+
+    local hasObjectives
+    local expanded
+
+    local achievementKey = NormalizeAchievementKey and NormalizeAchievementKey(achievement and achievement.id)
+    if achievementKey then
+        local row = state.achievementRows[achievementKey]
+        if not row then
+            row = AchievementTrackerRow:New({
+                achievementKey = achievementKey,
+            })
+            state.achievementRows[achievementKey] = row
+        end
+        row:SetControl(control)
+        hasObjectives, expanded = row:Refresh(achievement)
+    else
+        hasObjectives, expanded = ApplyAchievementRowVisuals(control, achievement)
+    end
+
     control:SetHidden(false)
     AnchorControl(control, ACHIEVEMENT_INDENT_X)
 
@@ -1657,6 +1779,18 @@ function AchievementTracker.Init(parentControl, opts)
     AchievementTracker.Refresh()
 end
 
+-- Returns the registered AchievementTrackerRow instance for the given
+-- achievement id, enabling callers to refresh a single row without
+-- rebuilding the tracker.
+function AchievementTracker.GetAchievementRow(achievementId)
+    local key = NormalizeAchievementKey and NormalizeAchievementKey(achievementId)
+    if not key then
+        return nil
+    end
+
+    return state.achievementRows[key]
+end
+
 function AchievementTracker.Refresh()
     if not state.isInitialized then
         return
@@ -1685,6 +1819,7 @@ function AchievementTracker.Shutdown()
     state.snapshot = nil
     state.orderedControls = {}
     state.lastAnchoredControl = nil
+    state.achievementRows = {}
     state.fonts = {}
     state.opts = {}
     state.pendingFocusAchievementId = nil
