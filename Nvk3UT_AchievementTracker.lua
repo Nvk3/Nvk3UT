@@ -122,6 +122,7 @@ function AchievementTrackerRow:New(options)
     instance.hasObjectives = false
     instance.isExpanded = false
     instance.isFavorite = false
+    instance.lastHeight = 0
     return instance
 end
 
@@ -157,7 +158,18 @@ function AchievementTrackerRow:Refresh(achievementData)
     self.hasObjectives = hasObjectives and true or false
     self.isExpanded = isExpanded and true or false
     self.isFavorite = isFavorite and true or false
+    if self.control and self.control.GetHeight then
+        self.lastHeight = self.control:GetHeight() or 0
+    end
     return self.hasObjectives, self.isExpanded
+end
+
+function AchievementTrackerRow:GetHeight()
+    if self.control and self.control.GetHeight then
+        self.lastHeight = self.control:GetHeight() or self.lastHeight or 0
+    end
+
+    return self.lastHeight or 0
 end
 
 local state = {
@@ -389,6 +401,15 @@ local function RefreshControlMetrics(control)
             CATEGORY_MIN_HEIGHT
         )
     elseif rowType == "achievement" then
+        local achievementId = control.data and control.data.achievementId
+        local achievementKey = achievementId
+        if NormalizeAchievementKey then
+            achievementKey = NormalizeAchievementKey(achievementId) or achievementId
+        end
+        local row = achievementKey and state.achievementRows[achievementKey]
+        if row then
+            row:SetControl(control)
+        end
         ApplyRowMetrics(
             control,
             indent,
@@ -1094,6 +1115,8 @@ local function ResetLayoutState()
     state.orderedControls = {}
     state.lastAnchoredControl = nil
     state.achievementRows = {}
+    state.contentWidth = 0
+    state.contentHeight = 0
 end
 
 local function ReleaseAll(pool)
@@ -1104,48 +1127,92 @@ end
 
 local function AnchorControl(control, indentX)
     indentX = indentX or 0
+
+    if not control then
+        return
+    end
+
+    control.currentIndent = indentX
     control:ClearAnchors()
 
-    if state.lastAnchoredControl then
-        local previousIndent = state.lastAnchoredControl.currentIndent or 0
-        local offsetX = indentX - previousIndent
-        control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, offsetX, VERTICAL_PADDING)
-        control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, 0, VERTICAL_PADDING)
-    else
-        control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, 0)
-        control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, 0, 0)
+    local container = state.container
+    if container then
+        control:SetAnchor(TOPLEFT, container, TOPLEFT, indentX, 0)
+        control:SetAnchor(TOPRIGHT, container, TOPRIGHT, 0, 0)
     end
 
     state.lastAnchoredControl = control
     state.orderedControls[#state.orderedControls + 1] = control
-    control.currentIndent = indentX
 end
 
-local function UpdateContentSize()
-    local maxWidth = 0
-    local totalHeight = 0
+local function PerformLayoutPass()
+    local container = state.container
+    if not container then
+        state.contentWidth = 0
+        state.contentHeight = 0
+        state.lastAnchoredControl = nil
+        return 0, 0
+    end
+
+    local yOffset = 0
     local visibleCount = 0
+    local maxWidth = 0
+    local lastVisible = nil
 
     for index = 1, #state.orderedControls do
         local control = state.orderedControls[index]
         if control then
             RefreshControlMetrics(control)
-        end
-        if control and not control:IsHidden() then
-            visibleCount = visibleCount + 1
-            local width = (control:GetWidth() or 0) + (control.currentIndent or 0)
-            if width > maxWidth then
-                maxWidth = width
-            end
-            totalHeight = totalHeight + (control:GetHeight() or 0)
-            if visibleCount > 1 then
-                totalHeight = totalHeight + VERTICAL_PADDING
+
+            if not control:IsHidden() then
+                local indent = control.currentIndent or 0
+                if control.SetParent then
+                    control:SetParent(container)
+                end
+                control:ClearAnchors()
+                control:SetAnchor(TOPLEFT, container, TOPLEFT, indent, yOffset)
+                control:SetAnchor(TOPRIGHT, container, TOPRIGHT, 0, yOffset)
+
+                local width = (control:GetWidth() or 0) + indent
+                if width > maxWidth then
+                    maxWidth = width
+                end
+
+                local height = control:GetHeight() or 0
+                yOffset = yOffset + height
+                visibleCount = visibleCount + 1
+                lastVisible = control
+
+                if visibleCount > 0 then
+                    yOffset = yOffset + VERTICAL_PADDING
+                end
             end
         end
     end
 
+    if visibleCount > 0 then
+        yOffset = yOffset - VERTICAL_PADDING
+    else
+        yOffset = 0
+    end
+
+    state.lastAnchoredControl = lastVisible
     state.contentWidth = maxWidth
-    state.contentHeight = totalHeight
+    state.contentHeight = math.max(0, yOffset)
+
+    if container.SetHeight then
+        container:SetHeight(state.contentHeight)
+    end
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format(
+            "LAYOUT_ACH rows=%d height=%.2f",
+            visibleCount,
+            state.contentHeight or 0
+        ))
+    end
+
+    return visibleCount, state.contentHeight
 end
 
 local function IsCategoryExpanded()
@@ -1771,7 +1838,6 @@ local function Rebuild()
 
     LayoutCategory()
 
-    UpdateContentSize()
     NotifyHostContentChanged()
     ApplyPendingFocus()
 end
@@ -1882,6 +1948,10 @@ function AchievementTracker.ProcessStructureUpdate()
     end
 
     Rebuild()
+end
+
+function AchievementTracker.RunLayoutPass()
+    return PerformLayoutPass()
 end
 
 function AchievementTracker.ProcessLayoutUpdate()
@@ -2020,7 +2090,6 @@ function AchievementTracker.RefreshVisibility()
 end
 
 function AchievementTracker.GetContentSize()
-    UpdateContentSize()
     return state.contentWidth or 0, state.contentHeight or 0
 end
 

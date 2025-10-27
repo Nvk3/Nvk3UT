@@ -2014,12 +2014,14 @@ end
 local function processRows(manager)
     local queue = manager.rowsToRefresh
     if not queue or #queue == 0 then
-        return
+        return 0
     end
 
     if isDebugLoggingEnabled() then
         debugLog(string.format("PROCESS rows count=%d", #queue))
     end
+
+    local processed = 0
 
     for index = 1, #queue do
         local entry = queue[index]
@@ -2033,12 +2035,17 @@ local function processRows(manager)
                     local identifier = row.questKey or row.achievementKey or "unknown"
                     debugLog(string.format("ROW refreshed=%s reason=%s", tostring(identifier), tostring(entry.reason or "")))
                 end
+                if ok then
+                    processed = processed + 1
+                end
             end
         end
     end
 
     manager.rowsToRefresh = {}
     manager.queuedRows = {}
+
+    return processed
 end
 
 function TrackerHost.QueueQuestRowRefresh(questKey, context)
@@ -2110,6 +2117,8 @@ function TrackerHost.ProcessTrackerUpdates()
     manager.achievementsStructureDirty = false
     manager.layoutDirty = false
 
+    local layoutNeeded = layoutDirty or questsDirty or achievementsDirty
+
     if questsDirty then
         if isDebugLoggingEnabled() then
             debugLog("PROCESS questsStructureDirty")
@@ -2162,10 +2171,26 @@ function TrackerHost.ProcessTrackerUpdates()
         end
 
         applyWindowVisibility()
-        refreshWindowLayout()
     end
 
-    processRows(manager)
+    local refreshedCount = processRows(manager)
+    if refreshedCount > 0 then
+        layoutNeeded = true
+    end
+
+    if layoutNeeded then
+        local questTracker = Nvk3UT and Nvk3UT.QuestTracker
+        if questTracker and questTracker.RunLayoutPass then
+            safeCall(questTracker.RunLayoutPass)
+        end
+
+        local achievementTracker = Nvk3UT and Nvk3UT.AchievementTracker
+        if achievementTracker and achievementTracker.RunLayoutPass then
+            safeCall(achievementTracker.RunLayoutPass)
+        end
+
+        refreshWindowLayout()
+    end
 
     manager.questDebounceTriggered = false
     manager.questDebounceReason = nil
