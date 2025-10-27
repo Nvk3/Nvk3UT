@@ -83,6 +83,8 @@ local ProcessTrackedQuestUpdate -- forward declaration for deferred tracking pro
 local ApplyQuestRowVisuals -- forward declaration for the quest row refresh helper
 local ResolveQuestRowData -- forward declaration for retrieving quest data during row refresh
 local EnsurePools -- forward declaration for quest control pooling
+local AcquireCategoryControlFromPool -- forward declaration for category pool access
+local AcquireQuestControlFromPool -- forward declaration for quest pool access
 
 --[=[
 QuestTrackerRow encapsulates the data and controls for a single quest row. The
@@ -3480,7 +3482,7 @@ local function FormatConditionText(condition)
     return text
 end
 
-local function AcquireCategoryControlFromPool()
+AcquireCategoryControlFromPool = function()
     local control, key = state.categoryPool:AcquireObject()
     if not control.initialized then
         control.label = control:GetNamedChild("Label")
@@ -3539,7 +3541,7 @@ local function AcquireCategoryControlFromPool()
     return control, key
 end
 
-local function AcquireQuestControlFromPool()
+AcquireQuestControlFromPool = function()
     local control, key = state.questPool:AcquireObject()
     if not control.initialized then
         control.label = control:GetNamedChild("Label")

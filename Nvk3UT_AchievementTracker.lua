@@ -114,6 +114,8 @@ local NormalizeAchievementKey -- forward declaration for achievement row registr
 local ApplyAchievementRowVisuals -- forward declaration for the achievement row refresh helper
 local ResolveAchievementRowData -- forward declaration for row data resolution
 local EnsurePools -- forward declaration for achievement control pooling
+local AcquireCategoryControlFromPool -- forward declaration for category pool access
+local AcquireAchievementControlFromPool -- forward declaration for achievement pool access
 
 --[=[
 AchievementTrackerRow encapsulates the data and controls for a single
@@ -1617,7 +1619,7 @@ local function ShouldDisplayObjective(objective)
     return true
 end
 
-local function AcquireCategoryControlFromPool()
+AcquireCategoryControlFromPool = function()
     local control = state.categoryPool:AcquireObject()
     if not control.initialized then
         control.label = control:GetNamedChild("Label")
@@ -1667,7 +1669,7 @@ local function AcquireCategoryControlFromPool()
     return control
 end
 
-local function AcquireAchievementControlFromPool()
+AcquireAchievementControlFromPool = function()
     local control = state.achievementPool:AcquireObject()
     if not control.initialized then
         control.label = control:GetNamedChild("Label")
