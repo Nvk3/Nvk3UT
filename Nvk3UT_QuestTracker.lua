@@ -3483,6 +3483,17 @@ local function FormatConditionText(condition)
 end
 
 AcquireCategoryControlFromPool = function()
+    if not state.categoryPool then
+        EnsurePools()
+    end
+
+    if not state.categoryPool then
+        if IsDebugLoggingEnabled() then
+            DebugLog("POOL_MISSING category")
+        end
+        return nil, nil
+    end
+
     local control, key = state.categoryPool:AcquireObject()
     if not control.initialized then
         control.label = control:GetNamedChild("Label")
@@ -3542,6 +3553,17 @@ AcquireCategoryControlFromPool = function()
 end
 
 AcquireQuestControlFromPool = function()
+    if not state.questPool then
+        EnsurePools()
+    end
+
+    if not state.questPool then
+        if IsDebugLoggingEnabled() then
+            DebugLog("POOL_MISSING quest")
+        end
+        return nil, nil
+    end
+
     local control, key = state.questPool:AcquireObject()
     if not control.initialized then
         control.label = control:GetNamedChild("Label")
@@ -3697,17 +3719,9 @@ local function AttachBackdrop()
 end
 
 EnsurePools = function()
-    if state.categoryPool then
-        return
-    end
-
     if not state.container then
         return
     end
-
-    state.categoryPool = ZO_ControlPool:New("CategoryHeader_Template", state.container)
-    state.questPool = ZO_ControlPool:New("QuestHeader_Template", state.container)
-    state.conditionPool = ZO_ControlPool:New("QuestCondition_Template", state.container)
 
     local function resetControl(control)
         control:SetHidden(true)
@@ -3719,61 +3733,75 @@ EnsurePools = function()
         control.isExpanded = nil
     end
 
-    state.categoryPool:SetCustomResetBehavior(function(control)
-        resetControl(control)
-        if control.toggle then
-            if control.toggle.SetTexture then
-                control.toggle:SetTexture(SelectCategoryToggleTexture(false, false))
+    if not state.categoryPool then
+        local pool = ZO_ControlPool:New("CategoryHeader_Template", state.container)
+        pool:SetCustomResetBehavior(function(control)
+            resetControl(control)
+            if control.toggle then
+                if control.toggle.SetTexture then
+                    control.toggle:SetTexture(SelectCategoryToggleTexture(false, false))
+                end
+                if control.toggle.SetHidden then
+                    control.toggle:SetHidden(false)
+                end
             end
-            if control.toggle.SetHidden then
-                control.toggle:SetHidden(false)
+        end)
+        pool:SetCustomFactoryBehavior(function(_, control)
+            control.__nvkPoolFresh = "category"
+        end)
+        pool:SetCustomAcquireBehavior(function(control)
+            if IsDebugLoggingEnabled() then
+                if control.__nvkPoolFresh == "category" then
+                    DebugLog("POOL_CREATE category")
+                else
+                    DebugLog("POOL_TAKE category")
+                end
             end
-        end
-    end)
-    state.categoryPool:SetCustomFactoryBehavior(function(_, control)
-        control.__nvkPoolFresh = "category"
-    end)
-    state.categoryPool:SetCustomAcquireBehavior(function(control)
-        if IsDebugLoggingEnabled() then
-            if control.__nvkPoolFresh == "category" then
-                DebugLog("POOL_CREATE category")
-            else
-                DebugLog("POOL_TAKE category")
+            control.__nvkPoolFresh = nil
+        end)
+        state.categoryPool = pool
+    end
+
+    if not state.questPool then
+        local pool = ZO_ControlPool:New("QuestHeader_Template", state.container)
+        pool:SetCustomResetBehavior(function(control)
+            resetControl(control)
+            if control.label and control.label.SetText then
+                control.label:SetText("")
             end
-        end
-        control.__nvkPoolFresh = nil
-    end)
-    state.questPool:SetCustomResetBehavior(function(control)
-        resetControl(control)
-        if control.label and control.label.SetText then
-            control.label:SetText("")
-        end
-        if control.iconSlot then
-            if control.iconSlot.SetTexture then
-                control.iconSlot:SetTexture(nil)
+            if control.iconSlot then
+                if control.iconSlot.SetTexture then
+                    control.iconSlot:SetTexture(nil)
+                end
+                if control.iconSlot.SetAlpha then
+                    control.iconSlot:SetAlpha(0)
+                end
+                if control.iconSlot.SetHidden then
+                    control.iconSlot:SetHidden(false)
+                end
             end
-            if control.iconSlot.SetAlpha then
-                control.iconSlot:SetAlpha(0)
+        end)
+        pool:SetCustomFactoryBehavior(function(_, control)
+            control.__nvkPoolFresh = "quest"
+        end)
+        pool:SetCustomAcquireBehavior(function(control)
+            if IsDebugLoggingEnabled() then
+                if control.__nvkPoolFresh == "quest" then
+                    DebugLog("POOL_CREATE quest")
+                else
+                    DebugLog("POOL_TAKE quest")
+                end
             end
-            if control.iconSlot.SetHidden then
-                control.iconSlot:SetHidden(false)
-            end
-        end
-    end)
-    state.questPool:SetCustomFactoryBehavior(function(_, control)
-        control.__nvkPoolFresh = "quest"
-    end)
-    state.questPool:SetCustomAcquireBehavior(function(control)
-        if IsDebugLoggingEnabled() then
-            if control.__nvkPoolFresh == "quest" then
-                DebugLog("POOL_CREATE quest")
-            else
-                DebugLog("POOL_TAKE quest")
-            end
-        end
-        control.__nvkPoolFresh = nil
-    end)
-    state.conditionPool:SetCustomResetBehavior(resetControl)
+            control.__nvkPoolFresh = nil
+        end)
+        state.questPool = pool
+    end
+
+    if not state.conditionPool then
+        local pool = ZO_ControlPool:New("QuestCondition_Template", state.container)
+        pool:SetCustomResetBehavior(resetControl)
+        state.conditionPool = pool
+    end
 end
 
 local function LayoutCondition(condition)
@@ -3854,10 +3882,14 @@ local function LayoutQuest(quest)
     local questKey = NormalizeQuestKey(quest.journalIndex)
     local control = RequestQuestControl(questKey)
     if not control then
-        if IsDebugLoggingEnabled() then
-            DebugLog("LAYOUT quest missing control", tostring(questKey))
+        if state.questPool then
+            if IsDebugLoggingEnabled() then
+                DebugLog("LAYOUT quest missing control", tostring(questKey))
+            end
+            QueueQuestStructureUpdate({ reason = "QuestTracker.LayoutQuestMissingControl", trigger = "pool" })
+        elseif IsDebugLoggingEnabled() then
+            DebugLog("LAYOUT quest missing pool", tostring(questKey))
         end
-        QueueQuestStructureUpdate({ reason = "QuestTracker.LayoutQuestMissingControl", trigger = "pool" })
         return
     end
     local expanded = IsQuestExpanded(quest.journalIndex)
@@ -3924,10 +3956,14 @@ end
 local function LayoutCategory(category)
     local control = RequestCategoryControl(category)
     if not control then
-        if IsDebugLoggingEnabled() then
-            DebugLog("LAYOUT category missing control", tostring(category and category.key))
+        if state.categoryPool then
+            if IsDebugLoggingEnabled() then
+                DebugLog("LAYOUT category missing control", tostring(category and category.key))
+            end
+            QueueQuestStructureUpdate({ reason = "QuestTracker.LayoutCategoryMissingControl", trigger = "pool" })
+        elseif IsDebugLoggingEnabled() then
+            DebugLog("LAYOUT category missing pool")
         end
-        QueueQuestStructureUpdate({ reason = "QuestTracker.LayoutCategoryMissingControl", trigger = "pool" })
         return
     end
     local data = control.data
