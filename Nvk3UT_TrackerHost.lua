@@ -317,6 +317,8 @@ local function trackPendingRowRefresh(rowType, key, context)
     end
 end
 
+local queueRowForRefresh
+
 local function flushPendingRowRefreshes(manager, rowType)
     local pendingMap
     local tracker
@@ -514,7 +516,7 @@ local function markLayoutDirty(context)
     scheduleTrackerUpdateProcessing(false, context, "layoutUpdate")
 end
 
-local function queueRowForRefresh(row, context, rowType)
+queueRowForRefresh = function(row, context, rowType)
     if type(row) ~= "table" then
         return false
     end
