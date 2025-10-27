@@ -84,6 +84,7 @@ local state = {
     orderedControls = {},
     lastAnchoredControl = nil,
     snapshot = nil,
+    subscription = nil,
     categoryControls = {},
     questControls = {},
     combatHidden = false,
@@ -454,153 +455,6 @@ local function CollectCategoryKeysForQuest(journalIndex)
     return keys, found
 end
 
-local DEFAULT_CATEGORY_KEY = "__nvk3ut_misc__"
-
-local function BuildQuestConditionsFromRecord(record)
-    local conditions = {}
-
-    if record and type(record.objectives) == "table" then
-        for index = 1, #record.objectives do
-            local objective = record.objectives[index]
-            local displayText = objective and objective.displayText
-            if type(displayText) ~= "string" or displayText == "" then
-                displayText = objective and objective.text
-            end
-            if type(displayText) == "string" and displayText ~= "" then
-                conditions[#conditions + 1] = {
-                    text = displayText,
-                    displayText = displayText,
-                    current = objective.current,
-                    max = objective.max,
-                    isVisible = true,
-                    isComplete = objective.complete == true and objective.isTurnIn ~= true,
-                    isFailCondition = false,
-                    isTurnIn = objective.isTurnIn == true,
-                    forceDisplay = objective.isTurnIn == true or objective.complete ~= true,
-                }
-            end
-        end
-    end
-
-    return conditions
-end
-
-local function BuildQuestEntryFromRecord(record)
-    if not record then
-        return nil
-    end
-
-    local conditions = BuildQuestConditionsFromRecord(record)
-    local steps = {}
-    steps[1] = {
-        isVisible = true,
-        conditions = conditions,
-    }
-
-    local flags = {
-        tracked = record.tracked == true,
-        assisted = record.assisted == true,
-    }
-
-    return {
-        journalIndex = record.journalIndex,
-        name = record.name,
-        headerText = record.headerText,
-        objectives = record.objectives,
-        steps = steps,
-        flags = flags,
-        isComplete = record.isComplete == true,
-        categoryKey = record.categoryKey,
-        categoryName = record.categoryName,
-        parentKey = record.parentKey,
-        parentName = record.parentName,
-        lastUpdateMs = record.lastUpdateMs,
-    }
-end
-
-local function ResolveCategoryFallbackName(record)
-    if record and type(record.categoryName) == "string" and record.categoryName ~= "" then
-        return record.categoryName
-    end
-
-    if record and type(record.parentName) == "string" and record.parentName ~= "" then
-        return record.parentName
-    end
-
-    return "Miscellaneous"
-end
-
-local function BuildLocalSnapshot()
-    local snapshot = { categories = { ordered = {}, byKey = {} } }
-
-    local questSource = LocalQuestDB and LocalQuestDB.quests
-    if type(questSource) ~= "table" then
-        return snapshot
-    end
-
-    local categoriesByKey = {}
-    for journalIndex, record in pairs(questSource) do
-        local questEntry = BuildQuestEntryFromRecord(record)
-        if questEntry then
-            local categoryKey = NormalizeCategoryKey(record.categoryKey) or NormalizeCategoryKey(record.parentKey) or DEFAULT_CATEGORY_KEY
-            local category = categoriesByKey[categoryKey]
-            if not category then
-                local parentKey = NormalizeCategoryKey(record.parentKey)
-                local parentName = record.parentName
-                local categoryName = ResolveCategoryFallbackName(record)
-                category = {
-                    key = categoryKey,
-                    name = categoryName,
-                    quests = {},
-                    groupKey = parentKey,
-                    groupName = parentName,
-                    type = nil,
-                    groupOrder = nil,
-                }
-                if parentKey and parentName then
-                    category.parent = {
-                        key = parentKey,
-                        name = parentName,
-                    }
-                end
-                categoriesByKey[categoryKey] = category
-            end
-            category.quests[#category.quests + 1] = questEntry
-        end
-    end
-
-    local ordered = {}
-    for key, category in pairs(categoriesByKey) do
-        category.key = key
-        ordered[#ordered + 1] = category
-    end
-
-    table.sort(ordered, function(a, b)
-        local nameA = string.lower(a.name or "")
-        local nameB = string.lower(b.name or "")
-        if nameA == nameB then
-            return (a.key or "") < (b.key or "")
-        end
-        return nameA < nameB
-    end)
-
-    for index = 1, #ordered do
-        local category = ordered[index]
-        table.sort(category.quests, function(left, right)
-            local nameA = string.lower(left.name or "")
-            local nameB = string.lower(right.name or "")
-            if nameA == nameB then
-                return (left.journalIndex or 0) < (right.journalIndex or 0)
-            end
-            return nameA < nameB
-        end)
-    end
-
-    snapshot.categories.ordered = ordered
-    snapshot.categories.byKey = categoriesByKey
-
-    return snapshot
-end
 
 local function FindQuestCategoryIndex(snapshot, journalIndex)
     if not snapshot or not snapshot.categories or not snapshot.categories.ordered then
@@ -3605,12 +3459,12 @@ local function RelayoutFromCategoryIndex(startCategoryIndex)
     ProcessPendingExternalReveal()
 end
 
-local function ApplySnapshotFromLocalDB(snapshot, context)
+local function ApplySnapshot(snapshot, context)
     state.snapshot = snapshot
 
     local trackingContext = {
         trigger = (context and context.trigger) or "refresh",
-        source = (context and context.source) or "QuestTracker:ApplyLocalSnapshot",
+        source = (context and context.source) or "QuestTracker:ApplySnapshot",
     }
 
     UpdateTrackedQuestCache(nil, trackingContext)
@@ -3622,56 +3476,42 @@ local function ApplySnapshotFromLocalDB(snapshot, context)
     NotifyStatusRefresh()
 end
 
-function QuestTracker.RedrawQuestTrackerFromLocalDB(context)
-    local snapshot = BuildLocalSnapshot()
-    ApplySnapshotFromLocalDB(snapshot, context)
+local function OnSnapshotUpdated(snapshot)
+    state.snapshot = snapshot
 
     if not state.isInitialized then
         return
     end
 
-    RelayoutFromCategoryIndex(1)
+    if RequestRefresh then
+        RequestRefresh()
+    end
 end
 
-function QuestTracker.RedrawSingleQuestFromLocalDB(journalIndex, context)
-    local snapshot = BuildLocalSnapshot()
-
-    local oldCategoryIndex = nil
-    if state.snapshot then
-        oldCategoryIndex = select(1, FindQuestCategoryIndex(state.snapshot, journalIndex))
-    end
-
-    local newCategoryIndex = select(1, FindQuestCategoryIndex(snapshot, journalIndex))
-
-    ApplySnapshotFromLocalDB(snapshot, context)
-
-    if not state.isInitialized then
+local function SubscribeToModel()
+    if state.subscription or not Nvk3UT.QuestModel or not Nvk3UT.QuestModel.Subscribe then
         return
     end
 
-    local startCategoryIndex
-    if oldCategoryIndex and newCategoryIndex then
-        startCategoryIndex = math.min(oldCategoryIndex, newCategoryIndex)
-    elseif oldCategoryIndex then
-        startCategoryIndex = oldCategoryIndex
-    elseif newCategoryIndex then
-        startCategoryIndex = newCategoryIndex
-    else
-        startCategoryIndex = 1
+    state.subscription = function(snapshot)
+        OnSnapshotUpdated(snapshot)
     end
 
-    local totalCategories = (snapshot.categories and snapshot.categories.ordered) and #snapshot.categories.ordered or 0
-    if startCategoryIndex < 1 then
-        startCategoryIndex = 1
-    end
-    if totalCategories > 0 and startCategoryIndex > totalCategories then
-        startCategoryIndex = totalCategories
-    elseif totalCategories == 0 then
-        startCategoryIndex = 1
-    end
-
-    RelayoutFromCategoryIndex(startCategoryIndex)
+    Nvk3UT.QuestModel.Subscribe(state.subscription)
 end
+
+local function UnsubscribeFromModel()
+    if not state.subscription then
+        return
+    end
+
+    if Nvk3UT.QuestModel and Nvk3UT.QuestModel.Unsubscribe then
+        Nvk3UT.QuestModel.Unsubscribe(state.subscription)
+    end
+
+    state.subscription = nil
+end
+
 
 local function Rebuild()
     if not state.container then
@@ -3795,17 +3635,32 @@ function QuestTracker.Init(parentControl, opts)
     end
 
     RegisterTrackingEvents()
+    SubscribeToModel()
+
+    if Nvk3UT.QuestModel and Nvk3UT.QuestModel.GetSnapshot then
+        state.snapshot = Nvk3UT.QuestModel.GetSnapshot() or state.snapshot
+    end
 
     state.isInitialized = true
     RefreshVisibility()
-    QuestTracker.RedrawQuestTrackerFromLocalDB({
-        trigger = "init",
-        source = "QuestTracker:Init",
-    })
+    QuestTracker.Refresh()
     AdoptTrackedQuestOnInit()
 end
 
 function QuestTracker.Refresh()
+    if not state.isInitialized then
+        return
+    end
+
+    if not state.snapshot and Nvk3UT.QuestModel and Nvk3UT.QuestModel.GetSnapshot then
+        state.snapshot = Nvk3UT.QuestModel.GetSnapshot()
+    end
+
+    ApplySnapshot(state.snapshot, {
+        trigger = "refresh",
+        source = "QuestTracker.Refresh",
+    })
+
     Rebuild()
 end
 
@@ -3816,6 +3671,7 @@ function QuestTracker.Shutdown()
 
     UnregisterCombatEvents()
     UnregisterTrackingEvents()
+    UnsubscribeFromModel()
 
     if state.categoryPool then
         state.categoryPool:ReleaseAllObjects()
