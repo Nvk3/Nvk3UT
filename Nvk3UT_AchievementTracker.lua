@@ -111,6 +111,12 @@ local FOCUS_HIGHLIGHT_DURATION_MS = 1600
 local FAVORITES_LOOKUP_KEY = "NVK3UT_FAVORITES_ROOT"
 local FAVORITES_CATEGORY_ID = "Nvk3UT_Favorites"
 
+-- Forward-declared tracker state so helpers defined below (such as
+-- GenerateControlName and the pooling routines) share the same table instance.
+-- Without this, those helpers would capture a nil upvalue and crash once the
+-- rebuild path attempts to create controls, leaving the tracker empty.
+local state
+
 local function GenerateControlName(controlType)
     local counters = state.controlNameCounters
     if not counters then
@@ -222,7 +228,7 @@ function AchievementTrackerRow:GetHeight()
     return self.lastHeight or 0
 end
 
-local state = {
+state = {
     isInitialized = false,
     opts = {},
     fonts = {},

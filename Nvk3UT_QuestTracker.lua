@@ -109,6 +109,9 @@ local ProcessTrackedQuestUpdate -- forward declaration for deferred tracking pro
 local ApplyQuestRowVisuals -- forward declaration for the quest row refresh helper
 local ResolveQuestRowData -- forward declaration for retrieving quest data during row refresh
 local EnsurePools -- forward declaration for quest control pooling
+local ResetCategoryControl -- forward declaration so pool acquisition can reset controls before use
+local ResetQuestControl -- forward declaration for quest control reset helpers
+local ResetConditionControl -- forward declaration for condition control reset helpers
 local AcquireCategoryControlFromPool -- forward declaration for category pool access
 local AcquireQuestControlFromPool -- forward declaration for quest pool access
 local ReleaseConditionControls -- forward declaration for releasing pooled condition controls
@@ -3998,7 +4001,7 @@ local function ResetBaseControl(control)
     control._nvkActive = nil
 end
 
-local function ResetCategoryControl(control)
+function ResetCategoryControl(control)
     ResetBaseControl(control)
     local toggle = control and control.toggle
     if toggle then
@@ -4011,7 +4014,7 @@ local function ResetCategoryControl(control)
     end
 end
 
-local function ResetQuestControl(control)
+function ResetQuestControl(control)
     ResetBaseControl(control)
     if control and control.label and control.label.SetText then
         control.label:SetText("")
@@ -4030,7 +4033,7 @@ local function ResetQuestControl(control)
     end
 end
 
-local function ResetConditionControl(control)
+function ResetConditionControl(control)
     ResetBaseControl(control)
     if control and control.label and control.label.SetText then
         control.label:SetText("")
