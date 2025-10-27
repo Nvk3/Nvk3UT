@@ -117,6 +117,7 @@ local ResolveAchievementRowData -- forward declaration for row data resolution
 local EnsurePools -- forward declaration for achievement control pooling
 local AcquireCategoryControlFromPool -- forward declaration for category pool access
 local AcquireAchievementControlFromPool -- forward declaration for achievement pool access
+local ReleaseObjectiveControls -- forward declaration for releasing pooled objective controls
 
 --[=[
 AchievementTrackerRow encapsulates the data and controls for a single
@@ -1234,6 +1235,122 @@ local function ClearTable(tbl)
     end
 end
 
+local function ResetBaseControl(control)
+    if not control then
+        return
+    end
+
+    if control.SetHidden then
+        control:SetHidden(true)
+    end
+    if control.data then
+        ClearTable(control.data)
+    end
+    control.currentIndent = nil
+    control.baseColor = nil
+    control.isExpanded = nil
+end
+
+local function ResetCategoryControl(control)
+    ResetBaseControl(control)
+    local toggle = control and control.toggle
+    if toggle then
+        if toggle.SetTexture then
+            toggle:SetTexture(SelectCategoryToggleTexture(false, false))
+        end
+        if toggle.SetHidden then
+            toggle:SetHidden(false)
+        end
+    end
+end
+
+local function ResetAchievementControl(control)
+    ResetBaseControl(control)
+    local label = control and control.label
+    if label and label.SetText then
+        label:SetText("")
+    end
+
+    local iconSlot = control and control.iconSlot
+    if iconSlot then
+        if iconSlot.SetTexture then
+            iconSlot:SetTexture(nil)
+        end
+        if iconSlot.SetAlpha then
+            iconSlot:SetAlpha(0)
+        end
+        if iconSlot.SetHidden then
+            iconSlot:SetHidden(false)
+        end
+    end
+end
+
+local function ResetObjectiveControl(control)
+    ResetBaseControl(control)
+    local label = control and control.label
+    if label and label.SetText then
+        label:SetText("")
+    end
+end
+
+ReleaseObjectiveControls = function()
+    local active = state.objectiveActiveControls
+    if not active then
+        return
+    end
+
+    local pool = state.objectivePool
+    if not pool then
+        pool = {}
+        state.objectivePool = pool
+    end
+
+    for index = #active, 1, -1 do
+        local control = active[index]
+        if control then
+            ResetObjectiveControl(control)
+            pool[#pool + 1] = control
+        end
+        active[index] = nil
+    end
+end
+
+EnsurePools = function(forceReset)
+    if not (state.container and WINDOW_MANAGER and WINDOW_MANAGER.CreateControlFromVirtual) then
+        return false
+    end
+
+    state.objectiveActiveControls = state.objectiveActiveControls or {}
+
+    if forceReset then
+        ReleaseObjectiveControls()
+
+        if state.categoryPool then
+            for index = 1, #state.categoryPool do
+                ResetCategoryControl(state.categoryPool[index])
+            end
+        end
+
+        if state.achievementPool then
+            for index = 1, #state.achievementPool do
+                ResetAchievementControl(state.achievementPool[index])
+            end
+        end
+
+        if state.objectivePool then
+            for index = 1, #state.objectivePool do
+                ResetObjectiveControl(state.objectivePool[index])
+            end
+        end
+    end
+
+    state.categoryPool = state.categoryPool or {}
+    state.achievementPool = state.achievementPool or {}
+    state.objectivePool = state.objectivePool or {}
+
+    return true
+end
+
 local function BeginStructureRebuild()
     if not state.container then
         if IsDebugLoggingEnabled() then
@@ -1277,13 +1394,21 @@ local function BeginStructureRebuild()
         end
     end
 
-    EnsurePools()
+    local poolsReady = EnsurePools and EnsurePools()
+    if not poolsReady then
+        if IsDebugLoggingEnabled() then
+            DebugLog("REBUILD_ABORT pools unavailable")
+        end
+        return false
+    end
 
     state.categoryControls = {}
     state.achievementControls = {}
     state.achievementControlsByKey = {}
 
-    ReleaseObjectiveControls()
+    if ReleaseObjectiveControls then
+        ReleaseObjectiveControls()
+    end
 
     return true
 end

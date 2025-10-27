@@ -86,6 +86,7 @@ local ResolveQuestRowData -- forward declaration for retrieving quest data durin
 local EnsurePools -- forward declaration for quest control pooling
 local AcquireCategoryControlFromPool -- forward declaration for category pool access
 local AcquireQuestControlFromPool -- forward declaration for quest pool access
+local ReleaseConditionControls -- forward declaration for releasing pooled condition controls
 
 --[=[
 QuestTrackerRow encapsulates the data and controls for a single quest row. The
@@ -3010,13 +3011,21 @@ local function BeginStructureRebuild()
         end
     end
 
-    EnsurePools()
+    local poolsReady = EnsurePools and EnsurePools()
+    if not poolsReady then
+        if IsDebugLoggingEnabled() then
+            DebugLog("REBUILD_ABORT pools unavailable")
+        end
+        return false
+    end
 
     state.categoryControls = {}
     state.questControls = {}
     state.questControlsByKey = {}
 
-    ReleaseConditionControls()
+    if ReleaseConditionControls then
+        ReleaseConditionControls()
+    end
 
     return true
 end
@@ -3917,7 +3926,7 @@ local function ResetConditionControl(control)
     end
 end
 
-local function ReleaseConditionControls()
+ReleaseConditionControls = function()
     local active = state.conditionActiveControls
     if not active then
         return
