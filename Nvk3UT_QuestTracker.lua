@@ -74,6 +74,12 @@ local COLOR_ROW_HOVER = { 1, 1, 0.6, 1 }
 
 local EMPTY_TABLE = {}
 
+-- Forward-declared tracker state so helper functions defined below (such as
+-- GenerateControlName or the pooling helpers) share the same table instance
+-- even before it is populated later in the file. Without this, those helpers
+-- would capture a nil upvalue and trigger rebuild failures once invoked.
+local state
+
 local function GenerateControlName(controlType)
     local counters = state.controlNameCounters
     if not counters then
@@ -193,7 +199,7 @@ function QuestTrackerRow:GetHeight()
     return self.lastHeight or 0
 end
 
-local state = {
+state = {
     isInitialized = false,
     opts = {},
     fonts = {},
