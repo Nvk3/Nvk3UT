@@ -9,6 +9,7 @@ local MODULE_NAME = addonName .. "AchievementTrackerController"
 
 local Utils = Nvk3UT and Nvk3UT.Utils
 local TrackerLayout = Nvk3UT and Nvk3UT.TrackerLayout
+local AchievementTrackerRow = Nvk3UT and Nvk3UT.AchievementTrackerRow
 local FormatCategoryHeaderText =
     (Utils and Utils.FormatCategoryHeaderText)
     or function(baseText, count, showCounts)
@@ -113,6 +114,7 @@ local state = {
     achievementPool = nil,
     objectivePool = nil,
     orderedControls = {},
+    rows = {},
     lastAnchoredControl = nil,
     snapshot = nil,
     subscription = nil,
@@ -986,10 +988,10 @@ end
 local function ResetLayoutState()
     if TrackerLayout and TrackerLayout.ResetAchievementLayout then
         TrackerLayout.ResetAchievementLayout(state)
-    else
-        state.orderedControls = {}
-        state.lastAnchoredControl = nil
     end
+    state.orderedControls = {}
+    state.rows = {}
+    state.lastAnchoredControl = nil
 end
 
 local function ReleaseAll(pool)
@@ -998,60 +1000,99 @@ local function ReleaseAll(pool)
     end
 end
 
-local function AnchorControl(control, indentX)
-    if TrackerLayout and TrackerLayout.AnchorAchievementRow then
-        TrackerLayout.AnchorAchievementRow(state, state.container, control, indentX, VERTICAL_PADDING)
+local function AppendRow(row)
+    if not row then
         return
     end
 
-    indentX = indentX or 0
-    control:ClearAnchors()
+    state.rows = state.rows or {}
 
-    if state.lastAnchoredControl then
-        local previousIndent = state.lastAnchoredControl.currentIndent or 0
-        local offsetX = indentX - previousIndent
-        control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, offsetX, VERTICAL_PADDING)
-        control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, 0, VERTICAL_PADDING)
-    else
-        control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, 0)
-        control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, 0, 0)
+    if type(row.RefreshVisual) == "function" then
+        row:RefreshVisual()
     end
 
-    state.lastAnchoredControl = control
-    state.orderedControls[#state.orderedControls + 1] = control
-    control.currentIndent = indentX
+    state.rows[#state.rows + 1] = row
+
+    local control = row.GetControl and row:GetControl()
+    if control then
+        state.orderedControls[#state.orderedControls + 1] = control
+    end
 end
 
-local function UpdateContentSize()
-    if TrackerLayout and TrackerLayout.UpdateAchievementContentSize then
-        TrackerLayout.UpdateAchievementContentSize(state, VERTICAL_PADDING, RefreshControlMetrics)
+local function ApplyAchievementLayout()
+    state.rows = state.rows or {}
+
+    if TrackerLayout and TrackerLayout.LayoutAchievementTrackerRows then
+        local width, height = TrackerLayout.LayoutAchievementTrackerRows(
+            state.container,
+            state.rows,
+            { verticalPadding = VERTICAL_PADDING }
+        )
+        state.contentWidth = width or 0
+        state.contentHeight = height or 0
         return
     end
 
     local maxWidth = 0
-    local totalHeight = 0
+    local currentY = 0
     local visibleCount = 0
 
-    for index = 1, #state.orderedControls do
-        local control = state.orderedControls[index]
-        if control then
-            RefreshControlMetrics(control)
-        end
-        if control and not control:IsHidden() then
-            visibleCount = visibleCount + 1
-            local width = (control:GetWidth() or 0) + (control.currentIndent or 0)
-            if width > maxWidth then
-                maxWidth = width
+    for index = 1, #state.rows do
+        local row = state.rows[index]
+        if row and type(row.IsRenderable) == "function" and row:IsRenderable() then
+            if type(row.SetContainer) == "function" then
+                row:SetContainer(state.container)
             end
-            totalHeight = totalHeight + (control:GetHeight() or 0)
-            if visibleCount > 1 then
-                totalHeight = totalHeight + VERTICAL_PADDING
+
+            local height = 0
+            if type(row.MeasureHeight) == "function" then
+                local ok, measured = pcall(row.MeasureHeight, row)
+                if ok and type(measured) == "number" and measured > 0 then
+                    height = measured
+                end
+            end
+
+            local hidden = true
+            if type(row.IsHidden) == "function" then
+                local ok, isHidden = pcall(row.IsHidden, row)
+                hidden = not ok or isHidden == true
+            end
+
+            if not hidden and height > 0 then
+                if visibleCount > 0 then
+                    currentY = currentY + VERTICAL_PADDING
+                end
+
+                if type(row.ApplyLayout) == "function" then
+                    local ok, applied = pcall(row.ApplyLayout, row, currentY)
+                    if ok and type(applied) == "number" and applied >= 0 then
+                        height = applied
+                    end
+                end
+
+                currentY = currentY + height
+                visibleCount = visibleCount + 1
+
+                if type(row.GetWidthContribution) == "function" then
+                    local ok, width = pcall(row.GetWidthContribution, row)
+                    if ok and type(width) == "number" and width > maxWidth then
+                        maxWidth = width
+                    end
+                end
             end
         end
     end
 
+    if state.container and state.container.SetHeight then
+        state.container:SetHeight(currentY)
+    end
+
     state.contentWidth = maxWidth
-    state.contentHeight = totalHeight
+    state.contentHeight = currentY
+end
+
+local function UpdateContentSize()
+    ApplyAchievementLayout()
 end
 
 local function IsCategoryExpanded()
@@ -1399,14 +1440,104 @@ local function LayoutObjective(achievement, objective)
         achievementId = achievement.id,
         objective = objective,
     }
+    if AchievementTrackerRow then
+        local row = AchievementTrackerRow:New({
+            rowType = "objective",
+            key = string.format("%s:%s", tostring(achievement.id or "?"), tostring(objective.index or "?")),
+            control = control,
+            indent = OBJECTIVE_INDENT_X,
+        })
+
+        row:SetRefreshFunction(function(r)
+            local ctrl = r:GetControl()
+            if not ctrl then
+                return
+            end
+
+            ctrl.data = {
+                achievementId = achievement.id,
+                objective = objective,
+            }
+
+            if ctrl.label then
+                ctrl.label:SetText(text)
+                local colorR, colorG, colorB, colorA = GetAchievementTrackerColor("objectiveText")
+                ctrl.label:SetColor(colorR, colorG, colorB, colorA)
+            end
+
+            if ctrl.SetHidden then
+                ctrl:SetHidden(false)
+            end
+        end)
+
+        row:SetMeasureFunction(function(r)
+            local ctrl = r:GetControl()
+            if not ctrl then
+                return 0
+            end
+
+            ctrl.currentIndent = r:GetIndent()
+            RefreshControlMetrics(ctrl)
+
+            if type(ctrl.GetHeight) == "function" then
+                return ctrl:GetHeight() or OBJECTIVE_MIN_HEIGHT
+            end
+
+            return OBJECTIVE_MIN_HEIGHT
+        end)
+
+        row:SetLayoutFunction(function(r, yOffset)
+            local ctrl = r:GetControl()
+            local container = state.container
+            if not (ctrl and container and ctrl.SetAnchor) then
+                return r:GetCachedHeight()
+            end
+
+            ctrl:ClearAnchors()
+            ctrl:SetAnchor(TOPLEFT, container, TOPLEFT, r:GetIndent(), yOffset)
+            ctrl:SetAnchor(TOPRIGHT, container, TOPRIGHT, 0, yOffset)
+            ctrl.currentIndent = r:GetIndent()
+
+            local height = r:GetCachedHeight()
+            if height <= 0 and type(ctrl.GetHeight) == "function" then
+                height = ctrl:GetHeight() or 0
+            end
+
+            return height
+        end)
+
+        row:SetWidthFunction(function(r)
+            local ctrl = r:GetControl()
+            if not ctrl then
+                return 0
+            end
+
+            local width = (type(ctrl.GetWidth) == "function" and ctrl:GetWidth()) or 0
+            if width <= 0 and type(ctrl.GetDesiredWidth) == "function" then
+                width = ctrl:GetDesiredWidth() or 0
+            end
+            if width <= 0 and type(ctrl.minWidth) == "number" then
+                width = ctrl.minWidth
+            end
+
+            return width + r:GetIndent()
+        end)
+
+        row:SetDefaultHeight(OBJECTIVE_MIN_HEIGHT)
+        row:SetTextPadding(ROW_TEXT_PADDING_Y)
+
+        AppendRow(row)
+        return
+    end
+
     control.label:SetText(text)
     if control.label then
-        local r, g, b, a = GetAchievementTrackerColor("objectiveText")
-        control.label:SetColor(r, g, b, a)
+        local fallbackR, fallbackG, fallbackB, fallbackA = GetAchievementTrackerColor("objectiveText")
+        control.label:SetColor(fallbackR, fallbackG, fallbackB, fallbackA)
     end
     ApplyRowMetrics(control, OBJECTIVE_INDENT_X, 0, 0, 0, OBJECTIVE_MIN_HEIGHT)
     control:SetHidden(false)
-    AnchorControl(control, OBJECTIVE_INDENT_X)
+    state.orderedControls[#state.orderedControls + 1] = control
 end
 
 local function LayoutAchievement(achievement)
@@ -1418,11 +1549,112 @@ local function LayoutAchievement(achievement)
         hasObjectives = hasObjectives,
         isFavorite = isFavorite,
     }
+    local expanded = hasObjectives and IsEntryExpanded(achievement.id)
+
+    if AchievementTrackerRow then
+        local row = AchievementTrackerRow:New({
+            rowType = "achievement",
+            key = achievement.id,
+            control = control,
+            indent = ACHIEVEMENT_INDENT_X,
+        })
+
+        row:SetRefreshFunction(function(r)
+            local ctrl = r:GetControl()
+            if not ctrl then
+                return
+            end
+
+            ctrl.data = {
+                achievementId = achievement.id,
+                hasObjectives = hasObjectives,
+                isFavorite = IsFavoriteAchievement(achievement.id),
+            }
+
+            if ctrl.label then
+                ctrl.label:SetText(FormatDisplayString(achievement.name))
+            end
+
+            local colorR, colorG, colorB, colorA = GetAchievementTrackerColor("entryTitle")
+            ApplyBaseColor(ctrl, colorR, colorG, colorB, colorA)
+            UpdateAchievementIconSlot(ctrl)
+
+            if ctrl.SetHidden then
+                ctrl:SetHidden(false)
+            end
+        end)
+
+        row:SetMeasureFunction(function(r)
+            local ctrl = r:GetControl()
+            if not ctrl then
+                return 0
+            end
+
+            ctrl.currentIndent = r:GetIndent()
+            RefreshControlMetrics(ctrl)
+
+            if type(ctrl.GetHeight) == "function" then
+                return ctrl:GetHeight() or ACHIEVEMENT_MIN_HEIGHT
+            end
+
+            return ACHIEVEMENT_MIN_HEIGHT
+        end)
+
+        row:SetLayoutFunction(function(r, yOffset)
+            local ctrl = r:GetControl()
+            local container = state.container
+            if not (ctrl and container and ctrl.SetAnchor) then
+                return r:GetCachedHeight()
+            end
+
+            ctrl:ClearAnchors()
+            ctrl:SetAnchor(TOPLEFT, container, TOPLEFT, r:GetIndent(), yOffset)
+            ctrl:SetAnchor(TOPRIGHT, container, TOPRIGHT, 0, yOffset)
+            ctrl.currentIndent = r:GetIndent()
+
+            local height = r:GetCachedHeight()
+            if height <= 0 and type(ctrl.GetHeight) == "function" then
+                height = ctrl:GetHeight() or 0
+            end
+
+            return height
+        end)
+
+        row:SetWidthFunction(function(r)
+            local ctrl = r:GetControl()
+            if not ctrl then
+                return 0
+            end
+
+            local width = (type(ctrl.GetWidth) == "function" and ctrl:GetWidth()) or 0
+            if width <= 0 and type(ctrl.GetDesiredWidth) == "function" then
+                width = ctrl:GetDesiredWidth() or 0
+            end
+            if width <= 0 and type(ctrl.minWidth) == "number" then
+                width = ctrl.minWidth
+            end
+
+            return width + r:GetIndent()
+        end)
+
+        row:SetDefaultHeight(ACHIEVEMENT_MIN_HEIGHT)
+        row:SetTextPadding(ROW_TEXT_PADDING_Y)
+
+        AppendRow(row)
+
+        if hasObjectives and expanded then
+            for index = 1, #achievement.objectives do
+                LayoutObjective(achievement, achievement.objectives[index])
+            end
+        end
+
+        return
+    end
+
     control.label:SetText(FormatDisplayString(achievement.name))
     local r, g, b, a = GetAchievementTrackerColor("entryTitle")
     ApplyBaseColor(control, r, g, b, a)
 
-    local expanded = hasObjectives and IsEntryExpanded(achievement.id)
     UpdateAchievementIconSlot(control)
     ApplyRowMetrics(
         control,
@@ -1433,7 +1665,7 @@ local function LayoutAchievement(achievement)
         ACHIEVEMENT_MIN_HEIGHT
     )
     control:SetHidden(false)
-    AnchorControl(control, ACHIEVEMENT_INDENT_X)
+    state.orderedControls[#state.orderedControls + 1] = control
 
     if hasObjectives and expanded then
         for index = 1, #achievement.objectives do
@@ -1515,9 +1747,107 @@ local function LayoutCategory()
 
     local control = AcquireCategoryControl()
     control.data = { categoryKey = CATEGORY_KEY }
+    local expanded = IsCategoryExpanded()
+
+    if AchievementTrackerRow then
+        local row = AchievementTrackerRow:New({
+            rowType = "category",
+            key = CATEGORY_KEY,
+            control = control,
+            indent = CATEGORY_INDENT_X,
+        })
+
+        row:SetRefreshFunction(function(r)
+            local ctrl = r:GetControl()
+            if not ctrl then
+                return
+            end
+
+            ctrl.data = { categoryKey = CATEGORY_KEY }
+
+            if ctrl.label then
+                ctrl.label:SetText(FormatCategoryHeaderText("Errungenschaften", total or 0, "achievement"))
+            end
+
+            local colorRole = expanded and "activeTitle" or "categoryTitle"
+            local colorR, colorG, colorB, colorA = GetAchievementTrackerColor(colorRole)
+            ApplyBaseColor(ctrl, colorR, colorG, colorB, colorA)
+            UpdateCategoryToggle(ctrl, expanded)
+
+            if ctrl.SetHidden then
+                ctrl:SetHidden(false)
+            end
+        end)
+
+        row:SetMeasureFunction(function(r)
+            local ctrl = r:GetControl()
+            if not ctrl then
+                return 0
+            end
+
+            ctrl.currentIndent = r:GetIndent()
+            RefreshControlMetrics(ctrl)
+
+            if type(ctrl.GetHeight) == "function" then
+                return ctrl:GetHeight() or CATEGORY_MIN_HEIGHT
+            end
+
+            return CATEGORY_MIN_HEIGHT
+        end)
+
+        row:SetLayoutFunction(function(r, yOffset)
+            local ctrl = r:GetControl()
+            local container = state.container
+            if not (ctrl and container and ctrl.SetAnchor) then
+                return r:GetCachedHeight()
+            end
+
+            ctrl:ClearAnchors()
+            ctrl:SetAnchor(TOPLEFT, container, TOPLEFT, r:GetIndent(), yOffset)
+            ctrl:SetAnchor(TOPRIGHT, container, TOPRIGHT, 0, yOffset)
+            ctrl.currentIndent = r:GetIndent()
+
+            local height = r:GetCachedHeight()
+            if height <= 0 and type(ctrl.GetHeight) == "function" then
+                height = ctrl:GetHeight() or 0
+            end
+
+            return height
+        end)
+
+        row:SetWidthFunction(function(r)
+            local ctrl = r:GetControl()
+            if not ctrl then
+                return 0
+            end
+
+            local width = (type(ctrl.GetWidth) == "function" and ctrl:GetWidth()) or 0
+            if width <= 0 and type(ctrl.GetDesiredWidth) == "function" then
+                width = ctrl:GetDesiredWidth() or 0
+            end
+            if width <= 0 and type(ctrl.minWidth) == "number" then
+                width = ctrl.minWidth
+            end
+
+            return width + r:GetIndent()
+        end)
+
+        row:SetDefaultHeight(CATEGORY_MIN_HEIGHT)
+        row:SetTextPadding(ROW_TEXT_PADDING_Y)
+
+        AppendRow(row)
+
+        if expanded then
+            for index = 1, #visibleEntries do
+                LayoutAchievement(visibleEntries[index])
+            end
+        end
+
+        return
+    end
+
     control.label:SetText(FormatCategoryHeaderText("Errungenschaften", total or 0, "achievement"))
 
-    local expanded = IsCategoryExpanded()
     local colorRole = expanded and "activeTitle" or "categoryTitle"
     local r, g, b, a = GetAchievementTrackerColor(colorRole)
     ApplyBaseColor(control, r, g, b, a)
@@ -1532,7 +1862,7 @@ local function LayoutCategory()
     )
 
     control:SetHidden(false)
-    AnchorControl(control, CATEGORY_INDENT_X)
+    state.orderedControls[#state.orderedControls + 1] = control
 
     if expanded then
         for index = 1, #visibleEntries do
@@ -1743,6 +2073,7 @@ function AchievementTrackerController.Shutdown()
     state.control = nil
     state.snapshot = nil
     state.orderedControls = {}
+    state.rows = {}
     state.lastAnchoredControl = nil
     state.fonts = {}
     state.opts = {}

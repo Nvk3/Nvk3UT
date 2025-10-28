@@ -9,6 +9,7 @@ local MODULE_NAME = addonName .. "QuestTrackerController"
 
 local Utils = Nvk3UT and Nvk3UT.Utils
 local TrackerLayout = Nvk3UT and Nvk3UT.TrackerLayout
+local QuestTrackerRow = Nvk3UT and Nvk3UT.QuestTrackerRow
 local FormatCategoryHeaderText =
     (Utils and Utils.FormatCategoryHeaderText)
     or function(baseText, count, showCounts)
@@ -82,6 +83,7 @@ local state = {
     questPool = nil,
     conditionPool = nil,
     orderedControls = {},
+    rows = {},
     lastAnchoredControl = nil,
     snapshot = nil,
     categoryControls = {},
@@ -2633,10 +2635,11 @@ end
 local function ResetLayoutState()
     if TrackerLayout and TrackerLayout.ResetQuestLayout then
         TrackerLayout.ResetQuestLayout(state)
-    else
-        state.orderedControls = {}
-        state.lastAnchoredControl = nil
     end
+
+    state.orderedControls = {}
+    state.rows = {}
+    state.lastAnchoredControl = nil
     state.categoryControls = {}
     state.questControls = {}
 end
@@ -2647,60 +2650,99 @@ local function ReleaseAll(pool)
     end
 end
 
-local function AnchorControl(control, indentX)
-    if TrackerLayout and TrackerLayout.AnchorQuestRow then
-        TrackerLayout.AnchorQuestRow(state, state.container, control, indentX, VERTICAL_PADDING)
+local function AppendRow(row)
+    if not row then
         return
     end
 
-    indentX = indentX or 0
-    control:ClearAnchors()
+    state.rows = state.rows or {}
 
-    if state.lastAnchoredControl then
-        local previousIndent = state.lastAnchoredControl.currentIndent or 0
-        local offsetX = indentX - previousIndent
-        control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, offsetX, VERTICAL_PADDING)
-        control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, 0, VERTICAL_PADDING)
-    else
-        control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, 0)
-        control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, 0, 0)
+    if type(row.RefreshVisual) == "function" then
+        row:RefreshVisual()
     end
 
-    state.lastAnchoredControl = control
-    state.orderedControls[#state.orderedControls + 1] = control
-    control.currentIndent = indentX
+    state.rows[#state.rows + 1] = row
+
+    local control = row.GetControl and row:GetControl()
+    if control then
+        state.orderedControls[#state.orderedControls + 1] = control
+    end
 end
 
-local function UpdateContentSize()
-    if TrackerLayout and TrackerLayout.UpdateQuestContentSize then
-        TrackerLayout.UpdateQuestContentSize(state, VERTICAL_PADDING, RefreshControlMetrics)
+local function ApplyQuestLayout()
+    state.rows = state.rows or {}
+
+    if TrackerLayout and TrackerLayout.LayoutQuestTrackerRows then
+        local width, height = TrackerLayout.LayoutQuestTrackerRows(
+            state.container,
+            state.rows,
+            { verticalPadding = VERTICAL_PADDING }
+        )
+        state.contentWidth = width or 0
+        state.contentHeight = height or 0
         return
     end
 
     local maxWidth = 0
-    local totalHeight = 0
+    local currentY = 0
     local visibleCount = 0
 
-    for index = 1, #state.orderedControls do
-        local control = state.orderedControls[index]
-        if control then
-            RefreshControlMetrics(control)
-        end
-        if control and not control:IsHidden() then
-            visibleCount = visibleCount + 1
-            local width = (control:GetWidth() or 0) + (control.currentIndent or 0)
-            if width > maxWidth then
-                maxWidth = width
+    for index = 1, #state.rows do
+        local row = state.rows[index]
+        if row and type(row.IsRenderable) == "function" and row:IsRenderable() then
+            if type(row.SetContainer) == "function" then
+                row:SetContainer(state.container)
             end
-            totalHeight = totalHeight + (control:GetHeight() or 0)
-            if visibleCount > 1 then
-                totalHeight = totalHeight + VERTICAL_PADDING
+
+            local height = 0
+            if type(row.MeasureHeight) == "function" then
+                local ok, measured = pcall(row.MeasureHeight, row)
+                if ok and type(measured) == "number" and measured > 0 then
+                    height = measured
+                end
+            end
+
+            local hidden = true
+            if type(row.IsHidden) == "function" then
+                local ok, isHidden = pcall(row.IsHidden, row)
+                hidden = not ok or isHidden == true
+            end
+
+            if not hidden and height > 0 then
+                if visibleCount > 0 then
+                    currentY = currentY + VERTICAL_PADDING
+                end
+
+                if type(row.ApplyLayout) == "function" then
+                    local ok, applied = pcall(row.ApplyLayout, row, currentY)
+                    if ok and type(applied) == "number" and applied >= 0 then
+                        height = applied
+                    end
+                end
+
+                currentY = currentY + height
+                visibleCount = visibleCount + 1
+
+                if type(row.GetWidthContribution) == "function" then
+                    local ok, width = pcall(row.GetWidthContribution, row)
+                    if ok and type(width) == "number" and width > maxWidth then
+                        maxWidth = width
+                    end
+                end
             end
         end
     end
 
+    if state.container and state.container.SetHeight then
+        state.container:SetHeight(currentY)
+    end
+
     state.contentWidth = maxWidth
-    state.contentHeight = totalHeight
+    state.contentHeight = currentY
+end
+
+local function UpdateContentSize()
+    ApplyQuestLayout()
 end
 
 local function SelectCategoryToggleTexture(expanded, isMouseOver)
@@ -3252,25 +3294,107 @@ local function LayoutCondition(condition)
 
     local control = AcquireConditionControl()
     control.data = { condition = condition }
+
+    if QuestTrackerRow then
+        local row = QuestTrackerRow:New({
+            rowType = "condition",
+            key = condition and condition.id,
+            control = control,
+            indent = CONDITION_INDENT_X,
+        })
+
+        row:SetRefreshFunction(function(r)
+            local ctrl = r:GetControl()
+            if not ctrl then
+                return
+            end
+
+            ctrl.data = { condition = condition }
+
+            if ctrl.label then
+                ctrl.label:SetText(FormatConditionText(condition))
+                local colorR, colorG, colorB, colorA = GetQuestTrackerColor("objectiveText")
+                ctrl.label:SetColor(colorR, colorG, colorB, colorA)
+            end
+
+            if ctrl.SetHidden then
+                ctrl:SetHidden(false)
+            end
+        end)
+
+        row:SetMeasureFunction(function(r)
+            local ctrl = r:GetControl()
+            if not ctrl then
+                return 0
+            end
+
+            ctrl.currentIndent = r:GetIndent()
+            RefreshControlMetrics(ctrl)
+
+            if type(ctrl.GetHeight) == "function" then
+                return ctrl:GetHeight() or CONDITION_MIN_HEIGHT
+            end
+
+            return CONDITION_MIN_HEIGHT
+        end)
+
+        row:SetLayoutFunction(function(r, yOffset)
+            local ctrl = r:GetControl()
+            local container = state.container
+            if not (ctrl and container and ctrl.SetAnchor) then
+                return r:GetCachedHeight()
+            end
+
+            ctrl:ClearAnchors()
+            ctrl:SetAnchor(TOPLEFT, container, TOPLEFT, r:GetIndent(), yOffset)
+            ctrl:SetAnchor(TOPRIGHT, container, TOPRIGHT, 0, yOffset)
+            ctrl.currentIndent = r:GetIndent()
+
+            local height = r:GetCachedHeight()
+            if height <= 0 and type(ctrl.GetHeight) == "function" then
+                height = ctrl:GetHeight() or 0
+            end
+
+            return height
+        end)
+
+        row:SetWidthFunction(function(r)
+            local ctrl = r:GetControl()
+            if not ctrl then
+                return 0
+            end
+
+            local width = (type(ctrl.GetWidth) == "function" and ctrl:GetWidth()) or 0
+            if width <= 0 and type(ctrl.GetDesiredWidth) == "function" then
+                width = ctrl:GetDesiredWidth() or 0
+            end
+            if width <= 0 and type(ctrl.minWidth) == "number" then
+                width = ctrl.minWidth
+            end
+
+            return width + r:GetIndent()
+        end)
+
+        row:SetDefaultHeight(CONDITION_MIN_HEIGHT)
+        row:SetTextPadding(ROW_TEXT_PADDING_Y)
+
+        AppendRow(row)
+        return
+    end
+
     control.label:SetText(FormatConditionText(condition))
     if control.label then
-        local r, g, b, a = GetQuestTrackerColor("objectiveText")
-        control.label:SetColor(r, g, b, a)
+        local fallbackR, fallbackG, fallbackB, fallbackA = GetQuestTrackerColor("objectiveText")
+        control.label:SetColor(fallbackR, fallbackG, fallbackB, fallbackA)
     end
     ApplyRowMetrics(control, CONDITION_INDENT_X, 0, 0, 0, CONDITION_MIN_HEIGHT)
     control:SetHidden(false)
-    AnchorControl(control, CONDITION_INDENT_X)
+    state.orderedControls[#state.orderedControls + 1] = control
 end
 
 local function LayoutQuest(quest)
     local control = AcquireQuestControl()
     control.data = { quest = quest }
-    control.label:SetText(quest.name or "")
-
-    local colorRole = DetermineQuestColorRole(quest)
-    local r, g, b, a = GetQuestTrackerColor(colorRole)
-    ApplyBaseColor(control, r, g, b, a)
-
     local questKey = NormalizeQuestKey(quest.journalIndex)
     local expanded = IsQuestExpanded(quest.journalIndex)
     if IsDebugLoggingEnabled() then
@@ -3280,20 +3404,118 @@ local function LayoutQuest(quest)
             tostring(expanded)
         ))
     end
-    UpdateQuestIconSlot(control)
-    ApplyRowMetrics(
-        control,
-        QUEST_INDENT_X,
-        QUEST_ICON_SLOT_WIDTH,
-        QUEST_ICON_SLOT_PADDING_X,
-        0,
-        QUEST_MIN_HEIGHT
-    )
-    control:SetHidden(false)
-    AnchorControl(control, QUEST_INDENT_X)
 
-    if quest and quest.journalIndex then
-        state.questControls[quest.journalIndex] = control
+    if QuestTrackerRow then
+        local row = QuestTrackerRow:New({
+            rowType = "quest",
+            key = quest and quest.journalIndex,
+            control = control,
+            indent = QUEST_INDENT_X,
+        })
+
+        row:SetRefreshFunction(function(r)
+            local ctrl = r:GetControl()
+            if not ctrl then
+                return
+            end
+
+            ctrl.data = { quest = quest }
+
+            if ctrl.label then
+                ctrl.label:SetText(quest.name or "")
+            end
+
+            local colorRole = DetermineQuestColorRole(quest)
+            local rowR, rowG, rowB, rowA = GetQuestTrackerColor(colorRole)
+            ApplyBaseColor(ctrl, rowR, rowG, rowB, rowA)
+            UpdateQuestIconSlot(ctrl)
+
+            if quest and quest.journalIndex then
+                state.questControls[quest.journalIndex] = ctrl
+            end
+
+            if ctrl.SetHidden then
+                ctrl:SetHidden(false)
+            end
+        end)
+
+        row:SetMeasureFunction(function(r)
+            local ctrl = r:GetControl()
+            if not ctrl then
+                return 0
+            end
+
+            ctrl.currentIndent = r:GetIndent()
+            RefreshControlMetrics(ctrl)
+
+            if type(ctrl.GetHeight) == "function" then
+                return ctrl:GetHeight() or QUEST_MIN_HEIGHT
+            end
+
+            return QUEST_MIN_HEIGHT
+        end)
+
+        row:SetLayoutFunction(function(r, yOffset)
+            local ctrl = r:GetControl()
+            local container = state.container
+            if not (ctrl and container and ctrl.SetAnchor) then
+                return r:GetCachedHeight()
+            end
+
+            ctrl:ClearAnchors()
+            ctrl:SetAnchor(TOPLEFT, container, TOPLEFT, r:GetIndent(), yOffset)
+            ctrl:SetAnchor(TOPRIGHT, container, TOPRIGHT, 0, yOffset)
+            ctrl.currentIndent = r:GetIndent()
+
+            local height = r:GetCachedHeight()
+            if height <= 0 and type(ctrl.GetHeight) == "function" then
+                height = ctrl:GetHeight() or 0
+            end
+
+            return height
+        end)
+
+        row:SetWidthFunction(function(r)
+            local ctrl = r:GetControl()
+            if not ctrl then
+                return 0
+            end
+
+            local width = (type(ctrl.GetWidth) == "function" and ctrl:GetWidth()) or 0
+            if width <= 0 and type(ctrl.GetDesiredWidth) == "function" then
+                width = ctrl:GetDesiredWidth() or 0
+            end
+            if width <= 0 and type(ctrl.minWidth) == "number" then
+                width = ctrl.minWidth
+            end
+
+            return width + r:GetIndent()
+        end)
+
+        row:SetDefaultHeight(QUEST_MIN_HEIGHT)
+        row:SetTextPadding(ROW_TEXT_PADDING_Y)
+
+        AppendRow(row)
+    else
+        control.label:SetText(quest.name or "")
+        local colorRole = DetermineQuestColorRole(quest)
+        local r, g, b, a = GetQuestTrackerColor(colorRole)
+        ApplyBaseColor(control, r, g, b, a)
+        UpdateQuestIconSlot(control)
+        ApplyRowMetrics(
+            control,
+            QUEST_INDENT_X,
+            QUEST_ICON_SLOT_WIDTH,
+            QUEST_ICON_SLOT_PADDING_X,
+            0,
+            QUEST_MIN_HEIGHT
+        )
+        control:SetHidden(false)
+        state.orderedControls[#state.orderedControls + 1] = control
+
+        if quest and quest.journalIndex then
+            state.questControls[quest.journalIndex] = control
+        end
     end
 
     if expanded then
@@ -3324,7 +3546,6 @@ local function LayoutCategory(category)
         state.categoryControls[normalizedKey] = control
     end
     local count = #category.quests
-    control.label:SetText(FormatCategoryHeaderText(category.name or "", count, "quest"))
     local expanded = IsCategoryExpanded(category.key)
     if IsDebugLoggingEnabled() then
         DebugLog(string.format(
@@ -3333,20 +3554,125 @@ local function LayoutCategory(category)
             tostring(expanded)
         ))
     end
-    local colorRole = expanded and "activeTitle" or "categoryTitle"
-    local r, g, b, a = GetQuestTrackerColor(colorRole)
-    ApplyBaseColor(control, r, g, b, a)
-    UpdateCategoryToggle(control, expanded)
-    ApplyRowMetrics(
-        control,
-        CATEGORY_INDENT_X,
-        GetToggleWidth(control.toggle, CATEGORY_TOGGLE_WIDTH),
-        TOGGLE_LABEL_PADDING_X,
-        0,
-        CATEGORY_MIN_HEIGHT
-    )
-    control:SetHidden(false)
-    AnchorControl(control, CATEGORY_INDENT_X)
+
+    if QuestTrackerRow then
+        local row = QuestTrackerRow:New({
+            rowType = "category",
+            key = category.key,
+            control = control,
+            indent = CATEGORY_INDENT_X,
+        })
+
+        row:SetRefreshFunction(function(r)
+            local ctrl = r:GetControl()
+            if not ctrl then
+                return
+            end
+
+            ctrl.data = {
+                categoryKey = category.key,
+                parentKey = category.parent and category.parent.key or nil,
+                parentName = category.parent and category.parent.name or nil,
+                groupKey = category.groupKey,
+                groupName = category.groupName,
+                categoryType = category.type,
+                groupOrder = category.groupOrder,
+            }
+
+            local normalized = NormalizeCategoryKey(category.key)
+            if normalized then
+                state.categoryControls[normalized] = ctrl
+            end
+
+            local label = ctrl.label
+            if label then
+                label:SetText(FormatCategoryHeaderText(category.name or "", count, "quest"))
+            end
+
+            local colorRole = expanded and "activeTitle" or "categoryTitle"
+            local rowR, rowG, rowB, rowA = GetQuestTrackerColor(colorRole)
+            ApplyBaseColor(ctrl, rowR, rowG, rowB, rowA)
+            UpdateCategoryToggle(ctrl, expanded)
+
+            if ctrl.SetHidden then
+                ctrl:SetHidden(false)
+            end
+        end)
+
+        row:SetMeasureFunction(function(r)
+            local ctrl = r:GetControl()
+            if not ctrl then
+                return 0
+            end
+
+            ctrl.currentIndent = r:GetIndent()
+            RefreshControlMetrics(ctrl)
+
+            if type(ctrl.GetHeight) == "function" then
+                return ctrl:GetHeight() or CATEGORY_MIN_HEIGHT
+            end
+
+            return CATEGORY_MIN_HEIGHT
+        end)
+
+        row:SetLayoutFunction(function(r, yOffset)
+            local ctrl = r:GetControl()
+            local container = state.container
+            if not (ctrl and container and ctrl.SetAnchor) then
+                return r:GetCachedHeight()
+            end
+
+            ctrl:ClearAnchors()
+            ctrl:SetAnchor(TOPLEFT, container, TOPLEFT, r:GetIndent(), yOffset)
+            ctrl:SetAnchor(TOPRIGHT, container, TOPRIGHT, 0, yOffset)
+            ctrl.currentIndent = r:GetIndent()
+
+            local height = r:GetCachedHeight()
+            if height <= 0 and type(ctrl.GetHeight) == "function" then
+                height = ctrl:GetHeight() or 0
+            end
+
+            return height
+        end)
+
+        row:SetWidthFunction(function(r)
+            local ctrl = r:GetControl()
+            if not ctrl then
+                return 0
+            end
+
+            local width = (type(ctrl.GetWidth) == "function" and ctrl:GetWidth()) or 0
+            if width <= 0 and type(ctrl.GetDesiredWidth) == "function" then
+                width = ctrl:GetDesiredWidth() or 0
+            end
+            if width <= 0 and type(ctrl.minWidth) == "number" then
+                width = ctrl.minWidth
+            end
+
+            return width + r:GetIndent()
+        end)
+
+        row:SetDefaultHeight(CATEGORY_MIN_HEIGHT)
+        row:SetTextPadding(ROW_TEXT_PADDING_Y)
+
+        AppendRow(row)
+    else
+        control.label:SetText(FormatCategoryHeaderText(category.name or "", count, "quest"))
+        local colorRole = expanded and "activeTitle" or "categoryTitle"
+        local r, g, b, a = GetQuestTrackerColor(colorRole)
+        ApplyBaseColor(control, r, g, b, a)
+        UpdateCategoryToggle(control, expanded)
+        ApplyRowMetrics(
+            control,
+            CATEGORY_INDENT_X,
+            GetToggleWidth(control.toggle, CATEGORY_TOGGLE_WIDTH),
+            TOGGLE_LABEL_PADDING_X,
+            0,
+            CATEGORY_MIN_HEIGHT
+        )
+        control:SetHidden(false)
+        state.orderedControls[#state.orderedControls + 1] = control
+    end
 
     if expanded then
         for index = 1, count do
@@ -3417,43 +3743,8 @@ local function TrimOrderedControlsToCategory(keepCategoryCount)
     state.lastAnchoredControl = state.orderedControls[#state.orderedControls]
 end
 
-local function RelayoutFromCategoryIndex(startCategoryIndex)
-    ApplyActiveQuestFromSaved()
-    EnsurePools()
-
-    if not state.snapshot or not state.snapshot.categories or not state.snapshot.categories.ordered then
-        ReleaseAll(state.categoryPool)
-        ReleaseAll(state.questPool)
-        ReleaseAll(state.conditionPool)
-        ResetLayoutState()
-        UpdateContentSize()
-        NotifyHostContentChanged()
-        ProcessPendingExternalReveal()
-        return
-    end
-
-    if startCategoryIndex <= 1 then
-        ReleaseAll(state.categoryPool)
-        ReleaseAll(state.questPool)
-        ReleaseAll(state.conditionPool)
-        ResetLayoutState()
-        startCategoryIndex = 1
-    else
-        TrimOrderedControlsToCategory(startCategoryIndex - 1)
-    end
-
-    PrimeInitialSavedState()
-
-    for index = startCategoryIndex, #state.snapshot.categories.ordered do
-        local category = state.snapshot.categories.ordered[index]
-        if category and category.quests and #category.quests > 0 then
-            LayoutCategory(category)
-        end
-    end
-
-    UpdateContentSize()
-    NotifyHostContentChanged()
-    ProcessPendingExternalReveal()
+local function RelayoutFromCategoryIndex(_)
+    Rebuild()
 end
 
 local function ApplySnapshot(snapshot, context)
@@ -3694,6 +3985,7 @@ function QuestTrackerController.Shutdown()
     state.control = nil
     state.snapshot = nil
     state.orderedControls = {}
+    state.rows = {}
     state.lastAnchoredControl = nil
     state.categoryControls = {}
     state.questControls = {}
