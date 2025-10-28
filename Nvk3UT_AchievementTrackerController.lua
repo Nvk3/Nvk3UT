@@ -124,7 +124,6 @@ local state = {
     contentHeight = 0,
     pendingFocusAchievementId = nil,
     hostHidden = false,
-    pendingVisibleRelayout = false,
     structureDirty = true,
 }
 
@@ -2041,23 +2040,6 @@ local function RefreshFromStructure(reason)
     NotifyHostContentChanged()
     ApplyPendingFocus()
 
-    local shouldDeferVisibleRelayout = state.hostHidden == true
-    if not shouldDeferVisibleRelayout then
-        local control = state.control
-        if HasValidControl(control) and control.IsHidden then
-            local ok, hidden = pcall(control.IsHidden, control)
-            shouldDeferVisibleRelayout = ok and hidden == true
-        end
-    end
-    if not shouldDeferVisibleRelayout then
-        local container = state.container
-        if HasValidControl(container) and container.IsHidden then
-            local ok, hidden = pcall(container.IsHidden, container)
-            shouldDeferVisibleRelayout = ok and hidden == true
-        end
-    end
-    state.pendingVisibleRelayout = shouldDeferVisibleRelayout
-
     if IsDebugLoggingEnabled() then
         DebugLog(string.format("REFRESH_FROM_STRUCTURE reason=%s rows=%d", tostring(reason), state.rows and #state.rows or 0))
     end
@@ -2129,7 +2111,6 @@ function AchievementTrackerController.Init(parentControl, opts)
     else
         state.lastKnownContainerWidth = 0
     end
-    state.pendingVisibleRelayout = false
     if state.control and state.control.SetResizeToFitDescendents then
         state.control:SetResizeToFitDescendents(true)
     end
@@ -2227,7 +2208,6 @@ function AchievementTrackerController.Shutdown()
     state.contentWidth = 0
     state.contentHeight = 0
     state.hostHidden = false
-    state.pendingVisibleRelayout = false
     state.structureDirty = true
     NotifyHostContentChanged()
 end
@@ -2341,10 +2321,6 @@ function AchievementTrackerController.HasPendingStructureChanges()
     return state.structureDirty == true
 end
 
-function AchievementTrackerController.HasPendingVisibleRelayout()
-    return state.pendingVisibleRelayout == true
-end
-
 function AchievementTrackerController.SyncStructureIfDirty(reason)
     local syncReason = reason or "sync"
 
@@ -2352,33 +2328,13 @@ function AchievementTrackerController.SyncStructureIfDirty(reason)
         return true
     end
 
-    local achievementModel = Nvk3UT and Nvk3UT.AchievementModel
-    local snapshot
-
-    if achievementModel and type(achievementModel.GetSnapshot) == "function" then
-        local ok, result = pcall(achievementModel.GetSnapshot, achievementModel)
-        if ok and type(result) == "table" then
-            snapshot = result
-        elseif IsDebugLoggingEnabled() then
-            DebugLog(string.format("SyncStructureIfDirty snapshot failed: %s", tostring(result)))
-        end
+    if not state.snapshot then
+        state.snapshot = { achievements = {} }
+    elseif type(state.snapshot.achievements) ~= "table" then
+        state.snapshot.achievements = {}
     end
-
-    if not snapshot then
-        if IsDebugLoggingEnabled() then
-            DebugLog(string.format("Achievement SyncStructureIfDirty(%s) postponed: snapshot unavailable", tostring(syncReason)))
-        end
-        return false
-    end
-
-    state.snapshot = snapshot
 
     local rebuilt = RebuildStructure(syncReason)
-
-    if not rebuilt then
-        FlagStructureDirtyInternal(syncReason)
-        return false
-    end
 
     if IsDebugLoggingEnabled() then
         DebugLog(string.format(
@@ -2388,7 +2344,7 @@ function AchievementTrackerController.SyncStructureIfDirty(reason)
         ))
     end
 
-    return true
+    return rebuilt ~= false
 end
 
 function AchievementTrackerController.IsActive()

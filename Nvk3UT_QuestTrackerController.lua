@@ -90,7 +90,6 @@ local state = {
     categoryControls = {},
     questControls = {},
     hostHidden = false,
-    pendingVisibleRelayout = false,
     pendingRefresh = false,
     contentWidth = 0,
     contentHeight = 0,
@@ -3929,23 +3928,6 @@ local function RefreshFromStructure(reason)
     NotifyHostContentChanged()
     ProcessPendingExternalReveal()
 
-    local shouldDeferVisibleRelayout = state.hostHidden == true
-    if not shouldDeferVisibleRelayout then
-        local control = state.control
-        if HasValidControl(control) and control.IsHidden then
-            local ok, hidden = pcall(control.IsHidden, control)
-            shouldDeferVisibleRelayout = ok and hidden == true
-        end
-    end
-    if not shouldDeferVisibleRelayout then
-        local container = state.container
-        if HasValidControl(container) and container.IsHidden then
-            local ok, hidden = pcall(container.IsHidden, container)
-            shouldDeferVisibleRelayout = ok and hidden == true
-        end
-    end
-    state.pendingVisibleRelayout = shouldDeferVisibleRelayout
-
     if IsDebugLoggingEnabled() then
         DebugLog(string.format("REFRESH_FROM_STRUCTURE reason=%s rows=%d", tostring(reason), state.rows and #state.rows or 0))
     end
@@ -3992,7 +3974,6 @@ function QuestTrackerController.Init(parentControl, opts)
     else
         state.lastKnownContainerWidth = 0
     end
-    state.pendingVisibleRelayout = false
     if state.control and state.control.SetResizeToFitDescendents then
         state.control:SetResizeToFitDescendents(true)
     end
@@ -4125,7 +4106,6 @@ function QuestTrackerController.Shutdown()
     state.isRebuildInProgress = false
     state.questModelSubscription = nil
     state.hostHidden = false
-    state.pendingVisibleRelayout = false
     state.structureDirty = true
     NotifyHostContentChanged()
 end
@@ -4194,10 +4174,6 @@ function QuestTrackerController.HasPendingStructureChanges()
     return state.structureDirty == true
 end
 
-function QuestTrackerController.HasPendingVisibleRelayout()
-    return state.pendingVisibleRelayout == true
-end
-
 function QuestTrackerController.SyncStructureIfDirty(reason)
     local syncReason = reason or "sync"
 
@@ -4205,52 +4181,21 @@ function QuestTrackerController.SyncStructureIfDirty(reason)
         return true
     end
 
-    local questModel = Nvk3UT and Nvk3UT.QuestModel
-    local snapshot
-
-    if questModel and type(questModel.GetSnapshot) == "function" then
-        local ok, result = pcall(questModel.GetSnapshot, questModel)
-        if ok and type(result) == "table" then
-            snapshot = result
-        elseif IsDebugLoggingEnabled() then
-            DebugLog(string.format("SyncStructureIfDirty snapshot failed: %s", tostring(result)))
-        end
-    end
+    local snapshot = state.snapshot
 
     if not snapshot then
-        if IsDebugLoggingEnabled() then
-            DebugLog(string.format("SyncStructureIfDirty(%s) postponed: snapshot unavailable", tostring(syncReason)))
-        end
-        return false
-    end
-
-    local normalizedSnapshot = snapshot
-    if type(normalizedSnapshot.categories) ~= "table" then
-        normalizedSnapshot = {}
-        for key, value in pairs(snapshot) do
-            normalizedSnapshot[key] = value
-        end
-        normalizedSnapshot.categories = { ordered = {}, byKey = {} }
+        snapshot = { categories = { ordered = {}, byKey = {} } }
+        state.snapshot = snapshot
     else
-        if type(normalizedSnapshot.categories.ordered) ~= "table" then
-            normalizedSnapshot.categories.ordered = {}
-        end
-        if type(normalizedSnapshot.categories.byKey) ~= "table" then
-            normalizedSnapshot.categories.byKey = {}
+        if type(snapshot.categories) ~= "table" then
+            snapshot.categories = { ordered = {}, byKey = {} }
+        else
+            snapshot.categories.ordered = snapshot.categories.ordered or {}
+            snapshot.categories.byKey = snapshot.categories.byKey or {}
         end
     end
-
-    ApplySnapshot(normalizedSnapshot, {
-        trigger = syncReason,
-        source = "QuestTracker:SyncStructureIfDirty",
-    })
 
     local rebuilt = RebuildStructure(syncReason)
-
-    if not rebuilt then
-        FlagStructureDirtyInternal(syncReason)
-        return false
-    end
 
     if IsDebugLoggingEnabled() then
         DebugLog(string.format(
@@ -4260,7 +4205,7 @@ function QuestTrackerController.SyncStructureIfDirty(reason)
         ))
     end
 
-    return true
+    return rebuilt ~= false
 end
 
 function QuestTrackerController.RefreshNow(reason)

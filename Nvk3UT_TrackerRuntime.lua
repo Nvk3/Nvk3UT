@@ -445,46 +445,6 @@ local function SyncStructureIfDirty(trackerKey, reason)
     return result ~= false
 end
 
-local function HasPendingStructure(trackerKey)
-    local tracker = ResolveTrackerModule(trackerKey)
-    if not tracker then
-        return false
-    end
-
-    local probe = tracker.HasPendingStructureChanges or tracker.IsStructureDirty
-    if type(probe) ~= "function" then
-        return false
-    end
-
-    local ok, result = pcall(probe, tracker)
-    if not ok then
-        DebugLog(string.format("%s pending structure probe failed: %s", tostring(trackerKey), tostring(result)))
-        return false
-    end
-
-    return result == true
-end
-
-local function HasPendingVisibleRelayout(trackerKey)
-    local tracker = ResolveTrackerModule(trackerKey)
-    if not tracker then
-        return false
-    end
-
-    local probe = tracker.HasPendingVisibleRelayout or tracker.NeedsVisibleRelayout
-    if type(probe) ~= "function" then
-        return false
-    end
-
-    local ok, result = pcall(probe, tracker)
-    if not ok then
-        DebugLog(string.format("%s pending visible relayout probe failed: %s", tostring(trackerKey), tostring(result)))
-        return false
-    end
-
-    return result == true
-end
-
 function TrackerRuntime.ForceQuestTrackerRefresh(reason)
     return CallRefresh("quest", { "RefreshNow", "RequestRefresh", "Refresh" }, reason)
 end
@@ -516,61 +476,22 @@ function TrackerRuntime.OnHostTransientVisibilityChanged(isVisible, source)
     EnsureVisibilitySettings()
 
     local normalizedVisible = isVisible ~= false
-    local previousHidden = state.hostHidden
     state.transientVisible = normalizedVisible
 
     local reason = source and string.format("transient-%s", tostring(source)) or "transient"
     ApplyFinalVisibility(reason, false)
 
-    local update = state.update
-    local questsDirty = update and update.questsDirty == true
-    local achievementsDirty = update and update.achievementsDirty == true
-    local layoutDirty = update and update.layoutDirty == true
-    local questStructureDirty = HasPendingStructure("quest")
-    local achievementStructureDirty = HasPendingStructure("achievement")
-    local questPendingVisible = HasPendingVisibleRelayout("quest")
-    local achievementPendingVisible = HasPendingVisibleRelayout("achievement")
-
-    if (questPendingVisible and not questsDirty) or (achievementPendingVisible and not achievementsDirty) then
-        update = GetUpdateState()
-        local visibleReason = reason or "visible-relayout"
-        if questPendingVisible and update.questsDirty ~= true then
-            update.questsDirty = true
-            update.questReason = update.questReason or visibleReason
-        end
-        if achievementPendingVisible and update.achievementsDirty ~= true then
-            update.achievementsDirty = true
-            update.achievementReason = update.achievementReason or visibleReason
-        end
-        questsDirty = update.questsDirty == true
-        achievementsDirty = update.achievementsDirty == true
-        layoutDirty = update.layoutDirty == true
-    end
-
-    local outstanding = questsDirty or achievementsDirty or layoutDirty or questStructureDirty or achievementStructureDirty
-
-    local shouldProcess = normalizedVisible and state.hostHidden == false and outstanding
-
     if IsDebugLoggingEnabled() then
         DebugLog(string.format(
-            "TransientVisibility source=%s visible=%s policyVisible=%s hostHidden(before=%s after=%s) process=%s dirty(q=%s a=%s l=%s) structure(q=%s a=%s) pendingVisible(q=%s a=%s)",
+            "TransientVisibility source=%s visible=%s policyVisible=%s hostHidden=%s",
             tostring(source),
             tostring(normalizedVisible),
             tostring(state.policyVisible ~= false),
-            tostring(previousHidden),
-            tostring(state.hostHidden),
-            tostring(shouldProcess),
-            tostring(questsDirty),
-            tostring(achievementsDirty),
-            tostring(layoutDirty),
-            tostring(questStructureDirty),
-            tostring(achievementStructureDirty),
-            tostring(questPendingVisible),
-            tostring(achievementPendingVisible)
+            tostring(state.hostHidden)
         ))
     end
 
-    if shouldProcess then
+    if normalizedVisible and state.hostHidden == false then
         TrackerRuntime.ProcessUpdates(reason)
     end
 end
@@ -600,49 +521,19 @@ local function FlushCoordinatorUpdates(triggerReason)
 
     if questsDirty then
         local questSynced = SyncStructureIfDirty("quest", questReason)
-        if IsDebugLoggingEnabled() then
-            DebugLog(string.format(
-                "ProcessUpdates quest syncBeforeRefresh=%s",
-                tostring(questSynced)
-            ))
-        end
-
         if questSynced then
             update.questsDirty = false
             update.questReason = nil
-
-            local refreshed = CallRefresh("quest", { "RefreshNow", "RequestRefresh", "Refresh" }, questReason)
-            if not refreshed then
-                update.questsDirty = true
-                update.questReason = questReason
-            end
-        else
-            update.questsDirty = true
-            update.questReason = update.questReason or questReason
+            CallRefresh("quest", { "RefreshNow", "RequestRefresh", "Refresh" }, questReason)
         end
     end
 
     if achievementsDirty then
         local achievementSynced = SyncStructureIfDirty("achievement", achievementReason)
-        if IsDebugLoggingEnabled() then
-            DebugLog(string.format(
-                "ProcessUpdates achievement syncBeforeRefresh=%s",
-                tostring(achievementSynced)
-            ))
-        end
-
         if achievementSynced then
             update.achievementsDirty = false
             update.achievementReason = nil
-
-            local refreshed = CallRefresh("achievement", { "RefreshNow", "RequestRefresh", "Refresh" }, achievementReason)
-            if not refreshed then
-                update.achievementsDirty = true
-                update.achievementReason = achievementReason
-            end
-        else
-            update.achievementsDirty = true
-            update.achievementReason = update.achievementReason or achievementReason
+            CallRefresh("achievement", { "RefreshNow", "RequestRefresh", "Refresh" }, achievementReason)
         end
     end
 
@@ -651,26 +542,12 @@ local function FlushCoordinatorUpdates(triggerReason)
         update.layoutReason = nil
 
         if update.questsDirty ~= true and update.achievementsDirty ~= true then
-            local refreshed = TrackerRuntime.RequestFullRefresh(layoutReason)
-            if not refreshed then
-                update.layoutDirty = true
-                update.layoutReason = layoutReason
-            end
+            TrackerRuntime.RequestFullRefresh(layoutReason)
         end
     end
 end
 
 function TrackerRuntime.ProcessUpdates(triggerReason)
-    if state.transientVisible == false then
-        if IsDebugLoggingEnabled() then
-            DebugLog(string.format(
-                "ProcessUpdates(%s) deferred (transient hidden)",
-                tostring(triggerReason)
-            ))
-        end
-        return
-    end
-
     if IsDebugLoggingEnabled() then
         DebugLog(string.format("ProcessUpdates(%s)", tostring(triggerReason)))
     end
