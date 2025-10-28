@@ -30,9 +30,6 @@ local TRACKER_KEYS = {
 local state = {
     hostControl = nil,
     hostHidden = false,
-    hostVisible = true,
-    policyVisible = true,
-    transientVisible = true,
     isInCombat = false,
     hideInCombatEnabled = false,
     visibilityInitialized = false,
@@ -84,7 +81,6 @@ local function EnsureVisibilitySettings()
     end
 
     state.hideInCombatEnabled = settings.hideInCombat == true
-    state.policyVisible = not (state.hideInCombatEnabled and state.isInCombat)
 end
 
 local function IsDebugLoggingEnabled()
@@ -184,36 +180,25 @@ local function ReapplyTrackerVisibility(trackerKey, reason)
     ApplyVisibility(trackerKey, trackerState.hidden, reason)
 end
 
-local function ApplyFinalVisibility(reason, forceReapply)
-    local policyVisible = state.policyVisible ~= false
-    local transientVisible = state.transientVisible ~= false
-    local finalVisible = policyVisible and transientVisible
-    local finalHidden = not finalVisible
-
-    local host = state.hostControl
-    if host and host.SetHidden and (state.hostHidden ~= finalHidden or forceReapply) then
-        host:SetHidden(finalHidden)
-    end
-
-    local changed = state.hostHidden ~= finalHidden
-    state.hostHidden = finalHidden
-    state.hostVisible = not finalHidden
-
-    if changed or forceReapply then
-        for trackerKey in pairs(TRACKER_KEYS) do
-            ReapplyTrackerVisibility(trackerKey, reason or "host-visibility")
-        end
-    end
-
-    return changed
-end
-
 local function ApplyVisibilityPolicy(reason, forceReapply)
     EnsureVisibilitySettings()
 
     local shouldHide = state.hideInCombatEnabled and state.isInCombat
-    state.policyVisible = not shouldHide
-    ApplyFinalVisibility(reason, forceReapply)
+    local previous = state.hostHidden
+    state.hostHidden = shouldHide == true
+
+    local host = state.hostControl
+    if host and host.SetHidden then
+        if forceReapply or previous ~= state.hostHidden then
+            host:SetHidden(state.hostHidden)
+        end
+    end
+
+    if forceReapply or previous ~= state.hostHidden then
+        for trackerKey in pairs(TRACKER_KEYS) do
+            ReapplyTrackerVisibility(trackerKey, reason or "host-visibility")
+        end
+    end
 end
 
 local function IsTrackerActive(trackerKey)
@@ -262,12 +247,6 @@ function TrackerRuntime.RegisterHostControls(options)
     EnsureVisibilitySettings()
 
     state.hostControl = options.host or state.hostControl
-    if state.hostControl and state.hostControl.IsHidden then
-        local hostHidden = state.hostControl:IsHidden() == true
-        state.hostHidden = hostHidden
-        state.hostVisible = not hostHidden
-        state.transientVisible = not hostHidden
-    end
     if options.quest then
         state.quest.control = options.quest
         state.quest.appliedHidden = nil
@@ -291,9 +270,6 @@ function TrackerRuntime.UnregisterHostControls()
     state.quest.appliedHidden = nil
     state.achievement.appliedHidden = nil
     state.hostHidden = false
-    state.hostVisible = true
-    state.transientVisible = true
-    state.policyVisible = true
 end
 
 function TrackerRuntime.RegisterQuestTracker(options)
@@ -392,7 +368,7 @@ end
 ---visibility policy (for example hide-in-combat).
 ---@return boolean
 function TrackerRuntime.IsHostHiddenByPolicy()
-    return state.policyVisible == false
+    return state.hideInCombatEnabled and state.isInCombat
 end
 
 local function CallRefresh(trackerKey, methodNames, reason)
@@ -470,30 +446,6 @@ end
 
 function TrackerRuntime.GetCombatState()
     return state.isInCombat == true
-end
-
-function TrackerRuntime.OnHostTransientVisibilityChanged(isVisible, source)
-    EnsureVisibilitySettings()
-
-    local normalizedVisible = isVisible ~= false
-    state.transientVisible = normalizedVisible
-
-    local reason = source and string.format("transient-%s", tostring(source)) or "transient"
-    ApplyFinalVisibility(reason, false)
-
-    if IsDebugLoggingEnabled() then
-        DebugLog(string.format(
-            "TransientVisibility source=%s visible=%s policyVisible=%s hostHidden=%s",
-            tostring(source),
-            tostring(normalizedVisible),
-            tostring(state.policyVisible ~= false),
-            tostring(state.hostHidden)
-        ))
-    end
-
-    if normalizedVisible and state.hostHidden == false then
-        TrackerRuntime.ProcessUpdates(reason)
-    end
 end
 
 local function FlushCoordinatorUpdates(triggerReason)

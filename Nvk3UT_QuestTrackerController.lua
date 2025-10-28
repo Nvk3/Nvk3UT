@@ -4170,10 +4170,6 @@ function QuestTrackerController.FlagStructureDirty(reason)
     FlagStructureDirtyInternal(reason or "external")
 end
 
-function QuestTrackerController.HasPendingStructureChanges()
-    return state.structureDirty == true
-end
-
 function QuestTrackerController.SyncStructureIfDirty(reason)
     local syncReason = reason or "sync"
 

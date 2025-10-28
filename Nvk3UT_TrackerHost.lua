@@ -703,18 +703,6 @@ local function debugLog(...)
     end
 end
 
-local function notifyRuntimeOfHostVisibility(isVisible, source)
-    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
-    if not (runtime and runtime.OnHostTransientVisibilityChanged) then
-        return
-    end
-
-    local ok, err = pcall(runtime.OnHostTransientVisibilityChanged, runtime, isVisible, source)
-    if not ok then
-        debugLog("Failed to relay transient visibility", err)
-    end
-end
-
 setScrollOffset = function(rawOffset, skipScrollbarUpdate)
     local maxOffset = state.scrollMaxOffset or 0
     if rawOffset == nil then
@@ -1594,7 +1582,6 @@ local function applyWindowVisibility()
     local shouldHide = baseShouldHide or (runtimeHidden and not previewActive)
 
     state.root:SetHidden(shouldHide)
-    notifyRuntimeOfHostVisibility(not baseShouldHide, "host-visibility")
 
     if lamPreview.active and previewActive then
         lamPreview.windowPreviewApplied = true
@@ -2297,7 +2284,6 @@ function TrackerHost.OnLamPanelClosed()
         and state.root
     then
         state.root:SetHidden(not lamPreview.wasWindowVisibleBeforeLAM)
-        notifyRuntimeOfHostVisibility(lamPreview.wasWindowVisibleBeforeLAM == true, "lam-preview-close")
     end
 
     lamPreview.windowPreviewApplied = false
@@ -2433,7 +2419,6 @@ function TrackerHost.Shutdown()
         state.root:SetHandler("OnResizeStop", nil)
         state.root:SetHandler("OnMouseWheel", nil)
         state.root:SetHidden(true)
-        notifyRuntimeOfHostVisibility(false, "shutdown")
         state.root:SetParent(nil)
     end
     state.root = nil
@@ -2476,7 +2461,6 @@ function TrackerHost.EnsureVisible(options)
 
     if state.root and state.root.SetHidden then
         state.root:SetHidden(false)
-        notifyRuntimeOfHostVisibility(true, "ensure-visible")
     end
 
     if options.bringToFront and state.root and state.root.BringWindowToTop then
