@@ -85,7 +85,7 @@ local state = {
     snapshot = nil,
     categoryControls = {},
     questControls = {},
-    combatHidden = false,
+    hostHidden = false,
     pendingRefresh = false,
     contentWidth = 0,
     contentHeight = 0,
@@ -3536,26 +3536,23 @@ local function Rebuild()
     end
 end
 
-local function RefreshVisibility()
+local function ApplyHostVisibilityInternal(hidden, reason)
     if not state.control then
         return
     end
 
-    local hidden = false
-
-    if state.opts.active == false then
-        hidden = true
-    elseif state.opts.hideInCombat then
-        hidden = state.combatHidden
+    local normalized = hidden and true or false
+    if state.hostHidden == normalized then
+        return
     end
 
-    state.control:SetHidden(hidden)
+    state.hostHidden = normalized
+    state.control:SetHidden(normalized)
     NotifyHostContentChanged()
-end
 
-local function ApplyCombatState(inCombat)
-    state.combatHidden = inCombat and true or false
-    RefreshVisibility()
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format("HOST_VISIBILITY -> %s (%s)", normalized and "hidden" or "shown", tostring(reason)))
+    end
 end
 
 function QuestTracker.Init(parentControl, opts)
@@ -3569,6 +3566,11 @@ function QuestTracker.Init(parentControl, opts)
     state.container = parentControl
     if state.control and state.control.SetResizeToFitDescendents then
         state.control:SetResizeToFitDescendents(true)
+    end
+    if state.control and state.control.IsHidden then
+        state.hostHidden = state.control:IsHidden() == true
+    else
+        state.hostHidden = false
     end
 
     EnsureSavedVars()
@@ -3590,20 +3592,12 @@ function QuestTracker.Init(parentControl, opts)
 
     RegisterTrackingEvents()
 
-    if state.opts.hideInCombat then
-        local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
-        local inCombat
-        if runtime and runtime.GetCombatState then
-            inCombat = runtime.GetCombatState()
-        elseif IsUnitInCombat then
-            local ok, value = pcall(IsUnitInCombat, "player")
-            if ok then
-                inCombat = value
-            end
-        end
-        if inCombat ~= nil then
-            state.combatHidden = inCombat and true or false
-        end
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and runtime.RegisterQuestTracker then
+        runtime.RegisterQuestTracker({
+            tracker = QuestTracker,
+            control = state.control,
+        })
     end
 
     SubscribeToQuestModel()
@@ -3615,7 +3609,9 @@ function QuestTracker.Init(parentControl, opts)
         OnPlayerActivated()
     end
 
-    RefreshVisibility()
+    if runtime and runtime.UpdateQuestVisibility then
+        runtime.UpdateQuestVisibility("init")
+    end
 
     local questModel = Nvk3UT and Nvk3UT.QuestModel
     local snapshot = state.snapshot
@@ -3639,6 +3635,11 @@ function QuestTracker.Shutdown()
 
     UnregisterTrackingEvents()
     UnsubscribeFromQuestModel()
+
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and runtime.UnregisterQuestTracker then
+        runtime.UnregisterQuestTracker()
+    end
 
     if state.categoryPool then
         state.categoryPool:ReleaseAllObjects()
@@ -3681,12 +3682,16 @@ function QuestTracker.Shutdown()
     state.selectedQuestKey = nil
     state.isRebuildInProgress = false
     state.questModelSubscription = nil
+    state.hostHidden = false
     NotifyHostContentChanged()
 end
 
 function QuestTracker.SetActive(active)
     state.opts.active = active
-    RefreshVisibility()
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and runtime.UpdateQuestVisibility then
+        runtime.UpdateQuestVisibility("active-toggle")
+    end
     NotifyStatusRefresh()
 end
 
@@ -3699,28 +3704,10 @@ function QuestTracker.ApplySettings(settings)
     state.opts.autoExpand = settings.autoExpand ~= false
     state.opts.autoTrack = settings.autoTrack ~= false
     state.opts.active = (settings.active ~= false)
-
-    if state.isInitialized then
-        if state.opts.hideInCombat then
-            local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
-            local inCombat
-            if runtime and runtime.GetCombatState then
-                inCombat = runtime.GetCombatState()
-            elseif IsUnitInCombat then
-                local ok, value = pcall(IsUnitInCombat, "player")
-                if ok then
-                    inCombat = value
-                end
-            end
-            if inCombat ~= nil then
-                state.combatHidden = inCombat and true or false
-            end
-        else
-            state.combatHidden = false
-        end
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and runtime.UpdateQuestVisibility then
+        runtime.UpdateQuestVisibility("settings")
     end
-
-    RefreshVisibility()
     RequestRefresh()
     NotifyStatusRefresh()
 end
@@ -3737,10 +3724,6 @@ function QuestTracker.OnPlayerActivated()
 
     state.pendingActivation = false
     OnPlayerActivated()
-end
-
-function QuestTracker.OnCombatStateChanged(inCombat)
-    ApplyCombatState(inCombat)
 end
 
 function QuestTracker.ApplyTheme(settings)
@@ -3762,6 +3745,14 @@ end
 
 function QuestTracker.IsActive()
     return state.opts.active ~= false
+end
+
+function QuestTracker.ShouldHideInCombat()
+    return state.opts.hideInCombat == true
+end
+
+function QuestTracker.ApplyHostVisibility(hidden, reason)
+    ApplyHostVisibilityInternal(hidden, reason)
 end
 
 function QuestTracker.RequestRefresh()

@@ -1514,6 +1514,15 @@ local function createContainers()
         end
     end
 
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and runtime.RegisterHostControls then
+        runtime.RegisterHostControls({
+            host = state.root,
+            quest = state.questContainer,
+            achievement = state.achievementContainer,
+        })
+    end
+
     applyWindowBars()
     refreshScroll()
 end
@@ -2315,6 +2324,11 @@ function TrackerHost.Shutdown()
     end
     state.questContainer = nil
     Nvk3UT.UI.QuestContainer = nil
+
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and runtime.UnregisterHostControls then
+        runtime.UnregisterHostControls()
+    end
 
     if state.footerBar then
         state.footerBar:SetHidden(true)

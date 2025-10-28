@@ -119,6 +119,7 @@ local state = {
     contentWidth = 0,
     contentHeight = 0,
     pendingFocusAchievementId = nil,
+    hostHidden = false,
 }
 
 local function ApplyLabelDefaults(label)
@@ -958,14 +959,23 @@ local function RequestRefresh()
     end
 end
 
-local function RefreshVisibility()
+local function ApplyHostVisibilityInternal(hidden, reason)
     if not state.control then
         return
     end
 
-    local hidden = state.opts and state.opts.active == false
-    state.control:SetHidden(hidden)
+    local normalized = hidden and true or false
+    if state.hostHidden == normalized then
+        return
+    end
+
+    state.hostHidden = normalized
+    state.control:SetHidden(normalized)
     NotifyHostContentChanged()
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format("HOST_VISIBILITY -> %s (%s)", normalized and "hidden" or "shown", tostring(reason)))
+    end
 end
 
 local function ResetLayoutState()
@@ -1634,6 +1644,11 @@ function AchievementTracker.Init(parentControl, opts)
     if state.control and state.control.SetResizeToFitDescendents then
         state.control:SetResizeToFitDescendents(true)
     end
+    if state.control and state.control.IsHidden then
+        state.hostHidden = state.control:IsHidden() == true
+    else
+        state.hostHidden = false
+    end
     EnsureSavedVars()
 
     state.opts = {}
@@ -1647,13 +1662,24 @@ function AchievementTracker.Init(parentControl, opts)
         AchievementTracker.ApplySettings(opts)
     end
 
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and runtime.RegisterAchievementTracker then
+        runtime.RegisterAchievementTracker({
+            tracker = AchievementTracker,
+            control = state.control,
+        })
+    end
+
     SubscribeToModel()
 
     state.snapshot = Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.GetSnapshot and Nvk3UT.AchievementModel.GetSnapshot()
 
     state.isInitialized = true
 
-    RefreshVisibility()
+    if runtime and runtime.UpdateAchievementVisibility then
+        runtime.UpdateAchievementVisibility("init")
+    end
+
     AchievementTracker.Refresh()
 end
 
@@ -1671,6 +1697,11 @@ end
 
 function AchievementTracker.Shutdown()
     UnsubscribeFromModel()
+
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and runtime.UnregisterAchievementTracker then
+        runtime.UnregisterAchievementTracker()
+    end
 
     ReleaseAll(state.categoryPool)
     ReleaseAll(state.achievementPool)
@@ -1693,6 +1724,7 @@ function AchievementTracker.Shutdown()
     state.pendingRefresh = false
     state.contentWidth = 0
     state.contentHeight = 0
+    state.hostHidden = false
     NotifyHostContentChanged()
 end
 
@@ -1728,7 +1760,10 @@ function AchievementTracker.ApplySettings(settings)
         ApplyTooltipsSetting(settings.tooltips)
     end
 
-    RefreshVisibility()
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and runtime.UpdateAchievementVisibility then
+        runtime.UpdateAchievementVisibility("settings")
+    end
     RequestRefresh()
 end
 
@@ -1781,11 +1816,25 @@ end
 
 function AchievementTracker.SetActive(active)
     state.opts.active = (active ~= false)
-    RefreshVisibility()
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and runtime.UpdateAchievementVisibility then
+        runtime.UpdateAchievementVisibility("active-toggle")
+    end
 end
 
 function AchievementTracker.RefreshVisibility()
-    RefreshVisibility()
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and runtime.UpdateAchievementVisibility then
+        runtime.UpdateAchievementVisibility("external")
+    end
+end
+
+function AchievementTracker.IsActive()
+    return state.opts.active ~= false
+end
+
+function AchievementTracker.ApplyHostVisibility(hidden, reason)
+    ApplyHostVisibilityInternal(hidden, reason)
 end
 
 function AchievementTracker.GetContentSize()
