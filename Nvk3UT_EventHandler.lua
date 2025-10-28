@@ -23,6 +23,26 @@ local state = {
     eventsRegistered = false,
 }
 
+local QUEST_STRUCTURE_EVENTS = {
+    [EVENT_QUEST_ADDED] = true,
+    [EVENT_QUEST_REMOVED] = true,
+    [EVENT_QUEST_ADVANCED] = true,
+    [EVENT_QUEST_LOG_UPDATED] = true,
+    [EVENT_QUEST_CONDITION_COUNTER_CHANGED] = true,
+}
+
+local ACHIEVEMENT_STRUCTURE_EVENTS = {
+    [EVENT_ACHIEVEMENTS_UPDATED] = true,
+    [EVENT_ACHIEVEMENT_UPDATED] = true,
+    [EVENT_ACHIEVEMENT_AWARDED] = true,
+}
+
+local ACHIEVEMENT_TRACKED_LIST_EVENT = rawget(_G, "EVENT_ACHIEVEMENT_TRACKED_LIST_UPDATED")
+
+if ACHIEVEMENT_TRACKED_LIST_EVENT then
+    ACHIEVEMENT_STRUCTURE_EVENTS[ACHIEVEMENT_TRACKED_LIST_EVENT] = true
+end
+
 local function IsDebugLoggingEnabled()
     local sv = Nvk3UT and Nvk3UT.sv
     return sv and sv.debug == true
@@ -104,6 +124,10 @@ local function HandleQuestChanged(eventCode, ...)
 
     local reason = string.format("quest:%s", tostring(eventCode))
 
+    if QUEST_STRUCTURE_EVENTS[eventCode] then
+        Dispatch(controller, "FlagStructureDirty", reason)
+    end
+
     if IsDebugLoggingEnabled() then
         DebugLog(string.format(
             "Quest event %s controllerHandled=%s -> MarkQuestDirty",
@@ -120,6 +144,8 @@ local function HandleTrackingUpdate(eventCode, trackingType, context)
 
     Dispatch(Nvk3UT and Nvk3UT.QuestModel, "OnTrackingUpdate", eventCode, trackingType, context)
 
+    Dispatch(Nvk3UT and Nvk3UT.QuestTrackerController, "FlagStructureDirty", string.format("quest-tracking:%s", tostring(trackingType)))
+
     if IsDebugLoggingEnabled() then
         DebugLog(string.format(
             "Quest tracking update type=%s controllerHandled=%s -> MarkQuestDirty",
@@ -134,6 +160,7 @@ end
 local function ProcessPlayerActivated()
     Dispatch(Nvk3UT and Nvk3UT.QuestModel, "OnPlayerActivated")
     local questHandled = Dispatch(Nvk3UT and Nvk3UT.QuestTrackerController, "OnPlayerActivated")
+    Dispatch(Nvk3UT and Nvk3UT.QuestTrackerController, "FlagStructureDirty", "player-activated")
 
     if IsDebugLoggingEnabled() then
         DebugLog(string.format("PlayerActivated questHandled=%s -> MarkQuestDirty", tostring(questHandled)))
@@ -142,6 +169,7 @@ local function ProcessPlayerActivated()
     Dispatch(Nvk3UT and Nvk3UT.TrackerRuntime, "MarkQuestDirty", "player-activated")
 
     local achievementHandled = Dispatch(Nvk3UT and Nvk3UT.AchievementTrackerController, "OnPlayerActivated")
+    Dispatch(Nvk3UT and Nvk3UT.AchievementTrackerController, "FlagStructureDirty", "player-activated")
 
     if IsDebugLoggingEnabled() then
         DebugLog(string.format("PlayerActivated achievementHandled=%s -> MarkAchievementDirty", tostring(achievementHandled)))
@@ -165,6 +193,12 @@ local function HandleAchievementChanged(eventCode, ...)
 
     Dispatch(Nvk3UT and Nvk3UT.AchievementModel, "OnAchievementChanged", eventCode, ...)
 
+    local reason = string.format("achievement:%s", tostring(eventCode))
+
+    if ACHIEVEMENT_STRUCTURE_EVENTS[eventCode] then
+        Dispatch(Nvk3UT and Nvk3UT.AchievementTrackerController, "FlagStructureDirty", reason)
+    end
+
     if IsDebugLoggingEnabled() then
         DebugLog(string.format(
             "Achievement event %s controllerHandled=%s -> MarkAchievementDirty",
@@ -173,7 +207,7 @@ local function HandleAchievementChanged(eventCode, ...)
         ))
     end
 
-    Dispatch(Nvk3UT and Nvk3UT.TrackerRuntime, "MarkAchievementDirty", string.format("achievement:%s", tostring(eventCode)))
+    Dispatch(Nvk3UT and Nvk3UT.TrackerRuntime, "MarkAchievementDirty", reason)
 end
 
 local function RegisterEvents()
@@ -204,9 +238,8 @@ local function RegisterEvents()
     register("AchievementUpdated", EVENT_ACHIEVEMENT_UPDATED, HandleAchievementChanged)
     register("AchievementAwarded", EVENT_ACHIEVEMENT_AWARDED, HandleAchievementChanged)
 
-    local trackedListEvent = rawget(_G, "EVENT_ACHIEVEMENT_TRACKED_LIST_UPDATED")
-    if trackedListEvent then
-        register("AchievementTrackedList", trackedListEvent, HandleAchievementChanged)
+    if ACHIEVEMENT_TRACKED_LIST_EVENT then
+        register("AchievementTrackedList", ACHIEVEMENT_TRACKED_LIST_EVENT, HandleAchievementChanged)
     end
 
     state.eventsRegistered = true

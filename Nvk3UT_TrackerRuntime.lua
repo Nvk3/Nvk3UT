@@ -407,6 +407,23 @@ local function CallRefresh(trackerKey, methodNames, reason)
     return false
 end
 
+local function SyncStructureIfDirty(trackerKey, reason)
+    local tracker = ResolveTrackerModule(trackerKey)
+    if not tracker then
+        return false
+    end
+
+    local syncFunc = tracker.SyncStructureIfDirty
+    if type(syncFunc) ~= "function" then
+        return false
+    end
+
+    local description = string.format("%s.SyncStructureIfDirty", TRACKER_KEYS[trackerKey] or trackerKey)
+    local result = SafeCall(description, syncFunc, reason)
+
+    return result ~= false
+end
+
 function TrackerRuntime.ForceQuestTrackerRefresh(reason)
     return CallRefresh("quest", { "RefreshNow", "RequestRefresh", "Refresh" }, reason)
 end
@@ -458,6 +475,7 @@ local function FlushCoordinatorUpdates(triggerReason)
     end
 
     if questsDirty then
+        SyncStructureIfDirty("quest", questReason)
         update.questsDirty = false
         update.questReason = nil
         local refreshed = CallRefresh("quest", { "RefreshNow", "RequestRefresh", "Refresh" }, questReason)
@@ -468,6 +486,7 @@ local function FlushCoordinatorUpdates(triggerReason)
     end
 
     if achievementsDirty then
+        SyncStructureIfDirty("achievement", achievementReason)
         update.achievementsDirty = false
         update.achievementReason = nil
         local refreshed = CallRefresh("achievement", { "RefreshNow", "RequestRefresh", "Refresh" }, achievementReason)

@@ -107,6 +107,7 @@ local state = {
     isRebuildInProgress = false,
     questModelSubscription = nil,
     pendingActivation = false,
+    structureDirty = true,
 }
 
 local function HasValidControl(control)
@@ -2644,6 +2645,18 @@ local function ResetLayoutState()
     state.questControls = {}
 end
 
+local function FlagStructureDirtyInternal(reason)
+    if state.structureDirty then
+        return
+    end
+
+    state.structureDirty = true
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format("STRUCTURE_DIRTY reason=%s", tostring(reason)))
+    end
+end
+
 local function ReleaseAll(pool)
     if pool then
         pool:ReleaseAllObjects()
@@ -2657,15 +2670,30 @@ local function AppendRow(row)
 
     state.rows = state.rows or {}
 
-    if type(row.RefreshVisual) == "function" then
-        row:RefreshVisual()
-    end
-
     state.rows[#state.rows + 1] = row
 
     local control = row.GetControl and row:GetControl()
     if control then
         state.orderedControls[#state.orderedControls + 1] = control
+    end
+end
+
+local function RefreshRowVisuals()
+    if not state.rows then
+        return
+    end
+
+    for index = 1, #state.rows do
+        local row = state.rows[index]
+        if row then
+            if type(row.SetContainer) == "function" then
+                row:SetContainer(state.container)
+            end
+
+            if type(row.RefreshVisual) == "function" then
+                SafeCall(row.RefreshVisual, row)
+            end
+        end
     end
 end
 
@@ -2919,6 +2947,8 @@ SetCategoryExpanded = function(categoryKey, expanded, context)
         extraFields
     )
 
+    FlagStructureDirtyInternal(string.format("category:%s", tostring(key)))
+
     return true
 end
 
@@ -2966,6 +2996,8 @@ SetQuestExpanded = function(journalIndex, expanded, context)
         expanded,
         (context and context.source) or "QuestTracker:SetQuestExpanded"
     )
+
+    FlagStructureDirtyInternal(string.format("quest:%s", tostring(key)))
 
     return true
 end
@@ -3743,8 +3775,10 @@ local function TrimOrderedControlsToCategory(keepCategoryCount)
     state.lastAnchoredControl = state.orderedControls[#state.orderedControls]
 end
 
-local function RelayoutFromCategoryIndex(_)
-    Rebuild()
+local function RelayoutFromCategoryIndex(reason)
+    local relayoutReason = reason or "relayout"
+    FlagStructureDirtyInternal(relayoutReason)
+    QuestTrackerController.Refresh(relayoutReason)
 end
 
 local function ApplySnapshot(snapshot, context)
@@ -3762,6 +3796,8 @@ local function ApplySnapshot(snapshot, context)
     end
 
     NotifyStatusRefresh()
+
+    FlagStructureDirtyInternal((context and context.trigger) or "snapshot")
 end
 
 -- Apply the latest quest snapshot from the event-driven model and update the layout.
@@ -3805,13 +3841,13 @@ local function UnsubscribeFromQuestModel()
     state.questModelSubscription = nil
 end
 
-local function Rebuild()
+local function RebuildStructure(reason)
     if not HasActiveContainer() then
-        return
+        return false
     end
 
     if IsDebugLoggingEnabled() then
-        DebugLog("REBUILD_START")
+        DebugLog(string.format("REBUILD_STRUCTURE_START reason=%s", tostring(reason)))
     end
 
     state.isRebuildInProgress = true
@@ -3825,13 +3861,12 @@ local function Rebuild()
     ResetLayoutState()
 
     if not state.snapshot or not state.snapshot.categories or not state.snapshot.categories.ordered then
-        UpdateContentSize()
-        NotifyHostContentChanged()
         state.isRebuildInProgress = false
+        state.structureDirty = false
         if IsDebugLoggingEnabled() then
-            DebugLog("REBUILD_END")
+            DebugLog("REBUILD_STRUCTURE_END empty")
         end
-        return
+        return true
     end
 
     PrimeInitialSavedState()
@@ -3843,14 +3878,28 @@ local function Rebuild()
         end
     end
 
+    state.isRebuildInProgress = false
+    state.structureDirty = false
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format("REBUILD_STRUCTURE_END rows=%d", state.rows and #state.rows or 0))
+    end
+
+    return true
+end
+
+local function RefreshFromStructure(reason)
+    if not HasActiveContainer() then
+        return
+    end
+
+    RefreshRowVisuals()
     UpdateContentSize()
     NotifyHostContentChanged()
     ProcessPendingExternalReveal()
 
-    state.isRebuildInProgress = false
-
     if IsDebugLoggingEnabled() then
-        DebugLog("REBUILD_END")
+        DebugLog(string.format("REFRESH_FROM_STRUCTURE reason=%s rows=%d", tostring(reason), state.rows and #state.rows or 0))
     end
 end
 
@@ -3902,6 +3951,7 @@ function QuestTrackerController.Init(parentControl, opts)
     state.syncingTrackedState = false
     state.pendingDeselection = false
     state.pendingExternalReveal = nil
+    state.structureDirty = true
 
     QuestTrackerController.ApplyTheme(state.saved or {})
     QuestTrackerController.ApplySettings(state.saved or {})
@@ -3949,8 +3999,14 @@ function QuestTrackerController.Init(parentControl, opts)
     end
 end
 
-function QuestTrackerController.Refresh()
-    Rebuild()
+function QuestTrackerController.Refresh(reason)
+    local refreshReason = reason or "refresh"
+
+    if state.structureDirty then
+        RebuildStructure(refreshReason)
+    end
+
+    RefreshFromStructure(refreshReason)
 end
 
 function QuestTrackerController.Shutdown()
@@ -4009,6 +4065,7 @@ function QuestTrackerController.Shutdown()
     state.isRebuildInProgress = false
     state.questModelSubscription = nil
     state.hostHidden = false
+    state.structureDirty = true
     NotifyHostContentChanged()
 end
 
@@ -4068,11 +4125,31 @@ function QuestTrackerController.ApplyTheme(settings)
     RequestRefresh()
 end
 
+function QuestTrackerController.FlagStructureDirty(reason)
+    FlagStructureDirtyInternal(reason or "external")
+end
+
+function QuestTrackerController.SyncStructureIfDirty(reason)
+    if not state.structureDirty then
+        return false
+    end
+
+    local syncReason = reason or "sync"
+    local rebuilt = RebuildStructure(syncReason)
+
+    if not rebuilt then
+        FlagStructureDirtyInternal(syncReason)
+        return false
+    end
+
+    return true
+end
+
 function QuestTrackerController.RefreshNow(reason)
     if IsDebugLoggingEnabled() then
         DebugLog(string.format("REFRESH_NOW reason=%s", tostring(reason)))
     end
-    QuestTrackerController.Refresh()
+    QuestTrackerController.Refresh(reason)
 end
 
 function QuestTrackerController.OnQuestChanged(...)

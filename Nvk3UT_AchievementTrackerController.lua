@@ -123,6 +123,7 @@ local state = {
     contentHeight = 0,
     pendingFocusAchievementId = nil,
     hostHidden = false,
+    structureDirty = true,
 }
 
 local function HasValidControl(control)
@@ -288,6 +289,20 @@ local function DebugLog(...)
     elseif print then
         print("[" .. MODULE_NAME .. "]", ...)
     end
+end
+
+local function SafeCall(func, ...)
+    if type(func) ~= "function" then
+        return nil, "no function"
+    end
+
+    local ok, result = pcall(func, ...)
+    if not ok then
+        DebugLog(string.format("SafeCall failure: %s", tostring(result)))
+        return nil, result
+    end
+
+    return result, nil
 end
 
 local function EscapeDebugString(value)
@@ -994,6 +1009,18 @@ local function ResetLayoutState()
     state.lastAnchoredControl = nil
 end
 
+local function FlagStructureDirtyInternal(reason)
+    if state.structureDirty then
+        return
+    end
+
+    state.structureDirty = true
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format("STRUCTURE_DIRTY reason=%s", tostring(reason)))
+    end
+end
+
 local function ReleaseAll(pool)
     if pool then
         pool:ReleaseAllObjects()
@@ -1007,15 +1034,30 @@ local function AppendRow(row)
 
     state.rows = state.rows or {}
 
-    if type(row.RefreshVisual) == "function" then
-        row:RefreshVisual()
-    end
-
     state.rows[#state.rows + 1] = row
 
     local control = row.GetControl and row:GetControl()
     if control then
         state.orderedControls[#state.orderedControls + 1] = control
+    end
+end
+
+local function RefreshRowVisuals()
+    if not state.rows then
+        return
+    end
+
+    for index = 1, #state.rows do
+        local row = state.rows[index]
+        if row then
+            if type(row.SetContainer) == "function" then
+                row:SetContainer(state.container)
+            end
+
+            if type(row.RefreshVisual) == "function" then
+                SafeCall(row.RefreshVisual, row)
+            end
+        end
     end
 end
 
@@ -1121,6 +1163,7 @@ local function SetCategoryExpanded(expanded, context)
             afterExpanded,
             (context and context.source) or "AchievementTracker:SetCategoryExpanded"
         )
+        FlagStructureDirtyInternal("achievement-category")
     end
 end
 
@@ -1128,7 +1171,15 @@ local function SetEntryExpanded(achievementId, expanded)
     if not state.saved or not achievementId then
         return
     end
-    state.saved.entryExpanded[achievementId] = expanded and true or false
+    state.saved.entryExpanded = state.saved.entryExpanded or {}
+    local normalized = expanded and true or false
+    local previous = state.saved.entryExpanded[achievementId]
+    if previous == normalized then
+        return
+    end
+
+    state.saved.entryExpanded[achievementId] = normalized
+    FlagStructureDirtyInternal(string.format("achievement:%s", tostring(achievementId)))
 end
 
 local function IsEntryExpanded(achievementId)
@@ -1936,9 +1987,13 @@ local function ApplyPendingFocus()
     end
 end
 
-local function Rebuild()
+local function RebuildStructure(reason)
     if not HasValidControl(state.container) then
-        return
+        return false
+    end
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format("REBUILD_STRUCTURE_START reason=%s", tostring(reason)))
     end
 
     EnsurePools()
@@ -1951,14 +2006,34 @@ local function Rebuild()
 
     LayoutCategory()
 
+    state.structureDirty = false
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format("REBUILD_STRUCTURE_END rows=%d", state.rows and #state.rows or 0))
+    end
+
+    return true
+end
+
+local function RefreshFromStructure(reason)
+    if not HasValidControl(state.container) then
+        return
+    end
+
+    RefreshRowVisuals()
     UpdateContentSize()
     NotifyHostContentChanged()
     ApplyPendingFocus()
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format("REFRESH_FROM_STRUCTURE reason=%s rows=%d", tostring(reason), state.rows and #state.rows or 0))
+    end
 end
 
 local function OnSnapshotUpdated(snapshot)
     state.snapshot = snapshot
-    Rebuild()
+    FlagStructureDirtyInternal("snapshot")
+    AchievementTrackerController.Refresh("snapshot")
 end
 
 local function SubscribeToModel()
@@ -2007,6 +2082,7 @@ function AchievementTrackerController.Init(parentControl, opts)
 
     state.opts = {}
     state.fonts = {}
+    state.structureDirty = true
 
     AchievementTrackerController.ApplyTheme(state.saved or {})
     AchievementTrackerController.ApplySettings(state.saved or {})
@@ -2041,7 +2117,7 @@ function AchievementTrackerController.Init(parentControl, opts)
     end
 end
 
-function AchievementTrackerController.Refresh()
+function AchievementTrackerController.Refresh(reason)
     if not state.isInitialized then
         return
     end
@@ -2050,7 +2126,13 @@ function AchievementTrackerController.Refresh()
         state.snapshot = Nvk3UT.AchievementModel.GetSnapshot() or state.snapshot
     end
 
-    Rebuild()
+    local refreshReason = reason or "refresh"
+
+    if state.structureDirty then
+        RebuildStructure(refreshReason)
+    end
+
+    RefreshFromStructure(refreshReason)
 end
 
 function AchievementTrackerController.Shutdown()
@@ -2084,6 +2166,7 @@ function AchievementTrackerController.Shutdown()
     state.contentWidth = 0
     state.contentHeight = 0
     state.hostHidden = false
+    state.structureDirty = true
     NotifyHostContentChanged()
 end
 
@@ -2188,6 +2271,26 @@ function AchievementTrackerController.RefreshVisibility()
     end
 end
 
+function AchievementTrackerController.FlagStructureDirty(reason)
+    FlagStructureDirtyInternal(reason or "external")
+end
+
+function AchievementTrackerController.SyncStructureIfDirty(reason)
+    if not state.structureDirty then
+        return false
+    end
+
+    local syncReason = reason or "sync"
+    local rebuilt = RebuildStructure(syncReason)
+
+    if not rebuilt then
+        FlagStructureDirtyInternal(syncReason)
+        return false
+    end
+
+    return true
+end
+
 function AchievementTrackerController.IsActive()
     return state.opts.active ~= false
 end
@@ -2200,7 +2303,7 @@ function AchievementTrackerController.RefreshNow(reason)
     if IsDebugLoggingEnabled() then
         DebugLog(string.format("REFRESH_NOW reason=%s", tostring(reason)))
     end
-    AchievementTrackerController.Refresh()
+    AchievementTrackerController.Refresh(reason)
 end
 
 function AchievementTrackerController.OnAchievementProgress(...)
