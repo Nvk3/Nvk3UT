@@ -1516,7 +1516,9 @@ local function LayoutObjective(achievement, objective)
                 ctrl.label:SetColor(colorR, colorG, colorB, colorA)
             end
 
-            if ctrl.SetHidden then
+            if type(r.SetHidden) == "function" then
+                r:SetHidden(false)
+            elseif ctrl.SetHidden then
                 ctrl:SetHidden(false)
             end
         end)
@@ -1630,7 +1632,9 @@ local function LayoutAchievement(achievement)
             ApplyBaseColor(ctrl, colorR, colorG, colorB, colorA)
             UpdateAchievementIconSlot(ctrl)
 
-            if ctrl.SetHidden then
+            if type(r.SetHidden) == "function" then
+                r:SetHidden(false)
+            elseif ctrl.SetHidden then
                 ctrl:SetHidden(false)
             end
         end)
@@ -1825,7 +1829,9 @@ local function LayoutCategory()
             ApplyBaseColor(ctrl, colorR, colorG, colorB, colorA)
             UpdateCategoryToggle(ctrl, expanded)
 
-            if ctrl.SetHidden then
+            if type(r.SetHidden) == "function" then
+                r:SetHidden(false)
+            elseif ctrl.SetHidden then
                 ctrl:SetHidden(false)
             end
         end)

@@ -43,6 +43,7 @@ function QuestTrackerRow:New(params)
     row.containerProvider = params.containerProvider
     row.container = params.container
     row.cachedHeight = 0
+    row.explicitHidden = nil
 
     return row
 end
@@ -110,6 +111,10 @@ function QuestTrackerRow:IsRenderable()
 end
 
 function QuestTrackerRow:IsHidden()
+    if self.explicitHidden ~= nil then
+        return self.explicitHidden
+    end
+
     local control = self.control
     if not isControl(control) then
         return true
@@ -122,8 +127,15 @@ function QuestTrackerRow:IsHidden()
         return false
     end)
 
-    if ok then
-        return hidden == true
+    if ok and hidden then
+        local container = self:GetContainer()
+        if isControl(container) and type(container.IsHidden) == "function" then
+            local containerOk, containerHidden = pcall(container.IsHidden, container)
+            if containerOk and containerHidden then
+                return false
+            end
+        end
+        return true
     end
 
     return false
@@ -151,6 +163,20 @@ end
 
 function QuestTrackerRow:GetCachedHeight()
     return self.cachedHeight or 0
+end
+
+function QuestTrackerRow:SetHidden(hidden)
+    local normalized = hidden == true
+    self.explicitHidden = normalized
+
+    local control = self.control
+    if isControl(control) and type(control.SetHidden) == "function" then
+        control:SetHidden(normalized)
+    end
+end
+
+function QuestTrackerRow:IsExplicitlyHidden()
+    return self.explicitHidden
 end
 
 function QuestTrackerRow:RefreshVisual()

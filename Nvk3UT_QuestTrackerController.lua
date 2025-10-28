@@ -3349,7 +3349,9 @@ local function LayoutCondition(condition)
                 ctrl.label:SetColor(colorR, colorG, colorB, colorA)
             end
 
-            if ctrl.SetHidden then
+            if type(r.SetHidden) == "function" then
+                r:SetHidden(false)
+            elseif ctrl.SetHidden then
                 ctrl:SetHidden(false)
             end
         end)
@@ -3466,7 +3468,9 @@ local function LayoutQuest(quest)
                 state.questControls[quest.journalIndex] = ctrl
             end
 
-            if ctrl.SetHidden then
+            if type(r.SetHidden) == "function" then
+                r:SetHidden(false)
+            elseif ctrl.SetHidden then
                 ctrl:SetHidden(false)
             end
         end)
@@ -3626,7 +3630,9 @@ local function LayoutCategory(category)
             ApplyBaseColor(ctrl, rowR, rowG, rowB, rowA)
             UpdateCategoryToggle(ctrl, expanded)
 
-            if ctrl.SetHidden then
+            if type(r.SetHidden) == "function" then
+                r:SetHidden(false)
+            elseif ctrl.SetHidden then
                 ctrl:SetHidden(false)
             end
         end)
