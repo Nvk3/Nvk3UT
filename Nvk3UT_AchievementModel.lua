@@ -112,7 +112,7 @@ local function NormalizeAchievementId(value)
 end
 
 local function LogDebug(self, ...)
-    if not self.debugEnabled then
+    if not self or not self.debugEnabled then
         return
     end
 
@@ -121,6 +121,59 @@ local function LogDebug(self, ...)
     elseif print then
         print("[" .. MODEL_NAME .. "]", ...)
     end
+end
+
+local function Debugf(self, fmt, ...)
+    if not self or not self.debugEnabled or not fmt then
+        return
+    end
+
+    LogDebug(self, string.format(fmt, ...))
+end
+
+local function SummarizeAchievements(entries, limit)
+    if type(entries) ~= "table" then
+        return "(no list)"
+    end
+
+    local pieces = {}
+    local count = #entries
+    local maxItems = tonumber(limit) or 3
+    if maxItems < 1 then
+        maxItems = 1
+    end
+
+    local upper = math.min(count, maxItems)
+    for index = 1, upper do
+        local entry = entries[index]
+        if entry then
+            local id = entry.id or "?"
+            local name = entry.name or "?"
+            pieces[#pieces + 1] = string.format("%s:%s", tostring(id), tostring(name))
+        end
+    end
+
+    if count > upper then
+        pieces[#pieces + 1] = string.format("(+%d more)", count - upper)
+    elseif count == 0 then
+        pieces[#pieces + 1] = "<empty>"
+    end
+
+    return table.concat(pieces, "; ")
+end
+
+local function FormatArgs(...)
+    local count = select("#", ...)
+    if count == 0 then
+        return "<none>"
+    end
+
+    local parts = {}
+    for index = 1, count do
+        parts[index] = tostring(select(index, ...))
+    end
+
+    return table.concat(parts, ",")
 end
 
 local function NotifySubscribers(self)
@@ -396,6 +449,8 @@ local function BuildSnapshot(self)
     local entries = {}
     local completeCount = 0
 
+    Debugf(self, "[Collect] favorites=%d", #favoriteIds)
+
     for index = 1, #favoriteIds do
         local achievementId = favoriteIds[index]
         local entry = BuildAchievementEntry(self, achievementId)
@@ -406,13 +461,14 @@ local function BuildSnapshot(self)
             end
 
             local category = entry.category or {}
-            LogDebug(
+            Debugf(
                 self,
-                "Favorite entry",
-                achievementId,
-                category.categoryIndex,
-                category.subCategoryIndex,
-                category.achievementIndex
+                "[Collect] entry id=%s category=%s/%s index=%s complete=%s",
+                tostring(achievementId),
+                tostring(category.categoryIndex),
+                tostring(category.subCategoryIndex),
+                tostring(category.achievementIndex),
+                tostring(entry.flags.isComplete)
             )
         end
     end
@@ -481,6 +537,15 @@ local function BuildSnapshot(self)
 
     snapshot.signature = table.concat(signatureParts, "\31")
 
+    Debugf(
+        self,
+        "[Rebuild] entries=%d complete=%d signature=%s sample=%s",
+        #entries,
+        completeCount,
+        tostring(snapshot.signature),
+        SummarizeAchievements(entries, 5)
+    )
+
     return snapshot
 end
 
@@ -494,11 +559,13 @@ end
 
 local function PerformRebuild(self)
     if not self.isInitialized then
+        Debugf(self, "[Rebuild] aborted - not initialized")
         return false
     end
 
     local snapshot = BuildSnapshot(self)
     if not SnapshotsDiffer(self.currentSnapshot, snapshot) then
+        Debugf(self, "[Rebuild] unchanged signature=%s", tostring(snapshot and snapshot.signature))
         return false
     end
 
@@ -506,17 +573,21 @@ local function PerformRebuild(self)
     self.currentSnapshot = snapshot
     NotifySubscribers(self)
 
+    Debugf(self, "[Rebuild] applied revision=%d total=%d", snapshot.revision, snapshot.total or 0)
+
     return true
 end
 
 local function ScheduleRebuild(self)
     if self.pendingRebuild then
+        Debugf(self, "[Schedule] already pending")
         return
     end
 
     self.pendingRebuild = true
 
     local interval = self.debounceMs or DEFAULT_DEBOUNCE_MS
+    Debugf(self, "[Schedule] delay=%dms", interval or -1)
 
     EVENT_MANAGER:RegisterForUpdate(
         REBUILD_IDENTIFIER,
@@ -531,29 +602,35 @@ end
 
 local function ForceRebuild(self)
     if not self.isInitialized then
+        Debugf(self, "[ForceRebuild] aborted - not initialized")
         return false
     end
 
     if self.pendingRebuild then
         EVENT_MANAGER:UnregisterForUpdate(REBUILD_IDENTIFIER)
         self.pendingRebuild = false
+        Debugf(self, "[ForceRebuild] cleared pending update")
     end
 
     local updated = PerformRebuild(self)
+    Debugf(self, "[ForceRebuild] result=%s", tostring(updated))
     return updated == true
 end
 
 local function OnAchievementChanged(...)
     local self = AchievementModel
     if not self.isInitialized then
+        Debugf(self, "[Event] OnAchievementChanged ignored - not initialized")
         return
     end
 
+    Debugf(self, "[Event] OnAchievementChanged args=%s", FormatArgs(...))
     ScheduleRebuild(self)
 end
 
 function AchievementModel.OnFavoritesChanged()
     if not AchievementModel.isInitialized then
+        Debugf(AchievementModel, "[Event] OnFavoritesChanged ignored - not initialized")
         return
     end
 
@@ -562,12 +639,14 @@ end
 
 function AchievementModel.Init(opts)
     if AchievementModel.isInitialized then
+        Debugf(AchievementModel, "[Init] already initialized")
         return
     end
 
     opts = opts or {}
 
     AchievementModel.debugEnabled = opts.debug or false
+    Debugf(AchievementModel, "[Init] debug=%s", tostring(AchievementModel.debugEnabled))
 
     local requestedDebounce = tonumber(opts.debounceMs)
     if requestedDebounce then
@@ -581,6 +660,7 @@ function AchievementModel.Init(opts)
 
     ForceRebuild(AchievementModel)
     NotifySubscribers(AchievementModel)
+    Debugf(AchievementModel, "[Init] initial snapshot revision=%s", AchievementModel.currentSnapshot and AchievementModel.currentSnapshot.revision or "nil")
 end
 
 function AchievementModel.Shutdown()

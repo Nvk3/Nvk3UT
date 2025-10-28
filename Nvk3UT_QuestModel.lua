@@ -1474,7 +1474,7 @@ local function CompareQuestEntries(left, right)
 end
 
 local function LogDebug(self, ...)
-    if not self.debugEnabled then
+    if not self or not self.debugEnabled then
         return
     end
 
@@ -1483,6 +1483,59 @@ local function LogDebug(self, ...)
     elseif print then
         print("[" .. QUEST_MODEL_NAME .. "]", ...)
     end
+end
+
+local function Debugf(self, fmt, ...)
+    if not self or not self.debugEnabled or not fmt then
+        return
+    end
+
+    LogDebug(self, string.format(fmt, ...))
+end
+
+local function SummarizeQuestSample(quests, limit)
+    if type(quests) ~= "table" then
+        return "(no list)"
+    end
+
+    local pieces = {}
+    local count = #quests
+    local maxItems = tonumber(limit) or 3
+    if maxItems < 1 then
+        maxItems = 1
+    end
+
+    local upper = math.min(count, maxItems)
+    for index = 1, upper do
+        local quest = quests[index]
+        if quest then
+            local journalIndex = quest.journalIndex or quest.meta and quest.meta.journalIndex or "?"
+            local name = quest.name or quest.meta and quest.meta.questName or "?"
+            pieces[#pieces + 1] = string.format("%s:%s", tostring(journalIndex), tostring(name))
+        end
+    end
+
+    if count > upper then
+        pieces[#pieces + 1] = string.format("(+%d more)", count - upper)
+    elseif count == 0 then
+        pieces[#pieces + 1] = "<empty>"
+    end
+
+    return table.concat(pieces, "; ")
+end
+
+local function FormatArgs(...)
+    local count = select("#", ...)
+    if count == 0 then
+        return "<none>"
+    end
+
+    local parts = {}
+    for index = 1, count do
+        parts[index] = tostring(select(index, ...))
+    end
+
+    return table.concat(parts, ",")
 end
 
 local function NotifySubscribers(self)
@@ -1572,19 +1625,33 @@ CollectQuestEntries = function()
     local quests = {}
 
     if not GetNumJournalQuests then
+        Debugf(QuestModel, "[Collect] GetNumJournalQuests missing")
         return quests
     end
 
     local total = GetNumJournalQuests() or 0
     local questCount = math.min(total, QUEST_LOG_LIMIT)
+    Debugf(QuestModel, "[Collect] totalJournal=%d cap=%d", total, questCount)
     for journalIndex = 1, questCount do
         local questEntry = BuildQuestEntry(journalIndex)
         if questEntry then
             quests[#quests + 1] = questEntry
+        elseif QuestModel and QuestModel.debugEnabled then
+            local questName = nil
+            if type(GetJournalQuestInfo) == "function" then
+                questName = select(1, GetJournalQuestInfo(journalIndex))
+            end
+            Debugf(
+                QuestModel,
+                "[Collect] skipped journalIndex=%d name=%s",
+                journalIndex,
+                tostring(questName)
+            )
         end
     end
 
     table.sort(quests, CompareQuestEntries)
+    Debugf(QuestModel, "[Collect] built=%d sample=%s", #quests, SummarizeQuestSample(quests, 5))
     return quests
 end
 
@@ -1635,16 +1702,25 @@ local function SnapshotsDiffer(previous, current)
 end
 
 local function PerformRebuild(self)
-    if not self.isInitialized or not playerState.hasActivated then
+    if not self.isInitialized then
+        Debugf(self, "[Rebuild] aborted - not initialized")
+        return false
+    end
+
+    if not playerState.hasActivated then
+        Debugf(self, "[Rebuild] aborted - player not activated")
         return false
     end
 
     local snapshot, quests = BuildSnapshot(self)
     if not snapshot then
+        Debugf(self, "[Rebuild] snapshot missing")
         return false
     end
 
+    Debugf(self, "[Rebuild] candidates=%d signature=%s", #quests, tostring(snapshot.signature))
     if not SnapshotsDiffer(self.currentSnapshot, snapshot) then
+        Debugf(self, "[Rebuild] unchanged signature=%s", tostring(snapshot.signature))
         PersistQuests(quests)
         return false
     end
@@ -1652,22 +1728,26 @@ local function PerformRebuild(self)
     snapshot.revision = (self.currentSnapshot and self.currentSnapshot.revision or 0) + 1
     self.currentSnapshot = snapshot
     PersistQuests(quests)
+    Debugf(self, "[Rebuild] applied revision=%d quests=%d", snapshot.revision, #quests)
     NotifySubscribers(self)
     return true
 end
 
 local function ScheduleRebuild(self)
     if not playerState.hasActivated then
+        Debugf(self, "[Schedule] skipped - player not activated")
         return
     end
 
     if self.pendingRebuild then
+        Debugf(self, "[Schedule] already pending")
         return
     end
 
     self.pendingRebuild = true
 
     local interval = self.debounceMs or DEFAULT_DEBOUNCE_MS
+    Debugf(self, "[Schedule] delay=%dms", interval or -1)
 
     EVENT_MANAGER:RegisterForUpdate(
         REBUILD_IDENTIFIER,
@@ -1681,25 +1761,35 @@ local function ScheduleRebuild(self)
 end
 
 ForceRebuild = function(self)
-    if not self.isInitialized or not playerState.hasActivated then
+    if not self.isInitialized then
+        Debugf(self, "[ForceRebuild] aborted - not initialized")
+        return false
+    end
+
+    if not playerState.hasActivated then
+        Debugf(self, "[ForceRebuild] aborted - player not activated")
         return false
     end
 
     if self.pendingRebuild then
         EVENT_MANAGER:UnregisterForUpdate(REBUILD_IDENTIFIER)
         self.pendingRebuild = false
+        Debugf(self, "[ForceRebuild] cleared pending update")
     end
 
     local updated = PerformRebuild(self)
+    Debugf(self, "[ForceRebuild] result=%s", tostring(updated))
     return updated
 end
 
 local function OnQuestChanged(_, ...)
     local self = QuestModel
     if not self.isInitialized or not playerState.hasActivated then
+        Debugf(self, "[Event] OnQuestChanged ignored - initialized=%s activated=%s", tostring(self.isInitialized), tostring(playerState.hasActivated))
         return
     end
 
+    Debugf(self, "[Event] OnQuestChanged args=%s", FormatArgs(...))
     ResetBaseCategoryCache()
     ScheduleRebuild(self)
 end
@@ -1708,11 +1798,13 @@ local function OnTrackingUpdate(eventCode, trackingType)
     if trackingType ~= TRACK_TYPE_QUEST then
         return
     end
+    Debugf(QuestModel, "[Event] OnTrackingUpdate event=%s trackingType=%s", tostring(eventCode), tostring(trackingType))
     OnQuestChanged(eventCode)
 end
 
 function QuestModel.Init(opts)
     if QuestModel.isInitialized then
+        Debugf(QuestModel, "[Init] already initialized")
         return
     end
 
@@ -1721,6 +1813,7 @@ function QuestModel.Init(opts)
     EnsureSavedVars()
 
     QuestModel.debugEnabled = opts.debug or false
+    Debugf(QuestModel, "[Init] debug=%s", tostring(QuestModel.debugEnabled))
 
     local requestedDebounce = tonumber(opts.debounceMs)
     if requestedDebounce then
@@ -1740,6 +1833,7 @@ function QuestModel.Init(opts)
     end
 
     if playerState.hasActivated then
+        Debugf(QuestModel, "[Init] forcing rebuild on activation")
         ForceRebuild(QuestModel)
     end
 
@@ -1813,6 +1907,7 @@ function QuestModel.RequestImmediateRebuild(reason)
     end
 
     local updated = ForceRebuild(QuestModel)
+    Debugf(QuestModel, "[ImmediateRebuild] updated=%s", tostring(updated))
 
     if updated ~= true then
         ScheduleRebuild(QuestModel)
