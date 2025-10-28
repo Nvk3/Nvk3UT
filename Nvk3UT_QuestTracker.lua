@@ -6,7 +6,6 @@ local QuestTracker = {}
 QuestTracker.__index = QuestTracker
 
 local MODULE_NAME = addonName .. "QuestTracker"
-local EVENT_NAMESPACE = MODULE_NAME .. "_Event"
 
 local Utils = Nvk3UT and Nvk3UT.Utils
 local FormatCategoryHeaderText =
@@ -104,6 +103,7 @@ local state = {
     selectedQuestKey = nil,
     isRebuildInProgress = false,
     questModelSubscription = nil,
+    pendingActivation = false,
 }
 
 local STATE_VERSION = 1
@@ -2514,11 +2514,6 @@ local function RegisterTrackingEvents()
         return
     end
 
-    if EVENT_MANAGER then
-        EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. "TrackUpdate", EVENT_TRACKING_UPDATE, OnTrackedQuestUpdate)
-        EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. "PlayerActivated", EVENT_PLAYER_ACTIVATED, OnPlayerActivated)
-    end
-
     if FOCUSED_QUEST_TRACKER and FOCUSED_QUEST_TRACKER.RegisterCallback then
         FOCUSED_QUEST_TRACKER:RegisterCallback("QuestTrackerAssistStateChanged", OnFocusedTrackerAssistChanged)
     end
@@ -2529,11 +2524,6 @@ end
 local function UnregisterTrackingEvents()
     if not state.trackingEventsRegistered then
         return
-    end
-
-    if EVENT_MANAGER then
-        EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "TrackUpdate", EVENT_TRACKING_UPDATE)
-        EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "PlayerActivated", EVENT_PLAYER_ACTIVATED)
     end
 
     if FOCUSED_QUEST_TRACKER and FOCUSED_QUEST_TRACKER.UnregisterCallback then
@@ -3563,23 +3553,9 @@ local function RefreshVisibility()
     NotifyHostContentChanged()
 end
 
-local function OnCombatState(_, inCombat)
-    state.combatHidden = inCombat
+local function ApplyCombatState(inCombat)
+    state.combatHidden = inCombat and true or false
     RefreshVisibility()
-end
-
-local function RegisterCombatEvents()
-    if not state.opts.hideInCombat then
-        return
-    end
-
-    EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. "Combat", EVENT_PLAYER_COMBAT_STATE, OnCombatState)
-    state.combatHidden = IsUnitInCombat and IsUnitInCombat("player") or false
-    RefreshVisibility()
-end
-
-local function UnregisterCombatEvents()
-    EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "Combat", EVENT_PLAYER_COMBAT_STATE)
 end
 
 function QuestTracker.Init(parentControl, opts)
@@ -3612,17 +3588,33 @@ function QuestTracker.Init(parentControl, opts)
         QuestTracker.ApplySettings(opts)
     end
 
-    if state.opts.hideInCombat then
-        RegisterCombatEvents()
-    else
-        UnregisterCombatEvents()
-    end
-
     RegisterTrackingEvents()
+
+    if state.opts.hideInCombat then
+        local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+        local inCombat
+        if runtime and runtime.GetCombatState then
+            inCombat = runtime.GetCombatState()
+        elseif IsUnitInCombat then
+            local ok, value = pcall(IsUnitInCombat, "player")
+            if ok then
+                inCombat = value
+            end
+        end
+        if inCombat ~= nil then
+            state.combatHidden = inCombat and true or false
+        end
+    end
 
     SubscribeToQuestModel()
 
     state.isInitialized = true
+
+    if state.pendingActivation then
+        state.pendingActivation = false
+        OnPlayerActivated()
+    end
+
     RefreshVisibility()
 
     local questModel = Nvk3UT and Nvk3UT.QuestModel
@@ -3645,7 +3637,6 @@ function QuestTracker.Shutdown()
         return
     end
 
-    UnregisterCombatEvents()
     UnregisterTrackingEvents()
     UnsubscribeFromQuestModel()
 
@@ -3686,6 +3677,7 @@ function QuestTracker.Shutdown()
     state.syncingTrackedState = false
     state.pendingDeselection = false
     state.pendingExternalReveal = nil
+    state.pendingActivation = false
     state.selectedQuestKey = nil
     state.isRebuildInProgress = false
     state.questModelSubscription = nil
@@ -3710,9 +3702,20 @@ function QuestTracker.ApplySettings(settings)
 
     if state.isInitialized then
         if state.opts.hideInCombat then
-            RegisterCombatEvents()
+            local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+            local inCombat
+            if runtime and runtime.GetCombatState then
+                inCombat = runtime.GetCombatState()
+            elseif IsUnitInCombat then
+                local ok, value = pcall(IsUnitInCombat, "player")
+                if ok then
+                    inCombat = value
+                end
+            end
+            if inCombat ~= nil then
+                state.combatHidden = inCombat and true or false
+            end
         else
-            UnregisterCombatEvents()
             state.combatHidden = false
         end
     end
@@ -3720,6 +3723,24 @@ function QuestTracker.ApplySettings(settings)
     RefreshVisibility()
     RequestRefresh()
     NotifyStatusRefresh()
+end
+
+function QuestTracker.OnTrackedQuestUpdate(trackingType, context)
+    OnTrackedQuestUpdate(nil, trackingType, context)
+end
+
+function QuestTracker.OnPlayerActivated()
+    if not state.isInitialized then
+        state.pendingActivation = true
+        return
+    end
+
+    state.pendingActivation = false
+    OnPlayerActivated()
+end
+
+function QuestTracker.OnCombatStateChanged(inCombat)
+    ApplyCombatState(inCombat)
 end
 
 function QuestTracker.ApplyTheme(settings)

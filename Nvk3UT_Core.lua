@@ -247,6 +247,9 @@ local function OnLoaded(e,name)
     end
     TryEnable(1)
     if Nvk3UT.Tooltips and Nvk3UT.Tooltips.Init then Nvk3UT.Tooltips.Init() end
+    if Nvk3UT.EventHandler and Nvk3UT.EventHandler.Init then
+        pcall(Nvk3UT.EventHandler.Init)
+    end
     if Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.Init then
         pcall(Nvk3UT.TrackerHost.Init)
     end

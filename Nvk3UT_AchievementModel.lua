@@ -6,7 +6,6 @@ local AchievementModel = {}
 AchievementModel.__index = AchievementModel
 
 local MODEL_NAME = addonName .. "AchievementModel"
-local EVENT_NAMESPACE = MODEL_NAME .. "_Event"
 local REBUILD_IDENTIFIER = MODEL_NAME .. "_Rebuild"
 
 local MIN_DEBOUNCE_MS = 50
@@ -550,22 +549,6 @@ local function OnAchievementChanged(...)
     ScheduleRebuild(self)
 end
 
-local function RegisterForEvent(eventId)
-    if not eventId then
-        return
-    end
-
-    EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. tostring(eventId), eventId, OnAchievementChanged)
-end
-
-local function UnregisterEvent(eventId)
-    if not eventId then
-        return
-    end
-
-    EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. tostring(eventId), eventId)
-end
-
 function AchievementModel.OnFavoritesChanged()
     if not AchievementModel.isInitialized then
         return
@@ -593,15 +576,6 @@ function AchievementModel.Init(opts)
     AchievementModel.subscribers = {}
     AchievementModel.isInitialized = true
 
-    RegisterForEvent(EVENT_ACHIEVEMENTS_UPDATED)
-    RegisterForEvent(EVENT_ACHIEVEMENT_UPDATED)
-    RegisterForEvent(EVENT_ACHIEVEMENT_AWARDED)
-
-    local trackedListEvent = rawget(_G, "EVENT_ACHIEVEMENT_TRACKED_LIST_UPDATED")
-    if trackedListEvent then
-        RegisterForEvent(trackedListEvent)
-    end
-
     ForceRebuild(AchievementModel)
     NotifySubscribers(AchievementModel)
 end
@@ -609,15 +583,6 @@ end
 function AchievementModel.Shutdown()
     if not AchievementModel.isInitialized then
         return
-    end
-
-    UnregisterEvent(EVENT_ACHIEVEMENTS_UPDATED)
-    UnregisterEvent(EVENT_ACHIEVEMENT_UPDATED)
-    UnregisterEvent(EVENT_ACHIEVEMENT_AWARDED)
-
-    local trackedListEvent = rawget(_G, "EVENT_ACHIEVEMENT_TRACKED_LIST_UPDATED")
-    if trackedListEvent then
-        UnregisterEvent(trackedListEvent)
     end
 
     EVENT_MANAGER:UnregisterForUpdate(REBUILD_IDENTIFIER)
@@ -643,6 +608,10 @@ function AchievementModel.Subscribe(callback)
     end
 
     callback(AchievementModel.currentSnapshot)
+end
+
+function AchievementModel.OnAchievementChanged(eventCode, ...)
+    OnAchievementChanged(eventCode, ...)
 end
 
 function AchievementModel.Unsubscribe(callback)
