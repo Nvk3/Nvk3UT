@@ -1705,6 +1705,10 @@ function AchievementTrackerController.Init(parentControl, opts)
     end
 
     AchievementTrackerController.Refresh()
+
+    if runtime and type(runtime.ProcessUpdates) == "function" then
+        runtime.ProcessUpdates("achievement-init")
+    end
 end
 
 function AchievementTrackerController.Refresh()
@@ -1869,7 +1873,10 @@ function AchievementTrackerController.RefreshNow(reason)
 end
 
 function AchievementTrackerController.OnAchievementProgress(...)
-    RequestRefresh()
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if not (runtime and type(runtime.MarkAchievementDirty) == "function") then
+        RequestRefresh()
+    end
 end
 
 function AchievementTrackerController.GetContentSize()

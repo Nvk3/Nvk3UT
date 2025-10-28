@@ -33,6 +33,7 @@ local state = {
     isInCombat = false,
     hideInCombatEnabled = false,
     visibilityInitialized = false,
+    update = nil,
     quest = {
         tracker = nil,
         control = nil,
@@ -125,6 +126,21 @@ local function ResolveTrackerModule(key)
         trackerState.tracker = tracker
     end
     return tracker
+end
+
+local function GetUpdateState()
+    if not state.update then
+        state.update = {
+            questsDirty = false,
+            achievementsDirty = false,
+            layoutDirty = false,
+            questReason = nil,
+            achievementReason = nil,
+            layoutReason = nil,
+        }
+    end
+
+    return state.update
 end
 
 local function ApplyVisibility(trackerKey, hidden, reason)
@@ -273,6 +289,10 @@ function TrackerRuntime.RegisterQuestTracker(options)
     end
 
     UpdateQuestVisibility("register")
+
+    if state.update and state.update.questsDirty then
+        TrackerRuntime.ProcessUpdates("quest-register")
+    end
 end
 
 function TrackerRuntime.UnregisterQuestTracker()
@@ -296,6 +316,10 @@ function TrackerRuntime.RegisterAchievementTracker(options)
     end
 
     UpdateAchievementVisibility("register")
+
+    if state.update and state.update.achievementsDirty then
+        TrackerRuntime.ProcessUpdates("achievement-register")
+    end
 end
 
 function TrackerRuntime.UnregisterAchievementTracker()
@@ -353,7 +377,7 @@ end
 local function CallRefresh(trackerKey, methodNames, reason)
     local tracker = ResolveTrackerModule(trackerKey)
     if not tracker then
-        return
+        return false
     end
 
     local readiness = tracker.IsInitialized
@@ -361,14 +385,14 @@ local function CallRefresh(trackerKey, methodNames, reason)
         local ok, ready = pcall(readiness, tracker, methodNames and methodNames[1])
         if not ok then
             DebugLog(string.format("IsInitialized check failed for %s: %s", tostring(trackerKey), tostring(ready)))
-            return
+            return false
         end
 
         if ready == false then
-            return
+            return false
         end
     elseif readiness == false then
-        return
+        return false
     end
 
     for index = 1, #methodNames do
@@ -376,22 +400,25 @@ local function CallRefresh(trackerKey, methodNames, reason)
         local func = tracker[methodName]
         if type(func) == "function" then
             SafeCall(string.format("%s.%s", TRACKER_KEYS[trackerKey] or trackerKey, methodName), func, reason)
-            return
+            return true
         end
     end
+
+    return false
 end
 
 function TrackerRuntime.ForceQuestTrackerRefresh(reason)
-    CallRefresh("quest", { "RefreshNow", "RequestRefresh", "Refresh" }, reason)
+    return CallRefresh("quest", { "RefreshNow", "RequestRefresh", "Refresh" }, reason)
 end
 
 function TrackerRuntime.ForceAchievementTrackerRefresh(reason)
-    CallRefresh("achievement", { "RefreshNow", "RequestRefresh", "Refresh" }, reason)
+    return CallRefresh("achievement", { "RefreshNow", "RequestRefresh", "Refresh" }, reason)
 end
 
 function TrackerRuntime.RequestFullRefresh(reason)
-    TrackerRuntime.ForceQuestTrackerRefresh(reason)
-    TrackerRuntime.ForceAchievementTrackerRefresh(reason)
+    local questRefreshed = TrackerRuntime.ForceQuestTrackerRefresh(reason)
+    local achievementRefreshed = TrackerRuntime.ForceAchievementTrackerRefresh(reason)
+    return questRefreshed or achievementRefreshed
 end
 
 function TrackerRuntime.OnCombatStateChanged(inCombat)
@@ -405,6 +432,88 @@ end
 
 function TrackerRuntime.GetCombatState()
     return state.isInCombat == true
+end
+
+local function FlushCoordinatorUpdates(triggerReason)
+    local update = state.update
+    if not update then
+        return
+    end
+
+    local questsDirty = update.questsDirty
+    local achievementsDirty = update.achievementsDirty
+    local layoutDirty = update.layoutDirty
+
+    local questReason = update.questReason or triggerReason or "quest-dirty"
+    local achievementReason = update.achievementReason or triggerReason or "achievement-dirty"
+    local layoutReason = update.layoutReason or triggerReason or "layout-dirty"
+
+    if questsDirty then
+        update.questsDirty = false
+        update.questReason = nil
+        local refreshed = CallRefresh("quest", { "RefreshNow", "RequestRefresh", "Refresh" }, questReason)
+        if not refreshed then
+            update.questsDirty = true
+            update.questReason = questReason
+        end
+    end
+
+    if achievementsDirty then
+        update.achievementsDirty = false
+        update.achievementReason = nil
+        local refreshed = CallRefresh("achievement", { "RefreshNow", "RequestRefresh", "Refresh" }, achievementReason)
+        if not refreshed then
+            update.achievementsDirty = true
+            update.achievementReason = achievementReason
+        end
+    end
+
+    if layoutDirty then
+        update.layoutDirty = false
+        update.layoutReason = nil
+
+        if not questsDirty and not achievementsDirty then
+            local refreshed = TrackerRuntime.RequestFullRefresh(layoutReason)
+            if not refreshed then
+                update.layoutDirty = true
+                update.layoutReason = layoutReason
+            end
+        end
+    end
+end
+
+function TrackerRuntime.ProcessUpdates(triggerReason)
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format("ProcessUpdates(%s)", tostring(triggerReason)))
+    end
+
+    FlushCoordinatorUpdates(triggerReason)
+end
+
+local function MarkDirty(flagName, reasonKey, reason)
+    local update = GetUpdateState()
+    update[flagName] = true
+    if reason and reason ~= "" then
+        update[reasonKey] = reason
+    end
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format("MarkDirty %s -> %s", tostring(flagName), tostring(reason or "")))
+    end
+
+    TrackerRuntime.ProcessUpdates(reason)
+end
+
+function TrackerRuntime.MarkQuestDirty(reason)
+    MarkDirty("questsDirty", "questReason", reason)
+end
+
+function TrackerRuntime.MarkAchievementDirty(reason)
+    MarkDirty("achievementsDirty", "achievementReason", reason)
+end
+
+function TrackerRuntime.MarkLayoutDirty(reason)
+    MarkDirty("layoutDirty", "layoutReason", reason)
 end
 
 function TrackerRuntime:IsInitialized()

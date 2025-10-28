@@ -96,16 +96,22 @@ local function HandleQuestChanged(eventCode, ...)
     if eventCode == EVENT_QUEST_CONDITION_COUNTER_CHANGED or eventCode == EVENT_QUEST_ADVANCED then
         Dispatch(Nvk3UT and Nvk3UT.QuestTrackerController, "OnQuestProgress", eventCode, ...)
     end
+
+    local reason = string.format("quest:%s", tostring(eventCode))
+    Dispatch(Nvk3UT and Nvk3UT.TrackerRuntime, "MarkQuestDirty", reason)
 end
 
 local function HandleTrackingUpdate(eventCode, trackingType, context)
     Dispatch(Nvk3UT and Nvk3UT.QuestModel, "OnTrackingUpdate", eventCode, trackingType, context)
     Dispatch(Nvk3UT and Nvk3UT.QuestTrackerController, "OnTrackedQuestUpdate", trackingType, context)
+    Dispatch(Nvk3UT and Nvk3UT.TrackerRuntime, "MarkQuestDirty", string.format("quest-tracking:%s", tostring(trackingType)))
 end
 
 local function ProcessPlayerActivated()
     Dispatch(Nvk3UT and Nvk3UT.QuestModel, "OnPlayerActivated")
     Dispatch(Nvk3UT and Nvk3UT.QuestTrackerController, "OnPlayerActivated")
+    Dispatch(Nvk3UT and Nvk3UT.TrackerRuntime, "MarkQuestDirty", "player-activated")
+    Dispatch(Nvk3UT and Nvk3UT.TrackerRuntime, "MarkAchievementDirty", "player-activated")
 end
 
 local function HandlePlayerActivated()
@@ -121,6 +127,7 @@ end
 local function HandleAchievementChanged(eventCode, ...)
     Dispatch(Nvk3UT and Nvk3UT.AchievementModel, "OnAchievementChanged", eventCode, ...)
     Dispatch(Nvk3UT and Nvk3UT.AchievementTrackerController, "OnAchievementProgress", eventCode, ...)
+    Dispatch(Nvk3UT and Nvk3UT.TrackerRuntime, "MarkAchievementDirty", string.format("achievement:%s", tostring(eventCode)))
 end
 
 local function RegisterEvents()

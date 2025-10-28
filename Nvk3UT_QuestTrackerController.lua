@@ -3652,6 +3652,10 @@ function QuestTrackerController.Init(parentControl, opts)
         source = "QuestTracker:Init",
     })
     AdoptTrackedQuestOnInit()
+
+    if runtime and type(runtime.ProcessUpdates) == "function" then
+        runtime.ProcessUpdates("quest-init")
+    end
 end
 
 function QuestTrackerController.Refresh()
@@ -3780,11 +3784,17 @@ function QuestTrackerController.RefreshNow(reason)
 end
 
 function QuestTrackerController.OnQuestChanged(...)
-    RequestRefresh()
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if not (runtime and type(runtime.MarkQuestDirty) == "function") then
+        RequestRefresh()
+    end
 end
 
 function QuestTrackerController.OnQuestProgress(...)
-    RequestRefresh()
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if not (runtime and type(runtime.MarkQuestDirty) == "function") then
+        RequestRefresh()
+    end
 end
 
 function QuestTrackerController.IsActive()

@@ -117,7 +117,12 @@ function AchievementTracker.GetContentSize(...)
 end
 
 function AchievementTracker.OnAchievementProgress(...)
-    return CallController("OnAchievementProgress", ...)
+    local results = { CallController("OnAchievementProgress", ...) }
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and type(runtime.MarkAchievementDirty) == "function" then
+        runtime.MarkAchievementDirty("achievement-tracker-api")
+    end
+    return unpack(results)
 end
 
 function AchievementTracker.FocusAchievement(...)

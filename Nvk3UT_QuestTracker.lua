@@ -125,11 +125,21 @@ function QuestTracker.OnPlayerActivated(...)
 end
 
 function QuestTracker.OnQuestChanged(...)
-    return CallController("OnQuestChanged", ...)
+    local results = { CallController("OnQuestChanged", ...) }
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and type(runtime.MarkQuestDirty) == "function" then
+        runtime.MarkQuestDirty("quest-tracker-api")
+    end
+    return unpack(results)
 end
 
 function QuestTracker.OnQuestProgress(...)
-    return CallController("OnQuestProgress", ...)
+    local results = { CallController("OnQuestProgress", ...) }
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and type(runtime.MarkQuestDirty) == "function" then
+        runtime.MarkQuestDirty("quest-progress-api")
+    end
+    return unpack(results)
 end
 
 setmetatable(QuestTracker, {
