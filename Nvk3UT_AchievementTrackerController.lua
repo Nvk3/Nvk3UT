@@ -2275,6 +2275,10 @@ function AchievementTrackerController.FlagStructureDirty(reason)
     FlagStructureDirtyInternal(reason or "external")
 end
 
+function AchievementTrackerController.HasPendingStructureChanges()
+    return state.structureDirty == true
+end
+
 function AchievementTrackerController.SyncStructureIfDirty(reason)
     if not state.structureDirty then
         return false
