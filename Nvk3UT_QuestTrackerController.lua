@@ -79,7 +79,6 @@ local state = {
     saved = nil,
     control = nil,
     container = nil,
-    lastKnownContainerWidth = 0,
     categoryPool = nil,
     questPool = nil,
     conditionPool = nil,
@@ -920,26 +919,6 @@ local function GetToggleWidth(toggle, fallback)
     return fallback or 0
 end
 
-local function CacheContainerWidth(width)
-    if type(width) == "number" and width > 0 then
-        state.lastKnownContainerWidth = width
-    end
-end
-
-local function GetContainerWidth()
-    if not state.container or not state.container.GetWidth then
-        return state.lastKnownContainerWidth or 0
-    end
-
-    local width = state.container:GetWidth()
-    if type(width) == "number" and width > 0 then
-        CacheContainerWidth(width)
-        return width
-    end
-
-    return state.lastKnownContainerWidth or 0
-end
-
 local function ApplyRowMetrics(control, indent, toggleWidth, leftPadding, rightPadding, minHeight)
     if not control or not control.label then
         return
@@ -950,7 +929,13 @@ local function ApplyRowMetrics(control, indent, toggleWidth, leftPadding, rightP
     leftPadding = leftPadding or 0
     rightPadding = rightPadding or 0
 
-    local containerWidth = GetContainerWidth()
+    local containerWidth = 0
+    if state.container and state.container.GetWidth then
+        local width = state.container:GetWidth()
+        if type(width) == "number" and width > 0 then
+            containerWidth = width
+        end
+    end
     local availableWidth = containerWidth - indent - toggleWidth - leftPadding - rightPadding
     if availableWidth < 0 then
         availableWidth = 0
@@ -965,7 +950,6 @@ local function ApplyRowMetrics(control, indent, toggleWidth, leftPadding, rightP
     end
 
     control:SetHeight(targetHeight)
-    CacheContainerWidth(containerWidth)
 end
 
 local function RefreshControlMetrics(control)
@@ -3358,9 +3342,7 @@ local function LayoutCondition(condition)
                 ctrl.label:SetColor(colorR, colorG, colorB, colorA)
             end
 
-            if type(r.SetHidden) == "function" then
-                r:SetHidden(false)
-            elseif ctrl.SetHidden then
+            if ctrl.SetHidden then
                 ctrl:SetHidden(false)
             end
         end)
@@ -3477,9 +3459,7 @@ local function LayoutQuest(quest)
                 state.questControls[quest.journalIndex] = ctrl
             end
 
-            if type(r.SetHidden) == "function" then
-                r:SetHidden(false)
-            elseif ctrl.SetHidden then
+            if ctrl.SetHidden then
                 ctrl:SetHidden(false)
             end
         end)
@@ -3639,9 +3619,7 @@ local function LayoutCategory(category)
             ApplyBaseColor(ctrl, rowR, rowG, rowB, rowA)
             UpdateCategoryToggle(ctrl, expanded)
 
-            if type(r.SetHidden) == "function" then
-                r:SetHidden(false)
-            elseif ctrl.SetHidden then
+            if ctrl.SetHidden then
                 ctrl:SetHidden(false)
             end
         end)
@@ -3964,16 +3942,6 @@ function QuestTrackerController.Init(parentControl, opts)
 
     state.control = parentControl
     state.container = parentControl
-    if parentControl and parentControl.GetWidth then
-        local width = parentControl:GetWidth()
-        if type(width) == "number" and width > 0 then
-            state.lastKnownContainerWidth = width
-        else
-            state.lastKnownContainerWidth = 0
-        end
-    else
-        state.lastKnownContainerWidth = 0
-    end
     if state.control and state.control.SetResizeToFitDescendents then
         state.control:SetResizeToFitDescendents(true)
     end
@@ -4078,7 +4046,6 @@ function QuestTrackerController.Shutdown()
     end
 
     state.container = nil
-    state.lastKnownContainerWidth = 0
     state.control = nil
     state.snapshot = nil
     state.orderedControls = {}

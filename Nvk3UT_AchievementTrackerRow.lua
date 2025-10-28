@@ -88,10 +88,8 @@ function AchievementTrackerRow:New(params)
     row.measureFunc = params.measureFunc
     row.layoutFunc = params.layoutFunc
     row.widthFunc = params.widthFunc
-    row.containerProvider = params.containerProvider
     row.container = params.container
     row.cachedHeight = 0
-    row.explicitHidden = nil
 
     return row
 end
@@ -109,7 +107,11 @@ function AchievementTrackerRow:SetLayoutFunction(callback)
 end
 
 function AchievementTrackerRow:SetWidthFunction(callback)
-    self.widthFunc = callback
+    if type(callback) == "function" then
+        self.widthFunc = callback
+    else
+        self.widthFunc = nil
+    end
 end
 
 function AchievementTrackerRow:SetIndent(indent)
@@ -135,15 +137,7 @@ function AchievementTrackerRow:SetContainer(container)
 end
 
 function AchievementTrackerRow:GetContainer()
-    if self.container then
-        return self.container
-    end
-
-    if type(self.containerProvider) == "function" then
-        return self.containerProvider(self)
-    end
-
-    return nil
+    return self.container
 end
 
 function AchievementTrackerRow:GetControl()
@@ -156,37 +150,6 @@ end
 
 function AchievementTrackerRow:IsRenderable()
     return self:IsControlValid()
-end
-
-function AchievementTrackerRow:IsHidden()
-    if self.explicitHidden ~= nil then
-        return self.explicitHidden
-    end
-
-    local control = self.control
-    if not isControl(control) then
-        return true
-    end
-
-    local ok, hidden = pcall(function()
-        if type(control.IsHidden) == "function" then
-            return control:IsHidden()
-        end
-        return false
-    end)
-
-    if ok and hidden then
-        local container = self:GetContainer()
-        if isControl(container) and type(container.IsHidden) == "function" then
-            local containerOk, containerHidden = pcall(container.IsHidden, container)
-            if containerOk and containerHidden then
-                return false
-            end
-        end
-        return true
-    end
-
-    return false
 end
 
 function AchievementTrackerRow:GetIndent()
@@ -217,20 +180,6 @@ function AchievementTrackerRow:RefreshVisual()
     if type(self.refreshFunc) == "function" then
         self.refreshFunc(self)
     end
-end
-
-function AchievementTrackerRow:SetHidden(hidden)
-    local normalized = hidden == true
-    self.explicitHidden = normalized
-
-    local control = self.control
-    if isControl(control) and type(control.SetHidden) == "function" then
-        control:SetHidden(normalized)
-    end
-end
-
-function AchievementTrackerRow:IsExplicitlyHidden()
-    return self.explicitHidden
 end
 
 function AchievementTrackerRow:MeasureHeight()

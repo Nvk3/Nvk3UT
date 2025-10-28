@@ -33,31 +33,6 @@ local function setRowContainer(row, container)
     end
 end
 
-local function getRowHiddenState(row, containerHidden)
-    if not isRow(row) then
-        return true
-    end
-
-    if type(row.IsExplicitlyHidden) == "function" then
-        local ok, explicit = pcall(row.IsExplicitlyHidden, row)
-        if ok and explicit ~= nil then
-            return explicit == true
-        end
-    end
-
-    if type(row.IsHidden) == "function" then
-        local ok, hidden = pcall(row.IsHidden, row)
-        if ok then
-            if hidden and containerHidden then
-                return false
-            end
-            return hidden == true
-        end
-    end
-
-    return false
-end
-
 local function getRowWidth(row)
     if not isRow(row) then
         return 0
@@ -77,14 +52,6 @@ local function applyLayout(container, rows, options)
     local currentY = 0
     local visibleCount = 0
 
-    local containerHidden = false
-    if isControl(container) and type(container.IsHidden) == "function" then
-        local ok, hidden = pcall(container.IsHidden, container)
-        if ok then
-            containerHidden = hidden == true
-        end
-    end
-
     if type(rows) ~= "table" then
         rows = {}
     end
@@ -99,7 +66,7 @@ local function applyLayout(container, rows, options)
                 height = 0
             end
 
-            if not getRowHiddenState(row, containerHidden) and height > 0 then
+            if height > 0 then
                 if visibleCount > 0 then
                     currentY = currentY + verticalPadding
                 end
