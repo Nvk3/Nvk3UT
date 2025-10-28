@@ -126,6 +126,7 @@ local function HandleQuestChanged(eventCode, ...)
 
     if QUEST_STRUCTURE_EVENTS[eventCode] then
         Dispatch(controller, "FlagStructureDirty", reason)
+        Dispatch(Nvk3UT and Nvk3UT.QuestModel, "RequestImmediateRebuild", reason)
     end
 
     if IsDebugLoggingEnabled() then
@@ -144,7 +145,9 @@ local function HandleTrackingUpdate(eventCode, trackingType, context)
 
     Dispatch(Nvk3UT and Nvk3UT.QuestModel, "OnTrackingUpdate", eventCode, trackingType, context)
 
-    Dispatch(Nvk3UT and Nvk3UT.QuestTrackerController, "FlagStructureDirty", string.format("quest-tracking:%s", tostring(trackingType)))
+    local trackingReason = string.format("quest-tracking:%s", tostring(trackingType))
+    Dispatch(Nvk3UT and Nvk3UT.QuestTrackerController, "FlagStructureDirty", trackingReason)
+    Dispatch(Nvk3UT and Nvk3UT.QuestModel, "RequestImmediateRebuild", trackingReason)
 
     if IsDebugLoggingEnabled() then
         DebugLog(string.format(
@@ -154,7 +157,7 @@ local function HandleTrackingUpdate(eventCode, trackingType, context)
         ))
     end
 
-    Dispatch(Nvk3UT and Nvk3UT.TrackerRuntime, "MarkQuestDirty", string.format("quest-tracking:%s", tostring(trackingType)))
+    Dispatch(Nvk3UT and Nvk3UT.TrackerRuntime, "MarkQuestDirty", trackingReason)
 end
 
 local function ProcessPlayerActivated()
@@ -197,6 +200,7 @@ local function HandleAchievementChanged(eventCode, ...)
 
     if ACHIEVEMENT_STRUCTURE_EVENTS[eventCode] then
         Dispatch(Nvk3UT and Nvk3UT.AchievementTrackerController, "FlagStructureDirty", reason)
+        Dispatch(Nvk3UT and Nvk3UT.AchievementModel, "RequestImmediateRebuild", reason)
     end
 
     if IsDebugLoggingEnabled() then

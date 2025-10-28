@@ -1799,6 +1799,23 @@ function QuestModel.Unsubscribe(callback)
     end
 end
 
+function QuestModel.RequestImmediateRebuild(reason)
+    if type(ForceRebuild) ~= "function" then
+        return false
+    end
+
+    if not QuestModel.isInitialized then
+        return false
+    end
+
+    if QuestModel.debugEnabled then
+        LogDebug(QuestModel, string.format("[ImmediateRebuild] reason=%s", tostring(reason)))
+    end
+
+    local updated = ForceRebuild(QuestModel)
+    return updated == true
+end
+
 Nvk3UT.QuestModel = QuestModel
 
 return QuestModel

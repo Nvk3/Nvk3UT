@@ -529,7 +529,7 @@ end
 
 local function ForceRebuild(self)
     if not self.isInitialized then
-        return
+        return false
     end
 
     if self.pendingRebuild then
@@ -537,7 +537,8 @@ local function ForceRebuild(self)
         self.pendingRebuild = false
     end
 
-    PerformRebuild(self)
+    local updated = PerformRebuild(self)
+    return updated == true
 end
 
 local function OnAchievementChanged(...)
@@ -618,6 +619,22 @@ function AchievementModel.Unsubscribe(callback)
     if AchievementModel.subscribers then
         AchievementModel.subscribers[callback] = nil
     end
+end
+
+function AchievementModel.RequestImmediateRebuild(reason)
+    if type(ForceRebuild) ~= "function" then
+        return false
+    end
+
+    if not AchievementModel.isInitialized then
+        return false
+    end
+
+    if AchievementModel.debugEnabled then
+        LogDebug(AchievementModel, string.format("[ImmediateRebuild] reason=%s", tostring(reason)))
+    end
+
+    return ForceRebuild(AchievementModel)
 end
 
 Nvk3UT.AchievementModel = AchievementModel
