@@ -58,16 +58,21 @@ end
 
 local function HandleQuestChanged(eventCode, ...)
     Dispatch(Nvk3UT and Nvk3UT.QuestModel, "OnQuestChanged", eventCode, ...)
+    Dispatch(Nvk3UT and Nvk3UT.QuestTrackerController, "OnQuestChanged", eventCode, ...)
+
+    if eventCode == EVENT_QUEST_CONDITION_COUNTER_CHANGED or eventCode == EVENT_QUEST_ADVANCED then
+        Dispatch(Nvk3UT and Nvk3UT.QuestTrackerController, "OnQuestProgress", eventCode, ...)
+    end
 end
 
 local function HandleTrackingUpdate(eventCode, trackingType, context)
     Dispatch(Nvk3UT and Nvk3UT.QuestModel, "OnTrackingUpdate", eventCode, trackingType, context)
-    Dispatch(Nvk3UT and Nvk3UT.QuestTracker, "OnTrackedQuestUpdate", trackingType, context)
+    Dispatch(Nvk3UT and Nvk3UT.QuestTrackerController, "OnTrackedQuestUpdate", trackingType, context)
 end
 
 local function ProcessPlayerActivated()
     Dispatch(Nvk3UT and Nvk3UT.QuestModel, "OnPlayerActivated")
-    Dispatch(Nvk3UT and Nvk3UT.QuestTracker, "OnPlayerActivated")
+    Dispatch(Nvk3UT and Nvk3UT.QuestTrackerController, "OnPlayerActivated")
 end
 
 local function HandlePlayerActivated()
@@ -82,6 +87,7 @@ end
 
 local function HandleAchievementChanged(eventCode, ...)
     Dispatch(Nvk3UT and Nvk3UT.AchievementModel, "OnAchievementChanged", eventCode, ...)
+    Dispatch(Nvk3UT and Nvk3UT.AchievementTrackerController, "OnAchievementProgress", eventCode, ...)
 end
 
 local function RegisterEvents()

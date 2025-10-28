@@ -23,8 +23,8 @@ TrackerRuntime.__index = TrackerRuntime
 local MODULE_NAME = addonName .. "TrackerRuntime"
 
 local TRACKER_KEYS = {
-    quest = "QuestTracker",
-    achievement = "AchievementTracker",
+    quest = "QuestTrackerController",
+    achievement = "AchievementTrackerController",
 }
 
 local state = {
@@ -367,11 +367,11 @@ local function CallRefresh(trackerKey, methodNames, reason)
 end
 
 function TrackerRuntime.ForceQuestTrackerRefresh(reason)
-    CallRefresh("quest", { "RequestRefresh", "Refresh" }, reason)
+    CallRefresh("quest", { "RefreshNow", "RequestRefresh", "Refresh" }, reason)
 end
 
 function TrackerRuntime.ForceAchievementTrackerRefresh(reason)
-    CallRefresh("achievement", { "RequestRefresh", "Refresh" }, reason)
+    CallRefresh("achievement", { "RefreshNow", "RequestRefresh", "Refresh" }, reason)
 end
 
 function TrackerRuntime.RequestFullRefresh(reason)
