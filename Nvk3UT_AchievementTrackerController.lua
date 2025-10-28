@@ -1989,6 +1989,14 @@ local function RebuildStructure(reason)
         DebugLog(string.format("REBUILD_STRUCTURE_START reason=%s", tostring(reason)))
     end
 
+    local snapshot = state.snapshot
+    if not snapshot or type(snapshot.achievements) ~= "table" then
+        if IsDebugLoggingEnabled() then
+            DebugLog("REBUILD_STRUCTURE_ABORT snapshot unavailable")
+        end
+        return false
+    end
+
     EnsurePools()
 
     ReleaseAll(state.categoryPool)
@@ -2024,6 +2032,13 @@ local function RefreshFromStructure(reason)
 end
 
 local function OnSnapshotUpdated(snapshot, context)
+    if snapshot == nil then
+        if IsDebugLoggingEnabled() then
+            DebugLog("Achievement snapshot update skipped (snapshot unavailable)")
+        end
+        return
+    end
+
     state.snapshot = snapshot
 
     local reason = (context and context.trigger) or "snapshot"

@@ -3795,7 +3795,14 @@ end
 
 -- Apply the latest quest snapshot from the event-driven model and update the layout.
 local function OnQuestModelSnapshotUpdated(snapshot, context)
-    ApplySnapshot(snapshot or { categories = { ordered = {}, byKey = {} } }, context)
+    if snapshot == nil then
+        if IsDebugLoggingEnabled() then
+            DebugLog("Quest snapshot update skipped (snapshot unavailable)")
+        end
+        return
+    end
+
+    ApplySnapshot(snapshot, context)
 
     if not state.isInitialized then
         return
@@ -3858,6 +3865,15 @@ local function RebuildStructure(reason)
         DebugLog(string.format("REBUILD_STRUCTURE_START reason=%s", tostring(reason)))
     end
 
+    local snapshot = state.snapshot
+    if not snapshot or not snapshot.categories or not snapshot.categories.ordered then
+        state.isRebuildInProgress = false
+        if IsDebugLoggingEnabled() then
+            DebugLog("REBUILD_STRUCTURE_ABORT snapshot unavailable")
+        end
+        return false
+    end
+
     state.isRebuildInProgress = true
     ApplyActiveQuestFromSaved()
 
@@ -3868,19 +3884,10 @@ local function RebuildStructure(reason)
     ReleaseAll(state.conditionPool)
     ResetLayoutState()
 
-    if not state.snapshot or not state.snapshot.categories or not state.snapshot.categories.ordered then
-        state.isRebuildInProgress = false
-        state.structureDirty = false
-        if IsDebugLoggingEnabled() then
-            DebugLog("REBUILD_STRUCTURE_END empty")
-        end
-        return true
-    end
-
     PrimeInitialSavedState()
 
-    for index = 1, #state.snapshot.categories.ordered do
-        local category = state.snapshot.categories.ordered[index]
+    for index = 1, #snapshot.categories.ordered do
+        local category = snapshot.categories.ordered[index]
         if category and category.quests and #category.quests > 0 then
             LayoutCategory(category)
         end
