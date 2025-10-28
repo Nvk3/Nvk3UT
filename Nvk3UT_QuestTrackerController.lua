@@ -4134,12 +4134,33 @@ function QuestTrackerController.SyncStructureIfDirty(reason)
         return false
     end
 
+    local questModel = Nvk3UT and Nvk3UT.QuestModel
+    if questModel and type(questModel.GetSnapshot) == "function" then
+        local ok, snapshot = pcall(questModel.GetSnapshot, questModel)
+        if ok then
+            ApplySnapshot(snapshot or { categories = { ordered = {}, byKey = {} } }, {
+                trigger = reason or "sync",
+                source = "QuestTracker:SyncStructureIfDirty",
+            })
+        elseif IsDebugLoggingEnabled() then
+            DebugLog(string.format("SyncStructureIfDirty snapshot failed: %s", tostring(snapshot)))
+        end
+    end
+
     local syncReason = reason or "sync"
     local rebuilt = RebuildStructure(syncReason)
 
     if not rebuilt then
         FlagStructureDirtyInternal(syncReason)
         return false
+    end
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format(
+            "SyncStructureIfDirty(%s) rows=%d",
+            tostring(syncReason),
+            state.rows and #state.rows or 0
+        ))
     end
 
     return true

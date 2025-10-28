@@ -2280,12 +2280,30 @@ function AchievementTrackerController.SyncStructureIfDirty(reason)
         return false
     end
 
+    local achievementModel = Nvk3UT and Nvk3UT.AchievementModel
+    if achievementModel and type(achievementModel.GetSnapshot) == "function" then
+        local ok, snapshot = pcall(achievementModel.GetSnapshot, achievementModel)
+        if ok then
+            state.snapshot = snapshot
+        elseif IsDebugLoggingEnabled() then
+            DebugLog(string.format("SyncStructureIfDirty snapshot failed: %s", tostring(snapshot)))
+        end
+    end
+
     local syncReason = reason or "sync"
     local rebuilt = RebuildStructure(syncReason)
 
     if not rebuilt then
         FlagStructureDirtyInternal(syncReason)
         return false
+    end
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format(
+            "Achievement SyncStructureIfDirty(%s) rows=%d",
+            tostring(syncReason),
+            state.rows and #state.rows or 0
+        ))
     end
 
     return true

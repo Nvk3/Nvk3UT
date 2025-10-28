@@ -475,7 +475,13 @@ local function FlushCoordinatorUpdates(triggerReason)
     end
 
     if questsDirty then
-        SyncStructureIfDirty("quest", questReason)
+        local questSynced = SyncStructureIfDirty("quest", questReason)
+        if IsDebugLoggingEnabled() then
+            DebugLog(string.format(
+                "ProcessUpdates quest syncBeforeRefresh=%s",
+                tostring(questSynced)
+            ))
+        end
         update.questsDirty = false
         update.questReason = nil
         local refreshed = CallRefresh("quest", { "RefreshNow", "RequestRefresh", "Refresh" }, questReason)
@@ -486,7 +492,13 @@ local function FlushCoordinatorUpdates(triggerReason)
     end
 
     if achievementsDirty then
-        SyncStructureIfDirty("achievement", achievementReason)
+        local achievementSynced = SyncStructureIfDirty("achievement", achievementReason)
+        if IsDebugLoggingEnabled() then
+            DebugLog(string.format(
+                "ProcessUpdates achievement syncBeforeRefresh=%s",
+                tostring(achievementSynced)
+            ))
+        end
         update.achievementsDirty = false
         update.achievementReason = nil
         local refreshed = CallRefresh("achievement", { "RefreshNow", "RequestRefresh", "Refresh" }, achievementReason)

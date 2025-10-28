@@ -134,27 +134,34 @@ local function Dispatch(target, methodName, ...)
 end
 
 local function HandleQuestChanged(eventCode, ...)
+    local questModel = Nvk3UT and Nvk3UT.QuestModel
     local controller = Nvk3UT and Nvk3UT.QuestTrackerController
+
+    Dispatch(questModel, "OnQuestChanged", eventCode, ...)
+
+    local reason = string.format("quest:%s", tostring(eventCode))
+    local isStructure = QUEST_STRUCTURE_EVENTS[eventCode] == true
+
+    if isStructure then
+        Dispatch(questModel, "RequestImmediateRebuild", reason)
+    end
+
     local controllerHandled = Dispatch(controller, "OnQuestChanged", eventCode, ...)
 
     if eventCode == EVENT_QUEST_CONDITION_COUNTER_CHANGED or eventCode == EVENT_QUEST_ADVANCED then
         controllerHandled = Dispatch(controller, "OnQuestProgress", eventCode, ...) or controllerHandled
     end
 
-    Dispatch(Nvk3UT and Nvk3UT.QuestModel, "OnQuestChanged", eventCode, ...)
-
-    local reason = string.format("quest:%s", tostring(eventCode))
-
-    if QUEST_STRUCTURE_EVENTS[eventCode] then
+    if isStructure then
         Dispatch(controller, "FlagStructureDirty", reason)
-        Dispatch(Nvk3UT and Nvk3UT.QuestModel, "RequestImmediateRebuild", reason)
     end
 
     if IsDebugLoggingEnabled() then
         DebugLog(string.format(
-            "Quest event %s controllerHandled=%s -> MarkQuestDirty",
+            "Quest event %s -> model updated -> controllerHandled=%s -> MarkQuestDirty (structure=%s)",
             tostring(eventCode),
-            tostring(controllerHandled)
+            tostring(controllerHandled),
+            tostring(isStructure)
         ))
     end
 
@@ -162,17 +169,19 @@ local function HandleQuestChanged(eventCode, ...)
 end
 
 local function HandleTrackingUpdate(eventCode, trackingType, context)
-    local controllerHandled = Dispatch(Nvk3UT and Nvk3UT.QuestTrackerController, "OnTrackedQuestUpdate", trackingType, context)
-
-    Dispatch(Nvk3UT and Nvk3UT.QuestModel, "OnTrackingUpdate", eventCode, trackingType, context)
+    local questModel = Nvk3UT and Nvk3UT.QuestModel
+    Dispatch(questModel, "OnTrackingUpdate", eventCode, trackingType, context)
 
     local trackingReason = string.format("quest-tracking:%s", tostring(trackingType))
-    Dispatch(Nvk3UT and Nvk3UT.QuestTrackerController, "FlagStructureDirty", trackingReason)
-    Dispatch(Nvk3UT and Nvk3UT.QuestModel, "RequestImmediateRebuild", trackingReason)
+    Dispatch(questModel, "RequestImmediateRebuild", trackingReason)
+
+    local controller = Nvk3UT and Nvk3UT.QuestTrackerController
+    local controllerHandled = Dispatch(controller, "OnTrackedQuestUpdate", trackingType, context)
+    Dispatch(controller, "FlagStructureDirty", trackingReason)
 
     if IsDebugLoggingEnabled() then
         DebugLog(string.format(
-            "Quest tracking update type=%s controllerHandled=%s -> MarkQuestDirty",
+            "Quest tracking update type=%s -> model updated -> controllerHandled=%s -> MarkQuestDirty",
             tostring(trackingType),
             tostring(controllerHandled)
         ))
@@ -213,22 +222,29 @@ local function HandleCombatState(_, inCombat)
 end
 
 local function HandleAchievementChanged(eventCode, ...)
-    local controllerHandled = Dispatch(Nvk3UT and Nvk3UT.AchievementTrackerController, "OnAchievementProgress", eventCode, ...)
-
-    Dispatch(Nvk3UT and Nvk3UT.AchievementModel, "OnAchievementChanged", eventCode, ...)
+    local achievementModel = Nvk3UT and Nvk3UT.AchievementModel
+    Dispatch(achievementModel, "OnAchievementChanged", eventCode, ...)
 
     local reason = string.format("achievement:%s", tostring(eventCode))
+    local isStructure = ACHIEVEMENT_STRUCTURE_EVENTS[eventCode] == true
 
-    if ACHIEVEMENT_STRUCTURE_EVENTS[eventCode] then
-        Dispatch(Nvk3UT and Nvk3UT.AchievementTrackerController, "FlagStructureDirty", reason)
-        Dispatch(Nvk3UT and Nvk3UT.AchievementModel, "RequestImmediateRebuild", reason)
+    if isStructure then
+        Dispatch(achievementModel, "RequestImmediateRebuild", reason)
+    end
+
+    local controller = Nvk3UT and Nvk3UT.AchievementTrackerController
+    local controllerHandled = Dispatch(controller, "OnAchievementProgress", eventCode, ...)
+
+    if isStructure then
+        Dispatch(controller, "FlagStructureDirty", reason)
     end
 
     if IsDebugLoggingEnabled() then
         DebugLog(string.format(
-            "Achievement event %s controllerHandled=%s -> MarkAchievementDirty",
+            "Achievement event %s -> model updated -> controllerHandled=%s -> MarkAchievementDirty (structure=%s)",
             tostring(eventCode),
-            tostring(controllerHandled)
+            tostring(controllerHandled),
+            tostring(isStructure)
         ))
     end
 
