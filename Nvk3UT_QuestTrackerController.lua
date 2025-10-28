@@ -149,6 +149,20 @@ local function DebugLog(...)
     end
 end
 
+local function SafeCall(func, ...)
+    if type(func) ~= "function" then
+        return false, nil
+    end
+
+    local ok, result = pcall(func, ...)
+    if not ok then
+        DebugLog("Call failed", tostring(result))
+        return false, nil
+    end
+
+    return true, result
+end
+
 local function DebugDeselect(context, details)
     if not NVK_DEBUG_DESELECT then
         return
@@ -1160,20 +1174,6 @@ local function LogCategoryExpansion(action, trigger, categoryKey, beforeExpanded
     end
 
     EmitDebugAction(action, trigger, "category", fields)
-end
-
-local function SafeCall(func, ...)
-    if type(func) ~= "function" then
-        return false, nil
-    end
-
-    local ok, result = pcall(func, ...)
-    if not ok then
-        DebugLog("Call failed", tostring(result))
-        return false, nil
-    end
-
-    return true, result
 end
 
 local function IsTruthy(value)
