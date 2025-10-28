@@ -343,6 +343,13 @@ function TrackerRuntime.ApplyVisibilityPolicy(reason, forceReapply)
     ApplyVisibilityPolicy(reason, forceReapply)
 end
 
+---Returns whether the runtime currently suppresses the host due to
+---visibility policy (for example hide-in-combat).
+---@return boolean
+function TrackerRuntime.IsHostHiddenByPolicy()
+    return state.hostHidden == true
+end
+
 local function CallRefresh(trackerKey, methodNames, reason)
     local tracker = ResolveTrackerModule(trackerKey)
     if not tracker then

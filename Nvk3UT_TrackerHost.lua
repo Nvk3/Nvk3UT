@@ -27,6 +27,7 @@ local MAX_BAR_HEIGHT = 250
 local FRAGMENT_REASON_SUPPRESSED = addonName .. "_HostSuppressed"
 local FRAGMENT_REASON_USER = addonName .. "_HostHiddenBySettings"
 local FRAGMENT_REASON_SCENE = addonName .. "_HostSceneHidden"
+local FRAGMENT_REASON_RUNTIME = addonName .. "_HostRuntimeHidden"
 
 local DEFAULT_APPEARANCE = {
     enabled = true,
@@ -1557,16 +1558,29 @@ local function applyWindowVisibility()
     local previewActive = state.lamPreviewForceVisible == true and not userHidden
     local shouldHide = (suppressed or userHidden or sceneHidden) and not previewActive
 
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    local runtimeHidden = false
+    if runtime and type(runtime.IsHostHiddenByPolicy) == "function" then
+        local ok, result = pcall(runtime.IsHostHiddenByPolicy, runtime)
+        runtimeHidden = ok and result == true
+    end
+
     if state.fragment and state.fragment.SetHiddenForReason then
         if previewActive then
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, false)
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, false)
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, false)
+            state.fragment:SetHiddenForReason(FRAGMENT_REASON_RUNTIME, false)
         else
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, suppressed)
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, userHidden)
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, sceneHidden)
+            state.fragment:SetHiddenForReason(FRAGMENT_REASON_RUNTIME, runtimeHidden)
         end
+    end
+
+    if runtimeHidden and not previewActive then
+        shouldHide = true
     end
 
     state.root:SetHidden(shouldHide)
