@@ -124,6 +124,7 @@ local state = {
     contentHeight = 0,
     pendingFocusAchievementId = nil,
     hostHidden = false,
+    pendingVisibleRelayout = false,
     structureDirty = true,
 }
 
@@ -2040,6 +2041,23 @@ local function RefreshFromStructure(reason)
     NotifyHostContentChanged()
     ApplyPendingFocus()
 
+    local shouldDeferVisibleRelayout = state.hostHidden == true
+    if not shouldDeferVisibleRelayout then
+        local control = state.control
+        if HasValidControl(control) and control.IsHidden then
+            local ok, hidden = pcall(control.IsHidden, control)
+            shouldDeferVisibleRelayout = ok and hidden == true
+        end
+    end
+    if not shouldDeferVisibleRelayout then
+        local container = state.container
+        if HasValidControl(container) and container.IsHidden then
+            local ok, hidden = pcall(container.IsHidden, container)
+            shouldDeferVisibleRelayout = ok and hidden == true
+        end
+    end
+    state.pendingVisibleRelayout = shouldDeferVisibleRelayout
+
     if IsDebugLoggingEnabled() then
         DebugLog(string.format("REFRESH_FROM_STRUCTURE reason=%s rows=%d", tostring(reason), state.rows and #state.rows or 0))
     end
@@ -2111,6 +2129,7 @@ function AchievementTrackerController.Init(parentControl, opts)
     else
         state.lastKnownContainerWidth = 0
     end
+    state.pendingVisibleRelayout = false
     if state.control and state.control.SetResizeToFitDescendents then
         state.control:SetResizeToFitDescendents(true)
     end
@@ -2208,6 +2227,7 @@ function AchievementTrackerController.Shutdown()
     state.contentWidth = 0
     state.contentHeight = 0
     state.hostHidden = false
+    state.pendingVisibleRelayout = false
     state.structureDirty = true
     NotifyHostContentChanged()
 end
@@ -2319,6 +2339,10 @@ end
 
 function AchievementTrackerController.HasPendingStructureChanges()
     return state.structureDirty == true
+end
+
+function AchievementTrackerController.HasPendingVisibleRelayout()
+    return state.pendingVisibleRelayout == true
 end
 
 function AchievementTrackerController.SyncStructureIfDirty(reason)

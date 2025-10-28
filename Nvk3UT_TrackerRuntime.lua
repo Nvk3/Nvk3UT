@@ -465,6 +465,26 @@ local function HasPendingStructure(trackerKey)
     return result == true
 end
 
+local function HasPendingVisibleRelayout(trackerKey)
+    local tracker = ResolveTrackerModule(trackerKey)
+    if not tracker then
+        return false
+    end
+
+    local probe = tracker.HasPendingVisibleRelayout or tracker.NeedsVisibleRelayout
+    if type(probe) ~= "function" then
+        return false
+    end
+
+    local ok, result = pcall(probe, tracker)
+    if not ok then
+        DebugLog(string.format("%s pending visible relayout probe failed: %s", tostring(trackerKey), tostring(result)))
+        return false
+    end
+
+    return result == true
+end
+
 function TrackerRuntime.ForceQuestTrackerRefresh(reason)
     return CallRefresh("quest", { "RefreshNow", "RequestRefresh", "Refresh" }, reason)
 end
@@ -508,13 +528,32 @@ function TrackerRuntime.OnHostTransientVisibilityChanged(isVisible, source)
     local layoutDirty = update and update.layoutDirty == true
     local questStructureDirty = HasPendingStructure("quest")
     local achievementStructureDirty = HasPendingStructure("achievement")
+    local questPendingVisible = HasPendingVisibleRelayout("quest")
+    local achievementPendingVisible = HasPendingVisibleRelayout("achievement")
+
+    if (questPendingVisible and not questsDirty) or (achievementPendingVisible and not achievementsDirty) then
+        update = GetUpdateState()
+        local visibleReason = reason or "visible-relayout"
+        if questPendingVisible and update.questsDirty ~= true then
+            update.questsDirty = true
+            update.questReason = update.questReason or visibleReason
+        end
+        if achievementPendingVisible and update.achievementsDirty ~= true then
+            update.achievementsDirty = true
+            update.achievementReason = update.achievementReason or visibleReason
+        end
+        questsDirty = update.questsDirty == true
+        achievementsDirty = update.achievementsDirty == true
+        layoutDirty = update.layoutDirty == true
+    end
+
     local outstanding = questsDirty or achievementsDirty or layoutDirty or questStructureDirty or achievementStructureDirty
 
     local shouldProcess = normalizedVisible and state.hostHidden == false and outstanding
 
     if IsDebugLoggingEnabled() then
         DebugLog(string.format(
-            "TransientVisibility source=%s visible=%s policyVisible=%s hostHidden(before=%s after=%s) process=%s dirty(q=%s a=%s l=%s) structure(q=%s a=%s)",
+            "TransientVisibility source=%s visible=%s policyVisible=%s hostHidden(before=%s after=%s) process=%s dirty(q=%s a=%s l=%s) structure(q=%s a=%s) pendingVisible(q=%s a=%s)",
             tostring(source),
             tostring(normalizedVisible),
             tostring(state.policyVisible ~= false),
@@ -525,7 +564,9 @@ function TrackerRuntime.OnHostTransientVisibilityChanged(isVisible, source)
             tostring(achievementsDirty),
             tostring(layoutDirty),
             tostring(questStructureDirty),
-            tostring(achievementStructureDirty)
+            tostring(achievementStructureDirty),
+            tostring(questPendingVisible),
+            tostring(achievementPendingVisible)
         ))
     end
 

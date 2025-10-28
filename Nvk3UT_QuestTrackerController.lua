@@ -90,6 +90,7 @@ local state = {
     categoryControls = {},
     questControls = {},
     hostHidden = false,
+    pendingVisibleRelayout = false,
     pendingRefresh = false,
     contentWidth = 0,
     contentHeight = 0,
@@ -3928,6 +3929,23 @@ local function RefreshFromStructure(reason)
     NotifyHostContentChanged()
     ProcessPendingExternalReveal()
 
+    local shouldDeferVisibleRelayout = state.hostHidden == true
+    if not shouldDeferVisibleRelayout then
+        local control = state.control
+        if HasValidControl(control) and control.IsHidden then
+            local ok, hidden = pcall(control.IsHidden, control)
+            shouldDeferVisibleRelayout = ok and hidden == true
+        end
+    end
+    if not shouldDeferVisibleRelayout then
+        local container = state.container
+        if HasValidControl(container) and container.IsHidden then
+            local ok, hidden = pcall(container.IsHidden, container)
+            shouldDeferVisibleRelayout = ok and hidden == true
+        end
+    end
+    state.pendingVisibleRelayout = shouldDeferVisibleRelayout
+
     if IsDebugLoggingEnabled() then
         DebugLog(string.format("REFRESH_FROM_STRUCTURE reason=%s rows=%d", tostring(reason), state.rows and #state.rows or 0))
     end
@@ -3974,6 +3992,7 @@ function QuestTrackerController.Init(parentControl, opts)
     else
         state.lastKnownContainerWidth = 0
     end
+    state.pendingVisibleRelayout = false
     if state.control and state.control.SetResizeToFitDescendents then
         state.control:SetResizeToFitDescendents(true)
     end
@@ -4106,6 +4125,7 @@ function QuestTrackerController.Shutdown()
     state.isRebuildInProgress = false
     state.questModelSubscription = nil
     state.hostHidden = false
+    state.pendingVisibleRelayout = false
     state.structureDirty = true
     NotifyHostContentChanged()
 end
@@ -4172,6 +4192,10 @@ end
 
 function QuestTrackerController.HasPendingStructureChanges()
     return state.structureDirty == true
+end
+
+function QuestTrackerController.HasPendingVisibleRelayout()
+    return state.pendingVisibleRelayout == true
 end
 
 function QuestTrackerController.SyncStructureIfDirty(reason)
