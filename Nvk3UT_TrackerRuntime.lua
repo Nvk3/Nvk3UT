@@ -356,6 +356,21 @@ local function CallRefresh(trackerKey, methodNames, reason)
         return
     end
 
+    local readiness = tracker.IsInitialized
+    if type(readiness) == "function" then
+        local ok, ready = pcall(readiness, tracker, methodNames and methodNames[1])
+        if not ok then
+            DebugLog(string.format("IsInitialized check failed for %s: %s", tostring(trackerKey), tostring(ready)))
+            return
+        end
+
+        if ready == false then
+            return
+        end
+    elseif readiness == false then
+        return
+    end
+
     for index = 1, #methodNames do
         local methodName = methodNames[index]
         local func = tracker[methodName]
@@ -390,6 +405,10 @@ end
 
 function TrackerRuntime.GetCombatState()
     return state.isInCombat == true
+end
+
+function TrackerRuntime:IsInitialized()
+    return true
 end
 
 Nvk3UT.TrackerRuntime = TrackerRuntime

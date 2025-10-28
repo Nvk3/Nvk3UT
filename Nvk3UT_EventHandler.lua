@@ -40,8 +40,41 @@ local function DebugLog(...)
     end
 end
 
+local function IsModuleReady(target, methodName)
+    if not target then
+        return false
+    end
+
+    local readiness = target.IsInitialized
+    if type(readiness) == "function" then
+        local ok, result = pcall(readiness, target, methodName)
+        if not ok then
+            DebugLog(string.format(
+                "IsInitialized check failed for %s: %s",
+                tostring(methodName),
+                tostring(result)
+            ))
+            return false
+        end
+
+        if result == nil then
+            return true
+        end
+
+        return result ~= false
+    elseif readiness ~= nil then
+        return readiness ~= false
+    end
+
+    return true
+end
+
 local function Dispatch(target, methodName, ...)
     if not target then
+        return
+    end
+
+    if not IsModuleReady(target, methodName) then
         return
     end
 

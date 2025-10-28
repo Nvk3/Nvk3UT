@@ -123,6 +123,10 @@ local state = {
     hostHidden = false,
 }
 
+local function HasValidControl(control)
+    return type(control) == "userdata"
+end
+
 local function ApplyLabelDefaults(label)
     if not label or not label.SetHorizontalAlignment then
         return
@@ -961,18 +965,18 @@ local function RequestRefresh()
 end
 
 local function ApplyHostVisibilityInternal(hidden, reason)
-    if not state.control then
-        return
-    end
-
     local normalized = hidden and true or false
+
     if state.hostHidden == normalized then
         return
     end
 
     state.hostHidden = normalized
-    state.control:SetHidden(normalized)
-    NotifyHostContentChanged()
+
+    if HasValidControl(state.control) and state.control.SetHidden then
+        state.control:SetHidden(normalized)
+        NotifyHostContentChanged()
+    end
 
     if IsDebugLoggingEnabled() then
         DebugLog(string.format("HOST_VISIBILITY -> %s (%s)", normalized and "hidden" or "shown", tostring(reason)))
@@ -1326,6 +1330,10 @@ local function EnsurePools()
         return
     end
 
+    if not HasValidControl(state.container) then
+        return
+    end
+
     state.categoryPool = ZO_ControlPool:New("AchievementsCategoryHeader_Template", state.container)
     state.achievementPool = ZO_ControlPool:New("AchievementHeader_Template", state.container)
     state.objectivePool = ZO_ControlPool:New("AchievementObjective_Template", state.container)
@@ -1599,7 +1607,7 @@ local function ApplyPendingFocus()
 end
 
 local function Rebuild()
-    if not state.container then
+    if not HasValidControl(state.container) then
         return
     end
 
@@ -1646,12 +1654,13 @@ local function UnsubscribeFromModel()
 end
 
 function AchievementTrackerController.Init(parentControl, opts)
-    if not parentControl then
-        error("AchievementTrackerController.Init requires a parent control")
-    end
-
     if state.isInitialized then
         AchievementTrackerController.Shutdown()
+    end
+
+    if not HasValidControl(parentControl) then
+        DebugLog("Init aborted: invalid parent control")
+        return
     end
 
     state.control = parentControl
@@ -1866,6 +1875,10 @@ end
 function AchievementTrackerController.GetContentSize()
     UpdateContentSize()
     return state.contentWidth or 0, state.contentHeight or 0
+end
+
+function AchievementTrackerController:IsInitialized()
+    return state.isInitialized == true
 end
 
 -- Ensure the container exists before populating entries during init

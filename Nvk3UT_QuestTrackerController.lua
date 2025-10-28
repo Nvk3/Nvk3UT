@@ -107,6 +107,14 @@ local state = {
     pendingActivation = false,
 }
 
+local function HasValidControl(control)
+    return type(control) == "userdata"
+end
+
+local function HasActiveContainer()
+    return HasValidControl(state.container)
+end
+
 local STATE_VERSION = 1
 
 local PRIORITY = {
@@ -3190,6 +3198,10 @@ local function EnsurePools()
         return
     end
 
+    if not HasActiveContainer() then
+        return
+    end
+
     state.categoryPool = ZO_ControlPool:New("CategoryHeader_Template", state.container)
     state.questPool = ZO_ControlPool:New("QuestHeader_Template", state.container)
     state.conditionPool = ZO_ControlPool:New("QuestCondition_Template", state.container)
@@ -3503,7 +3515,7 @@ local function UnsubscribeFromQuestModel()
 end
 
 local function Rebuild()
-    if not state.container then
+    if not HasActiveContainer() then
         return
     end
 
@@ -3552,18 +3564,18 @@ local function Rebuild()
 end
 
 local function ApplyHostVisibilityInternal(hidden, reason)
-    if not state.control then
-        return
-    end
-
     local normalized = hidden and true or false
+
     if state.hostHidden == normalized then
         return
     end
 
     state.hostHidden = normalized
-    state.control:SetHidden(normalized)
-    NotifyHostContentChanged()
+
+    if HasValidControl(state.control) and state.control.SetHidden then
+        state.control:SetHidden(normalized)
+        NotifyHostContentChanged()
+    end
 
     if IsDebugLoggingEnabled() then
         DebugLog(string.format("HOST_VISIBILITY -> %s (%s)", normalized and "hidden" or "shown", tostring(reason)))
@@ -3575,7 +3587,10 @@ function QuestTrackerController.Init(parentControl, opts)
         return
     end
 
-    assert(parentControl ~= nil, "QuestTrackerController.Init requires a parent control")
+    if not HasValidControl(parentControl) then
+        DebugLog("Init aborted: invalid parent control")
+        return
+    end
 
     state.control = parentControl
     state.container = parentControl
@@ -3787,6 +3802,14 @@ end
 function QuestTrackerController.GetContentSize()
     UpdateContentSize()
     return state.contentWidth or 0, state.contentHeight or 0
+end
+
+function QuestTrackerController:IsInitialized(methodName)
+    if methodName == "OnPlayerActivated" then
+        return true
+    end
+
+    return state.isInitialized == true
 end
 
 Nvk3UT.QuestTrackerController = QuestTrackerController

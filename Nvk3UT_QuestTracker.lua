@@ -7,21 +7,61 @@ QuestTracker.__index = QuestTracker
 
 local MODULE_NAME = addonName .. "QuestTracker"
 
+local unpack = table.unpack or unpack
+
+local function IsDebugLoggingEnabled()
+    local sv = Nvk3UT and Nvk3UT.sv
+    return sv and sv.debug == true
+end
+
+local function DebugLog(message, ...)
+    if not IsDebugLoggingEnabled() then
+        return
+    end
+
+    if select("#", ...) > 0 then
+        message = string.format(tostring(message), ...)
+    end
+
+    if d then
+        d(string.format("[%s] %s", MODULE_NAME, tostring(message)))
+    elseif print then
+        print(string.format("[%s] %s", MODULE_NAME, tostring(message)))
+    end
+end
+
 local function GetController()
     local controller = Nvk3UT and Nvk3UT.QuestTrackerController
-    if not controller then
-        error(string.format("[%s] QuestTrackerController is not available", MODULE_NAME))
-    end
     return controller
 end
 
 local function CallController(methodName, ...)
     local controller = GetController()
+    if not controller then
+        DebugLog("QuestTrackerController missing for %s", tostring(methodName))
+        return nil
+    end
+
     local fn = controller[methodName]
     if type(fn) ~= "function" then
-        error(string.format("[%s] QuestTrackerController.%s is not a function", MODULE_NAME, tostring(methodName)))
+        DebugLog("QuestTrackerController.%s is not callable", tostring(methodName))
+        return nil
     end
-    return fn(...)
+
+    local ok, results = pcall(function(...)
+        return { fn(...) }
+    end, ...)
+
+    if not ok then
+        DebugLog("QuestTrackerController.%s failed: %s", tostring(methodName), tostring(results))
+        return nil
+    end
+
+    if not results then
+        return nil
+    end
+
+    return unpack(results)
 end
 
 function QuestTracker.Init(...)
@@ -57,7 +97,11 @@ function QuestTracker.SetActive(...)
 end
 
 function QuestTracker.IsActive(...)
-    return CallController("IsActive", ...)
+    local result = CallController("IsActive", ...)
+    if result == nil then
+        return true
+    end
+    return result
 end
 
 function QuestTracker.ApplyHostVisibility(...)
@@ -65,7 +109,11 @@ function QuestTracker.ApplyHostVisibility(...)
 end
 
 function QuestTracker.GetContentSize(...)
-    return CallController("GetContentSize", ...)
+    local width, height = CallController("GetContentSize", ...)
+    if width == nil or height == nil then
+        return 0, 0
+    end
+    return width, height
 end
 
 function QuestTracker.OnTrackedQuestUpdate(...)
@@ -83,6 +131,24 @@ end
 function QuestTracker.OnQuestProgress(...)
     return CallController("OnQuestProgress", ...)
 end
+
+setmetatable(QuestTracker, {
+    __index = function(_, key)
+        local controller = GetController()
+        if not controller then
+            return nil
+        end
+
+        local value = controller[key]
+        if type(value) == "function" then
+            return function(_, ...)
+                return CallController(key, ...)
+            end
+        end
+
+        return value
+    end,
+})
 
 Nvk3UT.QuestTracker = QuestTracker
 
