@@ -2292,16 +2292,24 @@ function AchievementTrackerController.SyncStructureIfDirty(reason)
     end
 
     local achievementModel = Nvk3UT and Nvk3UT.AchievementModel
+    local latestSnapshot = nil
     if achievementModel and achievementModel.GetSnapshot then
-        local latestSnapshot = achievementModel.GetSnapshot()
-        if latestSnapshot ~= nil then
-            state.snapshot = latestSnapshot
-        end
+        latestSnapshot = achievementModel.GetSnapshot()
     end
 
-    if not state.snapshot then
-        state.snapshot = { achievements = {} }
-    elseif type(state.snapshot.achievements) ~= "table" then
+    if latestSnapshot == nil then
+        if IsDebugLoggingEnabled() then
+            DebugLog(string.format(
+                "Achievement SyncStructureIfDirty(%s) aborted - snapshot unavailable",
+                tostring(syncReason)
+            ))
+        end
+        return false
+    end
+
+    state.snapshot = latestSnapshot
+
+    if type(state.snapshot.achievements) ~= "table" then
         state.snapshot.achievements = {}
     end
 

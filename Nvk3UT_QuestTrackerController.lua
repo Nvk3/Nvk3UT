@@ -4145,25 +4145,30 @@ function QuestTrackerController.SyncStructureIfDirty(reason)
     end
 
     local questModel = Nvk3UT and Nvk3UT.QuestModel
+    local latestSnapshot = nil
     if questModel and questModel.GetSnapshot then
-        local latestSnapshot = questModel.GetSnapshot()
-        if latestSnapshot ~= nil then
-            state.snapshot = latestSnapshot
-        end
+        latestSnapshot = questModel.GetSnapshot()
     end
+
+    if latestSnapshot == nil then
+        if IsDebugLoggingEnabled() then
+            DebugLog(string.format(
+                "SyncStructureIfDirty(%s) aborted - snapshot unavailable",
+                tostring(syncReason)
+            ))
+        end
+        return false
+    end
+
+    state.snapshot = latestSnapshot
 
     local snapshot = state.snapshot
 
-    if not snapshot then
-        snapshot = { categories = { ordered = {}, byKey = {} } }
-        state.snapshot = snapshot
+    if type(snapshot.categories) ~= "table" then
+        snapshot.categories = { ordered = {}, byKey = {} }
     else
-        if type(snapshot.categories) ~= "table" then
-            snapshot.categories = { ordered = {}, byKey = {} }
-        else
-            snapshot.categories.ordered = snapshot.categories.ordered or {}
-            snapshot.categories.byKey = snapshot.categories.byKey or {}
-        end
+        snapshot.categories.ordered = snapshot.categories.ordered or {}
+        snapshot.categories.byKey = snapshot.categories.byKey or {}
     end
 
     local rebuilt = RebuildStructure(syncReason)
