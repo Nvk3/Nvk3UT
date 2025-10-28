@@ -606,12 +606,19 @@ local function FlushCoordinatorUpdates(triggerReason)
                 tostring(questSynced)
             ))
         end
-        update.questsDirty = false
-        update.questReason = nil
-        local refreshed = CallRefresh("quest", { "RefreshNow", "RequestRefresh", "Refresh" }, questReason)
-        if not refreshed then
+
+        if questSynced then
+            update.questsDirty = false
+            update.questReason = nil
+
+            local refreshed = CallRefresh("quest", { "RefreshNow", "RequestRefresh", "Refresh" }, questReason)
+            if not refreshed then
+                update.questsDirty = true
+                update.questReason = questReason
+            end
+        else
             update.questsDirty = true
-            update.questReason = questReason
+            update.questReason = update.questReason or questReason
         end
     end
 
@@ -623,12 +630,19 @@ local function FlushCoordinatorUpdates(triggerReason)
                 tostring(achievementSynced)
             ))
         end
-        update.achievementsDirty = false
-        update.achievementReason = nil
-        local refreshed = CallRefresh("achievement", { "RefreshNow", "RequestRefresh", "Refresh" }, achievementReason)
-        if not refreshed then
+
+        if achievementSynced then
+            update.achievementsDirty = false
+            update.achievementReason = nil
+
+            local refreshed = CallRefresh("achievement", { "RefreshNow", "RequestRefresh", "Refresh" }, achievementReason)
+            if not refreshed then
+                update.achievementsDirty = true
+                update.achievementReason = achievementReason
+            end
+        else
             update.achievementsDirty = true
-            update.achievementReason = achievementReason
+            update.achievementReason = update.achievementReason or achievementReason
         end
     end
 
@@ -636,7 +650,7 @@ local function FlushCoordinatorUpdates(triggerReason)
         update.layoutDirty = false
         update.layoutReason = nil
 
-        if not questsDirty and not achievementsDirty then
+        if update.questsDirty ~= true and update.achievementsDirty ~= true then
             local refreshed = TrackerRuntime.RequestFullRefresh(layoutReason)
             if not refreshed then
                 update.layoutDirty = true

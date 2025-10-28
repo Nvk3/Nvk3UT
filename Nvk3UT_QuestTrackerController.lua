@@ -4199,24 +4199,52 @@ function QuestTrackerController.HasPendingVisibleRelayout()
 end
 
 function QuestTrackerController.SyncStructureIfDirty(reason)
+    local syncReason = reason or "sync"
+
     if not state.structureDirty then
-        return false
+        return true
     end
 
     local questModel = Nvk3UT and Nvk3UT.QuestModel
+    local snapshot
+
     if questModel and type(questModel.GetSnapshot) == "function" then
-        local ok, snapshot = pcall(questModel.GetSnapshot, questModel)
-        if ok then
-            ApplySnapshot(snapshot or { categories = { ordered = {}, byKey = {} } }, {
-                trigger = reason or "sync",
-                source = "QuestTracker:SyncStructureIfDirty",
-            })
+        local ok, result = pcall(questModel.GetSnapshot, questModel)
+        if ok and type(result) == "table" then
+            snapshot = result
         elseif IsDebugLoggingEnabled() then
-            DebugLog(string.format("SyncStructureIfDirty snapshot failed: %s", tostring(snapshot)))
+            DebugLog(string.format("SyncStructureIfDirty snapshot failed: %s", tostring(result)))
         end
     end
 
-    local syncReason = reason or "sync"
+    if not snapshot then
+        if IsDebugLoggingEnabled() then
+            DebugLog(string.format("SyncStructureIfDirty(%s) postponed: snapshot unavailable", tostring(syncReason)))
+        end
+        return false
+    end
+
+    local normalizedSnapshot = snapshot
+    if type(normalizedSnapshot.categories) ~= "table" then
+        normalizedSnapshot = {}
+        for key, value in pairs(snapshot) do
+            normalizedSnapshot[key] = value
+        end
+        normalizedSnapshot.categories = { ordered = {}, byKey = {} }
+    else
+        if type(normalizedSnapshot.categories.ordered) ~= "table" then
+            normalizedSnapshot.categories.ordered = {}
+        end
+        if type(normalizedSnapshot.categories.byKey) ~= "table" then
+            normalizedSnapshot.categories.byKey = {}
+        end
+    end
+
+    ApplySnapshot(normalizedSnapshot, {
+        trigger = syncReason,
+        source = "QuestTracker:SyncStructureIfDirty",
+    })
+
     local rebuilt = RebuildStructure(syncReason)
 
     if not rebuilt then

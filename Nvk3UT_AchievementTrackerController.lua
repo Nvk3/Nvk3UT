@@ -2346,21 +2346,33 @@ function AchievementTrackerController.HasPendingVisibleRelayout()
 end
 
 function AchievementTrackerController.SyncStructureIfDirty(reason)
+    local syncReason = reason or "sync"
+
     if not state.structureDirty then
-        return false
+        return true
     end
 
     local achievementModel = Nvk3UT and Nvk3UT.AchievementModel
+    local snapshot
+
     if achievementModel and type(achievementModel.GetSnapshot) == "function" then
-        local ok, snapshot = pcall(achievementModel.GetSnapshot, achievementModel)
-        if ok then
-            state.snapshot = snapshot
+        local ok, result = pcall(achievementModel.GetSnapshot, achievementModel)
+        if ok and type(result) == "table" then
+            snapshot = result
         elseif IsDebugLoggingEnabled() then
-            DebugLog(string.format("SyncStructureIfDirty snapshot failed: %s", tostring(snapshot)))
+            DebugLog(string.format("SyncStructureIfDirty snapshot failed: %s", tostring(result)))
         end
     end
 
-    local syncReason = reason or "sync"
+    if not snapshot then
+        if IsDebugLoggingEnabled() then
+            DebugLog(string.format("Achievement SyncStructureIfDirty(%s) postponed: snapshot unavailable", tostring(syncReason)))
+        end
+        return false
+    end
+
+    state.snapshot = snapshot
+
     local rebuilt = RebuildStructure(syncReason)
 
     if not rebuilt then
