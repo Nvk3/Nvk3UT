@@ -23,25 +23,46 @@ local state = {
     eventsRegistered = false,
 }
 
-local QUEST_STRUCTURE_EVENTS = {
-    [EVENT_QUEST_ADDED] = true,
-    [EVENT_QUEST_REMOVED] = true,
-    [EVENT_QUEST_ADVANCED] = true,
-    [EVENT_QUEST_LOG_UPDATED] = true,
-    [EVENT_QUEST_CONDITION_COUNTER_CHANGED] = true,
-}
+local QUEST_STRUCTURE_EVENTS = {}
 
-local ACHIEVEMENT_STRUCTURE_EVENTS = {
-    [EVENT_ACHIEVEMENTS_UPDATED] = true,
-    [EVENT_ACHIEVEMENT_UPDATED] = true,
-    [EVENT_ACHIEVEMENT_AWARDED] = true,
-}
+local ACHIEVEMENT_STRUCTURE_EVENTS = {}
 
+local function AddQuestStructureEvent(eventId)
+    if eventId ~= nil then
+        QUEST_STRUCTURE_EVENTS[eventId] = true
+    end
+end
+
+local function AddAchievementStructureEvent(eventId)
+    if eventId ~= nil then
+        ACHIEVEMENT_STRUCTURE_EVENTS[eventId] = true
+    end
+end
+
+local EVENT_QUEST_ADDED = rawget(_G, "EVENT_QUEST_ADDED")
+local EVENT_QUEST_REMOVED = rawget(_G, "EVENT_QUEST_REMOVED")
+local EVENT_QUEST_ADVANCED = rawget(_G, "EVENT_QUEST_ADVANCED")
+local EVENT_QUEST_LOG_UPDATED = rawget(_G, "EVENT_QUEST_LOG_UPDATED")
+local EVENT_QUEST_CONDITION_COUNTER_CHANGED = rawget(_G, "EVENT_QUEST_CONDITION_COUNTER_CHANGED")
+local EVENT_TRACKING_UPDATE = rawget(_G, "EVENT_TRACKING_UPDATE")
+local EVENT_PLAYER_ACTIVATED = rawget(_G, "EVENT_PLAYER_ACTIVATED")
+local EVENT_PLAYER_COMBAT_STATE = rawget(_G, "EVENT_PLAYER_COMBAT_STATE")
+
+local EVENT_ACHIEVEMENTS_UPDATED = rawget(_G, "EVENT_ACHIEVEMENTS_UPDATED")
+local EVENT_ACHIEVEMENT_UPDATED = rawget(_G, "EVENT_ACHIEVEMENT_UPDATED")
+local EVENT_ACHIEVEMENT_AWARDED = rawget(_G, "EVENT_ACHIEVEMENT_AWARDED")
 local ACHIEVEMENT_TRACKED_LIST_EVENT = rawget(_G, "EVENT_ACHIEVEMENT_TRACKED_LIST_UPDATED")
 
-if ACHIEVEMENT_TRACKED_LIST_EVENT then
-    ACHIEVEMENT_STRUCTURE_EVENTS[ACHIEVEMENT_TRACKED_LIST_EVENT] = true
-end
+AddQuestStructureEvent(EVENT_QUEST_ADDED)
+AddQuestStructureEvent(EVENT_QUEST_REMOVED)
+AddQuestStructureEvent(EVENT_QUEST_ADVANCED)
+AddQuestStructureEvent(EVENT_QUEST_LOG_UPDATED)
+AddQuestStructureEvent(EVENT_QUEST_CONDITION_COUNTER_CHANGED)
+
+AddAchievementStructureEvent(EVENT_ACHIEVEMENTS_UPDATED)
+AddAchievementStructureEvent(EVENT_ACHIEVEMENT_UPDATED)
+AddAchievementStructureEvent(EVENT_ACHIEVEMENT_AWARDED)
+AddAchievementStructureEvent(ACHIEVEMENT_TRACKED_LIST_EVENT)
 
 local function IsDebugLoggingEnabled()
     local sv = Nvk3UT and Nvk3UT.sv
