@@ -617,6 +617,39 @@ local function ForceRebuild(self)
     return updated == true
 end
 
+local function EnsureSnapshotAvailable(reason)
+    if AchievementModel.currentSnapshot then
+        return true
+    end
+
+    if not AchievementModel.isInitialized then
+        Debugf(AchievementModel, "[EnsureSnapshot] skipped - not initialized (%s)", tostring(reason))
+        return false
+    end
+
+    local updated = ForceRebuild(AchievementModel)
+    if AchievementModel.currentSnapshot then
+        Debugf(
+            AchievementModel,
+            "[EnsureSnapshot] rebuild applied (%s) updated=%s",
+            tostring(reason),
+            tostring(updated)
+        )
+        return true
+    end
+
+    if updated ~= true then
+        ScheduleRebuild(AchievementModel)
+        Debugf(
+            AchievementModel,
+            "[EnsureSnapshot] scheduled follow-up rebuild (%s)",
+            tostring(reason)
+        )
+    end
+
+    return AchievementModel.currentSnapshot ~= nil
+end
+
 local function OnAchievementChanged(...)
     local self = AchievementModel
     if not self.isInitialized then
@@ -677,6 +710,10 @@ function AchievementModel.Shutdown()
 end
 
 function AchievementModel.GetSnapshot()
+    if not AchievementModel.currentSnapshot then
+        EnsureSnapshotAvailable("get-snapshot")
+    end
+
     return AchievementModel.currentSnapshot
 end
 

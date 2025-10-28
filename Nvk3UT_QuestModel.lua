@@ -1782,6 +1782,44 @@ ForceRebuild = function(self)
     return updated
 end
 
+local function EnsureSnapshotAvailable(reason)
+    if QuestModel.currentSnapshot then
+        return true
+    end
+
+    if not QuestModel.isInitialized then
+        Debugf(QuestModel, "[EnsureSnapshot] skipped - not initialized (%s)", tostring(reason))
+        return false
+    end
+
+    if not playerState.hasActivated then
+        Debugf(QuestModel, "[EnsureSnapshot] skipped - player not activated (%s)", tostring(reason))
+        return false
+    end
+
+    local updated = ForceRebuild(QuestModel)
+    if QuestModel.currentSnapshot then
+        Debugf(
+            QuestModel,
+            "[EnsureSnapshot] rebuild applied (%s) updated=%s",
+            tostring(reason),
+            tostring(updated)
+        )
+        return true
+    end
+
+    if updated ~= true then
+        ScheduleRebuild(QuestModel)
+        Debugf(
+            QuestModel,
+            "[EnsureSnapshot] scheduled follow-up rebuild (%s)",
+            tostring(reason)
+        )
+    end
+
+    return QuestModel.currentSnapshot ~= nil
+end
+
 local function OnQuestChanged(_, ...)
     local self = QuestModel
     if not self.isInitialized or not playerState.hasActivated then
@@ -1859,6 +1897,10 @@ function QuestModel.Shutdown()
 end
 
 function QuestModel.GetSnapshot()
+    if not QuestModel.currentSnapshot then
+        EnsureSnapshotAvailable("get-snapshot")
+    end
+
     return QuestModel.currentSnapshot
 end
 
