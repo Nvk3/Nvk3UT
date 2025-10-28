@@ -1856,6 +1856,7 @@ local function attachFragmentToScene(scene)
 
     if scene.HasFragment and scene:HasFragment(state.fragment) then
         state.fragmentScenes[scene] = true
+        ensureSceneStateCallback(scene)
         return true
     end
 
