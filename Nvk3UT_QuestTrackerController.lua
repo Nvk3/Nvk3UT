@@ -4144,6 +4144,14 @@ function QuestTrackerController.SyncStructureIfDirty(reason)
         return true
     end
 
+    local questModel = Nvk3UT and Nvk3UT.QuestModel
+    if questModel and questModel.GetSnapshot then
+        local latestSnapshot = questModel.GetSnapshot()
+        if latestSnapshot ~= nil then
+            state.snapshot = latestSnapshot
+        end
+    end
+
     local snapshot = state.snapshot
 
     if not snapshot then

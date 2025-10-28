@@ -1813,6 +1813,11 @@ function QuestModel.RequestImmediateRebuild(reason)
     end
 
     local updated = ForceRebuild(QuestModel)
+
+    if updated ~= true then
+        ScheduleRebuild(QuestModel)
+    end
+
     return updated == true
 end
 

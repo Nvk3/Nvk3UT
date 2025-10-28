@@ -494,17 +494,19 @@ end
 
 local function PerformRebuild(self)
     if not self.isInitialized then
-        return
+        return false
     end
 
     local snapshot = BuildSnapshot(self)
     if not SnapshotsDiffer(self.currentSnapshot, snapshot) then
-        return
+        return false
     end
 
     snapshot.revision = (self.currentSnapshot and self.currentSnapshot.revision or 0) + 1
     self.currentSnapshot = snapshot
     NotifySubscribers(self)
+
+    return true
 end
 
 local function ScheduleRebuild(self)
@@ -634,7 +636,13 @@ function AchievementModel.RequestImmediateRebuild(reason)
         LogDebug(AchievementModel, string.format("[ImmediateRebuild] reason=%s", tostring(reason)))
     end
 
-    return ForceRebuild(AchievementModel)
+    local updated = ForceRebuild(AchievementModel)
+
+    if updated ~= true then
+        ScheduleRebuild(AchievementModel)
+    end
+
+    return updated == true
 end
 
 Nvk3UT.AchievementModel = AchievementModel

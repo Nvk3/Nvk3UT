@@ -2291,6 +2291,14 @@ function AchievementTrackerController.SyncStructureIfDirty(reason)
         return true
     end
 
+    local achievementModel = Nvk3UT and Nvk3UT.AchievementModel
+    if achievementModel and achievementModel.GetSnapshot then
+        local latestSnapshot = achievementModel.GetSnapshot()
+        if latestSnapshot ~= nil then
+            state.snapshot = latestSnapshot
+        end
+    end
+
     if not state.snapshot then
         state.snapshot = { achievements = {} }
     elseif type(state.snapshot.achievements) ~= "table" then
