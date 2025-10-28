@@ -191,7 +191,9 @@ local function HandleTrackingUpdate(eventCode, trackingType, context)
 end
 
 local function ProcessPlayerActivated()
-    Dispatch(Nvk3UT and Nvk3UT.QuestModel, "OnPlayerActivated")
+    local questModel = Nvk3UT and Nvk3UT.QuestModel
+    Dispatch(questModel, "OnPlayerActivated")
+    Dispatch(questModel, "RequestImmediateRebuild", "player-activated")
     local questHandled = Dispatch(Nvk3UT and Nvk3UT.QuestTrackerController, "OnPlayerActivated")
     Dispatch(Nvk3UT and Nvk3UT.QuestTrackerController, "FlagStructureDirty", "player-activated")
 
@@ -201,6 +203,9 @@ local function ProcessPlayerActivated()
 
     Dispatch(Nvk3UT and Nvk3UT.TrackerRuntime, "MarkQuestDirty", "player-activated")
 
+    local achievementModel = Nvk3UT and Nvk3UT.AchievementModel
+    Dispatch(achievementModel, "OnPlayerActivated")
+    Dispatch(achievementModel, "RequestImmediateRebuild", "player-activated")
     local achievementHandled = Dispatch(Nvk3UT and Nvk3UT.AchievementTrackerController, "OnPlayerActivated")
     Dispatch(Nvk3UT and Nvk3UT.AchievementTrackerController, "FlagStructureDirty", "player-activated")
 
