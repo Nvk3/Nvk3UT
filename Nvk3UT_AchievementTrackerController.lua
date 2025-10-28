@@ -110,6 +110,7 @@ local state = {
     saved = nil,
     control = nil,
     container = nil,
+    lastKnownContainerWidth = 0,
     categoryPool = nil,
     achievementPool = nil,
     objectivePool = nil,
@@ -203,17 +204,24 @@ local function GetToggleWidth(toggle, fallback)
     return fallback or 0
 end
 
+local function CacheContainerWidth(width)
+    if type(width) == "number" and width > 0 then
+        state.lastKnownContainerWidth = width
+    end
+end
+
 local function GetContainerWidth()
     if not state.container or not state.container.GetWidth then
-        return 0
+        return state.lastKnownContainerWidth or 0
     end
 
     local width = state.container:GetWidth()
-    if not width or width <= 0 then
-        return 0
+    if type(width) == "number" and width > 0 then
+        CacheContainerWidth(width)
+        return width
     end
 
-    return width
+    return state.lastKnownContainerWidth or 0
 end
 
 local function ApplyRowMetrics(control, indent, toggleWidth, leftPadding, rightPadding, minHeight)
@@ -241,6 +249,7 @@ local function ApplyRowMetrics(control, indent, toggleWidth, leftPadding, rightP
     end
 
     control:SetHeight(targetHeight)
+    CacheContainerWidth(containerWidth)
 end
 
 local function RefreshControlMetrics(control)
@@ -2092,6 +2101,16 @@ function AchievementTrackerController.Init(parentControl, opts)
 
     state.control = parentControl
     state.container = parentControl
+    if parentControl and parentControl.GetWidth then
+        local width = parentControl:GetWidth()
+        if type(width) == "number" and width > 0 then
+            state.lastKnownContainerWidth = width
+        else
+            state.lastKnownContainerWidth = 0
+        end
+    else
+        state.lastKnownContainerWidth = 0
+    end
     if state.control and state.control.SetResizeToFitDescendents then
         state.control:SetResizeToFitDescendents(true)
     end
@@ -2174,6 +2193,7 @@ function AchievementTrackerController.Shutdown()
     state.objectivePool = nil
 
     state.container = nil
+    state.lastKnownContainerWidth = 0
     state.control = nil
     state.snapshot = nil
     state.orderedControls = {}
