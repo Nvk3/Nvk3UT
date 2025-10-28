@@ -25,10 +25,17 @@ Nvk3UT_CompletedData.lua
 Nvk3UT_CompletedIntegration.lua
 Nvk3UT_QuestModel.lua
 Nvk3UT_AchievementModel.lua
+Nvk3UT_TrackerLayout.lua
+Nvk3UT_QuestTrackerRow.lua
+Nvk3UT_AchievementTrackerRow.lua
+Nvk3UT_QuestTrackerController.lua
+Nvk3UT_AchievementTrackerController.lua
 Nvk3UT_QuestTracker.xml
 Nvk3UT_QuestTracker.lua
 Nvk3UT_AchievementTracker.xml
 Nvk3UT_AchievementTracker.lua
+Nvk3UT_TrackerRuntime.lua
+Nvk3UT_EventHandler.lua
 Nvk3UT_LAM.lua
 Nvk3UT_TrackerHost.lua
 Nvk3UT_Core.lua

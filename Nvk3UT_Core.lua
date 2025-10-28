@@ -64,7 +64,6 @@ local defaults = {
     QuestTracker = {
         active = true,
         hideDefault = false,
-        hideInCombat = false,
         lock = false,
         autoGrowV = true,
         autoGrowH = false,
@@ -97,6 +96,9 @@ local defaults = {
             completed = true,
             todo = true,
         },
+    },
+    TrackerRuntime = {
+        hideInCombat = false,
     },
     appearance = DEFAULT_TRACKER_APPEARANCE,
 }
@@ -144,7 +146,12 @@ local function AdoptLegacySettings(saved)
 
     saved.QuestTracker = MergeDefaults(saved.QuestTracker, defaults.QuestTracker)
     saved.AchievementTracker = MergeDefaults(saved.AchievementTracker, defaults.AchievementTracker)
+    saved.TrackerRuntime = MergeDefaults(saved.TrackerRuntime, defaults.TrackerRuntime)
     saved.appearance = MergeDefaults(saved.appearance, defaults.appearance)
+
+    if saved.TrackerRuntime.hideInCombat == nil and saved.QuestTracker then
+        saved.TrackerRuntime.hideInCombat = saved.QuestTracker.hideInCombat == true
+    end
 
     saved.ui = saved.General
     saved.features = saved.General.features
@@ -247,6 +254,9 @@ local function OnLoaded(e,name)
     end
     TryEnable(1)
     if Nvk3UT.Tooltips and Nvk3UT.Tooltips.Init then Nvk3UT.Tooltips.Init() end
+    if Nvk3UT.EventHandler and Nvk3UT.EventHandler.Init then
+        pcall(Nvk3UT.EventHandler.Init)
+    end
     if Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.Init then
         pcall(Nvk3UT.TrackerHost.Init)
     end

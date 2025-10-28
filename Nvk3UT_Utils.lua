@@ -552,6 +552,72 @@ function M.IsMultiStageAchievement(id)
   return false
 end
 
+local stageDebugBatch = {
+  entries = {},
+  scheduled = false,
+}
+
+local function flushStageDebugBatch()
+  stageDebugBatch.scheduled = false
+  if #stageDebugBatch.entries == 0 then
+    return
+  end
+
+  local entries = stageDebugBatch.entries
+  local entryCount = #entries
+  local displayCount = entryCount
+  local overflow = 0
+
+  local MAX_ENTRIES = 10
+  if entryCount > MAX_ENTRIES then
+    displayCount = MAX_ENTRIES
+    overflow = entryCount - MAX_ENTRIES
+  end
+
+  local parts = {}
+  for index = 1, displayCount do
+    parts[index] = entries[index]
+  end
+
+  if overflow > 0 then
+    parts[#parts + 1] = string.format("+%d more", overflow)
+  end
+
+  local payload = table.concat(parts, "; ")
+  stageDebugBatch.entries = {}
+
+  if M and M.d then
+    M.d("[Nvk3UT][Utils][Stage] pending", string.format("data={%s}", payload))
+  end
+end
+
+local function queueStageDebugEntry(entry)
+  if not (entry and entry ~= "") then
+    return
+  end
+
+  if not (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug) then
+    return
+  end
+
+  stageDebugBatch.entries[#stageDebugBatch.entries + 1] = entry
+
+  if stageDebugBatch.scheduled then
+    return
+  end
+
+  stageDebugBatch.scheduled = true
+
+  if type(zo_callLater) == "function" then
+    zo_callLater(function()
+      flushStageDebugBatch()
+    end, 0)
+    return
+  end
+
+  flushStageDebugBatch()
+end
+
 function M.IsAchievementFullyComplete(id)
   if type(id) ~= "number" then
     return false
@@ -577,10 +643,7 @@ function M.IsAchievementFullyComplete(id)
     local satisfied = stageComplete or satisfiedUpstream
     if not satisfied then
       if utilsDebug and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then
-        utilsDebug(
-          "[Nvk3UT][Utils][Stage] pending",
-          string.format("data={id:%d,stage:%d,index:%d}", id, stageId, index)
-        )
+        queueStageDebugEntry(string.format("id:%d,stage:%d,index:%d", id, stageId, index))
       end
       return false
     end

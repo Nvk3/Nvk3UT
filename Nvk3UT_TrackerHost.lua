@@ -27,6 +27,7 @@ local MAX_BAR_HEIGHT = 250
 local FRAGMENT_REASON_SUPPRESSED = addonName .. "_HostSuppressed"
 local FRAGMENT_REASON_USER = addonName .. "_HostHiddenBySettings"
 local FRAGMENT_REASON_SCENE = addonName .. "_HostSceneHidden"
+local FRAGMENT_REASON_RUNTIME = addonName .. "_HostRuntimeHidden"
 
 local DEFAULT_APPEARANCE = {
     enabled = true,
@@ -140,6 +141,24 @@ local function isSceneShowing(scene)
 end
 
 local function isHudSceneShowing()
+    if SCENE_MANAGER then
+        if type(SCENE_MANAGER.IsShowing) == "function" then
+            if SCENE_MANAGER:IsShowing("hud") or SCENE_MANAGER:IsShowing("hudui") then
+                return true
+            end
+        end
+
+        if type(SCENE_MANAGER.GetCurrentScene) == "function" then
+            local currentScene = SCENE_MANAGER:GetCurrentScene()
+            if currentScene and currentScene.GetName then
+                local sceneName = currentScene:GetName()
+                if sceneName == "hud" or sceneName == "hudui" then
+                    return true
+                end
+            end
+        end
+    end
+
     local checkedAny = false
 
     local function pushScenes(list, scene)
@@ -1514,6 +1533,15 @@ local function createContainers()
         end
     end
 
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and runtime.RegisterHostControls then
+        runtime.RegisterHostControls({
+            host = state.root,
+            quest = state.questContainer,
+            achievement = state.achievementContainer,
+        })
+    end
+
     applyWindowBars()
     refreshScroll()
 end
@@ -1546,19 +1574,30 @@ local function applyWindowVisibility()
     local suppressed = state.initializing == true
     local sceneHidden = not isHudSceneShowing()
     local previewActive = state.lamPreviewForceVisible == true and not userHidden
-    local shouldHide = (suppressed or userHidden or sceneHidden) and not previewActive
+    local baseShouldHide = (suppressed or userHidden or sceneHidden) and not previewActive
+
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    local runtimeHidden = false
+    if runtime and type(runtime.IsHostHiddenByPolicy) == "function" then
+        local ok, result = pcall(runtime.IsHostHiddenByPolicy, runtime)
+        runtimeHidden = ok and result == true
+    end
 
     if state.fragment and state.fragment.SetHiddenForReason then
         if previewActive then
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, false)
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, false)
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, false)
+            state.fragment:SetHiddenForReason(FRAGMENT_REASON_RUNTIME, false)
         else
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, suppressed)
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, userHidden)
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, sceneHidden)
+            state.fragment:SetHiddenForReason(FRAGMENT_REASON_RUNTIME, runtimeHidden)
         end
     end
+
+    local shouldHide = baseShouldHide or (runtimeHidden and not previewActive)
 
     state.root:SetHidden(shouldHide)
 
@@ -1811,12 +1850,7 @@ local function ensureSceneStateCallback(scene)
             return
         end
 
-        local wasHidden = state.root:IsHidden()
-        local shouldHide = applyWindowVisibility()
-
-        if wasHidden and shouldHide == false then
-            notifyContentChanged()
-        end
+        applyWindowVisibility()
     end
 
     local ok, message = pcall(scene.RegisterCallback, scene, "StateChange", onStateChange)
@@ -1840,6 +1874,7 @@ local function attachFragmentToScene(scene)
 
     if scene.HasFragment and scene:HasFragment(state.fragment) then
         state.fragmentScenes[scene] = true
+        ensureSceneStateCallback(scene)
         return true
     end
 
@@ -1859,8 +1894,18 @@ local function ensureSceneFragmentsInternal()
         return
     end
 
-    if not state.fragment then
-        local fragment
+    local previousFragment = state.fragment
+
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    local fragment = previousFragment
+    if runtime and runtime.EnsureHostFragment then
+        local ensured = runtime.EnsureHostFragment(state.root)
+        if ensured then
+            fragment = ensured
+        end
+    end
+
+    if not fragment then
         if ZO_HUDFadeSceneFragment then
             fragment = ZO_HUDFadeSceneFragment:New(state.root)
         elseif ZO_SimpleSceneFragment then
@@ -1871,13 +1916,25 @@ local function ensureSceneFragmentsInternal()
             return
         end
 
-        state.fragment = fragment
-        state.fragmentScenes = {}
-
         if fragment.SetHideOnSceneHidden then
             fragment:SetHideOnSceneHidden(false)
         end
     end
+
+    if fragment ~= previousFragment then
+        if previousFragment and state.fragmentScenes then
+            for scene in pairs(state.fragmentScenes) do
+                if scene and scene.RemoveFragment then
+                    pcall(scene.RemoveFragment, scene, previousFragment)
+                end
+            end
+        end
+
+        state.fragmentScenes = nil
+    end
+
+    state.fragment = fragment
+    state.fragmentScenes = state.fragmentScenes or {}
 
     local attached = false
     attached = attachFragmentToScene(HUD_SCENE) or attached
@@ -1960,6 +2017,11 @@ local function createRootControl()
 
     state.root = control
     Nvk3UT.UI.Root = control
+
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and runtime.RegisterHostControls then
+        runtime.RegisterHostControls({ host = control })
+    end
 
     applyLayoutConstraints()
     createBackdrop()
@@ -2315,6 +2377,11 @@ function TrackerHost.Shutdown()
     end
     state.questContainer = nil
     Nvk3UT.UI.QuestContainer = nil
+
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and runtime.UnregisterHostControls then
+        runtime.UnregisterHostControls()
+    end
 
     if state.footerBar then
         state.footerBar:SetHidden(true)

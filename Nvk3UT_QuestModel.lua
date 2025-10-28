@@ -268,7 +268,6 @@ local QuestModel = {}
 QuestModel.__index = QuestModel
 
 local QUEST_MODEL_NAME = addonName .. "QuestModel"
-local EVENT_NAMESPACE = QUEST_MODEL_NAME .. "_Event"
 local REBUILD_IDENTIFIER = QUEST_MODEL_NAME .. "_Rebuild"
 
 local QUEST_SAVED_VARS_NAME = "Nvk3UT_Data_Quests"
@@ -287,7 +286,6 @@ local QUEST_SAVED_VARS_DEFAULTS = {
 
 local questSavedVars = nil
 local bootstrapState = {
-    registered = false,
     executed = false,
 }
 local playerState = {
@@ -478,11 +476,6 @@ local function BootstrapQuestData()
 end
 
 local function OnPlayerActivated()
-    if bootstrapState.registered and EVENT_MANAGER then
-        EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "PlayerActivated", EVENT_PLAYER_ACTIVATED)
-        bootstrapState.registered = false
-    end
-
     local sv = EnsureSavedVars()
     local requiresBootstrap = ShouldBootstrap(sv)
     DebugInitLog("[Init] OnPlayerActivated → Bootstrap required: %s", tostring(requiresBootstrap))
@@ -496,33 +489,6 @@ local function OnPlayerActivated()
     if QuestModel.isInitialized and type(ForceRebuild) == "function" then
         ForceRebuild(QuestModel)
     end
-end
-
-local function RegisterForPlayerActivated()
-    if bootstrapState.registered or not EVENT_MANAGER then
-        return
-    end
-
-    EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. "PlayerActivated", EVENT_PLAYER_ACTIVATED, OnPlayerActivated)
-    bootstrapState.registered = true
-end
-
-local function OnAddOnLoaded(_, name)
-    if name ~= addonName then
-        return
-    end
-
-    if EVENT_MANAGER then
-        EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "OnLoaded", EVENT_ADD_ON_LOADED)
-    end
-
-    EnsureSavedVars()
-    RegisterForPlayerActivated()
-    DebugInitLog("[Init] OnAddOnLoaded → SavedVars ready")
-end
-
-if EVENT_MANAGER then
-    EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. "OnLoaded", EVENT_ADD_ON_LOADED, OnAddOnLoaded)
 end
 
 local MIN_DEBOUNCE_MS = 50
@@ -1519,14 +1485,6 @@ local function LogDebug(self, ...)
     end
 end
 
-local function RegisterQuestEvent(eventId, handler)
-    EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. tostring(eventId), eventId, handler)
-end
-
-local function UnregisterQuestEvent(eventId)
-    EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. tostring(eventId), eventId)
-end
-
 local function NotifySubscribers(self)
     if not self.subscribers then
         return
@@ -1761,7 +1719,6 @@ function QuestModel.Init(opts)
     opts = opts or {}
 
     EnsureSavedVars()
-    RegisterForPlayerActivated()
 
     QuestModel.debugEnabled = opts.debug or false
 
@@ -1782,17 +1739,6 @@ function QuestModel.Init(opts)
         QuestModel.currentSnapshot = nil
     end
 
-    local eventHandler = function(...)
-        OnQuestChanged(...)
-    end
-
-    RegisterQuestEvent(EVENT_QUEST_ADDED, eventHandler)
-    RegisterQuestEvent(EVENT_QUEST_REMOVED, eventHandler)
-    RegisterQuestEvent(EVENT_QUEST_ADVANCED, eventHandler)
-    RegisterQuestEvent(EVENT_QUEST_CONDITION_COUNTER_CHANGED, eventHandler)
-    RegisterQuestEvent(EVENT_QUEST_LOG_UPDATED, eventHandler)
-    EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. "TRACKING", EVENT_TRACKING_UPDATE, OnTrackingUpdate)
-
     if playerState.hasActivated then
         ForceRebuild(QuestModel)
     end
@@ -1807,16 +1753,7 @@ function QuestModel.Shutdown()
         return
     end
 
-    UnregisterQuestEvent(EVENT_QUEST_ADDED)
-    UnregisterQuestEvent(EVENT_QUEST_REMOVED)
-    UnregisterQuestEvent(EVENT_QUEST_ADVANCED)
-    UnregisterQuestEvent(EVENT_QUEST_CONDITION_COUNTER_CHANGED)
-    UnregisterQuestEvent(EVENT_QUEST_LOG_UPDATED)
-    EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "TRACKING", EVENT_TRACKING_UPDATE)
-    EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "OnLoaded", EVENT_ADD_ON_LOADED)
     EVENT_MANAGER:UnregisterForUpdate(REBUILD_IDENTIFIER)
-    EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "PlayerActivated", EVENT_PLAYER_ACTIVATED)
-    bootstrapState.registered = false
     playerState.hasActivated = false
 
     QuestModel.isInitialized = false
@@ -1829,6 +1766,18 @@ end
 
 function QuestModel.GetSnapshot()
     return QuestModel.currentSnapshot
+end
+
+function QuestModel.OnQuestChanged(eventCode, ...)
+    OnQuestChanged(eventCode, ...)
+end
+
+function QuestModel.OnTrackingUpdate(eventCode, trackingType, context)
+    OnTrackingUpdate(eventCode, trackingType, context)
+end
+
+function QuestModel.OnPlayerActivated()
+    OnPlayerActivated()
 end
 
 function QuestModel.Subscribe(callback)
@@ -1848,6 +1797,28 @@ function QuestModel.Unsubscribe(callback)
     if QuestModel.subscribers then
         QuestModel.subscribers[callback] = nil
     end
+end
+
+function QuestModel.RequestImmediateRebuild(reason)
+    if type(ForceRebuild) ~= "function" then
+        return false
+    end
+
+    if not QuestModel.isInitialized then
+        return false
+    end
+
+    if QuestModel.debugEnabled then
+        LogDebug(QuestModel, string.format("[ImmediateRebuild] reason=%s", tostring(reason)))
+    end
+
+    local updated = ForceRebuild(QuestModel)
+
+    if updated ~= true then
+        ScheduleRebuild(QuestModel)
+    end
+
+    return updated == true
 end
 
 Nvk3UT.QuestModel = QuestModel

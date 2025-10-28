@@ -261,6 +261,12 @@ local function getAchievementSettings()
     return sv.AchievementTracker
 end
 
+local function getRuntimeSettings()
+    local sv = getSavedVars()
+    sv.TrackerRuntime = sv.TrackerRuntime or {}
+    return sv.TrackerRuntime
+end
+
 local function ensureTrackerAppearance()
     local host = Nvk3UT and Nvk3UT.TrackerHost
     if host and host.EnsureAppearanceDefaults then
@@ -609,6 +615,35 @@ local function registerPanel(displayTitle)
                     end
                 end,
                 default = true,
+            }
+
+            controls[#controls + 1] = {
+                type = "checkbox",
+                name = "Im Kampf verstecken",
+                getFunc = function()
+                    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+                    if runtime and runtime.GetHideInCombatEnabled then
+                        local ok, result = pcall(runtime.GetHideInCombatEnabled)
+                        if ok then
+                            return result == true
+                        end
+                    end
+
+                    local settings = getRuntimeSettings()
+                    return settings.hideInCombat == true
+                end,
+                setFunc = function(value)
+                    local enabled = value == true
+                    local settings = getRuntimeSettings()
+                    settings.hideInCombat = enabled
+
+                    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+                    if runtime and runtime.SetHideInCombatEnabled then
+                        runtime.SetHideInCombatEnabled(enabled)
+                    end
+                end,
+                default = false,
+                tooltip = "Blendet den gesamten Tracker im Kampf aus.",
             }
 
             controls[#controls + 1] = {
@@ -1072,21 +1107,6 @@ local function registerPanel(displayTitle)
                     end
                 end,
                 default = true,
-            }
-
-            controls[#controls + 1] = {
-                type = "checkbox",
-                name = "Im Kampf verstecken",
-                getFunc = function()
-                    local settings = getQuestSettings()
-                    return settings.hideInCombat == true
-                end,
-                setFunc = function(value)
-                    local settings = getQuestSettings()
-                    settings.hideInCombat = value
-                    applyQuestSettings()
-                end,
-                default = false,
             }
 
             controls[#controls + 1] = {

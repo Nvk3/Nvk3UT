@@ -6,7 +6,6 @@ local AchievementModel = {}
 AchievementModel.__index = AchievementModel
 
 local MODEL_NAME = addonName .. "AchievementModel"
-local EVENT_NAMESPACE = MODEL_NAME .. "_Event"
 local REBUILD_IDENTIFIER = MODEL_NAME .. "_Rebuild"
 
 local MIN_DEBOUNCE_MS = 50
@@ -495,17 +494,19 @@ end
 
 local function PerformRebuild(self)
     if not self.isInitialized then
-        return
+        return false
     end
 
     local snapshot = BuildSnapshot(self)
     if not SnapshotsDiffer(self.currentSnapshot, snapshot) then
-        return
+        return false
     end
 
     snapshot.revision = (self.currentSnapshot and self.currentSnapshot.revision or 0) + 1
     self.currentSnapshot = snapshot
     NotifySubscribers(self)
+
+    return true
 end
 
 local function ScheduleRebuild(self)
@@ -530,7 +531,7 @@ end
 
 local function ForceRebuild(self)
     if not self.isInitialized then
-        return
+        return false
     end
 
     if self.pendingRebuild then
@@ -538,7 +539,8 @@ local function ForceRebuild(self)
         self.pendingRebuild = false
     end
 
-    PerformRebuild(self)
+    local updated = PerformRebuild(self)
+    return updated == true
 end
 
 local function OnAchievementChanged(...)
@@ -548,22 +550,6 @@ local function OnAchievementChanged(...)
     end
 
     ScheduleRebuild(self)
-end
-
-local function RegisterForEvent(eventId)
-    if not eventId then
-        return
-    end
-
-    EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. tostring(eventId), eventId, OnAchievementChanged)
-end
-
-local function UnregisterEvent(eventId)
-    if not eventId then
-        return
-    end
-
-    EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. tostring(eventId), eventId)
 end
 
 function AchievementModel.OnFavoritesChanged()
@@ -593,15 +579,6 @@ function AchievementModel.Init(opts)
     AchievementModel.subscribers = {}
     AchievementModel.isInitialized = true
 
-    RegisterForEvent(EVENT_ACHIEVEMENTS_UPDATED)
-    RegisterForEvent(EVENT_ACHIEVEMENT_UPDATED)
-    RegisterForEvent(EVENT_ACHIEVEMENT_AWARDED)
-
-    local trackedListEvent = rawget(_G, "EVENT_ACHIEVEMENT_TRACKED_LIST_UPDATED")
-    if trackedListEvent then
-        RegisterForEvent(trackedListEvent)
-    end
-
     ForceRebuild(AchievementModel)
     NotifySubscribers(AchievementModel)
 end
@@ -609,15 +586,6 @@ end
 function AchievementModel.Shutdown()
     if not AchievementModel.isInitialized then
         return
-    end
-
-    UnregisterEvent(EVENT_ACHIEVEMENTS_UPDATED)
-    UnregisterEvent(EVENT_ACHIEVEMENT_UPDATED)
-    UnregisterEvent(EVENT_ACHIEVEMENT_AWARDED)
-
-    local trackedListEvent = rawget(_G, "EVENT_ACHIEVEMENT_TRACKED_LIST_UPDATED")
-    if trackedListEvent then
-        UnregisterEvent(trackedListEvent)
     end
 
     EVENT_MANAGER:UnregisterForUpdate(REBUILD_IDENTIFIER)
@@ -645,10 +613,36 @@ function AchievementModel.Subscribe(callback)
     callback(AchievementModel.currentSnapshot)
 end
 
+function AchievementModel.OnAchievementChanged(eventCode, ...)
+    OnAchievementChanged(eventCode, ...)
+end
+
 function AchievementModel.Unsubscribe(callback)
     if AchievementModel.subscribers then
         AchievementModel.subscribers[callback] = nil
     end
+end
+
+function AchievementModel.RequestImmediateRebuild(reason)
+    if type(ForceRebuild) ~= "function" then
+        return false
+    end
+
+    if not AchievementModel.isInitialized then
+        return false
+    end
+
+    if AchievementModel.debugEnabled then
+        LogDebug(AchievementModel, string.format("[ImmediateRebuild] reason=%s", tostring(reason)))
+    end
+
+    local updated = ForceRebuild(AchievementModel)
+
+    if updated ~= true then
+        ScheduleRebuild(AchievementModel)
+    end
+
+    return updated == true
 end
 
 Nvk3UT.AchievementModel = AchievementModel
