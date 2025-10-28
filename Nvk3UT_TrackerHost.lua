@@ -1875,8 +1875,18 @@ local function ensureSceneFragmentsInternal()
         return
     end
 
-    if not state.fragment then
-        local fragment
+    local previousFragment = state.fragment
+
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    local fragment = previousFragment
+    if runtime and runtime.EnsureHostFragment then
+        local ensured = runtime.EnsureHostFragment(state.root)
+        if ensured then
+            fragment = ensured
+        end
+    end
+
+    if not fragment then
         if ZO_HUDFadeSceneFragment then
             fragment = ZO_HUDFadeSceneFragment:New(state.root)
         elseif ZO_SimpleSceneFragment then
@@ -1887,13 +1897,25 @@ local function ensureSceneFragmentsInternal()
             return
         end
 
-        state.fragment = fragment
-        state.fragmentScenes = {}
-
         if fragment.SetHideOnSceneHidden then
             fragment:SetHideOnSceneHidden(false)
         end
     end
+
+    if fragment ~= previousFragment then
+        if previousFragment and state.fragmentScenes then
+            for scene in pairs(state.fragmentScenes) do
+                if scene and scene.RemoveFragment then
+                    pcall(scene.RemoveFragment, scene, previousFragment)
+                end
+            end
+        end
+
+        state.fragmentScenes = nil
+    end
+
+    state.fragment = fragment
+    state.fragmentScenes = state.fragmentScenes or {}
 
     local attached = false
     attached = attachFragmentToScene(HUD_SCENE) or attached
@@ -1976,6 +1998,11 @@ local function createRootControl()
 
     state.root = control
     Nvk3UT.UI.Root = control
+
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and runtime.RegisterHostControls then
+        runtime.RegisterHostControls({ host = control })
+    end
 
     applyLayoutConstraints()
     createBackdrop()

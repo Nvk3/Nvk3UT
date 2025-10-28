@@ -29,6 +29,9 @@ local TRACKER_KEYS = {
 
 local state = {
     hostControl = nil,
+    hostFragment = nil,
+    hostFragmentControl = nil,
+    hostFragmentScenes = nil,
     hostHidden = false,
     isInCombat = false,
     hideInCombatEnabled = false,
@@ -47,6 +50,98 @@ local state = {
         appliedHidden = nil,
     },
 }
+
+local function RemoveHostFragment()
+    local fragment = state.hostFragment
+    if not fragment then
+        state.hostFragmentScenes = nil
+        state.hostFragmentControl = nil
+        return
+    end
+
+    if state.hostFragmentScenes then
+        for scene in pairs(state.hostFragmentScenes) do
+            if scene and scene.RemoveFragment then
+                pcall(scene.RemoveFragment, scene, fragment)
+            end
+        end
+    end
+
+    state.hostFragmentScenes = nil
+    state.hostFragment = nil
+    state.hostFragmentControl = nil
+end
+
+local function AttachHostFragmentToScene(scene)
+    if not (scene and state.hostFragment and scene.AddFragment) then
+        return false
+    end
+
+    state.hostFragmentScenes = state.hostFragmentScenes or {}
+    if state.hostFragmentScenes[scene] then
+        return true
+    end
+
+    if scene.HasFragment and scene:HasFragment(state.hostFragment) then
+        state.hostFragmentScenes[scene] = true
+        return true
+    end
+
+    local ok, err = pcall(scene.AddFragment, scene, state.hostFragment)
+    if not ok then
+        DebugLog(string.format("Failed to attach host fragment: %s", tostring(err)))
+        return false
+    end
+
+    state.hostFragmentScenes[scene] = true
+    return true
+end
+
+local function EnsureHostFragment()
+    local host = state.hostControl
+    if not host then
+        return nil
+    end
+
+    if state.hostFragment and state.hostFragmentControl ~= host then
+        RemoveHostFragment()
+    end
+
+    if not state.hostFragment then
+        local fragment
+        if ZO_HUDFadeSceneFragment then
+            fragment = ZO_HUDFadeSceneFragment:New(host)
+        elseif ZO_SimpleSceneFragment then
+            fragment = ZO_SimpleSceneFragment:New(host)
+        end
+
+        if not fragment then
+            DebugLog("Unable to create host scene fragment")
+            return nil
+        end
+
+        if fragment.SetHideOnSceneHidden then
+            fragment:SetHideOnSceneHidden(false)
+        end
+
+        state.hostFragment = fragment
+        state.hostFragmentControl = host
+        state.hostFragmentScenes = {}
+
+        DebugLog("Tracker host fragment created")
+    end
+
+    local attached = false
+    attached = AttachHostFragmentToScene(HUD_SCENE) or attached
+    attached = AttachHostFragmentToScene(HUD_UI_SCENE) or attached
+
+    if SCENE_MANAGER and SCENE_MANAGER.GetScene then
+        attached = AttachHostFragmentToScene(SCENE_MANAGER:GetScene("hud")) or attached
+        attached = AttachHostFragmentToScene(SCENE_MANAGER:GetScene("hudui")) or attached
+    end
+
+    return state.hostFragment
+end
 
 local function GetSavedVars()
     return Nvk3UT and Nvk3UT.sv
@@ -247,6 +342,9 @@ function TrackerRuntime.RegisterHostControls(options)
     EnsureVisibilitySettings()
 
     state.hostControl = options.host or state.hostControl
+    if state.hostControl then
+        EnsureHostFragment()
+    end
     if options.quest then
         state.quest.control = options.quest
         state.quest.appliedHidden = nil
@@ -262,6 +360,7 @@ function TrackerRuntime.RegisterHostControls(options)
 end
 
 function TrackerRuntime.UnregisterHostControls()
+    RemoveHostFragment()
     state.hostControl = nil
     state.quest.control = nil
     state.achievement.control = nil
@@ -535,6 +634,18 @@ end
 
 function TrackerRuntime:IsInitialized()
     return true
+end
+
+function TrackerRuntime.EnsureHostFragment(hostControl)
+    if hostControl and hostControl ~= state.hostControl then
+        state.hostControl = hostControl
+    end
+
+    return EnsureHostFragment()
+end
+
+function TrackerRuntime.GetHostFragment()
+    return state.hostFragment
 end
 
 Nvk3UT.TrackerRuntime = TrackerRuntime
