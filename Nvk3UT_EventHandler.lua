@@ -74,6 +74,8 @@ local function HandlePlayerActivated()
     ProcessPlayerActivated()
 end
 
+-- Combat visibility is routed through the TrackerRuntime so the host can
+-- apply policies like hide-in-combat across every child tracker.
 local function HandleCombatState(_, inCombat)
     Dispatch(Nvk3UT and Nvk3UT.TrackerRuntime, "OnCombatStateChanged", inCombat)
 end

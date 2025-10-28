@@ -7,6 +7,10 @@
     should react. This module does **not** perform any throttling, batching,
     debounce, or coordinator work yet – it simply mirrors the timing from the
     working main branch while centralizing ownership of host-level decisions.
+    Runtime owns visibility policy (such as hide-in-combat) for the shared
+    tracker host and applies it consistently to every child tracker. LAM
+    settings feed into the runtime directly so the host reacts immediately
+    without batching or debounce layers.
 ]]
 
 local addonName = "Nvk3UT"
@@ -25,18 +29,58 @@ local TRACKER_KEYS = {
 
 local state = {
     hostControl = nil,
-    lastCombatState = false,
+    hostHidden = false,
+    isInCombat = false,
+    hideInCombatEnabled = false,
+    visibilityInitialized = false,
     quest = {
         tracker = nil,
         control = nil,
         hidden = false,
+        appliedHidden = nil,
     },
     achievement = {
         tracker = nil,
         control = nil,
         hidden = false,
+        appliedHidden = nil,
     },
 }
+
+local function GetSavedVars()
+    return Nvk3UT and Nvk3UT.sv
+end
+
+local function GetRuntimeSettings()
+    local sv = GetSavedVars()
+    if not sv then
+        return nil
+    end
+
+    sv.TrackerRuntime = sv.TrackerRuntime or {}
+    return sv.TrackerRuntime
+end
+
+local function EnsureVisibilitySettings()
+    if state.visibilityInitialized then
+        return
+    end
+
+    local sv = GetSavedVars()
+    if not sv then
+        return
+    end
+
+    state.visibilityInitialized = true
+
+    local settings = GetRuntimeSettings()
+    if settings.hideInCombat == nil then
+        local questSettings = sv and sv.QuestTracker
+        settings.hideInCombat = questSettings and questSettings.hideInCombat == true or false
+    end
+
+    state.hideInCombatEnabled = settings.hideInCombat == true
+end
 
 local function IsDebugLoggingEnabled()
     local sv = Nvk3UT and Nvk3UT.sv
@@ -90,22 +134,59 @@ local function ApplyVisibility(trackerKey, hidden, reason)
     end
 
     local normalizedHidden = hidden and true or false
-    if trackerState.hidden == normalizedHidden then
+    trackerState.hidden = normalizedHidden
+
+    local effectiveHidden = normalizedHidden or state.hostHidden
+    if trackerState.appliedHidden == effectiveHidden then
         return
     end
 
-    trackerState.hidden = normalizedHidden
+    trackerState.appliedHidden = effectiveHidden
 
     local tracker = ResolveTrackerModule(trackerKey)
     if tracker and tracker.ApplyHostVisibility then
-        SafeCall(string.format("%s.ApplyHostVisibility", TRACKER_KEYS[trackerKey] or trackerKey), tracker.ApplyHostVisibility, normalizedHidden, reason)
+        SafeCall(string.format("%s.ApplyHostVisibility", TRACKER_KEYS[trackerKey] or trackerKey), tracker.ApplyHostVisibility, effectiveHidden, reason)
         return
     end
 
     local control = trackerState.control
     if control and control.SetHidden then
-        control:SetHidden(normalizedHidden)
+        control:SetHidden(effectiveHidden)
     end
+end
+
+local function ReapplyTrackerVisibility(trackerKey, reason)
+    local trackerState = state[trackerKey]
+    if not trackerState then
+        return
+    end
+
+    ApplyVisibility(trackerKey, trackerState.hidden, reason)
+end
+
+local function ApplyHostHiddenState(shouldHide, reason, forceReapply)
+    local normalized = shouldHide and true or false
+
+    local host = state.hostControl
+    if host and host.SetHidden then
+        host:SetHidden(normalized)
+    end
+
+    local changed = state.hostHidden ~= normalized
+    state.hostHidden = normalized
+
+    if changed or forceReapply then
+        for trackerKey in pairs(TRACKER_KEYS) do
+            ReapplyTrackerVisibility(trackerKey, reason or "host-visibility")
+        end
+    end
+end
+
+local function ApplyVisibilityPolicy(reason, forceReapply)
+    EnsureVisibilitySettings()
+
+    local shouldHide = state.hideInCombatEnabled and state.isInCombat
+    ApplyHostHiddenState(shouldHide, reason, forceReapply)
 end
 
 local function IsTrackerActive(trackerKey)
@@ -122,16 +203,6 @@ local function IsTrackerActive(trackerKey)
     return result ~= false
 end
 
-local function ShouldQuestHideInCombat()
-    local tracker = ResolveTrackerModule("quest")
-    if not tracker or type(tracker.ShouldHideInCombat) ~= "function" then
-        return false
-    end
-
-    local result = SafeCall("QuestTracker.ShouldHideInCombat", tracker.ShouldHideInCombat)
-    return result == true
-end
-
 local function UpdateQuestVisibility(reason)
     local hidden = false
     local hiddenReason = reason or "state"
@@ -139,9 +210,6 @@ local function UpdateQuestVisibility(reason)
     if not IsTrackerActive("quest") then
         hidden = true
         hiddenReason = "inactive"
-    elseif state.lastCombatState and ShouldQuestHideInCombat() then
-        hidden = true
-        hiddenReason = "combat"
     end
 
     ApplyVisibility("quest", hidden, hiddenReason)
@@ -164,12 +232,21 @@ function TrackerRuntime.RegisterHostControls(options)
         options = {}
     end
 
+    EnsureVisibilitySettings()
+
     state.hostControl = options.host or state.hostControl
-    state.quest.control = options.quest or state.quest.control
-    state.achievement.control = options.achievement or state.achievement.control
+    if options.quest then
+        state.quest.control = options.quest
+        state.quest.appliedHidden = nil
+    end
+    if options.achievement then
+        state.achievement.control = options.achievement
+        state.achievement.appliedHidden = nil
+    end
 
     UpdateQuestVisibility("host-register")
     UpdateAchievementVisibility("host-register")
+    ApplyVisibilityPolicy("host-register", true)
 end
 
 function TrackerRuntime.UnregisterHostControls()
@@ -178,6 +255,8 @@ function TrackerRuntime.UnregisterHostControls()
     state.achievement.control = nil
     state.quest.hidden = false
     state.achievement.hidden = false
+    state.quest.appliedHidden = nil
+    state.achievement.appliedHidden = nil
 end
 
 function TrackerRuntime.RegisterQuestTracker(options)
@@ -185,9 +264,12 @@ function TrackerRuntime.RegisterQuestTracker(options)
         options = {}
     end
 
+    EnsureVisibilitySettings()
+
     state.quest.tracker = options.tracker or ResolveTrackerModule("quest")
     if options.control then
         state.quest.control = options.control
+        state.quest.appliedHidden = nil
     end
 
     UpdateQuestVisibility("register")
@@ -197,6 +279,7 @@ function TrackerRuntime.UnregisterQuestTracker()
     state.quest.tracker = nil
     state.quest.control = nil
     state.quest.hidden = false
+    state.quest.appliedHidden = nil
 end
 
 function TrackerRuntime.RegisterAchievementTracker(options)
@@ -204,9 +287,12 @@ function TrackerRuntime.RegisterAchievementTracker(options)
         options = {}
     end
 
+    EnsureVisibilitySettings()
+
     state.achievement.tracker = options.tracker or ResolveTrackerModule("achievement")
     if options.control then
         state.achievement.control = options.control
+        state.achievement.appliedHidden = nil
     end
 
     UpdateAchievementVisibility("register")
@@ -216,6 +302,7 @@ function TrackerRuntime.UnregisterAchievementTracker()
     state.achievement.tracker = nil
     state.achievement.control = nil
     state.achievement.hidden = false
+    state.achievement.appliedHidden = nil
 end
 
 function TrackerRuntime.UpdateQuestVisibility(reason)
@@ -229,6 +316,31 @@ end
 function TrackerRuntime.UpdateAllVisibility(reason)
     UpdateQuestVisibility(reason)
     UpdateAchievementVisibility(reason)
+end
+
+function TrackerRuntime.GetHideInCombatEnabled()
+    EnsureVisibilitySettings()
+    return state.hideInCombatEnabled == true
+end
+
+function TrackerRuntime.SetHideInCombatEnabled(enabled)
+    EnsureVisibilitySettings()
+
+    local normalized = enabled and true or false
+    local changed = state.hideInCombatEnabled ~= normalized
+
+    state.hideInCombatEnabled = normalized
+
+    local settings = GetRuntimeSettings()
+    if settings then
+        settings.hideInCombat = normalized
+    end
+
+    ApplyVisibilityPolicy("settings", not changed)
+end
+
+function TrackerRuntime.ApplyVisibilityPolicy(reason, forceReapply)
+    ApplyVisibilityPolicy(reason, forceReapply)
 end
 
 local function CallRefresh(trackerKey, methodNames, reason)
@@ -261,13 +373,16 @@ function TrackerRuntime.RequestFullRefresh(reason)
 end
 
 function TrackerRuntime.OnCombatStateChanged(inCombat)
+    EnsureVisibilitySettings()
+
     local normalized = inCombat and true or false
-    state.lastCombatState = normalized
+    state.isInCombat = normalized
+    ApplyVisibilityPolicy("combat")
     UpdateQuestVisibility("combat")
 end
 
 function TrackerRuntime.GetCombatState()
-    return state.lastCombatState == true
+    return state.isInCombat == true
 end
 
 Nvk3UT.TrackerRuntime = TrackerRuntime

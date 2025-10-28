@@ -3700,7 +3700,6 @@ function QuestTracker.ApplySettings(settings)
         return
     end
 
-    state.opts.hideInCombat = settings.hideInCombat and true or false
     state.opts.autoExpand = settings.autoExpand ~= false
     state.opts.autoTrack = settings.autoTrack ~= false
     state.opts.active = (settings.active ~= false)
@@ -3745,10 +3744,6 @@ end
 
 function QuestTracker.IsActive()
     return state.opts.active ~= false
-end
-
-function QuestTracker.ShouldHideInCombat()
-    return state.opts.hideInCombat == true
 end
 
 function QuestTracker.ApplyHostVisibility(hidden, reason)
