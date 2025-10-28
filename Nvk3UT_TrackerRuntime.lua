@@ -606,6 +606,16 @@ local function FlushCoordinatorUpdates(triggerReason)
 end
 
 function TrackerRuntime.ProcessUpdates(triggerReason)
+    if state.transientVisible == false then
+        if IsDebugLoggingEnabled() then
+            DebugLog(string.format(
+                "ProcessUpdates(%s) deferred (transient hidden)",
+                tostring(triggerReason)
+            ))
+        end
+        return
+    end
+
     if IsDebugLoggingEnabled() then
         DebugLog(string.format("ProcessUpdates(%s)", tostring(triggerReason)))
     end

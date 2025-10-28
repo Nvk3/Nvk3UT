@@ -2036,10 +2036,26 @@ local function RefreshFromStructure(reason)
     end
 end
 
-local function OnSnapshotUpdated(snapshot)
+local function OnSnapshotUpdated(snapshot, context)
     state.snapshot = snapshot
-    FlagStructureDirtyInternal("snapshot")
-    AchievementTrackerController.Refresh("snapshot")
+
+    local reason = (context and context.trigger) or "snapshot"
+    FlagStructureDirtyInternal(reason)
+
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and type(runtime.MarkAchievementDirty) == "function" then
+        if IsDebugLoggingEnabled() then
+            DebugLog(string.format(
+                "Achievement snapshot -> delegating refresh to runtime (reason=%s)",
+                tostring(reason)
+            ))
+        end
+
+        runtime.MarkAchievementDirty(reason)
+        return
+    end
+
+    AchievementTrackerController.Refresh(reason)
 end
 
 local function SubscribeToModel()
@@ -2048,7 +2064,7 @@ local function SubscribeToModel()
     end
 
     state.subscription = function(snapshot)
-        OnSnapshotUpdated(snapshot)
+        OnSnapshotUpdated(snapshot, { trigger = "model" })
     end
 
     Nvk3UT.AchievementModel.Subscribe(state.subscription)

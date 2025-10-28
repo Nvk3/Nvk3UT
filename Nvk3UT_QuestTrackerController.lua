@@ -3814,7 +3814,22 @@ local function OnQuestModelSnapshotUpdated(snapshot, context)
         return
     end
 
-    RelayoutFromCategoryIndex(1)
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    local reason = (context and context.trigger) or "model"
+
+    if runtime and type(runtime.MarkQuestDirty) == "function" then
+        if IsDebugLoggingEnabled() then
+            DebugLog(string.format(
+                "Quest snapshot -> delegating refresh to runtime (reason=%s)",
+                tostring(reason)
+            ))
+        end
+
+        runtime.MarkQuestDirty(reason)
+        return
+    end
+
+    RelayoutFromCategoryIndex(reason)
 end
 
 -- Listen for snapshot updates from the quest model so the tracker stays in sync with game events.
