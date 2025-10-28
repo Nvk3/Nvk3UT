@@ -448,6 +448,15 @@ local function FlushCoordinatorUpdates(triggerReason)
     local achievementReason = update.achievementReason or triggerReason or "achievement-dirty"
     local layoutReason = update.layoutReason or triggerReason or "layout-dirty"
 
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format(
+            "FlushCoordinatorUpdates questsDirty=%s achievementsDirty=%s layoutDirty=%s",
+            tostring(questsDirty),
+            tostring(achievementsDirty),
+            tostring(layoutDirty)
+        ))
+    end
+
     if questsDirty then
         update.questsDirty = false
         update.questReason = nil

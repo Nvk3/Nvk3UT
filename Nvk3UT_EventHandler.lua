@@ -71,46 +71,82 @@ end
 
 local function Dispatch(target, methodName, ...)
     if not target then
-        return
+        return false
     end
 
     if not IsModuleReady(target, methodName) then
-        return
+        return false
     end
 
     local handler = target[methodName]
     if type(handler) ~= "function" then
-        return
+        return false
     end
 
     local ok, err = pcall(handler, ...)
     if not ok then
         DebugLog(string.format("Handler %s failed: %s", tostring(methodName), tostring(err)))
+        return false
     end
+
+    return true
 end
 
 local function HandleQuestChanged(eventCode, ...)
-    Dispatch(Nvk3UT and Nvk3UT.QuestModel, "OnQuestChanged", eventCode, ...)
-    Dispatch(Nvk3UT and Nvk3UT.QuestTrackerController, "OnQuestChanged", eventCode, ...)
+    local controller = Nvk3UT and Nvk3UT.QuestTrackerController
+    local controllerHandled = Dispatch(controller, "OnQuestChanged", eventCode, ...)
 
     if eventCode == EVENT_QUEST_CONDITION_COUNTER_CHANGED or eventCode == EVENT_QUEST_ADVANCED then
-        Dispatch(Nvk3UT and Nvk3UT.QuestTrackerController, "OnQuestProgress", eventCode, ...)
+        controllerHandled = Dispatch(controller, "OnQuestProgress", eventCode, ...) or controllerHandled
     end
 
+    Dispatch(Nvk3UT and Nvk3UT.QuestModel, "OnQuestChanged", eventCode, ...)
+
     local reason = string.format("quest:%s", tostring(eventCode))
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format(
+            "Quest event %s controllerHandled=%s -> MarkQuestDirty",
+            tostring(eventCode),
+            tostring(controllerHandled)
+        ))
+    end
+
     Dispatch(Nvk3UT and Nvk3UT.TrackerRuntime, "MarkQuestDirty", reason)
 end
 
 local function HandleTrackingUpdate(eventCode, trackingType, context)
+    local controllerHandled = Dispatch(Nvk3UT and Nvk3UT.QuestTrackerController, "OnTrackedQuestUpdate", trackingType, context)
+
     Dispatch(Nvk3UT and Nvk3UT.QuestModel, "OnTrackingUpdate", eventCode, trackingType, context)
-    Dispatch(Nvk3UT and Nvk3UT.QuestTrackerController, "OnTrackedQuestUpdate", trackingType, context)
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format(
+            "Quest tracking update type=%s controllerHandled=%s -> MarkQuestDirty",
+            tostring(trackingType),
+            tostring(controllerHandled)
+        ))
+    end
+
     Dispatch(Nvk3UT and Nvk3UT.TrackerRuntime, "MarkQuestDirty", string.format("quest-tracking:%s", tostring(trackingType)))
 end
 
 local function ProcessPlayerActivated()
     Dispatch(Nvk3UT and Nvk3UT.QuestModel, "OnPlayerActivated")
-    Dispatch(Nvk3UT and Nvk3UT.QuestTrackerController, "OnPlayerActivated")
+    local questHandled = Dispatch(Nvk3UT and Nvk3UT.QuestTrackerController, "OnPlayerActivated")
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format("PlayerActivated questHandled=%s -> MarkQuestDirty", tostring(questHandled)))
+    end
+
     Dispatch(Nvk3UT and Nvk3UT.TrackerRuntime, "MarkQuestDirty", "player-activated")
+
+    local achievementHandled = Dispatch(Nvk3UT and Nvk3UT.AchievementTrackerController, "OnPlayerActivated")
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format("PlayerActivated achievementHandled=%s -> MarkAchievementDirty", tostring(achievementHandled)))
+    end
+
     Dispatch(Nvk3UT and Nvk3UT.TrackerRuntime, "MarkAchievementDirty", "player-activated")
 end
 
@@ -125,8 +161,18 @@ local function HandleCombatState(_, inCombat)
 end
 
 local function HandleAchievementChanged(eventCode, ...)
+    local controllerHandled = Dispatch(Nvk3UT and Nvk3UT.AchievementTrackerController, "OnAchievementProgress", eventCode, ...)
+
     Dispatch(Nvk3UT and Nvk3UT.AchievementModel, "OnAchievementChanged", eventCode, ...)
-    Dispatch(Nvk3UT and Nvk3UT.AchievementTrackerController, "OnAchievementProgress", eventCode, ...)
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format(
+            "Achievement event %s controllerHandled=%s -> MarkAchievementDirty",
+            tostring(eventCode),
+            tostring(controllerHandled)
+        ))
+    end
+
     Dispatch(Nvk3UT and Nvk3UT.TrackerRuntime, "MarkAchievementDirty", string.format("achievement:%s", tostring(eventCode)))
 end
 
