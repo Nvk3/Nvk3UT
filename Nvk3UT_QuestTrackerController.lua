@@ -4157,6 +4157,26 @@ function QuestTrackerController.SyncStructureIfDirty(reason)
         latestSnapshot = questModel.GetSnapshot()
     end
 
+    if latestSnapshot == nil and questModel then
+        local requestRebuild = questModel.RequestImmediateRebuild
+        if type(requestRebuild) == "function" then
+            local rebuildReason = string.format("controller-sync:%s", tostring(syncReason))
+            local ok = requestRebuild(rebuildReason)
+
+            if IsDebugLoggingEnabled() then
+                DebugLog(string.format(
+                    "SyncStructureIfDirty(%s) requested immediate rebuild -> %s",
+                    tostring(syncReason),
+                    tostring(ok)
+                ))
+            end
+
+            if questModel.GetSnapshot then
+                latestSnapshot = questModel.GetSnapshot()
+            end
+        end
+    end
+
     if latestSnapshot == nil then
         if IsDebugLoggingEnabled() then
             DebugLog(string.format(

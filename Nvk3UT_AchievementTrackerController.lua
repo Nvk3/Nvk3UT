@@ -2312,6 +2312,26 @@ function AchievementTrackerController.SyncStructureIfDirty(reason)
         latestSnapshot = achievementModel.GetSnapshot()
     end
 
+    if latestSnapshot == nil and achievementModel then
+        local requestRebuild = achievementModel.RequestImmediateRebuild
+        if type(requestRebuild) == "function" then
+            local rebuildReason = string.format("controller-sync:%s", tostring(syncReason))
+            local ok = requestRebuild(rebuildReason)
+
+            if IsDebugLoggingEnabled() then
+                DebugLog(string.format(
+                    "Achievement SyncStructureIfDirty(%s) requested immediate rebuild -> %s",
+                    tostring(syncReason),
+                    tostring(ok)
+                ))
+            end
+
+            if achievementModel.GetSnapshot then
+                latestSnapshot = achievementModel.GetSnapshot()
+            end
+        end
+    end
+
     if latestSnapshot == nil then
         if IsDebugLoggingEnabled() then
             DebugLog(string.format(
