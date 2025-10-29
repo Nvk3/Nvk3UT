@@ -9,6 +9,7 @@
 Core/Nvk3UT_Utils.lua
 Core/Nvk3UT_Diagnostics.lua
 Core/Nvk3UT_SelfTest.lua
+Core/Nvk3UT_StateInit.lua
 Core/Nvk3UT_Rebuild.lua
 Core/Nvk3UT_Core.lua
 Nvk3UT_Achievements.lua

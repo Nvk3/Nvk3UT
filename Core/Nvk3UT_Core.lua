@@ -122,168 +122,23 @@ function Addon:SetDebugEnabled(enabled)
     self.debugEnabled = enabled and true or false
 end
 
-local DEFAULT_FONT_FACE_BOLD = "$(BOLD_FONT)"
-local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
-
-local DEFAULT_QUEST_FONTS = {
-    category = { face = DEFAULT_FONT_FACE_BOLD, size = 20, outline = DEFAULT_FONT_OUTLINE },
-    title = { face = DEFAULT_FONT_FACE_BOLD, size = 16, outline = DEFAULT_FONT_OUTLINE },
-    line = { face = DEFAULT_FONT_FACE_BOLD, size = 14, outline = DEFAULT_FONT_OUTLINE },
-}
-
-local DEFAULT_ACHIEVEMENT_FONTS = {
-    category = { face = DEFAULT_FONT_FACE_BOLD, size = 20, outline = DEFAULT_FONT_OUTLINE },
-    title = { face = DEFAULT_FONT_FACE_BOLD, size = 16, outline = DEFAULT_FONT_OUTLINE },
-    line = { face = DEFAULT_FONT_FACE_BOLD, size = 14, outline = DEFAULT_FONT_OUTLINE },
-}
-
-local DEFAULT_TRACKER_APPEARANCE = {
-    questTracker = {
-        colors = {
-            categoryTitle = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
-            objectiveText = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
-            entryTitle = { r = 1, g = 1, b = 0, a = 1 },
-            activeTitle = { r = 1, g = 1, b = 1, a = 1 },
-        },
-    },
-    achievementTracker = {
-        colors = {
-            categoryTitle = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
-            objectiveText = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
-            entryTitle = { r = 1, g = 1, b = 0, a = 1 },
-            activeTitle = { r = 1, g = 1, b = 1, a = 1 },
-        },
-    },
-}
-
-local defaults = {
-    version = 4,
-    debug = false,
-    General = {
-        showStatus = true,
-        favScope = "account",
-        recentWindow = 0,
-        recentMax = 100,
-        showCategoryCounts = true,
-        showQuestCategoryCounts = true,
-        showAchievementCategoryCounts = true,
-        window = {
-            left = 200,
-            top = 200,
-            width = 360,
-            height = 640,
-            locked = false,
-        },
-        features = {
-            completed = true,
-            favorites = true,
-            recent = true,
-            todo = true,
-            tooltips = true,
-        },
-    },
-    QuestTracker = {
-        active = true,
-        hideDefault = false,
-        hideInCombat = false,
-        lock = false,
-        autoGrowV = true,
-        autoGrowH = false,
-        autoExpand = true,
-        autoTrack = true,
-        background = {
-            enabled = true,
-            alpha = 0.35,
-            edgeAlpha = 0.5,
-            padding = 8,
-        },
-        fonts = DEFAULT_QUEST_FONTS,
-    },
-    AchievementTracker = {
-        active = true,
-        lock = false,
-        autoGrowV = true,
-        autoGrowH = false,
-        background = {
-            enabled = true,
-            alpha = 0.35,
-            edgeAlpha = 0.5,
-            padding = 8,
-        },
-        fonts = DEFAULT_ACHIEVEMENT_FONTS,
-        tooltips = true,
-        sections = {
-            favorites = true,
-            recent = true,
-            completed = true,
-            todo = true,
-        },
-    },
-    appearance = DEFAULT_TRACKER_APPEARANCE,
-}
-
-local function MergeDefaults(target, source)
-    if type(source) ~= "table" then
-        return target
-    end
-
-    if type(target) ~= "table" then
-        target = {}
-    end
-
-    for key, value in pairs(source) do
-        if type(value) == "table" then
-            target[key] = MergeDefaults(target[key], value)
-        elseif target[key] == nil then
-            target[key] = value
-        end
-    end
-
-    return target
-end
-
-local function AdoptLegacySettings(saved)
-    if type(saved) ~= "table" then
-        return
-    end
-
-    saved.General = MergeDefaults(saved.General, defaults.General)
-
-    if type(saved.ui) == "table" then
-        saved.General.showStatus = (saved.ui.showStatus ~= false)
-        saved.General.favScope = saved.ui.favScope or saved.General.favScope
-        saved.General.recentWindow = saved.ui.recentWindow or saved.General.recentWindow
-        saved.General.recentMax = saved.ui.recentMax or saved.General.recentMax
-    end
-
-    saved.General.features = MergeDefaults(saved.General.features, defaults.General.features)
-    if type(saved.features) == "table" then
-        for key, value in pairs(saved.features) do
-            saved.General.features[key] = value
-        end
-    end
-
-    saved.QuestTracker = MergeDefaults(saved.QuestTracker, defaults.QuestTracker)
-    saved.AchievementTracker = MergeDefaults(saved.AchievementTracker, defaults.AchievementTracker)
-    saved.appearance = MergeDefaults(saved.appearance, defaults.appearance)
-
-    saved.ui = saved.General
-    saved.features = saved.General.features
-end
-
 ---Initialises SavedVariables and exposes them on the addon table.
 function Addon:InitSavedVariables()
-    if self.SV ~= nil then
-        return self.SV
+    local stateInit = Nvk3UT_StateInit
+    if stateInit and stateInit.BootstrapSavedVariables then
+        local sv = stateInit.BootstrapSavedVariables(self)
+        if type(sv) == "table" then
+            self.SV = sv
+        end
     end
 
-    -- TODO CORE_005_CREATE_StateInit_lua: move SavedVariables bootstrap into dedicated state-init module.
-    local sv = ZO_SavedVars:NewAccountWide("Nvk3UT_SV", 2, nil, defaults)
-    AdoptLegacySettings(sv)
-
-    self.SV = sv
-    self.sv = sv -- legacy alias consumed by existing modules
-    self:SetDebugEnabled(sv and sv.debug)
+    local sv = self.SV
+    if type(sv) == "table" then
+        self.sv = sv -- legacy alias consumed by existing modules
+        if type(self.SetDebugEnabled) == "function" then
+            self:SetDebugEnabled(sv.debug)
+        end
+    end
 
     return self.SV
 end
@@ -418,8 +273,13 @@ function Addon:OnAddonLoaded(actualAddonName)
         return
     end
 
-    -- TODO Model: delegate SavedVariables init once Core/Nvk3UT_StateInit.lua exists.
+    -- SavedVariables bootstrap lives in Core/Nvk3UT_StateInit.lua.
     self:InitSavedVariables()
+
+    if Nvk3UT_Diagnostics and Nvk3UT_Diagnostics.SyncFromSavedVariables and self.SV then
+        -- Ensure diagnostics pick up runtime toggles even if they loaded after StateInit.
+        Nvk3UT_Diagnostics.SyncFromSavedVariables(self.SV)
+    end
 
     self._rebuild_lock = false
 
