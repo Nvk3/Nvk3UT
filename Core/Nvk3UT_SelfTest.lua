@@ -14,9 +14,12 @@ local SelfTest = Nvk3UT_SelfTest
 
 -- Attach to the addon root when Core is ready without assuming it exists now.
 function SelfTest.AttachToRoot(root)
-    if type(root) == "table" then
-        root.SelfTest = root.SelfTest or SelfTest
+    if type(root) ~= "table" then
+        return
     end
+
+    root.SelfTest = SelfTest
+    return root.SelfTest
 end
 
 local function _format(fmt, ...)
@@ -302,7 +305,21 @@ end
 -- Backward compatibility for legacy callers that used Nvk3UT.SelfTest.Run()
 if not SelfTest.Run then
     function SelfTest.Run()
-        return SelfTest.RunCoreSanityCheck()
+        local function execute()
+            return SelfTest.RunCoreSanityCheck()
+        end
+
+        if Nvk3UT and type(Nvk3UT.SafeCall) == "function" then
+            return Nvk3UT.SafeCall(execute)
+        end
+
+        local ok, result = pcall(execute)
+        if not ok then
+            _error("SelfTest execution failed: %s", tostring(result))
+            return nil
+        end
+
+        return result
     end
 end
 
