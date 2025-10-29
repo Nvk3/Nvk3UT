@@ -1,6 +1,29 @@
 -- Runtime/Nvk3UT_TrackerHost.lua
 local Host = {}
 
+--[[
+TEMPORARY EVENT HANDLERS NOTICE
+================================
+This file currently self-registers scene / cursor / combat events in _TempRegisterEvents().
+
+This is ONLY a stopgap until we introduce Events/Nvk3UT_EventHandlerBase.lua
+and the rest of the Events/* modules (Migration Tokens: EVENTS_001_CREATE_EventHandlerBase_lua
+and following). Once those exist, ALL ESO event registration and SCENE_MANAGER callbacks
+MUST be removed from Runtime/Nvk3UT_TrackerHost.lua.
+
+At that point:
+- Events/* will own HUD visibility, cursor mode, combat state, quest/achievement change hooks.
+- Events/* will call Nvk3UT.TrackerHost:SetVisible(), Nvk3UT.TrackerRuntime:SetCursorMode(),
+  Nvk3UT.TrackerRuntime:SetCombatState(), and Nvk3UT.TrackerRuntime:QueueDirty() as needed.
+
+If you are working on the Events migration, DELETE:
+- Host:_TempRegisterEvents()
+- Any SCENE_MANAGER:RegisterCallback(...) and EVENT_MANAGER:RegisterForEvent(...) in this file
+- The OnPlayerActivated() call to self:_TempRegisterEvents()
+
+Do not forget to also remove the corresponding TODO comments.
+]]
+
 local WINDOW_NAME = "Nvk3UT_TrackerHost_Window"
 local HEADER_NAME = WINDOW_NAME .. "_Header"
 local FOOTER_NAME = WINDOW_NAME .. "_Footer"
@@ -140,6 +163,8 @@ local function normalizeWindowBars(bars)
 
     return bars
 end
+
+local queueLayout
 
 local function ensureWindow(self)
     if self.window and self.scrollChild then
@@ -291,6 +316,24 @@ function Host.Init(self)
     self.scrollChild = self.scrollChild or nil
     self.locked = self.locked or false
     self._isDragging = false
+    self._tempEventsRegistered = self._tempEventsRegistered or false
+    self._tempSceneCallbacks = self._tempSceneCallbacks or {}
+    self._hudSceneVisible = self._hudSceneVisible
+    if self._hudSceneVisible == nil then
+        self._hudSceneVisible = true
+    end
+    self._hudUiSceneVisible = self._hudUiSceneVisible
+    if self._hudUiSceneVisible == nil then
+        self._hudUiSceneVisible = true
+    end
+    self._sceneShouldShow = self._sceneShouldShow
+    if self._sceneShouldShow == nil then
+        self._sceneShouldShow = true
+    end
+    self._userDesiredVisible = self._userDesiredVisible
+    if self._userDesiredVisible == nil then
+        self._userDesiredVisible = true
+    end
 end
 
 function Host.OnPlayerActivated(self)
@@ -299,8 +342,14 @@ function Host.OnPlayerActivated(self)
     ensureWindow(self)
     Host.ApplySavedSettings(self)
 
+    -- TEMPORARY: register in-file event listeners until Events/ modules take over.
+    -- TODO [EventMigration]: remove this call once Events/ modules own all ESO events.
+    self:_TempRegisterEvents()
+
     if Nvk3UT and Nvk3UT.Debug then
-        Nvk3UT:Debug("TrackerHost.OnPlayerActivated() complete")
+        Nvk3UT:Debug(
+            "TrackerHost.OnPlayerActivated() complete tempEvents=" .. tostring(self._tempEventsRegistered)
+        )
     end
 end
 
@@ -423,22 +472,40 @@ function Host.SaveWindowDimensions(self)
     general.window.height = math.floor(self.window:GetHeight() + 0.5)
 end
 
-function Host.SetVisible(self, isVisible, suppressSave)
+function Host.SetVisible(self, isVisible, suppressSave, fromScene)
     self = self or Host
 
-    if not self.window then
-        return
+    local general
+    if fromScene then
+        self._sceneShouldShow = isVisible and true or false
+    else
+        self._userDesiredVisible = isVisible and true or false
+        general = ensureGeneral(self)
+        if general and not suppressSave then
+            general.window.visible = self._userDesiredVisible
+        end
     end
 
-    self.window:SetHidden(not isVisible)
+    local window = self.window
+    local previousVisible = window and not window:IsHidden()
+    local shouldShow = (self._userDesiredVisible ~= false) and (self._sceneShouldShow ~= false)
+    if window then
+        window:SetHidden(not shouldShow)
+    end
 
-    local general = ensureGeneral(self)
-    if general and not suppressSave then
-        general.window.visible = isVisible and true or false
+    if window and previousVisible ~= shouldShow then
+        if queueLayout then
+            queueLayout()
+        end
     end
 
     if Nvk3UT and Nvk3UT.Debug then
-        Nvk3UT:Debug("TrackerHost.SetVisible(" .. tostring(isVisible) .. ")")
+        Nvk3UT:Debug(string.format(
+            "TrackerHost.SetVisible(request=%s, fromScene=%s, final=%s)",
+            tostring(isVisible),
+            tostring(fromScene == true),
+            tostring(shouldShow)
+        ))
     end
 end
 
@@ -494,7 +561,117 @@ function Host.GetWindowControl(self)
     return self.window
 end
 
-local function queueLayout()
+function Host:_TempRegisterEvents()
+    if self._tempEventsRegistered then
+        return
+    end
+    self._tempEventsRegistered = true
+
+    local sceneCallbacks = self._tempSceneCallbacks or {}
+    self._tempSceneCallbacks = sceneCallbacks
+
+    -------------------------------------------------
+    -- Scene / HUD visibility handling
+    -------------------------------------------------
+    local function handleSceneState(sceneKey)
+        local function stateChanged(_, newState)
+            if newState ~= SCENE_SHOWING and newState ~= SCENE_SHOWN and newState ~= SCENE_HIDING and newState ~= SCENE_HIDDEN then
+                return
+            end
+
+            local isShowing = newState == SCENE_SHOWING or newState == SCENE_SHOWN
+            if sceneKey == "hudui" then
+                self._hudUiSceneVisible = isShowing and true or false
+            else
+                self._hudSceneVisible = isShowing and true or false
+            end
+
+            local shouldShow = (self._hudSceneVisible ~= false) or (self._hudUiSceneVisible ~= false)
+            self:SetVisible(shouldShow, true, true)
+        end
+
+        return stateChanged
+    end
+
+    local function registerScene(scene, key)
+        if not (scene and scene.RegisterCallback) then
+            return
+        end
+
+        key = key or (scene.GetName and scene:GetName()) or tostring(scene)
+        if sceneCallbacks[key] then
+            return
+        end
+
+        local callback = handleSceneState(key)
+        local ok = pcall(scene.RegisterCallback, scene, "StateChange", callback)
+        if ok then
+            sceneCallbacks[key] = callback
+            local isShowing = scene.IsShowing and scene:IsShowing()
+            if isShowing ~= nil then
+                if key == "hudui" or key == "HUD_UI_SCENE" then
+                    self._hudUiSceneVisible = isShowing and true or false
+                else
+                    self._hudSceneVisible = isShowing and true or false
+                end
+            end
+        end
+    end
+
+    registerScene(HUD_SCENE, "hud")
+    registerScene(HUD_UI_SCENE, "hudui")
+
+    if SCENE_MANAGER and SCENE_MANAGER.GetScene then
+        registerScene(SCENE_MANAGER:GetScene("hud"), "hud")
+        registerScene(SCENE_MANAGER:GetScene("hudui"), "hudui")
+    end
+
+    local hudShowing = self._hudSceneVisible ~= false
+    local hudUiShowing = self._hudUiSceneVisible ~= false
+    self:SetVisible(hudShowing or hudUiShowing, true, true)
+
+    -------------------------------------------------
+    -- Cursor mode / reticle handling
+    -------------------------------------------------
+    if EVENT_MANAGER and EVENT_MANAGER.RegisterForEvent then
+        local function onReticleHidden(_, isHidden)
+            local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+            if runtime and runtime.SetCursorMode then
+                runtime:SetCursorMode(isHidden == true)
+            end
+        end
+
+        EVENT_MANAGER:RegisterForEvent(
+            "Nvk3UT_TrackerHost_Reticle",
+            EVENT_RETICLE_HIDDEN_UPDATE,
+            onReticleHidden
+        )
+
+        -------------------------------------------------
+        -- Combat state handling
+        -------------------------------------------------
+        local function onCombatState(_, inCombat)
+            local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+            if runtime and runtime.SetCombatState then
+                runtime:SetCombatState(inCombat == true)
+            end
+        end
+
+        EVENT_MANAGER:RegisterForEvent(
+            "Nvk3UT_TrackerHost_Combat",
+            EVENT_PLAYER_COMBAT_STATE,
+            onCombatState
+        )
+    end
+
+    if Nvk3UT and Nvk3UT.Debug then
+        Nvk3UT:Debug(
+            "TrackerHost._TempRegisterEvents() registered temporary scene/cursor/combat listeners"
+        )
+    end
+end
+
+queueLayout = function()
     local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
     if runtime and runtime.QueueDirty then
         runtime:QueueDirty("layout")
