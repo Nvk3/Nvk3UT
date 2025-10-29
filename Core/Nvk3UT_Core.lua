@@ -17,6 +17,14 @@ Addon._rebuild_lock = Addon._rebuild_lock or false
 Addon.initialized  = Addon.initialized or false
 Addon.playerActivated = Addon.playerActivated or false
 
+if Nvk3UT_Utils and type(Nvk3UT_Utils.AttachToRoot) == "function" then
+    Nvk3UT_Utils.AttachToRoot(Addon)
+end
+
+if Nvk3UT_SelfTest and type(Nvk3UT_SelfTest.AttachToRoot) == "function" then
+    Nvk3UT_SelfTest.AttachToRoot(Addon)
+end
+
 local function formatMessage(prefix, fmt, ...)
     if not fmt then
         return prefix
