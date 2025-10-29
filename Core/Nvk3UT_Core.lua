@@ -12,6 +12,7 @@ Addon.addonVersion = ADDON_VERSION
 Addon.SV           = Addon.SV or nil
 Addon.sv           = Addon.sv or Addon.SV -- legacy alias expected by existing modules
 Addon.modules      = Addon.modules or {}
+Addon.moduleOrder  = Addon.moduleOrder or {}
 Addon.debugEnabled = Addon.debugEnabled or false
 Addon._rebuild_lock = Addon._rebuild_lock or false
 Addon.initialized  = Addon.initialized or false
@@ -89,16 +90,49 @@ local function _SafeCall(fn, ...)
     return nil
 end
 
-Addon.SafeCall = _SafeCall
+function Addon.SafeCall(selfOrFunc, maybeFunc, ...)
+    if type(selfOrFunc) == "table" then
+        if type(maybeFunc) ~= "function" then
+            return nil
+        end
+
+        return _SafeCall(maybeFunc, ...)
+    end
+
+    if maybeFunc == nil and select("#", ...) == 0 then
+        return _SafeCall(selfOrFunc)
+    end
+
+    return _SafeCall(selfOrFunc, maybeFunc, ...)
+end
 
 ---Registers a named module for lookup.
+local function registerModuleOrder(name)
+    for _, existing in ipairs(Addon.moduleOrder) do
+        if existing == name then
+            return
+        end
+    end
+
+    Addon.moduleOrder[#Addon.moduleOrder + 1] = name
+end
+
 function Addon.RegisterModule(name, moduleTable)
     if type(name) ~= "string" or name == "" then
         return nil
     end
 
     Addon.modules[name] = moduleTable or true
-    return Addon.modules[name]
+    registerModuleOrder(name)
+
+    local module = Addon.modules[name]
+    if type(module) == "table" and type(module.Init) == "function" then
+        Addon:SafeCall(function()
+            module:Init()
+        end)
+    end
+
+    return module
 end
 
 ---Retrieves a module table by name.
@@ -120,6 +154,44 @@ end
 
 function Addon:SetDebugEnabled(enabled)
     self.debugEnabled = enabled and true or false
+end
+
+local function forEachModule(callback)
+    if type(callback) ~= "function" then
+        return
+    end
+
+    if type(Addon.moduleOrder) == "table" and #Addon.moduleOrder > 0 then
+        for _, name in ipairs(Addon.moduleOrder) do
+            callback(name, Addon.modules[name])
+        end
+        return
+    end
+
+    for name, module in pairs(Addon.modules) do
+        callback(name, module)
+    end
+end
+
+function Addon:InvokeModuleHook(methodName, ...)
+    if type(methodName) ~= "string" or methodName == "" then
+        return
+    end
+
+    forEachModule(function(_, module)
+        if type(module) ~= "table" then
+            return
+        end
+
+        local handler = module[methodName]
+        if type(handler) ~= "function" then
+            return
+        end
+
+        self:SafeCall(function()
+            handler(module, ...)
+        end)
+    end)
 end
 
 ---Initialises SavedVariables and exposes them on the addon table.
@@ -316,6 +388,8 @@ function Addon:OnAddonLoaded(actualAddonName)
     EnableCompletedCategory()
 
     self.initialized = true
+
+    self:InvokeModuleHook("OnAddonLoaded", actualAddonName)
 end
 
 ---PLAYER_ACTIVATED lifecycle entry point invoked by Events layer.
@@ -335,12 +409,7 @@ function Addon:OnPlayerActivated()
         end
     end)
 
-    _SafeCall(function()
-        -- TODO HostLayout: move tracker host init into HostLayout module.
-        if Addon.TrackerHost and Addon.TrackerHost.Init then
-            Addon.TrackerHost.Init()
-        end
-    end)
+    self:InvokeModuleHook("OnPlayerActivated")
 
     -- TODO UI: move status refresh trigger into HostLayout/UI layer.
     self:UIUpdateStatus()
