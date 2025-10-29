@@ -32,5 +32,7 @@ Nvk3UT_QuestTracker.lua
 Nvk3UT_AchievementTracker.xml
 Nvk3UT_AchievementTracker.lua
 Nvk3UT_LAM.lua
+## Runtime
+Runtime/Nvk3UT_TrackerRuntime.lua
 Nvk3UT_TrackerHost.lua
 README.txt
