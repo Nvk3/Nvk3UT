@@ -6,31 +6,52 @@
 ## DependsOn: LibAddonMenu-2.0
 ## OptionalDependsOn: LibCustomMenu-2.0
 ## SavedVariables: Nvk3UT_SV Nvk3UT_Data_Favorites Nvk3UT_Data_Recent Nvk3UT_Data_Quests
+
+## Core
 Core/Nvk3UT_Utils.lua
 Core/Nvk3UT_Diagnostics.lua
 Core/Nvk3UT_SelfTest.lua
 Core/Nvk3UT_StateInit.lua
 Core/Nvk3UT_Rebuild.lua
 Core/Nvk3UT_Core.lua
-Nvk3UT_Achievements.lua
-Nvk3UT_UI.lua
-Nvk3UT_Tooltips.lua
+
+## Model/Quest
+Nvk3UT_QuestModel.lua
+
+## Model/Achievement
+Nvk3UT_AchievementModel.lua
 Nvk3UT_FavoritesData.lua
-Nvk3UT_Favorites.lua
 Nvk3UT_RecentData.lua
-Nvk3UT_Recent.lua
+Nvk3UT_TodoData.lua
+Nvk3UT_CompletedData.lua
 Nvk3UT_FavoritesIntegration.lua
 Nvk3UT_RecentIntegration.lua
-Nvk3UT_TodoData.lua
 Nvk3UT_TodoIntegration.lua
-Nvk3UT_CompletedData.lua
 Nvk3UT_CompletedIntegration.lua
-Nvk3UT_QuestModel.lua
-Nvk3UT_AchievementModel.lua
+
+## Journal
+Nvk3UT_Achievements.lua
+Nvk3UT_Favorites.lua
+Nvk3UT_Recent.lua
+Nvk3UT_RecentSummary.lua
+
+## Runtime
+Runtime/Nvk3UT_TrackerRuntime.lua
+Runtime/Nvk3UT_TrackerHost.lua
+Runtime/Nvk3UT_TrackerHostLayout.lua
+
+## Tracker
 Nvk3UT_QuestTracker.xml
 Nvk3UT_QuestTracker.lua
 Nvk3UT_AchievementTracker.xml
 Nvk3UT_AchievementTracker.lua
+
+## Events
+Events/Nvk3UT_EventHandlerBase.lua
+
+## UI
+Nvk3UT_UI.lua
+Nvk3UT_Tooltips.lua
 Nvk3UT_LAM.lua
-Nvk3UT_TrackerHost.lua
+
 README.txt

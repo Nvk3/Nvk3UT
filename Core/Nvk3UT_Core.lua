@@ -366,49 +366,12 @@ SLASH_COMMANDS["/nvk3test"] = function()
     end
 end
 
--- TODO(EVENTS_001_CREATE_EventHandlerBase_lua):
--- Remove this temporary bootstrap block from Core/Nvk3UT_Core.lua.
--- After the Events layer exists, EVENT_MANAGER:RegisterForEvent MUST live
--- exclusively in Events/Nvk3UT_EventHandlerBase.lua, not in Core.
 --------------------------------------------------------------------------------
--- TEMPORARY BOOTSTRAP (will be moved into Events/Nvk3UT_EventHandlerBase.lua)
--- This block ONLY exists until the Events layer is introduced.
--- TODO: Remove this entire block once Events/Nvk3UT_EventHandlerBase.lua is added.
---------------------------------------------------------------------------------
-do
-    -- Forward EVENT_ADD_ON_LOADED into our lifecycle API
-    local function _OnAddonLoaded(_, loadedAddonName)
-        -- We don't unregister here because EVENT_ADD_ON_LOADED fires multiple times
-        -- for every addon. Our :OnAddonLoaded() already filters by addon name.
-        if Nvk3UT and Nvk3UT.OnAddonLoaded then
-            Nvk3UT:OnAddonLoaded(loadedAddonName)
-        end
-    end
-
-    -- Forward EVENT_PLAYER_ACTIVATED into our lifecycle API
-    local function _OnPlayerActivated()
-        if Nvk3UT and Nvk3UT.OnPlayerActivated then
-            Nvk3UT:OnPlayerActivated()
-        end
-
-        -- Only need this once per session
-        EVENT_MANAGER:UnregisterForEvent("Nvk3UT_Init_PlayerActivated", EVENT_PLAYER_ACTIVATED)
-    end
-
-    EVENT_MANAGER:RegisterForEvent(
-        "Nvk3UT_Init_AddOnLoaded",
-        EVENT_ADD_ON_LOADED,
-        _OnAddonLoaded
-    )
-
-    EVENT_MANAGER:RegisterForEvent(
-        "Nvk3UT_Init_PlayerActivated",
-        EVENT_PLAYER_ACTIVATED,
-        _OnPlayerActivated
-    )
-end
---------------------------------------------------------------------------------
--- END TEMPORARY BOOTSTRAP
+-- NOTE:
+-- ESO event registration (ADD_ON_LOADED, PLAYER_ACTIVATED, HUD visibility,
+-- cursor mode, combat state, etc.) is now handled centrally inside
+-- Events/Nvk3UT_EventHandlerBase.lua. Core intentionally avoids registering
+-- EVENT_MANAGER callbacks directly so the Events layer can own that lifecycle.
 --------------------------------------------------------------------------------
 
 return Addon
