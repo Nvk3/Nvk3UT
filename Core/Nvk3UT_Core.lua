@@ -1,0 +1,501 @@
+-- Core/Nvk3UT_Core.lua
+-- Central addon root. Owns global table, SafeCall, module registry, SavedVariables bootstrap, lifecycle entry points.
+
+local ADDON_NAME    = ADDON_NAME    or "Nvk3UT"
+local ADDON_VERSION = ADDON_VERSION or "0.10.2" -- TODO: keep in sync with manifest when version updates
+
+Nvk3UT = Nvk3UT or {}
+local Addon = Nvk3UT
+
+Addon.addonName    = ADDON_NAME
+Addon.addonVersion = ADDON_VERSION
+Addon.SV           = Addon.SV or nil
+Addon.sv           = Addon.sv or Addon.SV -- legacy alias expected by existing modules
+Addon.modules      = Addon.modules or {}
+Addon.debugEnabled = Addon.debugEnabled or false
+Addon._rebuild_lock = Addon._rebuild_lock or false
+Addon.initialized  = Addon.initialized or false
+Addon.playerActivated = Addon.playerActivated or false
+
+local function formatMessage(prefix, fmt, ...)
+    if not fmt then
+        return prefix
+    end
+
+    if select('#', ...) == 0 then
+        return string.format("%s%s", prefix, tostring(fmt))
+    end
+
+    local formatString = prefix .. tostring(fmt)
+    local ok, message = pcall(string.format, formatString, ...)
+    if ok then
+        return message
+    end
+
+    return string.format("%s%s", prefix, tostring(fmt))
+end
+
+---Debug helper routed through Diagnostics when available.
+function Addon.Debug(fmt, ...)
+    if Addon.IsDebugEnabled and not Addon:IsDebugEnabled() then
+        return
+    end
+
+    if Nvk3UT_Diagnostics and Nvk3UT_Diagnostics.Debug then
+        return Nvk3UT_Diagnostics.Debug(fmt, ...)
+    end
+
+    if d then
+        d(formatMessage("[Nvk3UT DEBUG] ", fmt, ...))
+    end
+end
+
+---Error helper routed through Diagnostics when available.
+function Addon.Error(fmt, ...)
+    if Nvk3UT_Diagnostics and Nvk3UT_Diagnostics.Error then
+        return Nvk3UT_Diagnostics.Error(fmt, ...)
+    end
+
+    if d then
+        d(formatMessage("|cFF0000[Nvk3UT ERROR]|r ", fmt, ...))
+    end
+end
+
+local function _SafeCall(fn, ...)
+    if type(fn) ~= "function" then
+        return nil
+    end
+
+    local function _errHandler(err)
+        if Nvk3UT and Nvk3UT.Error then
+            Nvk3UT.Error("SafeCall error: %s\n%s", tostring(err), debug.traceback())
+        end
+        return err
+    end
+
+    local ok, result = xpcall(fn, _errHandler, ...)
+    if ok then
+        return result
+    end
+
+    return nil
+end
+
+Addon.SafeCall = _SafeCall
+
+---Registers a named module for lookup.
+function Addon.RegisterModule(name, moduleTable)
+    if type(name) ~= "string" or name == "" then
+        return nil
+    end
+
+    Addon.modules[name] = moduleTable or true
+    return Addon.modules[name]
+end
+
+---Retrieves a module table by name.
+function Addon.GetModule(name)
+    return Addon.modules[name]
+end
+
+function Addon:GetName()
+    return self.addonName
+end
+
+function Addon:GetVersion()
+    return self.addonVersion
+end
+
+function Addon:IsDebugEnabled()
+    return self.debugEnabled == true
+end
+
+function Addon:SetDebugEnabled(enabled)
+    self.debugEnabled = enabled and true or false
+end
+
+local DEFAULT_FONT_FACE_BOLD = "$(BOLD_FONT)"
+local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
+
+local DEFAULT_QUEST_FONTS = {
+    category = { face = DEFAULT_FONT_FACE_BOLD, size = 20, outline = DEFAULT_FONT_OUTLINE },
+    title = { face = DEFAULT_FONT_FACE_BOLD, size = 16, outline = DEFAULT_FONT_OUTLINE },
+    line = { face = DEFAULT_FONT_FACE_BOLD, size = 14, outline = DEFAULT_FONT_OUTLINE },
+}
+
+local DEFAULT_ACHIEVEMENT_FONTS = {
+    category = { face = DEFAULT_FONT_FACE_BOLD, size = 20, outline = DEFAULT_FONT_OUTLINE },
+    title = { face = DEFAULT_FONT_FACE_BOLD, size = 16, outline = DEFAULT_FONT_OUTLINE },
+    line = { face = DEFAULT_FONT_FACE_BOLD, size = 14, outline = DEFAULT_FONT_OUTLINE },
+}
+
+local DEFAULT_TRACKER_APPEARANCE = {
+    questTracker = {
+        colors = {
+            categoryTitle = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
+            objectiveText = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
+            entryTitle = { r = 1, g = 1, b = 0, a = 1 },
+            activeTitle = { r = 1, g = 1, b = 1, a = 1 },
+        },
+    },
+    achievementTracker = {
+        colors = {
+            categoryTitle = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
+            objectiveText = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
+            entryTitle = { r = 1, g = 1, b = 0, a = 1 },
+            activeTitle = { r = 1, g = 1, b = 1, a = 1 },
+        },
+    },
+}
+
+local defaults = {
+    version = 4,
+    debug = false,
+    General = {
+        showStatus = true,
+        favScope = "account",
+        recentWindow = 0,
+        recentMax = 100,
+        showCategoryCounts = true,
+        showQuestCategoryCounts = true,
+        showAchievementCategoryCounts = true,
+        window = {
+            left = 200,
+            top = 200,
+            width = 360,
+            height = 640,
+            locked = false,
+        },
+        features = {
+            completed = true,
+            favorites = true,
+            recent = true,
+            todo = true,
+            tooltips = true,
+        },
+    },
+    QuestTracker = {
+        active = true,
+        hideDefault = false,
+        hideInCombat = false,
+        lock = false,
+        autoGrowV = true,
+        autoGrowH = false,
+        autoExpand = true,
+        autoTrack = true,
+        background = {
+            enabled = true,
+            alpha = 0.35,
+            edgeAlpha = 0.5,
+            padding = 8,
+        },
+        fonts = DEFAULT_QUEST_FONTS,
+    },
+    AchievementTracker = {
+        active = true,
+        lock = false,
+        autoGrowV = true,
+        autoGrowH = false,
+        background = {
+            enabled = true,
+            alpha = 0.35,
+            edgeAlpha = 0.5,
+            padding = 8,
+        },
+        fonts = DEFAULT_ACHIEVEMENT_FONTS,
+        tooltips = true,
+        sections = {
+            favorites = true,
+            recent = true,
+            completed = true,
+            todo = true,
+        },
+    },
+    appearance = DEFAULT_TRACKER_APPEARANCE,
+}
+
+local function MergeDefaults(target, source)
+    if type(source) ~= "table" then
+        return target
+    end
+
+    if type(target) ~= "table" then
+        target = {}
+    end
+
+    for key, value in pairs(source) do
+        if type(value) == "table" then
+            target[key] = MergeDefaults(target[key], value)
+        elseif target[key] == nil then
+            target[key] = value
+        end
+    end
+
+    return target
+end
+
+local function AdoptLegacySettings(saved)
+    if type(saved) ~= "table" then
+        return
+    end
+
+    saved.General = MergeDefaults(saved.General, defaults.General)
+
+    if type(saved.ui) == "table" then
+        saved.General.showStatus = (saved.ui.showStatus ~= false)
+        saved.General.favScope = saved.ui.favScope or saved.General.favScope
+        saved.General.recentWindow = saved.ui.recentWindow or saved.General.recentWindow
+        saved.General.recentMax = saved.ui.recentMax or saved.General.recentMax
+    end
+
+    saved.General.features = MergeDefaults(saved.General.features, defaults.General.features)
+    if type(saved.features) == "table" then
+        for key, value in pairs(saved.features) do
+            saved.General.features[key] = value
+        end
+    end
+
+    saved.QuestTracker = MergeDefaults(saved.QuestTracker, defaults.QuestTracker)
+    saved.AchievementTracker = MergeDefaults(saved.AchievementTracker, defaults.AchievementTracker)
+    saved.appearance = MergeDefaults(saved.appearance, defaults.appearance)
+
+    saved.ui = saved.General
+    saved.features = saved.General.features
+end
+
+---Initialises SavedVariables and exposes them on the addon table.
+function Addon:InitSavedVariables()
+    if self.SV ~= nil then
+        return self.SV
+    end
+
+    -- TODO CORE_005_CREATE_StateInit_lua: move SavedVariables bootstrap into dedicated state-init module.
+    local sv = ZO_SavedVars:NewAccountWide("Nvk3UT_SV", 2, nil, defaults)
+    AdoptLegacySettings(sv)
+
+    self.SV = sv
+    self.sv = sv -- legacy alias consumed by existing modules
+    self:SetDebugEnabled(sv and sv.debug)
+
+    return self.SV
+end
+
+function Addon:UIUpdateStatus()
+    if self.UI and self.UI.UpdateStatus then
+        _SafeCall(function()
+            self.UI.UpdateStatus()
+        end)
+    end
+end
+
+---Handles achievement completion side-effects.
+-- TODO Events: wire achievement callbacks via Events/ layer.
+function Addon:HandleAchievementChanged(achievementId)
+    local id = tonumber(achievementId)
+    if not id then
+        return
+    end
+
+    local achievements = self.Achievements
+    if not (achievements and achievements.IsComplete and achievements.IsComplete(id)) then
+        return
+    end
+
+    local utils = self.Utils
+    local normalized = utils and utils.NormalizeAchievementId and utils.NormalizeAchievementId(id) or id
+
+    local favoritesData = self.FavoritesData
+    local favorites = self.Favorites
+    if favoritesData and favoritesData.IsFavorite and favorites and favorites.Remove then
+        local candidates = { id }
+        if normalized and normalized ~= id then
+            candidates[#candidates + 1] = normalized
+        end
+        for _, candidateId in ipairs(candidates) do
+            if favoritesData.IsFavorite(candidateId, "account") or favoritesData.IsFavorite(candidateId, "character") then
+                favorites.Remove(candidateId)
+            end
+        end
+    end
+
+    local progress = self._recentSV and self._recentSV.progress
+    if type(progress) == "table" then
+        local function tracked(val)
+            if val == nil then
+                return false
+            end
+
+            if progress[val] ~= nil then
+                return true
+            end
+
+            local key = tostring(val)
+            return progress[key] ~= nil
+        end
+
+        if tracked(id) or (normalized and normalized ~= id and tracked(normalized)) then
+            local recent = self.Recent
+            if recent and recent.CleanupCompleted then
+                _SafeCall(recent.CleanupCompleted)
+            end
+        end
+    end
+
+    self:UIUpdateStatus()
+end
+
+local function EnableCompletedCategory()
+    if Nvk3UT_EnableCompletedCategory then
+        _SafeCall(Nvk3UT_EnableCompletedCategory)
+    end
+end
+
+local function EnableFavoritesCategory()
+    if Nvk3UT_EnableFavorites then
+        _SafeCall(Nvk3UT_EnableFavorites)
+    end
+end
+
+local function EnableRecentCategory()
+    if Nvk3UT_EnableRecentCategory then
+        _SafeCall(Nvk3UT_EnableRecentCategory)
+    end
+end
+
+local function EnableTodoCategory()
+    if Nvk3UT_EnableTodoCategory then
+        _SafeCall(Nvk3UT_EnableTodoCategory)
+    end
+end
+
+local function logIntegrationsEnabled()
+    local utils = Addon.Utils
+    if utils and utils.d then
+        utils.d("[Nvk3UT][Core][Integrations] enabled", string.format("data={favorites:%s, recent:%s, completed:%s}", tostring(Nvk3UT_EnableFavorites and true or false), tostring(Nvk3UT_EnableRecentCategory and true or false), tostring(Nvk3UT_EnableCompletedCategory and true or false)))
+    end
+end
+
+function Addon:EnableIntegrations()
+    if self.__integrated then
+        return
+    end
+
+    local function TryEnable(attempt)
+        attempt = attempt or 1
+
+        if ACHIEVEMENTS then
+            if not Addon.__integrated then
+                Addon.__integrated = true
+                logIntegrationsEnabled()
+                EnableFavoritesCategory()
+                EnableRecentCategory()
+                EnableTodoCategory()
+            end
+            return
+        end
+
+        if attempt < 15 then
+            zo_callLater(function()
+                TryEnable(attempt + 1)
+            end, 500)
+        end
+    end
+
+    TryEnable(1)
+end
+
+---Addon load lifecycle entry point invoked by Events layer.
+function Addon:OnAddonLoaded(actualAddonName)
+    if actualAddonName ~= self.addonName then
+        return
+    end
+
+    -- TODO Model: delegate SavedVariables init once Core/Nvk3UT_StateInit.lua exists.
+    self:InitSavedVariables()
+
+    self._rebuild_lock = false
+
+    self.Debug("Nvk3UT loaded v%s", tostring(self.addonVersion))
+
+    _SafeCall(function()
+        -- TODO Model: move favorites saved-variable init into Model layer.
+        if Addon.FavoritesData and Addon.FavoritesData.InitSavedVars then
+            Addon.FavoritesData.InitSavedVars()
+        end
+    end)
+
+    _SafeCall(function()
+        -- TODO Model: move recent saved-variable init into Model layer.
+        if Addon.RecentData and Addon.RecentData.InitSavedVars then
+            Addon.RecentData.InitSavedVars()
+        end
+    end)
+
+    _SafeCall(function()
+        -- TODO Events: migrate event wiring into Events/ handlers.
+        if Addon.RecentData and Addon.RecentData.RegisterEvents then
+            Addon.RecentData.RegisterEvents()
+        end
+    end)
+
+    -- TODO UI: move status refresh trigger into HostLayout/UI layer.
+    self:UIUpdateStatus()
+
+    if Nvk3UT_SelfTest and Nvk3UT_SelfTest.RunCoreSanityCheck then
+        _SafeCall(Nvk3UT_SelfTest.RunCoreSanityCheck)
+    end
+
+    EnableCompletedCategory()
+
+    self.initialized = true
+end
+
+---PLAYER_ACTIVATED lifecycle entry point invoked by Events layer.
+function Addon:OnPlayerActivated()
+    if self.playerActivated then
+        return
+    end
+    self.playerActivated = true
+
+    -- TODO Controller: move integration gating into Controller layer once available.
+    self:EnableIntegrations()
+
+    _SafeCall(function()
+        -- TODO UI: move tooltip bootstrapping into UI helpers.
+        if Addon.Tooltips and Addon.Tooltips.Init then
+            Addon.Tooltips.Init()
+        end
+    end)
+
+    _SafeCall(function()
+        -- TODO HostLayout: move tracker host init into HostLayout module.
+        if Addon.TrackerHost and Addon.TrackerHost.Init then
+            Addon.TrackerHost.Init()
+        end
+    end)
+
+    -- TODO UI: move status refresh trigger into HostLayout/UI layer.
+    self:UIUpdateStatus()
+end
+
+-- Legacy compatibility wrappers ------------------------------------------------
+function Addon.OnAddOnLoadedEvent(...)
+    return Addon:OnAddonLoaded(...)
+end
+
+function Addon.OnPlayerActivatedEvent(...)
+    return Addon:OnPlayerActivated(...)
+end
+
+-- Diagnostics slash command ----------------------------------------------------
+SLASH_COMMANDS = SLASH_COMMANDS or {}
+SLASH_COMMANDS["/nvk3test"] = function()
+    if Nvk3UT_Diagnostics and Nvk3UT_Diagnostics.SelfTest then
+        _SafeCall(Nvk3UT_Diagnostics.SelfTest)
+    end
+    if Nvk3UT_Diagnostics and Nvk3UT_Diagnostics.SystemTest then
+        _SafeCall(Nvk3UT_Diagnostics.SystemTest)
+    end
+end
+
+return Addon
