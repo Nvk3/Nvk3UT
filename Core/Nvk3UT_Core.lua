@@ -107,27 +107,33 @@ function Addon.SafeCall(selfOrFunc, maybeFunc, ...)
 end
 
 ---Registers a named module for lookup.
-local function registerModuleOrder(name)
-    for _, existing in ipairs(Addon.moduleOrder) do
+local function registerModuleOrder(target, name)
+    local order = target.moduleOrder
+    if type(order) ~= "table" then
+        order = {}
+        target.moduleOrder = order
+    end
+
+    for _, existing in ipairs(order) do
         if existing == name then
             return
         end
     end
 
-    Addon.moduleOrder[#Addon.moduleOrder + 1] = name
+    order[#order + 1] = name
 end
 
-function Addon.RegisterModule(name, moduleTable)
+function Addon:RegisterModule(name, moduleTable)
     if type(name) ~= "string" or name == "" then
         return nil
     end
 
-    Addon.modules[name] = moduleTable or true
-    registerModuleOrder(name)
+    self.modules[name] = moduleTable or true
+    registerModuleOrder(self, name)
 
-    local module = Addon.modules[name]
+    local module = self.modules[name]
     if type(module) == "table" and type(module.Init) == "function" then
-        Addon:SafeCall(function()
+        self:SafeCall(function()
             module:Init()
         end)
     end
@@ -178,6 +184,14 @@ function Addon:InvokeModuleHook(methodName, ...)
         return
     end
 
+    local argCount = select("#", ...)
+    local args
+    if argCount > 0 then
+        args = { ... }
+    end
+
+    local unpack = table.unpack or unpack
+
     forEachModule(function(_, module)
         if type(module) ~= "table" then
             return
@@ -189,7 +203,11 @@ function Addon:InvokeModuleHook(methodName, ...)
         end
 
         self:SafeCall(function()
-            handler(module, ...)
+            if args and argCount > 0 then
+                handler(module, unpack(args, 1, argCount))
+            else
+                handler(module)
+            end
         end)
     end)
 end
