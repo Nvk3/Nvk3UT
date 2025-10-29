@@ -70,6 +70,10 @@ local IsQuestExpanded -- forward declaration so earlier functions can query ques
 local HandleQuestRowClick -- forward declaration for quest row click orchestration
 local FlushPendingTrackedQuestUpdate -- forward declaration for deferred tracking updates
 local ProcessTrackedQuestUpdate -- forward declaration for deferred tracking processing
+-- Forward declaration so SafeCall is visible to functions defined above its body.
+-- Without this, calling SafeCall in ResolveQuestDebugInfo during quest accept can crash
+-- because SafeCall would still be nil at that point.
+local SafeCall
 
 local state = {
     isInitialized = false,
@@ -1141,7 +1145,9 @@ local function LogCategoryExpansion(action, trigger, categoryKey, beforeExpanded
     EmitDebugAction(action, trigger, "category", fields)
 end
 
-local function SafeCall(func, ...)
+-- SafeCall implementation (assigned to the forward-declared upvalue above)
+-- Hoisting this assignment prevents the quest-accept crash when ESO auto-assists a new quest.
+SafeCall = function(func, ...)
     if type(func) ~= "function" then
         return false, nil
     end
