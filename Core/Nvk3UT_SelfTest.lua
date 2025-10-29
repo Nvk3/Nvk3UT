@@ -37,6 +37,16 @@ local function _debug(fmt, ...)
     end
 end
 
+local function _info(fmt, ...)
+    if Nvk3UT_Diagnostics and type(Nvk3UT_Diagnostics.Warn) == "function" then
+        Nvk3UT_Diagnostics.Warn(fmt, ...)
+    elseif Nvk3UT and type(Nvk3UT.Warn) == "function" then
+        Nvk3UT.Warn(fmt, ...)
+    elseif type(d) == "function" then
+        d(_format("[Nvk3UT SelfTest] %s", _format(fmt, ...)))
+    end
+end
+
 local function _error(fmt, ...)
     if Nvk3UT and type(Nvk3UT.Error) == "function" then
         Nvk3UT.Error(fmt, ...)
@@ -61,17 +71,13 @@ local function _runCheck(results, name, fn)
 
     if status == nil then
         results.skipped = results.skipped + 1
-        if detail then
-            _debug("%s check skipped: %s", name, detail)
-        end
+        _info("%s check skipped%s", name, detail and (": " .. detail) or "")
         return
     end
 
     if status then
         results.passed = results.passed + 1
-        if detail then
-            _debug("%s check ok: %s", name, detail)
-        end
+        _info("%s check ok%s", name, detail and (": " .. detail) or "")
     else
         results.failed = results.failed + 1
         _error("%s check failed: %s", name, detail or "no details provided")
@@ -263,7 +269,7 @@ local function checkRecentData()
 end
 
 local function summarize(results)
-    _debug(
+    _info(
         "SelfTest summary: passed=%d, skipped=%d, failed=%d",
         results.passed,
         results.skipped,
@@ -277,6 +283,8 @@ end
 -- Main entry point: safe to call via Nvk3UT.SafeCall
 function SelfTest.RunCoreSanityCheck()
     local results = _newResults()
+
+    _info("Running core self tests...")
 
     _runCheck(results, "Environment", checkEnvironment)
     _runCheck(results, "Diagnostics", checkDiagnosticsModule)
