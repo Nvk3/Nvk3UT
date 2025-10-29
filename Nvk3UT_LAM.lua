@@ -1518,8 +1518,36 @@ local function registerPanel(displayTitle)
                 type = "button",
                 name = "Self-Test ausführen",
                 func = function()
-                    if Nvk3UT and Nvk3UT.SelfTest and Nvk3UT.SelfTest.Run then
-                        Nvk3UT.SelfTest.Run()
+                    local module = nil
+                    if Nvk3UT and Nvk3UT.SelfTest then
+                        module = Nvk3UT.SelfTest
+                    elseif rawget(_G, "Nvk3UT_SelfTest") then
+                        module = Nvk3UT_SelfTest
+                    end
+
+                    if module and type(module.Run) == "function" then
+                        if Nvk3UT_Diagnostics and type(Nvk3UT_Diagnostics.Warn) == "function" then
+                            Nvk3UT_Diagnostics.Warn("Self-Test requested from settings panel")
+                        elseif type(d) == "function" then
+                            d("[Nvk3UT WARN] Self-Test requested from settings panel")
+                        end
+
+                        local ok, err = pcall(module.Run)
+                        if not ok then
+                            local message = string.format("Self-Test failed to execute: %s", tostring(err))
+                            if Nvk3UT_Diagnostics and type(Nvk3UT_Diagnostics.Error) == "function" then
+                                Nvk3UT_Diagnostics.Error(message)
+                            elseif type(d) == "function" then
+                                d(string.format("|cFF0000[Nvk3UT ERROR]|r %s", message))
+                            end
+                        end
+                    else
+                        local message = "Self-Test module not available; cannot run diagnostics"
+                        if Nvk3UT_Diagnostics and type(Nvk3UT_Diagnostics.Error) == "function" then
+                            Nvk3UT_Diagnostics.Error(message)
+                        elseif type(d) == "function" then
+                            d(string.format("|cFF0000[Nvk3UT ERROR]|r %s", message))
+                        end
                     end
                 end,
                 tooltip = "Führt einen kompakten Integritäts-Check aus. Bei aktiviertem Debug erscheinen ausführliche Chat-Logs.",
