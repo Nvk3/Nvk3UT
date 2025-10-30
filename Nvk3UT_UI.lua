@@ -183,13 +183,15 @@ local function __nvk3_GetQuestCountForTracker()
     end
   end
 
-  local apiCount = 0
-  if GetNumJournalQuests then
-    local total = GetNumJournalQuests() or 0
-    apiCount = math.min(math.max(total, 0), QUEST_LOG_LIMIT)
+  local questList = Nvk3UT and Nvk3UT.QuestList
+  if questList and questList.RefreshFromGame and questList.GetList then
+    questList:RefreshFromGame()
+    local entries = questList:GetList() or {}
+    local total = #entries
+    return math.min(math.max(total, 0), QUEST_LOG_LIMIT)
   end
 
-  return apiCount
+  return 0
 end
 
 local function __nvk3_BuildQuestStatusPart()

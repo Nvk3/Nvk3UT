@@ -11,6 +11,7 @@ local EVENT_NAMESPACE = MODULE_NAME .. "_Event"
 local Utils = Nvk3UT and Nvk3UT.Utils
 local QuestState = Nvk3UT and Nvk3UT.QuestState
 local QuestSelection = Nvk3UT and Nvk3UT.QuestSelection
+local QuestList = Nvk3UT and Nvk3UT.QuestList
 
 local function GetQuestState()
     if not QuestState and Nvk3UT then
@@ -34,6 +35,13 @@ local function GetQuestSelection()
     end
 
     return QuestSelection
+end
+
+local function GetQuestList()
+    if not QuestList and Nvk3UT then
+        QuestList = Nvk3UT.QuestList
+    end
+    return QuestList
 end
 
 local FormatCategoryHeaderText =
@@ -432,29 +440,22 @@ local function ForEachQuestIndex(callback)
         end
     end)
 
-    if not GetNumJournalQuests then
+    local questList = GetQuestList()
+    if not questList then
         return
     end
 
-    local total = GetNumJournalQuests() or 0
-    local maxIndex = MAX_JOURNAL_QUESTS or total
-    if maxIndex and maxIndex > total then
-        total = maxIndex
+    if questList.RefreshFromGame then
+        questList:RefreshFromGame()
     end
 
-    for index = 1, total do
-        if not visited[index] then
-            local isValid = true
-            if IsValidJournalQuestIndex then
-                isValid = IsValidJournalQuestIndex(index)
-            elseif GetJournalQuestName then
-                local name = GetJournalQuestName(index)
-                isValid = name ~= nil and name ~= ""
-            end
-
-            if isValid then
-                callback(index, nil, nil)
-            end
+    local entries = questList.GetList and questList:GetList() or {}
+    for index = 1, #entries do
+        local entry = entries[index]
+        local journalIndex = entry and entry.journalIndex
+        if journalIndex and not visited[journalIndex] then
+            visited[journalIndex] = true
+            callback(journalIndex, nil, nil)
         end
     end
 end
@@ -1186,10 +1187,16 @@ local function ResolveQuestDebugInfo(journalIndex)
         end
     end)
 
-    if (not questName or questName == "") and GetJournalQuestName then
-        local ok, name = SafeCall(GetJournalQuestName, journalIndex)
-        if ok and type(name) == "string" and name ~= "" then
-            questName = name
+    if (not questName or questName == "") then
+        local questList = GetQuestList()
+        if questList then
+            if questList.RefreshFromGame then
+                questList:RefreshFromGame()
+            end
+            local entry = questList.GetByJournalIndex and questList:GetByJournalIndex(journalIndex)
+            if entry and type(entry.name) == "string" and entry.name ~= "" then
+                questName = entry.name
+            end
         end
     end
 
@@ -1837,20 +1844,21 @@ local function ProcessPendingExternalReveal()
 end
 
 local function DoesJournalQuestExist(journalIndex)
-    if not (journalIndex and GetJournalQuestName) then
+    if not journalIndex then
         return false
     end
 
-    local ok, name = SafeCall(GetJournalQuestName, journalIndex)
-    if not ok then
+    local questList = GetQuestList()
+    if not questList then
         return false
     end
 
-    if type(name) ~= "string" then
-        return false
+    if questList.RefreshFromGame then
+        questList:RefreshFromGame()
     end
 
-    return name ~= ""
+    local entry = questList.GetByJournalIndex and questList:GetByJournalIndex(journalIndex)
+    return entry ~= nil
 end
 
 local function GetFocusedQuestIndex()

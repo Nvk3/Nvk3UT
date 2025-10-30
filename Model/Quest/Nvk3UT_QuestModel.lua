@@ -5,6 +5,7 @@ Nvk3UT = Nvk3UT or {}
 local ResolveQuestCategory
 local QuestState = Nvk3UT and Nvk3UT.QuestState
 local QuestSelection = Nvk3UT and Nvk3UT.QuestSelection
+local QuestList = Nvk3UT and Nvk3UT.QuestList
 
 local function GetQuestState()
     if not QuestState and Nvk3UT then
@@ -18,6 +19,13 @@ local function GetQuestSelection()
         QuestSelection = Nvk3UT.QuestSelection
     end
     return QuestSelection
+end
+
+local function GetQuestList()
+    if not QuestList and Nvk3UT then
+        QuestList = Nvk3UT.QuestList
+    end
+    return QuestList
 end
 
 local function NormalizeQuestKey(journalIndex)
@@ -154,23 +162,24 @@ local function AcquireTimestampMs()
 end
 
 local function CollectActiveObjectives(journalIndex, questIsComplete)
-    if type(GetJournalQuestNumSteps) ~= "function" or type(GetJournalQuestStepInfo) ~= "function" then
+    local questList = GetQuestList()
+    if not (questList and questList.GetQuestNumSteps and questList.GetQuestStepInfo) then
         return {}, nil
     end
 
-    -- Collect every visible condition across all steps so the tracker mirrors the journal "Objectives" list.
     local objectiveList = {}
     local seen = {}
     local fallbackStepText = nil
     local fallbackObjectiveText = nil
 
-    local numSteps = GetJournalQuestNumSteps(journalIndex)
+    local numSteps = questList:GetQuestNumSteps(journalIndex)
     if type(numSteps) ~= "number" or numSteps <= 0 then
         return objectiveList, fallbackStepText
     end
 
     for stepIndex = 1, numSteps do
-        local stepText, visibility, _, trackerOverrideText, stepNumConditions = GetJournalQuestStepInfo(journalIndex, stepIndex)
+        local stepText, visibility, _, trackerOverrideText, stepNumConditions =
+            questList:GetQuestStepInfo(journalIndex, stepIndex)
         local sanitizedOverrideText = StripProgressDecorations(trackerOverrideText)
         local sanitizedStepText = StripProgressDecorations(stepText)
         local fallbackObjectiveCandidate = nil
@@ -186,7 +195,6 @@ local function CollectActiveObjectives(journalIndex, questIsComplete)
         end
 
         if questIsComplete and not stepIsVisible then
-            -- Completed quests sometimes hide their final step even though the journal still shows the hand-in objective.
             stepIsVisible = true
         end
 
@@ -196,7 +204,8 @@ local function CollectActiveObjectives(journalIndex, questIsComplete)
                 fallbackStepText = fallbackStepCandidate
             end
 
-            fallbackObjectiveCandidate = NormalizeObjectiveDisplayText(trackerOverrideText) or NormalizeObjectiveDisplayText(stepText)
+            fallbackObjectiveCandidate =
+                NormalizeObjectiveDisplayText(trackerOverrideText) or NormalizeObjectiveDisplayText(stepText)
             if not fallbackObjectiveText and fallbackObjectiveCandidate then
                 fallbackObjectiveText = fallbackObjectiveCandidate
             end
@@ -204,21 +213,18 @@ local function CollectActiveObjectives(journalIndex, questIsComplete)
             local addedObjectiveForStep = false
 
             local totalConditions = tonumber(stepNumConditions) or 0
-            if type(GetJournalQuestNumConditions) == "function" then
-                local countedConditions = GetJournalQuestNumConditions(journalIndex, stepIndex)
-                if type(countedConditions) == "number" and countedConditions > totalConditions then
-                    totalConditions = countedConditions
-                end
+            local countedConditions = questList:GetQuestNumConditions(journalIndex, stepIndex)
+            if type(countedConditions) == "number" and countedConditions > totalConditions then
+                totalConditions = countedConditions
             end
 
-            if totalConditions > 0 and type(GetJournalQuestConditionInfo) == "function" then
+            if totalConditions > 0 and questList.GetQuestConditionInfo then
                 for conditionIndex = 1, totalConditions do
-                    local conditionText, current, maxValue, isFailCondition, isConditionComplete, _, isConditionVisible = GetJournalQuestConditionInfo(journalIndex, stepIndex, conditionIndex)
+                    local conditionText, current, maxValue, isFailCondition, isConditionComplete, _, isConditionVisible =
+                        questList:GetQuestConditionInfo(journalIndex, stepIndex, conditionIndex)
                     local formattedCondition = NormalizeObjectiveDisplayText(conditionText)
                     local isVisibleCondition = (isConditionVisible ~= false)
                     if questIsComplete and not isVisibleCondition then
-                        -- Some quests hide the final hand-in objective once the quest is flagged complete.
-                        -- We still want to surface those lines so the tracker mirrors the journal UI.
                         isVisibleCondition = true
                     end
                     local isFail = (isFailCondition == true)
@@ -1095,20 +1101,17 @@ local function BuildBaseCategoryCacheFromData(questList, categoryList)
 end
 
 local function AcquireQuestJournalData()
-    if not (QUEST_JOURNAL_MANAGER and QUEST_JOURNAL_MANAGER.GetQuestListData) then
+    local questList = GetQuestList()
+    if not (questList and questList.GetQuestListData) then
         return nil, nil, nil
     end
 
-    local ok, questList, categoryList, seenCategories = pcall(QUEST_JOURNAL_MANAGER.GetQuestListData, QUEST_JOURNAL_MANAGER)
-    if not ok then
+    local list, categoryList, seenCategories = questList:GetQuestListData()
+    if type(list) ~= "table" or type(categoryList) ~= "table" then
         return nil, nil, nil
     end
 
-    if type(questList) ~= "table" or type(categoryList) ~= "table" then
-        return nil, nil, nil
-    end
-
-    return questList, categoryList, seenCategories
+    return list, categoryList, seenCategories
 end
 
 local function AcquireBaseCategoryCache()
@@ -1361,15 +1364,17 @@ function NormalizeQuestCategoryData(quest)
 end
 
 local function CollectQuestSteps(journalQuestIndex)
-    if not GetJournalQuestNumSteps or not GetJournalQuestStepInfo then
+    local questList = GetQuestList()
+    if not (questList and questList.GetQuestNumSteps and questList.GetQuestStepInfo) then
         return {}
     end
 
     local steps = {}
-    local numSteps = GetJournalQuestNumSteps(journalQuestIndex) or 0
+    local numSteps = questList:GetQuestNumSteps(journalQuestIndex) or 0
     for stepIndex = 1, numSteps do
-        local stepText, stepType, numConditions, isVisible, isComplete, isOptional, isTracked = GetJournalQuestStepInfo(journalQuestIndex, stepIndex)
-        numConditions = numConditions or 0
+        local stepText, stepType, numConditions, isVisible, isComplete, isOptional, isTracked =
+            questList:GetQuestStepInfo(journalQuestIndex, stepIndex)
+        numConditions = tonumber(numConditions) or 0
         local stepEntry = {
             stepIndex = stepIndex,
             stepText = stepText,
@@ -1384,10 +1389,8 @@ local function CollectQuestSteps(journalQuestIndex)
 
         local conditions = stepEntry.conditions
         for conditionIndex = 1, numConditions do
-            local conditionText, current, maxValue, isFailCondition, isConditionComplete, isCreditShared, isConditionVisible
-            if GetJournalQuestConditionInfo then
-                conditionText, current, maxValue, isFailCondition, isConditionComplete, isCreditShared, isConditionVisible = GetJournalQuestConditionInfo(journalQuestIndex, stepIndex, conditionIndex)
-            end
+            local conditionText, current, maxValue, isFailCondition, isConditionComplete, isCreditShared, isConditionVisible =
+                questList:GetQuestConditionInfo(journalQuestIndex, stepIndex, conditionIndex)
             conditions[#conditions + 1] = {
                 conditionIndex = conditionIndex,
                 text = conditionText,
@@ -1407,79 +1410,77 @@ local function CollectQuestSteps(journalQuestIndex)
 end
 
 local function CollectLocationInfo(journalQuestIndex)
-    if not GetJournalQuestLocationInfo then
+    local questList = GetQuestList()
+    if not (questList and questList.GetQuestLocation) then
         return nil
     end
 
-    local zoneName, subZoneName, zoneIndex, poiIndex = GetJournalQuestLocationInfo(journalQuestIndex)
-    if zoneName or subZoneName or zoneIndex or poiIndex then
-        return {
-            zoneName = zoneName,
-            subZoneName = subZoneName,
-            zoneIndex = zoneIndex,
-            poiIndex = poiIndex,
-        }
-    end
-
-    return nil
+    return questList:GetQuestLocation(journalQuestIndex)
 end
 
-local function BuildQuestEntry(journalQuestIndex)
-    local questName, backgroundText, activeStepText, activeStepType, questLevel, zoneName, questType, instanceDisplayType, isRepeatable, isDaily, questDescription, displayType = GetJournalQuestInfo(journalQuestIndex)
-    if not questName or questName == "" then
+local function BuildQuestEntry(listEntry)
+    local questList = GetQuestList()
+    if not questList then
         return nil
     end
 
-    isRepeatable = not not isRepeatable
-    isDaily = not not isDaily
-
-    local questId = GetJournalQuestId and GetJournalQuestId(journalQuestIndex) or nil
-    local isTracked = IsJournalQuestTracked and IsJournalQuestTracked(journalQuestIndex) or false
-    isTracked = not not isTracked
-    local isAssisted = false
-    if GetTrackedIsAssisted and isTracked then
-        isAssisted = GetTrackedIsAssisted(TRACK_TYPE_QUEST, journalQuestIndex) or false
+    if type(listEntry) ~= "table" then
+        return nil
     end
-    isAssisted = not not isAssisted
 
-    local isComplete = false
-    if GetJournalQuestIsComplete then
-        isComplete = GetJournalQuestIsComplete(journalQuestIndex)
-    elseif IsJournalQuestComplete then
-        isComplete = IsJournalQuestComplete(journalQuestIndex)
+    local journalQuestIndex = listEntry.journalIndex
+    if not journalQuestIndex then
+        return nil
     end
-    isComplete = not not isComplete
 
-    local category = ResolveQuestCategory(journalQuestIndex, questType, displayType, isRepeatable, isDaily)
+    local info = questList:GetQuestInfo(journalQuestIndex)
+    if not info or not info.name or info.name == "" then
+        return nil
+    end
+
+    local questName = info.name
+    local questId = questList:GetQuestId(journalQuestIndex)
+    local isTracked = questList:IsQuestTracked(journalQuestIndex)
+    local isAssisted = questList:IsQuestAssisted(journalQuestIndex)
+    local isComplete = questList:IsQuestComplete(journalQuestIndex)
+    local category = ResolveQuestCategory and ResolveQuestCategory(
+        journalQuestIndex,
+        info.questType,
+        info.displayType,
+        info.isRepeatable,
+        info.isDaily
+    )
+
+    local zoneName = info.zoneName or listEntry.zoneName
 
     local questEntry = {
         journalIndex = journalQuestIndex,
         questId = questId,
         name = questName,
-        backgroundText = backgroundText,
-        activeStepText = activeStepText,
-        activeStepType = activeStepType,
-        level = questLevel,
+        backgroundText = info.backgroundText,
+        activeStepText = info.activeStepText,
+        activeStepType = info.activeStepType,
+        level = info.level,
         zoneName = zoneName,
-        questType = questType,
-        instanceDisplayType = instanceDisplayType,
-        displayType = displayType,
+        questType = info.questType,
+        instanceDisplayType = info.instanceDisplayType,
+        displayType = info.displayType,
         flags = {
             tracked = isTracked,
             assisted = isAssisted,
             isComplete = isComplete,
-            isRepeatable = isRepeatable,
-            isDaily = isDaily,
+            isRepeatable = info.isRepeatable,
+            isDaily = info.isDaily,
         },
         category = category,
         steps = CollectQuestSteps(journalQuestIndex),
         location = CollectLocationInfo(journalQuestIndex),
-        description = questDescription,
+        description = info.description,
     }
 
     questEntry.meta = {
-        questType = questType,
-        displayType = displayType,
+        questType = info.questType,
+        displayType = info.displayType,
         categoryType = category and category.type or nil,
         categoryKey = category and category.key or nil,
         groupKey = category and category.groupKey or nil,
@@ -1487,8 +1488,8 @@ local function BuildQuestEntry(journalQuestIndex)
         parentKey = category and category.parent and category.parent.key or nil,
         parentName = category and category.parent and category.parent.name or nil,
         zoneName = zoneName,
-        isRepeatable = isRepeatable,
-        isDaily = isDaily,
+        isRepeatable = info.isRepeatable,
+        isDaily = info.isDaily,
     }
 
     NormalizeQuestCategoryData(questEntry)
@@ -1655,14 +1656,18 @@ end
 CollectQuestEntries = function()
     local quests = {}
 
-    if not GetNumJournalQuests then
+    local questList = GetQuestList()
+    if not questList then
         return quests
     end
 
-    local total = GetNumJournalQuests() or 0
-    local questCount = math.min(total, QUEST_LOG_LIMIT)
-    for journalIndex = 1, questCount do
-        local questEntry = BuildQuestEntry(journalIndex)
+    if questList.RefreshFromGame then
+        questList:RefreshFromGame()
+    end
+
+    local entries = questList.GetList and questList:GetList() or {}
+    for index = 1, #entries do
+        local questEntry = BuildQuestEntry(entries[index])
         if questEntry then
             quests[#quests + 1] = questEntry
         end
@@ -1778,10 +1783,30 @@ ForceRebuild = function(self)
     return updated
 end
 
-local function OnQuestChanged(_, ...)
+local function OnQuestChanged(eventCode, ...)
     local self = QuestModel
     if not self.isInitialized or not playerState.hasActivated then
         return
+    end
+
+    local questList = GetQuestList()
+    if questList then
+        local journalIndex = select(1, ...)
+        if eventCode == EVENT_QUEST_ADDED and questList.OnQuestAccepted then
+            if journalIndex then
+                questList:OnQuestAccepted(journalIndex)
+            else
+                questList:MarkDirty()
+            end
+        elseif eventCode ~= EVENT_QUEST_REMOVED and questList.OnQuestUpdated then
+            if journalIndex then
+                questList:OnQuestUpdated(journalIndex)
+            else
+                questList:MarkDirty()
+            end
+        elseif questList.MarkDirty then
+            questList:MarkDirty()
+        end
     end
 
     ResetBaseCategoryCache()
@@ -1789,6 +1814,15 @@ local function OnQuestChanged(_, ...)
 end
 
 local function OnQuestRemoved(eventCode, isCompleted, journalIndex, ...)
+    local questList = GetQuestList()
+    if questList then
+        if journalIndex and questList.OnQuestRemoved then
+            questList:OnQuestRemoved(journalIndex)
+        elseif questList.MarkDirty then
+            questList:MarkDirty()
+        end
+    end
+
     local normalized = NormalizeQuestKey(journalIndex)
     if normalized then
         local questStateModule = GetQuestState()
