@@ -16,8 +16,33 @@ function EventHandlerBase:Init()
 end
 
 function EventHandlerBase:OnPlayerActivated()
-    if Nvk3UT and Nvk3UT.Debug then
-        Nvk3UT:Debug("EventHandlerBase.OnPlayerActivated()")
+    local addon = self.addon or Nvk3UT
+    if addon ~= self.addon then
+        self.addon = addon
+    end
+
+    local host = addon and addon.TrackerHost or self.host
+    if host ~= self.host then
+        self.host = host
+    end
+
+    local runtime = addon and addon.TrackerRuntime or self.runtime
+    if runtime ~= self.runtime then
+        self.runtime = runtime
+    end
+
+    if host and host.EnsureWindow then
+        host:EnsureWindow()
+    end
+
+    if host and host.ApplySavedSettings then
+        host:ApplySavedSettings()
+    end
+
+    self:_ApplySceneVisibility(self:_EvaluateSceneVisibility())
+
+    if addon and addon.Debug then
+        addon:Debug("EventHandlerBase.OnPlayerActivated() ensured tracker host visibility")
     end
 end
 
