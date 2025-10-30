@@ -26,6 +26,8 @@ if Nvk3UT_SelfTest and type(Nvk3UT_SelfTest.AttachToRoot) == "function" then
     Nvk3UT_SelfTest.AttachToRoot(Addon)
 end
 
+local unpack = table.unpack or unpack
+
 local function formatMessage(prefix, fmt, ...)
     if not fmt then
         return prefix
@@ -44,30 +46,77 @@ local function formatMessage(prefix, fmt, ...)
     return string.format("%s%s", prefix, tostring(fmt))
 end
 
+local function extractMessageArguments(first, ...)
+    local function shiftVarArgs(...)
+        if select('#', ...) == 0 then
+            return nil, nil
+        end
+
+        local fmtValue = select(1, ...)
+        if select('#', ...) == 1 then
+            return fmtValue, nil
+        end
+
+        return fmtValue, { select(2, ...) }
+    end
+
+    if first == Addon or (type(first) == "table" and first.Debug == Addon.Debug) then
+        return shiftVarArgs(...)
+    end
+
+    if select('#', ...) == 0 then
+        return first, nil
+    end
+
+    return first, { ... }
+end
+
+local function emitDiagnostic(diagnosticFn, prefix, fmt, args)
+    if not fmt then
+        return
+    end
+
+    if diagnosticFn then
+        if args and #args > 0 then
+            return diagnosticFn(fmt, unpack(args))
+        end
+
+        return diagnosticFn(fmt)
+    end
+
+    if not d then
+        return
+    end
+
+    if args and #args > 0 then
+        d(formatMessage(prefix, fmt, unpack(args)))
+    else
+        d(formatMessage(prefix, fmt))
+    end
+end
+
 ---Debug helper routed through Diagnostics when available.
-function Addon.Debug(fmt, ...)
+function Addon.Debug(first, ...)
+    local fmt, args = extractMessageArguments(first, ...)
+    if not fmt then
+        return
+    end
+
     if Addon.IsDebugEnabled and not Addon:IsDebugEnabled() then
         return
     end
 
-    if Nvk3UT_Diagnostics and Nvk3UT_Diagnostics.Debug then
-        return Nvk3UT_Diagnostics.Debug(fmt, ...)
-    end
-
-    if d then
-        d(formatMessage("[Nvk3UT DEBUG] ", fmt, ...))
-    end
+    emitDiagnostic(Nvk3UT_Diagnostics and Nvk3UT_Diagnostics.Debug, "[Nvk3UT DEBUG] ", fmt, args)
 end
 
 ---Error helper routed through Diagnostics when available.
-function Addon.Error(fmt, ...)
-    if Nvk3UT_Diagnostics and Nvk3UT_Diagnostics.Error then
-        return Nvk3UT_Diagnostics.Error(fmt, ...)
+function Addon.Error(first, ...)
+    local fmt, args = extractMessageArguments(first, ...)
+    if not fmt then
+        return
     end
 
-    if d then
-        d(formatMessage("|cFF0000[Nvk3UT ERROR]|r ", fmt, ...))
-    end
+    emitDiagnostic(Nvk3UT_Diagnostics and Nvk3UT_Diagnostics.Error, "|cFF0000[Nvk3UT ERROR]|r ", fmt, args)
 end
 
 local function _SafeCall(fn, ...)
