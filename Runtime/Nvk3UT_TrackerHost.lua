@@ -295,8 +295,6 @@ function Host:EnsureWindow()
     scroll:SetParent(window)
     scroll:ClearAnchors()
     scroll:SetAnchor(TOPLEFT, header, BOTTOMLEFT, 0, 0)
-    scroll:SetAnchor(TOPRIGHT, header, BOTTOMRIGHT, 0, 0)
-    scroll:SetAnchor(BOTTOMLEFT, footer, TOPLEFT, 0, 0)
     scroll:SetAnchor(BOTTOMRIGHT, footer, TOPRIGHT, 0, 0)
     scroll:SetMouseEnabled(true)
     scroll:SetClampedToScreen(false)
@@ -375,21 +373,22 @@ function Host:UpdateHeaderFooterSizeFromSV(windowBars)
     self.footerControl:SetMouseEnabled(footerHeight > 0)
 
     self.scrollArea:ClearAnchors()
-    if headerHeight > 0 then
-        self.scrollArea:SetAnchor(TOPLEFT, self.headerControl, BOTTOMLEFT, 0, 0)
-        self.scrollArea:SetAnchor(TOPRIGHT, self.headerControl, BOTTOMRIGHT, 0, 0)
-    else
-        self.scrollArea:SetAnchor(TOPLEFT, self.window, TOPLEFT, 0, 0)
-        self.scrollArea:SetAnchor(TOPRIGHT, self.window, TOPRIGHT, 0, 0)
-    end
 
-    if footerHeight > 0 then
-        self.scrollArea:SetAnchor(BOTTOMLEFT, self.footerControl, TOPLEFT, 0, 0)
-        self.scrollArea:SetAnchor(BOTTOMRIGHT, self.footerControl, TOPRIGHT, 0, 0)
-    else
-        self.scrollArea:SetAnchor(BOTTOMLEFT, self.window, BOTTOMLEFT, 0, 0)
-        self.scrollArea:SetAnchor(BOTTOMRIGHT, self.window, BOTTOMRIGHT, 0, 0)
+    local topAnchorControl = self.window
+    local topRelativePoint = TOPLEFT
+    if headerHeight > 0 then
+        topAnchorControl = self.headerControl
+        topRelativePoint = BOTTOMLEFT
     end
+    self.scrollArea:SetAnchor(TOPLEFT, topAnchorControl, topRelativePoint, 0, 0)
+
+    local bottomAnchorControl = self.window
+    local bottomRelativePoint = BOTTOMRIGHT
+    if footerHeight > 0 then
+        bottomAnchorControl = self.footerControl
+        bottomRelativePoint = TOPRIGHT
+    end
+    self.scrollArea:SetAnchor(BOTTOMRIGHT, bottomAnchorControl, bottomRelativePoint, 0, 0)
 end
 
 function Host:ApplySavedSettings()
