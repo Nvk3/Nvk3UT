@@ -144,21 +144,13 @@ function HostLayout:UpdateHeaderFooterSizes()
 
     scroll:ClearAnchors()
 
-    if headerHeight > 0 then
-        scroll:SetAnchor(TOPLEFT, header, BOTTOMLEFT, 0, 0)
-        scroll:SetAnchor(TOPRIGHT, header, BOTTOMRIGHT, 0, 0)
-    else
-        scroll:SetAnchor(TOPLEFT, window, TOPLEFT, 0, 0)
-        scroll:SetAnchor(TOPRIGHT, window, TOPRIGHT, 0, 0)
-    end
+    local topAnchorTarget = headerHeight > 0 and header or window
+    local topRelativePoint = headerHeight > 0 and BOTTOMLEFT or TOPLEFT
+    scroll:SetAnchor(TOPLEFT, topAnchorTarget, topRelativePoint, 0, 0)
 
-    if footerHeight > 0 then
-        scroll:SetAnchor(BOTTOMLEFT, footer, TOPLEFT, 0, 0)
-        scroll:SetAnchor(BOTTOMRIGHT, footer, TOPRIGHT, 0, 0)
-    else
-        scroll:SetAnchor(BOTTOMLEFT, window, BOTTOMLEFT, 0, 0)
-        scroll:SetAnchor(BOTTOMRIGHT, window, BOTTOMRIGHT, 0, 0)
-    end
+    local bottomAnchorTarget = footerHeight > 0 and footer or window
+    local bottomRelativePoint = footerHeight > 0 and TOPRIGHT or BOTTOMRIGHT
+    scroll:SetAnchor(BOTTOMRIGHT, bottomAnchorTarget, bottomRelativePoint, 0, 0)
 
     if Nvk3UT and Nvk3UT.Debug then
         Nvk3UT:Debug(string.format(
