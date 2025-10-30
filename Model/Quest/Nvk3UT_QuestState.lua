@@ -8,8 +8,6 @@ end
 local DEFAULTS = {
     expandedCategories = {},
     expandedQuests = {},
-    activeQuestId = nil,
-    focusedQuestId = nil,
 }
 
 local function shallowCopyTable(src)
@@ -162,22 +160,6 @@ local function migrateLegacyState(self, sv)
         legacy.questExpanded = nil
     end
 
-    if type(legacy.active) == "table" and legacy.active.questKey ~= nil then
-        local normalized = normalizeQuestKey(legacy.active.questKey)
-        if normalized then
-            questState.activeQuestId = questState.activeQuestId or normalized
-            migratedAny = true
-        end
-    end
-
-    if type(legacy.focusedQuestId) ~= "nil" then
-        local normalized = normalizeQuestKey(legacy.focusedQuestId)
-        if normalized or legacy.focusedQuestId == nil then
-            questState.focusedQuestId = questState.focusedQuestId or normalized
-            migratedAny = true
-        end
-    end
-
     if migratedAny and ADDON and ADDON.Debug then
         ADDON:Debug("QuestState: Migrated legacy quest tracker state")
     end
@@ -197,34 +179,6 @@ function M:Init()
     self.db = sv.QuestState
 
     migrateLegacyState(self, sv)
-end
-
-function M:GetActiveQuestId()
-    return self.db and self.db.activeQuestId or nil
-end
-
-function M:SetActiveQuestId(id)
-    if not self.db then
-        return
-    end
-    if id ~= nil then
-        id = normalizeQuestKey(id)
-    end
-    self.db.activeQuestId = id
-end
-
-function M:GetFocusedQuestId()
-    return self.db and self.db.focusedQuestId or nil
-end
-
-function M:SetFocusedQuestId(id)
-    if not self.db then
-        return
-    end
-    if id ~= nil then
-        id = normalizeQuestKey(id)
-    end
-    self.db.focusedQuestId = id
 end
 
 function M:IsCategoryExpanded(key)
@@ -310,12 +264,6 @@ function M:OnQuestRemoved(qKey)
     end
 
     self.db.expandedQuests[normalized] = nil
-    if self.db.activeQuestId == normalized then
-        self.db.activeQuestId = nil
-    end
-    if self.db.focusedQuestId == normalized then
-        self.db.focusedQuestId = nil
-    end
 
     local addon = ADDON
     if addon and addon.sv then

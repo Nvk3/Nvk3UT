@@ -121,8 +121,12 @@ local defaults = {
     QuestState = {
         expandedCategories = {},
         expandedQuests = {},
+    },
+    QuestSelection = {
         activeQuestId = nil,
         focusedQuestId = nil,
+        lastReason = nil,
+        lastChangedAt = nil,
     },
 }
 
@@ -203,12 +207,9 @@ local function EnsureFirstLoginStructures(saved)
     local questState = EnsureTable(saved, "QuestState")
     questState.expandedCategories = EnsureTable(questState, "expandedCategories")
     questState.expandedQuests = EnsureTable(questState, "expandedQuests")
-    if questState.activeQuestId == nil then
-        questState.activeQuestId = defaults.QuestState and defaults.QuestState.activeQuestId or nil
-    end
-    if questState.focusedQuestId == nil then
-        questState.focusedQuestId = defaults.QuestState and defaults.QuestState.focusedQuestId or nil
-    end
+
+    local questSelection = EnsureTable(saved, "QuestSelection")
+    MergeDefaults(questSelection, defaults.QuestSelection)
 
     if saved.debug == nil then
         saved.debug = defaults.debug

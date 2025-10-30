@@ -4,12 +4,20 @@ Nvk3UT = Nvk3UT or {}
 
 local ResolveQuestCategory
 local QuestState = Nvk3UT and Nvk3UT.QuestState
+local QuestSelection = Nvk3UT and Nvk3UT.QuestSelection
 
 local function GetQuestState()
     if not QuestState and Nvk3UT then
         QuestState = Nvk3UT.QuestState
     end
     return QuestState
+end
+
+local function GetQuestSelection()
+    if not QuestSelection and Nvk3UT then
+        QuestSelection = Nvk3UT.QuestSelection
+    end
+    return QuestSelection
 end
 
 local function NormalizeQuestKey(journalIndex)
@@ -1781,15 +1789,26 @@ local function OnQuestChanged(_, ...)
 end
 
 local function OnQuestRemoved(eventCode, isCompleted, journalIndex, ...)
-    local questStateModule = GetQuestState()
-    if questStateModule then
-        if not questStateModule.db and type(questStateModule.Init) == "function" then
-            questStateModule:Init()
-        end
-        if questStateModule.OnQuestRemoved then
-            local normalized = NormalizeQuestKey(journalIndex)
-            if normalized then
+    local normalized = NormalizeQuestKey(journalIndex)
+    if normalized then
+        local questStateModule = GetQuestState()
+        if questStateModule then
+            if not questStateModule.db and type(questStateModule.Init) == "function" then
+                questStateModule:Init()
+            end
+            if questStateModule.OnQuestRemoved then
                 questStateModule:OnQuestRemoved(normalized)
+            end
+        end
+
+        local questSelectionModule = GetQuestSelection()
+        if questSelectionModule then
+            if not questSelectionModule.db and type(questSelectionModule.Init) == "function" then
+                questSelectionModule:Init()
+            end
+            if questSelectionModule.OnQuestRemoved then
+                local reason = isCompleted and "completed" or "abandon"
+                questSelectionModule:OnQuestRemoved(normalized, reason)
             end
         end
     end

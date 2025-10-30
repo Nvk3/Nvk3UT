@@ -10,6 +10,7 @@ local EVENT_NAMESPACE = MODULE_NAME .. "_Event"
 
 local Utils = Nvk3UT and Nvk3UT.Utils
 local QuestState = Nvk3UT and Nvk3UT.QuestState
+local QuestSelection = Nvk3UT and Nvk3UT.QuestSelection
 
 local function GetQuestState()
     if not QuestState and Nvk3UT then
@@ -21,6 +22,18 @@ local function GetQuestState()
     end
 
     return QuestState
+end
+
+local function GetQuestSelection()
+    if not QuestSelection and Nvk3UT then
+        QuestSelection = Nvk3UT.QuestSelection
+    end
+
+    if QuestSelection and not QuestSelection.db and type(QuestSelection.Init) == "function" then
+        QuestSelection:Init()
+    end
+
+    return QuestSelection
 end
 
 local FormatCategoryHeaderText =
@@ -553,8 +566,8 @@ local function EnsureActiveSavedState()
         state.saved.active = active
     end
 
-    local questState = GetQuestState()
-    local storedActive = questState and questState.GetActiveQuestId and questState:GetActiveQuestId()
+    local questSelection = GetQuestSelection()
+    local storedActive = questSelection and questSelection.GetActiveQuestId and questSelection:GetActiveQuestId()
     if storedActive ~= nil then
         active.questKey = NormalizeQuestKey(storedActive)
     elseif active.questKey ~= nil then
@@ -576,8 +589,8 @@ local function SyncSelectedQuestFromSaved()
         return nil
     end
 
-    local questState = GetQuestState()
-    local questKey = questState and questState.GetActiveQuestId and questState:GetActiveQuestId()
+    local questSelection = GetQuestSelection()
+    local questKey = questSelection and questSelection.GetActiveQuestId and questSelection:GetActiveQuestId()
     if questKey == nil then
         local active = EnsureActiveSavedState()
         questKey = active and active.questKey or nil
@@ -769,9 +782,17 @@ local function WriteActiveQuest(questKey, source, options)
         end
     end
 
-    local questState = GetQuestState()
-    if questState and questState.SetActiveQuestId then
-        questState:SetActiveQuestId(normalized)
+    local questSelection = GetQuestSelection()
+    if questSelection then
+        if normalized ~= nil and questSelection.SetActiveQuestId then
+            questSelection:SetActiveQuestId(normalized, source)
+        elseif normalized == nil then
+            if questSelection.ClearActive then
+                questSelection:ClearActive(source)
+            elseif questSelection.SetActiveQuestId then
+                questSelection:SetActiveQuestId(nil, source)
+            end
+        end
     end
 
     local entry = EnsureActiveSavedState()
@@ -1013,16 +1034,22 @@ local function MigrateLegacySavedState(saved)
         saved.active.ts = tonumber(saved.active.ts) or 0
     end
 
-    if questState and questState.SetActiveQuestId then
-        questState:SetActiveQuestId(saved.active.questKey)
+    if questSelection and questSelection.SetActiveQuestId then
+        if saved.active.questKey ~= nil then
+            questSelection:SetActiveQuestId(saved.active.questKey, "legacy")
+        else
+            questSelection:SetActiveQuestId(nil, "legacy")
+        end
     end
 
     if saved.focusedQuestId ~= nil then
         local normalizedFocused = NormalizeQuestKey(saved.focusedQuestId)
         saved.focusedQuestId = normalizedFocused
-        if questState and questState.SetFocusedQuestId then
-            questState:SetFocusedQuestId(normalizedFocused)
+        if questSelection and questSelection.SetFocusedQuestId then
+            questSelection:SetFocusedQuestId(normalizedFocused, "legacy")
         end
+    elseif questSelection and questSelection.SetFocusedQuestId then
+        questSelection:SetFocusedQuestId(nil, "legacy")
     end
 
     EnsureSavedDefaults(saved)
@@ -1495,6 +1522,11 @@ local function ConfirmAbandonQuest(journalIndex)
     if type(AbandonQuest) == "function" then
         SafeCall(AbandonQuest, normalized)
     end
+
+    local questSelection = GetQuestSelection()
+    if questSelection and questSelection.OnQuestRemoved then
+        questSelection:OnQuestRemoved(normalized, "abandon")
+    end
 end
 
 local function BuildQuestContextMenuEntries(journalIndex)
@@ -1829,18 +1861,18 @@ local function GetFocusedQuestIndex()
         if ok then
             local numeric = tonumber(focused)
             if numeric and numeric > 0 then
-                local questState = GetQuestState()
-                if questState and questState.SetFocusedQuestId then
-                    questState:SetFocusedQuestId(numeric)
+                local questSelection = GetQuestSelection()
+                if questSelection and questSelection.SetFocusedQuestId then
+                    questSelection:SetFocusedQuestId(numeric, "journal")
                 end
                 return numeric
             end
         end
     end
 
-    local questState = GetQuestState()
-    if questState and questState.SetFocusedQuestId then
-        questState:SetFocusedQuestId(nil)
+    local questSelection = GetQuestSelection()
+    if questSelection and questSelection.SetFocusedQuestId then
+        questSelection:SetFocusedQuestId(nil, "journal")
     end
 
     return nil
