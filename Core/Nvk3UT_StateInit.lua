@@ -221,6 +221,33 @@ function Nvk3UT_StateInit.BootstrapSavedVariables(addonTable)
 
     addonTable.SV = sv
     addonTable.sv = sv
+    addonTable.db = sv
+
+    local db = addonTable.db
+
+    db.QuestState = db.QuestState or {}
+    local qs = db.QuestState
+
+    qs.version = qs.version or 1
+
+    qs.window = qs.window or {}
+    qs.window.x = qs.window.x or 100
+    qs.window.y = qs.window.y or 100
+    qs.window.locked = (qs.window.locked == nil) and false or qs.window.locked
+
+    qs.expanded = qs.expanded or {}
+    qs.expanded.quests = qs.expanded.quests or {}
+    qs.expanded.quests_ts = qs.expanded.quests_ts or {}
+    qs.expanded.categories = qs.expanded.categories or {}
+    qs.expanded.categories_ts = qs.expanded.categories_ts or {}
+
+    if Nvk3UT.QuestState and Nvk3UT.QuestState.Init then
+        if Nvk3UT.SafeCall then
+            Nvk3UT.SafeCall(Nvk3UT.QuestState.Init, Nvk3UT.QuestState, db)
+        else
+            Nvk3UT.QuestState:Init(db)
+        end
+    end
 
     if type(addonTable.SetDebugEnabled) == "function" then
         addonTable:SetDebugEnabled(sv.debug)
