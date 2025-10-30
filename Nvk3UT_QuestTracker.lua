@@ -9,6 +9,20 @@ local MODULE_NAME = addonName .. "QuestTracker"
 local EVENT_NAMESPACE = MODULE_NAME .. "_Event"
 
 local Utils = Nvk3UT and Nvk3UT.Utils
+local QuestState = Nvk3UT and Nvk3UT.QuestState
+
+local function GetQuestState()
+    if not QuestState and Nvk3UT then
+        QuestState = Nvk3UT.QuestState
+    end
+
+    if QuestState and not QuestState.db and type(QuestState.Init) == "function" then
+        QuestState:Init()
+    end
+
+    return QuestState
+end
+
 local FormatCategoryHeaderText =
     (Utils and Utils.FormatCategoryHeaderText)
     or function(baseText, count, showCounts)
@@ -66,6 +80,7 @@ local COLOR_ROW_HOVER = { 1, 1, 0.6, 1 }
 local RequestRefresh -- forward declaration for functions that trigger refreshes
 local SetCategoryExpanded -- forward declaration for expansion helpers used before assignment
 local SetQuestExpanded
+local IsCategoryExpanded -- forward declaration for category expansion queries
 local IsQuestExpanded -- forward declaration so earlier functions can query quest expansion state
 local HandleQuestRowClick -- forward declaration for quest row click orchestration
 local FlushPendingTrackedQuestUpdate -- forward declaration for deferred tracking updates
@@ -538,7 +553,11 @@ local function EnsureActiveSavedState()
         state.saved.active = active
     end
 
-    if active.questKey ~= nil then
+    local questState = GetQuestState()
+    local storedActive = questState and questState.GetActiveQuestId and questState:GetActiveQuestId()
+    if storedActive ~= nil then
+        active.questKey = NormalizeQuestKey(storedActive)
+    elseif active.questKey ~= nil then
         active.questKey = NormalizeQuestKey(active.questKey)
     end
 
@@ -557,8 +576,12 @@ local function SyncSelectedQuestFromSaved()
         return nil
     end
 
-    local active = EnsureActiveSavedState()
-    local questKey = active and active.questKey or nil
+    local questState = GetQuestState()
+    local questKey = questState and questState.GetActiveQuestId and questState:GetActiveQuestId()
+    if questKey == nil then
+        local active = EnsureActiveSavedState()
+        questKey = active and active.questKey or nil
+    end
     if questKey ~= nil then
         questKey = NormalizeQuestKey(questKey)
     end
@@ -596,17 +619,22 @@ local function WriteCategoryState(categoryKey, expanded, source, options)
     options = options or {}
     state.saved.cat = state.saved.cat or {}
 
-    local prev = state.saved.cat[key]
+    local entry = state.saved.cat[key]
+    if type(entry) ~= "table" then
+        entry = {}
+        state.saved.cat[key] = entry
+    end
+
     local priorityOverride = options.priorityOverride
     local priority = priorityOverride or PRIORITY[source] or 0
-    local prevPriority = prev and (PRIORITY[prev.source] or 0) or 0
+    local prevPriority = entry and entry.source and (PRIORITY[entry.source] or 0) or 0
     local overrideTimestamp = tonumber(options.timestamp)
     local now = overrideTimestamp or GetCurrentTimeSeconds()
-    local prevTs = (prev and prev.ts) or 0
+    local prevTs = tonumber(entry.ts) or 0
     local forceWrite = options.force == true
     local allowTimestampRegression = options.allowTimestampRegression == true
 
-    if prev and not forceWrite then
+    if entry.source and not forceWrite then
         if prevPriority > priority then
             return false
         end
@@ -616,17 +644,33 @@ local function WriteCategoryState(categoryKey, expanded, source, options)
         end
     end
 
-    local newExpanded = expanded and true or false
+    local beforeExpanded
+    if IsCategoryExpanded then
+        beforeExpanded = IsCategoryExpanded(key)
+    end
 
-    state.saved.cat[key] = {
-        expanded = newExpanded,
-        source = source,
-        ts = now,
-    }
+    entry.source = source
+    entry.ts = now
+    entry.hasExplicitState = true
+    entry.expanded = nil
 
-    LogStateWrite("cat", key, newExpanded, source, priority)
+    local questState = GetQuestState()
+    if questState and questState.SetCategoryExpanded then
+        questState:SetCategoryExpanded(key, expanded)
+    end
 
-    return true
+    local afterExpanded = beforeExpanded
+    if IsCategoryExpanded then
+        afterExpanded = IsCategoryExpanded(key)
+    elseif questState and questState.IsCategoryExpanded then
+        afterExpanded = questState:IsCategoryExpanded(key)
+    else
+        afterExpanded = expanded and true or false
+    end
+
+    LogStateWrite("cat", key, afterExpanded, source, priority)
+
+    return afterExpanded ~= beforeExpanded
 end
 
 local function WriteQuestState(questKey, expanded, source, options)
@@ -643,17 +687,22 @@ local function WriteQuestState(questKey, expanded, source, options)
     options = options or {}
     state.saved.quest = state.saved.quest or {}
 
-    local prev = state.saved.quest[key]
+    local entry = state.saved.quest[key]
+    if type(entry) ~= "table" then
+        entry = {}
+        state.saved.quest[key] = entry
+    end
+
     local priorityOverride = options.priorityOverride
     local priority = priorityOverride or PRIORITY[source] or 0
-    local prevPriority = prev and (PRIORITY[prev.source] or 0) or 0
+    local prevPriority = entry and entry.source and (PRIORITY[entry.source] or 0) or 0
     local overrideTimestamp = tonumber(options.timestamp)
     local now = overrideTimestamp or GetCurrentTimeSeconds()
-    local prevTs = (prev and prev.ts) or 0
+    local prevTs = tonumber(entry.ts) or 0
     local forceWrite = options.force == true
     local allowTimestampRegression = options.allowTimestampRegression == true
 
-    if prev and not forceWrite then
+    if entry.source and not forceWrite then
         if prevPriority > priority then
             return false
         end
@@ -663,17 +712,33 @@ local function WriteQuestState(questKey, expanded, source, options)
         end
     end
 
-    local newExpanded = expanded and true or false
+    local beforeExpanded
+    if IsQuestExpanded then
+        beforeExpanded = IsQuestExpanded(key)
+    end
 
-    state.saved.quest[key] = {
-        expanded = newExpanded,
-        source = source,
-        ts = now,
-    }
+    entry.source = source
+    entry.ts = now
+    entry.hasExplicitState = true
+    entry.expanded = nil
 
-    LogStateWrite("quest", key, newExpanded, source, priority)
+    local questState = GetQuestState()
+    if questState and questState.SetQuestExpanded then
+        questState:SetQuestExpanded(key, expanded)
+    end
 
-    return true
+    local afterExpanded = beforeExpanded
+    if IsQuestExpanded then
+        afterExpanded = IsQuestExpanded(key)
+    elseif questState and questState.IsQuestExpanded then
+        afterExpanded = questState:IsQuestExpanded(key)
+    else
+        afterExpanded = expanded and true or false
+    end
+
+    LogStateWrite("quest", key, afterExpanded, source, priority)
+
+    return afterExpanded ~= beforeExpanded
 end
 
 local function WriteActiveQuest(questKey, source, options)
@@ -687,14 +752,14 @@ local function WriteActiveQuest(questKey, source, options)
     local prev = EnsureActiveSavedState()
     local priorityOverride = options.priorityOverride
     local priority = priorityOverride or PRIORITY[source] or 0
-    local prevPriority = prev and (PRIORITY[prev.source] or 0) or 0
+    local prevPriority = prev and prev.source and (PRIORITY[prev.source] or 0) or 0
     local overrideTimestamp = tonumber(options.timestamp)
     local now = overrideTimestamp or GetCurrentTimeSeconds()
     local prevTs = (prev and prev.ts) or 0
     local forceWrite = options.force == true
     local allowTimestampRegression = options.allowTimestampRegression == true
 
-    if prev and not forceWrite then
+    if prev and prev.source and not forceWrite then
         if prevPriority > priority then
             return false
         end
@@ -704,17 +769,26 @@ local function WriteActiveQuest(questKey, source, options)
         end
     end
 
-    state.saved.active = {
-        questKey = normalized,
-        source = source,
-        ts = now,
-    }
+    local questState = GetQuestState()
+    if questState and questState.SetActiveQuestId then
+        questState:SetActiveQuestId(normalized)
+    end
+
+    local entry = EnsureActiveSavedState()
+    if entry then
+        entry.questKey = normalized
+        entry.source = source
+        entry.ts = now
+    end
 
     LogStateWrite("active", normalized, nil, source, priority)
 
     ApplyActiveQuestFromSaved()
 
-    return true
+    local currentKey = entry and entry.questKey or nil
+    local previousKey = prev and prev.questKey or nil
+
+    return currentKey ~= previousKey
 end
 
 local function PrimeInitialSavedState()
@@ -809,37 +883,121 @@ local function MigrateLegacySavedState(saved)
     saved.cat = saved.cat or {}
     saved.quest = saved.quest or {}
 
-    local legacyCategories = saved.catExpanded
-    if type(legacyCategories) == "table" then
-        for key, value in pairs(legacyCategories) do
-            local normalized = NormalizeCategoryKey(key)
-            if normalized then
-                saved.cat[normalized] = {
-                    expanded = value and true or false,
-                    source = "init",
-                    ts = 0,
-                }
-            end
+    local questState = GetQuestState()
+
+    local function setCategoryState(key, value)
+        if questState and questState.SetCategoryExpanded then
+            questState:SetCategoryExpanded(key, value)
         end
     end
 
-    saved.catExpanded = nil
-
-    local legacyQuests = saved.questExpanded
-    if type(legacyQuests) == "table" then
-        for key, value in pairs(legacyQuests) do
-            local normalized = NormalizeQuestKey(key)
-            if normalized then
-                saved.quest[normalized] = {
-                    expanded = value and true or false,
-                    source = "init",
-                    ts = 0,
-                }
-            end
+    local function setQuestState(key, value)
+        if questState and questState.SetQuestExpanded then
+            questState:SetQuestExpanded(key, value)
         end
     end
 
-    saved.questExpanded = nil
+    local normalizedCat = {}
+    local function mergeCategoryEntry(key, entry)
+        local normalized = NormalizeCategoryKey(key)
+        if not normalized then
+            return
+        end
+
+        local meta = normalizedCat[normalized]
+        if not meta then
+            meta = {}
+            normalizedCat[normalized] = meta
+        end
+
+        local expandedValue = nil
+        if type(entry) == "table" then
+            for field, value in pairs(entry) do
+                if field ~= "expanded" then
+                    if meta[field] == nil then
+                        meta[field] = value
+                    end
+                end
+            end
+            if entry.expanded ~= nil then
+                expandedValue = entry.expanded == true
+            end
+        elseif entry ~= nil then
+            expandedValue = entry == true
+        end
+
+        if expandedValue ~= nil then
+            setCategoryState(normalized, expandedValue)
+            meta.hasExplicitState = true
+        end
+
+        meta.source = meta.source or "init"
+        meta.ts = tonumber(meta.ts) or 0
+    end
+
+    for key, entry in pairs(saved.cat) do
+        mergeCategoryEntry(key, entry)
+    end
+
+    if type(saved.catExpanded) == "table" then
+        for key, value in pairs(saved.catExpanded) do
+            mergeCategoryEntry(key, { expanded = value and true or false, source = "init", ts = 0 })
+        end
+        saved.catExpanded = nil
+    end
+
+    saved.cat = normalizedCat
+
+    local normalizedQuest = {}
+    local function mergeQuestEntry(key, entry)
+        local normalized = NormalizeQuestKey(key)
+        if not normalized then
+            return
+        end
+
+        local meta = normalizedQuest[normalized]
+        if not meta then
+            meta = {}
+            normalizedQuest[normalized] = meta
+        end
+
+        local expandedValue = nil
+        if type(entry) == "table" then
+            for field, value in pairs(entry) do
+                if field ~= "expanded" then
+                    if meta[field] == nil then
+                        meta[field] = value
+                    end
+                end
+            end
+            if entry.expanded ~= nil then
+                expandedValue = entry.expanded == true
+            end
+        elseif entry ~= nil then
+            expandedValue = entry == true
+        end
+
+        if expandedValue ~= nil then
+            setQuestState(normalized, expandedValue)
+            meta.hasExplicitState = true
+        end
+
+        meta.source = meta.source or "init"
+        meta.ts = tonumber(meta.ts) or 0
+    end
+
+    for key, entry in pairs(saved.quest) do
+        mergeQuestEntry(key, entry)
+    end
+
+    if type(saved.questExpanded) == "table" then
+        for key, value in pairs(saved.questExpanded) do
+            mergeQuestEntry(key, { expanded = value and true or false, source = "init", ts = 0 })
+        end
+        saved.questExpanded = nil
+    end
+
+    saved.quest = normalizedQuest
 
     if type(saved.active) ~= "table" then
         saved.active = {
@@ -852,7 +1010,19 @@ local function MigrateLegacySavedState(saved)
             saved.active.questKey = NormalizeQuestKey(saved.active.questKey)
         end
         saved.active.source = saved.active.source or "init"
-        saved.active.ts = saved.active.ts or 0
+        saved.active.ts = tonumber(saved.active.ts) or 0
+    end
+
+    if questState and questState.SetActiveQuestId then
+        questState:SetActiveQuestId(saved.active.questKey)
+    end
+
+    if saved.focusedQuestId ~= nil then
+        local normalizedFocused = NormalizeQuestKey(saved.focusedQuestId)
+        saved.focusedQuestId = normalizedFocused
+        if questState and questState.SetFocusedQuestId then
+            questState:SetFocusedQuestId(normalizedFocused)
+        end
     end
 
     EnsureSavedDefaults(saved)
@@ -1659,9 +1829,18 @@ local function GetFocusedQuestIndex()
         if ok then
             local numeric = tonumber(focused)
             if numeric and numeric > 0 then
+                local questState = GetQuestState()
+                if questState and questState.SetFocusedQuestId then
+                    questState:SetFocusedQuestId(numeric)
+                end
                 return numeric
             end
         end
+    end
+
+    local questState = GetQuestState()
+    if questState and questState.SetFocusedQuestId then
+        questState:SetFocusedQuestId(nil)
     end
 
     return nil
@@ -1838,12 +2017,7 @@ local function AutoExpandQuestForTracking(journalIndex, forceExpand, context)
     DebugDeselect("AutoExpandQuestForTracking", {
         journalIndex = journalIndex,
         forceExpand = tostring(forceExpand),
-        previous = tostring(
-            state.saved
-                and state.saved.quest
-                and state.saved.quest[questKey]
-                and state.saved.quest[questKey].expanded
-        ),
+        previous = tostring(IsQuestExpanded and IsQuestExpanded(questKey)),
     })
 
     local logContext = {
@@ -2566,6 +2740,7 @@ local function NotifyStatusRefresh()
 end
 
 local function EnsureSavedVars()
+    GetQuestState()
     Nvk3UT.sv = Nvk3UT.sv or {}
     local saved = Nvk3UT.sv.QuestTracker or {}
     Nvk3UT.sv.QuestTracker = saved
@@ -2776,17 +2951,39 @@ local function GetDefaultQuestExpanded()
     return state.opts.autoExpand ~= false
 end
 
-local function IsCategoryExpanded(categoryKey)
+local function HasExplicitCategoryState(key)
+    if not (state.saved and state.saved.cat) then
+        return false
+    end
+
+    local entry = state.saved.cat[key]
+    return entry and entry.hasExplicitState == true
+end
+
+local function HasExplicitQuestState(key)
+    if not (state.saved and state.saved.quest) then
+        return false
+    end
+
+    local entry = state.saved.quest[key]
+    return entry and entry.hasExplicitState == true
+end
+
+IsCategoryExpanded = function(categoryKey)
     local key = NormalizeCategoryKey(categoryKey)
     if not key then
         return GetDefaultCategoryExpanded()
     end
 
-    if state.saved and state.saved.cat then
-        local entry = state.saved.cat[key]
-        if entry and entry.expanded ~= nil then
-            return entry.expanded and true or false
-        end
+    local questState = GetQuestState()
+    local stored = questState and questState.IsCategoryExpanded and questState:IsCategoryExpanded(key)
+
+    if HasExplicitCategoryState(key) then
+        return stored == true
+    end
+
+    if stored == true then
+        return true
     end
 
     return GetDefaultCategoryExpanded()
@@ -2798,11 +2995,15 @@ IsQuestExpanded = function(journalIndex)
         return GetDefaultQuestExpanded()
     end
 
-    if state.saved and state.saved.quest then
-        local entry = state.saved.quest[key]
-        if entry and entry.expanded ~= nil then
-            return entry.expanded and true or false
-        end
+    local questState = GetQuestState()
+    local stored = questState and questState.IsQuestExpanded and questState:IsQuestExpanded(key)
+
+    if HasExplicitQuestState(key) then
+        return stored == true
+    end
+
+    if stored == true then
+        return true
     end
 
     return GetDefaultQuestExpanded()
@@ -2836,10 +3037,12 @@ SetCategoryExpanded = function(categoryKey, expanded, context)
         return false
     end
 
+    local afterExpanded = IsCategoryExpanded and IsCategoryExpanded(key)
+
     DebugDeselect("SetCategoryExpanded", {
         categoryKey = key,
         previous = tostring(beforeExpanded),
-        newValue = tostring(expanded),
+        newValue = tostring(afterExpanded),
     })
 
     local manualCollapseRespected
@@ -2861,11 +3064,11 @@ SetCategoryExpanded = function(categoryKey, expanded, context)
     end
 
     LogCategoryExpansion(
-        expanded and "expand" or "collapse",
+        afterExpanded and "expand" or "collapse",
         (context and context.trigger) or "unknown",
         key,
         beforeExpanded,
-        expanded,
+        afterExpanded,
         (context and context.source) or "QuestTracker:SetCategoryExpanded",
         extraFields
     )
@@ -2901,20 +3104,22 @@ SetQuestExpanded = function(journalIndex, expanded, context)
         return false
     end
 
+    local afterExpanded = IsQuestExpanded and IsQuestExpanded(key)
+
     DebugDeselect("SetQuestExpanded", {
         journalIndex = key,
         previous = tostring(beforeExpanded),
-        newValue = tostring(expanded),
+        newValue = tostring(afterExpanded),
     })
 
     local numericIndex = QuestKeyToJournalIndex(key) or key
 
     LogQuestExpansion(
-        expanded and "expand" or "collapse",
+        afterExpanded and "expand" or "collapse",
         (context and context.trigger) or "unknown",
         numericIndex,
         beforeExpanded,
-        expanded,
+        afterExpanded,
         (context and context.source) or "QuestTracker:SetQuestExpanded"
     )
 

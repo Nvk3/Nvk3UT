@@ -3,6 +3,40 @@ local addonName = "Nvk3UT"
 Nvk3UT = Nvk3UT or {}
 
 local ResolveQuestCategory
+local QuestState = Nvk3UT and Nvk3UT.QuestState
+
+local function GetQuestState()
+    if not QuestState and Nvk3UT then
+        QuestState = Nvk3UT.QuestState
+    end
+    return QuestState
+end
+
+local function NormalizeQuestKey(journalIndex)
+    if journalIndex == nil then
+        return nil
+    end
+
+    if type(journalIndex) == "number" then
+        if journalIndex > 0 then
+            return tostring(journalIndex)
+        end
+        return nil
+    end
+
+    if type(journalIndex) == "string" then
+        local numeric = tonumber(journalIndex)
+        if numeric and numeric > 0 then
+            return tostring(numeric)
+        end
+        if journalIndex ~= "" then
+            return journalIndex
+        end
+        return nil
+    end
+
+    return tostring(journalIndex)
+end
 
 local QUEST_JOURNAL_CAP = rawget(_G, "MAX_JOURNAL_QUESTS") or 25
 
@@ -1746,6 +1780,23 @@ local function OnQuestChanged(_, ...)
     ScheduleRebuild(self)
 end
 
+local function OnQuestRemoved(eventCode, isCompleted, journalIndex, ...)
+    local questStateModule = GetQuestState()
+    if questStateModule then
+        if not questStateModule.db and type(questStateModule.Init) == "function" then
+            questStateModule:Init()
+        end
+        if questStateModule.OnQuestRemoved then
+            local normalized = NormalizeQuestKey(journalIndex)
+            if normalized then
+                questStateModule:OnQuestRemoved(normalized)
+            end
+        end
+    end
+
+    OnQuestChanged(eventCode, isCompleted, journalIndex, ...)
+end
+
 local function OnTrackingUpdate(eventCode, trackingType)
     if trackingType ~= TRACK_TYPE_QUEST then
         return
@@ -1787,7 +1838,7 @@ function QuestModel.Init(opts)
     end
 
     RegisterQuestEvent(EVENT_QUEST_ADDED, eventHandler)
-    RegisterQuestEvent(EVENT_QUEST_REMOVED, eventHandler)
+    RegisterQuestEvent(EVENT_QUEST_REMOVED, OnQuestRemoved)
     RegisterQuestEvent(EVENT_QUEST_ADVANCED, eventHandler)
     RegisterQuestEvent(EVENT_QUEST_CONDITION_COUNTER_CHANGED, eventHandler)
     RegisterQuestEvent(EVENT_QUEST_LOG_UPDATED, eventHandler)

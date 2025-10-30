@@ -25,7 +25,9 @@ Nvk3UT_TodoData.lua
 Nvk3UT_TodoIntegration.lua
 Nvk3UT_CompletedData.lua
 Nvk3UT_CompletedIntegration.lua
-Nvk3UT_QuestModel.lua
+; --- Model (Quest) ---
+Model/Quest/Nvk3UT_QuestState.lua
+Model/Quest/Nvk3UT_QuestModel.lua
 Nvk3UT_AchievementModel.lua
 Nvk3UT_QuestTracker.xml
 Nvk3UT_QuestTracker.lua
