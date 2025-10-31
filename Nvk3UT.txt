@@ -16,6 +16,7 @@ Model/Quest/Nvk3UT_QuestState.lua
 Model/Quest/Nvk3UT_QuestSelection.lua
 Model/Quest/Nvk3UT_QuestList.lua
 Model/Quest/Nvk3UT_QuestModel.lua
+Model/Achievement/Nvk3UT_AchievementState.lua
 Nvk3UT_AchievementModel.lua
 Nvk3UT_Achievements.lua
 Nvk3UT_FavoritesData.lua
