@@ -39,6 +39,237 @@ local function callESO(func, ...)
     return result1, result2, result3, result4, result5, result6, result7, result8, result9, result10, result11
 end
 
+local function safeCallMethod(target, methodName)
+    if type(target) ~= "table" then
+        return nil
+    end
+
+    local method = target[methodName]
+    if type(method) ~= "function" then
+        return nil
+    end
+
+    local ok, value = pcall(method, target)
+    if ok then
+        return value
+    end
+
+    return nil
+end
+
+local function extractCategoryIndex(categoryData)
+    if type(categoryData) ~= "table" then
+        return nil
+    end
+
+    return categoryData.categoryIndex
+        or categoryData.index
+        or categoryData.categoryType
+        or categoryData.type
+        or categoryData.typeId
+        or safeCallMethod(categoryData, "GetCategoryIndex")
+        or safeCallMethod(categoryData, "GetIndex")
+        or safeCallMethod(categoryData, "GetCategoryType")
+end
+
+local function extractCategoryName(categoryData)
+    if type(categoryData) ~= "table" then
+        return nil
+    end
+
+    local name = categoryData.name
+        or categoryData.categoryName
+        or categoryData.label
+        or safeCallMethod(categoryData, "GetName")
+        or safeCallMethod(categoryData, "GetCategoryName")
+
+    if type(name) == "string" and name ~= "" then
+        return name
+    end
+
+    return nil
+end
+
+local function extractCategoryQuestList(categoryData)
+    if type(categoryData) ~= "table" then
+        return nil
+    end
+
+    local sources = {
+        categoryData.quests,
+        categoryData.questList,
+        categoryData.questListData,
+        categoryData.entries,
+    }
+
+    for index = 1, #sources do
+        local candidate = sources[index]
+        if type(candidate) == "table" then
+            return candidate
+        end
+    end
+
+    local getters = { "GetQuests", "GetQuestList", "GetQuestListData", "GetEntries" }
+    for index = 1, #getters do
+        local value = safeCallMethod(categoryData, getters[index])
+        if type(value) == "table" then
+            return value
+        end
+    end
+
+    return nil
+end
+
+local function extractQuestJournalIndex(questData)
+    if type(questData) ~= "table" then
+        return nil
+    end
+
+    local index = questData.journalIndex
+        or questData.index
+        or questData.questIndex
+        or safeCallMethod(questData, "GetJournalIndex")
+        or safeCallMethod(questData, "GetIndex")
+        or safeCallMethod(questData, "GetQuestIndex")
+
+    if type(index) == "number" then
+        return index
+    end
+
+    return nil
+end
+
+local function extractQuestCategoryIndex(questData)
+    if type(questData) ~= "table" then
+        return nil
+    end
+
+    local index = questData.categoryIndex
+        or questData.categoryType
+        or questData.type
+        or safeCallMethod(questData, "GetCategoryIndex")
+        or safeCallMethod(questData, "GetCategoryType")
+
+    if type(index) == "number" then
+        return index
+    end
+
+    return nil
+end
+
+local function extractQuestCategoryName(questData)
+    if type(questData) ~= "table" then
+        return nil
+    end
+
+    local name = questData.categoryName
+        or questData.category
+        or safeCallMethod(questData, "GetCategoryName")
+
+    if type(name) == "string" and name ~= "" then
+        return name
+    end
+
+    return nil
+end
+
+local function registerCategoryEntry(seen, order, catIndex, catName)
+    local key
+    if catIndex ~= nil then
+        key = "idx:" .. tostring(catIndex)
+    elseif catName and catName ~= "" then
+        key = "name:" .. tostring(catName)
+    else
+        key = "anon:" .. tostring(#order + 1)
+    end
+
+    local entry = seen[key]
+    if not entry then
+        local assignedIndex = catIndex
+        if assignedIndex == nil then
+            assignedIndex = #order + 9000
+        end
+        entry = {
+            index = assignedIndex,
+            name = catName or "MISCELLANEOUS",
+        }
+        order[#order + 1] = entry
+        seen[key] = entry
+    else
+        if catName and (not entry.name or entry.name == "") then
+            entry.name = catName
+        end
+        if catIndex and (not entry.index or entry.index >= 9000) then
+            entry.index = catIndex
+        end
+    end
+
+    return entry
+end
+
+local function AcquireQuestJournalData()
+    if not (QUEST_JOURNAL_MANAGER and QUEST_JOURNAL_MANAGER.GetQuestListData) then
+        return nil, nil, nil
+    end
+
+    local ok, questList, categoryList, seenCategories =
+        pcall(QUEST_JOURNAL_MANAGER.GetQuestListData, QUEST_JOURNAL_MANAGER)
+    if not ok then
+        debugLog("QuestList:AcquireQuestJournalData failed: %s", tostring(questList))
+        return nil, nil, nil
+    end
+
+    if type(questList) ~= "table" or type(categoryList) ~= "table" then
+        return nil, nil, nil
+    end
+
+    return questList, categoryList, seenCategories
+end
+
+local function BuildBaseCategoryCacheFromData(questListData, categoryList)
+    local map, order = {}, {}
+    local seen = {}
+
+    if type(categoryList) == "table" then
+        for index = 1, #categoryList do
+            local categoryData = categoryList[index]
+            local categoryIndex = extractCategoryIndex(categoryData)
+            local categoryName = extractCategoryName(categoryData)
+            local entry = registerCategoryEntry(seen, order, categoryIndex, categoryName)
+
+            local questEntries = extractCategoryQuestList(categoryData)
+            if type(questEntries) == "table" then
+                for questIdx = 1, #questEntries do
+                    local questData = questEntries[questIdx]
+                    local journalIndex = extractQuestJournalIndex(questData)
+                    if journalIndex then
+                        map[journalIndex] = { index = entry.index, name = entry.name }
+                    end
+                end
+            end
+        end
+    end
+
+    if next(map) == nil and type(questListData) == "table" then
+        for index = 1, #questListData do
+            local questData = questListData[index]
+            local journalIndex = extractQuestJournalIndex(questData)
+            if journalIndex then
+                local categoryIndex = extractQuestCategoryIndex(questData)
+                local categoryName = extractQuestCategoryName(questData)
+                local entry = registerCategoryEntry(seen, order, categoryIndex, categoryName)
+                map[journalIndex] = { index = entry.index, name = entry.name }
+            end
+        end
+
+        table.sort(order, function(left, right)
+            return (left.index or 9999) < (right.index or 9999)
+        end)
+    end
+
+    return map, order
+end
+
 local function makeQuestKey(journalIndex)
     local questId = callESO(GetJournalQuestId, journalIndex)
     if questId and questId ~= 0 then
@@ -242,7 +473,14 @@ function M:RefreshFromGame(force)
         return self._version
     end
 
-    M._catMap, M._catOrder = (function()
+    local questListData, categoryList = AcquireQuestJournalData()
+    local managerMap, managerOrder = nil, nil
+    if questListData or categoryList then
+        managerMap, managerOrder = BuildBaseCategoryCacheFromData(questListData, categoryList)
+    end
+
+    local fallbackMap, fallbackOrder = nil, nil
+    if not managerMap or next(managerMap) == nil then
         local map, order = {}, {}
         local numCats = callESO(GetJournalNumQuestCategories) or 0
         for categoryIndex = 1, numCats do
@@ -259,8 +497,23 @@ function M:RefreshFromGame(force)
                 end
             end
         end
-        return map, order
-    end)()
+        fallbackMap, fallbackOrder = map, order
+    end
+
+    local useManagerCategories = false
+    if managerMap and next(managerMap) ~= nil then
+        useManagerCategories = true
+    elseif managerOrder and #managerOrder > 0 then
+        useManagerCategories = true
+    end
+
+    if useManagerCategories then
+        M._catMap = managerMap or {}
+        M._catOrder = managerOrder or {}
+    else
+        M._catMap = fallbackMap or {}
+        M._catOrder = fallbackOrder or {}
+    end
 
     resetLists()
 
@@ -276,12 +529,26 @@ function M:RefreshFromGame(force)
 
     self._version = (self._version or 0) + 1
     self._dirty = false
+
+    local sampleParts = {}
+    local sampleCount = 0
+    for journalIndex, info in pairs(M._catMap or {}) do
+        sampleCount = sampleCount + 1
+        if sampleCount <= 3 then
+            local label = info and info.name or "?"
+            sampleParts[#sampleParts + 1] = string.format("%s=%s", tostring(journalIndex), tostring(label))
+        else
+            break
+        end
+    end
+
     debugLog(
-        "QuestList: built %d quests (v%d), cats=%d (mapped=%s).",
+        "QuestList: built %d quests (v%d), cats=%d (mapped=%s) samples=[%s].",
         #self._list,
         self._version,
         M._catOrder and #M._catOrder or 0,
-        tostring(M._catMap and next(M._catMap) ~= nil)
+        tostring(M._catMap and next(M._catMap) ~= nil),
+        table.concat(sampleParts, ", ")
     )
     return self._version
 end

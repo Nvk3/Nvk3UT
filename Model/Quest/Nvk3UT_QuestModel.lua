@@ -90,6 +90,8 @@ local function normalizeObjectiveDisplayText(text)
         displayText = zo_strformat("<<1>>", displayText)
     end
 
+    displayText = StripProgressDecorations(displayText) or displayText
+
     displayText = displayText:gsub("\r\n", "\n")
     displayText = displayText:gsub("\r", "\n")
     displayText = displayText:gsub("\t", " ")
@@ -1362,6 +1364,14 @@ function M:RefreshFromGame(force)
     local rawEntries = collectQuestEntries()
     local rows, indexByKey, indexByJournal = buildQuestRows(rawEntries, questState, questSelection)
 
+    local rowsWithObjectives = 0
+    for index = 1, #rows do
+        local quest = rows[index]
+        if type(quest.objectives) == "table" and #quest.objectives > 0 then
+            rowsWithObjectives = rowsWithObjectives + 1
+        end
+    end
+
     if #rows == 0 then
         local questListObj = getQuestList()
         local count = 0
@@ -1378,6 +1388,13 @@ function M:RefreshFromGame(force)
 
     self._vm = snapshot
     self._dirty = false
+
+    debugLog(
+        "QuestModel: view built with %d rows (v%d); rowsWithObjectives=%d.",
+        #rows,
+        self._version,
+        rowsWithObjectives
+    )
 
     return self._version
 end
