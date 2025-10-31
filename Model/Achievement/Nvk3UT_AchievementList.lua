@@ -202,6 +202,39 @@ local function CollectRecentIds()
     return copy
 end
 
+local function CollectTodoData()
+    local Todo = Nvk3UT and Nvk3UT.TodoData
+    if not Todo then
+        return {}, {}, {}, {}
+    end
+
+    local todoIds = {}
+    if type(Todo.ListAllOpen) == "function" then
+        local ok, list = pcall(Todo.ListAllOpen, nil, false)
+        if ok and type(list) == "table" then
+            todoIds = list
+        end
+    end
+
+    local todoNames, todoKeys, todoTopIds = {}, {}, {}
+    if type(Todo.GetSubcategoryList) == "function" then
+        local ok, names, keys, topIds = pcall(Todo.GetSubcategoryList)
+        if ok then
+            if type(names) == "table" then
+                todoNames = names
+            end
+            if type(keys) == "table" then
+                todoKeys = keys
+            end
+            if type(topIds) == "table" then
+                todoTopIds = topIds
+            end
+        end
+    end
+
+    return todoIds, todoNames, todoKeys, todoTopIds
+end
+
 local function BuildObjectiveData(achievementId)
     local objectives = {}
 
@@ -415,6 +448,7 @@ end
 local function BuildRawData()
     local favoriteIds = CollectFavoriteIds()
     local recentIds = CollectRecentIds()
+    local todoIds, todoNames, todoKeys, todoTopIds = CollectTodoData()
     local entries = {}
     local completeCount = 0
 
@@ -440,6 +474,8 @@ local function BuildRawData()
 
     SortAchievements(entries)
 
+    local todoTotal = (type(todoIds) == "table") and #todoIds or 0
+
     return {
         achievements = entries,
         total = #entries,
@@ -449,6 +485,11 @@ local function BuildRawData()
         favoriteIds = favoriteIds,
         recentIds = recentIds,
         recentTotal = #recentIds,
+        todoIds = todoIds,
+        todoTotal = todoTotal,
+        todoNames = todoNames,
+        todoKeys = todoKeys,
+        todoTopIds = todoTopIds,
     }
 end
 
@@ -460,11 +501,12 @@ function AchievementList:RefreshFromGame()
     emitDebugMessage("RefreshFromGame start")
     rawData = BuildRawData()
     emitDebugMessage(
-        "RefreshFromGame done (favorites=%d complete=%d incomplete=%d recent=%d)",
+        "RefreshFromGame done (favorites=%d complete=%d incomplete=%d recent=%d todo=%d)",
         rawData.total or 0,
         rawData.totalComplete or 0,
         rawData.totalIncomplete or 0,
-        rawData.recentTotal or (rawData.recentIds and #rawData.recentIds) or 0
+        rawData.recentTotal or (rawData.recentIds and #rawData.recentIds) or 0,
+        rawData.todoTotal or (rawData.todoIds and #rawData.todoIds) or 0
     )
     return rawData
 end
@@ -498,6 +540,20 @@ function AchievementList:GetSection(name)
         return {
             ids = raw.recentIds,
             total = raw.recentTotal,
+        }
+    end
+
+    if name == "todo" then
+        local raw = self:GetRaw()
+        if not raw then
+            return nil
+        end
+        return {
+            ids = raw.todoIds,
+            total = raw.todoTotal,
+            names = raw.todoNames,
+            keys = raw.todoKeys,
+            topIds = raw.todoTopIds,
         }
     end
 
