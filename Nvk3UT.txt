@@ -21,12 +21,12 @@ Model/Achievement/Nvk3UT_FavoritesData.lua
 Model/Achievement/Nvk3UT_RecentData.lua
 Model/Achievement/Nvk3UT_TodoData.lua
 Model/Achievement/Nvk3UT_CompletedData.lua
-Model/Achievement/Nvk3UT_AchievementList.lua
-Model/Achievement/Nvk3UT_AchievementModel.lua
 Model/Achievement/Nvk3UT_FavoritesIntegration.lua
 Model/Achievement/Nvk3UT_RecentIntegration.lua
 Model/Achievement/Nvk3UT_TodoIntegration.lua
 Model/Achievement/Nvk3UT_CompletedIntegration.lua
+Model/Achievement/Nvk3UT_AchievementList.lua
+Model/Achievement/Nvk3UT_AchievementModel.lua
 Nvk3UT_Achievements.lua
 Nvk3UT_Favorites.lua
 Nvk3UT_Recent.lua
