@@ -6,10 +6,12 @@ Nvk3UT.AchievementsJournal = Journal
 local Utils = Nvk3UT and Nvk3UT.Utils
 
 local FavoritesCategory = Nvk3UT and Nvk3UT.FavoritesCategory
+local RecentCategory = Nvk3UT and Nvk3UT.RecentCategory
 
 local state = {
     parent = nil,
     favorites = nil,
+    recent = nil,
 }
 
 local function isDebugEnabled()
@@ -80,7 +82,15 @@ function Journal:Init(parentOrSceneFragment)
             state.favorites = parentOrSceneFragment
         end
     end
-    return state.favorites or parentOrSceneFragment
+    if RecentCategory and type(RecentCategory.Init) == "function" then
+        local ok, result = pcall(RecentCategory.Init, RecentCategory, parentOrSceneFragment)
+        if ok then
+            state.recent = result or parentOrSceneFragment
+        else
+            state.recent = parentOrSceneFragment
+        end
+    end
+    return state.favorites or state.recent or parentOrSceneFragment
 end
 
 ---Refresh the journal view.
@@ -90,6 +100,12 @@ function Journal:Refresh()
         local ok = pcall(FavoritesCategory.Refresh, FavoritesCategory)
         if not ok and Utils and Utils.d and isDebugEnabled() then
             Utils.d("[Ach][Journal] FavoritesCategory.Refresh failed")
+        end
+    end
+    if RecentCategory and type(RecentCategory.Refresh) == "function" then
+        local ok = pcall(RecentCategory.Refresh, RecentCategory)
+        if not ok and Utils and Utils.d and isDebugEnabled() then
+            Utils.d("[Ach][Journal] RecentCategory.Refresh failed")
         end
     end
     return state.parent

@@ -11,6 +11,8 @@ local function resolveCategory()
     return Nvk3UT and Nvk3UT.FavoritesCategory
 end
 
+local tableUnpack = table.unpack or unpack
+
 local function safeCall(method, ...)
     local SafeCall = Nvk3UT and Nvk3UT.SafeCall
     if type(SafeCall) == "function" then
@@ -21,12 +23,13 @@ local function safeCall(method, ...)
         return nil
     end
 
-    local ok, result = pcall(method, ...)
-    if ok then
-        return result
+    local results = { pcall(method, ...) }
+    if not results[1] then
+        return nil
     end
 
-    return nil
+    table.remove(results, 1)
+    return tableUnpack(results)
 end
 
 local Shim = {}

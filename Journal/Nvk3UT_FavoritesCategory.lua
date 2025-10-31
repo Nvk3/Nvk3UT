@@ -12,6 +12,8 @@ local state = {
     container = nil,
 }
 
+local tableUnpack = table.unpack or unpack
+
 local function safeCall(func, ...)
     local SafeCall = Nvk3UT and Nvk3UT.SafeCall
     if type(SafeCall) == "function" then
@@ -22,12 +24,13 @@ local function safeCall(func, ...)
         return nil
     end
 
-    local ok, result = pcall(func, ...)
-    if ok then
-        return result
+    local results = { pcall(func, ...) }
+    if not results[1] then
+        return nil
     end
 
-    return nil
+    table.remove(results, 1)
+    return tableUnpack(results)
 end
 
 local function ensureData()
