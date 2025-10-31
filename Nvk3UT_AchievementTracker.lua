@@ -1633,7 +1633,7 @@ function AchievementTracker.Init(parentControl, opts)
 
     SubscribeToModel()
 
-    state.snapshot = Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.GetSnapshot and Nvk3UT.AchievementModel.GetSnapshot()
+    state.snapshot = Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.GetViewData and Nvk3UT.AchievementModel.GetViewData()
 
     state.isInitialized = true
 
@@ -1646,8 +1646,8 @@ function AchievementTracker.Refresh()
         return
     end
 
-    if Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.GetSnapshot then
-        state.snapshot = Nvk3UT.AchievementModel.GetSnapshot() or state.snapshot
+    if Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.GetViewData then
+        state.snapshot = Nvk3UT.AchievementModel.GetViewData() or state.snapshot
     end
 
     Rebuild()
