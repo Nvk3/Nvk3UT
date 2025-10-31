@@ -78,6 +78,104 @@ function Utils.d(...)
     return Utils.Debug(...)
 end
 
+local ACHIEVEMENT_DEBUG_UPDATE_KEY = "Nvk3UT_Achievement_Pending_Debug"
+local achievementDebugState = {
+    count = 0,
+    lastEventMs = 0,
+    flushRegistered = false,
+}
+
+local function isRootDebugEnabled()
+    ensureRoot()
+
+    local root = rawget(_G, "Nvk3UT")
+    if type(root) ~= "table" then
+        return false
+    end
+
+    if type(root.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(root.IsDebugEnabled, root)
+        if ok then
+            return enabled == true
+        end
+        return false
+    end
+
+    if root.debugEnabled ~= nil then
+        return root.debugEnabled == true
+    end
+
+    return false
+end
+
+local function getDebugMilliseconds()
+    if type(GetFrameTimeMilliseconds) == "function" then
+        local ok, value = pcall(GetFrameTimeMilliseconds)
+        if ok and type(value) == "number" then
+            return value
+        end
+    end
+
+    if type(GetGameTimeMilliseconds) == "function" then
+        local ok, value = pcall(GetGameTimeMilliseconds)
+        if ok and type(value) == "number" then
+            return value
+        end
+    end
+
+    return achievementDebugState.lastEventMs or 0
+end
+
+local function flushAchievementDebug()
+    achievementDebugState.flushRegistered = false
+
+    if achievementDebugState.count <= 0 then
+        achievementDebugState.count = 0
+        return
+    end
+
+    debugInternal(
+        "Achievement stages pending: %d updates (coalesced)",
+        achievementDebugState.count
+    )
+    achievementDebugState.count = 0
+end
+
+local function QueueAchievementPendingDebug(id, stage, index)
+    if not isRootDebugEnabled() then
+        return
+    end
+
+    achievementDebugState.count = achievementDebugState.count + 1
+    achievementDebugState.lastEventMs = getDebugMilliseconds()
+
+    if achievementDebugState.flushRegistered then
+        return
+    end
+
+    if not EVENT_MANAGER then
+        flushAchievementDebug()
+        return
+    end
+
+    achievementDebugState.flushRegistered = true
+
+    EVENT_MANAGER:RegisterForUpdate(
+        ACHIEVEMENT_DEBUG_UPDATE_KEY,
+        50,
+        function()
+            local now = getDebugMilliseconds()
+            local lastEvent = achievementDebugState.lastEventMs or 0
+            if now - lastEvent < 80 then
+                return
+            end
+
+            EVENT_MANAGER:UnregisterForUpdate(ACHIEVEMENT_DEBUG_UPDATE_KEY)
+            flushAchievementDebug()
+        end
+    )
+end
+
 local function timestampFallback()
     if type(GetFrameTimeMilliseconds) == "function" then
         local ok, value = pcall(GetFrameTimeMilliseconds)
@@ -626,12 +724,7 @@ function Utils.IsAchievementFullyComplete(id)
         local stageComplete = isCriteriaComplete(stageId) or safeAchievementInfo(stageId) == true
         local satisfied = stageComplete or satisfiedUpstream
         if not satisfied then
-            debugInternal(
-                "Achievement stage pending: id=%d stage=%d index=%d",
-                id,
-                stageId,
-                index
-            )
+            QueueAchievementPendingDebug(id, stageId, index)
             return false
         end
         satisfiedUpstream = satisfied

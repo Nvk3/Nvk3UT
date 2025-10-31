@@ -11,7 +11,7 @@ QuestModel.__index = QuestModel
 
 local QUEST_MODEL_NAME = addonName .. "QuestModel"
 local EVENT_NAMESPACE = QUEST_MODEL_NAME .. "_Event"
-local REBUILD_IDENTIFIER = QUEST_MODEL_NAME .. "_Rebuild"
+local UPDATE_KEY = QUEST_MODEL_NAME .. "_Debounce"
 local DEBOUNCE_UPDATE_INTERVAL_MS = 33
 
 local QUEST_SAVED_VARS_NAME = "Nvk3UT_Data_Quests"
@@ -38,6 +38,22 @@ local playerState = {
 }
 
 local DEBUG_INIT = false
+
+local function SafeCall(func, ...)
+    if type(func) ~= "function" then
+        return false, nil
+    end
+
+    local ok, result = xpcall(func, function(err)
+        return err
+    end, ...)
+
+    if not ok then
+        return false, result
+    end
+
+    return true, result
+end
 
 local function IsDebugLoggingEnabled()
     if DEBUG_INIT then
@@ -437,11 +453,41 @@ local function PerformRebuild(self)
     snapshot.revision = (self.currentSnapshot and self.currentSnapshot.revision or 0) + 1
     self.currentSnapshot = snapshot
     PersistQuests(quests)
-    NotifySubscribers(self)
     return true
 end
 
-local function ScheduleRebuild(self)
+local function InvokeRebuildAndNotify(self)
+    local updated = false
+    local ok, err = SafeCall(function()
+        updated = PerformRebuild(self)
+        return updated
+    end)
+
+    if not ok then
+        local root = rawget(_G, "Nvk3UT") or Nvk3UT
+        if type(root) == "table" and type(root.Error) == "function" then
+            root.Error("QuestModel rebuild failed: %s", tostring(err))
+        end
+        return false
+    end
+
+    if updated then
+        local notifyOk, notifyErr = SafeCall(function()
+            NotifySubscribers(self)
+        end)
+
+        if not notifyOk then
+            local root = rawget(_G, "Nvk3UT") or Nvk3UT
+            if type(root) == "table" and type(root.Error) == "function" then
+                root.Error("QuestModel notify failed: %s", tostring(notifyErr))
+            end
+        end
+    end
+
+    return updated
+end
+
+local function ScheduleModelUpdate(self, reason)
     if not playerState.hasActivated then
         return
     end
@@ -465,10 +511,17 @@ local function ScheduleRebuild(self)
         tickInterval = 1
     end
 
+    if not EVENT_MANAGER then
+        self.updateRegistered = false
+        self.pendingRebuild = false
+        InvokeRebuildAndNotify(self)
+        return
+    end
+
     self.updateRegistered = true
 
     EVENT_MANAGER:RegisterForUpdate(
-        REBUILD_IDENTIFIER,
+        UPDATE_KEY,
         tickInterval,
         function()
             local current = GetDebounceClockMs()
@@ -482,10 +535,10 @@ local function ScheduleRebuild(self)
                 return
             end
 
-            EVENT_MANAGER:UnregisterForUpdate(REBUILD_IDENTIFIER)
+            EVENT_MANAGER:UnregisterForUpdate(UPDATE_KEY)
             self.updateRegistered = false
             self.pendingRebuild = false
-            PerformRebuild(self)
+            InvokeRebuildAndNotify(self)
         end
     )
 end
@@ -495,15 +548,14 @@ ForceRebuildInternal = function(self)
         return false
     end
 
-    if self.updateRegistered then
-        EVENT_MANAGER:UnregisterForUpdate(REBUILD_IDENTIFIER)
+    if self.updateRegistered and EVENT_MANAGER then
+        EVENT_MANAGER:UnregisterForUpdate(UPDATE_KEY)
         self.updateRegistered = false
     end
 
     self.pendingRebuild = false
 
-    local updated = PerformRebuild(self)
-    return updated
+    return InvokeRebuildAndNotify(self)
 end
 
 QuestModel.ForceRebuild = ForceRebuildInternal
@@ -516,7 +568,7 @@ local function OnQuestChanged(_, ...)
     end
 
     ResetBaseCategoryCache()
-    ScheduleRebuild(self)
+    ScheduleModelUpdate(self, "questChanged")
 end
 
 local function OnTrackingUpdate(eventCode, trackingType)
@@ -589,7 +641,7 @@ function QuestModel.Shutdown()
     UnregisterQuestEvent(EVENT_QUEST_LOG_UPDATED)
     EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "TRACKING", EVENT_TRACKING_UPDATE)
     EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "OnLoaded", EVENT_ADD_ON_LOADED)
-    EVENT_MANAGER:UnregisterForUpdate(REBUILD_IDENTIFIER)
+    EVENT_MANAGER:UnregisterForUpdate(UPDATE_KEY)
     EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "PlayerActivated", EVENT_PLAYER_ACTIVATED)
     bootstrapState.registered = false
     playerState.hasActivated = false
