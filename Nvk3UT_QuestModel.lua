@@ -2,266 +2,16 @@ local addonName = "Nvk3UT"
 
 Nvk3UT = Nvk3UT or {}
 
-local ResolveQuestCategory
-
-local QUEST_JOURNAL_CAP = rawget(_G, "MAX_JOURNAL_QUESTS") or 25
-
-local function StripProgressDecorations(text)
-    if type(text) ~= "string" then
-        return nil
-    end
-
-    local sanitized = text
-    sanitized = sanitized:gsub("%s*%(%s*%d+%s*/%s*%d+%s*%)", "")
-    sanitized = sanitized:gsub("%s*%[%s*%d+%s*/%s*%d+%s*%]", "")
-    sanitized = sanitized:gsub("%s+", " ")
-    sanitized = sanitized:gsub("^%s+", "")
-    sanitized = sanitized:gsub("%s+$", "")
-
-    if sanitized == "" then
-        return nil
-    end
-
-    return sanitized
+local function GetQuestListModule()
+    return Nvk3UT and Nvk3UT.QuestList
 end
 
-local function NormalizeObjectiveDisplayText(text)
-    if type(text) ~= "string" then
-        return nil
+local function ResolveQuestCategory(journalIndex, questType, displayType, isRepeatable, isDaily)
+    local questList = GetQuestListModule()
+    if questList and questList.ResolveQuestCategory then
+        return questList.ResolveQuestCategory(journalIndex, questType, displayType, isRepeatable, isDaily)
     end
-
-    local displayText = text
-    if zo_strformat then
-        displayText = zo_strformat("<<1>>", displayText)
-    end
-
-    displayText = displayText:gsub("\r\n", "\n")
-    displayText = displayText:gsub("\r", "\n")
-    displayText = displayText:gsub("\t", " ")
-    displayText = displayText:gsub("\n+", " ")
-    displayText = displayText:gsub("^%s+", "")
-    displayText = displayText:gsub("%s+$", "")
-
-    if displayText == "" then
-        return nil
-    end
-
-    return displayText
-end
-
-local function ShouldUseHeaderText(candidate, objectives)
-    if type(candidate) ~= "string" then
-        return nil
-    end
-
-    local headerText = candidate
-    headerText = headerText:gsub("%s+", " ")
-    headerText = headerText:gsub("^%s+", "")
-    headerText = headerText:gsub("%s+$", "")
-
-    if headerText == "" then
-        return nil
-    end
-
-    if #headerText > 140 then
-        return nil
-    end
-
-    local sentenceCount = 0
-    headerText:gsub("[%.%!%?]", function()
-        sentenceCount = sentenceCount + 1
-    end)
-    if sentenceCount >= 2 and #headerText > 80 then
-        return nil
-    end
-
-    if objectives and type(objectives) == "table" then
-        local headerLower = string.lower(headerText)
-        for index = 1, #objectives do
-            local objective = objectives[index]
-            local displayText = objective and objective.displayText
-            if type(displayText) == "string" then
-                local comparison = string.lower(displayText)
-                if comparison == headerLower then
-                    return nil
-                end
-            end
-        end
-    end
-
-    return headerText
-end
-
-local function AcquireTimestampMs()
-    if type(GetFrameTimeMilliseconds) == "function" then
-        return GetFrameTimeMilliseconds()
-    end
-
-    if type(GetGameTimeMilliseconds) == "function" then
-        return GetGameTimeMilliseconds()
-    end
-
-    if type(GetFrameTimeSeconds) == "function" then
-        local seconds = GetFrameTimeSeconds()
-        if type(seconds) == "number" then
-            return math.floor(seconds * 1000 + 0.5)
-        end
-    end
-
     return nil
-end
-
-local function CollectActiveObjectives(journalIndex, questIsComplete)
-    if type(GetJournalQuestNumSteps) ~= "function" or type(GetJournalQuestStepInfo) ~= "function" then
-        return {}, nil
-    end
-
-    -- Collect every visible condition across all steps so the tracker mirrors the journal "Objectives" list.
-    local objectiveList = {}
-    local seen = {}
-    local fallbackStepText = nil
-    local fallbackObjectiveText = nil
-
-    local numSteps = GetJournalQuestNumSteps(journalIndex)
-    if type(numSteps) ~= "number" or numSteps <= 0 then
-        return objectiveList, fallbackStepText
-    end
-
-    for stepIndex = 1, numSteps do
-        local stepText, visibility, _, trackerOverrideText, stepNumConditions = GetJournalQuestStepInfo(journalIndex, stepIndex)
-        local sanitizedOverrideText = StripProgressDecorations(trackerOverrideText)
-        local sanitizedStepText = StripProgressDecorations(stepText)
-        local fallbackObjectiveCandidate = nil
-
-        local stepIsVisible = true
-        if visibility ~= nil then
-            local hiddenConstant = rawget(_G, "QUEST_STEP_VISIBILITY_HIDDEN")
-            if hiddenConstant ~= nil then
-                stepIsVisible = (visibility ~= hiddenConstant)
-            else
-                stepIsVisible = (visibility ~= false)
-            end
-        end
-
-        if questIsComplete and not stepIsVisible then
-            -- Completed quests sometimes hide their final step even though the journal still shows the hand-in objective.
-            stepIsVisible = true
-        end
-
-        if stepIsVisible then
-            local fallbackStepCandidate = sanitizedOverrideText or sanitizedStepText
-            if not fallbackStepText and fallbackStepCandidate then
-                fallbackStepText = fallbackStepCandidate
-            end
-
-            fallbackObjectiveCandidate = NormalizeObjectiveDisplayText(trackerOverrideText) or NormalizeObjectiveDisplayText(stepText)
-            if not fallbackObjectiveText and fallbackObjectiveCandidate then
-                fallbackObjectiveText = fallbackObjectiveCandidate
-            end
-
-            local addedObjectiveForStep = false
-
-            local totalConditions = tonumber(stepNumConditions) or 0
-            if type(GetJournalQuestNumConditions) == "function" then
-                local countedConditions = GetJournalQuestNumConditions(journalIndex, stepIndex)
-                if type(countedConditions) == "number" and countedConditions > totalConditions then
-                    totalConditions = countedConditions
-                end
-            end
-
-            if totalConditions > 0 and type(GetJournalQuestConditionInfo) == "function" then
-                for conditionIndex = 1, totalConditions do
-                    local conditionText, current, maxValue, isFailCondition, isConditionComplete, _, isConditionVisible = GetJournalQuestConditionInfo(journalIndex, stepIndex, conditionIndex)
-                    local formattedCondition = NormalizeObjectiveDisplayText(conditionText)
-                    local isVisibleCondition = (isConditionVisible ~= false)
-                    if questIsComplete and not isVisibleCondition then
-                        -- Some quests hide the final hand-in objective once the quest is flagged complete.
-                        -- We still want to surface those lines so the tracker mirrors the journal UI.
-                        isVisibleCondition = true
-                    end
-                    local isFail = (isFailCondition == true)
-
-                    if formattedCondition and isVisibleCondition and not isFail then
-                        addedObjectiveForStep = true
-
-                        if not seen[formattedCondition] then
-                            seen[formattedCondition] = true
-                            objectiveList[#objectiveList + 1] = {
-                                displayText = formattedCondition,
-                                current = tonumber(current) or 0,
-                                max = tonumber(maxValue) or 0,
-                                complete = isConditionComplete == true,
-                                isTurnIn = false,
-                            }
-                        end
-                    end
-                end
-            end
-
-            if not addedObjectiveForStep and fallbackObjectiveCandidate and not seen[fallbackObjectiveCandidate] then
-                seen[fallbackObjectiveCandidate] = true
-                objectiveList[#objectiveList + 1] = {
-                    displayText = fallbackObjectiveCandidate,
-                    current = 0,
-                    max = 0,
-                    complete = false,
-                    isTurnIn = false,
-                }
-                addedObjectiveForStep = true
-            end
-        end
-    end
-
-    if #objectiveList == 0 and fallbackObjectiveText and not seen[fallbackObjectiveText] then
-        objectiveList[1] = {
-            displayText = fallbackObjectiveText,
-            current = 0,
-            max = 0,
-            complete = false,
-            isTurnIn = false,
-        }
-    end
-
-    return objectiveList, fallbackStepText
-end
-
-local function DetermineCategoryInfo(journalIndex, questType, displayType, isRepeatable, isDaily)
-    local categoryKey, categoryName, parentKey, parentName
-
-    if type(ResolveQuestCategory) == "function" then
-        local category = ResolveQuestCategory(journalIndex, questType, displayType, isRepeatable, isDaily)
-        if type(category) == "table" then
-            categoryKey = category.key or category.groupKey or category.categoryKey
-            categoryName = category.name or category.groupName or category.categoryName
-
-            if type(category.parent) == "table" then
-                parentKey = category.parent.key or category.parent.categoryKey
-                parentName = category.parent.name or category.parent.categoryName
-            elseif category.groupKey and category.groupName then
-                parentKey = category.groupKey
-                parentName = category.groupName
-            end
-        end
-    end
-
-    if (not categoryKey or categoryKey == "") and type(GetCategoryKey) == "function" then
-        categoryKey = GetCategoryKey(questType, displayType, isRepeatable, isDaily)
-    end
-
-    if (not categoryName or categoryName == "") and categoryKey then
-        local readable = categoryKey:gsub("_", " ")
-        readable = readable:gsub("%s+", " ")
-        if type(zo_strformat) == "function" then
-            categoryName = zo_strformat("<<1>>", readable)
-        else
-            categoryName = readable
-        end
-    end
-
-    parentKey = parentKey or categoryKey
-    parentName = parentName or categoryName
-
-    return categoryKey, categoryName, parentKey, parentName
 end
 
 local QuestModel = {}
@@ -621,7 +371,11 @@ local groupEntryCache = {}
 local baseCategoryCache = nil
 
 local function ResetBaseCategoryCache()
-    baseCategoryCache = nil
+    -- TEMP SHIM (QMODEL_003): clear QuestList category cache.
+    local questList = GetQuestListModule()
+    if questList and questList.ResetBaseCategoryCache then
+        questList.ResetBaseCategoryCache()
+    end
 end
 
 local function GetGroupDefinition(groupKey)
@@ -1221,18 +975,11 @@ local function BuildOverallSignature(quests)
 end
 
 function GetCategoryKey(questType, displayType, isRepeatable, isDaily)
-    if displayType and QUEST_DISPLAY_TYPE_TO_CATEGORY[displayType] then
-        return QUEST_DISPLAY_TYPE_TO_CATEGORY[displayType]
+    -- TEMP SHIM (QMODEL_003): use QuestList for category resolution.
+    local questList = GetQuestListModule()
+    if questList and questList.GetCategoryKey then
+        return questList.GetCategoryKey(questType, displayType, isRepeatable, isDaily)
     end
-
-    if isRepeatable or isDaily then
-        return "REPEATABLE"
-    end
-
-    if questType and QUEST_TYPE_TO_CATEGORY[questType] then
-        return QUEST_TYPE_TO_CATEGORY[questType]
-    end
-
     return DEFAULT_GROUP_KEY
 end
 
@@ -1254,67 +1001,12 @@ local function ResolveQuestCategoryInternal(journalQuestIndex, questType, displa
     return DetermineLegacyCategory(questType, displayType, isRepeatable, isDaily)
 end
 
-ResolveQuestCategory = ResolveQuestCategoryInternal
-
 function NormalizeQuestCategoryData(quest)
-    if type(quest) ~= "table" then
-        return quest
+    -- TEMP SHIM (QMODEL_003): delegate category normalization to QuestList.
+    local questList = GetQuestListModule()
+    if questList and questList.NormalizeQuestCategoryData then
+        return questList.NormalizeQuestCategoryData(quest)
     end
-
-    quest.flags = quest.flags or {}
-
-    if type(quest.category) ~= "table" then
-        local fallback = DetermineLegacyCategory(quest.questType, quest.displayType, quest.flags.isRepeatable, quest.flags.isDaily)
-        quest.category = CloneCategoryEntry(fallback)
-    end
-
-    local category = quest.category
-
-    if not category.groupKey or not category.groupName or category.groupOrder == nil then
-        local groupKey = category.groupKey
-            or CATEGORY_TYPE_TO_GROUP[category.type]
-            or (quest.meta and quest.meta.groupKey)
-            or CATEGORY_TYPE_TO_GROUP[quest.meta and quest.meta.categoryType]
-            or (category.parent and category.parent.key)
-            or GetCategoryKey(quest.questType, quest.displayType, quest.flags.isRepeatable, quest.flags.isDaily)
-            or category.key
-
-        local groupEntry = GetGroupEntry(groupKey)
-        category.groupKey = groupEntry.key
-        category.groupName = groupEntry.name
-        category.groupOrder = groupEntry.order
-        category.groupType = groupEntry.type
-    end
-
-    category.parent = GetCategoryParentCopy(category)
-
-    if not category.order then
-        local orderBase = category.groupOrder or 0
-        category.order = orderBase * 1000 + (category.rawOrder or 0)
-    end
-
-    quest.category = category
-
-    quest.meta = quest.meta or {}
-    local meta = quest.meta
-    meta.questType = meta.questType or quest.questType
-    meta.displayType = meta.displayType or quest.displayType
-    meta.categoryType = meta.categoryType or category.type
-    meta.categoryKey = meta.categoryKey or category.key
-    meta.groupKey = meta.groupKey or category.groupKey
-    meta.groupName = meta.groupName or category.groupName
-    meta.parentKey = meta.parentKey or (category.parent and category.parent.key)
-    meta.parentName = meta.parentName or (category.parent and category.parent.name)
-    meta.zoneName = meta.zoneName or quest.zoneName
-
-    if meta.isRepeatable == nil then
-        meta.isRepeatable = quest.flags.isRepeatable
-    end
-
-    if meta.isDaily == nil then
-        meta.isDaily = quest.flags.isDaily
-    end
-
     return quest
 end
 
@@ -1541,109 +1233,52 @@ local function NotifySubscribers(self)
 end
 
 GetCategoryParentCopy = function(category)
-    if not category then
-        return nil
+    -- TEMP SHIM (QMODEL_003): forward to QuestList helper.
+    local questList = GetQuestListModule()
+    if questList and questList.GetCategoryParentCopy then
+        return questList.GetCategoryParentCopy(category)
     end
-
-    if category.parent then
-        return CopyParentInfo(category.parent)
-    end
-
-    if category.groupKey or category.groupName then
-        return CopyParentInfo({
-            key = category.groupKey,
-            name = category.groupName,
-            order = category.groupOrder,
-            type = category.groupType,
-        })
-    end
-
     return nil
 end
 
 local function BuildCategoriesIndex(quests)
-    local categoriesByKey = {}
-    local orderedKeys = {}
-
-    for index = 1, #quests do
-        local quest = quests[index]
-        local category = quest.category or {}
-        local key = category.key or string.format("unknown:%d", index)
-        local categoryEntry = categoriesByKey[key]
-        if not categoryEntry then
-            categoryEntry = {
-                key = key,
-                name = category.name or "",
-                order = category.order or 0,
-                type = category.type,
-                groupKey = category.groupKey,
-                groupName = category.groupName,
-                groupOrder = category.groupOrder,
-                groupType = category.groupType,
-                parent = GetCategoryParentCopy(category),
-                quests = {},
-            }
-            categoriesByKey[key] = categoryEntry
-            orderedKeys[#orderedKeys + 1] = key
-        end
-        categoryEntry.quests[#categoryEntry.quests + 1] = quest
-    end
-
-    table.sort(orderedKeys, function(left, right)
-        local leftOrder = categoriesByKey[left].order or 0
-        local rightOrder = categoriesByKey[right].order or 0
-        if leftOrder ~= rightOrder then
-            return leftOrder < rightOrder
-        end
-        return left < right
-    end)
-
-    local orderedCategories = {}
-    for index = 1, #orderedKeys do
-        local key = orderedKeys[index]
-        orderedCategories[index] = categoriesByKey[key]
+    -- TEMP SHIM (QMODEL_003): delegate to QuestList.
+    local questList = GetQuestListModule()
+    if questList and questList.BuildCategoriesIndex then
+        return questList.BuildCategoriesIndex(quests or {})
     end
 
     return {
-        byKey = categoriesByKey,
-        ordered = orderedCategories,
+        byKey = {},
+        ordered = {},
     }
 end
 
 CollectQuestEntries = function()
-    local quests = {}
-
-    if not GetNumJournalQuests then
-        return quests
+    -- TEMP SHIM (QMODEL_003): defer to QuestList retrieval.
+    local questList = GetQuestListModule()
+    if questList and questList.RefreshFromGame then
+        return questList:RefreshFromGame()
     end
-
-    local total = GetNumJournalQuests() or 0
-    local questCount = math.min(total, QUEST_LOG_LIMIT)
-    for journalIndex = 1, questCount do
-        local questEntry = BuildQuestEntry(journalIndex)
-        if questEntry then
-            quests[#quests + 1] = questEntry
-        end
-    end
-
-    table.sort(quests, CompareQuestEntries)
-    return quests
+    return {}
 end
 
 BuildSnapshotFromQuests = function(quests)
-    if type(quests) ~= "table" then
-        quests = {}
+    -- TEMP SHIM (QMODEL_003): use QuestList snapshot builder.
+    local questList = GetQuestListModule()
+    if questList and questList.BuildSnapshotFromQuests then
+        return questList:BuildSnapshotFromQuests(quests)
     end
 
+    quests = type(quests) == "table" and quests or {}
     for index = 1, #quests do
         quests[index] = NormalizeQuestCategoryData(quests[index])
     end
-
     local snapshot = {
-        updatedAtMs = GetTimestampMs(),
+        updatedAtMs = nil,
         quests = quests,
         categories = BuildCategoriesIndex(quests),
-        signature = BuildOverallSignature(quests),
+        signature = nil,
         questById = {},
         questByJournalIndex = {},
     }
