@@ -9,6 +9,8 @@ local MODULE_NAME = addonName .. "QuestTracker"
 local EVENT_NAMESPACE = MODULE_NAME .. "_Event"
 
 local Utils = Nvk3UT and Nvk3UT.Utils
+local QuestState = Nvk3UT and Nvk3UT.QuestState
+local QuestSelection = Nvk3UT and Nvk3UT.QuestSelection
 local FormatCategoryHeaderText =
     (Utils and Utils.FormatCategoryHeaderText)
     or function(baseText, count, showCounts)
@@ -109,8 +111,6 @@ local state = {
     isRebuildInProgress = false,
     questModelSubscription = nil,
 }
-
-local STATE_VERSION = 1
 
 local PRIORITY = {
     manual = 5,
@@ -252,6 +252,10 @@ local function ApplyBaseColor(control, r, g, b, a)
 end
 
 local function GetCurrentTimeSeconds()
+    if QuestState and QuestState.GetCurrentTimeSeconds then
+        return QuestState.GetCurrentTimeSeconds()
+    end
+
     if GetFrameTimeSeconds then
         local ok, now = pcall(GetFrameTimeSeconds)
         if ok and type(now) == "number" then
@@ -274,6 +278,10 @@ local function GetCurrentTimeSeconds()
 end
 
 local function NormalizeCategoryKey(categoryKey)
+    if QuestState and QuestState.NormalizeCategoryKey then
+        return QuestState.NormalizeCategoryKey(categoryKey)
+    end
+
     if categoryKey == nil then
         return nil
     end
@@ -290,6 +298,10 @@ local function NormalizeCategoryKey(categoryKey)
 end
 
 local function NormalizeQuestKey(journalIndex)
+    if QuestState and QuestState.NormalizeQuestKey then
+        return QuestState.NormalizeQuestKey(journalIndex)
+    end
+
     if journalIndex == nil then
         return nil
     end
@@ -523,7 +535,16 @@ local function LogStateWrite(entity, key, expanded, source, priority)
     end
 end
 
+-- TEMP SHIM (QMODEL_002): TODO remove on SWITCH token; forwards to QuestSelection for active-state ensures.
 local function EnsureActiveSavedState()
+    if QuestSelection and QuestSelection.EnsureActiveSavedState then
+        return QuestSelection.EnsureActiveSavedState()
+    end
+
+    if QuestState and QuestState.EnsureActiveSavedState then
+        return QuestState.EnsureActiveSavedState()
+    end
+
     if not state.saved then
         return nil
     end
@@ -552,18 +573,23 @@ local function EnsureActiveSavedState()
 end
 
 local function SyncSelectedQuestFromSaved()
-    if not state.saved then
-        state.selectedQuestKey = nil
-        return nil
+    local questKey
+
+    if QuestSelection and QuestSelection.GetActiveQuestKey then
+        questKey = QuestSelection.GetActiveQuestKey()
+    elseif QuestState and QuestState.GetSelectedQuestId then
+        questKey = QuestState.GetSelectedQuestId()
+    elseif state.saved then
+        local active = EnsureActiveSavedState()
+        questKey = active and active.questKey or nil
     end
 
-    local active = EnsureActiveSavedState()
-    local questKey = active and active.questKey or nil
     if questKey ~= nil then
         questKey = NormalizeQuestKey(questKey)
     end
 
     state.selectedQuestKey = questKey
+
     return questKey
 end
 
@@ -582,7 +608,19 @@ local function ApplyActiveQuestFromSaved()
     return journalIndex
 end
 
+-- TEMP SHIM (QMODEL_001): TODO remove on SWITCH token; forwards category expansion state to Nvk3UT.QuestState.
 local function WriteCategoryState(categoryKey, expanded, source, options)
+    if QuestState and QuestState.SetCategoryExpanded then
+        local changed, normalizedKey, newExpanded, priority, resolvedSource =
+            QuestState.SetCategoryExpanded(categoryKey, expanded, source, options)
+        if not changed then
+            return false
+        end
+
+        LogStateWrite("cat", normalizedKey, newExpanded, resolvedSource or source or "auto", priority)
+        return true
+    end
+
     if not state.saved then
         return false
     end
@@ -629,7 +667,19 @@ local function WriteCategoryState(categoryKey, expanded, source, options)
     return true
 end
 
+-- TEMP SHIM (QMODEL_001): TODO remove on SWITCH token; forwards quest expansion state to Nvk3UT.QuestState.
 local function WriteQuestState(questKey, expanded, source, options)
+    if QuestState and QuestState.SetQuestExpanded then
+        local changed, normalizedKey, newExpanded, priority, resolvedSource =
+            QuestState.SetQuestExpanded(questKey, expanded, source, options)
+        if not changed then
+            return false
+        end
+
+        LogStateWrite("quest", normalizedKey, newExpanded, resolvedSource or source or "auto", priority)
+        return true
+    end
+
     if not state.saved then
         return false
     end
@@ -676,7 +726,32 @@ local function WriteQuestState(questKey, expanded, source, options)
     return true
 end
 
+-- TEMP SHIM (QMODEL_002): TODO remove on SWITCH token; forwards active quest state to QuestSelection.
 local function WriteActiveQuest(questKey, source, options)
+    if QuestSelection and QuestSelection.SetActive then
+        local changed, normalizedKey, priority, resolvedSource =
+            QuestSelection.SetActive(questKey, source, options)
+        if not changed then
+            return false
+        end
+
+        LogStateWrite("active", normalizedKey, nil, resolvedSource or source or "auto", priority)
+        ApplyActiveQuestFromSaved()
+        return true
+    end
+
+    if QuestState and QuestState.SetSelectedQuestId then
+        local changed, normalizedKey, priority, resolvedSource =
+            QuestState.SetSelectedQuestId(questKey, source, options)
+        if not changed then
+            return false
+        end
+
+        LogStateWrite("active", normalizedKey, nil, resolvedSource or source or "auto", priority)
+        ApplyActiveQuestFromSaved()
+        return true
+    end
+
     if not state.saved then
         return false
     end
@@ -785,77 +860,6 @@ local function PrimeInitialSavedState()
             primedQuests
         ))
     end
-end
-
-local function EnsureSavedDefaults(saved)
-    saved.defaults = saved.defaults or {}
-    if saved.defaults.categoryExpanded == nil then
-        saved.defaults.categoryExpanded = true
-    else
-        saved.defaults.categoryExpanded = saved.defaults.categoryExpanded and true or false
-    end
-    if saved.defaults.questExpanded == nil then
-        saved.defaults.questExpanded = true
-    else
-        saved.defaults.questExpanded = saved.defaults.questExpanded and true or false
-    end
-end
-
-local function MigrateLegacySavedState(saved)
-    if type(saved) ~= "table" then
-        return
-    end
-
-    saved.cat = saved.cat or {}
-    saved.quest = saved.quest or {}
-
-    local legacyCategories = saved.catExpanded
-    if type(legacyCategories) == "table" then
-        for key, value in pairs(legacyCategories) do
-            local normalized = NormalizeCategoryKey(key)
-            if normalized then
-                saved.cat[normalized] = {
-                    expanded = value and true or false,
-                    source = "init",
-                    ts = 0,
-                }
-            end
-        end
-    end
-
-    saved.catExpanded = nil
-
-    local legacyQuests = saved.questExpanded
-    if type(legacyQuests) == "table" then
-        for key, value in pairs(legacyQuests) do
-            local normalized = NormalizeQuestKey(key)
-            if normalized then
-                saved.quest[normalized] = {
-                    expanded = value and true or false,
-                    source = "init",
-                    ts = 0,
-                }
-            end
-        end
-    end
-
-    saved.questExpanded = nil
-
-    if type(saved.active) ~= "table" then
-        saved.active = {
-            questKey = nil,
-            source = "init",
-            ts = 0,
-        }
-    else
-        if saved.active.questKey ~= nil then
-            saved.active.questKey = NormalizeQuestKey(saved.active.questKey)
-        end
-        saved.active.source = saved.active.source or "init"
-        saved.active.ts = saved.active.ts or 0
-    end
-
-    EnsureSavedDefaults(saved)
 end
 
 local function ApplyLabelDefaults(label)
@@ -2567,21 +2571,22 @@ end
 
 local function EnsureSavedVars()
     Nvk3UT.sv = Nvk3UT.sv or {}
-    local saved = Nvk3UT.sv.QuestTracker or {}
-    Nvk3UT.sv.QuestTracker = saved
 
-    if type(saved.stateVersion) ~= "number" or saved.stateVersion < STATE_VERSION then
-        MigrateLegacySavedState(saved)
-        saved.stateVersion = STATE_VERSION
+    if QuestState and QuestState.Bind then
+        local saved = QuestState.Bind(Nvk3UT.sv)
+        state.saved = saved
+        if QuestSelection and QuestSelection.Bind then
+            QuestSelection.Bind(Nvk3UT.sv, saved)
+        end
+    else
+        local saved = Nvk3UT.sv.QuestTracker or {}
+        Nvk3UT.sv.QuestTracker = saved
+        state.saved = saved
+        EnsureActiveSavedState()
+        if QuestSelection and QuestSelection.Bind then
+            QuestSelection.Bind(Nvk3UT.sv, saved)
+        end
     end
-
-    saved.cat = saved.cat or {}
-    saved.quest = saved.quest or {}
-
-    state.saved = saved
-    EnsureActiveSavedState()
-
-    EnsureSavedDefaults(saved)
 
     ApplyActiveQuestFromSaved()
 end
@@ -2761,7 +2766,12 @@ local function UpdateQuestIconSlot(control)
 end
 
 local function GetDefaultCategoryExpanded()
-    if state.saved and state.saved.defaults and state.saved.defaults.categoryExpanded ~= nil then
+    if QuestState and QuestState.GetCategoryDefaultExpanded then
+        local savedDefault = QuestState.GetCategoryDefaultExpanded()
+        if savedDefault ~= nil then
+            return savedDefault and true or false
+        end
+    elseif state.saved and state.saved.defaults and state.saved.defaults.categoryExpanded ~= nil then
         return state.saved.defaults.categoryExpanded and true or false
     end
 
@@ -2769,7 +2779,12 @@ local function GetDefaultCategoryExpanded()
 end
 
 local function GetDefaultQuestExpanded()
-    if state.saved and state.saved.defaults and state.saved.defaults.questExpanded ~= nil then
+    if QuestState and QuestState.GetQuestDefaultExpanded then
+        local savedDefault = QuestState.GetQuestDefaultExpanded()
+        if savedDefault ~= nil then
+            return savedDefault and true or false
+        end
+    elseif state.saved and state.saved.defaults and state.saved.defaults.questExpanded ~= nil then
         return state.saved.defaults.questExpanded and true or false
     end
 
@@ -2782,7 +2797,12 @@ local function IsCategoryExpanded(categoryKey)
         return GetDefaultCategoryExpanded()
     end
 
-    if state.saved and state.saved.cat then
+    if QuestState and QuestState.IsCategoryExpanded then
+        local stored = QuestState.IsCategoryExpanded(key)
+        if stored ~= nil then
+            return stored and true or false
+        end
+    elseif state.saved and state.saved.cat then
         local entry = state.saved.cat[key]
         if entry and entry.expanded ~= nil then
             return entry.expanded and true or false
@@ -2798,7 +2818,12 @@ IsQuestExpanded = function(journalIndex)
         return GetDefaultQuestExpanded()
     end
 
-    if state.saved and state.saved.quest then
+    if QuestState and QuestState.IsQuestExpanded then
+        local stored = QuestState.IsQuestExpanded(key)
+        if stored ~= nil then
+            return stored and true or false
+        end
+    elseif state.saved and state.saved.quest then
         local entry = state.saved.quest[key]
         if entry and entry.expanded ~= nil then
             return entry.expanded and true or false
