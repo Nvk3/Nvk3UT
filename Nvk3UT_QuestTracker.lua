@@ -2218,6 +2218,24 @@ HandleQuestRowClick = function(journalIndex)
 
     ApplyImmediateTrackedQuest(questId, "click-select")
 
+    local questSelectionModule = GetQuestSelectionModule()
+    if questSelectionModule and type(questSelectionModule.OnClickSelect) == "function" then
+        local timestampMs = GetTimeMilliseconds()
+        local handled = questSelectionModule.OnClickSelect(questId, timestampMs)
+        if IsDebugLoggingEnabled() then
+            DebugLog(string.format(
+                "CLICK_SELECT_SIGNAL questId=%s handled=%s",
+                tostring(questId),
+                tostring(handled)
+            ))
+        end
+    end
+
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and type(runtime.QueueDirty) == "function" then
+        runtime:QueueDirty("quest")
+    end
+
     if IsDebugLoggingEnabled() then
         DebugLog(string.format("SET_ACTIVE questId=%s prev=%s", tostring(questId), previousQuestString))
     end
@@ -2648,13 +2666,27 @@ local function UpdateQuestIconSlot(control)
     end
 
     local questData = control.data and control.data.quest
+    local questId = control.data and control.data.questId
+    if questId == nil and questData then
+        questId = questData.journalIndex
+    end
     local isSelected = false
-    if questData then
-        local questKey = NormalizeQuestKey(questData.journalIndex)
-        if questKey and state.selectedQuestKey then
-            isSelected = questKey == state.selectedQuestKey
-        elseif state.trackedQuestIndex then
-            isSelected = questData.journalIndex == state.trackedQuestIndex
+    if questId then
+        local questSelectionModule = GetQuestSelectionModule()
+        if questSelectionModule and type(questSelectionModule.IsSelected) == "function" then
+            isSelected = questSelectionModule.IsSelected(questId)
+        end
+
+        if not isSelected then
+            local questKey = NormalizeQuestKey(questId)
+            if questKey and state.selectedQuestKey then
+                isSelected = questKey == state.selectedQuestKey
+            elseif state.trackedQuestIndex then
+                local numericId = tonumber(questId)
+                if numericId and numericId > 0 then
+                    isSelected = numericId == state.trackedQuestIndex
+                end
+            end
         end
     end
 
@@ -2996,11 +3028,12 @@ local function AcquireQuestControl()
                     return
                 end
                 local parent = toggleCtrl:GetParent()
-                local questData = parent and parent.data and parent.data.quest
-                if not questData then
+                local rowData = parent and parent.data
+                local questId = rowData and (rowData.questId or (rowData.quest and rowData.quest.journalIndex))
+                if not questId then
                     return
                 end
-                local journalIndex = questData.journalIndex
+                local journalIndex = tonumber(questId) or questId
                 ToggleQuestExpansion(journalIndex, {
                     trigger = "click",
                     source = "QuestTracker:OnToggleClick",
@@ -3021,11 +3054,12 @@ local function AcquireQuestControl()
                 return
             end
             if button == MOUSE_BUTTON_INDEX_LEFT then
-                local questData = ctrl.data and ctrl.data.quest
-                if not questData then
+                local rowData = ctrl.data
+                local questId = rowData and (rowData.questId or (rowData.quest and rowData.quest.journalIndex))
+                if not questId then
                     return
                 end
-                local journalIndex = questData.journalIndex
+                local journalIndex = tonumber(questId) or questId
                 local toggleMouseOver = false
                 if ctrl.iconSlot then
                     local toggleIsMouseOver = ctrl.iconSlot.IsMouseOver
@@ -3192,7 +3226,10 @@ end
 
 local function LayoutQuest(quest)
     local control = AcquireQuestControl()
-    control.data = { quest = quest }
+    control.data = {
+        quest = quest,
+        questId = quest and quest.journalIndex or nil,
+    }
     control.label:SetText(quest.name or "")
 
     local colorRole = DetermineQuestColorRole(quest)
