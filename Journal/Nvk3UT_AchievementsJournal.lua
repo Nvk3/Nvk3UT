@@ -8,12 +8,14 @@ local Utils = Nvk3UT and Nvk3UT.Utils
 local FavoritesCategory = Nvk3UT and Nvk3UT.FavoritesCategory
 local RecentSummary = Nvk3UT and Nvk3UT.RecentSummary
 local RecentCategory = Nvk3UT and Nvk3UT.RecentCategory
+local TodoCategory = Nvk3UT and Nvk3UT.TodoCategory
 
 local state = {
     parent = nil,
     favorites = nil,
     summary = nil,
     recent = nil,
+    todo = nil,
 }
 
 local function isDebugEnabled()
@@ -100,7 +102,15 @@ function Journal:Init(parentOrSceneFragment)
             state.recent = parentOrSceneFragment
         end
     end
-    return state.favorites or state.summary or state.recent or parentOrSceneFragment
+    if TodoCategory and type(TodoCategory.Init) == "function" then
+        local ok, result = pcall(TodoCategory.Init, TodoCategory, parentOrSceneFragment)
+        if ok then
+            state.todo = result or parentOrSceneFragment
+        else
+            state.todo = parentOrSceneFragment
+        end
+    end
+    return state.favorites or state.summary or state.recent or state.todo or parentOrSceneFragment
 end
 
 ---Refresh the journal view.
@@ -122,6 +132,12 @@ function Journal:Refresh()
         local ok = pcall(RecentCategory.Refresh, RecentCategory)
         if not ok and Utils and Utils.d and isDebugEnabled() then
             Utils.d("[Ach][Journal] RecentCategory.Refresh failed")
+        end
+    end
+    if TodoCategory and type(TodoCategory.Refresh) == "function" then
+        local ok = pcall(TodoCategory.Refresh, TodoCategory)
+        if not ok and Utils and Utils.d and isDebugEnabled() then
+            Utils.d("[Ach][Journal] TodoCategory.Refresh failed")
         end
     end
     return state.parent
