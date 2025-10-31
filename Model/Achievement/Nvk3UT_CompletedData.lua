@@ -23,6 +23,14 @@ local function push(list, value)
     list[#list + 1] = value
 end
 
+local function asUnix(ts)
+    local n = tonumber(ts)
+    if n and n > 0 then
+        return math.floor(n)
+    end
+    return nil
+end
+
 local function isDebugEnabled()
     local root = Nvk3UT and Nvk3UT.sv
     return root and root.debug == true
@@ -127,6 +135,8 @@ local function collectCompletionMeta(achievementId)
         end
     end
 
+    timestamp = asUnix(timestamp) or 0
+
     local points
     if type(infoPoints) == "number" then
         points = infoPoints
@@ -138,11 +148,12 @@ local function collectCompletionMeta(achievementId)
 end
 
 local function addIdToMonth(achievementId, timestamp)
-    if not (achievementId and timestamp and timestamp ~= 0) then
+    local t = asUnix(timestamp)
+    if not (achievementId and t) then
         return
     end
 
-    local dateTable = os.date("*t", timestamp)
+    local dateTable = os.date("*t", t)
     if not dateTable then
         return
     end
@@ -192,6 +203,8 @@ local function fetchCompletionForScan(achievementId)
             timestamp = value
         end
     end
+
+    timestamp = asUnix(timestamp) or 0
 
     return isComplete == true, timestamp
 end
