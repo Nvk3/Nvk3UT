@@ -10,6 +10,7 @@ local EVENT_NAMESPACE = MODULE_NAME .. "_Event"
 
 local Utils = Nvk3UT and Nvk3UT.Utils
 local QuestState = Nvk3UT and Nvk3UT.QuestState
+local QuestSelection = Nvk3UT and Nvk3UT.QuestSelection
 local FormatCategoryHeaderText =
     (Utils and Utils.FormatCategoryHeaderText)
     or function(baseText, count, showCounts)
@@ -83,6 +84,97 @@ local function GetQuestStateModule()
 
     QuestState = Nvk3UT and Nvk3UT.QuestState
     return QuestState
+end
+
+local function GetQuestSelectionModule()
+    if QuestSelection and QuestSelection.Init then
+        return QuestSelection
+    end
+
+    QuestSelection = Nvk3UT and Nvk3UT.QuestSelection
+    return QuestSelection
+end
+
+local function GetTimeMilliseconds()
+    if type(GetFrameTimeMilliseconds) == "function" then
+        local ok, value = pcall(GetFrameTimeMilliseconds)
+        if ok and type(value) == "number" then
+            return value
+        end
+    end
+
+    if type(GetGameTimeMilliseconds) == "function" then
+        local ok, value = pcall(GetGameTimeMilliseconds)
+        if ok and type(value) == "number" then
+            return value
+        end
+    end
+
+    if type(GetSecondsSinceMidnight) == "function" then
+        local ok, value = pcall(GetSecondsSinceMidnight)
+        if ok and type(value) == "number" then
+            return math.floor(value * 1000 + 0.5)
+        end
+    end
+
+    return math.floor((os.time() or 0) * 1000)
+end
+
+local function ApplyQuestSelectionFromSource(journalIndex, stateSource)
+    local module = GetQuestSelectionModule()
+    if not module then
+        return false
+    end
+
+    local timestamp = GetTimeMilliseconds()
+    local sourceTag = stateSource or "auto"
+
+    if sourceTag == "click-select" or sourceTag == "manual" then
+        if module.OnClickSelect then
+            return module.OnClickSelect(journalIndex, timestamp)
+        end
+    elseif sourceTag == "external-select" then
+        if module.OnJournalSelect then
+            return module.OnJournalSelect(journalIndex, timestamp)
+        end
+    elseif sourceTag == "auto" or sourceTag == "init" then
+        if module.OnGameAutoTrack then
+            return module.OnGameAutoTrack(journalIndex, timestamp)
+        end
+    else
+        if module.OnApiSelect then
+            return module.OnApiSelect(journalIndex, timestamp)
+        end
+    end
+
+    if module.SetSelectedQuestId then
+        return module.SetSelectedQuestId(journalIndex, sourceTag, timestamp)
+    end
+
+    return false
+end
+
+local function ClearQuestSelection(reason)
+    local module = GetQuestSelectionModule()
+    if not module then
+        return false
+    end
+
+    local timestamp = GetTimeMilliseconds()
+    if module.OnDeselection then
+        return module.OnDeselection(reason or "deselect", timestamp)
+    end
+
+    local source = reason or "deselect"
+    local changed = false
+    if module.SetSelectedQuestId then
+        changed = module.SetSelectedQuestId(nil, source, timestamp) or changed
+    end
+    if module.SetFocusedQuestId then
+        module.SetFocusedQuestId(nil, source, timestamp)
+    end
+
+    return changed
 end
 
 local state = {
@@ -489,30 +581,36 @@ local function ResolveStateSource(context, fallback)
 end
 
 local function EnsureActiveSavedState()
-    local module = GetQuestStateModule()
-    if not (module and module.GetSelectedQuestInfo) then
+    local module = GetQuestSelectionModule()
+    if not (module and module.GetLastUpdate) then
         return nil
     end
 
-    local active = module.GetSelectedQuestInfo()
-    if active and active.questKey ~= nil then
-        active.questKey = NormalizeQuestKey(active.questKey)
+    local lastUpdate = module.GetLastUpdate()
+    if type(lastUpdate) ~= "table" then
+        return nil
     end
 
-    return active
+    local questKey = NormalizeQuestKey(lastUpdate.selectedId)
+    local timestampMs = tonumber(lastUpdate.timestampMs) or 0
+
+    return {
+        questKey = questKey,
+        source = lastUpdate.source or "",
+        ts = timestampMs / 1000,
+        timestampMs = timestampMs,
+    }
 end
 
 local function SyncSelectedQuestFromSaved()
-    local module = GetQuestStateModule()
+    local module = GetQuestSelectionModule()
     if not (module and module.GetSelectedQuestId) then
         state.selectedQuestKey = nil
         return nil
     end
 
-    local questKey = module.GetSelectedQuestId()
-    if questKey ~= nil then
-        questKey = NormalizeQuestKey(questKey)
-    end
+    local questId = module.GetSelectedQuestId()
+    local questKey = questId and NormalizeQuestKey(questId) or nil
 
     state.selectedQuestKey = questKey
     return questKey
@@ -554,6 +652,8 @@ local function PrimeInitialSavedState()
     if not questState then
         return
     end
+
+    local questSelection = GetQuestSelectionModule()
 
     local primedCategories = 0
     local primedQuests = 0
@@ -604,13 +704,11 @@ local function PrimeInitialSavedState()
 
     local active = EnsureActiveSavedState()
     local activeTs = (active and active.ts) or 0
-    if activeTs < initTimestamp then
-        questState.SetSelectedQuestId(active and active.questKey or nil, {
-            source = "init",
-            timestamp = initTimestamp,
-            force = true,
-            allowTimestampRegression = true,
-        })
+    if activeTs < initTimestamp and questSelection and questSelection.SetSelectedQuestId then
+        local initTimestampMs = math.floor(initTimestamp * 1000 + 0.5)
+        local questId = active and active.questKey or nil
+        local sourceTag = (questSelection.SOURCES and questSelection.SOURCES.GAME) or "game"
+        questSelection.SetSelectedQuestId(questId, sourceTag, initTimestampMs)
     end
 
     if IsDebugLoggingEnabled() and (primedCategories > 0 or primedQuests > 0) then
@@ -1445,6 +1543,9 @@ local function DoesJournalQuestExist(journalIndex)
 end
 
 local function GetFocusedQuestIndex()
+    local questSelection = GetQuestSelectionModule()
+    local timestamp = GetTimeMilliseconds()
+
     if QUEST_JOURNAL_MANAGER and QUEST_JOURNAL_MANAGER.GetFocusedQuestIndex then
         local ok, focused = SafeCall(function(manager)
             return manager:GetFocusedQuestIndex()
@@ -1452,18 +1553,26 @@ local function GetFocusedQuestIndex()
         if ok then
             local numeric = tonumber(focused)
             if numeric and numeric > 0 then
-                local questState = GetQuestStateModule()
-                if questState and questState.SetFocusedQuestId then
-                    questState.SetFocusedQuestId(numeric)
+                if questSelection and questSelection.SetFocusedQuestId then
+                    local sourceTag = (questSelection.SOURCES and questSelection.SOURCES.GAME) or "game"
+                    questSelection.SetFocusedQuestId(numeric, sourceTag, timestamp)
                 end
                 return numeric
             end
         end
     end
 
-    local questState = GetQuestStateModule()
-    if questState and questState.SetFocusedQuestId then
-        questState.SetFocusedQuestId(nil)
+    if questSelection and questSelection.GetFocusedQuestId then
+        local saved = questSelection.GetFocusedQuestId()
+        local numeric = tonumber(saved)
+        if numeric and numeric > 0 then
+            return numeric
+        end
+    end
+
+    if questSelection and questSelection.SetFocusedQuestId then
+        local sourceTag = (questSelection.SOURCES and questSelection.SOURCES.GAME) or "game"
+        questSelection.SetFocusedQuestId(nil, sourceTag, timestamp)
     end
 
     return nil
@@ -1523,17 +1632,7 @@ local function UpdateTrackedQuestCache(forcedIndex, context)
     if trackedIndex then
         state.pendingDeselection = false
         local sourceTag = ResolveStateSource(context, "auto")
-        local writeOptions
-        if context and context.isExternal then
-            writeOptions = { force = true }
-        end
-
-        local questState = GetQuestStateModule()
-        if questState and questState.SetSelectedQuestId then
-            writeOptions = writeOptions or {}
-            writeOptions.source = sourceTag
-            questState.SetSelectedQuestId(trackedIndex, writeOptions)
-        end
+        ApplyQuestSelectionFromSource(trackedIndex, sourceTag)
 
         ApplyActiveQuestFromSaved()
     else
@@ -1620,12 +1719,7 @@ local function ApplyImmediateTrackedQuest(journalIndex, stateSource)
     state.lastTrackedBeforeSync = state.trackedQuestIndex
 
     local sourceTag = stateSource or "auto"
-    local questState = GetQuestStateModule()
-    local changed = false
-
-    if questState and questState.SetSelectedQuestId then
-        changed = questState.SetSelectedQuestId(journalIndex, { source = sourceTag })
-    end
+    local changed = ApplyQuestSelectionFromSource(journalIndex, sourceTag)
 
     ApplyActiveQuestFromSaved()
 
@@ -1974,10 +2068,7 @@ local function SyncTrackedQuestState(forcedIndex, forceExpand, context)
 
     if state.pendingDeselection and not state.trackedQuestIndex then
         local clearSource = ResolveStateSource(context, "auto")
-        local questState = GetQuestStateModule()
-        if questState and questState.SetSelectedQuestId then
-            questState.SetSelectedQuestId(nil, { source = clearSource })
-        end
+        ClearQuestSelection(clearSource)
         ApplyActiveQuestFromSaved()
         state.pendingDeselection = false
     end
@@ -2396,6 +2487,11 @@ local function EnsureSavedVars()
     local questState = GetQuestStateModule()
     if questState and questState.Init then
         questState:Init(svRoot)
+    end
+
+    local questSelection = GetQuestSelectionModule()
+    if questSelection and questSelection.Init then
+        questSelection:Init(svRoot)
     end
 
     if type(saved.stateVersion) ~= "number" or saved.stateVersion < STATE_VERSION then
