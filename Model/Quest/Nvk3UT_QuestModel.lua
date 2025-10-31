@@ -61,7 +61,7 @@ local function debugLog(fmt, ...)
     ADDON:Debug(fmt, ...)
 end
 
-local function stripProgressDecorations(text)
+local function StripProgressDecorations(text)
     if type(text) ~= "string" then
         return nil
     end
@@ -815,7 +815,23 @@ local function determineLegacyCategory(questType, displayType, isRepeatable, isD
     return createLeafEntry(groupEntry, groupEntry.name, 0, groupEntry.type, groupEntry.key)
 end
 
-local function resolveQuestCategory(journalIndex, questType, displayType, isRepeatable, isDaily)
+local function resolveQuestCategory(journalIndex, questType, displayType, isRepeatable, isDaily, listEntry)
+    if type(listEntry) == "table" then
+        local index = listEntry.categoryIndex
+        local name = listEntry.categoryName
+        local key = listEntry.categoryKey or (index and ("cat:" .. tostring(index)))
+        if key or name or index then
+            local category = {
+                key = key or "cat:9999",
+                name = name or "MISCELLANEOUS",
+                order = index or 9999,
+                rawOrder = index,
+                index = index,
+            }
+            return category
+        end
+    end
+
     local cache = acquireBaseCategoryCache()
     if cache and cache.byJournalIndex then
         local entry = cache.byJournalIndex[journalIndex]
@@ -896,8 +912,8 @@ local function collectQuestObjectivesFromJournal(journalIndex, questIsComplete)
     for stepIndex = 1, numSteps do
         local stepText, visibility, _, trackerOverrideText =
             callQuestList("GetJournalQuestStepInfo", journalIndex, stepIndex)
-        local sanitizedOverride = stripProgressDecorations(trackerOverrideText)
-        local sanitizedStep = stripProgressDecorations(stepText)
+        local sanitizedOverride = StripProgressDecorations(trackerOverrideText)
+        local sanitizedStep = StripProgressDecorations(stepText)
         local fallbackStepCandidate = sanitizedOverride or sanitizedStep
 
         local stepIsVisible = true
@@ -1062,7 +1078,21 @@ local function buildQuestEntry(listEntry)
     local isComplete = callQuestList("IsJournalQuestComplete", journalIndex)
 
     local objectives, stepHeader, stepIndex = collectQuestObjectives(journalIndex, isComplete == true, listEntry)
-    local category = resolveQuestCategory(journalIndex, questType, displayType, isRepeatable, isDaily)
+    local category = resolveQuestCategory(journalIndex, questType, displayType, isRepeatable, isDaily, listEntry)
+
+    if category then
+        if listEntry.categoryKey and not category.key then
+            category.key = listEntry.categoryKey
+        end
+        if listEntry.categoryName and not category.name then
+            category.name = listEntry.categoryName
+        end
+        if listEntry.categoryIndex and (category.order == nil or category.order == 0) then
+            category.order = listEntry.categoryIndex
+            category.rawOrder = listEntry.categoryIndex
+            category.index = category.index or listEntry.categoryIndex
+        end
+    end
 
     local questEntry = {
         key = listEntry.key,

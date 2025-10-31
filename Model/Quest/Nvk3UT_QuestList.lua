@@ -11,6 +11,10 @@ M._byJournal = M._byJournal or {}
 M._version = M._version or 0
 M._dirty = M._dirty ~= false
 
+-- Journal categories (rebuilt on each refresh)
+M._catMap = M._catMap or nil   -- [journalIndex] = { index = ci, name = catName }
+M._catOrder = M._catOrder or nil -- array of { index, name } in basegame order
+
 local function debugLog(fmt, ...)
     if not (ADDON and ADDON.Debug) then
         return
@@ -35,17 +39,17 @@ local function callESO(func, ...)
 end
 
 local function makeQuestKey(journalIndex)
-    local questId = M:GetJournalQuestId(journalIndex)
+    local questId = callESO(GetJournalQuestId, journalIndex)
     if questId and questId ~= 0 then
         return string.format("qid:%s", tostring(questId))
     end
 
-    local uniqueId = M:GetJournalQuestUniqueId(journalIndex)
+    local uniqueId = callESO(GetJournalQuestUniqueId, journalIndex)
     if uniqueId then
         return string.format("uid:%s", tostring(uniqueId))
     end
 
-    local name = M:GetJournalQuestName(journalIndex)
+    local name = callESO(GetJournalQuestName, journalIndex)
     return table.concat({ "jnl", tostring(journalIndex), tostring(name or "?") }, ":")
 end
 
@@ -53,6 +57,199 @@ local function resetLists()
     M._list = {}
     M._byKey = {}
     M._byJournal = {}
+end
+
+-- Build journal categories in basegame order (robust on older clients)
+local function buildCategoryMap()
+    local map, order = {}, {}
+    local numCats = callESO(GetJournalNumQuestCategories) or 0
+
+    for ci = 1, numCats do
+        local catName, numInCat = callESO(GetJournalQuestCategoryInfo, ci)
+        if catName then
+            table.insert(order, { index = ci, name = catName })
+            if GetJournalQuestIndexFromCategory then
+                for qi = 1, (numInCat or 0) do
+                    local journalIndex = callESO(GetJournalQuestIndexFromCategory, ci, qi)
+                    if journalIndex then
+                        map[journalIndex] = { index = ci, name = catName }
+                    end
+                end
+            end
+        end
+    end
+
+    if next(map) == nil then
+        local total = callESO(GetNumJournalQuests) or 0
+        for j = 1, total do
+            local catIdx = callESO(GetJournalQuestCategoryType, j)
+            if catIdx then
+                local catName = callESO(GetJournalQuestCategoryInfo, catIdx)
+                map[j] = { index = catIdx, name = catName or "MISCELLANEOUS" }
+                local seen
+                for _, o in ipairs(order) do
+                    if o.index == catIdx then
+                        seen = true
+                        break
+                    end
+                end
+                if not seen then
+                    table.insert(order, { index = catIdx, name = catName or "MISCELLANEOUS" })
+                end
+            end
+        end
+        table.sort(order, function(a, b)
+            return (a.index or 9999) < (b.index or 9999)
+        end)
+    end
+
+    return map, order
+end
+
+local function stripProgressDecorations(text)
+    if type(text) ~= "string" then
+        return nil
+    end
+
+    local s = text
+    s = s:gsub("%s*%(%s*%d+%s*/%s*%d+%s*%)", "")
+    s = s:gsub("%s*%[%s*%d+%s*/%s*%d+%s*%]", "")
+    s = s:gsub("%s+", " ")
+    s = s:gsub("^%s+", "")
+    s = s:gsub("%s+$", "")
+    if s == "" then
+        return nil
+    end
+    return s
+end
+
+local function findActiveStepIndex(journalIndex)
+    local numSteps = callESO(GetJournalQuestNumSteps, journalIndex) or 0
+    if numSteps <= 0 then
+        return 1, nil
+    end
+
+    local hiddenConstant = rawget(_G, "QUEST_STEP_VISIBILITY_HIDDEN")
+
+    for stepIndex = 1, numSteps do
+        local stepText, visibility, _, trackerOverrideText =
+            callESO(GetJournalQuestStepInfo, journalIndex, stepIndex)
+        local numConditions = callESO(GetJournalQuestNumConditions, journalIndex, stepIndex) or 0
+        local stepVisible = true
+        if visibility ~= nil then
+            if hiddenConstant ~= nil then
+                stepVisible = (visibility ~= hiddenConstant)
+            else
+                stepVisible = (visibility ~= false)
+            end
+        end
+
+        if stepVisible and numConditions > 0 then
+            local title = stripProgressDecorations(trackerOverrideText) or stripProgressDecorations(stepText)
+            return stepIndex, title
+        end
+    end
+
+    local stepText, _, _, trackerOverrideText = callESO(GetJournalQuestStepInfo, journalIndex, 1)
+    return 1, (stripProgressDecorations(trackerOverrideText) or stripProgressDecorations(stepText))
+end
+
+local function buildObjectivesForStep(journalIndex, stepIndex)
+    local objectives = {}
+    local numConditions = callESO(GetJournalQuestNumConditions, journalIndex, stepIndex) or 0
+
+    for conditionIndex = 1, numConditions do
+        local text, cur, maxValue, isFail, isComplete =
+            callESO(GetJournalQuestConditionInfo, journalIndex, stepIndex, conditionIndex)
+        if text and text ~= "" then
+            objectives[#objectives + 1] = {
+                text = text,
+                cur = cur or 0,
+                max = maxValue or 0,
+                complete = isComplete == true,
+                failed = isFail == true,
+            }
+        end
+    end
+
+    return objectives
+end
+
+local function buildEntry(journalIndex)
+    local name = callESO(GetJournalQuestName, journalIndex)
+    if not name or name == "" then
+        return nil
+    end
+
+    local entry = {
+        journalIndex = journalIndex,
+        key = makeQuestKey(journalIndex),
+        name = name,
+    }
+
+    local questId = callESO(GetJournalQuestId, journalIndex)
+    if questId and questId ~= 0 then
+        entry.questId = questId
+    end
+
+    entry.uniqueId = callESO(GetJournalQuestUniqueId, journalIndex)
+
+    local zoneName, objectiveName, zoneIndex, poiIndex = callESO(GetJournalQuestLocationInfo, journalIndex)
+    entry.zoneName = zoneName
+    entry.objective = objectiveName
+    entry.zoneIndex = zoneIndex
+    entry.poiIndex = poiIndex
+
+    local questName, backgroundText, activeStepText, activeStepType, questLevel, questZoneName, questType, instanceDisplayType,
+        isRepeatable, isDaily, questDescription, displayType = callESO(GetJournalQuestInfo, journalIndex)
+
+    entry.backgroundText = backgroundText
+    entry.activeStepText = activeStepText
+    entry.activeStepType = activeStepType
+    entry.questLevel = questLevel
+    entry.zoneName = questZoneName or entry.zoneName
+    entry.questType = questType
+    entry.instanceType = instanceDisplayType
+    entry.displayType = displayType
+    entry.isRepeatable = isRepeatable == true
+    entry.isDaily = isDaily == true
+    entry.description = questDescription
+
+    local tracked = callESO(IsTrackedJournalQuest, journalIndex)
+    entry.tracked = tracked == true
+
+    local assisted = nil
+    if type(IsAssistedQuest) == "function" then
+        assisted = callESO(IsAssistedQuest, journalIndex)
+    else
+        local trackTypeQuest = rawget(_G, "TRACK_TYPE_QUEST")
+        if type(GetTrackedIsAssisted) == "function" and trackTypeQuest ~= nil then
+            assisted = callESO(GetTrackedIsAssisted, trackTypeQuest, journalIndex)
+        end
+    end
+    entry.assisted = assisted == true
+
+    local isComplete = nil
+    if type(GetJournalQuestIsComplete) == "function" then
+        isComplete = callESO(GetJournalQuestIsComplete, journalIndex)
+    else
+        isComplete = callESO(IsJournalQuestComplete, journalIndex)
+    end
+    entry.isComplete = isComplete == true
+
+    local stepIndex, stepTitle = findActiveStepIndex(journalIndex)
+    entry.stepIndex = stepIndex
+    entry.stepText = stepTitle
+    entry.objectives = buildObjectivesForStep(journalIndex, stepIndex)
+    entry.hasObjectives = (#entry.objectives > 0)
+    entry.numConditions = #entry.objectives
+
+    local cat = (M._catMap and M._catMap[journalIndex]) or nil
+    entry.categoryIndex = cat and cat.index or 9999
+    entry.categoryName = cat and cat.name or "MISCELLANEOUS"
+    entry.categoryKey = "cat:" .. tostring(entry.categoryIndex)
+
+    return entry
 end
 
 function M:MarkDirty()
@@ -70,35 +267,21 @@ function M:RefreshFromGame(force)
         return self._version
     end
 
-    local nextVersion = (self._version or 0) + 1
+    self._catMap, self._catOrder = buildCategoryMap()
+
     resetLists()
 
-    local total = tonumber(self:GetNumJournalQuests()) or 0
+    local total = callESO(GetNumJournalQuests) or 0
     for journalIndex = 1, total do
-        local name = self:GetJournalQuestName(journalIndex)
-        if name and name ~= "" then
-            local entry = {
-                journalIndex = journalIndex,
-                key = makeQuestKey(journalIndex),
-                name = name,
-            }
-
-            local stepText, _, _, trackerOverrideText = self:GetJournalQuestStepInfo(journalIndex, 1)
-            if trackerOverrideText and trackerOverrideText ~= "" then
-                entry.stepText = trackerOverrideText
-            elseif stepText and stepText ~= "" then
-                entry.stepText = stepText
-            end
-
-            entry.numConditions = self:GetJournalQuestNumConditions(journalIndex, 1) or 0
-
+        local entry = buildEntry(journalIndex)
+        if entry then
             self._list[#self._list + 1] = entry
             self._byKey[entry.key] = entry
             self._byJournal[journalIndex] = entry.key
         end
     end
 
-    self._version = nextVersion
+    self._version = (self._version or 0) + 1
     self._dirty = false
     debugLog("QuestList: built %d quests (v%d).", #self._list, self._version)
     return self._version
