@@ -30,6 +30,7 @@ Model/Achievement/Nvk3UT_AchievementModel.lua
 Journal/Nvk3UT_FavoritesCategory.lua
 Journal/Nvk3UT_RecentSummary.lua
 Journal/Nvk3UT_TodoSummary.lua
+Journal/Nvk3UT_CompletedCategory.lua
 Journal/Nvk3UT_AchievementsJournal.lua
 Journal/Nvk3UT_RecentCategory.lua
 Journal/Nvk3UT_TodoCategory.lua
@@ -39,6 +40,7 @@ Nvk3UT_Recent.lua
 Nvk3UT_RecentSummary.lua
 Nvk3UT_Todo.lua
 Nvk3UT_TodoSummary.lua
+Nvk3UT_Completed.lua
 Nvk3UT_TrackerHost.lua
 Nvk3UT_QuestTracker.xml
 Nvk3UT_QuestTracker.lua

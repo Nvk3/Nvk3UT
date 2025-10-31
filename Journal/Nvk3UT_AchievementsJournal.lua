@@ -6,6 +6,7 @@ Nvk3UT.AchievementsJournal = Journal
 local Utils = Nvk3UT and Nvk3UT.Utils
 
 local FavoritesCategory = Nvk3UT and Nvk3UT.FavoritesCategory
+local CompletedCategory = Nvk3UT and Nvk3UT.CompletedCategory
 local RecentSummary = Nvk3UT and Nvk3UT.RecentSummary
 local RecentCategory = Nvk3UT and Nvk3UT.RecentCategory
 local TodoSummary = Nvk3UT and Nvk3UT.TodoSummary
@@ -14,6 +15,7 @@ local TodoCategory = Nvk3UT and Nvk3UT.TodoCategory
 local state = {
     parent = nil,
     favorites = nil,
+    completed = nil,
     recentSummary = nil,
     recent = nil,
     todoSummary = nil,
@@ -88,6 +90,14 @@ function Journal:Init(parentOrSceneFragment)
             state.favorites = parentOrSceneFragment
         end
     end
+    if CompletedCategory and type(CompletedCategory.Init) == "function" then
+        local ok, result = pcall(CompletedCategory.Init, CompletedCategory, parentOrSceneFragment)
+        if ok then
+            state.completed = result or parentOrSceneFragment
+        else
+            state.completed = parentOrSceneFragment
+        end
+    end
     if RecentSummary and type(RecentSummary.Init) == "function" then
         local ok, result = pcall(RecentSummary.Init, RecentSummary, parentOrSceneFragment)
         if ok then
@@ -120,7 +130,13 @@ function Journal:Init(parentOrSceneFragment)
             state.todo = parentOrSceneFragment
         end
     end
-    return state.favorites or state.recentSummary or state.recent or state.todoSummary or state.todo or parentOrSceneFragment
+    return state.favorites
+        or state.completed
+        or state.recentSummary
+        or state.recent
+        or state.todoSummary
+        or state.todo
+        or parentOrSceneFragment
 end
 
 ---Refresh the journal view.
@@ -130,6 +146,12 @@ function Journal:Refresh()
         local ok = pcall(FavoritesCategory.Refresh, FavoritesCategory)
         if not ok and Utils and Utils.d and isDebugEnabled() then
             Utils.d("[Ach][Journal] FavoritesCategory.Refresh failed")
+        end
+    end
+    if CompletedCategory and type(CompletedCategory.Refresh) == "function" then
+        local ok = pcall(CompletedCategory.Refresh, CompletedCategory)
+        if not ok and Utils and Utils.d and isDebugEnabled() then
+            Utils.d("[Ach][Journal] CompletedCategory.Refresh failed")
         end
     end
     if RecentSummary and type(RecentSummary.Refresh) == "function" then
