@@ -1,5 +1,6 @@
 -- Model/Quest/Nvk3UT_QuestState.lua
--- Centralizes persistent quest tracker UI state (categories, quests, and active selection).
+-- Centralizes persistent quest tracker UI state (categories and quests) while forwarding
+-- active selection responsibilities to Nvk3UT.QuestSelection.
 
 Nvk3UT = Nvk3UT or {}
 Nvk3UT.QuestState = Nvk3UT.QuestState or {}
@@ -7,6 +8,10 @@ Nvk3UT.QuestState = Nvk3UT.QuestState or {}
 local QuestState = Nvk3UT.QuestState
 
 local saved = QuestState._saved
+
+local function GetQuestSelectionModule()
+    return Nvk3UT and Nvk3UT.QuestSelection
+end
 
 local STATE_VERSION = 1
 
@@ -153,7 +158,7 @@ local function MigrateLegacySavedState(target)
     EnsureSavedDefaults(target)
 end
 
-local function EnsureActiveSavedState(target)
+local function EnsureActiveSavedStateFallback(target)
     if type(target) ~= "table" then
         return nil
     end
@@ -280,7 +285,7 @@ local function ApplyQuestWrite(questKey, expanded, source, options)
     return true, key, newExpanded, priority, source
 end
 
-local function ApplyActiveWrite(questKey, source, options)
+local function ApplyActiveWriteFallback(questKey, source, options)
     if not saved then
         return false
     end
@@ -289,7 +294,7 @@ local function ApplyActiveWrite(questKey, source, options)
     options = options or {}
 
     local normalized = questKey and NormalizeQuestKey(questKey) or nil
-    local previous = EnsureActiveSavedState(saved)
+    local previous = EnsureActiveSavedStateFallback(saved)
     local shouldWrite, priority, timestamp = ResolveWrite(source, options, previous)
     if not shouldWrite then
         return false, normalized, priority, source
@@ -324,10 +329,20 @@ function QuestState.Bind(root)
 
     EnsureSavedTables(questTracker)
     EnsureSavedDefaults(questTracker)
-    EnsureActiveSavedState(questTracker)
+
+    local questSelection = GetQuestSelectionModule()
+    if questSelection and questSelection.EnsureActiveSavedState then
+        questSelection.EnsureActiveSavedState(questTracker)
+    else
+        EnsureActiveSavedStateFallback(questTracker)
+    end
 
     saved = questTracker
     QuestState._saved = saved
+
+    if questSelection and questSelection.Bind then
+        questSelection.Bind(root, questTracker)
+    end
 
     return questTracker
 end
@@ -348,8 +363,14 @@ function QuestState.NormalizeQuestKey(journalIndex)
     return NormalizeQuestKey(journalIndex)
 end
 
+-- TEMP SHIM (QMODEL_002): TODO remove on SWITCH token; forwards active-state ensures to QuestSelection.
 function QuestState.EnsureActiveSavedState()
-    return EnsureActiveSavedState(saved)
+    local questSelection = GetQuestSelectionModule()
+    if questSelection and questSelection.EnsureActiveSavedState then
+        return questSelection.EnsureActiveSavedState(saved)
+    end
+
+    return EnsureActiveSavedStateFallback(saved)
 end
 
 function QuestState.SetCategoryExpanded(categoryKey, expanded, source, options)
@@ -360,8 +381,14 @@ function QuestState.SetQuestExpanded(questKey, expanded, source, options)
     return ApplyQuestWrite(questKey, expanded, source, options)
 end
 
+-- TEMP SHIM (QMODEL_002): TODO remove on SWITCH token; forwards active selection writes to QuestSelection.
 function QuestState.SetSelectedQuestId(questKey, source, options)
-    return ApplyActiveWrite(questKey, source, options)
+    local questSelection = GetQuestSelectionModule()
+    if questSelection and questSelection.SetActive then
+        return questSelection.SetActive(questKey, source, options)
+    end
+
+    return ApplyActiveWriteFallback(questKey, source, options)
 end
 
 function QuestState.IsCategoryExpanded(categoryKey)
@@ -410,12 +437,18 @@ function QuestState.IsQuestExpanded(questKey)
     return nil
 end
 
+-- TEMP SHIM (QMODEL_002): TODO remove on SWITCH token; forwards active selection reads to QuestSelection.
 function QuestState.GetSelectedQuestId()
+    local questSelection = GetQuestSelectionModule()
+    if questSelection and questSelection.GetActiveQuestKey then
+        return questSelection.GetActiveQuestKey()
+    end
+
     if not saved then
         return nil
     end
 
-    local active = EnsureActiveSavedState(saved)
+    local active = EnsureActiveSavedStateFallback(saved)
     return active and active.questKey or nil
 end
 

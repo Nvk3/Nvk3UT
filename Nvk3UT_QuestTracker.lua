@@ -10,6 +10,7 @@ local EVENT_NAMESPACE = MODULE_NAME .. "_Event"
 
 local Utils = Nvk3UT and Nvk3UT.Utils
 local QuestState = Nvk3UT and Nvk3UT.QuestState
+local QuestSelection = Nvk3UT and Nvk3UT.QuestSelection
 local FormatCategoryHeaderText =
     (Utils and Utils.FormatCategoryHeaderText)
     or function(baseText, count, showCounts)
@@ -534,8 +535,12 @@ local function LogStateWrite(entity, key, expanded, source, priority)
     end
 end
 
--- TEMP SHIM (QMODEL_001): TODO remove on SWITCH token; forwards to Nvk3UT.QuestState until legacy helpers are retired.
+-- TEMP SHIM (QMODEL_002): TODO remove on SWITCH token; forwards to QuestSelection for active-state ensures.
 local function EnsureActiveSavedState()
+    if QuestSelection and QuestSelection.EnsureActiveSavedState then
+        return QuestSelection.EnsureActiveSavedState()
+    end
+
     if QuestState and QuestState.EnsureActiveSavedState then
         return QuestState.EnsureActiveSavedState()
     end
@@ -570,7 +575,9 @@ end
 local function SyncSelectedQuestFromSaved()
     local questKey
 
-    if QuestState and QuestState.GetSelectedQuestId then
+    if QuestSelection and QuestSelection.GetActiveQuestKey then
+        questKey = QuestSelection.GetActiveQuestKey()
+    elseif QuestState and QuestState.GetSelectedQuestId then
         questKey = QuestState.GetSelectedQuestId()
     elseif state.saved then
         local active = EnsureActiveSavedState()
@@ -719,8 +726,20 @@ local function WriteQuestState(questKey, expanded, source, options)
     return true
 end
 
--- TEMP SHIM (QMODEL_001): TODO remove on SWITCH token; forwards active quest state to Nvk3UT.QuestState.
+-- TEMP SHIM (QMODEL_002): TODO remove on SWITCH token; forwards active quest state to QuestSelection.
 local function WriteActiveQuest(questKey, source, options)
+    if QuestSelection and QuestSelection.SetActive then
+        local changed, normalizedKey, priority, resolvedSource =
+            QuestSelection.SetActive(questKey, source, options)
+        if not changed then
+            return false
+        end
+
+        LogStateWrite("active", normalizedKey, nil, resolvedSource or source or "auto", priority)
+        ApplyActiveQuestFromSaved()
+        return true
+    end
+
     if QuestState and QuestState.SetSelectedQuestId then
         local changed, normalizedKey, priority, resolvedSource =
             QuestState.SetSelectedQuestId(questKey, source, options)
@@ -2556,11 +2575,17 @@ local function EnsureSavedVars()
     if QuestState and QuestState.Bind then
         local saved = QuestState.Bind(Nvk3UT.sv)
         state.saved = saved
+        if QuestSelection and QuestSelection.Bind then
+            QuestSelection.Bind(Nvk3UT.sv, saved)
+        end
     else
         local saved = Nvk3UT.sv.QuestTracker or {}
         Nvk3UT.sv.QuestTracker = saved
         state.saved = saved
         EnsureActiveSavedState()
+        if QuestSelection and QuestSelection.Bind then
+            QuestSelection.Bind(Nvk3UT.sv, saved)
+        end
     end
 
     ApplyActiveQuestFromSaved()
