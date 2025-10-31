@@ -12,6 +12,7 @@ local Utils = Nvk3UT and Nvk3UT.Utils
 local QuestState = Nvk3UT and Nvk3UT.QuestState
 local QuestSelection = Nvk3UT and Nvk3UT.QuestSelection
 local QuestList = Nvk3UT and Nvk3UT.QuestList
+local QuestModel = Nvk3UT and Nvk3UT.QuestModel
 
 local function GetQuestState()
     if not QuestState and Nvk3UT then
@@ -42,6 +43,13 @@ local function GetQuestList()
         QuestList = Nvk3UT.QuestList
     end
     return QuestList
+end
+
+local function GetQuestModel()
+    if not QuestModel and Nvk3UT then
+        QuestModel = Nvk3UT.QuestModel
+    end
+    return QuestModel
 end
 
 local FormatCategoryHeaderText =
@@ -143,7 +151,6 @@ local state = {
     isClickSelectInProgress = false,
     selectedQuestKey = nil,
     isRebuildInProgress = false,
-    questModelSubscription = nil,
 }
 
 local STATE_VERSION = 1
@@ -3718,34 +3725,17 @@ local function OnQuestModelSnapshotUpdated(snapshot, context)
     RelayoutFromCategoryIndex(1)
 end
 
--- Listen for snapshot updates from the quest model so the tracker stays in sync with game events.
-local function SubscribeToQuestModel()
-    if state.questModelSubscription then
+local function RefreshModelSnapshot(context, force)
+    local model = GetQuestModel()
+    local fallback = { categories = { ordered = {}, byKey = {} } }
+    if not (model and model.RefreshFromGame and model.GetViewData) then
+        OnQuestModelSnapshotUpdated(fallback, context)
         return
     end
 
-    local questModel = Nvk3UT and Nvk3UT.QuestModel
-    if not (questModel and questModel.Subscribe) then
-        return
-    end
-
-    state.questModelSubscription = function(snapshot)
-        OnQuestModelSnapshotUpdated(snapshot, {
-            trigger = "model",
-            source = "QuestTracker:QuestModelSubscription",
-        })
-    end
-
-    questModel.Subscribe(state.questModelSubscription)
-end
-
-local function UnsubscribeFromQuestModel()
-    local questModel = Nvk3UT and Nvk3UT.QuestModel
-    if state.questModelSubscription and questModel and questModel.Unsubscribe then
-        questModel.Unsubscribe(state.questModelSubscription)
-    end
-
-    state.questModelSubscription = nil
+    model:RefreshFromGame(force)
+    local view = model:GetViewData()
+    OnQuestModelSnapshotUpdated(view or fallback, context)
 end
 
 local function Rebuild()
@@ -3871,23 +3861,22 @@ function QuestTracker.Init(parentControl, opts)
 
     RegisterTrackingEvents()
 
-    SubscribeToQuestModel()
-
     state.isInitialized = true
     RefreshVisibility()
 
-    local questModel = Nvk3UT and Nvk3UT.QuestModel
-    local snapshot = state.snapshot
-        or (questModel and questModel.GetSnapshot and questModel.GetSnapshot())
-
-    OnQuestModelSnapshotUpdated(snapshot, {
+    RefreshModelSnapshot({
         trigger = "init",
         source = "QuestTracker:Init",
-    })
+    }, true)
+
     AdoptTrackedQuestOnInit()
 end
 
-function QuestTracker.Refresh()
+function QuestTracker.Refresh(force)
+    RefreshModelSnapshot({
+        trigger = force and "force" or "refresh",
+        source = "QuestTracker.Refresh",
+    }, force)
     Rebuild()
 end
 
@@ -3898,7 +3887,6 @@ function QuestTracker.Shutdown()
 
     UnregisterCombatEvents()
     UnregisterTrackingEvents()
-    UnsubscribeFromQuestModel()
 
     if state.categoryPool then
         state.categoryPool:ReleaseAllObjects()
@@ -3939,7 +3927,6 @@ function QuestTracker.Shutdown()
     state.pendingExternalReveal = nil
     state.selectedQuestKey = nil
     state.isRebuildInProgress = false
-    state.questModelSubscription = nil
     NotifyHostContentChanged()
 end
 

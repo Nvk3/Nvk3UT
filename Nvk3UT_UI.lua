@@ -173,9 +173,10 @@ end
 
 local function __nvk3_GetQuestCountForTracker()
   local QuestModel = Nvk3UT and Nvk3UT.QuestModel
-  if QuestModel and QuestModel.GetSnapshot then
-    local snapshot = QuestModel.GetSnapshot()
-    local quests = snapshot and snapshot.quests
+  if QuestModel and QuestModel.RefreshFromGame and QuestModel.GetViewData then
+    QuestModel:RefreshFromGame()
+    local view = QuestModel:GetViewData()
+    local quests = view and view.quests
     if type(quests) == "table" then
       local count = #quests
       count = math.min(math.max(count, 0), QUEST_LOG_LIMIT)

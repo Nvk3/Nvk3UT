@@ -1973,8 +1973,8 @@ local function applyAppearance()
 end
 
 local function initModels(debugEnabled)
-    if Nvk3UT.QuestModel and Nvk3UT.QuestModel.Init then
-        pcall(Nvk3UT.QuestModel.Init, { debug = debugEnabled })
+    if Nvk3UT.QuestModel and Nvk3UT.QuestModel.RefreshFromGame then
+        pcall(Nvk3UT.QuestModel.RefreshFromGame, Nvk3UT.QuestModel, true)
     end
 
     if Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.Init then
@@ -2251,10 +2251,6 @@ function TrackerHost.Shutdown()
 
     if Nvk3UT.AchievementTracker and Nvk3UT.AchievementTracker.Shutdown then
         pcall(Nvk3UT.AchievementTracker.Shutdown)
-    end
-
-    if Nvk3UT.QuestModel and Nvk3UT.QuestModel.Shutdown then
-        pcall(Nvk3UT.QuestModel.Shutdown)
     end
 
     if Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.Shutdown then
