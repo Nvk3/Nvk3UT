@@ -210,6 +210,8 @@ local state = {
     selectedQuestKey = nil,
     isRebuildInProgress = false,
     questModelSubscription = nil,
+    -- TEMP SHIM: remove after full wiring (EVENTS_*_SWITCH)
+    lastEffectiveSelectedQuestId = nil,
 }
 
 local STATE_VERSION = 1
@@ -2660,6 +2662,46 @@ local function UpdateCategoryToggle(control, expanded)
     control.isExpanded = expanded and true or false
 end
 
+-- TEMP SHIM: remove after full wiring (EVENTS_*_SWITCH)
+local function UpdateEffectiveSelectionSentinel(queueOnChange)
+    local questSelectionModule = GetQuestSelectionModule()
+    if not (questSelectionModule and type(questSelectionModule.GetEffectiveSelectedQuestId) == "function") then
+        return false
+    end
+
+    local ok, currentId = pcall(questSelectionModule.GetEffectiveSelectedQuestId, questSelectionModule)
+    if not ok then
+        return false
+    end
+
+    local previousId = state.lastEffectiveSelectedQuestId
+    if previousId == currentId then
+        return false
+    end
+
+    state.lastEffectiveSelectedQuestId = currentId
+
+    if IsDebugLoggingEnabled() then
+        -- TEMP SHIM: remove after full wiring (EVENTS_*_SWITCH)
+        DebugLog(string.format(
+            "EffectiveSelected changed %s -> %s",
+            tostring(previousId),
+            tostring(currentId)
+        ))
+    end
+
+    if not queueOnChange or state.isRebuildInProgress then
+        return true
+    end
+
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and type(runtime.QueueDirty) == "function" then
+        runtime:QueueDirty("quest")
+    end
+
+    return true
+end
+
 local function UpdateQuestIconSlot(control)
     if not (control and control.iconSlot) then
         return
@@ -2670,22 +2712,36 @@ local function UpdateQuestIconSlot(control)
     if questId == nil and questData then
         questId = questData.journalIndex
     end
-    local isSelected = false
-    if questId then
-        local questSelectionModule = GetQuestSelectionModule()
+
+    local questSelectionModule = GetQuestSelectionModule()
+    local effectiveSelectedId
+    if questSelectionModule and type(questSelectionModule.GetEffectiveSelectedQuestId) == "function" then
+        local ok, value = pcall(questSelectionModule.GetEffectiveSelectedQuestId, questSelectionModule)
+        if ok then
+            effectiveSelectedId = value
+        end
+    end
+
+    local questKey = NormalizeQuestKey(questId)
+    local effectiveKey = NormalizeQuestKey(effectiveSelectedId)
+    local isSelected = questKey ~= nil and effectiveKey ~= nil and questKey == effectiveKey
+
+    if not isSelected and questKey ~= nil then
         if questSelectionModule and type(questSelectionModule.IsSelected) == "function" then
-            isSelected = questSelectionModule.IsSelected(questId)
+            local ok, directSelected = pcall(questSelectionModule.IsSelected, questSelectionModule, questId)
+            if ok and directSelected then
+                isSelected = true
+            end
         end
 
-        if not isSelected then
-            local questKey = NormalizeQuestKey(questId)
-            if questKey and state.selectedQuestKey then
-                isSelected = questKey == state.selectedQuestKey
-            elseif state.trackedQuestIndex then
-                local numericId = tonumber(questId)
-                if numericId and numericId > 0 then
-                    isSelected = numericId == state.trackedQuestIndex
-                end
+        if not isSelected and state.selectedQuestKey then
+            isSelected = questKey == state.selectedQuestKey
+        end
+
+        if not isSelected and state.trackedQuestIndex then
+            local numericId = tonumber(questKey)
+            if numericId and numericId > 0 then
+                isSelected = numericId == state.trackedQuestIndex
             end
         end
     end
@@ -2699,6 +2755,14 @@ local function UpdateQuestIconSlot(control)
         end
         if control.iconSlot.SetHidden then
             control.iconSlot:SetHidden(false)
+        end
+        if IsDebugLoggingEnabled() then
+            -- TEMP SHIM: remove after full wiring (EVENTS_*_SWITCH)
+            DebugLog(string.format(
+                "Selected glyph applied to quest %s (effective=%s)",
+                tostring(questKey),
+                tostring(effectiveKey)
+            ))
         end
     else
         if control.iconSlot.SetTexture then
@@ -3619,7 +3683,11 @@ function QuestTracker.Init(parentControl, opts)
 end
 
 function QuestTracker.Refresh()
+    -- TEMP SHIM: remove after full wiring (EVENTS_*_SWITCH)
+    UpdateEffectiveSelectionSentinel(true)
     Rebuild()
+    -- TEMP SHIM: remove after full wiring (EVENTS_*_SWITCH)
+    UpdateEffectiveSelectionSentinel(false)
 end
 
 function QuestTracker.Shutdown()
@@ -3671,6 +3739,8 @@ function QuestTracker.Shutdown()
     state.selectedQuestKey = nil
     state.isRebuildInProgress = false
     state.questModelSubscription = nil
+    -- TEMP SHIM: remove after full wiring (EVENTS_*_SWITCH)
+    state.lastEffectiveSelectedQuestId = nil
     NotifyHostContentChanged()
 end
 

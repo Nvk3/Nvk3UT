@@ -303,6 +303,55 @@ function QuestSelection.GetFocusedQuestId()
     return data.focusedQuestId
 end
 
+-- TEMP SHIM: remove after full wiring (EVENTS_*_SWITCH)
+function QuestSelection.GetEffectiveSelectedQuestId()
+    local selectedId = QuestSelection.GetSelectedQuestId()
+    if selectedId ~= nil then
+        return selectedId
+    end
+
+    local function MapJournalIndex(journalIndex)
+        if journalIndex == nil then
+            return nil
+        end
+
+        local questModel = Nvk3UT and Nvk3UT.QuestModel
+        if questModel and type(questModel.MapJournalIndexToQuestId) == "function" then
+            local ok, mapped = pcall(questModel.MapJournalIndexToQuestId, questModel, journalIndex)
+            if ok and mapped ~= nil then
+                return NormalizeQuestId(mapped)
+            end
+        end
+
+        return NormalizeQuestId(journalIndex)
+    end
+
+    local trackedIndex
+    if type(GetTrackedQuestIndex) == "function" then
+        local ok, value = pcall(GetTrackedQuestIndex)
+        if ok and value ~= nil then
+            trackedIndex = value
+        end
+    end
+
+    local mappedTracked = MapJournalIndex(trackedIndex)
+    if mappedTracked ~= nil then
+        return mappedTracked
+    end
+
+    if JOURNAL_MANAGER and type(JOURNAL_MANAGER.GetSelectedQuestIndex) == "function" then
+        local ok, journalIndex = pcall(JOURNAL_MANAGER.GetSelectedQuestIndex, JOURNAL_MANAGER)
+        if ok and journalIndex ~= nil then
+            local mappedJournal = MapJournalIndex(journalIndex)
+            if mappedJournal ~= nil then
+                return mappedJournal
+            end
+        end
+    end
+
+    return nil
+end
+
 function QuestSelection.GetLastUpdate()
     local data = GetData()
     if not data then
