@@ -6,6 +6,7 @@ Nvk3UT.AchievementsJournal = Journal
 local Utils = Nvk3UT and Nvk3UT.Utils
 
 local FavoritesCategory = Nvk3UT and Nvk3UT.FavoritesCategory
+local CompletedSummary = Nvk3UT and Nvk3UT.CompletedSummary
 local CompletedCategory = Nvk3UT and Nvk3UT.CompletedCategory
 local RecentSummary = Nvk3UT and Nvk3UT.RecentSummary
 local RecentCategory = Nvk3UT and Nvk3UT.RecentCategory
@@ -15,6 +16,7 @@ local TodoCategory = Nvk3UT and Nvk3UT.TodoCategory
 local state = {
     parent = nil,
     favorites = nil,
+    completedSummary = nil,
     completed = nil,
     recentSummary = nil,
     recent = nil,
@@ -90,6 +92,14 @@ function Journal:Init(parentOrSceneFragment)
             state.favorites = parentOrSceneFragment
         end
     end
+    if CompletedSummary and type(CompletedSummary.Init) == "function" then
+        local ok, result = pcall(CompletedSummary.Init, CompletedSummary, parentOrSceneFragment)
+        if ok then
+            state.completedSummary = result or parentOrSceneFragment
+        else
+            state.completedSummary = parentOrSceneFragment
+        end
+    end
     if CompletedCategory and type(CompletedCategory.Init) == "function" then
         local ok, result = pcall(CompletedCategory.Init, CompletedCategory, parentOrSceneFragment)
         if ok then
@@ -131,6 +141,7 @@ function Journal:Init(parentOrSceneFragment)
         end
     end
     return state.favorites
+        or state.completedSummary
         or state.completed
         or state.recentSummary
         or state.recent
@@ -146,6 +157,12 @@ function Journal:Refresh()
         local ok = pcall(FavoritesCategory.Refresh, FavoritesCategory)
         if not ok and Utils and Utils.d and isDebugEnabled() then
             Utils.d("[Ach][Journal] FavoritesCategory.Refresh failed")
+        end
+    end
+    if CompletedSummary and type(CompletedSummary.Refresh) == "function" then
+        local ok = pcall(CompletedSummary.Refresh, CompletedSummary)
+        if not ok and Utils and Utils.d and isDebugEnabled() then
+            Utils.d("[Ach][Journal] CompletedSummary.Refresh failed")
         end
     end
     if CompletedCategory and type(CompletedCategory.Refresh) == "function" then
