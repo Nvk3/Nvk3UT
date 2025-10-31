@@ -60,53 +60,6 @@ local function resetLists()
     M._byJournal = {}
 end
 
--- Build journal categories in basegame order (robust on older clients)
-local function buildCategoryMap()
-    local map, order = {}, {}
-    local numCats = callESO(GetJournalNumQuestCategories) or 0
-
-    for ci = 1, numCats do
-        local catName, numInCat = callESO(GetJournalQuestCategoryInfo, ci)
-        if catName then
-            table.insert(order, { index = ci, name = catName })
-            if GetJournalQuestIndexFromCategory then
-                for qi = 1, (numInCat or 0) do
-                    local journalIndex = callESO(GetJournalQuestIndexFromCategory, ci, qi)
-                    if journalIndex then
-                        map[journalIndex] = { index = ci, name = catName }
-                    end
-                end
-            end
-        end
-    end
-
-    if next(map) == nil then
-        local total = callESO(GetNumJournalQuests) or 0
-        for j = 1, total do
-            local catIdx = callESO(GetJournalQuestCategoryType, j)
-            if catIdx then
-                local catName = callESO(GetJournalQuestCategoryInfo, catIdx)
-                map[j] = { index = catIdx, name = catName or "MISCELLANEOUS" }
-                local seen
-                for _, o in ipairs(order) do
-                    if o.index == catIdx then
-                        seen = true
-                        break
-                    end
-                end
-                if not seen then
-                    table.insert(order, { index = catIdx, name = catName or "MISCELLANEOUS" })
-                end
-            end
-        end
-        table.sort(order, function(a, b)
-            return (a.index or 9999) < (b.index or 9999)
-        end)
-    end
-
-    return map, order
-end
-
 local function stripProgressDecorations(text)
     if type(text) ~= "string" then
         return nil
@@ -133,15 +86,16 @@ local function findActiveStepIndex(journalIndex)
     local hiddenConstant = rawget(_G, "QUEST_STEP_VISIBILITY_HIDDEN")
 
     for stepIndex = 1, numSteps do
-        local stepText, visibility, _, trackerOverrideText =
+        local stepText, stepType, stepVisibility, trackerOverrideText =
             callESO(GetJournalQuestStepInfo, journalIndex, stepIndex)
         local numConditions = callESO(GetJournalQuestNumConditions, journalIndex, stepIndex) or 0
+
         local stepVisible = true
-        if visibility ~= nil then
+        if stepVisibility ~= nil then
             if hiddenConstant ~= nil then
-                stepVisible = (visibility ~= hiddenConstant)
+                stepVisible = (stepVisibility ~= hiddenConstant)
             else
-                stepVisible = (visibility ~= false)
+                stepVisible = (stepVisibility ~= false)
             end
         end
 
@@ -247,15 +201,27 @@ local function buildEntry(journalIndex)
 
     local cat = (M._catMap and M._catMap[journalIndex]) or nil
     if not cat then
-        local catIdx = callESO(GetJournalQuestCategoryType, journalIndex)
-        if catIdx then
-            local catName = callESO(GetJournalQuestCategoryInfo, catIdx)
-            cat = { index = catIdx, name = catName or "MISCELLANEOUS" }
+        local fallbackMap = {}
+        local numCats = callESO(GetJournalNumQuestCategories) or 0
+        for categoryIndex = 1, numCats do
+            local catName, numInCat = callESO(GetJournalQuestCategoryInfo, categoryIndex)
+            if GetJournalQuestIndexFromCategory then
+                for qi = 1, (numInCat or 0) do
+                    local jIdx = callESO(GetJournalQuestIndexFromCategory, categoryIndex, qi)
+                    if jIdx then
+                        fallbackMap[jIdx] = { index = categoryIndex, name = catName or "MISCELLANEOUS" }
+                    end
+                end
+            end
+        end
+        cat = fallbackMap[journalIndex]
+        if not cat then
+            cat = { index = 9999, name = "MISCELLANEOUS" }
         end
     end
 
-    entry.categoryIndex = (cat and cat.index) or 9999
-    entry.categoryName = (cat and cat.name) or "MISCELLANEOUS"
+    entry.categoryIndex = cat.index
+    entry.categoryName = cat.name
     entry.categoryKey = "cat:" .. tostring(entry.categoryIndex)
 
     return entry
@@ -276,7 +242,25 @@ function M:RefreshFromGame(force)
         return self._version
     end
 
-    self._catMap, self._catOrder = buildCategoryMap()
+    M._catMap, M._catOrder = (function()
+        local map, order = {}, {}
+        local numCats = callESO(GetJournalNumQuestCategories) or 0
+        for categoryIndex = 1, numCats do
+            local catName, numInCat = callESO(GetJournalQuestCategoryInfo, categoryIndex)
+            if catName then
+                order[#order + 1] = { index = categoryIndex, name = catName }
+                if GetJournalQuestIndexFromCategory then
+                    for qi = 1, (numInCat or 0) do
+                        local jIdx = callESO(GetJournalQuestIndexFromCategory, categoryIndex, qi)
+                        if jIdx then
+                            map[jIdx] = { index = categoryIndex, name = catName }
+                        end
+                    end
+                end
+            end
+        end
+        return map, order
+    end)()
 
     resetLists()
 
@@ -292,7 +276,13 @@ function M:RefreshFromGame(force)
 
     self._version = (self._version or 0) + 1
     self._dirty = false
-    debugLog("QuestList: built %d quests (v%d).", #self._list, self._version)
+    debugLog(
+        "QuestList: built %d quests (v%d), cats=%d (mapped=%s).",
+        #self._list,
+        self._version,
+        M._catOrder and #M._catOrder or 0,
+        tostring(M._catMap and next(M._catMap) ~= nil)
+    )
     return self._version
 end
 
