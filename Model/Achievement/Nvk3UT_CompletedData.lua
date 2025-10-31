@@ -23,6 +23,7 @@ local function push(list, value)
     list[#list + 1] = value
 end
 
+-- Normalize any timestamp-like value to a unix number (seconds)
 local function asUnix(ts)
     local n = tonumber(ts)
     if n and n > 0 then
@@ -127,15 +128,13 @@ local function collectCompletionMeta(achievementId)
         end
     end
 
-    local timestamp = infoTimestamp
-    if (timestamp == nil or timestamp == 0) and type(GetAchievementTimestamp) == "function" then
+    local timestamp = asUnix(infoTimestamp)
+    if (not timestamp or timestamp == 0) and type(GetAchievementTimestamp) == "function" then
         local ok, value = pcall(GetAchievementTimestamp, achievementId)
-        if ok and value ~= nil then
-            timestamp = value
-        end
+        timestamp = asUnix(ok and value or nil) or 0
+    else
+        timestamp = timestamp or 0
     end
-
-    timestamp = asUnix(timestamp) or 0
 
     local points
     if type(infoPoints) == "number" then
@@ -196,15 +195,13 @@ local function fetchCompletionForScan(achievementId)
         isComplete = infoCompleted == true
     end
 
-    local timestamp = infoTimestamp
-    if (timestamp == nil or timestamp == 0) and type(GetAchievementTimestamp) == "function" then
+    local timestamp = asUnix(infoTimestamp)
+    if (not timestamp or timestamp == 0) and type(GetAchievementTimestamp) == "function" then
         local ok, value = pcall(GetAchievementTimestamp, achievementId)
-        if ok and value ~= nil then
-            timestamp = value
-        end
+        timestamp = asUnix(ok and value or nil) or 0
+    else
+        timestamp = timestamp or 0
     end
-
-    timestamp = asUnix(timestamp) or 0
 
     return isComplete == true, timestamp
 end
@@ -262,8 +259,8 @@ local function scanAllAchievements()
     end
 
     table.sort(last50, function(a, b)
-        local ta = safeCall(GetAchievementTimestamp, a) or 0
-        local tb = safeCall(GetAchievementTimestamp, b) or 0
+        local ta = asUnix(safeCall(GetAchievementTimestamp, a)) or 0
+        local tb = asUnix(safeCall(GetAchievementTimestamp, b)) or 0
         return ta > tb
     end)
 
