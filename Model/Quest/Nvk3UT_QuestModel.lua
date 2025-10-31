@@ -12,6 +12,7 @@ QuestModel.__index = QuestModel
 local QUEST_MODEL_NAME = addonName .. "QuestModel"
 local EVENT_NAMESPACE = QUEST_MODEL_NAME .. "_Event"
 local REBUILD_IDENTIFIER = QUEST_MODEL_NAME .. "_Rebuild"
+local DEBOUNCE_UPDATE_INTERVAL_MS = 33
 
 local QUEST_SAVED_VARS_NAME = "Nvk3UT_Data_Quests"
 local QUEST_SAVED_VARS_VERSION = 1
@@ -63,6 +64,31 @@ local function DebugInitLog(message, ...)
     elseif print then
         print("[Nvk3UT][QuestInit]", formatted)
     end
+end
+
+local function GetDebounceClockMs()
+    if GetFrameTimeMilliseconds then
+        local ok, value = pcall(GetFrameTimeMilliseconds)
+        if ok and type(value) == "number" then
+            return value
+        end
+    end
+
+    if GetGameTimeMilliseconds then
+        local ok, value = pcall(GetGameTimeMilliseconds)
+        if ok and type(value) == "number" then
+            return value
+        end
+    end
+
+    if GetTimeStamp then
+        local ok, value = pcall(GetTimeStamp)
+        if ok and type(value) == "number" then
+            return value * 1000
+        end
+    end
+
+    return nil
 end
 
 local function CopyTable(value)
@@ -420,19 +446,44 @@ local function ScheduleRebuild(self)
         return
     end
 
-    if self.pendingRebuild then
-        return
+    local now = GetDebounceClockMs()
+    local last = self.lastQuestEventMs or 0
+    if now == nil then
+        now = last
     end
+    self.lastQuestEventMs = now
 
     self.pendingRebuild = true
 
-    local interval = self.debounceMs or DEFAULT_DEBOUNCE_MS
+    if self.updateRegistered then
+        return
+    end
+
+    local debounceWindow = self.debounceMs or DEFAULT_DEBOUNCE_MS
+    local tickInterval = math.min(DEBOUNCE_UPDATE_INTERVAL_MS, debounceWindow)
+    if tickInterval < 1 then
+        tickInterval = 1
+    end
+
+    self.updateRegistered = true
 
     EVENT_MANAGER:RegisterForUpdate(
         REBUILD_IDENTIFIER,
-        interval,
+        tickInterval,
         function()
+            local current = GetDebounceClockMs()
+            local lastEvent = self.lastQuestEventMs or 0
+            local window = self.debounceMs or DEFAULT_DEBOUNCE_MS
+            if current == nil then
+                current = lastEvent + window
+            end
+
+            if current - lastEvent < window then
+                return
+            end
+
             EVENT_MANAGER:UnregisterForUpdate(REBUILD_IDENTIFIER)
+            self.updateRegistered = false
             self.pendingRebuild = false
             PerformRebuild(self)
         end
@@ -444,10 +495,12 @@ ForceRebuildInternal = function(self)
         return false
     end
 
-    if self.pendingRebuild then
+    if self.updateRegistered then
         EVENT_MANAGER:UnregisterForUpdate(REBUILD_IDENTIFIER)
-        self.pendingRebuild = false
+        self.updateRegistered = false
     end
+
+    self.pendingRebuild = false
 
     local updated = PerformRebuild(self)
     return updated
@@ -492,6 +545,8 @@ function QuestModel.Init(opts)
         QuestModel.debounceMs = DEFAULT_DEBOUNCE_MS
     end
     QuestModel.subscribers = {}
+    QuestModel.updateRegistered = false
+    QuestModel.lastQuestEventMs = QuestModel.lastQuestEventMs or 0
     QuestModel.isInitialized = true
 
     local savedSnapshot = BuildSnapshotFromSaved()

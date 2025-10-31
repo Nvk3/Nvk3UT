@@ -92,6 +92,7 @@ local state = {
     snapshot = nil,
     categoryControls = {},
     questControls = {},
+    questControlsByQuestId = {},
     combatHidden = false,
     pendingRefresh = false,
     contentWidth = 0,
@@ -110,6 +111,7 @@ local state = {
     selectedQuestKey = nil,
     isRebuildInProgress = false,
     questModelSubscription = nil,
+    lastLiveIndexResolveLogMs = nil,
 }
 
 local PRIORITY = {
@@ -1165,6 +1167,78 @@ SafeCall = function(func, ...)
     return true, result
 end
 
+local function GetCurrentMilliseconds()
+    if GetFrameTimeMilliseconds then
+        local ok, value = SafeCall(GetFrameTimeMilliseconds)
+        if ok and type(value) == "number" then
+            return value
+        end
+    end
+
+    if GetGameTimeMilliseconds then
+        local ok, value = SafeCall(GetGameTimeMilliseconds)
+        if ok and type(value) == "number" then
+            return value
+        end
+    end
+
+    if GetTimeStamp then
+        local ok, value = SafeCall(GetTimeStamp)
+        if ok and type(value) == "number" then
+            return value * 1000
+        end
+    end
+
+    return 0
+end
+
+local function ShouldLogLiveIndexResolve()
+    local root = Nvk3UT
+    if type(root) ~= "table" then
+        return false
+    end
+
+    if type(root.IsDebugEnabled) == "function" then
+        local ok, enabled = SafeCall(root.IsDebugEnabled, root)
+        if not ok or not enabled then
+            return false
+        end
+    elseif root.debugEnabled ~= nil and root.debugEnabled ~= true then
+        return false
+    end
+
+    return type(root.Debug) == "function"
+end
+
+local function LogLiveIndexResolve(storedIndex, resolvedIndex, questId)
+    if not ShouldLogLiveIndexResolve() then
+        return
+    end
+
+    local now = GetCurrentMilliseconds()
+    local last = state.lastLiveIndexResolveLogMs
+    if now and last and now - last < 250 then
+        return
+    end
+
+    if now then
+        state.lastLiveIndexResolveLogMs = now
+    end
+
+    local debugFn = Nvk3UT and Nvk3UT.Debug
+    if type(debugFn) ~= "function" then
+        return
+    end
+
+    SafeCall(
+        debugFn,
+        "[QuestTracker] Quest journal index drift resolved: questId=%s stored=%s resolved=%s",
+        tostring(questId or "nil"),
+        tostring(storedIndex or "nil"),
+        tostring(resolvedIndex or "nil")
+    )
+end
+
 local function IsTruthy(value)
     return value ~= nil and value ~= false
 end
@@ -1373,12 +1447,21 @@ local function BuildQuestContextMenuEntries(journalIndex)
     return entries
 end
 
-local function ShowQuestContextMenu(control, journalIndex)
+local function ShowQuestContextMenu(control, questRef)
     if not control then
         return
     end
 
-    local entries = BuildQuestContextMenuEntries(journalIndex)
+    local questData = ResolveQuestReference(questRef)
+    local liveIndex = ResolveLiveJournalIndex(questData)
+    if not liveIndex then
+        if RequestRefresh then
+            RequestRefresh()
+        end
+        return
+    end
+
+    local entries = BuildQuestContextMenuEntries(liveIndex)
     if #entries == 0 then
         return
     end
@@ -1569,13 +1652,129 @@ local function ExpandCategoriesForClickSelect(journalIndex)
     return expandedAny, found
 end
 
+local function ResolveQuestReference(reference, questIdHint)
+    if not reference then
+        return nil
+    end
+
+    if type(reference) == "table" then
+        if reference.quest then
+            return reference.quest
+        end
+
+        if reference.data and reference.data.quest then
+            return reference.data.quest
+        end
+
+        if reference.journalIndex or reference.questId or reference.steps then
+            return reference
+        end
+    end
+
+    local questId = questIdHint
+    if type(reference) == "table" and reference.questId then
+        questId = reference.questId
+    end
+
+    local numeric = tonumber(reference)
+
+    if questId and state.questControlsByQuestId then
+        local control = state.questControlsByQuestId[questId]
+        if control and control.data and control.data.quest then
+            return control.data.quest
+        end
+    end
+
+    if numeric and state.questControls then
+        local control = state.questControls[numeric]
+        if control and control.data and control.data.quest then
+            return control.data.quest
+        end
+    end
+
+    local snapshot = state.snapshot
+    if snapshot then
+        if questId and snapshot.questById and snapshot.questById[questId] then
+            return snapshot.questById[questId]
+        end
+
+        if numeric and snapshot.questByJournalIndex and snapshot.questByJournalIndex[numeric] then
+            return snapshot.questByJournalIndex[numeric]
+        end
+    end
+
+    if numeric or questId then
+        return {
+            journalIndex = numeric,
+            questId = questId,
+        }
+    end
+
+    return nil
+end
+
+-- Live-Index-Reauflösung: nutzt gespeicherte questId, um aktuellen journalIndex zu finden.
+local function ResolveLiveJournalIndex(questData)
+    if not questData then
+        return nil
+    end
+
+    local idx = tonumber(questData.journalIndex)
+    local questId = questData.questId
+    local originalIndex = idx
+    local mismatchDetected = false
+
+    if idx and idx > 0 and DoesJournalQuestExist(idx) then
+        if GetJournalQuestId and questId then
+            local ok, currentId = SafeCall(GetJournalQuestId, idx)
+            if ok and currentId == questId then
+                return idx
+            end
+
+            mismatchDetected = true
+        else
+            return idx
+        end
+    end
+
+    if questId and GetNumJournalQuests and GetJournalQuestId then
+        local total = GetNumJournalQuests() or 0
+        for i = 1, total do
+            local ok, currentId = SafeCall(GetJournalQuestId, i)
+            if ok and currentId == questId then
+                if mismatchDetected or (originalIndex and originalIndex ~= i) then
+                    LogLiveIndexResolve(originalIndex, i, questId)
+                end
+                return i
+            end
+        end
+    end
+
+    return nil
+end
+
 local function FindQuestControlByJournalIndex(journalIndex)
     if not journalIndex then
         return nil
     end
 
+    local questData = ResolveQuestReference(journalIndex)
+    local liveIndex = ResolveLiveJournalIndex(questData)
+    if not liveIndex then
+        return nil
+    end
+
+    local questId = questData and questData.questId
+
+    if questId and state.questControlsByQuestId then
+        local control = state.questControlsByQuestId[questId]
+        if control then
+            return control
+        end
+    end
+
+    local numeric = tonumber(liveIndex) or liveIndex
     if state.questControls then
-        local numeric = tonumber(journalIndex) or journalIndex
         local control = state.questControls[numeric]
         if control then
             return control
@@ -1585,9 +1784,15 @@ local function FindQuestControlByJournalIndex(journalIndex)
     for index = 1, #state.orderedControls do
         local control = state.orderedControls[index]
         if control and control.rowType == "quest" then
-            local questData = control.data and control.data.quest
-            if questData and questData.journalIndex == journalIndex then
-                return control
+            local rowQuest = control.data and control.data.quest
+            if rowQuest then
+                if questId and rowQuest.questId and rowQuest.questId == questId then
+                    return control
+                end
+
+                if rowQuest.journalIndex == numeric then
+                    return control
+                end
             end
         end
     end
@@ -1599,31 +1804,55 @@ local function EnsureQuestRowVisible(journalIndex, options)
     options = options or {}
     local allowQueue = options.allowQueue ~= false
 
-    local control = FindQuestControlByJournalIndex(journalIndex)
+    local questData = ResolveQuestReference(journalIndex, options.questId)
+    local liveIndex = ResolveLiveJournalIndex(questData)
+    if not liveIndex then
+        if RequestRefresh then
+            RequestRefresh()
+        end
+        return false
+    end
+
+    local control = FindQuestControlByJournalIndex(questData or liveIndex)
     if not control or (control.IsHidden and control:IsHidden()) then
-        if allowQueue and journalIndex then
-            state.pendingExternalReveal = { questId = journalIndex }
+        if allowQueue then
+            state.pendingExternalReveal = {
+                questData = {
+                    journalIndex = liveIndex,
+                    questId = questData and questData.questId,
+                },
+            }
         end
         return false
     end
 
     local host = Nvk3UT and Nvk3UT.TrackerHost
     if not (host and host.ScrollControlIntoView) then
-        if allowQueue and journalIndex then
-            state.pendingExternalReveal = { questId = journalIndex }
+        if allowQueue then
+            state.pendingExternalReveal = {
+                questData = {
+                    journalIndex = liveIndex,
+                    questId = questData and questData.questId,
+                },
+            }
         end
         return false
     end
 
     local ok, ensured = pcall(host.ScrollControlIntoView, control)
     if not ok or not ensured then
-        if allowQueue and journalIndex then
-            state.pendingExternalReveal = { questId = journalIndex }
+        if allowQueue then
+            state.pendingExternalReveal = {
+                questData = {
+                    journalIndex = liveIndex,
+                    questId = questData and questData.questId,
+                },
+            }
         end
         return false
     end
 
-    LogScrollIntoView(journalIndex)
+    LogScrollIntoView(liveIndex)
 
     return true
 end
@@ -1635,7 +1864,8 @@ local function ProcessPendingExternalReveal()
     end
 
     state.pendingExternalReveal = nil
-    EnsureQuestRowVisible(pending.questId, { allowQueue = false })
+    local questRef = pending.questData or pending
+    EnsureQuestRowVisible(questRef, { allowQueue = false })
 end
 
 local function DoesJournalQuestExist(journalIndex)
@@ -1911,8 +2141,19 @@ local function EnsureTrackedQuestVisible(journalIndex, forceExpand, context)
         return
     end
 
+    local questData = ResolveQuestReference(journalIndex, context and context.questId)
+    local liveIndex = ResolveLiveJournalIndex(questData)
+    if not liveIndex then
+        if RequestRefresh then
+            RequestRefresh()
+        end
+        return
+    end
+
+    local questId = questData and questData.questId
+
     DebugDeselect("EnsureTrackedQuestVisible", {
-        journalIndex = journalIndex,
+        journalIndex = liveIndex,
         forceExpand = tostring(forceExpand),
     })
     local logContext = {
@@ -1925,17 +2166,17 @@ local function EnsureTrackedQuestVisible(journalIndex, forceExpand, context)
     local isExternal = context and context.isExternal
     local isNewTarget = context and context.isNewTarget
     if isExternal then
-        LogExternalSelect(journalIndex)
-        ExpandCategoriesForExternalSelect(journalIndex)
+        LogExternalSelect(questId or liveIndex)
+        ExpandCategoriesForExternalSelect(liveIndex)
     else
-        EnsureTrackedCategoriesExpanded(journalIndex, forceExpand, logContext)
+        EnsureTrackedCategoriesExpanded(liveIndex, forceExpand, logContext)
     end
     if isExternal and isNewTarget then
         logContext.forceWrite = true
     end
-    AutoExpandQuestForTracking(journalIndex, forceExpand, logContext)
+    AutoExpandQuestForTracking(liveIndex, forceExpand, logContext)
     if isExternal then
-        EnsureQuestRowVisible(journalIndex, { allowQueue = true })
+        EnsureQuestRowVisible(questData or liveIndex, { allowQueue = true, questId = questId })
     end
 end
 
@@ -1949,6 +2190,32 @@ local function SyncTrackedQuestState(forcedIndex, forceExpand, context)
     end
 
     context = context or {}
+
+    if forcedIndex then
+        local forcedQuestData = ResolveQuestReference(forcedIndex, context.questId)
+        local liveForcedIndex = ResolveLiveJournalIndex(forcedQuestData)
+        if liveForcedIndex then
+            if liveForcedIndex ~= forcedIndex then
+                forcedIndex = liveForcedIndex
+                context.forcedIndex = liveForcedIndex
+            end
+        else
+            if RequestRefresh then
+                RequestRefresh()
+            end
+            forcedIndex = nil
+            context.forcedIndex = nil
+        end
+    end
+
+    if state.pendingSelection and state.pendingSelection.questId then
+        local pendingData = ResolveQuestReference(state.pendingSelection.index, state.pendingSelection.questId)
+        local pendingLiveIndex = ResolveLiveJournalIndex(pendingData)
+        if pendingLiveIndex then
+            state.pendingSelection.index = pendingLiveIndex
+        end
+    end
+
     state.syncingTrackedState = true
 
     repeat
@@ -2097,6 +2364,13 @@ local function SyncTrackedQuestState(forcedIndex, forceExpand, context)
                 isExternal = isExternalFlag,
                 isNewTarget = isNewTarget,
             }
+            if not visibilityContext.questId then
+                if context.questId then
+                    visibilityContext.questId = context.questId
+                elseif state.pendingSelection and state.pendingSelection.questId then
+                    visibilityContext.questId = state.pendingSelection.questId
+                end
+            end
             EnsureTrackedQuestVisible(currentTracked, shouldForceExpand, visibilityContext)
         else
             DebugDeselect("SyncTrackedQuestState:skip-ensure-visible", {
@@ -2212,8 +2486,13 @@ end
 RequestRefresh = RequestRefreshInternal
 
 local function TrackQuestByJournalIndex(journalIndex, options)
-    local numeric = tonumber(journalIndex)
+    local questData = ResolveQuestReference(journalIndex, options and options.questId)
+    local liveIndex = ResolveLiveJournalIndex(questData)
+    local numeric = tonumber(liveIndex or journalIndex)
     if not numeric or numeric <= 0 then
+        if RequestRefresh then
+            RequestRefresh()
+        end
         return false
     end
 
@@ -2283,15 +2562,22 @@ local function TrackQuestByJournalIndex(journalIndex, options)
     return true
 end
 
-HandleQuestRowClick = function(journalIndex)
-    local questId = tonumber(journalIndex)
-    if not questId or questId <= 0 then
+HandleQuestRowClick = function(questRef)
+    local questData = ResolveQuestReference(questRef)
+    local liveIndex = ResolveLiveJournalIndex(questData)
+    if not liveIndex then
+        if RequestRefresh then
+            RequestRefresh()
+        end
         return
     end
 
+    local questId = questData and questData.questId
+    local logId = questId or liveIndex
+
     if state.isClickSelectInProgress then
         if IsDebugLoggingEnabled() then
-            DebugLog(string.format("CLICK_SELECT_SKIPPED questId=%s reason=in-progress", tostring(questId)))
+            DebugLog(string.format("CLICK_SELECT_SKIPPED questId=%s reason=in-progress", tostring(logId)))
         end
         return
     end
@@ -2299,7 +2585,7 @@ HandleQuestRowClick = function(journalIndex)
     state.isClickSelectInProgress = true
 
     if IsDebugLoggingEnabled() then
-        DebugLog(string.format("CLICK_SELECT_START questId=%s", tostring(questId)))
+        DebugLog(string.format("CLICK_SELECT_START questId=%s", tostring(logId)))
     end
 
     state.pendingSelection = nil
@@ -2307,35 +2593,36 @@ HandleQuestRowClick = function(journalIndex)
     local previousQuest = state.trackedQuestIndex
     local previousQuestString = previousQuest and tostring(previousQuest) or "nil"
 
-    ApplyImmediateTrackedQuest(questId, "click-select")
+    ApplyImmediateTrackedQuest(liveIndex, "click-select")
 
     if IsDebugLoggingEnabled() then
-        DebugLog(string.format("SET_ACTIVE questId=%s prev=%s", tostring(questId), previousQuestString))
+        DebugLog(string.format("SET_ACTIVE questId=%s prev=%s", tostring(logId), previousQuestString))
     end
 
     RequestRefresh()
 
     if IsDebugLoggingEnabled() then
-        DebugLog(string.format("UI_SELECT questId=%s", tostring(questId)))
+        DebugLog(string.format("UI_SELECT questId=%s", tostring(logId)))
     end
 
-    local nextExpanded = not IsQuestExpanded(questId)
+    local nextExpanded = not IsQuestExpanded(liveIndex)
     state.pendingSelection = {
-        index = questId,
+        index = liveIndex,
         expanded = nextExpanded,
         forceExpand = nextExpanded,
         trigger = "click",
         source = "QuestTracker:HandleQuestRowClick",
+        questId = questId,
     }
 
-    SetQuestExpanded(questId, nextExpanded, {
+    SetQuestExpanded(liveIndex, nextExpanded, {
         trigger = "click-select",
         source = "QuestTracker:HandleQuestRowClick",
     })
 
-    ExpandCategoriesForClickSelect(questId)
+    ExpandCategoriesForClickSelect(liveIndex)
 
-    EnsureQuestRowVisible(questId, { allowQueue = false })
+    EnsureQuestRowVisible(questData or liveIndex, { allowQueue = false, questId = questId })
 
     state.isClickSelectInProgress = false
 
@@ -2349,18 +2636,20 @@ HandleQuestRowClick = function(journalIndex)
         applyImmediate = false,
         requestRefresh = false,
         stateSource = "click-select",
+        questId = questId,
     }
 
-    local tracked = TrackQuestByJournalIndex(questId, trackOptions)
+    local tracked = TrackQuestByJournalIndex(liveIndex, trackOptions)
 
     if tracked then
         ProcessTrackedQuestUpdate(TRACK_TYPE_QUEST, {
             trigger = "click",
             source = "QuestTracker:HandleQuestRowClick",
-            forcedIndex = questId,
+            forcedIndex = liveIndex,
             forceExpand = nextExpanded,
             isExternal = false,
             stateSource = "click-select",
+            questId = questId,
         })
     else
         state.pendingSelection = nil
@@ -2369,7 +2658,7 @@ HandleQuestRowClick = function(journalIndex)
     RequestRefresh()
 
     if IsDebugLoggingEnabled() then
-        DebugLog(string.format("CLICK_SELECT_END questId=%s", tostring(questId)))
+        DebugLog(string.format("CLICK_SELECT_END questId=%s", tostring(logId)))
     end
 end
 
@@ -2453,6 +2742,10 @@ ProcessTrackedQuestUpdate = function(trackingType, context)
 
     if not resolvedContext.source then
         resolvedContext.source = "QuestTracker:OnTrackedQuestUpdate"
+    end
+
+    if not resolvedContext.questId and state.pendingSelection and state.pendingSelection.questId then
+        resolvedContext.questId = state.pendingSelection.questId
     end
 
     local forcedIndex = resolvedContext.forcedIndex
@@ -2647,6 +2940,7 @@ local function ResetLayoutState()
     state.lastAnchoredControl = nil
     state.categoryControls = {}
     state.questControls = {}
+    state.questControlsByQuestId = {}
 end
 
 local function ReleaseAll(pool)
@@ -2946,12 +3240,17 @@ SetQuestExpanded = function(journalIndex, expanded, context)
     return true
 end
 
-local function ToggleQuestExpansion(journalIndex, context)
-    if not journalIndex then
+local function ToggleQuestExpansion(questRef, context)
+    local questData = ResolveQuestReference(questRef)
+    local liveIndex = ResolveLiveJournalIndex(questData)
+    if not liveIndex then
+        if RequestRefresh then
+            RequestRefresh()
+        end
         return false
     end
 
-    local expanded = IsQuestExpanded(journalIndex)
+    local expanded = IsQuestExpanded(liveIndex)
     local toggleContext = context or {}
     if toggleContext.trigger == nil then
         toggleContext = {
@@ -2968,7 +3267,7 @@ local function ToggleQuestExpansion(journalIndex, context)
         toggleContext.source = "QuestTracker:ToggleQuestExpansion"
     end
 
-    local changed = SetQuestExpanded(journalIndex, not expanded, toggleContext)
+    local changed = SetQuestExpanded(liveIndex, not expanded, toggleContext)
     if changed then
         QuestTracker.Refresh()
     end
@@ -3086,8 +3385,7 @@ local function AcquireQuestControl()
                 if not questData then
                     return
                 end
-                local journalIndex = questData.journalIndex
-                ToggleQuestExpansion(journalIndex, {
+                ToggleQuestExpansion(questData, {
                     trigger = "click",
                     source = "QuestTracker:OnToggleClick",
                 })
@@ -3111,7 +3409,6 @@ local function AcquireQuestControl()
                 if not questData then
                     return
                 end
-                local journalIndex = questData.journalIndex
                 local toggleMouseOver = false
                 if ctrl.iconSlot then
                     local toggleIsMouseOver = ctrl.iconSlot.IsMouseOver
@@ -3121,7 +3418,7 @@ local function AcquireQuestControl()
                 end
 
                 if toggleMouseOver then
-                    ToggleQuestExpansion(journalIndex, {
+                    ToggleQuestExpansion(questData, {
                         trigger = "click",
                         source = "QuestTracker:OnRowClickToggle",
                     })
@@ -3129,20 +3426,20 @@ local function AcquireQuestControl()
                 end
 
                 if state.opts.autoTrack == false then
-                    ToggleQuestExpansion(journalIndex, {
+                    ToggleQuestExpansion(questData, {
                         trigger = "click",
                         source = "QuestTracker:OnRowClickManualToggle",
                     })
                     return
                 end
 
-                HandleQuestRowClick(journalIndex)
+                HandleQuestRowClick(questData)
             elseif button == MOUSE_BUTTON_INDEX_RIGHT then
                 local questData = ctrl.data and ctrl.data.quest
                 if not questData then
                     return
                 end
-                ShowQuestContextMenu(ctrl, questData.journalIndex)
+                ShowQuestContextMenu(ctrl, questData)
             end
         end)
         control:SetHandler("OnMouseEnter", function(ctrl)
@@ -3240,6 +3537,15 @@ local function EnsurePools()
         end
     end)
     state.questPool:SetCustomResetBehavior(function(control)
+        local questData = control.data and control.data.quest
+        if questData then
+            if questData.journalIndex then
+                state.questControls[questData.journalIndex] = nil
+            end
+            if questData.questId then
+                state.questControlsByQuestId[questData.questId] = nil
+            end
+        end
         resetControl(control)
         if control.label and control.label.SetText then
             control.label:SetText("")
@@ -3308,6 +3614,9 @@ local function LayoutQuest(quest)
 
     if quest and quest.journalIndex then
         state.questControls[quest.journalIndex] = control
+    end
+    if quest and quest.questId then
+        state.questControlsByQuestId[quest.questId] = control
     end
 
     if expanded then
@@ -3387,6 +3696,9 @@ local function ReleaseRowControl(control)
         local questData = control.data and control.data.quest
         if questData and questData.journalIndex then
             state.questControls[questData.journalIndex] = nil
+        end
+        if questData and questData.questId then
+            state.questControlsByQuestId[questData.questId] = nil
         end
         if state.questPool and control.poolKey then
             state.questPool:ReleaseObject(control.poolKey)
@@ -3702,6 +4014,7 @@ function QuestTracker.Shutdown()
     state.lastAnchoredControl = nil
     state.categoryControls = {}
     state.questControls = {}
+    state.questControlsByQuestId = {}
     state.isInitialized = false
     state.opts = {}
     state.fonts = {}
@@ -3719,6 +4032,7 @@ function QuestTracker.Shutdown()
     state.pendingExternalReveal = nil
     state.selectedQuestKey = nil
     state.isRebuildInProgress = false
+    state.lastLiveIndexResolveLogMs = nil
     state.questModelSubscription = nil
     NotifyHostContentChanged()
 end
