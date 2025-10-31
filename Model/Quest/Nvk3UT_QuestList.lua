@@ -10,8 +10,8 @@ M._byKey = M._byKey or {}
 M._byJournal = M._byJournal or {}
 M._version = M._version or 0
 M._dirty = M._dirty ~= false -- default to dirty on first load
-M._catMap = M._catMap
-M._catOrder = M._catOrder
+M._catMap = M._catMap or nil
+M._catOrder = M._catOrder or nil
 
 local unpack = table.unpack or unpack
 
@@ -42,6 +42,49 @@ local function safeCallMulti(func, ...)
 
     debugLog("QuestList call failed: %s", tostring(results[2]))
     return nil
+end
+
+local function stripProgressDecorations(text)
+    if type(text) ~= "string" then
+        return nil
+    end
+
+    local sanitized = text
+    sanitized = sanitized:gsub("%s*%(%s*%d+%s*/%s*%d+%s*%)", "")
+    sanitized = sanitized:gsub("%s*%[%s*%d+%s*/%s*%d+%s*%]", "")
+    sanitized = sanitized:gsub("%s+", " ")
+    sanitized = sanitized:gsub("^%s+", "")
+    sanitized = sanitized:gsub("%s+$", "")
+
+    if sanitized == "" then
+        return nil
+    end
+
+    return sanitized
+end
+
+local function normalizeObjectiveDisplayText(text)
+    if type(text) ~= "string" then
+        return nil
+    end
+
+    local displayText = text
+    if zo_strformat then
+        displayText = zo_strformat("<<1>>", displayText)
+    end
+
+    displayText = displayText:gsub("\r\n", "\n")
+    displayText = displayText:gsub("\r", "\n")
+    displayText = displayText:gsub("\t", " ")
+    displayText = displayText:gsub("\n+", " ")
+    displayText = displayText:gsub("^%s+", "")
+    displayText = displayText:gsub("%s+$", "")
+
+    if displayText == "" then
+        return nil
+    end
+
+    return displayText
 end
 
 local function makeQuestKey(journalIndex)
@@ -82,24 +125,27 @@ local function buildEntry(journalIndex)
     local tracked = safeCallMulti(IsTrackedJournalQuest, journalIndex)
     entry.tracked = tracked == true
 
-    local stepText, stepType, _, trackerOverrideText = nil, nil, nil, nil
-    local stepInfo = pack(safeCallMulti(GetJournalQuestStepInfo, journalIndex, 1))
-    if stepInfo.n >= 2 then
-        stepText = stepInfo[1]
-        stepType = stepInfo[3]
-        trackerOverrideText = stepInfo[4]
-    end
+    local questIsComplete = M and M.IsQuestComplete and M:IsQuestComplete(journalIndex)
+    local activeStepIndex, stepTitle = findActiveStepIndex(journalIndex)
+    local objectives, fallbackStepText, stepType =
+        buildObjectivesForStep(journalIndex, activeStepIndex, questIsComplete)
 
-    local overrideText = trackerOverrideText
-    if type(overrideText) == "string" and overrideText ~= "" then
-        entry.stepText = overrideText
-    else
-        entry.stepText = stepText
-    end
+    entry.stepIndex = activeStepIndex
     entry.stepType = stepType
+    entry.stepText = stepTitle or fallbackStepText
+    entry.objectives = objectives
+    entry.hasObjectives = (#objectives > 0)
+    entry.numConditions = #objectives
 
-    local numConditions = safeCallMulti(GetJournalQuestNumConditions, journalIndex, 1)
-    entry.numConditions = tonumber(numConditions) or 0
+    local categoryInfo = (M._catMap and M._catMap[journalIndex]) or nil
+    if categoryInfo then
+        entry.categoryIndex = tonumber(categoryInfo.index) or 9999
+        entry.categoryName = categoryInfo.name
+    else
+        entry.categoryIndex = 9999
+        entry.categoryName = "MISCELLANEOUS"
+    end
+    entry.categoryKey = string.format("cat:%s", tostring(entry.categoryIndex))
 
     entry.key = makeQuestKey(journalIndex)
     return entry
@@ -107,9 +153,9 @@ end
 
 local function buildCategoryMap()
     local map, order = {}, {}
-    local numCategories = tonumber(safeCallMulti(GetJournalNumQuestCategories)) or 0
+    local numCats = tonumber(safeCallMulti(GetJournalNumQuestCategories)) or 0
 
-    for categoryIndex = 1, numCategories do
+    for categoryIndex = 1, numCats do
         local categoryName, numInCategory = safeCallMulti(GetJournalQuestCategoryInfo, categoryIndex)
         if categoryName and categoryName ~= "" then
             order[#order + 1] = { index = categoryIndex, name = categoryName }
@@ -124,37 +170,152 @@ local function buildCategoryMap()
         end
     end
 
-    if next(map) == nil and type(GetJournalQuestCategoryType) == "function" then
-        local numQuests = tonumber(safeCallMulti(GetNumJournalQuests)) or 0
-        for journalIndex = 1, numQuests do
+    if next(map) == nil then
+        local total = tonumber(safeCallMulti(GetNumJournalQuests)) or 0
+        for journalIndex = 1, total do
             local categoryIndex = safeCallMulti(GetJournalQuestCategoryType, journalIndex)
             if categoryIndex then
-                local categoryName = safeCallMulti(GetJournalQuestCategoryInfo, categoryIndex)
-                map[journalIndex] = {
-                    index = categoryIndex,
-                    name = categoryName,
-                }
-                if categoryIndex then
-                    local seen = false
-                    for _, entry in ipairs(order) do
-                        if entry.index == categoryIndex then
-                            seen = true
-                            break
-                        end
+                local catName = safeCallMulti(GetJournalQuestCategoryInfo, categoryIndex) or "MISCELLANEOUS"
+                map[journalIndex] = { index = categoryIndex, name = catName }
+
+                local seen = false
+                for _, existing in ipairs(order) do
+                    if existing.index == categoryIndex then
+                        seen = true
+                        break
                     end
-                    if not seen then
-                        order[#order + 1] = { index = categoryIndex, name = categoryName }
-                    end
+                end
+                if not seen then
+                    order[#order + 1] = { index = categoryIndex, name = catName }
                 end
             end
         end
 
         table.sort(order, function(left, right)
-            return (left.index or math.huge) < (right.index or math.huge)
+            return (left.index or 9999) < (right.index or 9999)
         end)
     end
 
     return map, order
+end
+
+local function findActiveStepIndex(journalIndex)
+    local numSteps = tonumber(safeCallMulti(GetJournalQuestNumSteps, journalIndex)) or 0
+    if numSteps <= 0 then
+        return 1, nil
+    end
+
+    local fallbackText = nil
+    for stepIndex = 1, numSteps do
+        local stepText, visibility, _, trackerOverrideText =
+            safeCallMulti(GetJournalQuestStepInfo, journalIndex, stepIndex)
+        local sanitizedOverride = stripProgressDecorations(trackerOverrideText)
+        local sanitizedStep = stripProgressDecorations(stepText)
+        local _, numConditions = safeCallMulti(GetJournalQuestNumConditions, journalIndex, stepIndex)
+        local stepIsVisible = true
+        if visibility ~= nil then
+            local hiddenConstant = rawget(_G, "QUEST_STEP_VISIBILITY_HIDDEN")
+            if hiddenConstant ~= nil then
+                stepIsVisible = (visibility ~= hiddenConstant)
+            else
+                stepIsVisible = (visibility ~= false)
+            end
+        end
+
+        local candidate = sanitizedOverride or sanitizedStep
+        if not fallbackText and candidate then
+            fallbackText = candidate
+        end
+
+        if stepIsVisible and (numConditions or 0) > 0 then
+            return stepIndex, candidate
+        end
+    end
+
+    return 1, fallbackText
+end
+
+local function buildObjectivesForStep(journalIndex, stepIndex, questIsComplete)
+    local objectives = {}
+    if not stepIndex then
+        return objectives, nil, nil
+    end
+
+    local stepText, visibility, stepType, trackerOverrideText =
+        safeCallMulti(GetJournalQuestStepInfo, journalIndex, stepIndex)
+    local sanitizedOverride = stripProgressDecorations(trackerOverrideText)
+    local sanitizedStep = stripProgressDecorations(stepText)
+
+    local stepIsVisible = true
+    if visibility ~= nil then
+        local hiddenConstant = rawget(_G, "QUEST_STEP_VISIBILITY_HIDDEN")
+        if hiddenConstant ~= nil then
+            stepIsVisible = (visibility ~= hiddenConstant)
+        else
+            stepIsVisible = (visibility ~= false)
+        end
+    end
+    if questIsComplete and not stepIsVisible then
+        stepIsVisible = true
+    end
+
+    local fallbackText = sanitizedOverride or sanitizedStep
+    local numConditions = tonumber(safeCallMulti(GetJournalQuestNumConditions, journalIndex, stepIndex)) or 0
+    local seen = {}
+
+    for conditionIndex = 1, numConditions do
+        local conditionText, cur, maxValue, isComplete, _, isVisible, isFail, isTracked, isShared, isHidden, isOptional,
+            countDisplayType = safeCallMulti(GetJournalQuestConditionInfo, journalIndex, stepIndex, conditionIndex)
+        local normalized = normalizeObjectiveDisplayText(conditionText)
+        local displayText = normalized or fallbackText or conditionText
+        if displayText and displayText ~= "" then
+            local bucketKey = string.lower(displayText)
+            if not seen[bucketKey] then
+                seen[bucketKey] = true
+                objectives[#objectives + 1] = {
+                    text = conditionText,
+                    displayText = displayText,
+                    current = tonumber(cur) or 0,
+                    cur = tonumber(cur) or 0,
+                    max = tonumber(maxValue) or 0,
+                    complete = isComplete == true,
+                    isComplete = isComplete == true,
+                    isTurnIn = false,
+                    isVisible = isVisible ~= false,
+                    isFailCondition = isFail == true,
+                    failed = isFail == true,
+                    isTracked = isTracked == true,
+                    isCreditShared = isShared == true,
+                    isHidden = isHidden == true,
+                    isOptional = isOptional == true,
+                    countDisplayType = countDisplayType,
+                }
+            end
+        end
+    end
+
+    if #objectives == 0 and fallbackText and fallbackText ~= "" then
+        objectives[1] = {
+            text = fallbackText,
+            displayText = fallbackText,
+            current = 0,
+            cur = 0,
+            max = 0,
+            complete = false,
+            isComplete = false,
+            isTurnIn = false,
+            isVisible = stepIsVisible,
+            isFailCondition = false,
+            failed = false,
+            isTracked = false,
+            isCreditShared = false,
+            isHidden = false,
+            isOptional = false,
+            countDisplayType = nil,
+        }
+    end
+
+    return objectives, fallbackText or sanitizedStep, stepType
 end
 
 function M:MarkDirty()
@@ -184,16 +345,6 @@ function M:RefreshFromGame(force)
         local name = safeCallMulti(GetJournalQuestName, journalIndex)
         if name and name ~= "" then
             local entry = buildEntry(journalIndex)
-            local categoryInfo = self._catMap and self._catMap[journalIndex] or nil
-            if categoryInfo then
-                entry.categoryIndex = tonumber(categoryInfo.index) or 9999
-                entry.categoryName = categoryInfo.name
-            else
-                entry.categoryIndex = 9999
-                entry.categoryName = "MISCELLANEOUS"
-            end
-            entry.categoryKey = string.format("cat:%s", tostring(entry.categoryIndex))
-
             self._list[#self._list + 1] = entry
             self._byKey[entry.key] = entry
             self._byJournal[journalIndex] = entry.key

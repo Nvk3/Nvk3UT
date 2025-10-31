@@ -103,6 +103,42 @@ local function normalizeObjectiveDisplayText(text)
     return displayText
 end
 
+local function copyObjectivesFromEntry(listEntry)
+    if type(listEntry) ~= "table" then
+        return nil
+    end
+
+    local source = listEntry.objectives
+    local hasFlag = listEntry.hasObjectives == true
+    local stepText = listEntry.stepText
+    local stepIndex = listEntry.stepIndex
+
+    if type(source) ~= "table" then
+        if hasFlag then
+            return {}, stepText, stepIndex, true
+        end
+        return nil
+    end
+
+    local copy = {}
+    for index = 1, #source do
+        local objective = source[index]
+        if type(objective) == "table" then
+            local clone = {}
+            for key, value in pairs(objective) do
+                clone[key] = value
+            end
+            copy[#copy + 1] = clone
+        end
+    end
+
+    if #copy == 0 and not hasFlag then
+        return nil
+    end
+
+    return copy, stepText, stepIndex, (hasFlag or #copy > 0)
+end
+
 local function shouldUseHeaderText(candidate, objectives)
     if type(candidate) ~= "string" then
         return nil
@@ -127,8 +163,8 @@ local function shouldUseHeaderText(candidate, objectives)
     if objectives and type(objectives) == "table" then
         local headerLower = string.lower(headerText)
         for index = 1, #objectives do
-            local objective = objectives[index]
-            local displayText = objective and objective.displayText
+        local objective = objectives[index]
+        local displayText = objective and (objective.displayText or objective.text)
             if type(displayText) == "string" then
                 if string.lower(displayText) == headerLower then
                     return nil
@@ -161,7 +197,7 @@ local function getTimestampMs()
     return nil
 end
 
-local function collectQuestObjectives(journalIndex, questIsComplete)
+local function collectQuestObjectivesFromJournal(journalIndex, questIsComplete)
     local questList = getQuestList()
     if not questList then
         return {}, nil
@@ -173,6 +209,7 @@ local function collectQuestObjectives(journalIndex, questIsComplete)
     local objectiveList = {}
     local seen = {}
     local fallbackStepText = nil
+    local fallbackStepIndex = nil
     local fallbackObjectiveText = nil
 
     local numSteps = questList:GetQuestNumSteps(journalIndex)
@@ -209,6 +246,7 @@ local function collectQuestObjectives(journalIndex, questIsComplete)
 
         if not fallbackStepText and sanitizedStepText then
             fallbackStepText = sanitizedStepText
+            fallbackStepIndex = fallbackStepIndex or stepIndex
         end
 
         if sanitizedOverrideText and not seen[sanitizedOverrideText] then
@@ -272,9 +310,22 @@ local function collectQuestObjectives(journalIndex, questIsComplete)
             complete = false,
             isTurnIn = false,
         }
+        fallbackStepIndex = fallbackStepIndex or 1
     end
 
-    return objectiveList, fallbackStepText
+    return objectiveList, fallbackStepText, fallbackStepIndex
+end
+
+local function collectQuestObjectives(journalIndex, questIsComplete, listEntry)
+    local copied, stepText, stepIndex, hasObjectives = copyObjectivesFromEntry(listEntry)
+    if copied then
+        return copied, stepText, stepIndex, hasObjectives
+    end
+
+    local objectives, fallbackStepText, fallbackStepIndex =
+        collectQuestObjectivesFromJournal(journalIndex, questIsComplete)
+    local hasData = (#objectives > 0)
+    return objectives, fallbackStepText, fallbackStepIndex, hasData
 end
 
 local function collectQuestConditions(journalIndex, stepIndex)
@@ -804,14 +855,16 @@ local function buildQuestEntry(listEntry)
         info.isDaily,
         listEntry
     )
-    local objectives, fallbackStepText = collectQuestObjectives(journalIndex, isComplete)
+    local objectives, fallbackStepText, stepIndex, hasObjectivesFromList =
+        collectQuestObjectives(journalIndex, isComplete, listEntry)
     local questEntry = {
         key = listEntry.key or normalizeQuestKey(journalIndex),
         journalIndex = journalIndex,
         questId = questId,
         name = info.name,
         backgroundText = info.backgroundText,
-        activeStepText = info.activeStepText or fallbackStepText,
+        stepIndex = listEntry.stepIndex or stepIndex,
+        activeStepText = info.activeStepText or listEntry.stepText or fallbackStepText,
         activeStepType = info.activeStepType,
         level = info.level,
         zoneName = info.zoneName or listEntry.zoneName,
@@ -831,6 +884,9 @@ local function buildQuestEntry(listEntry)
         description = info.description,
         objectives = objectives,
     }
+    questEntry.hasObjectives = listEntry.hasObjectives or hasObjectivesFromList or (#objectives > 0)
+    questEntry.numConditions = listEntry.numConditions or #objectives
+    questEntry.stepIndex = questEntry.stepIndex or stepIndex
     questEntry.categoryIndex = tonumber(listEntry.categoryIndex) or questEntry.categoryIndex
     questEntry.categoryName = listEntry.categoryName or questEntry.categoryName
     questEntry.categoryKey = listEntry.categoryKey or questEntry.categoryKey
