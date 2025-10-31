@@ -9,6 +9,7 @@ local MODULE_NAME = addonName .. "QuestTracker"
 local EVENT_NAMESPACE = MODULE_NAME .. "_Event"
 
 local Utils = Nvk3UT and Nvk3UT.Utils
+local QuestState = Nvk3UT and Nvk3UT.QuestState
 local FormatCategoryHeaderText =
     (Utils and Utils.FormatCategoryHeaderText)
     or function(baseText, count, showCounts)
@@ -75,6 +76,15 @@ local ProcessTrackedQuestUpdate -- forward declaration for deferred tracking pro
 -- because SafeCall would still be nil at that point.
 local SafeCall
 
+local function GetQuestStateModule()
+    if QuestState and QuestState.Init then
+        return QuestState
+    end
+
+    QuestState = Nvk3UT and Nvk3UT.QuestState
+    return QuestState
+end
+
 local state = {
     isInitialized = false,
     opts = {},
@@ -111,14 +121,6 @@ local state = {
 }
 
 local STATE_VERSION = 1
-
-local PRIORITY = {
-    manual = 5,
-    ["click-select"] = 4,
-    ["external-select"] = 4,
-    auto = 2,
-    init = 1,
-}
 
 NVK_DEBUG_DESELECT = NVK_DEBUG_DESELECT or false
 
@@ -486,79 +488,28 @@ local function ResolveStateSource(context, fallback)
     return fallback or "auto"
 end
 
-local function LogStateWrite(entity, key, expanded, source, priority)
-    local debugCheck = IsDebugLoggingEnabled
-    if type(debugCheck) ~= "function" or not debugCheck() then
-        return
-    end
-
-    local formatted
-    if entity == "cat" then
-        formatted = string.format(
-            "STATE_WRITE cat=%s expanded=%s source=%s prio=%d",
-            tostring(key),
-            tostring(expanded),
-            tostring(source),
-            priority or 0
-        )
-    elseif entity == "quest" then
-        formatted = string.format(
-            "STATE_WRITE quest=%s expanded=%s source=%s prio=%d",
-            tostring(key),
-            tostring(expanded),
-            tostring(source),
-            priority or 0
-        )
-    elseif entity == "active" then
-        formatted = string.format(
-            "STATE_WRITE active=%s source=%s prio=%d",
-            tostring(key),
-            tostring(source),
-            priority or 0
-        )
-    end
-
-    if formatted then
-        DebugLog(formatted)
-    end
-end
-
 local function EnsureActiveSavedState()
-    if not state.saved then
+    local module = GetQuestStateModule()
+    if not (module and module.GetSelectedQuestInfo) then
         return nil
     end
 
-    local active = state.saved.active
-    if type(active) ~= "table" then
-        active = {
-            questKey = nil,
-            source = "init",
-            ts = 0,
-        }
-        state.saved.active = active
-    end
-
-    if active.questKey ~= nil then
+    local active = module.GetSelectedQuestInfo()
+    if active and active.questKey ~= nil then
         active.questKey = NormalizeQuestKey(active.questKey)
     end
-
-    if type(active.source) ~= "string" or active.source == "" then
-        active.source = "init"
-    end
-
-    active.ts = tonumber(active.ts) or 0
 
     return active
 end
 
 local function SyncSelectedQuestFromSaved()
-    if not state.saved then
+    local module = GetQuestStateModule()
+    if not (module and module.GetSelectedQuestId) then
         state.selectedQuestKey = nil
         return nil
     end
 
-    local active = EnsureActiveSavedState()
-    local questKey = active and active.questKey or nil
+    local questKey = module.GetSelectedQuestId()
     if questKey ~= nil then
         questKey = NormalizeQuestKey(questKey)
     end
@@ -582,141 +533,6 @@ local function ApplyActiveQuestFromSaved()
     return journalIndex
 end
 
-local function WriteCategoryState(categoryKey, expanded, source, options)
-    if not state.saved then
-        return false
-    end
-
-    local key = NormalizeCategoryKey(categoryKey)
-    if not key then
-        return false
-    end
-
-    source = source or "auto"
-    options = options or {}
-    state.saved.cat = state.saved.cat or {}
-
-    local prev = state.saved.cat[key]
-    local priorityOverride = options.priorityOverride
-    local priority = priorityOverride or PRIORITY[source] or 0
-    local prevPriority = prev and (PRIORITY[prev.source] or 0) or 0
-    local overrideTimestamp = tonumber(options.timestamp)
-    local now = overrideTimestamp or GetCurrentTimeSeconds()
-    local prevTs = (prev and prev.ts) or 0
-    local forceWrite = options.force == true
-    local allowTimestampRegression = options.allowTimestampRegression == true
-
-    if prev and not forceWrite then
-        if prevPriority > priority then
-            return false
-        end
-
-        if prevPriority == priority and not allowTimestampRegression and now < prevTs then
-            return false
-        end
-    end
-
-    local newExpanded = expanded and true or false
-
-    state.saved.cat[key] = {
-        expanded = newExpanded,
-        source = source,
-        ts = now,
-    }
-
-    LogStateWrite("cat", key, newExpanded, source, priority)
-
-    return true
-end
-
-local function WriteQuestState(questKey, expanded, source, options)
-    if not state.saved then
-        return false
-    end
-
-    local key = NormalizeQuestKey(questKey)
-    if not key then
-        return false
-    end
-
-    source = source or "auto"
-    options = options or {}
-    state.saved.quest = state.saved.quest or {}
-
-    local prev = state.saved.quest[key]
-    local priorityOverride = options.priorityOverride
-    local priority = priorityOverride or PRIORITY[source] or 0
-    local prevPriority = prev and (PRIORITY[prev.source] or 0) or 0
-    local overrideTimestamp = tonumber(options.timestamp)
-    local now = overrideTimestamp or GetCurrentTimeSeconds()
-    local prevTs = (prev and prev.ts) or 0
-    local forceWrite = options.force == true
-    local allowTimestampRegression = options.allowTimestampRegression == true
-
-    if prev and not forceWrite then
-        if prevPriority > priority then
-            return false
-        end
-
-        if prevPriority == priority and not allowTimestampRegression and now < prevTs then
-            return false
-        end
-    end
-
-    local newExpanded = expanded and true or false
-
-    state.saved.quest[key] = {
-        expanded = newExpanded,
-        source = source,
-        ts = now,
-    }
-
-    LogStateWrite("quest", key, newExpanded, source, priority)
-
-    return true
-end
-
-local function WriteActiveQuest(questKey, source, options)
-    if not state.saved then
-        return false
-    end
-
-    source = source or "auto"
-    options = options or {}
-    local normalized = questKey and NormalizeQuestKey(questKey) or nil
-    local prev = EnsureActiveSavedState()
-    local priorityOverride = options.priorityOverride
-    local priority = priorityOverride or PRIORITY[source] or 0
-    local prevPriority = prev and (PRIORITY[prev.source] or 0) or 0
-    local overrideTimestamp = tonumber(options.timestamp)
-    local now = overrideTimestamp or GetCurrentTimeSeconds()
-    local prevTs = (prev and prev.ts) or 0
-    local forceWrite = options.force == true
-    local allowTimestampRegression = options.allowTimestampRegression == true
-
-    if prev and not forceWrite then
-        if prevPriority > priority then
-            return false
-        end
-
-        if prevPriority == priority and not allowTimestampRegression and now < prevTs then
-            return false
-        end
-    end
-
-    state.saved.active = {
-        questKey = normalized,
-        source = source,
-        ts = now,
-    }
-
-    LogStateWrite("active", normalized, nil, source, priority)
-
-    ApplyActiveQuestFromSaved()
-
-    return true
-end
-
 local function PrimeInitialSavedState()
     if not state.saved then
         return
@@ -734,6 +550,11 @@ local function PrimeInitialSavedState()
     state.saved.initializedAt = state.saved.initializedAt or GetCurrentTimeSeconds()
     local initTimestamp = tonumber(state.saved.initializedAt) or GetCurrentTimeSeconds()
 
+    local questState = GetQuestStateModule()
+    if not questState then
+        return
+    end
+
     local primedCategories = 0
     local primedQuests = 0
 
@@ -742,10 +563,15 @@ local function PrimeInitialSavedState()
         if category then
             local catKey = NormalizeCategoryKey(category.key)
             if catKey then
-                local entry = state.saved.cat and state.saved.cat[catKey]
+                local entry = questState.GetCategoryState and questState.GetCategoryState(catKey)
                 local entryTs = (entry and entry.ts) or 0
                 if entryTs < initTimestamp or not entry then
-                    if WriteCategoryState(catKey, true, "init", { timestamp = initTimestamp }) then
+                    if questState.SetCategoryExpanded(catKey, true, {
+                        source = "init",
+                        timestamp = initTimestamp,
+                        force = true,
+                        allowTimestampRegression = true,
+                    }) then
                         primedCategories = primedCategories + 1
                     end
                 end
@@ -757,10 +583,15 @@ local function PrimeInitialSavedState()
                     if quest then
                         local questKey = NormalizeQuestKey(quest.journalIndex)
                         if questKey then
-                            local entry = state.saved.quest and state.saved.quest[questKey]
+                            local entry = questState.GetQuestState and questState.GetQuestState(questKey)
                             local entryTs = (entry and entry.ts) or 0
                             if entryTs < initTimestamp or not entry then
-                                if WriteQuestState(questKey, true, "init", { timestamp = initTimestamp }) then
+                                if questState.SetQuestExpanded(questKey, true, {
+                                    source = "init",
+                                    timestamp = initTimestamp,
+                                    force = true,
+                                    allowTimestampRegression = true,
+                                }) then
                                     primedQuests = primedQuests + 1
                                 end
                             end
@@ -774,7 +605,12 @@ local function PrimeInitialSavedState()
     local active = EnsureActiveSavedState()
     local activeTs = (active and active.ts) or 0
     if activeTs < initTimestamp then
-        WriteActiveQuest(active and active.questKey or nil, "init", { timestamp = initTimestamp })
+        questState.SetSelectedQuestId(active and active.questKey or nil, {
+            source = "init",
+            timestamp = initTimestamp,
+            force = true,
+            allowTimestampRegression = true,
+        })
     end
 
     if IsDebugLoggingEnabled() and (primedCategories > 0 or primedQuests > 0) then
@@ -806,54 +642,11 @@ local function MigrateLegacySavedState(saved)
         return
     end
 
-    saved.cat = saved.cat or {}
-    saved.quest = saved.quest or {}
-
-    local legacyCategories = saved.catExpanded
-    if type(legacyCategories) == "table" then
-        for key, value in pairs(legacyCategories) do
-            local normalized = NormalizeCategoryKey(key)
-            if normalized then
-                saved.cat[normalized] = {
-                    expanded = value and true or false,
-                    source = "init",
-                    ts = 0,
-                }
-            end
-        end
-    end
-
     saved.catExpanded = nil
-
-    local legacyQuests = saved.questExpanded
-    if type(legacyQuests) == "table" then
-        for key, value in pairs(legacyQuests) do
-            local normalized = NormalizeQuestKey(key)
-            if normalized then
-                saved.quest[normalized] = {
-                    expanded = value and true or false,
-                    source = "init",
-                    ts = 0,
-                }
-            end
-        end
-    end
-
     saved.questExpanded = nil
-
-    if type(saved.active) ~= "table" then
-        saved.active = {
-            questKey = nil,
-            source = "init",
-            ts = 0,
-        }
-    else
-        if saved.active.questKey ~= nil then
-            saved.active.questKey = NormalizeQuestKey(saved.active.questKey)
-        end
-        saved.active.source = saved.active.source or "init"
-        saved.active.ts = saved.active.ts or 0
-    end
+    saved.cat = nil
+    saved.quest = nil
+    saved.active = nil
 
     EnsureSavedDefaults(saved)
 end
@@ -1659,9 +1452,18 @@ local function GetFocusedQuestIndex()
         if ok then
             local numeric = tonumber(focused)
             if numeric and numeric > 0 then
+                local questState = GetQuestStateModule()
+                if questState and questState.SetFocusedQuestId then
+                    questState.SetFocusedQuestId(numeric)
+                end
                 return numeric
             end
         end
+    end
+
+    local questState = GetQuestStateModule()
+    if questState and questState.SetFocusedQuestId then
+        questState.SetFocusedQuestId(nil)
     end
 
     return nil
@@ -1725,7 +1527,15 @@ local function UpdateTrackedQuestCache(forcedIndex, context)
         if context and context.isExternal then
             writeOptions = { force = true }
         end
-        WriteActiveQuest(trackedIndex, sourceTag, writeOptions)
+
+        local questState = GetQuestStateModule()
+        if questState and questState.SetSelectedQuestId then
+            writeOptions = writeOptions or {}
+            writeOptions.source = sourceTag
+            questState.SetSelectedQuestId(trackedIndex, writeOptions)
+        end
+
+        ApplyActiveQuestFromSaved()
     else
         ApplyActiveQuestFromSaved()
     end
@@ -1810,10 +1620,14 @@ local function ApplyImmediateTrackedQuest(journalIndex, stateSource)
     state.lastTrackedBeforeSync = state.trackedQuestIndex
 
     local sourceTag = stateSource or "auto"
-    local changed = WriteActiveQuest(journalIndex, sourceTag)
-    if not changed then
-        ApplyActiveQuestFromSaved()
+    local questState = GetQuestStateModule()
+    local changed = false
+
+    if questState and questState.SetSelectedQuestId then
+        changed = questState.SetSelectedQuestId(journalIndex, { source = sourceTag })
     end
+
+    ApplyActiveQuestFromSaved()
 
     state.pendingDeselection = false
 
@@ -1835,15 +1649,19 @@ local function AutoExpandQuestForTracking(journalIndex, forceExpand, context)
 
     local questKey = NormalizeQuestKey(journalIndex)
 
+    local previousExpanded
+    local questState = GetQuestStateModule()
+    if questState and questState.IsQuestExpanded then
+        local expanded, hasValue = questState.IsQuestExpanded(questKey)
+        if hasValue then
+            previousExpanded = expanded
+        end
+    end
+
     DebugDeselect("AutoExpandQuestForTracking", {
         journalIndex = journalIndex,
         forceExpand = tostring(forceExpand),
-        previous = tostring(
-            state.saved
-                and state.saved.quest
-                and state.saved.quest[questKey]
-                and state.saved.quest[questKey].expanded
-        ),
+        previous = tostring(previousExpanded),
     })
 
     local logContext = {
@@ -2156,7 +1974,11 @@ local function SyncTrackedQuestState(forcedIndex, forceExpand, context)
 
     if state.pendingDeselection and not state.trackedQuestIndex then
         local clearSource = ResolveStateSource(context, "auto")
-        WriteActiveQuest(nil, clearSource)
+        local questState = GetQuestStateModule()
+        if questState and questState.SetSelectedQuestId then
+            questState.SetSelectedQuestId(nil, { source = clearSource })
+        end
+        ApplyActiveQuestFromSaved()
         state.pendingDeselection = false
     end
 
@@ -2567,16 +2389,19 @@ end
 
 local function EnsureSavedVars()
     Nvk3UT.sv = Nvk3UT.sv or {}
-    local saved = Nvk3UT.sv.QuestTracker or {}
-    Nvk3UT.sv.QuestTracker = saved
+    local svRoot = Nvk3UT.sv
+    local saved = svRoot.QuestTracker or {}
+    svRoot.QuestTracker = saved
+
+    local questState = GetQuestStateModule()
+    if questState and questState.Init then
+        questState:Init(svRoot)
+    end
 
     if type(saved.stateVersion) ~= "number" or saved.stateVersion < STATE_VERSION then
         MigrateLegacySavedState(saved)
         saved.stateVersion = STATE_VERSION
     end
-
-    saved.cat = saved.cat or {}
-    saved.quest = saved.quest or {}
 
     state.saved = saved
     EnsureActiveSavedState()
@@ -2782,10 +2607,11 @@ local function IsCategoryExpanded(categoryKey)
         return GetDefaultCategoryExpanded()
     end
 
-    if state.saved and state.saved.cat then
-        local entry = state.saved.cat[key]
-        if entry and entry.expanded ~= nil then
-            return entry.expanded and true or false
+    local questState = GetQuestStateModule()
+    if questState and questState.IsCategoryExpanded then
+        local expanded, hasValue = questState.IsCategoryExpanded(key)
+        if hasValue then
+            return expanded and true or false
         end
     end
 
@@ -2798,10 +2624,11 @@ IsQuestExpanded = function(journalIndex)
         return GetDefaultQuestExpanded()
     end
 
-    if state.saved and state.saved.quest then
-        local entry = state.saved.quest[key]
-        if entry and entry.expanded ~= nil then
-            return entry.expanded and true or false
+    local questState = GetQuestStateModule()
+    if questState and questState.IsQuestExpanded then
+        local expanded, hasValue = questState.IsQuestExpanded(key)
+        if hasValue then
+            return expanded and true or false
         end
     end
 
@@ -2818,6 +2645,11 @@ SetCategoryExpanded = function(categoryKey, expanded, context)
         return false
     end
 
+    local questState = GetQuestStateModule()
+    if not (questState and questState.SetCategoryExpanded) then
+        return false
+    end
+
     local beforeExpanded = IsCategoryExpanded(key)
     local stateSource = ResolveStateSource(context, expanded and "auto" or "auto")
     local writeOptions
@@ -2831,7 +2663,10 @@ SetCategoryExpanded = function(categoryKey, expanded, context)
         writeOptions.allowTimestampRegression = true
     end
 
-    local changed = WriteCategoryState(key, expanded, stateSource, writeOptions)
+    writeOptions = writeOptions or {}
+    writeOptions.source = stateSource
+
+    local changed = questState.SetCategoryExpanded(key, expanded, writeOptions)
     if not changed then
         return false
     end
@@ -2883,6 +2718,11 @@ SetQuestExpanded = function(journalIndex, expanded, context)
         return false
     end
 
+    local questState = GetQuestStateModule()
+    if not (questState and questState.SetQuestExpanded) then
+        return false
+    end
+
     local beforeExpanded = IsQuestExpanded(key)
     local stateSource = ResolveStateSource(context, expanded and "auto" or "auto")
     local writeOptions
@@ -2896,7 +2736,10 @@ SetQuestExpanded = function(journalIndex, expanded, context)
         writeOptions.allowTimestampRegression = true
     end
 
-    local changed = WriteQuestState(key, expanded, stateSource, writeOptions)
+    writeOptions = writeOptions or {}
+    writeOptions.source = stateSource
+
+    local changed = questState.SetQuestExpanded(key, expanded, writeOptions)
     if not changed then
         return false
     end
