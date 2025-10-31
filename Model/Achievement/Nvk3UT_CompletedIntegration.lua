@@ -4,7 +4,10 @@ local function _nvk3ut_is_enabled(key)
     return (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.features and Nvk3UT.sv.features[key]) and true or false
 end
 
-local Comp = Nvk3UT.CompletedData
+local function getCompletedData()
+    return Nvk3UT and Nvk3UT.CompletedData
+end
+
 local U = Nvk3UT and Nvk3UT.Utils
 
 local NVK3_DONE = 84003
@@ -68,6 +71,7 @@ local function _extractYearFromKey(key, last50Key)
 end
 
 local function _completedPointsForKey(key)
+    local Comp = getCompletedData()
     if not (Comp and Comp.SummaryCountAndPointsForKey) then
         return 0
     end
@@ -121,6 +125,7 @@ local function _updateCompletedTooltip(ach)
         return
     end
 
+    local Comp = getCompletedData()
     local parentNode = ach._nvkCompletedNode
     if not (parentNode and parentNode.GetData) then
         return
@@ -227,6 +232,7 @@ local function AddCompletedCategory(AchClass)
             return result
         end
 
+        local Comp = getCompletedData()
         if not (Comp and Comp.GetSubcategoryList) then
             return result
         end
@@ -322,6 +328,7 @@ local function OverrideGetCategoryInfoFromData(AchClass)
 
     function AchClass:GetCategoryInfoFromData(data, parentData)
         if _nvk3ut_is_enabled("completed") and data and data.categoryIndex == NVK3_DONE then
+            local Comp = getCompletedData()
             local key = data.subcategoryIndex or (Comp and Comp.Constants and Comp.Constants().LAST50_KEY)
             if key and Comp and Comp.SummaryCountAndPointsForKey then
                 local num, pts = Comp.SummaryCountAndPointsForKey(key)
@@ -337,6 +344,7 @@ local function Override_ZO_GetAchievementIds()
 
     function ZO_GetAchievementIds(categoryIndex, subcategoryIndex, numAchievements, considerSearchResults)
         if categoryIndex == NVK3_DONE then
+            local Comp = getCompletedData()
             local key = subcategoryIndex or (Comp and Comp.Constants and Comp.Constants().LAST50_KEY)
             if key and Comp and Comp.ListForKey then
                 local list = Comp.ListForKey(key) or {}
@@ -368,6 +376,7 @@ local function OverrideOnAchievementUpdated(AchClass)
     function AchClass:OnAchievementUpdated(id)
         local data = self.categoryTree and self.categoryTree:GetSelectedData()
         if _nvk3ut_is_enabled("completed") and data and data.categoryIndex == NVK3_DONE then
+            local Comp = getCompletedData()
             if Comp and Comp.Rebuild then
                 Comp.Rebuild()
             end

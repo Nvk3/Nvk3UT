@@ -21,14 +21,20 @@ end
 
 local function iterateProgress()
     ensureData()
-    local sv = Nvk3UT and Nvk3UT._recentSV
-    if not sv or type(sv.progress) ~= "table" then
+    if not (Data and Data.IterateProgress) then
         return {}
     end
+
+    local iterator, state, key = Data.IterateProgress()
+    if type(iterator) ~= "function" then
+        return {}
+    end
+
     local entries = {}
-    for rawId, _ in pairs(sv.progress) do
+    for rawId, _ in iterator, state, key do
         entries[#entries + 1] = tonumber(rawId) or rawId
     end
+
     return entries
 end
 

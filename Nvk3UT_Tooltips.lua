@@ -869,8 +869,9 @@ local function HookSceneAndEvents()
     end, 2000)
   end)
   zo_callLater(function()
-    if Nvk3UT and Nvk3UT.RebuildSelected and SecurePostHook then
-      SecurePostHook(Nvk3UT, "RebuildSelected", function()
+    local Rebuild = Nvk3UT and Nvk3UT.Rebuild
+    if Rebuild and SecurePostHook and Rebuild.ForceAchievementRefresh then
+      SecurePostHook(Rebuild, "ForceAchievementRefresh", function()
         T.HookNow()
       end)
     end
@@ -1012,6 +1013,18 @@ local function _nvkCountFavorites()
     local ok, n = pcall(Fav.Count)
     if ok and tonumber(n) then
       return n
+    end
+  end
+  if Fav and type(Fav.GetAllFavorites) == "function" then
+    local ok, iterator, state, key = pcall(Fav.GetAllFavorites)
+    if ok and type(iterator) == "function" then
+      local c = 0
+      for _, flagged in iterator, state, key do
+        if flagged then
+          c = c + 1
+        end
+      end
+      return c
     end
   end
   if Fav and type(Fav.Iterate) == "function" then

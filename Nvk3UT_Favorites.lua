@@ -63,7 +63,7 @@ function M.Remove(achievementId)
         return false
     end
 
-    if not (Data.Remove and Data.IsFavorite) then
+    if not (Data.SetFavorited and Data.IsFavorited) then
         return false
     end
 
@@ -73,8 +73,8 @@ function M.Remove(achievementId)
 
     for _, candidateId in ipairs(chainIds) do
         for _, scope in ipairs(scopes) do
-            if Data.IsFavorite(candidateId, scope) then
-                Data.Remove(candidateId, scope)
+            if Data.IsFavorited(candidateId, scope) then
+                Data.SetFavorited(candidateId, false, "Favorites:Remove", scope)
                 removedAny = true
             end
         end

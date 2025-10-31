@@ -8,6 +8,10 @@ AchievementTracker.__index = AchievementTracker
 local MODULE_NAME = addonName .. "AchievementTracker"
 
 local Utils = Nvk3UT and Nvk3UT.Utils
+
+local function GetAchievementState()
+    return Nvk3UT and Nvk3UT.AchievementState
+end
 local FormatCategoryHeaderText =
     (Utils and Utils.FormatCategoryHeaderText)
     or function(baseText, count, showCounts)
@@ -96,7 +100,6 @@ local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
 local REFRESH_DEBOUNCE_MS = 80
 
 local COLOR_ROW_HOVER = { 1, 1, 0.6, 1 }
-local FOCUS_HIGHLIGHT_DURATION_MS = 1600
 
 local FAVORITES_LOOKUP_KEY = "NVK3UT_FAVORITES_ROOT"
 local FAVORITES_CATEGORY_ID = "Nvk3UT_Favorites"
@@ -118,7 +121,6 @@ local state = {
     pendingRefresh = false,
     contentWidth = 0,
     contentHeight = 0,
-    pendingFocusAchievementId = nil,
 }
 
 local function ApplyLabelDefaults(label)
@@ -364,13 +366,21 @@ end
 
 local function EnsureSavedVars()
     Nvk3UT.sv = Nvk3UT.sv or {}
-    Nvk3UT.sv.AchievementTracker = Nvk3UT.sv.AchievementTracker or {}
-    local saved = Nvk3UT.sv.AchievementTracker
-    if saved.categoryExpanded == nil then
-        saved.categoryExpanded = true
+    local root = Nvk3UT.sv
+    root.AchievementTracker = root.AchievementTracker or {}
+
+    local achievementState = GetAchievementState()
+    if achievementState and achievementState.Init then
+        achievementState.Init(root)
+        state.saved = achievementState._saved or root.AchievementTracker
+    else
+        local saved = root.AchievementTracker
+        if saved.categoryExpanded == nil then
+            saved.categoryExpanded = true
+        end
+        saved.entryExpanded = saved.entryExpanded or {}
+        state.saved = saved
     end
-    saved.entryExpanded = saved.entryExpanded or {}
-    state.saved = saved
 end
 
 local function ApplyFont(label, font)
@@ -421,25 +431,30 @@ local function BuildFavoritesScope()
 end
 
 local function IsFavoriteAchievement(achievementId)
+    local achievementState = GetAchievementState()
+    if achievementState and achievementState.IsFavorited then
+        return achievementState.IsFavorited(achievementId)
+    end
+
     if not achievementId then
         return false
     end
 
     local Fav = Nvk3UT and Nvk3UT.FavoritesData
-    if not (Fav and Fav.IsFavorite) then
+    if not (Fav and Fav.IsFavorited) then
         return false
     end
 
     local scope = BuildFavoritesScope()
-    if Fav.IsFavorite(achievementId, scope) then
+    if Fav.IsFavorited(achievementId, scope) then
         return true
     end
 
-    if scope ~= "account" and Fav.IsFavorite(achievementId, "account") then
+    if scope ~= "account" and Fav.IsFavorited(achievementId, "account") then
         return true
     end
 
-    if scope ~= "character" and Fav.IsFavorite(achievementId, "character") then
+    if scope ~= "character" and Fav.IsFavorited(achievementId, "character") then
         return true
     end
 
@@ -452,12 +467,23 @@ local function RemoveAchievementFromFavorites(achievementId)
         return
     end
 
-    local Fav = Nvk3UT and Nvk3UT.FavoritesData
-    if not (Fav and Fav.Remove) then
+    local achievementState = GetAchievementState()
+    if achievementState and achievementState.SetFavorited then
+        achievementState.SetFavorited(numeric, false, "AchievementTracker:RemoveAchievementFromFavorites")
         return
     end
 
-    Fav.Remove(numeric, BuildFavoritesScope())
+    local Fav = Nvk3UT and Nvk3UT.FavoritesData
+    if not (Fav and Fav.SetFavorited) then
+        return
+    end
+
+    Fav.SetFavorited(
+        numeric,
+        false,
+        "AchievementTracker:RemoveAchievementFromFavorites",
+        BuildFavoritesScope()
+    )
 
     if AchievementTracker and AchievementTracker.RequestRefresh then
         AchievementTracker.RequestRefresh()
@@ -861,7 +887,7 @@ end
 
 local function HasAnyFavoriteAchievements()
     local Fav = Nvk3UT and Nvk3UT.FavoritesData
-    if not (Fav and Fav.Iterate) then
+    if not (Fav and Fav.GetAllFavorites) then
         return false
     end
 
@@ -870,8 +896,13 @@ local function HasAnyFavoriteAchievements()
             return false
         end
 
-        for id, isFavorite in Fav.Iterate(scope) do
-            if id and isFavorite then
+        local iterator, state, key = Fav.GetAllFavorites(scope)
+        if type(iterator) ~= "function" then
+            return false
+        end
+
+        for _, isFavorite in iterator, state, key do
+            if isFavorite then
                 return true
             end
         end
@@ -900,17 +931,17 @@ local function IsRecentAchievement(achievementId)
         return false
     end
 
-    local recent = Nvk3UT and Nvk3UT._recentSV and Nvk3UT._recentSV.progress
-    if not recent then
+    local recentData = Nvk3UT and Nvk3UT.RecentData
+    if not (recentData and recentData.Contains) then
         return false
     end
 
-    if recent[achievementId] ~= nil then
-        return true
+    local ok, result = pcall(recentData.Contains, achievementId)
+    if ok then
+        return result and true or false
     end
 
-    local key = tostring(achievementId)
-    return recent[key] ~= nil
+    return false
 end
 
 local function BuildTodoLookup()
@@ -1026,6 +1057,14 @@ local function UpdateContentSize()
 end
 
 local function IsCategoryExpanded()
+    local achievementState = GetAchievementState()
+    if achievementState and achievementState.IsGroupExpanded then
+        local expanded = achievementState.IsGroupExpanded(CATEGORY_KEY)
+        if expanded ~= nil then
+            return expanded ~= false
+        end
+    end
+
     if not state.saved then
         return true
     end
@@ -1036,12 +1075,20 @@ local function IsCategoryExpanded()
 end
 
 local function SetCategoryExpanded(expanded, context)
-    if not state.saved then
-        return
-    end
     local beforeExpanded = IsCategoryExpanded()
-    state.saved.categoryExpanded = expanded and true or false
-    local afterExpanded = IsCategoryExpanded()
+    local afterExpanded = beforeExpanded
+    local source = (context and context.source) or "AchievementTracker:SetCategoryExpanded"
+    local achievementState = GetAchievementState()
+
+    if achievementState and achievementState.SetGroupExpanded then
+        achievementState.SetGroupExpanded(CATEGORY_KEY, expanded, source)
+        if achievementState.IsGroupExpanded then
+            afterExpanded = achievementState.IsGroupExpanded(CATEGORY_KEY) ~= false
+        end
+    elseif state.saved then
+        state.saved.categoryExpanded = expanded and true or false
+        afterExpanded = IsCategoryExpanded()
+    end
 
     if beforeExpanded ~= afterExpanded then
         LogCategoryExpansion(
@@ -1049,12 +1096,17 @@ local function SetCategoryExpanded(expanded, context)
             (context and context.trigger) or "unknown",
             beforeExpanded,
             afterExpanded,
-            (context and context.source) or "AchievementTracker:SetCategoryExpanded"
+            source
         )
     end
 end
 
-local function SetEntryExpanded(achievementId, expanded)
+local function SetEntryExpanded(achievementId, expanded, source)
+    local achievementState = GetAchievementState()
+    if achievementState and achievementState.SetGroupExpanded then
+        achievementState.SetGroupExpanded(achievementId, expanded, source or "AchievementTracker:SetEntryExpanded")
+        return
+    end
     if not state.saved or not achievementId then
         return
     end
@@ -1062,6 +1114,14 @@ local function SetEntryExpanded(achievementId, expanded)
 end
 
 local function IsEntryExpanded(achievementId)
+    local achievementState = GetAchievementState()
+    if achievementState and achievementState.IsGroupExpanded then
+        local expanded = achievementState.IsGroupExpanded(achievementId)
+        if expanded ~= nil then
+            return expanded ~= false
+        end
+    end
+
     if not state.saved or not achievementId then
         return true
     end
@@ -1267,7 +1327,7 @@ local function AcquireAchievementControl()
                 end
                 local achievementId = ctrl.data.achievementId
                 local expanded = not IsEntryExpanded(achievementId)
-                SetEntryExpanded(achievementId, expanded)
+                SetEntryExpanded(achievementId, expanded, "AchievementTracker:ToggleAchievementObjectives")
                 AchievementTracker.Refresh()
             elseif button == RIGHT_MOUSE_BUTTON then
                 if not ctrl.data or not ctrl.data.achievementId then
@@ -1508,71 +1568,6 @@ local function LayoutCategory()
     end
 end
 
-local function HighlightControl(control)
-    if not (control and control.label and control.baseColor) then
-        return
-    end
-
-    local label = control.label
-    if not label.SetColor then
-        return
-    end
-
-    local baseColor = {
-        control.baseColor[1] or 1,
-        control.baseColor[2] or 1,
-        control.baseColor[3] or 1,
-        control.baseColor[4] or 1,
-    }
-
-    label:SetColor(unpack(COLOR_ROW_HOVER))
-
-    if zo_callLater then
-        zo_callLater(function()
-            if label and label.SetColor then
-                label:SetColor(baseColor[1], baseColor[2], baseColor[3], baseColor[4])
-            end
-        end, FOCUS_HIGHLIGHT_DURATION_MS)
-    else
-        label:SetColor(baseColor[1], baseColor[2], baseColor[3], baseColor[4])
-    end
-end
-
-local function FocusAchievementRowInternal(achievementId)
-    local numeric = tonumber(achievementId)
-    if not numeric or numeric <= 0 then
-        return false
-    end
-
-    local host = Nvk3UT and Nvk3UT.TrackerHost
-    for index = 1, #state.orderedControls do
-        local control = state.orderedControls[index]
-        if control and control.rowType == "achievement" then
-            local data = control.data
-            if data and data.achievementId and tonumber(data.achievementId) == numeric then
-                if host and host.ScrollControlIntoView then
-                    pcall(host.ScrollControlIntoView, control)
-                end
-                HighlightControl(control)
-                return true
-            end
-        end
-    end
-
-    return false
-end
-
-local function ApplyPendingFocus()
-    local pending = state.pendingFocusAchievementId
-    if not pending then
-        return
-    end
-
-    if FocusAchievementRowInternal(pending) then
-        state.pendingFocusAchievementId = nil
-    end
-end
-
 local function Rebuild()
     if not state.container then
         return
@@ -1590,7 +1585,6 @@ local function Rebuild()
 
     UpdateContentSize()
     NotifyHostContentChanged()
-    ApplyPendingFocus()
 end
 
 local function OnSnapshotUpdated(snapshot)
@@ -1649,7 +1643,7 @@ function AchievementTracker.Init(parentControl, opts)
 
     SubscribeToModel()
 
-    state.snapshot = Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.GetSnapshot and Nvk3UT.AchievementModel.GetSnapshot()
+    state.snapshot = Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.GetViewData and Nvk3UT.AchievementModel.GetViewData()
 
     state.isInitialized = true
 
@@ -1662,8 +1656,8 @@ function AchievementTracker.Refresh()
         return
     end
 
-    if Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.GetSnapshot then
-        state.snapshot = Nvk3UT.AchievementModel.GetSnapshot() or state.snapshot
+    if Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.GetViewData then
+        state.snapshot = Nvk3UT.AchievementModel.GetViewData() or state.snapshot
     end
 
     Rebuild()
@@ -1687,7 +1681,6 @@ function AchievementTracker.Shutdown()
     state.lastAnchoredControl = nil
     state.fonts = {}
     state.opts = {}
-    state.pendingFocusAchievementId = nil
 
     state.isInitialized = false
     state.pendingRefresh = false
@@ -1748,31 +1741,6 @@ function AchievementTracker.ApplyTheme(settings)
     state.fonts = MergeFonts(state.opts.fonts)
 
     RequestRefresh()
-end
-
-function AchievementTracker.FocusAchievement(achievementId)
-    local numeric = tonumber(achievementId)
-    if not numeric or numeric <= 0 then
-        return false
-    end
-
-    EnsureSavedVars()
-
-    SetCategoryExpanded(true, {
-        trigger = "external",
-        source = "AchievementTracker:FocusAchievement",
-    })
-
-    state.pendingFocusAchievementId = numeric
-
-    local focused = FocusAchievementRowInternal(numeric)
-    if focused then
-        state.pendingFocusAchievementId = nil
-        return true
-    end
-
-    RequestRefresh()
-    return false
 end
 
 function AchievementTracker.RequestRefresh()

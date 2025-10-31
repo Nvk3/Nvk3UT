@@ -1973,12 +1973,14 @@ local function applyAppearance()
 end
 
 local function initModels(debugEnabled)
+    local sv = getSavedVars()
+
     if Nvk3UT.QuestModel and Nvk3UT.QuestModel.Init then
-        pcall(Nvk3UT.QuestModel.Init, { debug = debugEnabled })
+        pcall(Nvk3UT.QuestModel.Init, { debug = debugEnabled, saved = sv })
     end
 
     if Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.Init then
-        pcall(Nvk3UT.AchievementModel.Init, { debug = debugEnabled })
+        pcall(Nvk3UT.AchievementModel.Init, { debug = debugEnabled, saved = sv })
     end
 end
 

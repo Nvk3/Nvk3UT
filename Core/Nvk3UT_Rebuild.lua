@@ -7,7 +7,6 @@ Nvk3UT_Rebuild = Nvk3UT_Rebuild or {}
 
 local Rebuild = Nvk3UT_Rebuild
 Rebuild._root = type(Rebuild._root) == "table" and Rebuild._root or nil
-Rebuild._selectionLock = Rebuild._selectionLock == true
 
 local ATTACH_RETRY_MS = 100
 local ATTACH_MAX_ATTEMPTS = 10
@@ -91,32 +90,6 @@ local function resolveAchievementsSystem()
     return ACHIEVEMENTS
 end
 
-local function beginSelectionLock(root)
-    if type(root) == "table" then
-        if root._rebuild_lock then
-            return false, root
-        end
-        root._rebuild_lock = true
-        return true, root
-    end
-
-    if Rebuild._selectionLock then
-        return false, nil
-    end
-
-    Rebuild._selectionLock = true
-    return true, nil
-end
-
-local function endSelectionLock(root)
-    if type(root) == "table" then
-        root._rebuild_lock = false
-        return
-    end
-
-    Rebuild._selectionLock = false
-end
-
 local function describeContext(action, context)
     if context == nil or context == "" then
         _debug("%s() requested", action)
@@ -181,45 +154,6 @@ local function rebuildCompletedData()
     return safeInvoke("CompletedData.Rebuild", completed.Rebuild)
 end
 
----Rebuild the currently selected achievement category in the achievements UI.
----@param achievementSystem table|nil
-function Rebuild.RebuildAchievementSelection(achievementSystem)
-    local ach = achievementSystem or resolveAchievementsSystem()
-    if type(ach) ~= "table" then
-        return
-    end
-
-    local categoryTree = ach.categoryTree
-    local onCategorySelected = ach.OnCategorySelected
-    if type(categoryTree) ~= "table" or type(categoryTree.GetSelectedData) ~= "function" then
-        return
-    end
-
-    if type(onCategorySelected) ~= "function" then
-        return
-    end
-
-    local selectedData = categoryTree:GetSelectedData()
-    if not selectedData then
-        return
-    end
-
-    local root = getRoot()
-    local acquired, owner = beginSelectionLock(root)
-    if not acquired then
-        return
-    end
-
-    local ok, err = pcall(onCategorySelected, ach, selectedData, true)
-    endSelectionLock(owner)
-
-    if not ok then
-        _error("RebuildAchievementSelection failed: %s", tostring(err))
-    end
-end
-
-Rebuild.RebuildSelected = Rebuild.RebuildAchievementSelection
-
 ---Force the quest tracker to refresh its view model / layout.
 ---@param context string|nil
 ---@return boolean triggered
@@ -254,9 +188,6 @@ function Rebuild.ForceAchievementRefresh(context)
     if not triggered then
         triggered = refreshTrackerHost() or triggered
     end
-
-    -- Keep the achievements journal in sync with tracker changes.
-    Rebuild.RebuildAchievementSelection()
 
     return triggered
 end
@@ -294,7 +225,6 @@ attachToRoot = function(root)
 
     Rebuild._root = root
     root.Rebuild = Rebuild
-    root.RebuildSelected = Rebuild.RebuildAchievementSelection
 end
 
 function Rebuild.AttachToRoot(root)
