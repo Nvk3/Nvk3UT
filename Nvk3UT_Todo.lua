@@ -3,12 +3,12 @@ Nvk3UT = Nvk3UT or {}
 local function logShim(action)
     local diagnostics = Nvk3UT and Nvk3UT.Diagnostics
     if diagnostics and diagnostics.Debug then
-        diagnostics.Debug("Recent SHIM -> %s", tostring(action))
+        diagnostics.Debug("Todo SHIM -> %s", tostring(action))
     end
 end
 
 local function resolveCategory()
-    return Nvk3UT and Nvk3UT.RecentCategory
+    return Nvk3UT and Nvk3UT.TodoCategory
 end
 
 local tableUnpack = table.unpack or unpack
@@ -33,7 +33,7 @@ local function safeCall(method, ...)
 end
 
 local Shim = {}
-Nvk3UT.Recent = Shim
+Nvk3UT.Todo = Shim
 
 function Shim.Init(...)
     logShim("Init")
@@ -69,16 +69,6 @@ function Shim.GetHeight(...)
     end
     local height = safeCall(category.GetHeight, category, ...)
     return tonumber(height) or 0
-end
-
-function Shim.CleanupCompleted(...)
-    logShim("CleanupCompleted")
-    local category = resolveCategory()
-    if not category or type(category.CleanupCompleted) ~= "function" then
-        return false
-    end
-    local result = safeCall(category.CleanupCompleted, category, ...)
-    return result and true or false
 end
 
 return Shim
