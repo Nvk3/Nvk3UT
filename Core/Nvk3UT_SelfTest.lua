@@ -220,7 +220,7 @@ local function checkFavoritesData()
         return false, "FavoritesData module missing"
     end
 
-    local required = { "InitSavedVars", "IsFavorite", "Toggle", "Remove" }
+    local required = { "InitSavedVars", "IsFavorited", "SetFavorited", "ToggleFavorited", "GetAllFavorites" }
     local missing = {}
     for _, fnName in ipairs(required) do
         if type(data[fnName]) ~= "function" then

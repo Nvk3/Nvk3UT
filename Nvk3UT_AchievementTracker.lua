@@ -441,20 +441,20 @@ local function IsFavoriteAchievement(achievementId)
     end
 
     local Fav = Nvk3UT and Nvk3UT.FavoritesData
-    if not (Fav and Fav.IsFavorite) then
+    if not (Fav and Fav.IsFavorited) then
         return false
     end
 
     local scope = BuildFavoritesScope()
-    if Fav.IsFavorite(achievementId, scope) then
+    if Fav.IsFavorited(achievementId, scope) then
         return true
     end
 
-    if scope ~= "account" and Fav.IsFavorite(achievementId, "account") then
+    if scope ~= "account" and Fav.IsFavorited(achievementId, "account") then
         return true
     end
 
-    if scope ~= "character" and Fav.IsFavorite(achievementId, "character") then
+    if scope ~= "character" and Fav.IsFavorited(achievementId, "character") then
         return true
     end
 
@@ -474,11 +474,16 @@ local function RemoveAchievementFromFavorites(achievementId)
     end
 
     local Fav = Nvk3UT and Nvk3UT.FavoritesData
-    if not (Fav and Fav.Remove) then
+    if not (Fav and Fav.SetFavorited) then
         return
     end
 
-    Fav.Remove(numeric, BuildFavoritesScope())
+    Fav.SetFavorited(
+        numeric,
+        false,
+        "AchievementTracker:RemoveAchievementFromFavorites",
+        BuildFavoritesScope()
+    )
 
     if AchievementTracker and AchievementTracker.RequestRefresh then
         AchievementTracker.RequestRefresh()
@@ -882,7 +887,7 @@ end
 
 local function HasAnyFavoriteAchievements()
     local Fav = Nvk3UT and Nvk3UT.FavoritesData
-    if not (Fav and Fav.Iterate) then
+    if not (Fav and Fav.GetAllFavorites) then
         return false
     end
 
@@ -891,8 +896,13 @@ local function HasAnyFavoriteAchievements()
             return false
         end
 
-        for id, isFavorite in Fav.Iterate(scope) do
-            if id and isFavorite then
+        local iterator, state, key = Fav.GetAllFavorites(scope)
+        if type(iterator) ~= "function" then
+            return false
+        end
+
+        for _, isFavorite in iterator, state, key do
+            if isFavorite then
                 return true
             end
         end

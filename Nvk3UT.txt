@@ -17,10 +17,10 @@ Model/Quest/Nvk3UT_QuestSelection.lua
 Model/Quest/Nvk3UT_QuestList.lua
 Model/Quest/Nvk3UT_QuestModel.lua
 Model/Achievement/Nvk3UT_AchievementState.lua
+Model/Achievement/Nvk3UT_FavoritesData.lua
 Model/Achievement/Nvk3UT_AchievementList.lua
 Model/Achievement/Nvk3UT_AchievementModel.lua
 Nvk3UT_Achievements.lua
-Nvk3UT_FavoritesData.lua
 Nvk3UT_Favorites.lua
 Nvk3UT_RecentData.lua
 Nvk3UT_Recent.lua

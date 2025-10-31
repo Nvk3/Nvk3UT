@@ -1015,6 +1015,18 @@ local function _nvkCountFavorites()
       return n
     end
   end
+  if Fav and type(Fav.GetAllFavorites) == "function" then
+    local ok, iterator, state, key = pcall(Fav.GetAllFavorites)
+    if ok and type(iterator) == "function" then
+      local c = 0
+      for _, flagged in iterator, state, key do
+        if flagged then
+          c = c + 1
+        end
+      end
+      return c
+    end
+  end
   if Fav and type(Fav.Iterate) == "function" then
     local ok, it, s, var = pcall(Fav.Iterate)
     if ok and it then

@@ -132,7 +132,7 @@ end
 
 local function CollectFavoriteIds()
     local Fav = Nvk3UT and Nvk3UT.FavoritesData
-    if not (Fav and Fav.Iterate) then
+    if not (Fav and Fav.GetAllFavorites) then
         return {}
     end
 
@@ -142,16 +142,9 @@ local function CollectFavoriteIds()
 
     for index = 1, #scopes do
         local scope = scopes[index]
-        local ok, iterator, state, key = pcall(Fav.Iterate, scope)
-        if ok and type(iterator) == "function" then
-            local currentKey = key
-            while true do
-                local rawId, flagged = iterator(state, currentKey)
-                currentKey = rawId
-                if rawId == nil then
-                    break
-                end
-
+        local iterator, state, key = Fav.GetAllFavorites(scope)
+        if type(iterator) == "function" then
+            for rawId, flagged in iterator, state, key do
                 if flagged then
                     local normalizedId = NormalizeAchievementId(rawId)
                     if normalizedId then

@@ -113,15 +113,21 @@ end
 
 local function __nvk3_CountFavorites()
   local Fav = Nvk3UT and Nvk3UT.FavoritesData
-  if not Fav or not Fav.Iterate then
+  if not Fav or not Fav.GetAllFavorites then
     return 0
   end
   local sv = Nvk3UT and Nvk3UT.sv
   local general = sv and sv.General
   local scope = (general and general.favScope) or "account"
   local n = 0
-  for _ in Fav.Iterate(scope) do
-    n = n + 1
+  local iterator, state, key = Fav.GetAllFavorites(scope)
+  if type(iterator) ~= "function" then
+    return 0
+  end
+  for _, flagged in iterator, state, key do
+    if flagged then
+      n = n + 1
+    end
   end
   return n
 end

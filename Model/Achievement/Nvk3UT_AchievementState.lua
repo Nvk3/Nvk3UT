@@ -389,20 +389,20 @@ function AchievementState.IsFavorited(achievementId)
     end
 
     local Fav = getFavoritesModule()
-    if not (Fav and Fav.IsFavorite) then
+    if not (Fav and Fav.IsFavorited) then
         return false
     end
 
     local scope = resolveFavoritesScope()
-    if Fav.IsFavorite(normalized, scope) then
+    if Fav.IsFavorited(normalized, scope) then
         return true
     end
 
-    if scope ~= "account" and Fav.IsFavorite(normalized, "account") then
+    if scope ~= "account" and Fav.IsFavorited(normalized, "account") then
         return true
     end
 
-    if scope ~= "character" and Fav.IsFavorite(normalized, "character") then
+    if scope ~= "character" and Fav.IsFavorited(normalized, "character") then
         return true
     end
 
@@ -416,28 +416,24 @@ function AchievementState.SetFavorited(achievementId, shouldFavorite, source)
     end
 
     local Fav = getFavoritesModule()
-    if not Fav then
+    if not (Fav and Fav.SetFavorited) then
         return false
     end
 
     local desired = shouldFavorite and true or false
-    local current = AchievementState.IsFavorited(normalized)
-    if current == desired then
+    local scope = resolveFavoritesScope()
+    local changed = Fav.SetFavorited(normalized, desired, source, scope)
+    if not changed then
         return false
     end
 
-    local scope = resolveFavoritesScope()
-    if desired then
-        if Fav.Add then
-            Fav.Add(normalized, scope)
-        end
-        emitDebugMessage("favorite:add id=%d scope=%s source=%s", normalized, tostring(scope), tostring(source or "auto"))
-    else
-        if Fav.Remove then
-            Fav.Remove(normalized, scope)
-        end
-        emitDebugMessage("favorite:remove id=%d scope=%s source=%s", normalized, tostring(scope), tostring(source or "auto"))
-    end
+    emitDebugMessage(
+        "favorite:%s id=%d scope=%s source=%s",
+        desired and "add" or "remove",
+        normalized,
+        tostring(scope),
+        tostring(source or "auto")
+    )
 
     touchInternal(string.format("favorite:%d", normalized))
     return true
