@@ -4,7 +4,10 @@ local function _nvk3ut_is_enabled(key)
   return (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.features and Nvk3UT.sv.features[key]) and true or false
 end
 
-local Todo = Nvk3UT.TodoData
+local function getTodoModule()
+    return Nvk3UT and Nvk3UT.TodoData
+end
+
 local U = Nvk3UT and Nvk3UT.Utils
 
 local NVK3_TODO = 84002
@@ -22,6 +25,7 @@ end
 -- Add one 'To-Do-Liste' header with subcategories for each basegame top category
 
 local function _todoCollectOpenSummary(topId)
+  local Todo = getTodoModule()
   if not topId or not Todo or type(Todo.ListOpenForTop) ~= "function" then
     return 0, 0
   end
@@ -172,11 +176,15 @@ local function AddTodoCategory(AchClass)
       _row.nvkPlainName = _row.nvkPlainName or sanitizePlainName(label)
     end
 
+    local Todo = getTodoModule()
     local numTop = GetNumAchievementCategories and GetNumAchievementCategories() or 0
     for top = 1, numTop do
       local ok, topName, nSub, nAch = pcall(GetAchievementCategoryInfo, top)
       if ok and ((nSub and nSub > 0) or (nAch and nAch > 0)) then
-        local openCount, openPoints = _todoCollectOpenSummary(top)
+        local openCount, openPoints = 0, 0
+        if Todo and Todo.ListOpenForTop then
+          openCount, openPoints = _todoCollectOpenSummary(top)
+        end
         if openCount > 0 then
           local node = self:AddCategory(lookup, tree, subTemplate, parentNode, top, topName, true)
           if node then
@@ -229,6 +237,10 @@ local function OverrideGetCategoryInfoFromData(AchClass)
     end
     local self, data, parentData = ...
     if _nvk3ut_is_enabled("todo") and data and data.categoryIndex == NVK3_TODO then
+      local Todo = getTodoModule()
+      if not (Todo and Todo.ListOpenForTop and Todo.ListAllOpen) then
+        return org(...)
+      end
       local ids
       if data.subcategoryIndex then
         ids = Todo.ListOpenForTop(data.subcategoryIndex, true)
@@ -250,6 +262,10 @@ local function Override_ZO_GetAchievementIds()
   local base = ZO_GetAchievementIds
   function ZO_GetAchievementIds(categoryIndex, subcategoryIndex, numAchievements, considerSearchResults)
     if categoryIndex == NVK3_TODO then
+      local Todo = getTodoModule()
+      if not (Todo and Todo.ListOpenForTop and Todo.ListAllOpen) then
+        return base(categoryIndex, subcategoryIndex, numAchievements, considerSearchResults)
+      end
       if subcategoryIndex then
         local __res = Todo.ListOpenForTop(subcategoryIndex, considerSearchResults)
         local U = Nvk3UT and Nvk3UT.Utils
