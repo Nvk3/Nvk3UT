@@ -549,137 +549,92 @@ local function cloneCategoryEntry(entry)
     return copy
 end
 
-local function buildCategoryTypeToGroup()
-    local mapping = {}
-    local function assign(constantName, groupKey)
-        local value = rawget(_G, constantName)
-        if value ~= nil then
-            mapping[value] = groupKey
-        end
+local DEFAULT_CATEGORY_INDEX = 9999
+local DEFAULT_CATEGORY_NAME = "MISCELLANEOUS"
+local DEFAULT_CATEGORY_KEY = string.format("cat:%s", tostring(DEFAULT_CATEGORY_INDEX))
+
+local function makeCategoryEntry(index, name, key)
+    local resolvedIndex = tonumber(index) or DEFAULT_CATEGORY_INDEX
+    local resolvedName = (type(name) == "string" and name ~= "") and name or DEFAULT_CATEGORY_NAME
+    local resolvedKey = nil
+    if type(key) == "string" and key ~= "" then
+        resolvedKey = key
+    elseif resolvedIndex == DEFAULT_CATEGORY_INDEX then
+        resolvedKey = DEFAULT_CATEGORY_KEY
+    else
+        resolvedKey = string.format("cat:%s", tostring(resolvedIndex))
     end
-    assign("ZO_QUEST_JOURNAL_CATEGORY_TYPE_MAIN_STORY", "MAIN_STORY")
-    assign("ZO_QUEST_JOURNAL_CATEGORY_TYPE_ZONE_STORY", "ZONE_STORY")
-    assign("ZO_QUEST_JOURNAL_CATEGORY_TYPE_ZONE", "ZONE")
-    assign("ZO_QUEST_JOURNAL_CATEGORY_TYPE_GUILD", "GUILD")
-    assign("ZO_QUEST_JOURNAL_CATEGORY_TYPE_CRAFTING", "CRAFTING")
-    assign("ZO_QUEST_JOURNAL_CATEGORY_TYPE_DUNGEON", "DUNGEON")
-    assign("ZO_QUEST_JOURNAL_CATEGORY_TYPE_ALLIANCE_WAR", "ALLIANCE_WAR")
-    assign("ZO_QUEST_JOURNAL_CATEGORY_TYPE_PROLOGUE", "PROLOGUE")
-    assign("ZO_QUEST_JOURNAL_CATEGORY_TYPE_REPEATABLE", "REPEATABLE")
-    assign("ZO_QUEST_JOURNAL_CATEGORY_TYPE_COMPANION", "COMPANION")
-    assign("ZO_QUEST_JOURNAL_CATEGORY_TYPE_MISCELLANEOUS", "MISC")
-    return mapping
+
+    return {
+        key = resolvedKey,
+        name = resolvedName,
+        order = resolvedIndex,
+        rawOrder = resolvedIndex,
+        index = resolvedIndex,
+        type = nil,
+        groupKey = resolvedKey,
+        groupName = resolvedName,
+        groupOrder = resolvedIndex,
+        groupType = nil,
+        parent = nil,
+    }
 end
 
-local CATEGORY_TYPE_TO_GROUP = buildCategoryTypeToGroup()
-
-local function getCategoryKey(questType, displayType, isRepeatable, isDaily)
-    if displayType and CATEGORY_TYPE_TO_GROUP[displayType] then
-        return CATEGORY_TYPE_TO_GROUP[displayType]
-    end
-    if isRepeatable or isDaily then
-        return "REPEATABLE"
-    end
-    if questType and CATEGORY_TYPE_TO_GROUP[questType] then
-        return CATEGORY_TYPE_TO_GROUP[questType]
-    end
-    return DEFAULT_GROUP_KEY
-end
-
-local function determineLegacyCategory(questType, displayType, isRepeatable, isDaily)
-    local groupKey = getCategoryKey(questType, displayType, isRepeatable, isDaily)
-    local groupEntry = getGroupEntry(groupKey)
-    return createLeafEntry(groupEntry, groupEntry.name, 0, groupEntry.type, groupEntry.key, groupEntry.key)
-end
-
-local function resolveQuestCategory(journalIndex, questType, displayType, isRepeatable, isDaily)
-    local questList = getQuestList()
-    if not questList or not questList.GetQuestListData then
-        return determineLegacyCategory(questType, displayType, isRepeatable, isDaily)
-    end
-
-    local list, categoryList, seenCategories = questList:GetQuestListData()
-    if type(list) ~= "table" or type(categoryList) ~= "table" then
-        return determineLegacyCategory(questType, displayType, isRepeatable, isDaily)
-    end
-
-    local categoriesByKey = {}
-    local categoriesByName = {}
-    for _, category in ipairs(categoryList) do
-        if category.key and not categoriesByKey[category.key] then
-            local entry = cloneCategoryEntry(category)
-            categoriesByKey[entry.key] = entry
-            if entry.name then
-                categoriesByName[entry.name] = categoriesByName[entry.name] or {}
-                table.insert(categoriesByName[entry.name], entry)
-            end
+local function resolveQuestCategory(journalIndex, questType, displayType, isRepeatable, isDaily, listEntry)
+    local source = listEntry
+    if source == nil then
+        local questList = getQuestList()
+        if questList and questList.GetByJournalIndex then
+            source = questList:GetByJournalIndex(journalIndex)
         end
     end
 
-    local listData = list[journalIndex]
-    if type(listData) == "table" then
-        local key = listData.categoryKey
-        if key and categoriesByKey[key] then
-            return cloneCategoryEntry(categoriesByKey[key])
-        end
-        local name = listData.categoryName
-        if name and categoriesByName[name] and categoriesByName[name][1] then
-            return cloneCategoryEntry(categoriesByName[name][1])
-        end
+    if type(source) == "table" then
+        return makeCategoryEntry(source.categoryIndex, source.categoryName, source.categoryKey)
     end
 
-    return determineLegacyCategory(questType, displayType, isRepeatable, isDaily)
+    return makeCategoryEntry(nil, nil, nil)
 end
 
 local function normalizeQuestCategoryData(quest)
     if type(quest) ~= "table" then
         return quest
     end
-    quest.flags = quest.flags or {}
+
     if type(quest.category) ~= "table" then
-        quest.category = determineLegacyCategory(
-            quest.questType,
-            quest.displayType,
-            quest.flags.isRepeatable,
-            quest.flags.isDaily
-        )
+        quest.category = makeCategoryEntry(nil, nil, nil)
     end
+
     local category = quest.category
-    if not category.groupKey or not category.groupName or category.groupOrder == nil then
-        local groupKey = category.groupKey
-            or CATEGORY_TYPE_TO_GROUP[category.type]
-            or (quest.meta and quest.meta.groupKey)
-            or CATEGORY_TYPE_TO_GROUP[quest.meta and quest.meta.categoryType]
-            or (category.parent and category.parent.key)
-            or getCategoryKey(quest.questType, quest.displayType, quest.flags.isRepeatable, quest.flags.isDaily)
-            or category.key
-        local groupEntry = getGroupEntry(groupKey)
-        category.groupKey = groupEntry.key
-        category.groupName = groupEntry.name
-        category.groupOrder = groupEntry.order
-        category.groupType = groupEntry.type
-    end
-    category.parent = copyParentInfo(category.parent) or copyParentInfo({
-        key = category.groupKey,
-        name = category.groupName,
-        order = category.groupOrder,
-        type = category.groupType,
-    })
-    if not category.order then
-        local orderBase = category.groupOrder or 0
-        category.order = orderBase * 1000 + (category.rawOrder or 0)
-    end
+    category.order = tonumber(category.order or category.index) or DEFAULT_CATEGORY_INDEX
+    category.rawOrder = category.rawOrder or category.order
+    category.key = category.key or string.format("cat:%s", tostring(category.order))
+    category.name = category.name or DEFAULT_CATEGORY_NAME
+    category.groupKey = category.groupKey or category.key
+    category.groupName = category.groupName or category.name
+    category.groupOrder = category.groupOrder or category.order
+    category.groupType = category.groupType
+    category.parent = nil
+
     quest.category = category
+
+    quest.categoryKey = quest.categoryKey or category.key
+    quest.categoryName = quest.categoryName or category.name
+    quest.categoryIndex = quest.categoryIndex or category.order
+
     quest.meta = quest.meta or {}
     local meta = quest.meta
-    meta.questType = meta.questType or quest.questType
-    meta.displayType = meta.displayType or quest.displayType
     meta.categoryType = meta.categoryType or category.type
     meta.categoryKey = meta.categoryKey or category.key
     meta.groupKey = meta.groupKey or category.groupKey
     meta.groupName = meta.groupName or category.groupName
-    meta.parentKey = meta.parentKey or (category.parent and category.parent.key)
-    meta.parentName = meta.parentName or (category.parent and category.parent.name)
+    meta.parentKey = nil
+    meta.parentName = nil
+    meta.groupOrder = meta.groupOrder or category.groupOrder
+    meta.order = meta.order or category.order
+    meta.rawOrder = meta.rawOrder or category.rawOrder
+    meta.groupType = meta.groupType or category.groupType
+
     return quest
 end
 
@@ -752,8 +707,8 @@ end
 local function compareQuestEntries(left, right)
     local leftCategory = left.category or {}
     local rightCategory = right.category or {}
-    local leftOrder = leftCategory.order or 0
-    local rightOrder = rightCategory.order or 0
+    local leftOrder = tonumber(leftCategory.order or leftCategory.index) or DEFAULT_CATEGORY_INDEX
+    local rightOrder = tonumber(rightCategory.order or rightCategory.index) or DEFAULT_CATEGORY_INDEX
     if leftOrder ~= rightOrder then
         return leftOrder < rightOrder
     end
@@ -782,10 +737,12 @@ local function buildCategoriesIndex(quests)
     local orderedKeys = {}
     for _, quest in ipairs(quests) do
         local category = quest.category or {}
-        local key = category.key or string.format("unknown:%d", quest.journalIndex or 0)
+        local key = category.key or quest.categoryKey or string.format("unknown:%d", quest.journalIndex or 0)
         local categoryEntry = categoriesByKey[key]
         if not categoryEntry then
             categoryEntry = cloneCategoryEntry(category) or { key = key, name = category.name or "" }
+            categoryEntry.name = categoryEntry.name or quest.categoryName or category.name or DEFAULT_CATEGORY_NAME
+            categoryEntry.order = tonumber(categoryEntry.order or categoryEntry.index) or DEFAULT_CATEGORY_INDEX
             categoryEntry.quests = {}
             categoryEntry.count = 0
             categoriesByKey[key] = categoryEntry
@@ -797,10 +754,15 @@ local function buildCategoriesIndex(quests)
     table.sort(orderedKeys, function(leftKey, rightKey)
         local leftEntry = categoriesByKey[leftKey]
         local rightEntry = categoriesByKey[rightKey]
-        local leftOrder = leftEntry and leftEntry.order or 0
-        local rightOrder = rightEntry and rightEntry.order or 0
+        local leftOrder = leftEntry and (tonumber(leftEntry.order or leftEntry.index) or DEFAULT_CATEGORY_INDEX) or DEFAULT_CATEGORY_INDEX
+        local rightOrder = rightEntry and (tonumber(rightEntry.order or rightEntry.index) or DEFAULT_CATEGORY_INDEX) or DEFAULT_CATEGORY_INDEX
         if leftOrder ~= rightOrder then
             return leftOrder < rightOrder
+        end
+        local leftName = leftEntry and leftEntry.name or ""
+        local rightName = rightEntry and rightEntry.name or ""
+        if leftName ~= rightName then
+            return leftName < rightName
         end
         return leftKey < rightKey
     end)
@@ -834,7 +796,14 @@ local function buildQuestEntry(listEntry)
     local isTracked = questList:IsQuestTracked(journalIndex)
     local isAssisted = questList:IsQuestAssisted(journalIndex)
     local isComplete = questList:IsQuestComplete(journalIndex)
-    local category = resolveQuestCategory(journalIndex, info.questType, info.displayType, info.isRepeatable, info.isDaily)
+    local category = resolveQuestCategory(
+        journalIndex,
+        info.questType,
+        info.displayType,
+        info.isRepeatable,
+        info.isDaily,
+        listEntry
+    )
     local objectives, fallbackStepText = collectQuestObjectives(journalIndex, isComplete)
     local questEntry = {
         key = listEntry.key or normalizeQuestKey(journalIndex),
@@ -862,20 +831,23 @@ local function buildQuestEntry(listEntry)
         description = info.description,
         objectives = objectives,
     }
+    questEntry.categoryIndex = tonumber(listEntry.categoryIndex) or questEntry.categoryIndex
+    questEntry.categoryName = listEntry.categoryName or questEntry.categoryName
+    questEntry.categoryKey = listEntry.categoryKey or questEntry.categoryKey
+    normalizeQuestCategoryData(questEntry)
     questEntry.meta = {
         questType = info.questType,
         displayType = info.displayType,
-        categoryType = category and category.type or nil,
-        categoryKey = category and category.key or nil,
-        groupKey = category and category.groupKey or nil,
-        groupName = category and category.groupName or nil,
-        parentKey = category and category.parent and category.parent.key or nil,
-        parentName = category and category.parent and category.parent.name or nil,
+        categoryType = questEntry.category and questEntry.category.type or category and category.type or nil,
+        categoryKey = questEntry.categoryKey,
+        groupKey = questEntry.category and questEntry.category.groupKey or category and category.groupKey or nil,
+        groupName = questEntry.category and questEntry.category.groupName or category and category.groupName or nil,
+        parentKey = questEntry.category and questEntry.category.parent and questEntry.category.parent.key or nil,
+        parentName = questEntry.category and questEntry.category.parent and questEntry.category.parent.name or nil,
         zoneName = questEntry.zoneName,
         isRepeatable = info.isRepeatable,
         isDaily = info.isDaily,
     }
-    normalizeQuestCategoryData(questEntry)
     questEntry.signature = buildQuestSignature(questEntry)
     return questEntry
 end
@@ -912,6 +884,9 @@ local function buildRows(quests)
         quest.isActive = (activeKey ~= nil and key ~= nil and activeKey == key) or false
         quest.isFocused = (focusedKey ~= nil and key ~= nil and focusedKey == key) or false
         quest.expanded = questState and questState:IsQuestExpanded(key) or false
+        quest.categoryKey = quest.categoryKey or (quest.category and quest.category.key)
+        quest.categoryName = quest.categoryName or (quest.category and quest.category.name)
+        quest.categoryIndex = quest.categoryIndex or (quest.category and (quest.category.order or quest.category.index))
         rows[#rows + 1] = quest
     end
     return rows

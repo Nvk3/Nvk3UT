@@ -10,6 +10,8 @@ M._byKey = M._byKey or {}
 M._byJournal = M._byJournal or {}
 M._version = M._version or 0
 M._dirty = M._dirty ~= false -- default to dirty on first load
+M._catMap = M._catMap
+M._catOrder = M._catOrder
 
 local unpack = table.unpack or unpack
 
@@ -103,6 +105,58 @@ local function buildEntry(journalIndex)
     return entry
 end
 
+local function buildCategoryMap()
+    local map, order = {}, {}
+    local numCategories = tonumber(safeCallMulti(GetJournalNumQuestCategories)) or 0
+
+    for categoryIndex = 1, numCategories do
+        local categoryName, numInCategory = safeCallMulti(GetJournalQuestCategoryInfo, categoryIndex)
+        if categoryName and categoryName ~= "" then
+            order[#order + 1] = { index = categoryIndex, name = categoryName }
+            if type(GetJournalQuestIndexFromCategory) == "function" then
+                for questIndex = 1, tonumber(numInCategory) or 0 do
+                    local journalIndex = safeCallMulti(GetJournalQuestIndexFromCategory, categoryIndex, questIndex)
+                    if journalIndex then
+                        map[journalIndex] = { index = categoryIndex, name = categoryName }
+                    end
+                end
+            end
+        end
+    end
+
+    if next(map) == nil and type(GetJournalQuestCategoryType) == "function" then
+        local numQuests = tonumber(safeCallMulti(GetNumJournalQuests)) or 0
+        for journalIndex = 1, numQuests do
+            local categoryIndex = safeCallMulti(GetJournalQuestCategoryType, journalIndex)
+            if categoryIndex then
+                local categoryName = safeCallMulti(GetJournalQuestCategoryInfo, categoryIndex)
+                map[journalIndex] = {
+                    index = categoryIndex,
+                    name = categoryName,
+                }
+                if categoryIndex then
+                    local seen = false
+                    for _, entry in ipairs(order) do
+                        if entry.index == categoryIndex then
+                            seen = true
+                            break
+                        end
+                    end
+                    if not seen then
+                        order[#order + 1] = { index = categoryIndex, name = categoryName }
+                    end
+                end
+            end
+        end
+
+        table.sort(order, function(left, right)
+            return (left.index or math.huge) < (right.index or math.huge)
+        end)
+    end
+
+    return map, order
+end
+
 function M:MarkDirty()
     self._dirty = true
 end
@@ -120,6 +174,8 @@ function M:RefreshFromGame(force)
         return self._version
     end
 
+    self._catMap, self._catOrder = buildCategoryMap()
+
     local numQuests = safeCallMulti(GetNumJournalQuests) or 0
 
     self:Clear()
@@ -128,6 +184,16 @@ function M:RefreshFromGame(force)
         local name = safeCallMulti(GetJournalQuestName, journalIndex)
         if name and name ~= "" then
             local entry = buildEntry(journalIndex)
+            local categoryInfo = self._catMap and self._catMap[journalIndex] or nil
+            if categoryInfo then
+                entry.categoryIndex = tonumber(categoryInfo.index) or 9999
+                entry.categoryName = categoryInfo.name
+            else
+                entry.categoryIndex = 9999
+                entry.categoryName = "MISCELLANEOUS"
+            end
+            entry.categoryKey = string.format("cat:%s", tostring(entry.categoryIndex))
+
             self._list[#self._list + 1] = entry
             self._byKey[entry.key] = entry
             self._byJournal[journalIndex] = entry.key
