@@ -601,10 +601,11 @@ function QuestModel.Init(opts)
     QuestModel.lastQuestEventMs = QuestModel.lastQuestEventMs or 0
     QuestModel.isInitialized = true
 
-    local savedSnapshot = BuildSnapshotFromSaved()
-    if savedSnapshot then
-        savedSnapshot.revision = (QuestModel.currentSnapshot and QuestModel.currentSnapshot.revision) or 0
-        QuestModel.currentSnapshot = savedSnapshot
+    local cachedSnapshot = BuildSnapshotFromSaved()
+    if cachedSnapshot then
+        cachedSnapshot.revision = (QuestModel.currentSnapshot and QuestModel.currentSnapshot.revision) or 0
+        QuestModel.currentSnapshot = cachedSnapshot
+        NotifySubscribers(QuestModel)
     else
         QuestModel.currentSnapshot = nil
     end
