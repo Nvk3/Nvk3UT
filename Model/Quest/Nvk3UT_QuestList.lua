@@ -35,6 +35,7 @@ local function callESO(func, ...)
         return nil
     end
 
+    -- IMPORTANT: pass through ALL results (many ESO APIs return >3 values)
     return result1, result2, result3, result4, result5, result6, result7, result8, result9, result10, result11
 end
 
@@ -245,8 +246,16 @@ local function buildEntry(journalIndex)
     entry.numConditions = #entry.objectives
 
     local cat = (M._catMap and M._catMap[journalIndex]) or nil
-    entry.categoryIndex = cat and cat.index or 9999
-    entry.categoryName = cat and cat.name or "MISCELLANEOUS"
+    if not cat then
+        local catIdx = callESO(GetJournalQuestCategoryType, journalIndex)
+        if catIdx then
+            local catName = callESO(GetJournalQuestCategoryInfo, catIdx)
+            cat = { index = catIdx, name = catName or "MISCELLANEOUS" }
+        end
+    end
+
+    entry.categoryIndex = (cat and cat.index) or 9999
+    entry.categoryName = (cat and cat.name) or "MISCELLANEOUS"
     entry.categoryKey = "cat:" .. tostring(entry.categoryIndex)
 
     return entry
