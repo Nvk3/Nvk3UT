@@ -169,6 +169,39 @@ local function CollectFavoriteIds()
     return ids
 end
 
+local function CollectRecentIds()
+    local RecentData = Nvk3UT and Nvk3UT.RecentData
+    if not RecentData then
+        return {}
+    end
+
+    local result
+    if type(RecentData.ListConfigured) == "function" then
+        local ok, list = pcall(RecentData.ListConfigured)
+        if ok and type(list) == "table" then
+            result = list
+        end
+    end
+
+    if not result and type(RecentData.List) == "function" then
+        local ok, list = pcall(RecentData.List)
+        if ok and type(list) == "table" then
+            result = list
+        end
+    end
+
+    if type(result) ~= "table" then
+        return {}
+    end
+
+    local copy = {}
+    for index = 1, #result do
+        copy[index] = result[index]
+    end
+
+    return copy
+end
+
 local function BuildObjectiveData(achievementId)
     local objectives = {}
 
@@ -381,6 +414,7 @@ end
 
 local function BuildRawData()
     local favoriteIds = CollectFavoriteIds()
+    local recentIds = CollectRecentIds()
     local entries = {}
     local completeCount = 0
 
@@ -413,6 +447,8 @@ local function BuildRawData()
         totalIncomplete = #entries - completeCount,
         hasIncomplete = (#entries - completeCount) > 0,
         favoriteIds = favoriteIds,
+        recentIds = recentIds,
+        recentTotal = #recentIds,
     }
 end
 
@@ -424,10 +460,11 @@ function AchievementList:RefreshFromGame()
     emitDebugMessage("RefreshFromGame start")
     rawData = BuildRawData()
     emitDebugMessage(
-        "RefreshFromGame done (favorites=%d complete=%d incomplete=%d)",
+        "RefreshFromGame done (favorites=%d complete=%d incomplete=%d recent=%d)",
         rawData.total or 0,
         rawData.totalComplete or 0,
-        rawData.totalIncomplete or 0
+        rawData.totalIncomplete or 0,
+        rawData.recentTotal or (rawData.recentIds and #rawData.recentIds) or 0
     )
     return rawData
 end
@@ -450,6 +487,17 @@ function AchievementList:GetSection(name)
             total = raw.total,
             complete = raw.totalComplete,
             incomplete = raw.totalIncomplete,
+        }
+    end
+
+    if name == "recent" then
+        local raw = self:GetRaw()
+        if not raw then
+            return nil
+        end
+        return {
+            ids = raw.recentIds,
+            total = raw.recentTotal,
         }
     end
 

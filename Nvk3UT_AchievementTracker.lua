@@ -931,17 +931,17 @@ local function IsRecentAchievement(achievementId)
         return false
     end
 
-    local recent = Nvk3UT and Nvk3UT._recentSV and Nvk3UT._recentSV.progress
-    if not recent then
+    local recentData = Nvk3UT and Nvk3UT.RecentData
+    if not (recentData and recentData.Contains) then
         return false
     end
 
-    if recent[achievementId] ~= nil then
-        return true
+    local ok, result = pcall(recentData.Contains, achievementId)
+    if ok then
+        return result and true or false
     end
 
-    local key = tostring(achievementId)
-    return recent[key] ~= nil
+    return false
 end
 
 local function BuildTodoLookup()

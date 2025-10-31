@@ -181,25 +181,22 @@ function Addon:HandleAchievementChanged(achievementId)
         end
     end
 
-    local progress = self._recentSV and self._recentSV.progress
-    if type(progress) == "table" then
-        local function tracked(val)
-            if val == nil then
-                return false
-            end
-
-            if progress[val] ~= nil then
-                return true
-            end
-
-            local key = tostring(val)
-            return progress[key] ~= nil
+    local recentData = Nvk3UT and Nvk3UT.RecentData
+    if recentData and recentData.Contains then
+        local candidates = { id }
+        if normalized and normalized ~= id then
+            candidates[#candidates + 1] = normalized
         end
 
-        if tracked(id) or (normalized and normalized ~= id and tracked(normalized)) then
-            local recent = self.Recent
-            if recent and recent.CleanupCompleted then
-                _SafeCall(recent.CleanupCompleted)
+        for index = 1, #candidates do
+            local candidateId = candidates[index]
+            local ok, isTracked = pcall(recentData.Contains, candidateId)
+            if ok and isTracked then
+                local recent = self.Recent
+                if recent and recent.CleanupCompleted then
+                    _SafeCall(recent.CleanupCompleted)
+                end
+                break
             end
         end
     end
