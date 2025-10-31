@@ -270,6 +270,198 @@ local function BuildBaseCategoryCacheFromData(questListData, categoryList)
     return map, order
 end
 
+local function appendCategoryOrder(order, seen, index, name)
+    if not index then
+        return
+    end
+
+    local label = name or "MISCELLANEOUS"
+    local key = string.format("%s|%s", tostring(index), label)
+    if seen[key] then
+        return
+    end
+
+    order[#order + 1] = { index = index, name = label }
+    seen[key] = true
+end
+
+local function deriveCategoriesFromQuestModel()
+    local questModel = ADDON and ADDON.QuestModel
+    if not questModel then
+        return nil, nil
+    end
+
+    if type(questModel.MarkCategoriesDirty) == "function" then
+        pcall(questModel.MarkCategoriesDirty, questModel)
+    end
+
+    if type(questModel.GetCategoryForJournalIndex) ~= "function" then
+        return nil, nil
+    end
+
+    local ok, byJournal, ordered = pcall(questModel.GetCategoryForJournalIndex, questModel, nil)
+    if not ok then
+        debugLog("QuestList: QuestModel:GetCategoryForJournalIndex failed: %s", tostring(byJournal))
+        return nil, nil
+    end
+
+    if type(byJournal) ~= "table" then
+        return nil, nil
+    end
+
+    local map = {}
+    for journalIndex, categoryEntry in pairs(byJournal) do
+        if type(journalIndex) == "number" and type(categoryEntry) == "table" then
+            local orderIndex = tonumber(categoryEntry.order)
+                or tonumber(categoryEntry.rawOrder)
+                or tonumber(categoryEntry.index)
+                or tonumber(categoryEntry.groupOrder)
+                or tonumber(categoryEntry.orderIndex)
+                or tonumber(journalIndex)
+            local name = categoryEntry.name or categoryEntry.title or categoryEntry.categoryName
+
+            map[journalIndex] = {
+                index = orderIndex or 9999,
+                name = name or "MISCELLANEOUS",
+            }
+        end
+    end
+
+    local order = {}
+    local seen = {}
+    if type(ordered) == "table" then
+        for idx = 1, #ordered do
+            local entry = ordered[idx]
+            if type(entry) == "table" then
+                local orderIndex = tonumber(entry.order)
+                    or tonumber(entry.rawOrder)
+                    or tonumber(entry.index)
+                    or tonumber(idx)
+                appendCategoryOrder(order, seen, orderIndex, entry.name or entry.title)
+            end
+        end
+    end
+
+    if #order == 0 then
+        -- ensure deterministic order even if ordered list missing
+        local fallbackSeen = {}
+        local sortedJournal = {}
+        for journalIndex, info in pairs(map) do
+            sortedJournal[#sortedJournal + 1] = { index = info.index, name = info.name }
+        end
+        table.sort(sortedJournal, function(left, right)
+            return (left.index or 9999) < (right.index or 9999)
+        end)
+        for idx = 1, #sortedJournal do
+            local entry = sortedJournal[idx]
+            appendCategoryOrder(order, fallbackSeen, entry.index, entry.name)
+        end
+    end
+
+    return map, order
+end
+
+local function assignJournalCategory(map, journalIndex, orderIndex, name)
+    if not journalIndex then
+        return
+    end
+
+    map[journalIndex] = {
+        index = orderIndex or 9999,
+        name = name or "MISCELLANEOUS",
+    }
+end
+
+local function buildFallbackCategoryMap()
+    local map, order = {}, {}
+    local seenOrder = {}
+    local sequentialIndex = 0
+
+    local numCategories = callESO(GetJournalNumQuestCategories) or 0
+    for categoryIndex = 1, numCategories do
+        local categoryName, numSubcategories = callESO(GetJournalQuestCategoryInfo, categoryIndex)
+        local usedSubcategories = false
+
+        if type(GetJournalQuestSubcategoryInfo) == "function" and type(GetJournalQuestIndexFromSubcategory) == "function" then
+            local totalSubcategories = tonumber(numSubcategories) or 0
+            for subIndex = 1, totalSubcategories do
+                local subName, numQuests = callESO(GetJournalQuestSubcategoryInfo, categoryIndex, subIndex)
+                if subName and subName ~= "" then
+                    sequentialIndex = sequentialIndex + 1
+                    appendCategoryOrder(order, seenOrder, sequentialIndex, subName)
+
+                    local questCount = tonumber(numQuests) or 0
+                    if questCount <= 0 then
+                        local questOffset = 1
+                        while true do
+                            local journalIndex = callESO(
+                                GetJournalQuestIndexFromSubcategory,
+                                categoryIndex,
+                                subIndex,
+                                questOffset
+                            )
+                            if not journalIndex then
+                                break
+                            end
+                            assignJournalCategory(map, journalIndex, sequentialIndex, subName)
+                            questOffset = questOffset + 1
+                        end
+                    else
+                        for questOffset = 1, questCount do
+                            local journalIndex = callESO(
+                                GetJournalQuestIndexFromSubcategory,
+                                categoryIndex,
+                                subIndex,
+                                questOffset
+                            )
+                            if journalIndex then
+                                assignJournalCategory(map, journalIndex, sequentialIndex, subName)
+                            end
+                        end
+                    end
+
+                    usedSubcategories = true
+                end
+            end
+        end
+
+        if not usedSubcategories then
+            sequentialIndex = sequentialIndex + 1
+            local headerName = categoryName or "MISCELLANEOUS"
+            appendCategoryOrder(order, seenOrder, sequentialIndex, headerName)
+
+            local questCount = nil
+            if type(GetJournalQuestNumQuestsInCategory) == "function" then
+                questCount = callESO(GetJournalQuestNumQuestsInCategory, categoryIndex)
+            end
+            local totalQuests = tonumber(questCount) or tonumber(numSubcategories) or 0
+
+            if type(GetJournalQuestIndexFromCategory) == "function" then
+                if totalQuests > 0 then
+                    for questOffset = 1, totalQuests do
+                        local journalIndex = callESO(GetJournalQuestIndexFromCategory, categoryIndex, questOffset)
+                        if journalIndex then
+                            assignJournalCategory(map, journalIndex, sequentialIndex, headerName)
+                        end
+                    end
+                else
+                    local questOffset = 1
+                    while true do
+                        local journalIndex = callESO(GetJournalQuestIndexFromCategory, categoryIndex, questOffset)
+                        if not journalIndex then
+                            break
+                        end
+                        assignJournalCategory(map, journalIndex, sequentialIndex, headerName)
+                        questOffset = questOffset + 1
+                    end
+                end
+            end
+        end
+    end
+
+    return map, order
+end
+
 local function makeQuestKey(journalIndex)
     local questId = callESO(GetJournalQuestId, journalIndex)
     if questId and questId ~= 0 then
@@ -432,23 +624,7 @@ local function buildEntry(journalIndex)
 
     local cat = (M._catMap and M._catMap[journalIndex]) or nil
     if not cat then
-        local fallbackMap = {}
-        local numCats = callESO(GetJournalNumQuestCategories) or 0
-        for categoryIndex = 1, numCats do
-            local catName, numInCat = callESO(GetJournalQuestCategoryInfo, categoryIndex)
-            if GetJournalQuestIndexFromCategory then
-                for qi = 1, (numInCat or 0) do
-                    local jIdx = callESO(GetJournalQuestIndexFromCategory, categoryIndex, qi)
-                    if jIdx then
-                        fallbackMap[jIdx] = { index = categoryIndex, name = catName or "MISCELLANEOUS" }
-                    end
-                end
-            end
-        end
-        cat = fallbackMap[journalIndex]
-        if not cat then
-            cat = { index = 9999, name = "MISCELLANEOUS" }
-        end
+        cat = { index = 9999, name = "MISCELLANEOUS" }
     end
 
     entry.categoryIndex = cat.index
@@ -460,6 +636,10 @@ end
 
 function M:MarkDirty()
     self._dirty = true
+    local questModel = ADDON and ADDON.QuestModel
+    if questModel and type(questModel.MarkCategoriesDirty) == "function" then
+        pcall(questModel.MarkCategoriesDirty, questModel)
+    end
 end
 
 function M:Clear()
@@ -473,47 +653,40 @@ function M:RefreshFromGame(force)
         return self._version
     end
 
-    local questListData, categoryList = AcquireQuestJournalData()
-    local managerMap, managerOrder = nil, nil
-    if questListData or categoryList then
-        managerMap, managerOrder = BuildBaseCategoryCacheFromData(questListData, categoryList)
-    end
+    local map, order = deriveCategoriesFromQuestModel()
 
-    local fallbackMap, fallbackOrder = nil, nil
-    if not managerMap or next(managerMap) == nil then
-        local map, order = {}, {}
-        local numCats = callESO(GetJournalNumQuestCategories) or 0
-        for categoryIndex = 1, numCats do
-            local catName, numInCat = callESO(GetJournalQuestCategoryInfo, categoryIndex)
-            if catName then
-                order[#order + 1] = { index = categoryIndex, name = catName }
-                if GetJournalQuestIndexFromCategory then
-                    for qi = 1, (numInCat or 0) do
-                        local jIdx = callESO(GetJournalQuestIndexFromCategory, categoryIndex, qi)
-                        if jIdx then
-                            map[jIdx] = { index = categoryIndex, name = catName }
-                        end
-                    end
-                end
+    if (not map or next(map) == nil) or (not order or #order == 0) then
+        local questListData, categoryList = AcquireQuestJournalData()
+        if questListData or categoryList then
+            local managerMap, managerOrder = BuildBaseCategoryCacheFromData(questListData, categoryList)
+            if managerMap and next(managerMap) ~= nil then
+                map = managerMap
+            end
+            if managerOrder and #managerOrder > 0 then
+                order = managerOrder
             end
         end
-        fallbackMap, fallbackOrder = map, order
     end
 
-    local useManagerCategories = false
-    if managerMap and next(managerMap) ~= nil then
-        useManagerCategories = true
-    elseif managerOrder and #managerOrder > 0 then
-        useManagerCategories = true
+    if (not map or next(map) == nil) or (not order or #order == 0) then
+        local fallbackMap, fallbackOrder = buildFallbackCategoryMap()
+        if fallbackMap and next(fallbackMap) ~= nil then
+            map = fallbackMap
+        end
+        if fallbackOrder and #fallbackOrder > 0 then
+            order = fallbackOrder
+        end
     end
 
-    if useManagerCategories then
-        M._catMap = managerMap or {}
-        M._catOrder = managerOrder or {}
-    else
-        M._catMap = fallbackMap or {}
-        M._catOrder = fallbackOrder or {}
-    end
+    map = map or {}
+    order = order or {}
+
+    table.sort(order, function(left, right)
+        return (left.index or 9999) < (right.index or 9999)
+    end)
+
+    M._catMap = map
+    M._catOrder = order
 
     resetLists()
 
@@ -533,11 +706,10 @@ function M:RefreshFromGame(force)
     local sampleParts = {}
     local sampleCount = 0
     for journalIndex, info in pairs(M._catMap or {}) do
+        local label = info and info.name or "?"
+        sampleParts[#sampleParts + 1] = string.format("%s=%s", tostring(journalIndex), tostring(label))
         sampleCount = sampleCount + 1
-        if sampleCount <= 3 then
-            local label = info and info.name or "?"
-            sampleParts[#sampleParts + 1] = string.format("%s=%s", tostring(journalIndex), tostring(label))
-        else
+        if sampleCount >= 5 then
             break
         end
     end

@@ -735,6 +735,28 @@ local function acquireBaseCategoryCache()
     return baseCategoryCache
 end
 
+function M:MarkCategoriesDirty()
+    resetBaseCategoryCache()
+end
+
+function M:GetCategoryForJournalIndex(journalIndex)
+    local cache = acquireBaseCategoryCache()
+    if not cache then
+        return nil
+    end
+
+    if journalIndex == nil then
+        return cache.byJournalIndex, cache.ordered
+    end
+
+    local byJournal = cache.byJournalIndex
+    if not byJournal then
+        return nil
+    end
+
+    return byJournal[journalIndex]
+end
+
 local function appendSignaturePart(parts, value)
     parts[#parts + 1] = tostring(value)
 end
