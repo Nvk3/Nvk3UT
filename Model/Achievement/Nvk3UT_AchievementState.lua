@@ -443,36 +443,6 @@ function AchievementState.SetFavorited(achievementId, shouldFavorite, source)
     return true
 end
 
-function AchievementState.GetFocusedId()
-    local tracker = ensureTrackerSaved()
-    if not tracker then
-        return nil
-    end
-    return tracker.focusedAchievementId
-end
-
-function AchievementState.SetFocusedId(achievementId, source)
-    local tracker = ensureTrackerSaved()
-    if not tracker then
-        return false
-    end
-
-    local normalized = normalizeAchievementId(achievementId)
-    if achievementId == nil then
-        normalized = nil
-    end
-
-    local previous = tracker.focusedAchievementId
-    if previous == normalized then
-        return false
-    end
-
-    tracker.focusedAchievementId = normalized
-    emitDebugMessage("focus:set id=%s source=%s", tostring(normalized), tostring(source or "auto"))
-    touchInternal("focus")
-    return true
-end
-
 function AchievementState.TouchTimestamp(key, overrideTimestamp)
     return touchInternal(key, overrideTimestamp)
 end

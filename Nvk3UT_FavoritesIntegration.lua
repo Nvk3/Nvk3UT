@@ -6,6 +6,13 @@ local Fav = Nvk3UT.FavoritesData
 local U = Nvk3UT.Utils
 local favProvide_lastTs, favProvide_lastCount = 0, -1
 
+local function ForceAchievementRefresh(context)
+    local Rebuild = Nvk3UT and Nvk3UT.Rebuild
+    if Rebuild and Rebuild.ForceAchievementRefresh then
+        Rebuild.ForceAchievementRefresh(context)
+    end
+end
+
 local NVK3_FAVORITES_KEY = "Nvk3UT_Favorites"
 local ICON_PATH_FAVORITES = "/esoui/art/guild/guild_rankicon_leader_large.dds"
 local FAVORITES_LOOKUP_KEY = "NVK3UT_FAVORITES_ROOT"
@@ -225,7 +232,7 @@ local function HookAchievementContext()
                                 -- remove entire line of series
                                 local __scope = (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.General and Nvk3UT.sv.General.favScope) or "account"; while id ~= 0 do Fav.Remove(id, __scope); id = GetNextAchievementInLine(id) end; local U = Nvk3UT and Nvk3UT.Utils; if U and U.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then U.d("[Nvk3UT][Favorites][Toggle] remove", "data={rootId:", ACHIEVEMENTS:GetBaseAchievementId(self:GetId()), "}") end
                                 if ACHIEVEMENTS and ACHIEVEMENTS.refreshGroups then ACHIEVEMENTS.refreshGroups:RefreshAll("FullUpdate") end
-                                Nvk3UT.RebuildSelected(ACHIEVEMENTS)
+                                ForceAchievementRefresh("FavoritesIntegration:RemoveFromMenu")
                                 _updateFavoritesTooltip(ACHIEVEMENTS)
                                 if Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then Nvk3UT.UI.UpdateStatus() end
                             end)
@@ -233,7 +240,7 @@ local function HookAchievementContext()
                             AddCustomMenuItem("Zu Favoriten hinzufügen", function()
                                 local __scope = (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.General and Nvk3UT.sv.General.favScope) or "account"; Fav.Add(id, __scope)
                                 local U = Nvk3UT and Nvk3UT.Utils; if U and U.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then U.d("[Nvk3UT][Favorites][Toggle] add", "data={id:", id, ", scope:account}") end
-                                Nvk3UT.RebuildSelected(ACHIEVEMENTS)
+                                ForceAchievementRefresh("FavoritesIntegration:AddFromMenu")
                                 _updateFavoritesTooltip(ACHIEVEMENTS)
                                 if Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then Nvk3UT.UI.UpdateStatus() end
                             end)

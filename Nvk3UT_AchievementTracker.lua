@@ -100,7 +100,6 @@ local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
 local REFRESH_DEBOUNCE_MS = 80
 
 local COLOR_ROW_HOVER = { 1, 1, 0.6, 1 }
-local FOCUS_HIGHLIGHT_DURATION_MS = 1600
 
 local FAVORITES_LOOKUP_KEY = "NVK3UT_FAVORITES_ROOT"
 local FAVORITES_CATEGORY_ID = "Nvk3UT_Favorites"
@@ -122,7 +121,6 @@ local state = {
     pendingRefresh = false,
     contentWidth = 0,
     contentHeight = 0,
-    pendingFocusAchievementId = nil,
 }
 
 local function ApplyLabelDefaults(label)
@@ -1560,71 +1558,6 @@ local function LayoutCategory()
     end
 end
 
-local function HighlightControl(control)
-    if not (control and control.label and control.baseColor) then
-        return
-    end
-
-    local label = control.label
-    if not label.SetColor then
-        return
-    end
-
-    local baseColor = {
-        control.baseColor[1] or 1,
-        control.baseColor[2] or 1,
-        control.baseColor[3] or 1,
-        control.baseColor[4] or 1,
-    }
-
-    label:SetColor(unpack(COLOR_ROW_HOVER))
-
-    if zo_callLater then
-        zo_callLater(function()
-            if label and label.SetColor then
-                label:SetColor(baseColor[1], baseColor[2], baseColor[3], baseColor[4])
-            end
-        end, FOCUS_HIGHLIGHT_DURATION_MS)
-    else
-        label:SetColor(baseColor[1], baseColor[2], baseColor[3], baseColor[4])
-    end
-end
-
-local function FocusAchievementRowInternal(achievementId)
-    local numeric = tonumber(achievementId)
-    if not numeric or numeric <= 0 then
-        return false
-    end
-
-    local host = Nvk3UT and Nvk3UT.TrackerHost
-    for index = 1, #state.orderedControls do
-        local control = state.orderedControls[index]
-        if control and control.rowType == "achievement" then
-            local data = control.data
-            if data and data.achievementId and tonumber(data.achievementId) == numeric then
-                if host and host.ScrollControlIntoView then
-                    pcall(host.ScrollControlIntoView, control)
-                end
-                HighlightControl(control)
-                return true
-            end
-        end
-    end
-
-    return false
-end
-
-local function ApplyPendingFocus()
-    local pending = state.pendingFocusAchievementId
-    if not pending then
-        return
-    end
-
-    if FocusAchievementRowInternal(pending) then
-        state.pendingFocusAchievementId = nil
-    end
-end
-
 local function Rebuild()
     if not state.container then
         return
@@ -1642,7 +1575,6 @@ local function Rebuild()
 
     UpdateContentSize()
     NotifyHostContentChanged()
-    ApplyPendingFocus()
 end
 
 local function OnSnapshotUpdated(snapshot)
@@ -1739,11 +1671,6 @@ function AchievementTracker.Shutdown()
     state.lastAnchoredControl = nil
     state.fonts = {}
     state.opts = {}
-    state.pendingFocusAchievementId = nil
-    local achievementState = GetAchievementState()
-    if achievementState and achievementState.SetFocusedId then
-        achievementState.SetFocusedId(nil, "AchievementTracker:Shutdown")
-    end
 
     state.isInitialized = false
     state.pendingRefresh = false
@@ -1804,35 +1731,6 @@ function AchievementTracker.ApplyTheme(settings)
     state.fonts = MergeFonts(state.opts.fonts)
 
     RequestRefresh()
-end
-
-function AchievementTracker.FocusAchievement(achievementId)
-    local numeric = tonumber(achievementId)
-    if not numeric or numeric <= 0 then
-        return false
-    end
-
-    EnsureSavedVars()
-
-    SetCategoryExpanded(true, {
-        trigger = "external",
-        source = "AchievementTracker:FocusAchievement",
-    })
-
-    state.pendingFocusAchievementId = numeric
-    local achievementState = GetAchievementState()
-    if achievementState and achievementState.SetFocusedId then
-        achievementState.SetFocusedId(numeric, "AchievementTracker:FocusAchievement")
-    end
-
-    local focused = FocusAchievementRowInternal(numeric)
-    if focused then
-        state.pendingFocusAchievementId = nil
-        return true
-    end
-
-    RequestRefresh()
-    return false
 end
 
 function AchievementTracker.RequestRefresh()

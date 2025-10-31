@@ -869,8 +869,9 @@ local function HookSceneAndEvents()
     end, 2000)
   end)
   zo_callLater(function()
-    if Nvk3UT and Nvk3UT.RebuildSelected and SecurePostHook then
-      SecurePostHook(Nvk3UT, "RebuildSelected", function()
+    local Rebuild = Nvk3UT and Nvk3UT.Rebuild
+    if Rebuild and SecurePostHook and Rebuild.ForceAchievementRefresh then
+      SecurePostHook(Rebuild, "ForceAchievementRefresh", function()
         T.HookNow()
       end)
     end

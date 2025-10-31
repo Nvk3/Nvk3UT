@@ -47,8 +47,9 @@ function M.RefreshAchievements()
   if ach.refreshGroups then
     ach.refreshGroups:RefreshAll("FullUpdate")
   end
-  if Nvk3UT and Nvk3UT.RebuildSelected then
-    pcall(Nvk3UT.RebuildSelected, ach)
+  local Rebuild = Nvk3UT and Nvk3UT.Rebuild
+  if Rebuild and Rebuild.ForceAchievementRefresh then
+    Rebuild.ForceAchievementRefresh("UI.RefreshAchievements")
   end
 end
 
