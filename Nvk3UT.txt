@@ -20,6 +20,7 @@ Model/Achievement/Nvk3UT_AchievementState.lua
 Model/Achievement/Nvk3UT_FavoritesData.lua
 Model/Achievement/Nvk3UT_RecentData.lua
 Model/Achievement/Nvk3UT_TodoData.lua
+Model/Achievement/Nvk3UT_CompletedData.lua
 Model/Achievement/Nvk3UT_AchievementList.lua
 Model/Achievement/Nvk3UT_AchievementModel.lua
 Nvk3UT_Achievements.lua
@@ -28,7 +29,6 @@ Nvk3UT_Recent.lua
 Nvk3UT_FavoritesIntegration.lua
 Nvk3UT_RecentIntegration.lua
 Nvk3UT_TodoIntegration.lua
-Nvk3UT_CompletedData.lua
 Nvk3UT_CompletedIntegration.lua
 Nvk3UT_TrackerHost.lua
 Nvk3UT_QuestTracker.xml

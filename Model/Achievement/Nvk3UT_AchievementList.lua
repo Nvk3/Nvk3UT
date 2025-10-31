@@ -324,6 +324,42 @@ local function BuildAchievementEntry(achievementId)
         end
     end
 
+    local Completed = Nvk3UT and Nvk3UT.CompletedData
+    if Completed then
+        local meta
+        if type(Completed.GetCompletedMeta) == "function" then
+            local ok, result = pcall(Completed.GetCompletedMeta, achievementId)
+            if ok and type(result) == "table" then
+                meta = result
+            end
+        end
+
+        if (not meta) and type(Completed.IsCompleted) == "function" then
+            local ok, completed = pcall(Completed.IsCompleted, achievementId)
+            if ok and completed ~= nil then
+                meta = meta or {}
+                meta.isComplete = completed and true or false
+            end
+        end
+
+        if meta and meta.isComplete ~= nil then
+            isComplete = meta.isComplete and true or false
+        end
+
+        if meta and meta.timestamp ~= nil then
+            completedTimestamp = meta.timestamp
+        elseif type(Completed.GetCompletedTimestamp) == "function" then
+            local ok, ts = pcall(Completed.GetCompletedTimestamp, achievementId)
+            if ok and ts ~= nil then
+                completedTimestamp = ts
+            end
+        end
+
+        if meta and meta.points ~= nil and points == nil then
+            points = meta.points
+        end
+    end
+
     name = FormatDisplayString(name)
     description = FormatDisplayString(description)
 
