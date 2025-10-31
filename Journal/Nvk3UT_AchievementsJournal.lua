@@ -8,13 +8,15 @@ local Utils = Nvk3UT and Nvk3UT.Utils
 local FavoritesCategory = Nvk3UT and Nvk3UT.FavoritesCategory
 local RecentSummary = Nvk3UT and Nvk3UT.RecentSummary
 local RecentCategory = Nvk3UT and Nvk3UT.RecentCategory
+local TodoSummary = Nvk3UT and Nvk3UT.TodoSummary
 local TodoCategory = Nvk3UT and Nvk3UT.TodoCategory
 
 local state = {
     parent = nil,
     favorites = nil,
-    summary = nil,
+    recentSummary = nil,
     recent = nil,
+    todoSummary = nil,
     todo = nil,
 }
 
@@ -89,9 +91,9 @@ function Journal:Init(parentOrSceneFragment)
     if RecentSummary and type(RecentSummary.Init) == "function" then
         local ok, result = pcall(RecentSummary.Init, RecentSummary, parentOrSceneFragment)
         if ok then
-            state.summary = result or parentOrSceneFragment
+            state.recentSummary = result or parentOrSceneFragment
         else
-            state.summary = parentOrSceneFragment
+            state.recentSummary = parentOrSceneFragment
         end
     end
     if RecentCategory and type(RecentCategory.Init) == "function" then
@@ -102,6 +104,14 @@ function Journal:Init(parentOrSceneFragment)
             state.recent = parentOrSceneFragment
         end
     end
+    if TodoSummary and type(TodoSummary.Init) == "function" then
+        local ok, result = pcall(TodoSummary.Init, TodoSummary, parentOrSceneFragment)
+        if ok then
+            state.todoSummary = result or parentOrSceneFragment
+        else
+            state.todoSummary = parentOrSceneFragment
+        end
+    end
     if TodoCategory and type(TodoCategory.Init) == "function" then
         local ok, result = pcall(TodoCategory.Init, TodoCategory, parentOrSceneFragment)
         if ok then
@@ -110,7 +120,7 @@ function Journal:Init(parentOrSceneFragment)
             state.todo = parentOrSceneFragment
         end
     end
-    return state.favorites or state.summary or state.recent or state.todo or parentOrSceneFragment
+    return state.favorites or state.recentSummary or state.recent or state.todoSummary or state.todo or parentOrSceneFragment
 end
 
 ---Refresh the journal view.
@@ -132,6 +142,12 @@ function Journal:Refresh()
         local ok = pcall(RecentCategory.Refresh, RecentCategory)
         if not ok and Utils and Utils.d and isDebugEnabled() then
             Utils.d("[Ach][Journal] RecentCategory.Refresh failed")
+        end
+    end
+    if TodoSummary and type(TodoSummary.Refresh) == "function" then
+        local ok = pcall(TodoSummary.Refresh, TodoSummary)
+        if not ok and Utils and Utils.d and isDebugEnabled() then
+            Utils.d("[Ach][Journal] TodoSummary.Refresh failed")
         end
     end
     if TodoCategory and type(TodoCategory.Refresh) == "function" then
