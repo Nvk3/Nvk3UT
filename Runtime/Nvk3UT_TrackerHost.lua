@@ -198,6 +198,11 @@ local function scheduleUpdateSceneVisibility()
     zo_callLater(function()
         state.sceneVisibilityScheduled = false
         updateSceneVisibility()
+
+        local rt = Nvk3UT and Nvk3UT.TrackerRuntime
+        if rt and rt.QueueDirty then
+            rt:QueueDirty("layout")
+        end
     end, 0)
 end
 
