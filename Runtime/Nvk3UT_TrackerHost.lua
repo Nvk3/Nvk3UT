@@ -197,6 +197,19 @@ local function cloneTable(value)
     return copy
 end
 
+local function numbersDiffer(a, b, tolerance)
+    if a == b then
+        return false
+    end
+
+    if a == nil or b == nil then
+        return true
+    end
+
+    tolerance = tolerance or 0.01
+    return math.abs(a - b) > tolerance
+end
+
 local function normalizeColorComponent(value, fallback)
     local numeric = tonumber(value)
     if numeric == nil then
@@ -1189,6 +1202,36 @@ function TrackerHost.GetSectionMeasurements(sectionId)
     return measureTrackerContent(container, tracker)
 end
 
+function TrackerHost.GetLayoutSettings()
+    state.layout = state.layout or ensureLayoutSettings()
+    return state.layout
+end
+
+function TrackerHost.GetWindowBarSettings()
+    state.windowBars = state.windowBars or ensureWindowBarSettings()
+    return state.windowBars
+end
+
+function TrackerHost.GetHeaderControl()
+    return state.headerBar
+end
+
+function TrackerHost.GetFooterControl()
+    return state.footerBar
+end
+
+function TrackerHost.GetContentStack()
+    return state.contentStack
+end
+
+function TrackerHost.GetScrollContent()
+    return state.scrollContent
+end
+
+function TrackerHost.GetScrollContainer()
+    return state.scrollContainer
+end
+
 function TrackerHost.ReportSectionMissing(sectionId)
     if sectionId == "quest" then
         if not state.anchorWarnings.questMissing then
@@ -1215,18 +1258,71 @@ local function measureContentSize()
     local totalHeight = 0
     local maxWidth = 0
 
-    local headerHeight, footerHeight = getEffectiveBarHeights()
+    local layoutModule = Nvk3UT and Nvk3UT.TrackerHostLayout
+    local headerTargetHeight = 0
+    local footerTargetHeight = 0
+    local headerHeight = 0
+    local footerHeight = 0
+    local headerVisible = false
+    local footerVisible = false
+    local topPadding = 0
+    local bottomPadding = 0
+
+    local sizes
+    if layoutModule and type(layoutModule.UpdateHeaderFooterSizes) == "function" then
+        sizes = layoutModule.UpdateHeaderFooterSizes(TrackerHost)
+        headerTargetHeight = math.max(0, tonumber(sizes.headerTargetHeight or sizes.headerHeight) or 0)
+        footerTargetHeight = math.max(0, tonumber(sizes.footerTargetHeight or sizes.footerHeight) or 0)
+        headerHeight = math.max(0, tonumber(sizes.headerHeight) or headerTargetHeight)
+        footerHeight = math.max(0, tonumber(sizes.footerHeight) or footerTargetHeight)
+        headerVisible = sizes.headerVisible ~= false and headerTargetHeight > 0
+        footerVisible = sizes.footerVisible ~= false and footerTargetHeight > 0
+        topPadding = math.max(0, tonumber(sizes.contentTopPadding) or 0)
+        bottomPadding = math.max(0, tonumber(sizes.contentBottomPadding) or 0)
+    else
+        headerHeight, footerHeight = getEffectiveBarHeights()
+        headerTargetHeight = headerHeight
+        footerTargetHeight = footerHeight
+        headerVisible = headerTargetHeight > 0
+        footerVisible = footerTargetHeight > 0
+
+        local headerBar = state.headerBar
+        if headerBar and headerBar.GetHeight then
+            local measured = tonumber(headerBar:GetHeight())
+            if measured then
+                headerHeight = math.max(0, measured)
+            end
+        end
+        if not headerVisible then
+            headerHeight = 0
+        end
+
+        local footerBar = state.footerBar
+        if footerBar and footerBar.GetHeight then
+            local measured = tonumber(footerBar:GetHeight())
+            if measured then
+                footerHeight = math.max(0, measured)
+            end
+        end
+        if not footerVisible then
+            footerHeight = 0
+        end
+    end
+
     local headerWidth = 0
     local footerWidth = 0
 
     local headerBar = state.headerBar
-    if headerBar then
-        local isHidden = headerBar.IsHidden and headerBar:IsHidden()
-        if isHidden then
-            headerHeight = 0
-        else
-            headerHeight = headerBar.GetHeight and headerBar:GetHeight() or headerHeight
-            headerWidth = headerBar.GetWidth and headerBar:GetWidth() or headerWidth
+    if headerBar and headerBar.GetWidth then
+        if headerVisible then
+            headerWidth = tonumber(headerBar:GetWidth()) or 0
+        end
+    end
+
+    local footerBar = state.footerBar
+    if footerBar and footerBar.GetWidth then
+        if footerVisible then
+            footerWidth = tonumber(footerBar:GetWidth()) or 0
         end
     end
 
@@ -1236,29 +1332,22 @@ local function measureContentSize()
         Nvk3UT and Nvk3UT.AchievementTracker
     )
 
-    if questHeight > 0 then
+    local questVisible = questHeight > 0
+    local achievementVisible = achievementHeight > 0
+
+    if questVisible then
         totalHeight = totalHeight + questHeight
     end
 
-    if achievementHeight > 0 then
+    if achievementVisible then
+        if questVisible then
+            totalHeight = totalHeight + TrackerHost.GetSectionGap()
+        end
         totalHeight = totalHeight + achievementHeight
     end
 
-    local footerBar = state.footerBar
-    if footerBar then
-        local isHidden = footerBar.IsHidden and footerBar:IsHidden()
-        if isHidden then
-            footerHeight = 0
-        else
-            footerHeight = footerBar.GetHeight and footerBar:GetHeight() or footerHeight
-            footerWidth = footerBar.GetWidth and footerBar:GetWidth() or footerWidth
-        end
-    end
-
-    headerHeight = math.max(0, tonumber(headerHeight) or 0)
-    footerHeight = math.max(0, tonumber(footerHeight) or 0)
-
-    totalHeight = totalHeight + headerHeight + footerHeight
+    totalHeight = totalHeight + topPadding + bottomPadding
+    totalHeight = totalHeight + math.max(0, headerHeight) + math.max(0, footerHeight)
 
     maxWidth = math.max(maxWidth, headerWidth, footerWidth, questWidth, achievementWidth)
 
@@ -1368,8 +1457,18 @@ local function anchorContainers()
         return
     end
 
-    local headerHeight = getEffectiveBarHeights()
-    local headerVisible = headerBar ~= nil and headerHeight > 0.5
+    local layoutModule = Nvk3UT and Nvk3UT.TrackerHostLayout
+    local headerHeight = 0
+    local headerVisible = false
+    if layoutModule and type(layoutModule.UpdateHeaderFooterSizes) == "function" then
+        local sizes = layoutModule.UpdateHeaderFooterSizes(TrackerHost)
+        headerHeight = math.max(0, tonumber(sizes.headerHeight) or 0)
+        local targetHeight = math.max(0, tonumber(sizes.headerTargetHeight or sizes.headerHeight) or 0)
+        headerVisible = headerBar ~= nil and sizes.headerVisible ~= false and targetHeight > 0
+    else
+        headerHeight = getEffectiveBarHeights()
+        headerVisible = headerBar ~= nil and headerHeight > 0.5
+    end
 
     if headerBar then
         headerBar:ClearAnchors()
@@ -1407,7 +1506,7 @@ local function anchorContainers()
         return
     end
 
-    local layoutModule = Nvk3UT and Nvk3UT.TrackerHostLayout
+    layoutModule = layoutModule or (Nvk3UT and Nvk3UT.TrackerHostLayout)
     if layoutModule and type(layoutModule.ApplyLayout) == "function" then
         layoutModule.ApplyLayout(TrackerHost)
         return
@@ -1444,28 +1543,52 @@ applyWindowBars = function()
         return
     end
 
+    local layoutModule = Nvk3UT and Nvk3UT.TrackerHostLayout
     local headerHeight, footerHeight = getEffectiveBarHeights()
+    local headerVisible = headerHeight > 0
+    local footerVisible = footerHeight > 0
+    if layoutModule and type(layoutModule.UpdateHeaderFooterSizes) == "function" then
+        local sizes = layoutModule.UpdateHeaderFooterSizes(TrackerHost)
+        headerHeight = math.max(0, tonumber(sizes.headerTargetHeight or sizes.headerHeight) or 0)
+        footerHeight = math.max(0, tonumber(sizes.footerTargetHeight or sizes.footerHeight) or 0)
+        headerVisible = sizes.headerVisible ~= false and headerHeight > 0
+        footerVisible = sizes.footerVisible ~= false and footerHeight > 0
+    end
 
     local headerBar = state.headerBar
     if headerBar then
         if headerBar.SetHeight then
-            headerBar:SetHeight(headerHeight)
+            local currentHeight = headerBar.GetHeight and headerBar:GetHeight() or headerHeight
+            if numbersDiffer(currentHeight, headerHeight) then
+                headerBar:SetHeight(headerHeight)
+            end
         end
         if headerBar.SetHidden then
-            headerBar:SetHidden(headerHeight <= 0)
+            local shouldHide = not headerVisible
+            local currentHidden = headerBar.IsHidden and headerBar:IsHidden()
+            if currentHidden ~= shouldHide then
+                headerBar:SetHidden(shouldHide)
+            end
         end
-        headerBar:SetMouseEnabled(headerHeight > 0)
+        headerBar:SetMouseEnabled(headerVisible)
     end
 
     local footerBar = state.footerBar
     if footerBar then
         if footerBar.SetHeight then
-            footerBar:SetHeight(footerHeight)
+            local currentHeight = footerBar.GetHeight and footerBar:GetHeight() or footerHeight
+            if numbersDiffer(currentHeight, footerHeight) then
+                footerBar:SetHeight(footerHeight)
+            end
         end
         if footerBar.SetHidden then
-            footerBar:SetHidden(footerHeight <= 0)
+            local shouldHide = not footerVisible
+            local currentHidden = footerBar.IsHidden and footerBar:IsHidden()
+            if currentHidden ~= shouldHide then
+                footerBar:SetHidden(shouldHide)
+            end
         end
-        footerBar:SetMouseEnabled(footerHeight > 0)
+        footerBar:SetMouseEnabled(footerVisible)
     end
 
     anchorContainers()
@@ -1530,8 +1653,8 @@ refreshScroll = function(targetOffset)
     questHeight = math.max(0, tonumber(questHeight) or 0)
     achievementHeight = math.max(0, tonumber(achievementHeight) or 0)
 
-    local contentStackHeight = questHeight + achievementHeight
-    contentStackHeight = math.max(0, contentStackHeight)
+    local questVisible = questHeight > 0
+    local achievementVisible = achievementHeight > 0
 
     if state.questContainer and state.questContainer.SetHeight then
         state.questContainer:SetHeight(questHeight)
@@ -1541,57 +1664,113 @@ refreshScroll = function(targetOffset)
         state.achievementContainer:SetHeight(achievementHeight)
     end
 
-    if state.contentStack and state.contentStack.SetHeight then
-        state.contentStack:SetHeight(contentStackHeight)
-    end
-
     local headerBar = state.headerBar
     local footerBar = state.footerBar
 
-    local headerHeight = 0
-    if headerBar then
-        local isHidden = headerBar.IsHidden and headerBar:IsHidden()
-        if not isHidden then
-            headerHeight = headerBar.GetHeight and headerBar:GetHeight() or headerHeight
-        end
-    end
-
-    local footerHeight = 0
-    if footerBar then
-        local isHidden = footerBar.IsHidden and footerBar:IsHidden()
-        if not isHidden then
-            footerHeight = footerBar.GetHeight and footerBar:GetHeight() or footerHeight
-        end
-    end
-
+    local layoutModule = Nvk3UT and Nvk3UT.TrackerHostLayout
     local bars = state.windowBars or ensureWindowBarSettings()
 
-    if headerHeight <= 0 or not headerBar then
-        headerHeight = math.max(0, tonumber(bars and bars.headerHeightPx) or 0)
-        if headerBar and headerBar.SetHeight then
-            headerBar:SetHeight(headerHeight)
-        end
-    end
+    local headerTargetHeight = math.max(0, tonumber(bars and bars.headerHeightPx) or 0)
+    local footerTargetHeight = math.max(0, tonumber(bars and bars.footerHeightPx) or 0)
+    local headerHeight = headerTargetHeight
+    local footerHeight = footerTargetHeight
+    local headerVisible = headerTargetHeight > 0
+    local footerVisible = footerTargetHeight > 0
+    local topPadding = 0
+    local bottomPadding = 0
 
-    if footerHeight <= 0 or not footerBar then
-        footerHeight = math.max(0, tonumber(bars and bars.footerHeightPx) or 0)
-        if footerBar and footerBar.SetHeight then
-            footerBar:SetHeight(footerHeight)
+    if layoutModule and type(layoutModule.UpdateHeaderFooterSizes) == "function" then
+        local sizes = layoutModule.UpdateHeaderFooterSizes(TrackerHost)
+        headerTargetHeight = math.max(0, tonumber(sizes.headerTargetHeight or sizes.headerHeight) or headerTargetHeight)
+        footerTargetHeight = math.max(0, tonumber(sizes.footerTargetHeight or sizes.footerHeight) or footerTargetHeight)
+        headerHeight = math.max(0, tonumber(sizes.headerHeight) or headerTargetHeight)
+        footerHeight = math.max(0, tonumber(sizes.footerHeight) or footerTargetHeight)
+        headerVisible = sizes.headerVisible ~= false and headerTargetHeight > 0
+        footerVisible = sizes.footerVisible ~= false and footerTargetHeight > 0
+        topPadding = math.max(0, tonumber(sizes.contentTopPadding) or 0)
+        bottomPadding = math.max(0, tonumber(sizes.contentBottomPadding) or 0)
+    else
+        if headerBar and headerBar.GetHeight then
+            local measured = tonumber(headerBar:GetHeight())
+            if measured then
+                headerHeight = math.max(0, measured)
+            end
+        end
+        if footerBar and footerBar.GetHeight then
+            local measured = tonumber(footerBar:GetHeight())
+            if measured then
+                footerHeight = math.max(0, measured)
+            end
+        end
+        if not headerVisible then
+            headerHeight = 0
+        end
+        if not footerVisible then
+            footerHeight = 0
         end
     end
 
     if headerBar then
-        if headerBar.SetHidden then
-            headerBar:SetHidden(headerHeight <= 0)
+        if headerBar.SetHeight then
+            local currentHeight = headerBar.GetHeight and headerBar:GetHeight() or headerTargetHeight
+            if numbersDiffer(currentHeight, headerTargetHeight) then
+                headerBar:SetHeight(headerTargetHeight)
+            end
         end
-        headerBar:SetMouseEnabled(headerHeight > 0)
+        if headerBar.SetHidden then
+            local shouldHide = not headerVisible
+            local currentHidden = headerBar.IsHidden and headerBar:IsHidden()
+            if currentHidden ~= shouldHide then
+                headerBar:SetHidden(shouldHide)
+            end
+        end
+        headerBar:SetMouseEnabled(headerVisible)
     end
 
     if footerBar then
-        if footerBar.SetHidden then
-            footerBar:SetHidden(footerHeight <= 0)
+        if footerBar.SetHeight then
+            local currentHeight = footerBar.GetHeight and footerBar:GetHeight() or footerTargetHeight
+            if numbersDiffer(currentHeight, footerTargetHeight) then
+                footerBar:SetHeight(footerTargetHeight)
+            end
         end
-        footerBar:SetMouseEnabled(footerHeight > 0)
+        if footerBar.SetHidden then
+            local shouldHide = not footerVisible
+            local currentHidden = footerBar.IsHidden and footerBar:IsHidden()
+            if currentHidden ~= shouldHide then
+                footerBar:SetHidden(shouldHide)
+            end
+        end
+        footerBar:SetMouseEnabled(footerVisible)
+    end
+
+    if not headerVisible then
+        headerHeight = 0
+    else
+        headerHeight = headerTargetHeight
+    end
+
+    if not footerVisible then
+        footerHeight = 0
+    else
+        footerHeight = footerTargetHeight
+    end
+
+    local contentStackHeight = topPadding
+    if questVisible then
+        contentStackHeight = contentStackHeight + questHeight
+    end
+    if achievementVisible then
+        if questVisible then
+            contentStackHeight = contentStackHeight + TrackerHost.GetSectionGap()
+        end
+        contentStackHeight = contentStackHeight + achievementHeight
+    end
+    contentStackHeight = contentStackHeight + bottomPadding
+    contentStackHeight = math.max(0, contentStackHeight)
+
+    if state.contentStack and state.contentStack.SetHeight then
+        state.contentStack:SetHeight(contentStackHeight)
     end
 
     local contentHeight = headerHeight + contentStackHeight + footerHeight
