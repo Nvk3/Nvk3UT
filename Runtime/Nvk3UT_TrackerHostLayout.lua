@@ -24,6 +24,7 @@ local function ensureInitialized(self)
     }
     self._headerH = self._headerH or 0
     self._footerH = self._footerH or 0
+    self._hadZeroMeasure = self._hadZeroMeasure or false
 end
 
 function HostLayout:Init()
@@ -74,7 +75,7 @@ local function safeTrackerContentSize(tracker)
     return 0, 0
 end
 
-local function measureSection(kind, container)
+local function measureSection(self, kind, container)
     if not container then
         return 0, 0
     end
@@ -112,6 +113,17 @@ local function measureSection(kind, container)
         if container.GetHeight then
             local containerHeight = tonumber(container:GetHeight()) or 0
             height = math.max(height, containerHeight)
+        end
+    end
+
+    if height <= 0 then
+        local cache = self._cache and self._cache.sizes or nil
+        local last = cache and cache[kind]
+        if last and last > 0 then
+            height = last
+            self._hadZeroMeasure = true
+        else
+            height = last or 0
         end
     end
 
@@ -191,6 +203,7 @@ function HostLayout:ApplyLayout()
         return
     end
 
+    self._hadZeroMeasure = false
     self:UpdateHeaderFooterSizes()
 
     local paddingLeft = self.paddingLeft or 0
@@ -212,7 +225,7 @@ function HostLayout:ApplyLayout()
         if type(kind) == "string" and kind ~= "" then
             local container = host:GetSectionContainer(kind)
             if container and container.ClearAnchors and container.SetAnchor then
-                local width, height = measureSection(kind, container)
+                local width, height = measureSection(self, kind, container)
                 anchorSection(self, kind, container, paddingLeft, cursorY, paddingRight)
 
                 if sizes then
@@ -247,6 +260,14 @@ function HostLayout:ApplyLayout()
             usedSections,
             totalHeight
         )
+    end
+
+    if self._hadZeroMeasure then
+        self._hadZeroMeasure = false
+        local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+        if runtime and runtime.QueueDirty then
+            runtime:QueueDirty("layout")
+        end
     end
 end
 

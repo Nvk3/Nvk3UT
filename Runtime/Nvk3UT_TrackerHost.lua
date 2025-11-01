@@ -144,6 +144,7 @@ local state = {
     lastRootHiddenState = nil,
     updatingSceneVisibility = false,
     sceneVisibilityScheduled = false,
+    sceneShownRefreshPending = false,
 }
 
 local lamPreview = {
@@ -199,9 +200,18 @@ local function scheduleUpdateSceneVisibility()
         state.sceneVisibilityScheduled = false
         updateSceneVisibility()
 
-        local rt = Nvk3UT and Nvk3UT.TrackerRuntime
-        if rt and rt.QueueDirty then
-            rt:QueueDirty("layout")
+        local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+        if runtime and runtime.QueueDirty then
+            if state.sceneShownRefreshPending then
+                state.sceneShownRefreshPending = false
+                runtime:QueueDirty("quest")
+                runtime:QueueDirty("achievement")
+                runtime:QueueDirty("layout")
+            else
+                runtime:QueueDirty("layout")
+            end
+        else
+            state.sceneShownRefreshPending = false
         end
     end, 0)
 end
@@ -2154,6 +2164,9 @@ function TrackerHost.Init()
 
             local function onStateChange(_, newState)
                 state[field] = newState
+                if newState == SCENE_SHOWN then
+                    state.sceneShownRefreshPending = true
+                end
                 scheduleUpdateSceneVisibility()
             end
 
