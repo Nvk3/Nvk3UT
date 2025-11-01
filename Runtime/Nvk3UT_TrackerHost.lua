@@ -2304,24 +2304,25 @@ function TrackerHost.ApplyVisibilityRules()
     local previousSceneHidden = state.sceneHidden == true
 
     local lamOverride = state.isLAMOpen == true
+    local hideForScene = state.isInHUDScene ~= true
+    local hideForCombat = hostSettings and hostSettings.HideInCombat == true and state.isInCombat == true
     local hideReason = "hud"
-    local shouldHide = false
 
     if lamOverride then
-        shouldHide = false
+        state.sceneHidden = false
         hideReason = "LAM override"
-    elseif state.isInHUDScene ~= true then
-        shouldHide = true
-        hideReason = "scene"
-    elseif hostSettings and hostSettings.HideInCombat == true and state.isInCombat == true then
-        shouldHide = true
-        hideReason = "combat"
     else
-        shouldHide = false
-        hideReason = "hud"
+        if hideForScene then
+            hideReason = "scene"
+        elseif hideForCombat then
+            hideReason = "combat"
+        else
+            hideReason = "hud"
+        end
+
+        state.sceneHidden = hideForScene or hideForCombat
     end
 
-    state.sceneHidden = shouldHide
     applyWindowVisibility()
 
     local changed = previousSceneHidden ~= (state.sceneHidden == true)
