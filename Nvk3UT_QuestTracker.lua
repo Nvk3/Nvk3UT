@@ -3266,7 +3266,7 @@ function QuestTracker:EnsurePools(parent)
         return
     end
 
-    parent = parent or self.parentControl or state.parentControl or state.container or state.control
+    parent = parent or self.parentControl or QuestTracker.root or state.parentControl or state.container or state.control
     if not parent then
         return
     end
@@ -3275,14 +3275,7 @@ function QuestTracker:EnsurePools(parent)
     state.control = state.control or parent
     state.parentControl = parent
     self.parentControl = parent
-
-    state.poolCounters = state.poolCounters or {}
-
-    local function nextControlName(prefix)
-        local counters = state.poolCounters
-        counters[prefix] = (counters[prefix] or 0) + 1
-        return string.format("%s%d", prefix, counters[prefix])
-    end
+    QuestTracker.root = QuestTracker.root or parent
 
     local function resetCommon(control)
         if not control then
@@ -3304,27 +3297,6 @@ function QuestTracker:EnsurePools(parent)
         control.baseColor = nil
         control.isExpanded = nil
         control.poolKey = nil
-    end
-
-    local function newCategoryControl()
-        local controlName = nextControlName(CATEGORY_POOL_PREFIX)
-        local control = CreateControlFromVirtual(controlName, parent, "CategoryHeader_Template")
-        control:SetHidden(true)
-        return control
-    end
-
-    local function newQuestControl()
-        local controlName = nextControlName(QUEST_POOL_PREFIX)
-        local control = CreateControlFromVirtual(controlName, parent, "QuestHeader_Template")
-        control:SetHidden(true)
-        return control
-    end
-
-    local function newConditionControl()
-        local controlName = nextControlName(CONDITION_POOL_PREFIX)
-        local control = CreateControlFromVirtual(controlName, parent, "QuestCondition_Template")
-        control:SetHidden(true)
-        return control
     end
 
     local function resetCategory(control)
@@ -3366,9 +3338,30 @@ function QuestTracker:EnsurePools(parent)
         end
     end
 
-    state.categoryPool = ZO_ObjectPool:New(newCategoryControl, resetCategory)
-    state.questPool = ZO_ObjectPool:New(newQuestControl, resetQuest)
-    state.conditionPool = ZO_ObjectPool:New(newConditionControl, resetCondition)
+    local categoryPool = ZO_ControlPool:New("CategoryHeader_Template", parent, CATEGORY_POOL_PREFIX)
+    categoryPool:SetCustomFactoryBehavior(function(control)
+        resetCommon(control)
+        control:SetHidden(true)
+    end)
+    categoryPool:SetCustomResetBehavior(resetCategory)
+
+    local questPool = ZO_ControlPool:New("QuestHeader_Template", parent, QUEST_POOL_PREFIX)
+    questPool:SetCustomFactoryBehavior(function(control)
+        resetCommon(control)
+        control:SetHidden(true)
+    end)
+    questPool:SetCustomResetBehavior(resetQuest)
+
+    local conditionPool = ZO_ControlPool:New("QuestCondition_Template", parent, CONDITION_POOL_PREFIX)
+    conditionPool:SetCustomFactoryBehavior(function(control)
+        resetCommon(control)
+        control:SetHidden(true)
+    end)
+    conditionPool:SetCustomResetBehavior(resetCondition)
+
+    state.categoryPool = categoryPool
+    state.questPool = questPool
+    state.conditionPool = conditionPool
 
     self.categoryPool = state.categoryPool
     self.questPool = state.questPool
@@ -3713,7 +3706,7 @@ local function Rebuild()
 end
 
 local function RefreshVisibility()
-    local control = state.control or state.parentControl or QuestTracker.parentControl
+    local control = QuestTracker.root or state.container or state.control or state.parentControl or QuestTracker.parentControl
     if not (control and control.SetHidden) then
         return
     end
@@ -3727,6 +3720,9 @@ local function RefreshVisibility()
     end
 
     control:SetHidden(hidden and true or false)
+    if QuestTracker.root ~= control then
+        QuestTracker.root = control
+    end
     if state.control ~= control then
         state.control = control
     end
@@ -3759,6 +3755,7 @@ function QuestTracker.Init(parentControl, opts)
 
     assert(parentControl ~= nil, "QuestTracker.Init requires a parent control")
 
+    QuestTracker.root = parentControl
     state.control = parentControl
     state.container = parentControl
     state.parentControl = parentControl
@@ -3848,6 +3845,7 @@ function QuestTracker.Shutdown()
     state.control = nil
     state.parentControl = nil
     QuestTracker.parentControl = nil
+    QuestTracker.root = nil
     state.snapshot = nil
     state.orderedControls = {}
     state.lastAnchoredControl = nil
