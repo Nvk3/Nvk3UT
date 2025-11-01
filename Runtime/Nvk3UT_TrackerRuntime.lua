@@ -25,6 +25,7 @@ Runtime._questDirty = Runtime._questDirty == true
 Runtime._achievementDirty = Runtime._achievementDirty == true
 Runtime._layoutDirty = Runtime._layoutDirty == true
 Runtime._isInCombat = Runtime._isInCombat == true
+Runtime._combatChangedThisFrame = Runtime._combatChangedThisFrame == true
 Runtime._isInCursorMode = Runtime._isInCursorMode == true
 Runtime._scheduled = Runtime._scheduled == true
 Runtime._scheduledCallId = Runtime._scheduledCallId or nil
@@ -335,16 +336,22 @@ function Runtime:QueueDirty(kind, reason)
 end
 
 function Runtime:ProcessFrame()
+    local combatChangedThisFrame = self._combatChangedThisFrame == true
+
     bootstrapLegacyFlags()
 
     local dirtyQueue = self._dirtyQueue
-    if type(dirtyQueue) ~= "table" or #dirtyQueue == 0 then
+    local hasDirtyQueue = type(dirtyQueue) == "table" and #dirtyQueue > 0
+
+    if not hasDirtyQueue and not combatChangedThisFrame then
         return
     end
 
     local dirtyKeys = {}
-    for index = 1, #dirtyQueue do
-        dirtyKeys[index] = dirtyQueue[index]
+    if hasDirtyQueue then
+        for index = 1, #dirtyQueue do
+            dirtyKeys[index] = dirtyQueue[index]
+        end
     end
 
     local dirtySet = self._dirtySet
@@ -361,6 +368,10 @@ function Runtime:ProcessFrame()
         end
 
         debug("Runtime: batched dirty=[%s] (n=%d)", table.concat(formatted, ","), #dirtyKeys)
+    end
+
+    if combatChangedThisFrame then
+        debug("Runtime: combat state -> inCombat=%s", tostring(self._isInCombat == true))
     end
 
     local refreshed = false
@@ -381,6 +392,8 @@ function Runtime:ProcessFrame()
         applyTrackerHostLayout()
     end
 
+    self._combatChangedThisFrame = false
+
     if hasPendingDirty() then
         scheduleProcessing()
     end
@@ -393,7 +406,12 @@ function Runtime:SetCombatState(isInCombat)
     end
 
     self._isInCombat = normalized
+    self._combatChangedThisFrame = true
     self:QueueDirty(DIRTY_KEY_HOST_LAYOUT, "combat-state")
+end
+
+function Runtime:IsInCombat()
+    return self._isInCombat == true
 end
 
 function Runtime:SetCursorMode(isInCursorMode)
