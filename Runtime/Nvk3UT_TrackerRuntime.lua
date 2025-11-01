@@ -426,8 +426,12 @@ function Runtime:SetCombatState(isInCombat)
         return
     end
 
+    local wasInCombat = self._isInCombat == true
     self._isInCombat = normalized
-    self:QueueDirty("layout")
+
+    if wasInCombat and not normalized then
+        self:QueueDirty("layout")
+    end
 end
 
 function Runtime:SetCursorMode(isInCursorMode)

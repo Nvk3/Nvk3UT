@@ -787,6 +787,31 @@ queueRuntimeLayout = function()
     callRuntime("QueueDirty", "layout")
 end
 
+function TrackerHost.SetCombatState(selfOrFlag, maybeFlag)
+    local targetFlag
+    if selfOrFlag == TrackerHost then
+        targetFlag = maybeFlag
+    else
+        targetFlag = selfOrFlag
+    end
+
+    local normalized = targetFlag == true
+    local previous = state.isInCombat == true
+    if previous == normalized then
+        return false
+    end
+
+    state.isInCombat = normalized
+
+    diagnosticsDebug("Host combat: %s -> ApplyVisibilityRules()", tostring(normalized))
+
+    local visibilityChanged = TrackerHost.ApplyVisibilityRules()
+
+    callRuntime("SetCombatState", normalized)
+
+    return visibilityChanged == true
+end
+
 local BOOTSTRAP_NAMESPACE = addonName .. "_TrackerHostBootstrap"
 
 ensureRuntimeInitialized = function()
@@ -880,11 +905,7 @@ local function updateCombatState(inCombat)
     end
 
     state.bootstrapCombatState = normalized
-    state.isInCombat = normalized
-    diagnosticsDebug("TrackerHost combat state changed: %s", tostring(normalized))
-    callRuntime("SetCombatState", normalized)
-    TrackerHost.ApplyVisibilityRules()
-    queueRuntimeLayout()
+    TrackerHost.SetCombatState(normalized)
 end
 
 -- TEMP_BOOTSTRAP: Scene/HUD/Cursor/Combat forwarding only; no visibility toggles. Remove in EVENTS_012/013/014_SWITCH.
