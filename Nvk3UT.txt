@@ -47,6 +47,7 @@ Nvk3UT_CompletedSummary.lua
 ## === Runtime ===
 Runtime/Nvk3UT_TrackerRuntime.lua
 Runtime/Nvk3UT_TrackerHost.lua
+Runtime/Nvk3UT_TrackerHostLayout.lua
 Nvk3UT_QuestTracker.xml
 Nvk3UT_QuestTracker.lua
 Nvk3UT_AchievementTracker.xml
