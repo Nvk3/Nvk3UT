@@ -1085,15 +1085,8 @@ local function registerPanel(displayTitle)
                     local settings = getHostSettings()
                     settings.HideInCombat = value == true
                     local host = Nvk3UT and Nvk3UT.TrackerHost
-                    local visibilityChanged = false
                     if host and host.ApplyVisibilityRules then
-                        visibilityChanged = host:ApplyVisibilityRules() == true
-                    end
-                    if visibilityChanged then
-                        local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
-                        if runtime and runtime.QueueDirty then
-                            runtime:QueueDirty("layout")
-                        end
+                        host:ApplyVisibilityRules()
                     end
                 end,
                 default = false,
