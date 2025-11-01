@@ -27,6 +27,7 @@ local MAX_BAR_HEIGHT = 250
 local FRAGMENT_REASON_SUPPRESSED = addonName .. "_HostSuppressed"
 local FRAGMENT_REASON_USER = addonName .. "_HostHiddenBySettings"
 local FRAGMENT_REASON_SCENE = addonName .. "_HostSceneHidden"
+local FRAGMENT_REASON_RUNTIME = addonName .. "_HostRuntimeHidden"
 
 local DEFAULT_APPEARANCE = {
     enabled = true,
@@ -124,6 +125,10 @@ local state = {
         questMissing = false,
         achievementMissing = false,
     },
+    visibilityLocks = nil,
+    sectionContainers = nil,
+    sectionOrder = nil,
+    sceneVisibilityCallbacks = nil,
     previousDefaultQuestTrackerHidden = nil,
     initializing = false,
     lamPreviewForceVisible = false,
@@ -150,6 +155,7 @@ local createContainers
 local startWindowDrag
 local stopWindowDrag
 local getCurrentScrollOffset
+local layoutSectionContainers
 
 local function getSavedVars()
     return Nvk3UT and Nvk3UT.sv
@@ -178,6 +184,21 @@ local function cloneTable(value)
         copy[key] = cloneTable(entry)
     end
     return copy
+end
+
+local function isRuntimeVisible()
+    local locks = state.visibilityLocks
+    if not locks then
+        return true
+    end
+
+    for _, allowed in pairs(locks) do
+        if allowed == false then
+            return false
+        end
+    end
+
+    return true
 end
 
 local function normalizeColorComponent(value, fallback)
@@ -1033,7 +1054,33 @@ local function anchorContainers()
         debugLog("Achievement container not ready for anchoring")
         state.anchorWarnings.achievementMissing = true
     end
+
+    layoutSectionContainersInternal()
 end
+
+local function layoutSectionContainersInternal()
+    if not (state.sectionOrder and state.contentStack) then
+        return
+    end
+
+    local previous = state.achievementContainer or state.questContainer
+    for index = 1, #state.sectionOrder do
+        local container = state.sectionOrder[index]
+        if container and container.ClearAnchors and container.SetAnchor then
+            container:ClearAnchors()
+            if previous then
+                container:SetAnchor(TOPLEFT, previous, BOTTOMLEFT, 0, 0)
+                container:SetAnchor(TOPRIGHT, previous, BOTTOMRIGHT, 0, 0)
+            else
+                container:SetAnchor(TOPLEFT, state.contentStack, TOPLEFT, 0, 0)
+                container:SetAnchor(TOPRIGHT, state.contentStack, TOPRIGHT, 0, 0)
+            end
+            previous = container
+        end
+    end
+end
+
+layoutSectionContainers = layoutSectionContainersInternal
 
 applyWindowBars = function()
     state.windowBars = ensureWindowBarSettings()
@@ -1489,6 +1536,7 @@ local function applyWindowLock()
     local locked = state.window.locked == true
     state.root:SetMovable(not locked)
     state.root:SetResizeHandleSize(locked and 0 or RESIZE_HANDLE_SIZE)
+    applyWindowVisibility()
 end
 
 local function applyWindowVisibility()
@@ -1498,22 +1546,32 @@ local function applyWindowVisibility()
 
     local userHidden = state.window and state.window.visible == false
     local suppressed = state.initializing == true
-    local previewActive = state.lamPreviewForceVisible == true and not userHidden
-    local shouldHide = (suppressed or userHidden) and not previewActive
+    local runtimeHidden = not isRuntimeVisible()
+    local previewActive = state.lamPreviewForceVisible == true and not userHidden and not runtimeHidden
+    local shouldHide = (suppressed or userHidden or runtimeHidden) and not previewActive
 
     if state.fragment and state.fragment.SetHiddenForReason then
         if previewActive then
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, false)
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, false)
+            state.fragment:SetHiddenForReason(FRAGMENT_REASON_RUNTIME, false)
         else
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, suppressed)
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, userHidden)
+            state.fragment:SetHiddenForReason(FRAGMENT_REASON_RUNTIME, runtimeHidden)
         end
 
         state.fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, false)
     end
 
     state.root:SetHidden(shouldHide)
+    if state.root.SetMouseEnabled then
+        local locked = state.window and state.window.locked == true
+        state.root:SetMouseEnabled(not shouldHide and not locked)
+    end
+    if state.root.SetHitTestEnabled then
+        state.root:SetHitTestEnabled(not shouldHide)
+    end
 
     if lamPreview.active and previewActive then
         lamPreview.windowPreviewApplied = true
@@ -2018,6 +2076,9 @@ function TrackerHost.Init()
     state.appearance = ensureAppearanceSettings()
     state.layout = ensureLayoutSettings()
     state.features = ensureFeatureSettings()
+    state.visibilityLocks = state.visibilityLocks or {}
+    state.sectionContainers = state.sectionContainers or {}
+    state.sectionOrder = state.sectionOrder or {}
     TrackerHost.EnsureAppearanceDefaults()
 
     createRootControl()
@@ -2048,6 +2109,78 @@ function TrackerHost.Init()
     notifyContentChanged()
 
     debugLog("Host window initialized")
+end
+
+function TrackerHost.GetRoot()
+    if not state.initialized then
+        TrackerHost.Init()
+    end
+
+    return state.root
+end
+
+function TrackerHost.SetLocked(isLocked)
+    if not state.initialized then
+        TrackerHost.Init()
+    end
+
+    state.window = ensureWindowSettings()
+    state.window.locked = isLocked == true
+
+    if state.root then
+        applyWindowLock()
+    end
+
+    if Nvk3UT and Nvk3UT.Diagnostics and Nvk3UT.Diagnostics.Debug then
+        Nvk3UT.Diagnostics.Debug("TrackerHost.SetLocked(%s)", tostring(isLocked))
+    end
+end
+
+function TrackerHost.SetVisible(isVisible, reason)
+    if not state.initialized then
+        TrackerHost.Init()
+    end
+
+    reason = reason or "runtime"
+    state.visibilityLocks = state.visibilityLocks or {}
+    state.visibilityLocks[reason] = isVisible ~= false
+
+    if state.root then
+        applyWindowVisibility()
+    end
+end
+
+function TrackerHost.GetSectionContainer(key)
+    if key == nil then
+        return nil
+    end
+
+    if not state.initialized then
+        TrackerHost.Init()
+    end
+
+    if not (state.contentStack and WINDOW_MANAGER) then
+        return nil
+    end
+
+    local normalized = type(key) == "string" and key or tostring(key)
+    state.sectionContainers = state.sectionContainers or {}
+    state.sectionOrder = state.sectionOrder or {}
+
+    local container = state.sectionContainers[normalized]
+    if not container then
+        container = WINDOW_MANAGER:CreateControl(nil, state.contentStack, CT_CONTROL)
+        if container.SetResizeToFitDescendents then
+            container:SetResizeToFitDescendents(true)
+        end
+        container:SetHidden(false)
+        state.sectionContainers[normalized] = container
+        state.sectionOrder[#state.sectionOrder + 1] = container
+        layoutSectionContainersInternal()
+        notifyContentChanged()
+    end
+
+    return container
 end
 
 function TrackerHost.ApplySettings()
@@ -2243,6 +2376,12 @@ function TrackerHost.Shutdown()
     lamPreview.windowPreviewApplied = false
     state.lamPreviewForceVisible = false
 
+    if EVENT_MANAGER then
+        EVENT_MANAGER:UnregisterForEvent(BOOTSTRAP_NAMESPACE .. "Cursor", EVENT_CURSOR_MODE_CHANGED)
+        EVENT_MANAGER:UnregisterForEvent(BOOTSTRAP_NAMESPACE .. "Combat", EVENT_PLAYER_COMBAT_STATE)
+        EVENT_MANAGER:UnregisterForEvent(BOOTSTRAP_NAMESPACE .. "Loaded", EVENT_ADD_ON_LOADED)
+    end
+
     if state.previousDefaultQuestTrackerHidden ~= nil and ZO_QuestTracker and ZO_QuestTracker.SetHidden then
         ZO_QuestTracker:SetHidden(state.previousDefaultQuestTrackerHidden)
     end
@@ -2320,6 +2459,14 @@ function TrackerHost.Shutdown()
     end
     state.sceneCallbacks = nil
 
+    if state.sceneVisibilityCallbacks then
+        for scene, callback in pairs(state.sceneVisibilityCallbacks) do
+            if scene and scene.UnregisterCallback and callback then
+                pcall(scene.UnregisterCallback, scene, "StateChange", callback)
+            end
+        end
+    end
+
     if state.fragment and state.fragment.SetHiddenForReason then
         state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, true)
         state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, true)
@@ -2373,9 +2520,167 @@ function TrackerHost.Shutdown()
     state.layout = nil
     state.features = nil
     state.windowBars = nil
+    state.sectionContainers = nil
+    state.sectionOrder = nil
+    state.visibilityLocks = nil
+    state.sceneVisibilityCallbacks = nil
     state.initialized = false
     state.previousDefaultQuestTrackerHidden = nil
     state.initializing = false
+end
+
+-- ===== TEMP BOOTSTRAP (keep until EVENTS_*_SWITCH tokens) =====
+-- TODO(v4 EVENTS_012_SWITCH): remove HUD visibility bootstrap from TrackerHost
+-- TODO(v4 EVENTS_013_SWITCH): remove combat bootstrap from TrackerHost
+-- TODO(v4 EVENTS_014_SWITCH): remove cursor bootstrap from TrackerHost
+
+local function runtimeDebug(fmt, ...)
+    if Nvk3UT and Nvk3UT.Diagnostics and Nvk3UT.Diagnostics.Debug then
+        Nvk3UT.Diagnostics.Debug(fmt, ...)
+    end
+end
+
+local function forwardRuntime(methodName, ...)
+    if not (Nvk3UT and Nvk3UT.TrackerRuntime) then
+        return
+    end
+
+    local runtime = Nvk3UT.TrackerRuntime
+    local target = runtime and runtime[methodName]
+    if type(target) ~= "function" then
+        return
+    end
+
+    if Nvk3UT.SafeCall then
+        Nvk3UT.SafeCall(function()
+            target(runtime, ...)
+        end)
+    else
+        local ok, err = pcall(target, runtime, ...)
+        if not ok then
+            runtimeDebug("TrackerHost runtime forward failed: %s", tostring(err))
+        end
+    end
+end
+
+local BOOTSTRAP_NAMESPACE = addonName .. "_TrackerHostBootstrap"
+
+local function registerCursorBootstrap()
+    if not EVENT_MANAGER then
+        return
+    end
+
+    local function onCursorModeChanged(_, cursorShown)
+        runtimeDebug("TrackerHost cursor mode changed: %s", tostring(cursorShown))
+        forwardRuntime("SetCursorMode", cursorShown)
+    end
+
+    EVENT_MANAGER:RegisterForEvent(
+        BOOTSTRAP_NAMESPACE .. "Cursor",
+        EVENT_CURSOR_MODE_CHANGED,
+        onCursorModeChanged
+    )
+end
+
+local function registerCombatBootstrap()
+    if not EVENT_MANAGER then
+        return
+    end
+
+    local function onCombatState(_, inCombat)
+        runtimeDebug("TrackerHost combat state: %s", tostring(inCombat))
+        forwardRuntime("SetCombatState", inCombat)
+    end
+
+    EVENT_MANAGER:RegisterForEvent(
+        BOOTSTRAP_NAMESPACE .. "Combat",
+        EVENT_PLAYER_COMBAT_STATE,
+        onCombatState
+    )
+end
+
+local function applySceneVisibility(scene, reason)
+    if not (scene and scene.RegisterCallback) then
+        return
+    end
+
+    state.sceneVisibilityCallbacks = state.sceneVisibilityCallbacks or {}
+    if state.sceneVisibilityCallbacks[scene] then
+        return
+    end
+
+    local function onStateChange(_, newState)
+        if newState == SCENE_SHOWING or newState == SCENE_SHOWN then
+            runtimeDebug("TrackerHost HUD scene %s showing", tostring(reason))
+            if Nvk3UT and Nvk3UT.SafeCall then
+                Nvk3UT.SafeCall(function()
+                    TrackerHost.SetVisible(true, reason)
+                end)
+            else
+                TrackerHost.SetVisible(true, reason)
+            end
+        elseif newState == SCENE_HIDDEN then
+            runtimeDebug("TrackerHost HUD scene %s hidden", tostring(reason))
+            if Nvk3UT and Nvk3UT.SafeCall then
+                Nvk3UT.SafeCall(function()
+                    TrackerHost.SetVisible(false, reason)
+                end)
+            else
+                TrackerHost.SetVisible(false, reason)
+            end
+        end
+    end
+
+    local ok, err = pcall(scene.RegisterCallback, scene, "StateChange", onStateChange)
+    if ok then
+        state.sceneVisibilityCallbacks[scene] = onStateChange
+
+        local sceneState = scene.GetState and scene:GetState()
+        local isShown = sceneState == SCENE_SHOWING or sceneState == SCENE_SHOWN
+        if isShown then
+            TrackerHost.SetVisible(true, reason)
+        else
+            TrackerHost.SetVisible(false, reason)
+        end
+    else
+        runtimeDebug("Failed to register HUD visibility callback: %s", tostring(err))
+    end
+end
+
+local function registerHudBootstrap()
+    if not SCENE_MANAGER then
+        return
+    end
+
+    applySceneVisibility(HUD_SCENE, "HUD")
+    applySceneVisibility(HUD_UI_SCENE, "HUD")
+
+    if SCENE_MANAGER.GetScene then
+        applySceneVisibility(SCENE_MANAGER:GetScene("hud"), "HUD")
+        applySceneVisibility(SCENE_MANAGER:GetScene("hudui"), "HUD")
+    end
+end
+
+local function onAddonLoaded(_, name)
+    if name ~= addonName then
+        return
+    end
+
+    if EVENT_MANAGER then
+        EVENT_MANAGER:UnregisterForEvent(BOOTSTRAP_NAMESPACE .. "Loaded", EVENT_ADD_ON_LOADED)
+    end
+
+    registerCursorBootstrap()
+    registerCombatBootstrap()
+    registerHudBootstrap()
+end
+
+if EVENT_MANAGER then
+    EVENT_MANAGER:RegisterForEvent(
+        BOOTSTRAP_NAMESPACE .. "Loaded",
+        EVENT_ADD_ON_LOADED,
+        onAddonLoaded
+    )
 end
 
 Nvk3UT.TrackerHost = TrackerHost
