@@ -137,6 +137,7 @@ local state = {
     bootstrapCursorMode = nil,
     bootstrapCombatState = nil,
     bootstrapSceneCallbacks = nil,
+    bootstrapSceneManagerCallbackRegistered = false,
     bootstrapsRegistered = false,
     cursorBootstrapRegistered = false,
     combatBootstrapRegistered = false,
@@ -779,7 +780,7 @@ ensureRuntimeInitialized = function()
     end
 end
 
-local function isHudSceneVisible()
+local function isGameHUDActive()
     local manager = SCENE_MANAGER
     if manager and type(manager.IsShowing) == "function" then
         if manager:IsShowing("hud") then
@@ -855,22 +856,23 @@ local function applyBootstrapVisibility(host)
         return
     end
 
-    local shouldShow = isHudSceneVisible()
-    local desiredSceneHidden = not shouldShow
+    local shouldShow = isGameHUDActive()
+    local lastApplied = state.bootstrapHudVisible
 
-    if state.bootstrapHudVisible == shouldShow and state.sceneHidden == desiredSceneHidden then
-        return
-    end
-
-    local isVisible
+    local currentVisible
     if type(host.IsVisible) == "function" then
         local ok, result = pcall(host.IsVisible, host)
         if ok then
-            isVisible = result
+            currentVisible = result
         end
     end
 
-    if isVisible ~= nil and isVisible == shouldShow and state.sceneHidden == desiredSceneHidden then
+    if currentVisible ~= nil and currentVisible == shouldShow then
+        state.bootstrapHudVisible = shouldShow
+        return
+    end
+
+    if lastApplied ~= nil and lastApplied == shouldShow then
         state.bootstrapHudVisible = shouldShow
         return
     end
@@ -883,7 +885,7 @@ local function applyBootstrapVisibility(host)
             return
         end
 
-        if state.sceneHidden == desiredSceneHidden and type(host.IsVisible) == "function" then
+        if type(host.IsVisible) == "function" then
             local ok, current = pcall(host.IsVisible, host)
             if ok and current == shouldShow then
                 return
@@ -937,6 +939,37 @@ local function registerHudScene(host, scene, sceneName)
     state.bootstrapSceneCallbacks[scene] = onSceneStateChange
 end
 
+local function registerSceneManagerCallback(host)
+    if state.bootstrapSceneManagerCallbackRegistered then
+        return
+    end
+
+    local manager = SCENE_MANAGER
+    if not manager then
+        diagnosticsDebug("HUD bootstrap missing SCENE_MANAGER")
+        return
+    end
+
+    if type(manager.RegisterCallback) ~= "function" then
+        diagnosticsDebug("HUD bootstrap scene manager lacks RegisterCallback")
+        return
+    end
+
+    local function onSceneStateChanged()
+        safeCall(function()
+            applyBootstrapVisibility(host)
+        end)
+    end
+
+    local ok, message = pcall(manager.RegisterCallback, manager, "SceneStateChanged", onSceneStateChanged)
+    if not ok then
+        diagnosticsDebug("Failed to register HUD bootstrap global callback: %s", tostring(message))
+        return
+    end
+
+    state.bootstrapSceneManagerCallbackRegistered = true
+end
+
 local function ensureHudBootstrap()
     -- TEMP_BOOTSTRAP: Scene/HUD/Cursor/Combat forwarding only; no visibility toggles. Remove in EVENTS_012/013/014_SWITCH.
     local host = TrackerHost
@@ -947,6 +980,8 @@ local function ensureHudBootstrap()
         registerHudScene(host, SCENE_MANAGER:GetScene("hud"), "hud")
         registerHudScene(host, SCENE_MANAGER:GetScene("hudui"), "hudui")
     end
+
+    registerSceneManagerCallback(host)
 
     applyBootstrapVisibility(host)
 end
