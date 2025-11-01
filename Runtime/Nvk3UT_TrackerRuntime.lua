@@ -32,6 +32,10 @@ Runtime._scheduledCallId = Runtime._scheduledCallId or nil
 Runtime._initialized = Runtime._initialized == true
 Runtime._dirtySet = type(Runtime._dirtySet) == "table" and Runtime._dirtySet or {}
 Runtime._dirtyQueue = type(Runtime._dirtyQueue) == "table" and Runtime._dirtyQueue or {}
+Runtime._hostPolicy = type(Runtime._hostPolicy) == "table" and Runtime._hostPolicy or {}
+Runtime._hostSuppressed = Runtime._hostSuppressed == true
+Runtime._hostSuppressedApplied =
+    (Runtime._hostSuppressedApplied == true or Runtime._hostSuppressedApplied == false) and Runtime._hostSuppressedApplied or nil
 
 local function debug(fmt, ...)
     if Addon and type(Addon.Debug) == "function" then
@@ -124,6 +128,37 @@ local function setHostWindow(hostWindow)
     end
 
     ref.hostWindow = hostWindow
+end
+
+local function getTrackerHost()
+    local host = rawget(Addon, "TrackerHost")
+    if type(host) ~= "table" then
+        return nil
+    end
+
+    return host
+end
+
+local function applyHostSuppressed(suppressed, reason)
+    local host = getTrackerHost()
+    local applied = false
+
+    if host then
+        local setter = host.SetRuntimePolicyHidden or host.SetRuntimeSuppressed or host.SetRuntimeHidden
+        if type(setter) == "function" then
+            applied = callWithOptionalSelf(host, setter, false, suppressed, reason)
+        end
+    end
+
+    if not applied then
+        local hostWindow = getHostWindow()
+        if hostWindow ~= nil and type(hostWindow.SetHidden) == "function" then
+            hostWindow:SetHidden(suppressed == true)
+            applied = true
+        end
+    end
+
+    return applied
 end
 
 local function callWithOptionalSelf(targetTable, fn, preferPlainCall, ...)
@@ -310,7 +345,9 @@ end
 function Runtime:Init(hostWindow)
     setHostWindow(hostWindow)
     self._initialized = true
+    self._hostSuppressedApplied = nil
     debug("TrackerRuntime.Init(%s)", tostring(hostWindow))
+    self:_EvaluateHostVisibility("host-init")
 end
 
 function Runtime:QueueDirty(kind, reason)
@@ -399,6 +436,36 @@ function Runtime:ProcessFrame()
     end
 end
 
+function Runtime:_EvaluateHostVisibility(reason)
+    local policy = self._hostPolicy
+    if type(policy) ~= "table" then
+        policy = {}
+        self._hostPolicy = policy
+    end
+
+    local hideInCombat = policy.hideInCombat == true
+    local shouldSuppress = hideInCombat and self:IsInCombat()
+
+    self._hostSuppressed = shouldSuppress
+
+    local previousApplied = self._hostSuppressedApplied
+    if previousApplied == shouldSuppress and previousApplied ~= nil then
+        return
+    end
+
+    local applied = applyHostSuppressed(shouldSuppress, reason or "policy")
+    if applied then
+        self._hostSuppressedApplied = shouldSuppress
+        if previousApplied ~= shouldSuppress then
+            debug(
+                "Runtime: host visibility -> suppressed=%s reason=%s",
+                tostring(shouldSuppress),
+                tostring(reason or "policy")
+            )
+        end
+    end
+end
+
 function Runtime:SetCombatState(isInCombat)
     local normalized = isInCombat == true
     if self._isInCombat == normalized then
@@ -408,10 +475,33 @@ function Runtime:SetCombatState(isInCombat)
     self._isInCombat = normalized
     self._combatChangedThisFrame = true
     self:QueueDirty(DIRTY_KEY_HOST_LAYOUT, "combat-state")
+    self:_EvaluateHostVisibility("combat-state")
 end
 
 function Runtime:IsInCombat()
     return self._isInCombat == true
+end
+
+function Runtime:SetHostPolicy(policy, reason)
+    local hideInCombat = false
+    if type(policy) == "table" and policy.hideInCombat ~= nil then
+        hideInCombat = policy.hideInCombat == true
+    end
+
+    local current = self._hostPolicy
+    if type(current) ~= "table" then
+        current = {}
+        self._hostPolicy = current
+    end
+
+    local previous = current.hideInCombat == true
+    current.hideInCombat = hideInCombat
+
+    if previous ~= hideInCombat then
+        debug("Runtime: host policy -> hideInCombat=%s", tostring(hideInCombat))
+    end
+
+    self:_EvaluateHostVisibility(reason or "policy")
 end
 
 function Runtime:SetCursorMode(isInCursorMode)

@@ -253,6 +253,24 @@ local function getQuestSettings()
     return sv.QuestTracker
 end
 
+local function getHostSettings()
+    local sv = getSavedVars()
+    sv.host = sv.host or {}
+
+    if sv.host.hideInCombat == nil then
+        local quest = sv.QuestTracker
+        if quest and quest.hideInCombat ~= nil then
+            sv.host.hideInCombat = quest.hideInCombat == true
+        else
+            sv.host.hideInCombat = false
+        end
+    else
+        sv.host.hideInCombat = sv.host.hideInCombat == true
+    end
+
+    return sv.host
+end
+
 local function getAchievementSettings()
     local sv = getSavedVars()
     sv.AchievementTracker = sv.AchievementTracker or {}
@@ -331,6 +349,19 @@ end
 local function applyQuestSettings()
     if Nvk3UT and Nvk3UT.QuestTracker and Nvk3UT.QuestTracker.ApplySettings then
         Nvk3UT.QuestTracker.ApplySettings(getQuestSettings())
+    end
+end
+
+local function applyHostBehaviorSettings(reason)
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if host and host.ApplyHostBehavior then
+        host.ApplyHostBehavior({ reason = reason or "lam" })
+        return
+    end
+
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and runtime.SetHostPolicy then
+        runtime:SetHostPolicy({ hideInCombat = getHostSettings().hideInCombat == true }, reason or "lam")
     end
 end
 
@@ -915,6 +946,31 @@ local function registerPanel(displayTitle)
 
     options[#options + 1] = {
         type = "submenu",
+        name = "Host – Behavior",
+        controls = (function()
+            local controls = {}
+
+            controls[#controls + 1] = {
+                type = "checkbox",
+                name = "Tracker im Kampf verstecken",
+                getFunc = function()
+                    local settings = getHostSettings()
+                    return settings.hideInCombat == true
+                end,
+                setFunc = function(value)
+                    local settings = getHostSettings()
+                    settings.hideInCombat = value == true
+                    applyHostBehaviorSettings("lam-toggle")
+                end,
+                default = false,
+            }
+
+            return controls
+        end)(),
+    }
+
+    options[#options + 1] = {
+        type = "submenu",
         name = "Host – Auto-Resize & Layout",
         controls = (function()
             local controls = {}
@@ -1072,21 +1128,6 @@ local function registerPanel(displayTitle)
                     end
                 end,
                 default = true,
-            }
-
-            controls[#controls + 1] = {
-                type = "checkbox",
-                name = "Im Kampf verstecken",
-                getFunc = function()
-                    local settings = getQuestSettings()
-                    return settings.hideInCombat == true
-                end,
-                setFunc = function(value)
-                    local settings = getQuestSettings()
-                    settings.hideInCombat = value
-                    applyQuestSettings()
-                end,
-                default = false,
             }
 
             controls[#controls + 1] = {

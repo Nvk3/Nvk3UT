@@ -118,7 +118,28 @@ local defaults = {
         },
     },
     appearance = DEFAULT_TRACKER_APPEARANCE,
+    host = {
+        hideInCombat = false,
+    },
 }
+
+local function ResolveHostHideInCombat(saved)
+    if type(saved) ~= "table" then
+        return false
+    end
+
+    local host = saved.host
+    if type(host) == "table" and host.hideInCombat ~= nil then
+        return host.hideInCombat == true
+    end
+
+    local quest = saved.QuestTracker
+    if type(quest) == "table" and quest.hideInCombat ~= nil then
+        return quest.hideInCombat == true
+    end
+
+    return false
+end
 
 local function MergeDefaults(target, source)
     if type(source) ~= "table" then
@@ -194,6 +215,17 @@ local function EnsureFirstLoginStructures(saved)
     EnsureTable(appearance, "questTracker")
     EnsureTable(appearance, "achievementTracker")
 
+    local host = EnsureTable(saved, "host")
+    if host.hideInCombat == nil then
+        if saved.QuestTracker and saved.QuestTracker.hideInCombat ~= nil then
+            host.hideInCombat = saved.QuestTracker.hideInCombat == true
+        else
+            host.hideInCombat = defaults.host.hideInCombat
+        end
+    else
+        host.hideInCombat = host.hideInCombat == true
+    end
+
     if saved.debug == nil then
         saved.debug = defaults.debug
     end
@@ -231,6 +263,15 @@ function Nvk3UT_StateInit.BootstrapSavedVariables(addonTable)
     end
 
     return sv
+end
+
+function Nvk3UT_StateInit.GetHostHideInCombat(saved)
+    local source = saved
+    if source == nil then
+        source = Nvk3UT and Nvk3UT.sv
+    end
+
+    return ResolveHostHideInCombat(source)
 end
 
 return Nvk3UT_StateInit

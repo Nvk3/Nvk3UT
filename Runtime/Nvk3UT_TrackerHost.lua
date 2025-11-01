@@ -27,6 +27,7 @@ local MAX_BAR_HEIGHT = 250
 local FRAGMENT_REASON_SUPPRESSED = addonName .. "_HostSuppressed"
 local FRAGMENT_REASON_USER = addonName .. "_HostHiddenBySettings"
 local FRAGMENT_REASON_SCENE = addonName .. "_HostSceneHidden"
+local FRAGMENT_REASON_POLICY = addonName .. "_HostPolicyHidden"
 
 local DEFAULT_APPEARANCE = {
     enabled = true,
@@ -142,6 +143,8 @@ local state = {
     cursorBootstrapRegistered = false,
     combatBootstrapRegistered = false,
     runtimeInitialized = false,
+    hostPolicyHideInCombat = false,
+    policyHidden = false,
 }
 
 local lamPreview = {
@@ -456,6 +459,40 @@ local function ensureFeatureSettings()
     end
 
     return features
+end
+
+local function ensureHostBehaviorSettings()
+    local sv = getSavedVars()
+    if not sv then
+        return { hideInCombat = false }
+    end
+
+    sv.host = sv.host or {}
+    local hostSettings = sv.host
+
+    if hostSettings.hideInCombat == nil then
+        hostSettings.hideInCombat = false
+    else
+        hostSettings.hideInCombat = hostSettings.hideInCombat == true
+    end
+
+    return hostSettings
+end
+
+local function syncRuntimeHostPolicy(reason)
+    local hostSettings = ensureHostBehaviorSettings()
+    local hideInCombat = hostSettings.hideInCombat == true
+
+    state.hostPolicyHideInCombat = hideInCombat
+
+    local runtime = getRuntime()
+    if runtime and type(runtime.SetHostPolicy) == "function" then
+        safeCall(function()
+            runtime:SetHostPolicy({ hideInCombat = hideInCombat }, reason or "host")
+        end)
+    end
+
+    return hostSettings
 end
 
 local function ensureLayoutSettings()
@@ -777,6 +814,7 @@ ensureRuntimeInitialized = function()
     if initialized then
         state.runtimeInitialized = true
         diagnosticsDebug("TrackerHost runtime initialized (root=%s)", tostring(state.root))
+        syncRuntimeHostPolicy("runtime-init")
     end
 end
 
@@ -2250,19 +2288,23 @@ local function applyWindowVisibility()
     local userHidden = state.window and state.window.visible == false
     local suppressed = state.initializing == true
     local sceneHidden = state.sceneHidden == true
+    local policyHidden = state.policyHidden == true
     local previewActive = state.lamPreviewForceVisible == true and not userHidden
+    local hideForPolicy = policyHidden and not previewActive
     local hideForScene = sceneHidden and not previewActive
-    local shouldHideForSettings = (suppressed or userHidden) and not previewActive
+    local shouldHideForSettings = (suppressed or userHidden or policyHidden) and not previewActive
 
     if state.fragment and state.fragment.SetHiddenForReason then
         if previewActive then
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, false)
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, false)
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, false)
+            state.fragment:SetHiddenForReason(FRAGMENT_REASON_POLICY, false)
         else
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, suppressed)
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, userHidden)
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, sceneHidden)
+            state.fragment:SetHiddenForReason(FRAGMENT_REASON_POLICY, hideForPolicy)
         end
     end
 
@@ -2277,6 +2319,27 @@ local function applyWindowVisibility()
     end
 
     return shouldHideForSettings or hideForScene
+end
+
+local function setPolicyHidden(hidden, reason)
+    local normalized = hidden == true
+    if state.policyHidden == normalized then
+        return false
+    end
+
+    state.policyHidden = normalized
+
+    diagnosticsDebug(
+        "TrackerHost policy hidden changed: %s (reason=%s)",
+        tostring(normalized),
+        tostring(reason)
+    )
+
+    if state.root then
+        applyWindowVisibility()
+    end
+
+    return true
 end
 
 local function refreshWindowLayout(targetOffset)
@@ -2775,6 +2838,8 @@ function TrackerHost.Init()
     end
 
     state.initializing = true
+    state.policyHidden = false
+    state.hostPolicyHideInCombat = false
 
     state.window = ensureWindowSettings()
     state.appearance = ensureAppearanceSettings()
@@ -2814,6 +2879,10 @@ function TrackerHost.Init()
     ensureBootstraps()
 
     debugLog("Host window initialized")
+end
+
+function TrackerHost.SetRuntimePolicyHidden(hidden, reason)
+    return setPolicyHidden(hidden, reason)
 end
 
 function TrackerHost.SetVisible(isVisible)
@@ -2876,6 +2945,7 @@ function TrackerHost.ApplySettings()
 
     applyWindowSettings()
     applyFeatureSettings()
+    syncRuntimeHostPolicy("apply-settings")
 
     local sv = getSavedVars()
 
@@ -2888,6 +2958,15 @@ function TrackerHost.ApplySettings()
     end
 
     TrackerHost.ApplyAppearance()
+end
+
+function TrackerHost.ApplyHostBehavior(options)
+    local reason = options and options.reason or "host"
+    syncRuntimeHostPolicy(reason)
+
+    if state.root then
+        applyWindowVisibility()
+    end
 end
 
 function TrackerHost.ApplyTheme()
@@ -3161,6 +3240,8 @@ function TrackerHost.Shutdown()
     state.sceneHidden = false
     state.handlingBootstrapVisibility = false
     state.runtimeInitialized = false
+    state.policyHidden = false
+    state.hostPolicyHideInCombat = false
 
     if state.fragment and state.fragment.SetHiddenForReason then
         state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, true)
