@@ -11,16 +11,12 @@ local function isCallable(value)
         return true
     end
 
-    if type(value) == "table" then
-        local mt = getmetatable(value)
-        return mt ~= nil and type(mt.__call) == "function"
-    end
-
-    return false
+    local mt = (type(value) == "table") and getmetatable(value) or nil
+    return mt ~= nil and type(mt.__call) == "function"
 end
 
 local function ApplyAnchorSpec(ctrl, root, spec)
-    if not (ctrl and root) then
+    if not ctrl or not root then
         return
     end
 
@@ -71,7 +67,7 @@ local function ApplyAnchorSpec(ctrl, root, spec)
         return
     end
 
-    ctrl:SetAnchor(TOPLEFT, root, TOPLEFT, 0, 0)
+    ctrl:SetAnchor(TOPLEFT,     root, TOPLEFT,     0, 0)
     ctrl:SetAnchor(BOTTOMRIGHT, root, BOTTOMRIGHT, 0, 0)
 end
 
@@ -196,6 +192,13 @@ local state = {
     anchorWarnings = {
         questMissing = false,
         achievementMissing = false,
+    },
+    anchorDefaultsLogged = {
+        header = false,
+        content = false,
+        footer = false,
+        quest = false,
+        achievement = false,
     },
     visibilityLocks = nil,
     sectionContainers = nil,
@@ -1068,6 +1071,9 @@ local function anchorContainers()
     local headerBar = state.headerBar
     local contentStack = state.contentStack
     local footerBar = state.footerBar
+    local diagnostics = Nvk3UT and Nvk3UT.Diagnostics
+    local debugEnabled = diagnostics and diagnostics.IsDebugEnabled and diagnostics.IsDebugEnabled()
+    local defaultLogs = state.anchorDefaultsLogged
 
     if not scrollContent then
         return
@@ -1079,6 +1085,11 @@ local function anchorContainers()
     if headerBar then
         local headerSpec = state._anchorHeader
         if not headerSpec then
+            if debugEnabled and diagnostics and diagnostics.Debug and defaultLogs and not defaultLogs.header then
+                diagnostics.Debug("TrackerHost: anchorContainers: header uses default anchors")
+                defaultLogs.header = true
+            end
+
             headerSpec = {
                 { TOPLEFT, scrollContent, TOPLEFT, 0, 0 },
                 { TOPRIGHT, scrollContent, TOPRIGHT, 0, 0 },
@@ -1100,11 +1111,11 @@ local function anchorContainers()
                     { TOPLEFT, scrollContent, TOPLEFT, 0, 0 },
                     { TOPRIGHT, scrollContent, TOPRIGHT, 0, 0 },
                 }
+            end
 
-                local diagnostics = Nvk3UT and Nvk3UT.Diagnostics
-                if diagnostics and diagnostics.IsDebugEnabled and diagnostics.IsDebugEnabled() and diagnostics.Debug then
-                    diagnostics.Debug("TrackerHost: anchorContainers: content uses default fill")
-                end
+            if debugEnabled and diagnostics and diagnostics.Debug and defaultLogs and not defaultLogs.content then
+                diagnostics.Debug("TrackerHost: anchorContainers: content uses default anchors")
+                defaultLogs.content = true
             end
         end
         ApplyAnchorSpec(contentStack, scrollContent, contentSpec)
@@ -1129,6 +1140,11 @@ local function anchorContainers()
                     { TOPRIGHT, scrollContent, TOPRIGHT, 0, 0 },
                 }
             end
+
+            if debugEnabled and diagnostics and diagnostics.Debug and defaultLogs and not defaultLogs.footer then
+                diagnostics.Debug("TrackerHost: anchorContainers: footer uses default anchors")
+                defaultLogs.footer = true
+            end
         end
         ApplyAnchorSpec(footerBar, scrollContent, footerSpec)
     end
@@ -1145,6 +1161,11 @@ local function anchorContainers()
 
     local questSpec = state._anchorQuest
     if not questSpec then
+        if debugEnabled and diagnostics and diagnostics.Debug and defaultLogs and not defaultLogs.quest then
+            diagnostics.Debug("TrackerHost: anchorContainers: quest uses default anchors")
+            defaultLogs.quest = true
+        end
+
         questSpec = {
             { TOPLEFT, parent, TOPLEFT, 0, 0 },
             { TOPRIGHT, parent, TOPRIGHT, 0, 0 },
@@ -1156,6 +1177,11 @@ local function anchorContainers()
     if achievementContainer then
         local achievementSpec = state._anchorAchievement
         if not achievementSpec then
+            if debugEnabled and diagnostics and diagnostics.Debug and defaultLogs and not defaultLogs.achievement then
+                diagnostics.Debug("TrackerHost: anchorContainers: achievement uses default anchors")
+                defaultLogs.achievement = true
+            end
+
             achievementSpec = {
                 { TOPLEFT, questContainer, BOTTOMLEFT, 0, 0 },
                 { TOPRIGHT, questContainer, BOTTOMRIGHT, 0, 0 },
