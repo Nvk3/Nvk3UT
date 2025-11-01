@@ -38,12 +38,15 @@ Journal/Nvk3UT_CompletedCategory.lua
 Journal/Nvk3UT_CompletedSummary.lua
 ## === Runtime ===
 Runtime/Nvk3UT_TrackerRuntime.lua
-Nvk3UT_TrackerHost.lua
+Runtime/Nvk3UT_TrackerHost.lua
 Runtime/Nvk3UT_TrackerHostLayout.lua
+## === Tracker ===
 Nvk3UT_QuestTracker.xml
 Nvk3UT_QuestTracker.lua
 Nvk3UT_AchievementTracker.xml
 Nvk3UT_AchievementTracker.lua
+## === Events ===
+## === UI ===
 Nvk3UT_UI.lua
 Nvk3UT_Tooltips.lua
 Nvk3UT_LAM.lua
