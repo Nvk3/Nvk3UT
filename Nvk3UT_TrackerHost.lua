@@ -3,6 +3,8 @@ local addonName = "Nvk3UT"
 Nvk3UT = Nvk3UT or {}
 Nvk3UT.UI = Nvk3UT.UI or {}
 
+local unpack = unpack or table.unpack
+
 local TrackerHost = {}
 TrackerHost.__index = TrackerHost
 
@@ -2551,12 +2553,14 @@ local function forwardRuntime(methodName, ...)
         return
     end
 
+    local runtimeArgs = { ... }
+
     if Nvk3UT.SafeCall then
         Nvk3UT.SafeCall(function()
-            target(runtime, ...)
+            target(runtime, unpack(runtimeArgs))
         end)
     else
-        local ok, err = pcall(target, runtime, ...)
+        local ok, err = pcall(target, runtime, unpack(runtimeArgs))
         if not ok then
             runtimeDebug("TrackerHost runtime forward failed: %s", tostring(err))
         end
