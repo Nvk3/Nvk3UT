@@ -3,8 +3,9 @@ local addonName = "Nvk3UT"
 Nvk3UT = Nvk3UT or {}
 Nvk3UT.UI = Nvk3UT.UI or {}
 
-local TrackerHost = {}
+local TrackerHost = Nvk3UT.TrackerHost or {}
 TrackerHost.__index = TrackerHost
+Nvk3UT.TrackerHost = TrackerHost
 
 local ROOT_CONTROL_NAME = addonName .. "_UI_Root"
 local QUEST_CONTAINER_NAME = addonName .. "_QuestContainer"
@@ -128,6 +129,19 @@ local state = {
     initializing = false,
     lamPreviewForceVisible = false,
     sceneCallbacks = nil,
+    sceneVisibilityCallbacks = nil,
+    sections = nil,
+    hudSceneState = nil,
+    hudUiSceneState = nil,
+    sceneVisible = true,
+    externalVisible = true,
+    tempSceneBootstrapInitialized = false,
+    tempCombatRegistered = false,
+    tempCursorRegistered = false,
+    tempCombatNamespace = nil,
+    tempCursorEventNamespace = nil,
+    tempCursorCallback = nil,
+    lastRootHiddenState = nil,
 }
 
 local lamPreview = {
@@ -136,6 +150,35 @@ local lamPreview = {
     wasWindowVisibleBeforeLAM = nil,
     windowPreviewApplied = false,
 }
+
+local function safeCall(func, ...)
+    if type(func) ~= "function" then
+        return
+    end
+
+    local safe = Nvk3UT and Nvk3UT.SafeCall
+    if type(safe) == "function" then
+        return safe(func, ...)
+    end
+
+    return func(...)
+end
+
+local function isSceneShowing(sceneState)
+    return sceneState == SCENE_SHOWING or sceneState == SCENE_SHOWN
+end
+
+local function updateSceneVisibility()
+    local show = isSceneShowing(state.hudSceneState) or isSceneShowing(state.hudUiSceneState)
+    if state.hudSceneState == nil and state.hudUiSceneState == nil then
+        show = true
+    end
+    if state.sceneVisible ~= show then
+        state.sceneVisible = show
+    end
+
+    applyWindowVisibility()
+end
 
 local ensureSceneFragments
 local refreshScroll
@@ -1498,22 +1541,30 @@ local function applyWindowVisibility()
 
     local userHidden = state.window and state.window.visible == false
     local suppressed = state.initializing == true
+    local sceneVisible = state.sceneVisible ~= false
+    local externallyVisible = state.externalVisible ~= false
     local previewActive = state.lamPreviewForceVisible == true and not userHidden
-    local shouldHide = (suppressed or userHidden) and not previewActive
+    local shouldHide = (suppressed or userHidden or not sceneVisible or not externallyVisible) and not previewActive
 
     if state.fragment and state.fragment.SetHiddenForReason then
         if previewActive then
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, false)
+            state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, false)
+        elseif not externallyVisible then
+            state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, true)
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, false)
         else
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, suppressed)
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, userHidden)
         end
 
-        state.fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, false)
+        state.fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, not sceneVisible and not previewActive)
     end
 
-    state.root:SetHidden(shouldHide)
+    if state.lastRootHiddenState ~= shouldHide then
+        state.lastRootHiddenState = shouldHide
+        state.root:SetHidden(shouldHide)
+    end
 
     if lamPreview.active and previewActive then
         lamPreview.windowPreviewApplied = true
@@ -2013,6 +2064,9 @@ function TrackerHost.Init()
     end
 
     state.initializing = true
+    state.externalVisible = true
+    state.sceneVisible = state.sceneVisible ~= false
+    state.sections = state.sections or {}
 
     state.window = ensureWindowSettings()
     state.appearance = ensureAppearanceSettings()
@@ -2023,6 +2077,135 @@ function TrackerHost.Init()
     createRootControl()
     createContainers()
     applyWindowSettings()
+
+    -- === TEMP BOOTSTRAP: Scene Visibility ===
+    -- TEMP_BOOTSTRAP_SCENE_BEGIN
+    if not state.tempSceneBootstrapInitialized then
+        state.tempSceneBootstrapInitialized = true
+        local sceneManager = SCENE_MANAGER
+        local function registerScene(scene, field)
+            if not (scene and scene.RegisterCallback) then
+                return
+            end
+
+            state.sceneVisibilityCallbacks = state.sceneVisibilityCallbacks or {}
+            if state.sceneVisibilityCallbacks[scene] then
+                return
+            end
+
+            local function onStateChange(_, newState)
+                state[field] = newState
+                updateSceneVisibility()
+            end
+
+            local ok, message = pcall(scene.RegisterCallback, scene, "StateChange", onStateChange)
+            if not ok then
+                debugLog("Failed to register scene visibility callback", message)
+                return
+            end
+            state.sceneVisibilityCallbacks[scene] = onStateChange
+            if scene.GetState then
+                local ok, currentState = pcall(scene.GetState, scene)
+                if ok then
+                    state[field] = currentState
+                end
+            end
+        end
+
+        if sceneManager and sceneManager.GetScene then
+            registerScene(sceneManager:GetScene("hud"), "hudSceneState")
+            registerScene(sceneManager:GetScene("hudui"), "hudUiSceneState")
+        else
+            registerScene(HUD_SCENE, "hudSceneState")
+            registerScene(HUD_UI_SCENE, "hudUiSceneState")
+        end
+        updateSceneVisibility()
+    end
+    -- TEMP_BOOTSTRAP_SCENE_END
+
+    -- === TEMP BOOTSTRAP: Combat ===
+    -- TEMP_BOOTSTRAP_COMBAT_BEGIN
+    if not state.tempCombatRegistered and EVENT_MANAGER and EVENT_PLAYER_COMBAT_STATE then
+        state.tempCombatRegistered = true
+        state.tempCombatNamespace = addonName .. "_TrackerHostCombat"
+
+        EVENT_MANAGER:RegisterForEvent(state.tempCombatNamespace, EVENT_PLAYER_COMBAT_STATE, function(_, inCombat)
+            safeCall(function()
+                local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+                if runtime and runtime.SetCombatState then
+                    runtime:SetCombatState(inCombat)
+                end
+            end)
+        end)
+
+        if type(IsUnitInCombat) == "function" then
+            local ok, inCombat = pcall(IsUnitInCombat, "player")
+            if ok then
+                safeCall(function()
+                    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+                    if runtime and runtime.SetCombatState then
+                        runtime:SetCombatState(inCombat)
+                    end
+                end)
+            end
+        end
+    end
+    -- TEMP_BOOTSTRAP_COMBAT_END
+
+    -- === TEMP BOOTSTRAP: Cursor Mode ===
+    -- TEMP_BOOTSTRAP_CURSOR_BEGIN
+    if not state.tempCursorRegistered then
+        state.tempCursorRegistered = true
+
+        local function notifyCursorMode(isCursorShown)
+            safeCall(function()
+                local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+                if runtime and runtime.SetCursorMode then
+                    runtime:SetCursorMode(isCursorShown)
+                end
+            end)
+        end
+
+        local cursorRegistered = false
+        if CALLBACK_MANAGER and CALLBACK_MANAGER.RegisterCallback then
+            local function onReticleHidden(hidden)
+                notifyCursorMode(hidden == true)
+            end
+            CALLBACK_MANAGER:RegisterCallback("ReticleHiddenUpdate", onReticleHidden)
+            state.tempCursorCallback = onReticleHidden
+            cursorRegistered = true
+        elseif EVENT_MANAGER and EVENT_RETICLE_HIDDEN_UPDATE then
+            state.tempCursorEventNamespace = addonName .. "_TrackerHostCursor"
+            EVENT_MANAGER:RegisterForEvent(state.tempCursorEventNamespace, EVENT_RETICLE_HIDDEN_UPDATE, function(_, hidden)
+                notifyCursorMode(hidden == true)
+            end)
+            cursorRegistered = true
+        end
+
+        local cursorMode
+        if type(IsGameCameraUIModeActive) == "function" then
+            local ok, isUi = pcall(IsGameCameraUIModeActive)
+            if ok then
+                cursorMode = isUi == true
+            end
+        elseif type(IsReticleHidden) == "function" then
+            local ok, hidden = pcall(IsReticleHidden)
+            if ok then
+                cursorMode = hidden == true
+            end
+        elseif state.hudUiSceneState ~= nil then
+            cursorMode = isSceneShowing(state.hudUiSceneState)
+        end
+
+        if cursorMode ~= nil then
+            notifyCursorMode(cursorMode)
+        end
+
+        if not cursorRegistered then
+            state.tempCursorRegistered = false
+        end
+    end
+    -- TEMP_BOOTSTRAP_CURSOR_END
 
     local debugEnabled = (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug) == true
 
@@ -2127,6 +2310,63 @@ function TrackerHost.ApplyAppearance()
 
     applyAppearance()
     notifyContentChanged()
+end
+
+function TrackerHost.SetVisible(isVisible)
+    TrackerHost.Init()
+    state.externalVisible = isVisible ~= false
+    applyWindowVisibility()
+end
+
+function TrackerHost.GetRoot()
+    TrackerHost.Init()
+    return state.root
+end
+
+function TrackerHost.GetSectionContainer(kind)
+    if type(kind) ~= "string" or kind == "" then
+        return nil
+    end
+
+    TrackerHost.Init()
+    state.sections = state.sections or {}
+
+    if kind == "quest" then
+        return state.questContainer
+    elseif kind == "achievement" then
+        return state.achievementContainer
+    end
+
+    if state.sections[kind] then
+        return state.sections[kind]
+    end
+
+    createContainers()
+
+    local parent = state.contentStack or state.scrollContent or state.root
+    if not (parent and WINDOW_MANAGER) then
+        return nil
+    end
+
+    local control = WINDOW_MANAGER:CreateControl(nil, parent, CT_CONTROL)
+    control:SetMouseEnabled(false)
+    if control.SetResizeToFitDescendents then
+        control:SetResizeToFitDescendents(false)
+    end
+    control:SetHandler("OnMouseWheel", function(_, delta)
+        adjustScroll(delta)
+    end)
+
+    state.sections[kind] = control
+    return control
+end
+
+function TrackerHost.IsSceneShowing(sceneState)
+    return isSceneShowing(sceneState)
+end
+
+function TrackerHost.UpdateSceneVisibility()
+    updateSceneVisibility()
 end
 
 function TrackerHost.EnsureAppearanceDefaults()
@@ -2242,6 +2482,46 @@ function TrackerHost.Shutdown()
     lamPreview.wasWindowVisibleBeforeLAM = nil
     lamPreview.windowPreviewApplied = false
     state.lamPreviewForceVisible = false
+    if state.sections then
+        for _, control in pairs(state.sections) do
+            if control and control.SetParent then
+                control:SetParent(nil)
+            end
+        end
+    end
+    state.sections = nil
+
+    if state.sceneVisibilityCallbacks then
+        for scene, callback in pairs(state.sceneVisibilityCallbacks) do
+            if scene and scene.UnregisterCallback and callback then
+                pcall(scene.UnregisterCallback, scene, "StateChange", callback)
+            end
+        end
+    end
+    state.sceneVisibilityCallbacks = nil
+    state.hudSceneState = nil
+    state.hudUiSceneState = nil
+    state.sceneVisible = true
+    state.externalVisible = true
+    state.lastRootHiddenState = nil
+    state.tempSceneBootstrapInitialized = false
+
+    if state.tempCombatRegistered and EVENT_MANAGER and state.tempCombatNamespace then
+        EVENT_MANAGER:UnregisterForEvent(state.tempCombatNamespace, EVENT_PLAYER_COMBAT_STATE)
+    end
+    state.tempCombatRegistered = false
+    state.tempCombatNamespace = nil
+
+    if state.tempCursorRegistered then
+        if state.tempCursorCallback and CALLBACK_MANAGER and CALLBACK_MANAGER.UnregisterCallback then
+            CALLBACK_MANAGER:UnregisterCallback("ReticleHiddenUpdate", state.tempCursorCallback)
+        elseif state.tempCursorEventNamespace and EVENT_MANAGER and EVENT_RETICLE_HIDDEN_UPDATE then
+            EVENT_MANAGER:UnregisterForEvent(state.tempCursorEventNamespace, EVENT_RETICLE_HIDDEN_UPDATE)
+        end
+    end
+    state.tempCursorRegistered = false
+    state.tempCursorCallback = nil
+    state.tempCursorEventNamespace = nil
 
     if state.previousDefaultQuestTrackerHidden ~= nil and ZO_QuestTracker and ZO_QuestTracker.SetHidden then
         ZO_QuestTracker:SetHidden(state.previousDefaultQuestTrackerHidden)
