@@ -54,6 +54,10 @@ local DEFAULT_TRACKER_APPEARANCE = {
     },
 }
 
+local DEFAULT_HOST_SETTINGS = {
+    HideInCombat = false,
+}
+
 local defaults = {
     version = 4,
     debug = false,
@@ -118,6 +122,9 @@ local defaults = {
         },
     },
     appearance = DEFAULT_TRACKER_APPEARANCE,
+    Settings = {
+        Host = DEFAULT_HOST_SETTINGS,
+    },
 }
 
 local function MergeDefaults(target, source)
@@ -193,6 +200,20 @@ local function EnsureFirstLoginStructures(saved)
     MergeDefaults(appearance, defaults.appearance)
     EnsureTable(appearance, "questTracker")
     EnsureTable(appearance, "achievementTracker")
+
+    local settings = EnsureTable(saved, "Settings")
+    local hostSettings = EnsureTable(settings, "Host")
+    if hostSettings.HideInCombat == nil then
+        if saved.QuestTracker and saved.QuestTracker.hideInCombat ~= nil then
+            hostSettings.HideInCombat = saved.QuestTracker.hideInCombat == true
+        else
+            hostSettings.HideInCombat = DEFAULT_HOST_SETTINGS.HideInCombat
+        end
+    else
+        hostSettings.HideInCombat = hostSettings.HideInCombat == true
+    end
+    MergeDefaults(settings, defaults.Settings)
+    MergeDefaults(hostSettings, defaults.Settings.Host)
 
     if saved.debug == nil then
         saved.debug = defaults.debug

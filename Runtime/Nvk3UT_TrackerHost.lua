@@ -91,6 +91,10 @@ local DEFAULT_TRACKER_COLORS = {
 
 local DEFAULT_COLOR_FALLBACK = { r = 1, g = 1, b = 1, a = 1 }
 
+local DEFAULT_HOST_SETTINGS = {
+    HideInCombat = false,
+}
+
 local LEFT_MOUSE_BUTTON = _G.MOUSE_BUTTON_INDEX_LEFT or 1
 local unpack = unpack or table.unpack
 
@@ -123,6 +127,7 @@ local state = {
     appearance = nil,
     features = nil,
     windowBars = nil,
+    hostSettings = nil,
     anchorWarnings = {
         questMissing = false,
         achievementMissing = false,
@@ -142,6 +147,9 @@ local state = {
     cursorBootstrapRegistered = false,
     combatBootstrapRegistered = false,
     runtimeInitialized = false,
+    isInCombat = false,
+    isInHUDScene = true,
+    isLAMOpen = false,
 }
 
 local lamPreview = {
@@ -269,6 +277,33 @@ local function ensureAppearanceColorDefaults()
     end
 
     return sv.appearance
+end
+
+local function ensureHostSettings()
+    local sv = getSavedVars()
+    if not sv then
+        return cloneTable(DEFAULT_HOST_SETTINGS)
+    end
+
+    sv.Settings = sv.Settings or {}
+    sv.Settings.Host = sv.Settings.Host or {}
+
+    local hostSettings = sv.Settings.Host
+    if hostSettings.HideInCombat == nil then
+        hostSettings.HideInCombat = DEFAULT_HOST_SETTINGS.HideInCombat
+    else
+        hostSettings.HideInCombat = hostSettings.HideInCombat == true
+    end
+
+    return hostSettings
+end
+
+local function getHostSettings()
+    if state.hostSettings == nil then
+        state.hostSettings = ensureHostSettings()
+    end
+
+    return state.hostSettings
 end
 
 local function getDefaultColor(trackerType, role)
@@ -840,71 +875,35 @@ end
 
 local function updateCombatState(inCombat)
     local normalized = inCombat == true
-    if state.bootstrapCombatState == normalized then
+    if state.bootstrapCombatState == normalized and state.isInCombat == normalized then
         return
     end
 
     state.bootstrapCombatState = normalized
+    state.isInCombat = normalized
     diagnosticsDebug("TrackerHost combat state changed: %s", tostring(normalized))
     callRuntime("SetCombatState", normalized)
+    TrackerHost.ApplyVisibilityRules()
     queueRuntimeLayout()
 end
 
 -- TEMP_BOOTSTRAP: Scene/HUD/Cursor/Combat forwarding only; no visibility toggles. Remove in EVENTS_012/013/014_SWITCH.
 local function applyBootstrapVisibility(host)
-    if not host or type(host.SetVisible) ~= "function" then
+    if not host then
         return
     end
 
     local shouldShow = isGameHUDActive()
-    local lastApplied = state.bootstrapHudVisible
-
-    local currentVisible
-    if type(host.IsVisible) == "function" then
-        local ok, result = pcall(host.IsVisible, host)
-        if ok then
-            currentVisible = result
-        end
-    end
-
-    if currentVisible ~= nil and currentVisible == shouldShow then
-        state.bootstrapHudVisible = shouldShow
-        return
-    end
-
-    if lastApplied ~= nil and lastApplied == shouldShow then
-        state.bootstrapHudVisible = shouldShow
+    if state.bootstrapHudVisible == shouldShow and state.isInHUDScene == shouldShow then
         return
     end
 
     state.bootstrapHudVisible = shouldShow
+    state.isInHUDScene = shouldShow
     diagnosticsDebug("TrackerHost HUD visibility changed: %s", tostring(shouldShow))
 
-    local function applyVisibility()
-        if type(host.SetVisible) ~= "function" then
-            return
-        end
-
-        if type(host.IsVisible) == "function" then
-            local ok, current = pcall(host.IsVisible, host)
-            if ok and current == shouldShow then
-                return
-            end
-        end
-
-        state.handlingBootstrapVisibility = true
-        safeCall(function()
-            host:SetVisible(shouldShow)
-        end)
-        state.handlingBootstrapVisibility = false
-    end
-
-    if zo_callLater then
-        zo_callLater(function()
-            safeCall(applyVisibility)
-        end, 0)
-    else
-        safeCall(applyVisibility)
+    if TrackerHost.ApplyVisibilityRules() then
+        queueRuntimeLayout()
     end
 end
 
@@ -2279,6 +2278,43 @@ local function applyWindowVisibility()
     return shouldHideForSettings or hideForScene
 end
 
+function TrackerHost.ApplyVisibilityRules()
+    local hostSettings = getHostSettings()
+    local previousSceneHidden = state.sceneHidden == true
+
+    local lamOverride = state.isLAMOpen == true
+    local hideReason = "hud"
+    local shouldHide = false
+
+    if lamOverride then
+        shouldHide = false
+        hideReason = "LAM override"
+    elseif state.isInHUDScene ~= true then
+        shouldHide = true
+        hideReason = "scene"
+    elseif hostSettings and hostSettings.HideInCombat == true and state.isInCombat == true then
+        shouldHide = true
+        hideReason = "combat"
+    else
+        shouldHide = false
+        hideReason = "hud"
+    end
+
+    state.sceneHidden = shouldHide
+    applyWindowVisibility()
+
+    local changed = previousSceneHidden ~= (state.sceneHidden == true)
+    if changed then
+        diagnosticsDebug(
+            "Host visibility -> %s (%s)",
+            state.sceneHidden and "hidden" or "visible",
+            hideReason
+        )
+    end
+
+    return changed
+end
+
 local function refreshWindowLayout(targetOffset)
     if not state.root then
         return
@@ -2449,6 +2485,7 @@ local function applyWindowTopmost()
 end
 
 local function applyWindowSettings()
+    state.hostSettings = ensureHostSettings()
     state.window = ensureWindowSettings()
     state.appearance = ensureAppearanceSettings()
     state.layout = ensureLayoutSettings()
@@ -2776,6 +2813,7 @@ function TrackerHost.Init()
 
     state.initializing = true
 
+    state.hostSettings = ensureHostSettings()
     state.window = ensureWindowSettings()
     state.appearance = ensureAppearanceSettings()
     state.layout = ensureLayoutSettings()
@@ -2812,6 +2850,12 @@ function TrackerHost.Init()
     ensureSceneFragment(state.root)
 
     ensureBootstraps()
+
+    state.isInHUDScene = isGameHUDActive()
+    state.isInCombat = state.bootstrapCombatState == true
+    if TrackerHost.ApplyVisibilityRules() then
+        queueRuntimeLayout()
+    end
 
     debugLog("Host window initialized")
 end
@@ -2888,6 +2932,10 @@ function TrackerHost.ApplySettings()
     end
 
     TrackerHost.ApplyAppearance()
+
+    if TrackerHost.ApplyVisibilityRules() then
+        queueRuntimeLayout()
+    end
 end
 
 function TrackerHost.ApplyTheme()
@@ -2999,6 +3047,7 @@ function TrackerHost.SetTrackerColor(trackerType, role, r, g, b, a)
 end
 
 function TrackerHost.OnLamPanelOpened()
+    state.isLAMOpen = true
     lamPreview.active = true
     lamPreview.windowSettingOnOpen = isWindowOptionEnabled()
 
@@ -3011,6 +3060,9 @@ function TrackerHost.OnLamPanelOpened()
     if not lamPreview.windowSettingOnOpen then
         state.lamPreviewForceVisible = false
         lamPreview.windowPreviewApplied = false
+        if TrackerHost.ApplyVisibilityRules() then
+            queueRuntimeLayout()
+        end
         return
     end
 
@@ -3027,6 +3079,10 @@ function TrackerHost.OnLamPanelOpened()
     if TrackerHost.Refresh then
         TrackerHost.Refresh()
     end
+
+    if TrackerHost.ApplyVisibilityRules() then
+        queueRuntimeLayout()
+    end
 end
 
 function TrackerHost.OnLamPanelClosed()
@@ -3036,6 +3092,7 @@ function TrackerHost.OnLamPanelClosed()
 
     lamPreview.active = false
     state.lamPreviewForceVisible = false
+    state.isLAMOpen = false
 
     applyWindowVisibility()
 
@@ -3053,6 +3110,10 @@ function TrackerHost.OnLamPanelClosed()
     lamPreview.windowPreviewApplied = false
     lamPreview.windowSettingOnOpen = nil
     lamPreview.wasWindowVisibleBeforeLAM = nil
+
+    if TrackerHost.ApplyVisibilityRules() then
+        queueRuntimeLayout()
+    end
 end
 
 function TrackerHost.Shutdown()
@@ -3061,6 +3122,9 @@ function TrackerHost.Shutdown()
     lamPreview.wasWindowVisibleBeforeLAM = nil
     lamPreview.windowPreviewApplied = false
     state.lamPreviewForceVisible = false
+    state.isLAMOpen = false
+    state.isInHUDScene = true
+    state.isInCombat = false
 
     if state.previousDefaultQuestTrackerHidden ~= nil and ZO_QuestTracker and ZO_QuestTracker.SetHidden then
         ZO_QuestTracker:SetHidden(state.previousDefaultQuestTrackerHidden)
