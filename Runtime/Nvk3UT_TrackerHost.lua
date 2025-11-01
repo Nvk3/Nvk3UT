@@ -2477,8 +2477,14 @@ function TrackerHost.GetSectionContainer(kind)
     state.sections = state.sections or {}
 
     if kind == "quest" then
+        if not state.questContainer then
+            createContainers()
+        end
         return state.questContainer
     elseif kind == "achievement" then
+        if not state.achievementContainer then
+            createContainers()
+        end
         return state.achievementContainer
     end
 
