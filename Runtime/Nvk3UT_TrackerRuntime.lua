@@ -155,21 +155,43 @@ local function getTrackerHost()
     return host
 end
 
-local function applyHostSuppressed(suppressed, reason)
+local function applyHostSuppressed(suppressed, reason, details)
+    local visible = suppressed ~= true
     local host = getTrackerHost()
     local applied = false
 
     if host then
-        local setter = host.SetRuntimePolicyHidden or host.SetRuntimeSuppressed or host.SetRuntimeHidden
-        if type(setter) == "function" then
-            applied = callWithOptionalSelf(host, setter, false, suppressed, reason)
+        local setVisible = host.SetVisible
+        if type(setVisible) == "function" then
+            local context = {
+                runtimePolicy = true,
+                reason = reason,
+                details = details,
+            }
+
+            local result = safeCall(function()
+                return setVisible(host, visible, context)
+            end)
+
+            if result ~= nil then
+                applied = true
+            end
+        end
+
+        if not applied then
+            local legacySetter = host.SetRuntimePolicyHidden or host.SetRuntimeSuppressed or host.SetRuntimeHidden
+            if type(legacySetter) == "function" then
+                applied = callWithOptionalSelf(host, legacySetter, false, suppressed, reason)
+            end
         end
     end
 
     if not applied then
         local hostWindow = getHostWindow()
         if hostWindow ~= nil and type(hostWindow.SetHidden) == "function" then
-            hostWindow:SetHidden(suppressed == true)
+            safeCall(function()
+                hostWindow:SetHidden(not visible)
+            end)
             applied = true
         end
     end
@@ -363,7 +385,7 @@ function Runtime:Init(hostWindow)
     self._initialized = true
     self._hostSuppressedApplied = nil
     debug("TrackerRuntime.Init(%s)", tostring(hostWindow))
-    self:_EvaluateHostVisibility("host-init")
+    self:EvaluateHostVisibility("host-init")
 end
 
 function Runtime:QueueDirty(kind, reason)
@@ -453,6 +475,12 @@ function Runtime:ProcessFrame()
 end
 
 function Runtime:_EvaluateHostVisibility(reason)
+    local host = getTrackerHost()
+    local hostWindow = getHostWindow()
+    if host == nil and hostWindow == nil then
+        return
+    end
+
     local policy = self._hostPolicy
     if type(policy) ~= "table" then
         policy = {}
@@ -460,7 +488,39 @@ function Runtime:_EvaluateHostVisibility(reason)
     end
 
     local hideInCombat = policy.hideInCombat == true
-    local shouldSuppress = hideInCombat and self:IsInCombat()
+    local inCombat = self:IsInCombat()
+
+    local sceneManager = SCENE_MANAGER
+    local isHud = false
+    local isHudUi = false
+
+    if sceneManager and type(sceneManager.IsShowing) == "function" then
+        local ok, result = pcall(sceneManager.IsShowing, sceneManager, "hud")
+        if ok then
+            isHud = result == true
+        end
+
+        ok, result = pcall(sceneManager.IsShowing, sceneManager, "hudui")
+        if ok then
+            isHudUi = result == true
+        end
+    else
+        isHud = true
+    end
+
+    local lamPreview = false
+    if host then
+        local getter = host.IsLamPreviewVisible or host.IsLamPreviewForceVisible or host.IsLamPreviewActive
+        if type(getter) == "function" then
+            local value = safeCall(function()
+                return getter(host)
+            end)
+            lamPreview = value == true
+        end
+    end
+
+    local visible = (isHud or isHudUi or lamPreview) and not (hideInCombat and inCombat)
+    local shouldSuppress = not visible
 
     self._hostSuppressed = shouldSuppress
 
@@ -469,17 +529,35 @@ function Runtime:_EvaluateHostVisibility(reason)
         return
     end
 
-    local applied = applyHostSuppressed(shouldSuppress, reason or "policy")
+    local details = {
+        hud = isHud,
+        hudui = isHudUi,
+        lamPreview = lamPreview,
+        hideInCombat = hideInCombat,
+        inCombat = inCombat,
+        visible = visible,
+    }
+
+    local applied = applyHostSuppressed(shouldSuppress, reason or "policy", details)
     if applied then
         self._hostSuppressedApplied = shouldSuppress
         if previousApplied ~= shouldSuppress then
             debug(
-                "Runtime: host visibility -> suppressed=%s reason=%s",
-                tostring(shouldSuppress),
+                "Runtime: host visibility -> hud=%s hudui=%s lamPreview=%s hideInCombat=%s inCombat=%s => visible=%s reason=%s",
+                tostring(isHud),
+                tostring(isHudUi),
+                tostring(lamPreview),
+                tostring(hideInCombat),
+                tostring(inCombat),
+                tostring(visible),
                 tostring(reason or "policy")
             )
         end
     end
+end
+
+function Runtime:EvaluateHostVisibility(reason)
+    self:_EvaluateHostVisibility(reason)
 end
 
 function Runtime:SetCombatState(isInCombat)
@@ -491,7 +569,7 @@ function Runtime:SetCombatState(isInCombat)
     self._isInCombat = normalized
     self._combatChangedThisFrame = true
     self:QueueDirty(DIRTY_KEY_HOST_LAYOUT, "combat-state")
-    self:_EvaluateHostVisibility("combat-state")
+    self:EvaluateHostVisibility("combat-state")
 end
 
 function Runtime:IsInCombat()
@@ -517,7 +595,7 @@ function Runtime:SetHostPolicy(policy, reason)
         debug("Runtime: host policy -> hideInCombat=%s", tostring(hideInCombat))
     end
 
-    self:_EvaluateHostVisibility(reason or "policy")
+    self:EvaluateHostVisibility(reason or "policy")
 end
 
 function Runtime:SetCursorMode(isInCursorMode)

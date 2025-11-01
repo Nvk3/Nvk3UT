@@ -485,7 +485,7 @@ local function evaluateRuntimeHostVisibility(reason)
         return false
     end
 
-    local evaluate = runtime._EvaluateHostVisibility
+    local evaluate = runtime.EvaluateHostVisibility or runtime._EvaluateHostVisibility
     if type(evaluate) == "function" then
         safeCall(function()
             evaluate(runtime, reason or "host")
@@ -921,60 +921,31 @@ end
 
 -- TEMP_BOOTSTRAP: Scene/HUD/Cursor/Combat forwarding only; no visibility toggles. Remove in EVENTS_012/013/014_SWITCH.
 local function applyBootstrapVisibility(host)
-    if not host or type(host.SetVisible) ~= "function" then
+    if not host then
+        return
+    end
+
+    if evaluateRuntimeHostVisibility("scene-bootstrap") then
+        return
+    end
+
+    if type(host.SetVisible) ~= "function" then
         return
     end
 
     local shouldShow = isGameHUDActive()
     local lastApplied = state.bootstrapHudVisible
 
-    local currentVisible
-    if type(host.IsVisible) == "function" then
-        local ok, result = pcall(host.IsVisible, host)
-        if ok then
-            currentVisible = result
-        end
-    end
-
-    if currentVisible ~= nil and currentVisible == shouldShow then
-        state.bootstrapHudVisible = shouldShow
-        return
-    end
-
     if lastApplied ~= nil and lastApplied == shouldShow then
-        state.bootstrapHudVisible = shouldShow
         return
     end
 
     state.bootstrapHudVisible = shouldShow
-    diagnosticsDebug("TrackerHost HUD visibility changed: %s", tostring(shouldShow))
-
-    local function applyVisibility()
-        if type(host.SetVisible) ~= "function" then
-            return
-        end
-
-        if type(host.IsVisible) == "function" then
-            local ok, current = pcall(host.IsVisible, host)
-            if ok and current == shouldShow then
-                return
-            end
-        end
-
-        state.handlingBootstrapVisibility = true
-        safeCall(function()
-            host:SetVisible(shouldShow)
-        end)
-        state.handlingBootstrapVisibility = false
-    end
-
-    if zo_callLater then
-        zo_callLater(function()
-            safeCall(applyVisibility)
-        end, 0)
-    else
-        safeCall(applyVisibility)
-    end
+    state.handlingBootstrapVisibility = true
+    safeCall(function()
+        host:SetVisible(shouldShow, { runtimePolicy = true, reason = "scene-bootstrap-fallback" })
+    end)
+    state.handlingBootstrapVisibility = false
 end
 
 local function registerHudScene(host, scene, sceneName)
@@ -2723,6 +2694,13 @@ local function createRootControl()
         return
     end
 
+    if GuiRoot and control.GetParent and control.SetParent then
+        local parent = control:GetParent()
+        if parent ~= GuiRoot then
+            control:SetParent(GuiRoot)
+        end
+    end
+
     control:SetHidden(true)
     control:SetMouseEnabled(true)
     control:SetMovable(true)
@@ -2916,8 +2894,32 @@ function TrackerHost.SetRuntimePolicyHidden(hidden, reason)
     return setPolicyHidden(hidden, reason)
 end
 
-function TrackerHost.SetVisible(isVisible)
+function TrackerHost.SetVisible(isVisible, context)
     local visible = isVisible ~= false
+    local runtimeContext = type(context) == "table" and context.runtimePolicy == true
+    local reason = runtimeContext and (context.reason or "runtime") or nil
+
+    if runtimeContext then
+        local previousVisible = TrackerHost.IsVisible()
+        local previousSceneHidden = state.sceneHidden == true
+
+        if context and type(context.details) == "table" then
+            local details = context.details
+            local sceneAllowed = (details.hud == true) or (details.hudui == true) or (details.lamPreview == true)
+            state.sceneHidden = not sceneAllowed
+        end
+
+        setPolicyHidden(not visible, reason)
+
+        local newVisible = TrackerHost.IsVisible()
+        local sceneHiddenChanged = previousSceneHidden ~= (state.sceneHidden == true)
+        if previousVisible ~= newVisible or sceneHiddenChanged then
+            queueRuntimeLayout()
+        end
+
+        return newVisible
+    end
+
     state.window = state.window or ensureWindowSettings()
 
     local previousVisible = TrackerHost.IsVisible()
@@ -2963,6 +2965,10 @@ function TrackerHost.IsVisible()
     end
 
     return true
+end
+
+function TrackerHost.IsLamPreviewVisible()
+    return state.lamPreviewForceVisible == true
 end
 
 function TrackerHost.GetRootWindow()
@@ -3123,10 +3129,12 @@ function TrackerHost.OnLamPanelOpened()
     if not lamPreview.windowSettingOnOpen then
         state.lamPreviewForceVisible = false
         lamPreview.windowPreviewApplied = false
+        evaluateRuntimeHostVisibility("lam-open")
         return
     end
 
     state.lamPreviewForceVisible = true
+    evaluateRuntimeHostVisibility("lam-open")
 
     if TrackerHost.ApplyWindowBars then
         TrackerHost.ApplyWindowBars()
@@ -3150,6 +3158,8 @@ function TrackerHost.OnLamPanelClosed()
     state.lamPreviewForceVisible = false
 
     applyWindowVisibility()
+
+    evaluateRuntimeHostVisibility("lam-close")
 
     local currentWindowSetting = isWindowOptionEnabled()
     if
