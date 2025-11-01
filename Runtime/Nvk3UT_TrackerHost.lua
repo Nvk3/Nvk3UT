@@ -142,6 +142,7 @@ local state = {
     tempCursorEventNamespace = nil,
     tempCursorCallback = nil,
     lastRootHiddenState = nil,
+    updatingSceneVisibility = false,
 }
 
 local lamPreview = {
@@ -168,16 +169,27 @@ local function isSceneShowing(sceneState)
     return sceneState == SCENE_SHOWING or sceneState == SCENE_SHOWN
 end
 
-local function updateSceneVisibility()
-    local show = isSceneShowing(state.hudSceneState) or isSceneShowing(state.hudUiSceneState)
+local function updateSceneVisibility(show)
+    local hint = show
+    local target = isSceneShowing(state.hudSceneState) or isSceneShowing(state.hudUiSceneState)
     if state.hudSceneState == nil and state.hudUiSceneState == nil then
-        show = true
-    end
-    if state.sceneVisible ~= show then
-        state.sceneVisible = show
+        if hint ~= nil then
+            target = hint ~= false
+        else
+            target = true
+        end
     end
 
-    applyWindowVisibility()
+    local normalized = target ~= false
+    state.sceneVisible = normalized
+
+    state.updatingSceneVisibility = true
+    if TrackerHost and TrackerHost.SetVisible then
+        TrackerHost.SetVisible(normalized)
+    elseif type(applyWindowVisibility) == "function" then
+        applyWindowVisibility()
+    end
+    state.updatingSceneVisibility = false
 end
 
 local ensureSceneFragments
@@ -188,6 +200,7 @@ local setScrollOffset
 local updateScrollContentAnchors
 local anchorContainers
 local applyWindowBars
+local ensureRoot
 local applyWindowVisibility
 local createContainers
 local startWindowDrag
@@ -1535,7 +1548,7 @@ local function applyWindowLock()
 end
 
 local function applyWindowVisibility()
-    if not state.root then
+    if not ensureRoot() then
         return true
     end
 
@@ -1977,6 +1990,23 @@ local function createRootControl()
 end
 
 
+ensureRoot = function()
+    if state.root and state.root.SetHidden then
+        return true
+    end
+
+    if not WINDOW_MANAGER then
+        return false
+    end
+
+    if not state.root then
+        createRootControl()
+    end
+
+    return state.root ~= nil and state.root.SetHidden ~= nil
+end
+
+
 local function applyAppearance()
     state.appearance = ensureAppearanceSettings()
 
@@ -2066,6 +2096,7 @@ function TrackerHost.Init()
     state.initializing = true
     state.externalVisible = true
     state.sceneVisible = state.sceneVisible ~= false
+    state.updatingSceneVisibility = false
     state.sections = state.sections or {}
 
     state.window = ensureWindowSettings()
@@ -2074,7 +2105,11 @@ function TrackerHost.Init()
     state.features = ensureFeatureSettings()
     TrackerHost.EnsureAppearanceDefaults()
 
-    createRootControl()
+    ensureRoot()
+    if not state.root then
+        state.initializing = false
+        return
+    end
     createContainers()
     applyWindowSettings()
 
@@ -2083,42 +2118,62 @@ function TrackerHost.Init()
     if not state.tempSceneBootstrapInitialized then
         state.tempSceneBootstrapInitialized = true
         local sceneManager = SCENE_MANAGER
+        local hudScene = nil
+        local hudUiScene = nil
+        if sceneManager and sceneManager.GetScene then
+            hudScene = sceneManager:GetScene("hud")
+            hudUiScene = sceneManager:GetScene("hudui")
+        end
+        hudScene = hudScene or HUD_SCENE
+        hudUiScene = hudUiScene or HUD_UI_SCENE
+
         local function registerScene(scene, field)
-            if not (scene and scene.RegisterCallback) then
+            if not scene then
                 return
             end
 
             state.sceneVisibilityCallbacks = state.sceneVisibilityCallbacks or {}
-            if state.sceneVisibilityCallbacks[scene] then
-                return
+            local existingCallback = state.sceneVisibilityCallbacks[scene]
+            if existingCallback and scene.UnregisterCallback then
+                pcall(scene.UnregisterCallback, scene, "StateChange", existingCallback)
             end
 
             local function onStateChange(_, newState)
                 state[field] = newState
-                updateSceneVisibility()
+                local forced
+                if newState == SCENE_SHOWN or newState == SCENE_SHOWING then
+                    forced = true
+                elseif newState == SCENE_HIDING or newState == SCENE_HIDDEN then
+                    forced = false
+                end
+                updateSceneVisibility(forced)
             end
 
-            local ok, message = pcall(scene.RegisterCallback, scene, "StateChange", onStateChange)
-            if not ok then
-                debugLog("Failed to register scene visibility callback", message)
-                return
-            end
             state.sceneVisibilityCallbacks[scene] = onStateChange
+
+            if scene.RegisterCallback then
+                local ok, message = pcall(scene.RegisterCallback, scene, "StateChange", onStateChange)
+                if not ok then
+                    debugLog("Failed to register scene visibility callback", message)
+                end
+            end
+
             if scene.GetState then
                 local ok, currentState = pcall(scene.GetState, scene)
                 if ok then
                     state[field] = currentState
                 end
+            elseif scene.IsShowing then
+                local ok, isShowing = pcall(scene.IsShowing, scene)
+                if ok then
+                    state[field] = isShowing and SCENE_SHOWN or SCENE_HIDDEN
+                end
             end
         end
 
-        if sceneManager and sceneManager.GetScene then
-            registerScene(sceneManager:GetScene("hud"), "hudSceneState")
-            registerScene(sceneManager:GetScene("hudui"), "hudUiSceneState")
-        else
-            registerScene(HUD_SCENE, "hudSceneState")
-            registerScene(HUD_UI_SCENE, "hudUiSceneState")
-        end
+        registerScene(hudScene, "hudSceneState")
+        registerScene(hudUiScene, "hudUiSceneState")
+
         updateSceneVisibility()
     end
     -- TEMP_BOOTSTRAP_SCENE_END
@@ -2313,8 +2368,22 @@ function TrackerHost.ApplyAppearance()
 end
 
 function TrackerHost.SetVisible(isVisible)
-    TrackerHost.Init()
-    state.externalVisible = isVisible ~= false
+    local fromScene = state.updatingSceneVisibility == true
+
+    if not fromScene and not state.initialized and not state.initializing then
+        TrackerHost.Init()
+    end
+
+    if not ensureRoot() then
+        return
+    end
+
+    if fromScene then
+        state.sceneVisible = isVisible ~= false
+    else
+        state.externalVisible = isVisible ~= false
+    end
+
     applyWindowVisibility()
 end
 
@@ -2503,6 +2572,7 @@ function TrackerHost.Shutdown()
     state.hudUiSceneState = nil
     state.sceneVisible = true
     state.externalVisible = true
+    state.updatingSceneVisibility = false
     state.lastRootHiddenState = nil
     state.tempSceneBootstrapInitialized = false
 
