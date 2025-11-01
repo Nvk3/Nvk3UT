@@ -148,7 +148,7 @@ local lamPreview = {
     windowPreviewApplied = false,
 }
 
-local ensureSceneFragments
+local ensureSceneFragment
 local refreshScroll
 local applyViewportPadding
 local measureTrackerContent
@@ -834,35 +834,46 @@ local function updateCombatState(inCombat)
     queueRuntimeLayout()
 end
 
+-- TEMP_BOOTSTRAP: Scene/HUD/Cursor/Combat forwarding only; no visibility toggles. Remove in EVENTS_012/013/014_SWITCH.
 applyBootstrapVisibility = function(isVisible)
     local visible = isVisible ~= false
-
-    if state.bootstrapHudVisible == visible and state.sceneHidden == (not visible) then
-        return
-    end
+    local previousVisible = state.bootstrapHudVisible
+    local previousSceneHidden = state.sceneHidden == true
 
     state.bootstrapHudVisible = visible
 
-    state.handlingBootstrapVisibility = true
-    if TrackerHost and TrackerHost.SetVisible then
-        TrackerHost.SetVisible(visible)
-    else
-        state.sceneHidden = not visible
-        if state.root then
-            applyWindowVisibility()
-        end
+    local newSceneHidden = not visible
+    local sceneChanged = previousSceneHidden ~= newSceneHidden
+    local visibilityChanged = previousVisible ~= visible
+
+    if not sceneChanged and not visibilityChanged then
+        return
+    end
+
+    state.sceneHidden = newSceneHidden
+
+    if state.fragment and state.fragment.SetHiddenForReason then
+        state.fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, newSceneHidden)
+    end
+
+    if state.root then
+        applyWindowVisibility()
+    end
+
+    if sceneChanged or visibilityChanged then
         queueRuntimeLayout()
     end
-    state.handlingBootstrapVisibility = false
 
     diagnosticsDebug("TrackerHost HUD visibility changed: %s", tostring(visible))
 end
 
-local function handleHudSceneState(oldState, newState)
-    if newState == SCENE_SHOWING or newState == SCENE_SHOWN then
-        applyBootstrapVisibility(true)
-    elseif newState == SCENE_HIDDEN or newState == SCENE_HIDING then
-        applyBootstrapVisibility(false)
+local function handleHudSceneState()
+    if zo_callLater then
+        zo_callLater(function()
+            applyBootstrapVisibility(isHudSceneVisible())
+        end, 0)
+    else
+        applyBootstrapVisibility(isHudSceneVisible())
     end
 end
 
@@ -890,7 +901,7 @@ local function registerHudScene(scene)
 end
 
 local function ensureHudBootstrap()
-    -- TEMP_BOOTSTRAP until EVENTS_012_SWITCH (HUD). Keep scene callbacks here for now.
+    -- TEMP_BOOTSTRAP: Scene/HUD/Cursor/Combat forwarding only; no visibility toggles. Remove in EVENTS_012/013/014_SWITCH.
     registerHudScene(HUD_SCENE)
     registerHudScene(HUD_UI_SCENE)
 
@@ -915,7 +926,7 @@ local function ensureCursorBootstrap()
         return
     end
 
-    -- TEMP_BOOTSTRAP until EVENTS_014_SWITCH (Cursor). Forward cursor mode to runtime.
+    -- TEMP_BOOTSTRAP: Scene/HUD/Cursor/Combat forwarding only; no visibility toggles. Remove in EVENTS_012/013/014_SWITCH.
     local eventName = BOOTSTRAP_NAMESPACE .. "_Cursor"
     local ok, message = pcall(EVENT_MANAGER.RegisterForEvent, EVENT_MANAGER, eventName, EVENT_CURSOR_MODE_CHANGED, cursorModeEventHandler)
     if not ok then
@@ -940,7 +951,7 @@ local function ensureCombatBootstrap()
         return
     end
 
-    -- TEMP_BOOTSTRAP until EVENTS_013_SWITCH (Combat). Forward combat state to runtime.
+    -- TEMP_BOOTSTRAP: Scene/HUD/Cursor/Combat forwarding only; no visibility toggles. Remove in EVENTS_012/013/014_SWITCH.
     local eventName = BOOTSTRAP_NAMESPACE .. "_Combat"
     local ok, message = pcall(EVENT_MANAGER.RegisterForEvent, EVENT_MANAGER, eventName, EVENT_PLAYER_COMBAT_STATE, combatStateEventHandler)
     if not ok then
@@ -1817,7 +1828,8 @@ local function applyWindowVisibility()
     local suppressed = state.initializing == true
     local sceneHidden = state.sceneHidden == true
     local previewActive = state.lamPreviewForceVisible == true and not userHidden
-    local shouldHide = (suppressed or userHidden or sceneHidden) and not previewActive
+    local hideForScene = sceneHidden and not previewActive
+    local shouldHideForSettings = (suppressed or userHidden) and not previewActive
 
     if state.fragment and state.fragment.SetHiddenForReason then
         if previewActive then
@@ -1831,13 +1843,17 @@ local function applyWindowVisibility()
         end
     end
 
-    state.root:SetHidden(shouldHide)
+    if shouldHideForSettings or (hideForScene and not state.fragment) then
+        state.root:SetHidden(true)
+    elseif not hideForScene then
+        state.root:SetHidden(false)
+    end
 
     if lamPreview.active and previewActive then
         lamPreview.windowPreviewApplied = true
     end
 
-    return shouldHide
+    return shouldHideForSettings or hideForScene
 end
 
 local function refreshWindowLayout(targetOffset)
@@ -1845,7 +1861,7 @@ local function refreshWindowLayout(targetOffset)
         return
     end
 
-    ensureSceneFragments()
+    ensureSceneFragment(state.root)
     updateWindowGeometry()
     applyWindowVisibility()
     refreshScroll(targetOffset)
@@ -2029,7 +2045,7 @@ local function applyWindowSettings()
     updateWindowGeometry()
     applyWindowLock()
     applyWindowTopmost()
-    ensureSceneFragments()
+    ensureSceneFragment(state.root)
     applyWindowVisibility()
     refreshScroll()
 end
@@ -2130,17 +2146,19 @@ local function attachFragmentToScene(scene)
     return true
 end
 
-local function ensureSceneFragmentsInternal()
-    if not state.root then
+local function ensureSceneFragmentInternal(hostRoot)
+    local root = hostRoot or state.root
+    if not root then
         return
     end
 
-    if not state.fragment then
-        if not (ZO_HUDFadeSceneFragment and state.root) then
-            return
-        end
+    if not ZO_SimpleSceneFragment then
+        return
+    end
 
-        local fragment = ZO_HUDFadeSceneFragment:New(state.root)
+    local fragment = state.fragment
+    if not fragment then
+        fragment = ZO_SimpleSceneFragment:New(root)
         if not fragment then
             return
         end
@@ -2156,6 +2174,8 @@ local function ensureSceneFragmentsInternal()
         end
     end
 
+    state.fragmentScenes = state.fragmentScenes or {}
+
     local attached = false
     attached = attachFragmentToScene(HUD_SCENE) or attached
     attached = attachFragmentToScene(HUD_UI_SCENE) or attached
@@ -2169,12 +2189,12 @@ local function ensureSceneFragmentsInternal()
         state.fragmentRetryScheduled = true
         zo_callLater(function()
             state.fragmentRetryScheduled = false
-            ensureSceneFragmentsInternal()
+            ensureSceneFragmentInternal(root)
         end, FRAGMENT_RETRY_DELAY_MS)
     end
 end
 
-ensureSceneFragments = ensureSceneFragmentsInternal
+ensureSceneFragment = ensureSceneFragmentInternal
 
 local function createRootControl()
     if state.root or not WINDOW_MANAGER then
@@ -2240,7 +2260,7 @@ local function createRootControl()
 
     applyLayoutConstraints()
     createBackdrop()
-    ensureSceneFragments()
+    ensureSceneFragment(state.root)
     ensureRuntimeInitialized()
 end
 
@@ -2365,6 +2385,8 @@ function TrackerHost.Init()
     state.initializing = false
 
     notifyContentChanged()
+
+    ensureSceneFragment(state.root)
 
     ensureBootstraps()
 
