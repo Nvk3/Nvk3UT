@@ -143,6 +143,7 @@ local state = {
     tempCursorCallback = nil,
     lastRootHiddenState = nil,
     updatingSceneVisibility = false,
+    sceneVisibilityScheduled = false,
 }
 
 local lamPreview = {
@@ -169,15 +170,10 @@ local function isSceneShowing(sceneState)
     return sceneState == SCENE_SHOWING or sceneState == SCENE_SHOWN
 end
 
-local function updateSceneVisibility(show)
-    local hint = show
+local function updateSceneVisibility()
     local target = isSceneShowing(state.hudSceneState) or isSceneShowing(state.hudUiSceneState)
     if state.hudSceneState == nil and state.hudUiSceneState == nil then
-        if hint ~= nil then
-            target = hint ~= false
-        else
-            target = true
-        end
+        target = true
     end
 
     local normalized = target ~= false
@@ -190,6 +186,19 @@ local function updateSceneVisibility(show)
         applyWindowVisibility()
     end
     state.updatingSceneVisibility = false
+end
+
+-- debounce/koaleszierte Sichtbarkeits-Aktualisierung
+local function scheduleUpdateSceneVisibility()
+    if state.sceneVisibilityScheduled or not zo_callLater then
+        return
+    end
+
+    state.sceneVisibilityScheduled = true
+    zo_callLater(function()
+        state.sceneVisibilityScheduled = false
+        updateSceneVisibility()
+    end, 0)
 end
 
 local ensureSceneFragments
@@ -2140,13 +2149,7 @@ function TrackerHost.Init()
 
             local function onStateChange(_, newState)
                 state[field] = newState
-                local forced
-                if newState == SCENE_SHOWN or newState == SCENE_SHOWING then
-                    forced = true
-                elseif newState == SCENE_HIDING or newState == SCENE_HIDDEN then
-                    forced = false
-                end
-                updateSceneVisibility(forced)
+                scheduleUpdateSceneVisibility()
             end
 
             state.sceneVisibilityCallbacks[scene] = onStateChange
