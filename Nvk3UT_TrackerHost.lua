@@ -5,6 +5,76 @@ Nvk3UT.UI = Nvk3UT.UI or {}
 
 local unpack = unpack or table.unpack
 
+-- helper: treat anchor spec as callable, table spec, or keyword "fill"
+local function isCallable(value)
+    if type(value) == "function" then
+        return true
+    end
+
+    if type(value) == "table" then
+        local mt = getmetatable(value)
+        return mt ~= nil and type(mt.__call) == "function"
+    end
+
+    return false
+end
+
+local function ApplyAnchorSpec(ctrl, root, spec)
+    if not (ctrl and root) then
+        return
+    end
+
+    ctrl:ClearAnchors()
+
+    if isCallable(spec) then
+        local function apply()
+            spec(ctrl, root)
+        end
+
+        if Nvk3UT and type(Nvk3UT.SafeCall) == "function" then
+            Nvk3UT.SafeCall(apply)
+        else
+            local ok, err = pcall(apply)
+            if not ok then
+                local diagnostics = Nvk3UT and Nvk3UT.Diagnostics
+                if diagnostics and diagnostics.Debug then
+                    diagnostics.Debug("TrackerHost: ApplyAnchorSpec failed: %s", tostring(err))
+                end
+            end
+        end
+
+        return
+    end
+
+    if type(spec) == "table" then
+        local function setOne(anchorTable)
+            if type(anchorTable) ~= "table" then
+                return
+            end
+
+            local point = anchorTable[1] or TOPLEFT
+            local relativeTo = anchorTable[2] or root
+            local relativePoint = anchorTable[3] or point
+            local offsetX = anchorTable[4] or 0
+            local offsetY = anchorTable[5] or 0
+
+            ctrl:SetAnchor(point, relativeTo, relativePoint, offsetX, offsetY)
+        end
+
+        if type(spec[1]) == "table" and type(spec[2]) == "table" then
+            setOne(spec[1])
+            setOne(spec[2])
+        else
+            setOne(spec)
+        end
+
+        return
+    end
+
+    ctrl:SetAnchor(TOPLEFT, root, TOPLEFT, 0, 0)
+    ctrl:SetAnchor(BOTTOMRIGHT, root, BOTTOMRIGHT, 0, 0)
+end
+
 local TrackerHost = {}
 TrackerHost.__index = TrackerHost
 
@@ -130,6 +200,11 @@ local state = {
     visibilityLocks = nil,
     sectionContainers = nil,
     sectionOrder = nil,
+    _anchorHeader = nil,
+    _anchorContent = nil,
+    _anchorFooter = nil,
+    _anchorQuest = nil,
+    _anchorAchievement = nil,
     sceneVisibilityCallbacks = nil,
     previousDefaultQuestTrackerHidden = nil,
     initializing = false,
@@ -1002,34 +1077,60 @@ local function anchorContainers()
     local headerVisible = headerBar ~= nil and headerHeight > 0.5
 
     if headerBar then
-        headerBar:ClearAnchors()
-        headerBar:SetAnchor(TOPLEFT, scrollContent, TOPLEFT, 0, 0)
-        headerBar:SetAnchor(TOPRIGHT, scrollContent, TOPRIGHT, 0, 0)
+        local headerSpec = state._anchorHeader
+        if not headerSpec then
+            headerSpec = {
+                { TOPLEFT, scrollContent, TOPLEFT, 0, 0 },
+                { TOPRIGHT, scrollContent, TOPRIGHT, 0, 0 },
+            }
+        end
+        ApplyAnchorSpec(headerBar, scrollContent, headerSpec)
     end
 
     if contentStack then
-        contentStack:ClearAnchors()
-        if headerVisible and headerBar then
-            contentStack:SetAnchor(TOPLEFT, headerBar, BOTTOMLEFT, 0, 0)
-            contentStack:SetAnchor(TOPRIGHT, headerBar, BOTTOMRIGHT, 0, 0)
-        else
-            contentStack:SetAnchor(TOPLEFT, scrollContent, TOPLEFT, 0, 0)
-            contentStack:SetAnchor(TOPRIGHT, scrollContent, TOPRIGHT, 0, 0)
+        local contentSpec = state._anchorContent
+        if not contentSpec then
+            if headerVisible and headerBar then
+                contentSpec = {
+                    { TOPLEFT, headerBar, BOTTOMLEFT, 0, 0 },
+                    { TOPRIGHT, headerBar, BOTTOMRIGHT, 0, 0 },
+                }
+            else
+                contentSpec = {
+                    { TOPLEFT, scrollContent, TOPLEFT, 0, 0 },
+                    { TOPRIGHT, scrollContent, TOPRIGHT, 0, 0 },
+                }
+
+                local diagnostics = Nvk3UT and Nvk3UT.Diagnostics
+                if diagnostics and diagnostics.IsDebugEnabled and diagnostics.IsDebugEnabled() and diagnostics.Debug then
+                    diagnostics.Debug("TrackerHost: anchorContainers: content uses default fill")
+                end
+            end
         end
+        ApplyAnchorSpec(contentStack, scrollContent, contentSpec)
     end
 
     if footerBar then
-        footerBar:ClearAnchors()
-        if contentStack then
-            footerBar:SetAnchor(TOPLEFT, contentStack, BOTTOMLEFT, 0, 0)
-            footerBar:SetAnchor(TOPRIGHT, contentStack, BOTTOMRIGHT, 0, 0)
-        elseif headerVisible and headerBar then
-            footerBar:SetAnchor(TOPLEFT, headerBar, BOTTOMLEFT, 0, 0)
-            footerBar:SetAnchor(TOPRIGHT, headerBar, BOTTOMRIGHT, 0, 0)
-        else
-            footerBar:SetAnchor(TOPLEFT, scrollContent, TOPLEFT, 0, 0)
-            footerBar:SetAnchor(TOPRIGHT, scrollContent, TOPRIGHT, 0, 0)
+        local footerSpec = state._anchorFooter
+        if not footerSpec then
+            if contentStack then
+                footerSpec = {
+                    { TOPLEFT, contentStack, BOTTOMLEFT, 0, 0 },
+                    { TOPRIGHT, contentStack, BOTTOMRIGHT, 0, 0 },
+                }
+            elseif headerVisible and headerBar then
+                footerSpec = {
+                    { TOPLEFT, headerBar, BOTTOMLEFT, 0, 0 },
+                    { TOPRIGHT, headerBar, BOTTOMRIGHT, 0, 0 },
+                }
+            else
+                footerSpec = {
+                    { TOPLEFT, scrollContent, TOPLEFT, 0, 0 },
+                    { TOPRIGHT, scrollContent, TOPRIGHT, 0, 0 },
+                }
+            end
         end
+        ApplyAnchorSpec(footerBar, scrollContent, footerSpec)
     end
 
     local parent = contentStack or scrollContent
@@ -1042,15 +1143,25 @@ local function anchorContainers()
         return
     end
 
-    questContainer:ClearAnchors()
-    questContainer:SetAnchor(TOPLEFT, parent, TOPLEFT, 0, 0)
-    questContainer:SetAnchor(TOPRIGHT, parent, TOPRIGHT, 0, 0)
+    local questSpec = state._anchorQuest
+    if not questSpec then
+        questSpec = {
+            { TOPLEFT, parent, TOPLEFT, 0, 0 },
+            { TOPRIGHT, parent, TOPRIGHT, 0, 0 },
+        }
+    end
+    ApplyAnchorSpec(questContainer, parent, questSpec)
     state.anchorWarnings.questMissing = false
 
     if achievementContainer then
-        achievementContainer:ClearAnchors()
-        achievementContainer:SetAnchor(TOPLEFT, questContainer, BOTTOMLEFT, 0, 0)
-        achievementContainer:SetAnchor(TOPRIGHT, questContainer, BOTTOMRIGHT, 0, 0)
+        local achievementSpec = state._anchorAchievement
+        if not achievementSpec then
+            achievementSpec = {
+                { TOPLEFT, questContainer, BOTTOMLEFT, 0, 0 },
+                { TOPRIGHT, questContainer, BOTTOMRIGHT, 0, 0 },
+            }
+        end
+        ApplyAnchorSpec(achievementContainer, parent, achievementSpec)
         state.anchorWarnings.achievementMissing = false
     elseif not state.anchorWarnings.achievementMissing then
         debugLog("Achievement container not ready for anchoring")
