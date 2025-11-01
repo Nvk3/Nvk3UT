@@ -254,8 +254,9 @@ function HostLayout:ApplyLayout()
         self._cache.contentWidth = math.max(0, maxWidth)
     end
 
-    if type(Nvk3UT.Debug) == "function" then
-        Nvk3UT.Debug(
+    local logDebug = Nvk3UT and Nvk3UT.LogDebug
+    if type(logDebug) == "function" then
+        logDebug(
             "TrackerHostLayout: ApplyLayout (sections=%d, totalHeight=%.1f)",
             usedSections,
             totalHeight

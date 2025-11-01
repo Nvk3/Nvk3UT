@@ -729,12 +729,24 @@ local function debugLog(...)
         return
     end
 
-    local prefix = string.format("[%s]", addonName .. ".TrackerHost")
-    if d then
-        d(prefix, ...)
-    elseif print then
-        print(prefix, ...)
+    local logDebug = Nvk3UT and Nvk3UT.LogDebug
+    if type(logDebug) ~= "function" then
+        return
     end
+
+    local prefix = string.format("[%s]", addonName .. ".TrackerHost")
+    local argCount = select("#", ...)
+    if argCount == 0 then
+        logDebug("%s", prefix)
+        return
+    end
+
+    local parts = {}
+    for index = 1, argCount do
+        parts[#parts + 1] = tostring(select(index, ...))
+    end
+
+    logDebug("%s %s", prefix, table.concat(parts, " "))
 end
 
 setScrollOffset = function(rawOffset, skipScrollbarUpdate)

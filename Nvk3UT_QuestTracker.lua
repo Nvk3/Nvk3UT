@@ -84,9 +84,11 @@ local state = {
     saved = nil,
     control = nil,
     container = nil,
+    parentControl = nil,
     categoryPool = nil,
     questPool = nil,
     conditionPool = nil,
+    poolsInitialized = false,
     orderedControls = {},
     lastAnchoredControl = nil,
     snapshot = nil,
@@ -122,22 +124,43 @@ local PRIORITY = {
 
 NVK_DEBUG_DESELECT = NVK_DEBUG_DESELECT or false
 
+local CATEGORY_POOL_PREFIX = MODULE_NAME .. "_Category"
+local QUEST_POOL_PREFIX = MODULE_NAME .. "_QuestRow"
+local CONDITION_POOL_PREFIX = MODULE_NAME .. "_Condition"
+
 local function IsDebugLoggingEnabled()
     local sv = Nvk3UT and Nvk3UT.sv
     return sv and sv.debug == true
 end
 
 local function DebugLog(...)
-    local isEnabled = type(IsDebugLoggingEnabled) == "function" and IsDebugLoggingEnabled()
-    if not isEnabled then
+    if type(IsDebugLoggingEnabled) == "function" and not IsDebugLoggingEnabled() then
         return
     end
 
-    if d then
-        d(string.format("[%s]", MODULE_NAME), ...)
-    elseif print then
-        print("[" .. MODULE_NAME .. "]", ...)
+    local logDebug = Nvk3UT and Nvk3UT.LogDebug
+    if type(logDebug) ~= "function" then
+        return
     end
+
+    local partCount = select("#", ...)
+    if partCount == 0 then
+        logDebug("[%s]", MODULE_NAME)
+        return
+    end
+
+    local parts = {}
+    for index = 1, partCount do
+        local value = select(index, ...)
+        parts[#parts + 1] = tostring(value)
+    end
+
+    local message = table.concat(parts, " ")
+    if message == "" then
+        message = "(empty)"
+    end
+
+    logDebug("[%s] %s", MODULE_NAME, message)
 end
 
 local function DebugDeselect(context, details)
@@ -157,7 +180,10 @@ local function DebugDeselect(context, details)
 
     local message = table.concat(parts, " | ")
 
-    if d then
+    local logDebug = Nvk3UT and Nvk3UT.LogDebug
+    if type(logDebug) == "function" then
+        logDebug("%s", message)
+    elseif d then
         d(message)
     elseif print then
         print(message)
@@ -210,7 +236,10 @@ local function EmitDebugAction(action, trigger, entityType, fieldList)
     end
 
     local message = table.concat(parts, " ")
-    if d then
+    local logDebug = Nvk3UT and Nvk3UT.LogDebug
+    if type(logDebug) == "function" then
+        logDebug("%s", message)
+    elseif d then
         d(message)
     elseif print then
         print(message)
@@ -2998,6 +3027,13 @@ local function FormatConditionText(condition)
 end
 
 local function AcquireCategoryControl()
+    if not state.poolsInitialized then
+        QuestTracker:EnsurePools(state.container)
+    end
+    if not state.categoryPool then
+        return nil
+    end
+
     local control, key = state.categoryPool:AcquireObject()
     if not control.initialized then
         control.label = control:GetNamedChild("Label")
@@ -3057,6 +3093,13 @@ local function AcquireCategoryControl()
 end
 
 local function AcquireQuestControl()
+    if not state.poolsInitialized then
+        QuestTracker:EnsurePools(state.container)
+    end
+    if not state.questPool then
+        return nil
+    end
+
     local control, key = state.questPool:AcquireObject()
     if not control.initialized then
         control.label = control:GetNamedChild("Label")
@@ -3165,6 +3208,13 @@ local function AcquireQuestControl()
 end
 
 local function AcquireConditionControl()
+    if not state.poolsInitialized then
+        QuestTracker:EnsurePools(state.container)
+    end
+    if not state.conditionPool then
+        return nil
+    end
+
     local control, key = state.conditionPool:AcquireObject()
     if not control.initialized then
         control.label = control:GetNamedChild("Label")
@@ -3211,16 +3261,33 @@ local function AttachBackdrop()
     EnsureBackdrop()
 end
 
-local function EnsurePools()
-    if state.categoryPool then
+function QuestTracker:EnsurePools(parent)
+    if state.poolsInitialized then
         return
     end
 
-    state.categoryPool = ZO_ControlPool:New("CategoryHeader_Template", state.container)
-    state.questPool = ZO_ControlPool:New("QuestHeader_Template", state.container)
-    state.conditionPool = ZO_ControlPool:New("QuestCondition_Template", state.container)
+    parent = parent or self.parentControl or state.parentControl or state.container or state.control
+    if not parent then
+        return
+    end
+
+    state.container = parent
+    state.control = state.control or parent
+    state.parentControl = parent
+    self.parentControl = parent
+
+    state.categoryPool = ZO_ControlPool:New("CategoryHeader_Template", parent, CATEGORY_POOL_PREFIX)
+    state.questPool = ZO_ControlPool:New("QuestHeader_Template", parent, QUEST_POOL_PREFIX)
+    state.conditionPool = ZO_ControlPool:New("QuestCondition_Template", parent, CONDITION_POOL_PREFIX)
+
+    self.categoryPool = state.categoryPool
+    self.questPool = state.questPool
+    self.conditionPool = state.conditionPool
 
     local function resetControl(control)
+        if not control then
+            return
+        end
         control:SetHidden(true)
         control.data = nil
         control.currentIndent = nil
@@ -3228,35 +3295,46 @@ local function EnsurePools()
         control.isExpanded = nil
     end
 
-    state.categoryPool:SetCustomResetBehavior(function(control)
-        resetControl(control)
-        if control.toggle then
-            if control.toggle.SetTexture then
-                control.toggle:SetTexture(SelectCategoryToggleTexture(false, false))
+    if state.categoryPool and state.categoryPool.SetCustomResetBehavior then
+        state.categoryPool:SetCustomResetBehavior(function(control)
+            resetControl(control)
+            if control and control.toggle then
+                if control.toggle.SetTexture then
+                    control.toggle:SetTexture(SelectCategoryToggleTexture(false, false))
+                end
+                if control.toggle.SetHidden then
+                    control.toggle:SetHidden(false)
+                end
             end
-            if control.toggle.SetHidden then
-                control.toggle:SetHidden(false)
+        end)
+    end
+
+    if state.questPool and state.questPool.SetCustomResetBehavior then
+        state.questPool:SetCustomResetBehavior(function(control)
+            resetControl(control)
+            if control and control.label and control.label.SetText then
+                control.label:SetText("")
             end
-        end
-    end)
-    state.questPool:SetCustomResetBehavior(function(control)
-        resetControl(control)
-        if control.label and control.label.SetText then
-            control.label:SetText("")
-        end
-        if control.iconSlot then
-            if control.iconSlot.SetTexture then
-                control.iconSlot:SetTexture(nil)
+            if control and control.iconSlot then
+                if control.iconSlot.SetTexture then
+                    control.iconSlot:SetTexture(nil)
+                end
+                if control.iconSlot.SetAlpha then
+                    control.iconSlot:SetAlpha(0)
+                end
+                if control.iconSlot.SetHidden then
+                    control.iconSlot:SetHidden(false)
+                end
             end
-            if control.iconSlot.SetAlpha then
-                control.iconSlot:SetAlpha(0)
-            end
-            if control.iconSlot.SetHidden then
-                control.iconSlot:SetHidden(false)
-            end
-        end
-    end)
-    state.conditionPool:SetCustomResetBehavior(resetControl)
+        end)
+    end
+
+    if state.conditionPool and state.conditionPool.SetCustomResetBehavior then
+        state.conditionPool:SetCustomResetBehavior(resetControl)
+    end
+
+    state.poolsInitialized = true
+    self._poolsInited = true
 end
 
 local function LayoutCondition(condition)
@@ -3265,6 +3343,9 @@ local function LayoutCondition(condition)
     end
 
     local control = AcquireConditionControl()
+    if not control then
+        return
+    end
     control.data = { condition = condition }
     control.label:SetText(FormatConditionText(condition))
     if control.label then
@@ -3278,6 +3359,9 @@ end
 
 local function LayoutQuest(quest)
     local control = AcquireQuestControl()
+    if not control then
+        return
+    end
     control.data = { quest = quest }
     control.label:SetText(quest.name or "")
 
@@ -3324,6 +3408,9 @@ end
 
 local function LayoutCategory(category)
     local control = AcquireCategoryControl()
+    if not control then
+        return
+    end
     control.data = {
         categoryKey = category.key,
         parentKey = category.parent and category.parent.key or nil,
@@ -3433,7 +3520,10 @@ end
 
 local function RelayoutFromCategoryIndex(startCategoryIndex)
     ApplyActiveQuestFromSaved()
-    EnsurePools()
+    QuestTracker:EnsurePools()
+    if not state.poolsInitialized then
+        return
+    end
 
     if not state.snapshot or not state.snapshot.categories or not state.snapshot.categories.ordered then
         ReleaseAll(state.categoryPool)
@@ -3540,7 +3630,11 @@ local function Rebuild()
     state.isRebuildInProgress = true
     ApplyActiveQuestFromSaved()
 
-    EnsurePools()
+    QuestTracker:EnsurePools()
+    if not state.poolsInitialized then
+        state.isRebuildInProgress = false
+        return
+    end
 
     ReleaseAll(state.categoryPool)
     ReleaseAll(state.questPool)
@@ -3622,6 +3716,8 @@ function QuestTracker.Init(parentControl, opts)
 
     state.control = parentControl
     state.container = parentControl
+    state.parentControl = parentControl
+    QuestTracker.parentControl = parentControl
     if state.control and state.control.SetResizeToFitDescendents then
         state.control:SetResizeToFitDescendents(true)
     end
@@ -3652,6 +3748,8 @@ function QuestTracker.Init(parentControl, opts)
     RegisterTrackingEvents()
 
     SubscribeToQuestModel()
+
+    QuestTracker:EnsurePools(parentControl)
 
     state.isInitialized = true
     RefreshVisibility()
@@ -3695,8 +3793,16 @@ function QuestTracker.Shutdown()
         state.conditionPool = nil
     end
 
+    state.poolsInitialized = false
+    QuestTracker._poolsInited = false
+    QuestTracker.categoryPool = nil
+    QuestTracker.questPool = nil
+    QuestTracker.conditionPool = nil
+
     state.container = nil
     state.control = nil
+    state.parentControl = nil
+    QuestTracker.parentControl = nil
     state.snapshot = nil
     state.orderedControls = {}
     state.lastAnchoredControl = nil

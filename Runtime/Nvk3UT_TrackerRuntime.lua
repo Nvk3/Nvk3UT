@@ -165,8 +165,11 @@ function Runtime:ProcessFrame()
     end
 
     local debugKinds = collectDirtyKinds(self)
-    if #debugKinds > 0 and Nvk3UT and type(Nvk3UT.Debug) == "function" then
-        Nvk3UT.Debug("TrackerRuntime: coalesced dirty: %s", table.concat(debugKinds, ","))
+    if #debugKinds > 0 then
+        local logDebug = Nvk3UT and Nvk3UT.LogDebug
+        if type(logDebug) == "function" then
+            logDebug("TrackerRuntime: coalesced dirty: %s", table.concat(debugKinds, ","))
+        end
     end
 
     local questTracker = Nvk3UT and Nvk3UT.QuestTracker
@@ -200,8 +203,9 @@ function Runtime:ProcessFrame()
 
     resetDirty(self)
 
-    if Nvk3UT and type(Nvk3UT.Debug) == "function" then
-        Nvk3UT.Debug("TrackerRuntime: ProcessFrame complete")
+    local logDebug = Nvk3UT and Nvk3UT.LogDebug
+    if type(logDebug) == "function" then
+        logDebug("TrackerRuntime: ProcessFrame complete")
     end
 end
 

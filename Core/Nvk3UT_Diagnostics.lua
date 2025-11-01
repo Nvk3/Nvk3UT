@@ -1,17 +1,19 @@
--- Core/Nvk3UT_Diagnostics.lua
--- Centralized logging / diagnostics for Nvk3UT.
--- Loads before Core, so it cannot assume that the global addon table exists
--- at file scope. All access to Nvk3UT therefore happens via guarded helpers.
---
--- TODO: Once the refactor introduces a finalized Core bootstrap, make sure
--- Core/Nvk3UT_Core.lua calls Nvk3UT_Diagnostics.AttachToRoot(Nvk3UT) during
--- OnAddonLoaded so the Diagnostics module is reachable via Nvk3UT.Diagnostics.
+Nvk3UT = Nvk3UT or {}
 
 Nvk3UT_Diagnostics = Nvk3UT_Diagnostics or {}
 
 local Diagnostics = Nvk3UT_Diagnostics
 
-Diagnostics.debugEnabled = (Diagnostics.debugEnabled ~= nil) and Diagnostics.debugEnabled or true
+local LOG = LibDebugLogger and LibDebugLogger("Nvk3UT")
+
+local defaultDebugEnabled = false
+if Diagnostics.debugEnabled ~= nil then
+    defaultDebugEnabled = Diagnostics.debugEnabled and true or false
+elseif type(Nvk3UT) == "table" and Nvk3UT.debugEnabled ~= nil then
+    defaultDebugEnabled = Nvk3UT.debugEnabled and true or false
+end
+
+Diagnostics.debugEnabled = defaultDebugEnabled
 
 local isAttachedToRoot = false
 
@@ -21,10 +23,21 @@ local function ensureRoot()
     end
 
     local root = rawget(_G, "Nvk3UT")
-    if type(root) == "table" then
-        root.Diagnostics = root.Diagnostics or Diagnostics
-        isAttachedToRoot = true
+    if type(root) ~= "table" then
+        return
     end
+
+    root.Diagnostics = root.Diagnostics or Diagnostics
+    root.LogDebug = Diagnostics.LogDebug or root.LogDebug
+    root.LogInfo = Diagnostics.LogInfo or root.LogInfo
+    root.LogWarn = Diagnostics.LogWarn or root.LogWarn
+    root.LogError = Diagnostics.LogError or root.LogError
+    root.Debug = root.Debug or root.LogDebug
+    root.Info = root.Info or root.LogInfo
+    root.Warn = root.Warn or root.LogWarn
+    root.Error = root.Error or root.LogError
+
+    isAttachedToRoot = true
 end
 
 function Diagnostics.AttachToRoot(root)
@@ -33,6 +46,14 @@ function Diagnostics.AttachToRoot(root)
     end
 
     root.Diagnostics = root.Diagnostics or Diagnostics
+    root.LogDebug = Diagnostics.LogDebug or root.LogDebug
+    root.LogInfo = Diagnostics.LogInfo or root.LogInfo
+    root.LogWarn = Diagnostics.LogWarn or root.LogWarn
+    root.LogError = Diagnostics.LogError or root.LogError
+    root.Debug = root.Debug or root.LogDebug
+    root.Info = root.Info or root.LogInfo
+    root.Warn = root.Warn or root.LogWarn
+    root.Error = root.Error or root.LogError
     isAttachedToRoot = true
 end
 
@@ -41,7 +62,12 @@ local function _fmt(fmt, ...)
         return ""
     end
 
-    return string.format(tostring(fmt), ...)
+    local ok, message = pcall(string.format, tostring(fmt), ...)
+    if ok then
+        return message
+    end
+
+    return tostring(fmt)
 end
 
 local function _print(level, msg)
@@ -56,6 +82,9 @@ end
 
 function Diagnostics.SetDebugEnabled(enabled)
     Diagnostics.debugEnabled = not not enabled
+    if type(Nvk3UT) == "table" then
+        Nvk3UT.debugEnabled = Diagnostics.debugEnabled
+    end
 end
 
 function Diagnostics.IsDebugEnabled()
@@ -69,28 +98,84 @@ function Diagnostics.SyncFromSavedVariables(sv)
 
     if sv.debugEnabled ~= nil then
         Diagnostics.debugEnabled = not not sv.debugEnabled
+        if type(Nvk3UT) == "table" then
+            Nvk3UT.debugEnabled = Diagnostics.debugEnabled
+        end
     end
 
     -- TODO: wire additional diagnostics verbosity flags once SavedVariables schema is finalized.
 end
 
-function Diagnostics.Debug(fmt, ...)
+local function logDebugMessage(message)
+    if LOG and LOG.Debug then
+        LOG:Debug(message)
+        return
+    end
+
+    _print("Nvk3UT DEBUG", message)
+end
+
+local function logInfoMessage(message)
+    if LOG and LOG.Info then
+        LOG:Info(message)
+        return
+    end
+
+    _print("Nvk3UT INFO", message)
+end
+
+local function logWarnMessage(message)
+    if LOG and LOG.Warn then
+        LOG:Warn(message)
+        return
+    end
+
+    _print("Nvk3UT WARN", message)
+end
+
+local function logErrorMessage(message)
+    if LOG and LOG.Error then
+        LOG:Error(message)
+        return
+    end
+
+    _print("Nvk3UT ERROR", message)
+end
+
+function Diagnostics.LogDebug(fmt, ...)
     if not Diagnostics.debugEnabled then
         return
     end
 
     ensureRoot()
-    _print("Nvk3UT DEBUG", _fmt(fmt, ...))
+    logDebugMessage(_fmt(fmt, ...))
+end
+
+function Diagnostics.LogInfo(fmt, ...)
+    ensureRoot()
+    logInfoMessage(_fmt(fmt, ...))
+end
+
+function Diagnostics.LogWarn(fmt, ...)
+    ensureRoot()
+    logWarnMessage(_fmt(fmt, ...))
+end
+
+function Diagnostics.LogError(fmt, ...)
+    ensureRoot()
+    logErrorMessage(_fmt(fmt, ...))
+end
+
+function Diagnostics.Debug(fmt, ...)
+    Diagnostics.LogDebug(fmt, ...)
 end
 
 function Diagnostics.Warn(fmt, ...)
-    ensureRoot()
-    _print("Nvk3UT WARN", _fmt(fmt, ...))
+    Diagnostics.LogWarn(fmt, ...)
 end
 
 function Diagnostics.Error(fmt, ...)
-    ensureRoot()
-    _print("Nvk3UT ERROR", _fmt(fmt, ...))
+    Diagnostics.LogError(fmt, ...)
 end
 
 function Diagnostics.SelfTest()
@@ -115,17 +200,25 @@ end
 -- Backward compatibility -------------------------------------------------------
 if type(Nvk3UT) == "table" then
     Nvk3UT.Diagnostics = Nvk3UT.Diagnostics or Diagnostics
+    Nvk3UT.LogDebug = Diagnostics.LogDebug
+    Nvk3UT.LogInfo = Diagnostics.LogInfo
+    Nvk3UT.LogWarn = Diagnostics.LogWarn
+    Nvk3UT.LogError = Diagnostics.LogError
+    Nvk3UT.Debug = Nvk3UT.LogDebug
+    Nvk3UT.Info = Nvk3UT.LogInfo
+    Nvk3UT.Warn = Nvk3UT.LogWarn
+    Nvk3UT.Error = Nvk3UT.LogError
 end
 
 if Debug == nil then
     function Debug(fmt, ...)
-        return Diagnostics.Debug(fmt, ...)
+        return Diagnostics.LogDebug(fmt, ...)
     end
 end
 
 if LogError == nil then
     function LogError(fmt, ...)
-        return Diagnostics.Error(fmt, ...)
+        return Diagnostics.LogError(fmt, ...)
     end
 end
 
