@@ -354,14 +354,33 @@ end
 
 local function applyHostBehaviorSettings(reason)
     local host = Nvk3UT and Nvk3UT.TrackerHost
-    if host and host.ApplyHostBehavior then
-        host.ApplyHostBehavior({ reason = reason or "lam" })
+    if host and type(host.ApplyHostBehavior) == "function" then
+        local safeCall = Nvk3UT and Nvk3UT.SafeCall
+        local payload = { reason = reason or "lam" }
+
+        if type(safeCall) == "function" then
+            safeCall(function()
+                host:ApplyHostBehavior(payload)
+            end)
+        else
+            host:ApplyHostBehavior(payload)
+        end
         return
     end
 
     local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
-    if runtime and runtime.SetHostPolicy then
-        runtime:SetHostPolicy({ hideInCombat = getHostSettings().hideInCombat == true }, reason or "lam")
+    if runtime and type(runtime.SetHostPolicy) == "function" then
+        local hideInCombat = getHostSettings().hideInCombat == true
+        local safeCall = Nvk3UT and Nvk3UT.SafeCall
+        local function applyPolicy()
+            runtime:SetHostPolicy({ hideInCombat = hideInCombat }, reason or "lam")
+        end
+
+        if type(safeCall) == "function" then
+            safeCall(applyPolicy)
+        else
+            applyPolicy()
+        end
     end
 end
 

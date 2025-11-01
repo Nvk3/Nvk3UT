@@ -24,7 +24,23 @@ Runtime._hostRef = Runtime._hostRef or setmetatable({}, WEAK_VALUE_MT)
 Runtime._questDirty = Runtime._questDirty == true
 Runtime._achievementDirty = Runtime._achievementDirty == true
 Runtime._layoutDirty = Runtime._layoutDirty == true
-Runtime._isInCombat = Runtime._isInCombat == true
+local function readCurrentCombatState()
+    if type(IsUnitInCombat) == "function" then
+        local ok, result = pcall(IsUnitInCombat, "player")
+        if ok then
+            return result == true
+        end
+    end
+
+    return false
+end
+
+local initialCombatState = Runtime._isInCombat
+if initialCombatState == nil then
+    initialCombatState = readCurrentCombatState()
+end
+
+Runtime._isInCombat = initialCombatState == true
 Runtime._combatChangedThisFrame = Runtime._combatChangedThisFrame == true
 Runtime._isInCursorMode = Runtime._isInCursorMode == true
 Runtime._scheduled = Runtime._scheduled == true

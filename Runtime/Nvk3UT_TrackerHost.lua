@@ -479,6 +479,32 @@ local function ensureHostBehaviorSettings()
     return hostSettings
 end
 
+local function evaluateRuntimeHostVisibility(reason)
+    local runtime = getRuntime()
+    if not runtime then
+        return false
+    end
+
+    local evaluate = runtime._EvaluateHostVisibility
+    if type(evaluate) == "function" then
+        safeCall(function()
+            evaluate(runtime, reason or "host")
+        end)
+        return true
+    end
+
+    local setCombatState = runtime.SetCombatState
+    local isInCombat = runtime.IsInCombat
+    if type(setCombatState) == "function" and type(isInCombat) == "function" then
+        safeCall(function()
+            setCombatState(runtime, isInCombat(runtime))
+        end)
+        return true
+    end
+
+    return false
+end
+
 local function syncRuntimeHostPolicy(reason)
     local hostSettings = ensureHostBehaviorSettings()
     local hideInCombat = hostSettings.hideInCombat == true
@@ -486,13 +512,17 @@ local function syncRuntimeHostPolicy(reason)
     state.hostPolicyHideInCombat = hideInCombat
 
     local runtime = getRuntime()
-    if runtime and type(runtime.SetHostPolicy) == "function" then
-        safeCall(function()
-            runtime:SetHostPolicy({ hideInCombat = hideInCombat }, reason or "host")
-        end)
+    if not runtime or type(runtime.SetHostPolicy) ~= "function" then
+        return hostSettings, false
     end
 
-    return hostSettings
+    local applied = false
+    safeCall(function()
+        runtime:SetHostPolicy({ hideInCombat = hideInCombat }, reason or "host")
+        applied = true
+    end)
+
+    return hostSettings, applied
 end
 
 local function ensureLayoutSettings()
@@ -815,6 +845,7 @@ ensureRuntimeInitialized = function()
         state.runtimeInitialized = true
         diagnosticsDebug("TrackerHost runtime initialized (root=%s)", tostring(state.root))
         syncRuntimeHostPolicy("runtime-init")
+        evaluateRuntimeHostVisibility("runtime-init")
     end
 end
 
@@ -2946,6 +2977,7 @@ function TrackerHost.ApplySettings()
     applyWindowSettings()
     applyFeatureSettings()
     syncRuntimeHostPolicy("apply-settings")
+    evaluateRuntimeHostVisibility("apply-settings")
 
     local sv = getSavedVars()
 
@@ -2963,6 +2995,7 @@ end
 function TrackerHost.ApplyHostBehavior(options)
     local reason = options and options.reason or "host"
     syncRuntimeHostPolicy(reason)
+    evaluateRuntimeHostVisibility(reason)
 
     if state.root then
         applyWindowVisibility()
