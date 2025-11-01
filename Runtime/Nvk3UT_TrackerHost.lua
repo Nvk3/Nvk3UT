@@ -145,6 +145,7 @@ local state = {
     updatingSceneVisibility = false,
     sceneVisibilityScheduled = false,
     sceneShownRefreshPending = false,
+    questSectionInitialized = false,
 }
 
 local lamPreview = {
@@ -2095,11 +2096,7 @@ local function initTrackers(debugEnabled)
         return
     end
 
-    local questOpts = cloneTable(sv.QuestTracker or {})
-    questOpts.debug = debugEnabled
-    if Nvk3UT.QuestTracker and Nvk3UT.QuestTracker.Init and state.questContainer then
-        pcall(Nvk3UT.QuestTracker.Init, state.questContainer, questOpts)
-    end
+    TrackerHost.InitQuestSection()
 
     local achievementOpts = cloneTable(sv.AchievementTracker or {})
     achievementOpts.debug = debugEnabled
@@ -2135,6 +2132,7 @@ function TrackerHost.Init()
         return
     end
     createContainers()
+    TrackerHost.InitQuestSection()
     applyWindowSettings()
 
     -- === TEMP BOOTSTRAP: Scene Visibility ===
@@ -2413,6 +2411,63 @@ function TrackerHost.GetRoot()
     return state.root
 end
 
+function TrackerHost.GetQuestContainer()
+    if state.questContainer then
+        return state.questContainer
+    end
+
+    if not state.initialized and not state.initializing then
+        TrackerHost.Init()
+    end
+
+    if state.questContainer then
+        return state.questContainer
+    end
+
+    if not ensureRoot or not ensureRoot() then
+        return nil
+    end
+
+    if createContainers then
+        createContainers()
+    end
+
+    return state.questContainer
+end
+
+function TrackerHost.InitQuestSection()
+    if state.questSectionInitialized then
+        return
+    end
+
+    local container = TrackerHost.GetQuestContainer()
+    if not container then
+        return
+    end
+
+    local questTracker = Nvk3UT and Nvk3UT.QuestTracker
+    if not (questTracker and type(questTracker.Init) == "function") then
+        return
+    end
+
+    local sv = getSavedVars()
+    local questOpts = cloneTable((sv and sv.QuestTracker) or {}) or {}
+    questOpts.debug = (sv and sv.debug) == true
+
+    safeCall(function()
+        questTracker:Init(container, questOpts)
+    end)
+
+    state.questSectionInitialized = true
+
+    debugLog("QuestTracker.Init bound to Host container")
+
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and runtime.QueueDirty then
+        runtime:QueueDirty("layout")
+    end
+end
+
 function TrackerHost.GetSectionContainer(kind)
     if type(kind) ~= "string" or kind == "" then
         return nil
@@ -2647,6 +2702,7 @@ function TrackerHost.Shutdown()
     end
     state.questContainer = nil
     Nvk3UT.UI.QuestContainer = nil
+    state.questSectionInitialized = false
 
     if state.footerBar then
         state.footerBar:SetHidden(true)
