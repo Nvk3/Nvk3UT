@@ -1232,6 +1232,100 @@ function TrackerHost.GetScrollContainer()
     return state.scrollContainer
 end
 
+function TrackerHost.GetScrollbar()
+    return state.scrollbar
+end
+
+function TrackerHost.GetScrollbarWidth()
+    local scrollbar = state.scrollbar
+    if scrollbar and scrollbar.GetWidth then
+        local ok, width = pcall(scrollbar.GetWidth, scrollbar)
+        if ok then
+            width = tonumber(width)
+            if width then
+                return width
+            end
+        end
+    end
+
+    return SCROLLBAR_WIDTH
+end
+
+function TrackerHost.SetScrollbarHidden(hidden)
+    local scrollbar = state.scrollbar
+    if not (scrollbar and scrollbar.SetHidden) then
+        return false
+    end
+
+    local current = scrollbar.IsHidden and scrollbar:IsHidden()
+    if current == hidden then
+        return false
+    end
+
+    scrollbar:SetHidden(hidden)
+    return true
+end
+
+function TrackerHost.UpdateScrollbarRange(minValue, maxValue)
+    minValue = tonumber(minValue) or 0
+    maxValue = tonumber(maxValue) or 0
+
+    local scrollbar = state.scrollbar
+    state.scrollMaxOffset = math.max(0, maxValue)
+
+    if not (scrollbar and scrollbar.SetMinMax) then
+        return false
+    end
+
+    state.updatingScrollbar = true
+    local ok, err = pcall(scrollbar.SetMinMax, scrollbar, minValue, maxValue)
+    state.updatingScrollbar = false
+
+    if not ok then
+        debugLog("Failed to update scroll range", err)
+        return false
+    end
+
+    return true
+end
+
+function TrackerHost.GetScrollOvershootPadding()
+    return SCROLL_OVERSHOOT_PADDING
+end
+
+function TrackerHost.GetScrollContentRightOffset()
+    return state.scrollContentRightOffset or 0
+end
+
+function TrackerHost.SetScrollContentRightOffset(offset)
+    offset = tonumber(offset) or 0
+
+    local current = state.scrollContentRightOffset or 0
+    if not numbersDiffer(current, offset, 0.01) then
+        return false
+    end
+
+    state.scrollContentRightOffset = offset
+    applyViewportPadding()
+    return true
+end
+
+function TrackerHost.SetScrollMaxOffset(maxOffset)
+    state.scrollMaxOffset = math.max(0, tonumber(maxOffset) or 0)
+end
+
+function TrackerHost.GetScrollState()
+    return {
+        actual = state.scrollOffset or 0,
+        desired = state.desiredScrollOffset,
+        maxOffset = state.scrollMaxOffset or 0,
+    }
+end
+
+function TrackerHost.SetScrollOffset(offset, skipScrollbarUpdate)
+    return setScrollOffset(offset, skipScrollbarUpdate)
+end
+
 function TrackerHost.ReportSectionMissing(sectionId)
     if sectionId == "quest" then
         if not state.anchorWarnings.questMissing then
@@ -1639,6 +1733,7 @@ refreshScroll = function(targetOffset)
             previousActual = 0
         end
     end
+
     local previousDesired = targetOffset
     if previousDesired == nil then
         previousDesired = state.desiredScrollOffset or previousActual or 0
@@ -1664,32 +1759,49 @@ refreshScroll = function(targetOffset)
         state.achievementContainer:SetHeight(achievementHeight)
     end
 
-    local headerBar = state.headerBar
-    local footerBar = state.footerBar
-
     local layoutModule = Nvk3UT and Nvk3UT.TrackerHostLayout
-    local bars = state.windowBars or ensureWindowBarSettings()
+    local canUseLayoutModule = layoutModule
+        and type(layoutModule.UpdateHeaderFooterSizes) == "function"
+        and type(layoutModule.UpdateScrollAreaHeight) == "function"
+        and type(layoutModule.ApplyLayout) == "function"
 
-    local headerTargetHeight = math.max(0, tonumber(bars and bars.headerHeightPx) or 0)
-    local footerTargetHeight = math.max(0, tonumber(bars and bars.footerHeightPx) or 0)
-    local headerHeight = headerTargetHeight
-    local footerHeight = footerTargetHeight
-    local headerVisible = headerTargetHeight > 0
-    local footerVisible = footerTargetHeight > 0
-    local topPadding = 0
-    local bottomPadding = 0
-
-    if layoutModule and type(layoutModule.UpdateHeaderFooterSizes) == "function" then
+    if canUseLayoutModule then
         local sizes = layoutModule.UpdateHeaderFooterSizes(TrackerHost)
-        headerTargetHeight = math.max(0, tonumber(sizes.headerTargetHeight or sizes.headerHeight) or headerTargetHeight)
-        footerTargetHeight = math.max(0, tonumber(sizes.footerTargetHeight or sizes.footerHeight) or footerTargetHeight)
-        headerHeight = math.max(0, tonumber(sizes.headerHeight) or headerTargetHeight)
-        footerHeight = math.max(0, tonumber(sizes.footerHeight) or footerTargetHeight)
-        headerVisible = sizes.headerVisible ~= false and headerTargetHeight > 0
-        footerVisible = sizes.footerVisible ~= false and footerTargetHeight > 0
-        topPadding = math.max(0, tonumber(sizes.contentTopPadding) or 0)
-        bottomPadding = math.max(0, tonumber(sizes.contentBottomPadding) or 0)
+
+        local topPadding = math.max(0, tonumber(sizes.contentTopPadding) or 0)
+        local bottomPadding = math.max(0, tonumber(sizes.contentBottomPadding) or 0)
+
+        local contentStackHeight = topPadding
+        if questVisible then
+            contentStackHeight = contentStackHeight + questHeight
+        end
+        if achievementVisible then
+            if questVisible then
+                contentStackHeight = contentStackHeight + TrackerHost.GetSectionGap()
+            end
+            contentStackHeight = contentStackHeight + achievementHeight
+        end
+        contentStackHeight = contentStackHeight + bottomPadding
+        contentStackHeight = math.max(0, contentStackHeight)
+
+        local contentStack = state.contentStack
+        if contentStack and contentStack.SetHeight then
+            contentStack:SetHeight(contentStackHeight)
+        end
+
+        layoutModule.ApplyLayout(TrackerHost, sizes)
     else
+        local headerBar = state.headerBar
+        local footerBar = state.footerBar
+        local bars = state.windowBars or ensureWindowBarSettings()
+
+        local headerTargetHeight = math.max(0, tonumber(bars and bars.headerHeightPx) or 0)
+        local footerTargetHeight = math.max(0, tonumber(bars and bars.footerHeightPx) or 0)
+        local headerVisible = headerTargetHeight > 0
+        local footerVisible = footerTargetHeight > 0
+        local headerHeight = headerTargetHeight
+        local footerHeight = footerTargetHeight
+
         if headerBar and headerBar.GetHeight then
             local measured = tonumber(headerBar:GetHeight())
             if measured then
@@ -1702,119 +1814,114 @@ refreshScroll = function(targetOffset)
                 footerHeight = math.max(0, measured)
             end
         end
+
+        if headerBar then
+            if headerBar.SetHeight then
+                local currentHeight = headerBar.GetHeight and headerBar:GetHeight() or headerTargetHeight
+                if numbersDiffer(currentHeight, headerTargetHeight) then
+                    headerBar:SetHeight(headerTargetHeight)
+                end
+            end
+            if headerBar.SetHidden then
+                local shouldHide = not headerVisible
+                local currentHidden = headerBar.IsHidden and headerBar:IsHidden()
+                if currentHidden ~= shouldHide then
+                    headerBar:SetHidden(shouldHide)
+                end
+            end
+            headerBar:SetMouseEnabled(headerVisible)
+        end
+
+        if footerBar then
+            if footerBar.SetHeight then
+                local currentHeight = footerBar.GetHeight and footerBar:GetHeight() or footerTargetHeight
+                if numbersDiffer(currentHeight, footerTargetHeight) then
+                    footerBar:SetHeight(footerTargetHeight)
+                end
+            end
+            if footerBar.SetHidden then
+                local shouldHide = not footerVisible
+                local currentHidden = footerBar.IsHidden and footerBar:IsHidden()
+                if currentHidden ~= shouldHide then
+                    footerBar:SetHidden(shouldHide)
+                end
+            end
+            footerBar:SetMouseEnabled(footerVisible)
+        end
+
         if not headerVisible then
             headerHeight = 0
+        else
+            headerHeight = headerTargetHeight
         end
+
         if not footerVisible then
             footerHeight = 0
+        else
+            footerHeight = footerTargetHeight
         end
-    end
 
-    if headerBar then
-        if headerBar.SetHeight then
-            local currentHeight = headerBar.GetHeight and headerBar:GetHeight() or headerTargetHeight
-            if numbersDiffer(currentHeight, headerTargetHeight) then
-                headerBar:SetHeight(headerTargetHeight)
-            end
-        end
-        if headerBar.SetHidden then
-            local shouldHide = not headerVisible
-            local currentHidden = headerBar.IsHidden and headerBar:IsHidden()
-            if currentHidden ~= shouldHide then
-                headerBar:SetHidden(shouldHide)
-            end
-        end
-        headerBar:SetMouseEnabled(headerVisible)
-    end
+        local topPadding = 0
+        local bottomPadding = 0
 
-    if footerBar then
-        if footerBar.SetHeight then
-            local currentHeight = footerBar.GetHeight and footerBar:GetHeight() or footerTargetHeight
-            if numbersDiffer(currentHeight, footerTargetHeight) then
-                footerBar:SetHeight(footerTargetHeight)
-            end
-        end
-        if footerBar.SetHidden then
-            local shouldHide = not footerVisible
-            local currentHidden = footerBar.IsHidden and footerBar:IsHidden()
-            if currentHidden ~= shouldHide then
-                footerBar:SetHidden(shouldHide)
-            end
-        end
-        footerBar:SetMouseEnabled(footerVisible)
-    end
-
-    if not headerVisible then
-        headerHeight = 0
-    else
-        headerHeight = headerTargetHeight
-    end
-
-    if not footerVisible then
-        footerHeight = 0
-    else
-        footerHeight = footerTargetHeight
-    end
-
-    local contentStackHeight = topPadding
-    if questVisible then
-        contentStackHeight = contentStackHeight + questHeight
-    end
-    if achievementVisible then
+        local contentStackHeight = topPadding
         if questVisible then
-            contentStackHeight = contentStackHeight + TrackerHost.GetSectionGap()
+            contentStackHeight = contentStackHeight + questHeight
         end
-        contentStackHeight = contentStackHeight + achievementHeight
-    end
-    contentStackHeight = contentStackHeight + bottomPadding
-    contentStackHeight = math.max(0, contentStackHeight)
-
-    if state.contentStack and state.contentStack.SetHeight then
-        state.contentStack:SetHeight(contentStackHeight)
-    end
-
-    local contentHeight = headerHeight + contentStackHeight + footerHeight
-    contentHeight = math.max(0, contentHeight)
-
-    if scrollContent.SetResizeToFitDescendents then
-        scrollContent:SetResizeToFitDescendents(false)
-    end
-    if scrollContent.SetHeight then
-        scrollContent:SetHeight(contentHeight)
-    end
-
-    local viewportHeight = scrollContainer.GetHeight and scrollContainer:GetHeight() or 0
-    local overshootPadding = 0
-    if viewportHeight > 0 and contentHeight > viewportHeight then
-        overshootPadding = SCROLL_OVERSHOOT_PADDING
-    end
-
-    local maxOffset = math.max(contentHeight - viewportHeight + overshootPadding, 0)
-    local showScrollbar = maxOffset > 0.5
-
-    local scrollbarWidth = (scrollbar.GetWidth and scrollbar:GetWidth()) or SCROLLBAR_WIDTH
-    local desiredRightOffset = showScrollbar and -scrollbarWidth or 0
-
-    local setMinMax = scrollbar.SetMinMax
-    if setMinMax then
-        state.updatingScrollbar = true
-        local ok, err = pcall(setMinMax, scrollbar, 0, maxOffset)
-        state.updatingScrollbar = false
-        if not ok then
-            debugLog("Failed to update scroll range", err)
+        if achievementVisible then
+            if questVisible then
+                contentStackHeight = contentStackHeight + TrackerHost.GetSectionGap()
+            end
+            contentStackHeight = contentStackHeight + achievementHeight
         end
-    end
+        contentStackHeight = contentStackHeight + bottomPadding
+        contentStackHeight = math.max(0, contentStackHeight)
 
-    local setHidden = scrollbar.SetHidden
-    if setHidden then
-        setHidden(scrollbar, not showScrollbar)
-    end
+        if state.contentStack and state.contentStack.SetHeight then
+            state.contentStack:SetHeight(contentStackHeight)
+        end
 
-    state.scrollMaxOffset = maxOffset
+        local contentHeight = headerHeight + contentStackHeight + footerHeight
+        contentHeight = math.max(0, contentHeight)
 
-    if state.scrollContentRightOffset ~= desiredRightOffset then
-        state.scrollContentRightOffset = desiredRightOffset
-        applyViewportPadding()
+        if scrollContent.SetResizeToFitDescendents then
+            scrollContent:SetResizeToFitDescendents(false)
+        end
+        if scrollContent.SetHeight then
+            scrollContent:SetHeight(contentHeight)
+        end
+
+        local viewportHeight = scrollContainer.GetHeight and scrollContainer:GetHeight() or 0
+        local overshootPadding = 0
+        if viewportHeight > 0 and contentHeight > viewportHeight then
+            overshootPadding = SCROLL_OVERSHOOT_PADDING
+        end
+
+        local maxOffset = math.max(contentHeight - viewportHeight + overshootPadding, 0)
+        local showScrollbar = maxOffset > 0.5
+
+        local scrollbarWidth = (scrollbar.GetWidth and scrollbar:GetWidth()) or SCROLLBAR_WIDTH
+        local desiredRightOffset = showScrollbar and -scrollbarWidth or 0
+
+        if scrollbar.SetMinMax then
+            state.updatingScrollbar = true
+            local ok, err = pcall(scrollbar.SetMinMax, scrollbar, 0, maxOffset)
+            state.updatingScrollbar = false
+            if not ok then
+                debugLog("Failed to update scroll range", err)
+            end
+        end
+
+        if scrollbar.SetHidden then
+            scrollbar:SetHidden(not showScrollbar)
+        end
+
+        state.scrollMaxOffset = maxOffset
+
+        if numbersDiffer(state.scrollContentRightOffset or 0, desiredRightOffset, 0.01) then
+            state.scrollContentRightOffset = desiredRightOffset
+            applyViewportPadding()
+        end
     end
 
     local desiredOffset = math.max(0, previousDesired or 0)

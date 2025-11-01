@@ -112,6 +112,136 @@ local function getScrollContent(host)
     return nil
 end
 
+local function getScrollContainer(host)
+    if host and type(host.GetScrollContainer) == "function" then
+        return host.GetScrollContainer()
+    end
+
+    return nil
+end
+
+local function getScrollbar(host)
+    if host and type(host.GetScrollbar) == "function" then
+        return host.GetScrollbar()
+    end
+
+    return nil
+end
+
+local function getScrollbarWidth(host)
+    if host and type(host.GetScrollbarWidth) == "function" then
+        local width = host.GetScrollbarWidth()
+        if width ~= nil then
+            width = tonumber(width)
+            if width then
+                return width
+            end
+        end
+    end
+
+    local scrollbar = getScrollbar(host)
+    if scrollbar and type(scrollbar.GetWidth) == "function" then
+        local ok, measured = pcall(scrollbar.GetWidth, scrollbar)
+        if ok then
+            measured = tonumber(measured)
+            if measured then
+                return measured
+            end
+        end
+    end
+
+    return 0
+end
+
+local function getScrollOvershootPadding(host)
+    if host and type(host.GetScrollOvershootPadding) == "function" then
+        local padding = host.GetScrollOvershootPadding()
+        padding = tonumber(padding)
+        if padding then
+            if padding < 0 then
+                padding = 0
+            end
+            return padding
+        end
+    end
+
+    return 0
+end
+
+local function getScrollContentRightOffset(host)
+    if host and type(host.GetScrollContentRightOffset) == "function" then
+        local offset = host.GetScrollContentRightOffset()
+        offset = tonumber(offset)
+        if offset then
+            return offset
+        end
+    end
+
+    return 0
+end
+
+local function setScrollContentRightOffset(host, offset)
+    if host and type(host.SetScrollContentRightOffset) == "function" then
+        host.SetScrollContentRightOffset(offset)
+    end
+end
+
+local function updateScrollbarRange(host, minimum, maximum)
+    if host and type(host.UpdateScrollbarRange) == "function" then
+        host.UpdateScrollbarRange(minimum, maximum)
+        return
+    end
+
+    local scrollbar = getScrollbar(host)
+    if not (scrollbar and type(scrollbar.SetMinMax) == "function") then
+        return
+    end
+
+    pcall(scrollbar.SetMinMax, scrollbar, minimum or 0, maximum or 0)
+end
+
+local function setScrollbarHidden(host, hidden)
+    if host and type(host.SetScrollbarHidden) == "function" then
+        host.SetScrollbarHidden(hidden)
+        return
+    end
+
+    local scrollbar = getScrollbar(host)
+    if scrollbar and type(scrollbar.SetHidden) == "function" then
+        scrollbar:SetHidden(hidden)
+    end
+end
+
+local function setScrollMaxOffset(host, maxOffset)
+    if host and type(host.SetScrollMaxOffset) == "function" then
+        host.SetScrollMaxOffset(maxOffset)
+    end
+end
+
+local function getScrollState(host)
+    if host and type(host.GetScrollState) == "function" then
+        local state = host.GetScrollState()
+        if type(state) == "table" then
+            return state
+        end
+    end
+
+    local actual = 0
+    local desired
+
+    if host and type(host.GetScrollOffset) == "function" then
+        actual = tonumber(host.GetScrollOffset()) or 0
+    end
+
+    return { actual = actual, desired = desired }
+end
+
+local function setScrollOffset(host, offset, skipScrollbarUpdate)
+    if host and type(host.SetScrollOffset) == "function" then
+        host.SetScrollOffset(offset, skipScrollbarUpdate)
+    end
+end
+
 local function isControlHidden(control)
     if not control then
         return true
@@ -305,6 +435,7 @@ local function copyTable(source)
 end
 
 Layout._lastSizes = Layout._lastSizes or nil
+Layout._lastScrollMetrics = Layout._lastScrollMetrics or setmetatable({}, { __mode = "k" })
 
 function Layout.UpdateHeaderFooterSizes(host)
     host = getHost(host)
@@ -455,13 +586,137 @@ function Layout.UpdateHeaderFooterSizes(host)
     return result
 end
 
-function Layout.ApplyLayout(host)
+function Layout.UpdateScrollAreaHeight(host, contentHeight, sizes)
     host = getHost(host)
     if not host then
         return 0
     end
 
-    local sizes = Layout.UpdateHeaderFooterSizes(host)
+    if type(sizes) ~= "table" then
+        sizes = Layout.UpdateHeaderFooterSizes(host)
+    end
+
+    local scrollContainer = getScrollContainer(host)
+    local scrollContent = getScrollContent(host)
+    if not (scrollContainer and scrollContent) then
+        return 0
+    end
+
+    local metrics = Layout._lastScrollMetrics
+    local last = metrics[host]
+    if not last then
+        last = {}
+        metrics[host] = last
+    end
+
+    local stackHeight = sanitizeLength(contentHeight)
+    if stackHeight < 0 then
+        stackHeight = 0
+    end
+
+    local headerHeight = 0
+    if sizes and sizes.headerVisible ~= false then
+        headerHeight = sanitizeLength(sizes.headerTargetHeight or sizes.headerHeight)
+    end
+
+    local footerHeight = 0
+    if sizes and sizes.footerVisible ~= false then
+        footerHeight = sanitizeLength(sizes.footerTargetHeight or sizes.footerHeight)
+    end
+
+    local scrollChildHeight = headerHeight + stackHeight + footerHeight
+    if scrollChildHeight < 0 then
+        scrollChildHeight = 0
+    end
+
+    if type(scrollContent.SetResizeToFitDescendents) == "function" then
+        scrollContent:SetResizeToFitDescendents(false)
+    end
+
+    if type(scrollContent.SetHeight) == "function" then
+        if not last.scrollChildHeight or numbersDiffer(last.scrollChildHeight, scrollChildHeight) then
+            scrollContent:SetHeight(scrollChildHeight)
+            last.scrollChildHeight = scrollChildHeight
+        end
+    else
+        last.scrollChildHeight = scrollChildHeight
+    end
+
+    local topY = sizes and sanitizeLength(sizes.contentTopY) or 0
+    local bottomY = sizes and tonumber(sizes.contentBottomY)
+    local viewportHeight
+
+    if bottomY and bottomY ~= math.huge then
+        viewportHeight = bottomY - topY
+    end
+
+    if not viewportHeight or viewportHeight <= 0 then
+        if type(scrollContainer.GetHeight) == "function" then
+            local ok, height = pcall(scrollContainer.GetHeight, scrollContainer)
+            if ok then
+                viewportHeight = sanitizeLength(height)
+            end
+        end
+    end
+
+    viewportHeight = sanitizeLength(viewportHeight or 0)
+    if viewportHeight < 0 then
+        viewportHeight = 0
+    end
+
+    last.viewportHeight = viewportHeight
+
+    local overshoot = getScrollOvershootPadding(host)
+    local maxOffset = math.max(scrollChildHeight - viewportHeight + overshoot, 0)
+
+    if not last.maxOffset or numbersDiffer(last.maxOffset, maxOffset) then
+        setScrollMaxOffset(host, maxOffset)
+        updateScrollbarRange(host, 0, maxOffset)
+        last.maxOffset = maxOffset
+    else
+        setScrollMaxOffset(host, maxOffset)
+    end
+
+    local showScrollbar = maxOffset > 0.5
+    local desiredRightOffset = 0
+
+    if showScrollbar then
+        local width = getScrollbarWidth(host)
+        width = sanitizeLength(width)
+        desiredRightOffset = -width
+    end
+
+    if not last.scrollbarHidden or last.scrollbarHidden ~= (not showScrollbar) then
+        setScrollbarHidden(host, not showScrollbar)
+        last.scrollbarHidden = not showScrollbar
+    end
+
+    local previousRightOffset = getScrollContentRightOffset(host)
+    if numbersDiffer(previousRightOffset, desiredRightOffset) then
+        setScrollContentRightOffset(host, desiredRightOffset)
+        last.rightOffset = desiredRightOffset
+    else
+        last.rightOffset = previousRightOffset
+    end
+
+    local state = getScrollState(host)
+    local actual = state and tonumber(state.actual) or 0
+    if actual > maxOffset then
+        setScrollOffset(host, maxOffset, true)
+    end
+
+    return viewportHeight
+end
+
+function Layout.ApplyLayout(host, sizes)
+    host = getHost(host)
+    if not host then
+        return 0
+    end
+
+    if type(sizes) ~= "table" then
+        sizes = Layout.UpdateHeaderFooterSizes(host)
+    end
 
     local order = getSectionOrder(host)
     local firstSection = order[1]
@@ -551,6 +806,8 @@ function Layout.ApplyLayout(host)
     if totalHeight < 0 then
         totalHeight = 0
     end
+
+    Layout.UpdateScrollAreaHeight(host, totalHeight, sizes)
 
     return totalHeight
 end
