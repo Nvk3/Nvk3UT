@@ -3,6 +3,8 @@ Nvk3UT = Nvk3UT or {}
 local Journal = {}
 Nvk3UT.AchievementsJournal = Journal
 
+local Diagnostics = Nvk3UT and Nvk3UT.Diagnostics
+
 local Utils = Nvk3UT and Nvk3UT.Utils
 
 local FavoritesCategory = Nvk3UT and Nvk3UT.FavoritesCategory
@@ -23,6 +25,28 @@ local state = {
     todoSummary = nil,
     todo = nil,
 }
+
+local function logShim(action)
+    if Diagnostics and Diagnostics.Debug then
+        Diagnostics.Debug("Journal SHIM -> %s", tostring(action))
+    end
+end
+
+local function safeCall(func, ...)
+    local SafeCall = Nvk3UT and Nvk3UT.SafeCall
+    if type(SafeCall) == "function" then
+        return SafeCall(func, ...)
+    end
+
+    if type(func) ~= "function" then
+        return nil
+    end
+
+    local ok, result = pcall(func, ...)
+    if ok then
+        return result
+    end
+end
 
 local function isDebugEnabled()
     return Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug and Utils and Utils.d
@@ -254,6 +278,32 @@ function Journal.IsComplete(achievementId)
     end
 
     return resolved == true
+end
+
+local Shim = {}
+Nvk3UT.Achievements = Shim
+
+function Shim.Init(...)
+    logShim("Init")
+    if type(Journal.Init) ~= "function" then
+        return nil
+    end
+    return safeCall(Journal.Init, Journal, ...)
+end
+
+function Shim.Refresh(...)
+    logShim("Refresh")
+    if type(Journal.Refresh) ~= "function" then
+        return nil
+    end
+    return safeCall(Journal.Refresh, Journal, ...)
+end
+
+function Shim.IsComplete(...)
+    if type(Journal.IsComplete) ~= "function" then
+        return false
+    end
+    return safeCall(Journal.IsComplete, ...)
 end
 
 return Journal
