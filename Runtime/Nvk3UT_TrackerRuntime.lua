@@ -7,6 +7,16 @@ local Addon = Nvk3UT
 Addon.TrackerRuntime = Addon.TrackerRuntime or {}
 local Runtime = Addon.TrackerRuntime
 
+local DIRTY_KEY_QUEST = "quest"
+local DIRTY_KEY_ACHIEVEMENT = "achievement"
+local DIRTY_KEY_HOST_LAYOUT = "hostLayout"
+
+local VALID_DIRTY_KEYS = {
+    [DIRTY_KEY_QUEST] = true,
+    [DIRTY_KEY_ACHIEVEMENT] = true,
+    [DIRTY_KEY_HOST_LAYOUT] = true,
+}
+
 local WEAK_VALUE_MT = { __mode = "v" }
 local unpack = unpack or table.unpack
 
@@ -19,11 +29,66 @@ Runtime._isInCursorMode = Runtime._isInCursorMode == true
 Runtime._scheduled = Runtime._scheduled == true
 Runtime._scheduledCallId = Runtime._scheduledCallId or nil
 Runtime._initialized = Runtime._initialized == true
+Runtime._dirtySet = type(Runtime._dirtySet) == "table" and Runtime._dirtySet or {}
+Runtime._dirtyQueue = type(Runtime._dirtyQueue) == "table" and Runtime._dirtyQueue or {}
 
 local function debug(fmt, ...)
     if Addon and type(Addon.Debug) == "function" then
         Addon.Debug(fmt, ...)
     end
+end
+
+local function ensureDirtyState()
+    local dirtySet = Runtime._dirtySet
+    if type(dirtySet) ~= "table" then
+        dirtySet = {}
+        Runtime._dirtySet = dirtySet
+    end
+
+    local dirtyQueue = Runtime._dirtyQueue
+    if type(dirtyQueue) ~= "table" then
+        dirtyQueue = {}
+        Runtime._dirtyQueue = dirtyQueue
+    end
+
+    return dirtySet, dirtyQueue
+end
+
+local function setLegacyFlag(key, value)
+    local normalized = value == true
+    if key == DIRTY_KEY_QUEST then
+        Runtime._questDirty = normalized
+    elseif key == DIRTY_KEY_ACHIEVEMENT then
+        Runtime._achievementDirty = normalized
+    elseif key == DIRTY_KEY_HOST_LAYOUT then
+        Runtime._layoutDirty = normalized
+    end
+end
+
+local function bootstrapLegacyFlags()
+    local dirtySet, dirtyQueue = ensureDirtyState()
+
+    if Runtime._questDirty and not dirtySet[DIRTY_KEY_QUEST] then
+        dirtySet[DIRTY_KEY_QUEST] = true
+        dirtyQueue[#dirtyQueue + 1] = DIRTY_KEY_QUEST
+    end
+
+    if Runtime._achievementDirty and not dirtySet[DIRTY_KEY_ACHIEVEMENT] then
+        dirtySet[DIRTY_KEY_ACHIEVEMENT] = true
+        dirtyQueue[#dirtyQueue + 1] = DIRTY_KEY_ACHIEVEMENT
+    end
+
+    if Runtime._layoutDirty and not dirtySet[DIRTY_KEY_HOST_LAYOUT] then
+        dirtySet[DIRTY_KEY_HOST_LAYOUT] = true
+        dirtyQueue[#dirtyQueue + 1] = DIRTY_KEY_HOST_LAYOUT
+    end
+end
+
+local function hasPendingDirty()
+    bootstrapLegacyFlags()
+
+    local dirtyQueue = Runtime._dirtyQueue
+    return type(dirtyQueue) == "table" and #dirtyQueue > 0
 end
 
 local function safeCall(fn, ...)
@@ -200,14 +265,17 @@ local function applyTrackerHostLayout()
     return callWithOptionalSelf(layout, apply, true)
 end
 
-local function hasDirtyFlags()
-    return Runtime._questDirty or Runtime._achievementDirty or Runtime._layoutDirty
-end
-
 local function clearDirtyFlags()
     Runtime._questDirty = false
     Runtime._achievementDirty = false
     Runtime._layoutDirty = false
+end
+
+local function clearDirtyState()
+    clearDirtyFlags()
+
+    Runtime._dirtySet = {}
+    Runtime._dirtyQueue = {}
 end
 
 local function executeProcessing()
@@ -224,7 +292,7 @@ local function scheduleProcessing()
         return
     end
 
-    if not hasDirtyFlags() then
+    if not hasPendingDirty() then
         return
     end
 
@@ -244,58 +312,76 @@ function Runtime:Init(hostWindow)
     debug("TrackerRuntime.Init(%s)", tostring(hostWindow))
 end
 
-function Runtime:QueueDirty(kind)
-    if kind == "quest" then
-        self._questDirty = true
-    elseif kind == "achievement" then
-        self._achievementDirty = true
-    elseif kind == "layout" then
-        self._layoutDirty = true
-    else
+function Runtime:QueueDirty(kind, reason)
+    if kind == "layout" then
+        kind = DIRTY_KEY_HOST_LAYOUT
+    end
+
+    if not VALID_DIRTY_KEYS[kind] then
         debug("TrackerRuntime.QueueDirty ignored unknown kind '%s'", tostring(kind))
         return
     end
+
+    local dirtySet, dirtyQueue = ensureDirtyState()
+
+    if not dirtySet[kind] then
+        dirtySet[kind] = true
+        dirtyQueue[#dirtyQueue + 1] = kind
+    end
+
+    setLegacyFlag(kind, true)
 
     scheduleProcessing()
 end
 
 function Runtime:ProcessFrame()
-    if not hasDirtyFlags() then
+    bootstrapLegacyFlags()
+
+    local dirtyQueue = self._dirtyQueue
+    if type(dirtyQueue) ~= "table" or #dirtyQueue == 0 then
         return
     end
 
-    debug("TrackerRuntime.ProcessFrame begin")
+    local dirtyKeys = {}
+    for index = 1, #dirtyQueue do
+        dirtyKeys[index] = dirtyQueue[index]
+    end
 
-    local questDirty = self._questDirty
-    local achievementDirty = self._achievementDirty
-    local layoutDirty = self._layoutDirty
+    local dirtySet = self._dirtySet
+    local questDirty = dirtySet and dirtySet[DIRTY_KEY_QUEST] == true
+    local achievementDirty = dirtySet and dirtySet[DIRTY_KEY_ACHIEVEMENT] == true
+    local hostLayoutDirty = dirtySet and dirtySet[DIRTY_KEY_HOST_LAYOUT] == true
 
-    clearDirtyFlags()
+    clearDirtyState()
+
+    if #dirtyKeys > 0 then
+        local formatted = {}
+        for index = 1, #dirtyKeys do
+            formatted[index] = string.format("'%s'", tostring(dirtyKeys[index]))
+        end
+
+        debug("Runtime: batched dirty=[%s] (n=%d)", table.concat(formatted, ","), #dirtyKeys)
+    end
 
     local refreshed = false
 
     if questDirty then
-        debug("TrackerRuntime processing quest dirty")
         local built = buildQuestViewModel()
         local refreshedQuest = refreshQuestTracker()
         refreshed = refreshed or refreshedQuest or built
     end
 
     if achievementDirty then
-        debug("TrackerRuntime processing achievement dirty")
         local built = buildAchievementViewModel()
         local refreshedAchievement = refreshAchievementTracker()
         refreshed = refreshed or refreshedAchievement or built
     end
 
-    if refreshed or layoutDirty then
-        debug("TrackerRuntime applying layout (refreshed=%s, layoutDirty=%s)", tostring(refreshed), tostring(layoutDirty))
+    if refreshed or hostLayoutDirty then
         applyTrackerHostLayout()
     end
 
-    debug("TrackerRuntime.ProcessFrame end")
-
-    if hasDirtyFlags() then
+    if hasPendingDirty() then
         scheduleProcessing()
     end
 end
@@ -307,8 +393,7 @@ function Runtime:SetCombatState(isInCombat)
     end
 
     self._isInCombat = normalized
-    self._layoutDirty = true
-    scheduleProcessing()
+    self:QueueDirty(DIRTY_KEY_HOST_LAYOUT, "combat-state")
 end
 
 function Runtime:SetCursorMode(isInCursorMode)
@@ -318,8 +403,7 @@ function Runtime:SetCursorMode(isInCursorMode)
     end
 
     self._isInCursorMode = normalized
-    self._layoutDirty = true
-    scheduleProcessing()
+    self:QueueDirty(DIRTY_KEY_HOST_LAYOUT, "cursor-mode")
 end
 
 return Runtime

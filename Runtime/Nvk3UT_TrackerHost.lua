@@ -749,7 +749,7 @@ local function callRuntime(methodName, ...)
 end
 
 queueRuntimeLayout = function()
-    callRuntime("QueueDirty", "layout")
+    callRuntime("QueueDirty", "hostLayout")
 end
 
 local BOOTSTRAP_NAMESPACE = addonName .. "_TrackerHostBootstrap"
