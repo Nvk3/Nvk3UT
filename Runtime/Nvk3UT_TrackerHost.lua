@@ -850,45 +850,70 @@ local function updateCombatState(inCombat)
 end
 
 -- TEMP_BOOTSTRAP: Scene/HUD/Cursor/Combat forwarding only; no visibility toggles. Remove in EVENTS_012/013/014_SWITCH.
-applyBootstrapVisibility = function(isVisible)
-    local visible = isVisible ~= false
-    if state.bootstrapHudVisible == visible then
+local function applyBootstrapVisibility(host)
+    if not host or type(host.SetVisible) ~= "function" then
         return
     end
 
-    local previousSceneHidden = state.sceneHidden == true
-    local newSceneHidden = not visible
+    local shouldShow = isHudSceneVisible()
+    local desiredSceneHidden = not shouldShow
 
-    state.bootstrapHudVisible = visible
-    state.sceneHidden = newSceneHidden
-
-    diagnosticsDebug("TrackerHost HUD visibility changed: %s", tostring(visible))
-
-    if previousSceneHidden ~= newSceneHidden then
-        if state.fragment and state.fragment.SetHiddenForReason then
-            state.fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, newSceneHidden)
-        end
-
-        if state.root then
-            applyWindowVisibility()
-        end
-
-        queueRuntimeLayout()
+    if state.bootstrapHudVisible == shouldShow and state.sceneHidden == desiredSceneHidden then
+        return
     end
-end
 
-local function handleHudSceneState()
+    local isVisible
+    if type(host.IsVisible) == "function" then
+        local ok, result = pcall(host.IsVisible, host)
+        if ok then
+            isVisible = result
+        end
+    end
+
+    if isVisible ~= nil and isVisible == shouldShow and state.sceneHidden == desiredSceneHidden then
+        state.bootstrapHudVisible = shouldShow
+        return
+    end
+
+    state.bootstrapHudVisible = shouldShow
+    diagnosticsDebug("TrackerHost HUD visibility changed: %s", tostring(shouldShow))
+
+    local function applyVisibility()
+        if type(host.SetVisible) ~= "function" then
+            return
+        end
+
+        if state.sceneHidden == desiredSceneHidden and type(host.IsVisible) == "function" then
+            local ok, current = pcall(host.IsVisible, host)
+            if ok and current == shouldShow then
+                return
+            end
+        end
+
+        state.handlingBootstrapVisibility = true
+        safeCall(function()
+            host:SetVisible(shouldShow)
+        end)
+        state.handlingBootstrapVisibility = false
+    end
+
     if zo_callLater then
         zo_callLater(function()
-            applyBootstrapVisibility(isHudSceneVisible())
+            safeCall(applyVisibility)
         end, 0)
     else
-        applyBootstrapVisibility(isHudSceneVisible())
+        safeCall(applyVisibility)
     end
 end
 
-local function registerHudScene(scene)
-    if not (scene and scene.RegisterCallback) then
+local function registerHudScene(host, scene, sceneName)
+    if not scene then
+        diagnosticsDebug("HUD bootstrap scene missing: %s", tostring(sceneName))
+        return
+    end
+
+    if type(scene.RegisterCallback) ~= "function" then
+        diagnosticsDebug("HUD bootstrap scene lacks RegisterCallback: %s", tostring(sceneName))
         return
     end
 
@@ -897,30 +922,33 @@ local function registerHudScene(scene)
         return
     end
 
-    local function callback(oldState, newState)
-        handleHudSceneState(oldState, newState)
+    local function onSceneStateChange()
+        safeCall(function()
+            applyBootstrapVisibility(host)
+        end)
     end
 
-    local ok, message = pcall(scene.RegisterCallback, scene, "StateChange", callback)
+    local ok, message = pcall(scene.RegisterCallback, scene, "StateChange", onSceneStateChange)
     if not ok then
         diagnosticsDebug("Failed to register HUD bootstrap callback: %s", tostring(message))
         return
     end
 
-    state.bootstrapSceneCallbacks[scene] = callback
+    state.bootstrapSceneCallbacks[scene] = onSceneStateChange
 end
 
 local function ensureHudBootstrap()
     -- TEMP_BOOTSTRAP: Scene/HUD/Cursor/Combat forwarding only; no visibility toggles. Remove in EVENTS_012/013/014_SWITCH.
-    registerHudScene(HUD_SCENE)
-    registerHudScene(HUD_UI_SCENE)
+    local host = TrackerHost
+    registerHudScene(host, HUD_SCENE, "HUD_SCENE")
+    registerHudScene(host, HUD_UI_SCENE, "HUD_UI_SCENE")
 
     if SCENE_MANAGER and type(SCENE_MANAGER.GetScene) == "function" then
-        registerHudScene(SCENE_MANAGER:GetScene("hud"))
-        registerHudScene(SCENE_MANAGER:GetScene("hudui"))
+        registerHudScene(host, SCENE_MANAGER:GetScene("hud"), "hud")
+        registerHudScene(host, SCENE_MANAGER:GetScene("hudui"), "hudui")
     end
 
-    applyBootstrapVisibility(isHudSceneVisible())
+    applyBootstrapVisibility(host)
 end
 
 local function cursorModeEventHandler(_, currentMode)
