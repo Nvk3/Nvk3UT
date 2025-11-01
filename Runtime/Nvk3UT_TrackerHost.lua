@@ -141,7 +141,7 @@ local state = {
     tempCombatNamespace = nil,
     tempCursorEventNamespace = nil,
     tempCursorCallback = nil,
-    lastRootHiddenState = nil,
+    rootVisible = nil,
     updatingSceneVisibility = false,
     sceneVisibilityScheduled = false,
     sceneShownRefreshPending = false,
@@ -172,20 +172,34 @@ local function isSceneShowing(sceneState)
     return sceneState == SCENE_SHOWING or sceneState == SCENE_SHOWN
 end
 
+local function isSceneShown(sceneState)
+    return sceneState == SCENE_SHOWN
+end
+
+local function isSceneHidden(sceneState)
+    return sceneState == SCENE_HIDDEN
+end
+
 local function updateSceneVisibility()
-    local target = isSceneShowing(state.hudSceneState) or isSceneShowing(state.hudUiSceneState)
-    if state.hudSceneState == nil and state.hudUiSceneState == nil then
-        target = true
+    local visible = state.sceneVisible ~= false
+    local hudState = state.hudSceneState
+    local hudUiState = state.hudUiSceneState
+
+    if hudState == nil and hudUiState == nil then
+        visible = true
+    elseif isSceneShown(hudState) or isSceneShown(hudUiState) then
+        visible = true
+    elseif isSceneHidden(hudState) and isSceneHidden(hudUiState) then
+        visible = false
     end
 
-    local normalized = target ~= false
-    state.sceneVisible = normalized
+    state.sceneVisible = visible
 
     state.updatingSceneVisibility = true
-    if TrackerHost and TrackerHost.SetVisible then
-        TrackerHost.SetVisible(normalized)
-    elseif type(applyWindowVisibility) == "function" then
+    if type(applyWindowVisibility) == "function" then
         applyWindowVisibility()
+    elseif TrackerHost and TrackerHost.SetVisible then
+        TrackerHost:SetVisible(visible)
     end
     state.updatingSceneVisibility = false
 end
@@ -203,13 +217,17 @@ local function scheduleUpdateSceneVisibility()
 
         local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
         if runtime and runtime.QueueDirty then
-            if state.sceneShownRefreshPending then
+            local hostVisible = (state.root and state.root.SetHidden and state.rootVisible ~= false)
+            if state.sceneShownRefreshPending and hostVisible then
                 state.sceneShownRefreshPending = false
                 runtime:QueueDirty("quest")
                 runtime:QueueDirty("achievement")
                 runtime:QueueDirty("layout")
             else
                 runtime:QueueDirty("layout")
+                if state.sceneShownRefreshPending and not hostVisible then
+                    state.sceneShownRefreshPending = false
+                end
             end
         else
             state.sceneShownRefreshPending = false
@@ -1611,10 +1629,7 @@ local function applyWindowVisibility()
         state.fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, not sceneVisible and not previewActive)
     end
 
-    if state.lastRootHiddenState ~= shouldHide then
-        state.lastRootHiddenState = shouldHide
-        state.root:SetHidden(shouldHide)
-    end
+    TrackerHost:SetVisible(not shouldHide)
 
     if lamPreview.active and previewActive then
         lamPreview.windowPreviewApplied = true
@@ -2019,6 +2034,7 @@ local function createRootControl()
     end)
 
     state.root = control
+    state.rootVisible = false
     Nvk3UT.UI.Root = control
 
     applyLayoutConstraints()
@@ -2398,24 +2414,18 @@ function TrackerHost.ApplyAppearance()
     notifyContentChanged()
 end
 
-function TrackerHost.SetVisible(isVisible)
-    local fromScene = state.updatingSceneVisibility == true
-
-    if not fromScene and not state.initialized and not state.initializing then
-        TrackerHost.Init()
-    end
-
-    if not ensureRoot() then
+function TrackerHost:SetVisible(isVisible)
+    if not (state.root and state.root.SetHidden) then
         return
     end
 
-    if fromScene then
-        state.sceneVisible = isVisible ~= false
-    else
-        state.externalVisible = isVisible ~= false
+    local visible = isVisible ~= false
+    if state.rootVisible == visible then
+        return
     end
 
-    applyWindowVisibility()
+    state.rootVisible = visible
+    state.root:SetHidden(not visible)
 end
 
 function TrackerHost.GetRoot()
@@ -2631,7 +2641,8 @@ function TrackerHost.OnLamPanelClosed()
         and currentWindowSetting == lamPreview.windowSettingOnOpen
         and state.root
     then
-        state.root:SetHidden(not lamPreview.wasWindowVisibleBeforeLAM)
+        local restoreVisible = lamPreview.wasWindowVisibleBeforeLAM == true
+        TrackerHost:SetVisible(restoreVisible)
     end
 
     lamPreview.windowPreviewApplied = false
@@ -2667,7 +2678,7 @@ function TrackerHost.Shutdown()
     state.sceneVisible = true
     state.externalVisible = true
     state.updatingSceneVisibility = false
-    state.lastRootHiddenState = nil
+    state.rootVisible = nil
     state.tempSceneBootstrapInitialized = false
 
     if state.tempCombatRegistered and EVENT_MANAGER and state.tempCombatNamespace then
@@ -2803,7 +2814,7 @@ function TrackerHost.Shutdown()
         state.root:SetHandler("OnMoveStop", nil)
         state.root:SetHandler("OnResizeStop", nil)
         state.root:SetHandler("OnMouseWheel", nil)
-        state.root:SetHidden(true)
+        TrackerHost:SetVisible(false)
         state.root:SetParent(nil)
     end
     state.root = nil
@@ -2845,7 +2856,7 @@ function TrackerHost.EnsureVisible(options)
     refreshWindowLayout()
 
     if state.root and state.root.SetHidden then
-        state.root:SetHidden(false)
+        TrackerHost:SetVisible(true)
     end
 
     if options.bringToFront and state.root and state.root.BringWindowToTop then

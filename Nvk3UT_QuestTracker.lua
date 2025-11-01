@@ -3262,7 +3262,7 @@ local function AttachBackdrop()
 end
 
 function QuestTracker:EnsurePools(parent)
-    if state.poolsInitialized then
+    if state.poolsInitialized or self._poolsInited then
         return
     end
 
@@ -3713,7 +3713,7 @@ local function Rebuild()
 end
 
 local function RefreshVisibility()
-    local control = state.control
+    local control = state.control or state.parentControl or QuestTracker.parentControl
     if not (control and control.SetHidden) then
         return
     end
@@ -3726,7 +3726,10 @@ local function RefreshVisibility()
         hidden = state.combatHidden
     end
 
-    control:SetHidden(hidden)
+    control:SetHidden(hidden and true or false)
+    if state.control ~= control then
+        state.control = control
+    end
     NotifyHostContentChanged()
 end
 
