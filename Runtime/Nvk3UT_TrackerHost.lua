@@ -784,6 +784,22 @@ local function safeCall(fn, ...)
     return nil
 end
 
+local function isSceneShowing(scene)
+    if scene == nil or type(scene.IsShowing) ~= "function" then
+        return false
+    end
+
+    local result = safeCall(function()
+        return scene:IsShowing()
+    end)
+
+    if result ~= nil then
+        return result == true
+    end
+
+    return false
+end
+
 local function getRuntime()
     local addon = Nvk3UT
     if type(addon) ~= "table" then
@@ -850,6 +866,16 @@ ensureRuntimeInitialized = function()
 end
 
 local function isGameHUDActive()
+    local hudScene = HUD_SCENE
+    local hudUiScene = HUD_UI_SCENE
+
+    if hudScene ~= nil or hudUiScene ~= nil then
+        if isSceneShowing(hudScene) or isSceneShowing(hudUiScene) then
+            return true
+        end
+        return false
+    end
+
     local manager = SCENE_MANAGER
     if manager and type(manager.IsShowing) == "function" then
         if manager:IsShowing("hud") then
@@ -933,21 +959,27 @@ local function applyBootstrapVisibility(host)
         return
     end
 
-    local manager = SCENE_MANAGER
-    local isHud = false
-    local isHudUi = false
-    if manager and type(manager.IsShowing) == "function" then
-        local ok, result = pcall(manager.IsShowing, manager, "hud")
-        if ok then
-            isHud = result == true
-        end
+    local hudScene = HUD_SCENE
+    local hudUiScene = HUD_UI_SCENE
 
-        ok, result = pcall(manager.IsShowing, manager, "hudui")
-        if ok then
-            isHudUi = result == true
+    local isHud = isSceneShowing(hudScene)
+    local isHudUi = isSceneShowing(hudUiScene)
+
+    if not hudScene and not hudUiScene then
+        local manager = SCENE_MANAGER
+        if manager and type(manager.IsShowing) == "function" then
+            local ok, result = pcall(manager.IsShowing, manager, "hud")
+            if ok then
+                isHud = result == true
+            end
+
+            ok, result = pcall(manager.IsShowing, manager, "hudui")
+            if ok then
+                isHudUi = result == true
+            end
+        else
+            isHud = true
         end
-    else
-        isHud = true
     end
 
     local lamPreview = state.lamPreviewForceVisible == true
@@ -977,6 +1009,7 @@ local function applyBootstrapVisibility(host)
                     hud = isHud,
                     hudui = isHudUi,
                     lamPreview = lamPreview,
+                    sceneAllowed = shouldShow,
                 },
             }
         )
@@ -1002,7 +1035,10 @@ local function registerHudScene(host, scene, sceneName)
 
     local function onSceneStateChange()
         safeCall(function()
-            applyBootstrapVisibility(host)
+            local handled = evaluateRuntimeHostVisibility("scene-change")
+            if not handled then
+                applyBootstrapVisibility(host)
+            end
         end)
     end
 
@@ -1033,7 +1069,10 @@ local function registerSceneManagerCallback(host)
 
     local function onSceneStateChanged()
         safeCall(function()
-            applyBootstrapVisibility(host)
+            local handled = evaluateRuntimeHostVisibility("scene-manager")
+            if not handled then
+                applyBootstrapVisibility(host)
+            end
         end)
     end
 
@@ -2941,7 +2980,12 @@ function TrackerHost.SetVisible(isVisible, context)
 
         if context and type(context.details) == "table" then
             local details = context.details
-            local sceneAllowed = (details.hud == true) or (details.hudui == true) or (details.lamPreview == true)
+            local sceneAllowed = details.sceneAllowed
+            if sceneAllowed == nil then
+                sceneAllowed = (details.hud == true) or (details.hudui == true) or (details.lamPreview == true)
+            else
+                sceneAllowed = sceneAllowed == true
+            end
             state.sceneHidden = not sceneAllowed
         end
 

@@ -127,6 +127,20 @@ local function safeCall(fn, ...)
     return nil
 end
 
+local function isSceneShowing(scene)
+    if scene and type(scene.IsShowing) == "function" then
+        local result = safeCall(function()
+            return scene:IsShowing()
+        end)
+
+        if result ~= nil then
+            return result == true
+        end
+    end
+
+    return false
+end
+
 local function getHostWindow()
     local ref = Runtime._hostRef
     if type(ref) ~= "table" then
@@ -490,22 +504,27 @@ function Runtime:_EvaluateHostVisibility(reason)
     local hideInCombat = policy.hideInCombat == true
     local inCombat = self:IsInCombat()
 
-    local sceneManager = SCENE_MANAGER
-    local isHud = false
-    local isHudUi = false
+    local hudScene = HUD_SCENE
+    local hudUiScene = HUD_UI_SCENE
 
-    if sceneManager and type(sceneManager.IsShowing) == "function" then
-        local ok, result = pcall(sceneManager.IsShowing, sceneManager, "hud")
-        if ok then
-            isHud = result == true
-        end
+    local isHud = isSceneShowing(hudScene)
+    local isHudUi = isSceneShowing(hudUiScene)
 
-        ok, result = pcall(sceneManager.IsShowing, sceneManager, "hudui")
-        if ok then
-            isHudUi = result == true
+    if not hudScene and not hudUiScene then
+        local sceneManager = SCENE_MANAGER
+        if sceneManager and type(sceneManager.IsShowing) == "function" then
+            local ok, result = pcall(sceneManager.IsShowing, sceneManager, "hud")
+            if ok then
+                isHud = result == true
+            end
+
+            ok, result = pcall(sceneManager.IsShowing, sceneManager, "hudui")
+            if ok then
+                isHudUi = result == true
+            end
+        else
+            isHud = true
         end
-    else
-        isHud = true
     end
 
     local lamPreview = false
@@ -519,7 +538,9 @@ function Runtime:_EvaluateHostVisibility(reason)
         end
     end
 
-    local visible = (isHud or isHudUi or lamPreview) and not (hideInCombat and inCombat)
+    local sceneAllowed = (isHud or isHudUi or lamPreview)
+    local combatAllowed = not (hideInCombat and inCombat)
+    local visible = sceneAllowed and combatAllowed
     local shouldSuppress = not visible
 
     self._hostSuppressed = shouldSuppress
@@ -533,8 +554,10 @@ function Runtime:_EvaluateHostVisibility(reason)
         hud = isHud,
         hudui = isHudUi,
         lamPreview = lamPreview,
+        sceneAllowed = sceneAllowed,
         hideInCombat = hideInCombat,
         inCombat = inCombat,
+        combatAllowed = combatAllowed,
         visible = visible,
     }
 
