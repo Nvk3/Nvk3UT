@@ -933,7 +933,25 @@ local function applyBootstrapVisibility(host)
         return
     end
 
-    local shouldShow = isGameHUDActive()
+    local manager = SCENE_MANAGER
+    local isHud = false
+    local isHudUi = false
+    if manager and type(manager.IsShowing) == "function" then
+        local ok, result = pcall(manager.IsShowing, manager, "hud")
+        if ok then
+            isHud = result == true
+        end
+
+        ok, result = pcall(manager.IsShowing, manager, "hudui")
+        if ok then
+            isHudUi = result == true
+        end
+    else
+        isHud = true
+    end
+
+    local lamPreview = state.lamPreviewForceVisible == true
+    local shouldShow = (isHud or isHudUi or lamPreview)
     local lastApplied = state.bootstrapHudVisible
 
     if lastApplied ~= nil and lastApplied == shouldShow then
@@ -942,8 +960,26 @@ local function applyBootstrapVisibility(host)
 
     state.bootstrapHudVisible = shouldShow
     state.handlingBootstrapVisibility = true
+    diagnosticsDebug(
+        "Bootstrap visibility -> hud=%s hudui=%s lamPreview=%s => visible=%s",
+        tostring(isHud),
+        tostring(isHudUi),
+        tostring(lamPreview),
+        tostring(shouldShow)
+    )
     safeCall(function()
-        host:SetVisible(shouldShow, { runtimePolicy = true, reason = "scene-bootstrap-fallback" })
+        host:SetVisible(
+            shouldShow,
+            {
+                runtimePolicy = true,
+                reason = "scene-bootstrap-fallback",
+                details = {
+                    hud = isHud,
+                    hudui = isHudUi,
+                    lamPreview = lamPreview,
+                },
+            }
+        )
     end)
     state.handlingBootstrapVisibility = false
 end
