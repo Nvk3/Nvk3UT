@@ -3,8 +3,11 @@ Nvk3UT = Nvk3UT or {}
 local Summary = {}
 Nvk3UT.RecentSummary = Summary
 
+local Diagnostics = Nvk3UT and Nvk3UT.Diagnostics
 local Utils = Nvk3UT and Nvk3UT.Utils
 local Data = Nvk3UT and Nvk3UT.RecentData
+
+local EVENT_NAMESPACE = "Nvk3UT_RecentSummary"
 
 local state = {
     parent = nil,
@@ -14,6 +17,8 @@ local state = {
     sceneCallback = nil,
     dataTypeRegistered = false,
 }
+
+local eventsRegistered = false
 
 local tableUnpack = table.unpack or unpack
 
@@ -34,6 +39,12 @@ local function safeCall(func, ...)
 
     table.remove(results, 1)
     return tableUnpack(results)
+end
+
+local function logShim(action)
+    if Diagnostics and Diagnostics.Debug then
+        Diagnostics.Debug("RecentSummary SHIM -> %s", tostring(action))
+    end
 end
 
 local function isDebugEnabled()
@@ -220,6 +231,43 @@ local function ensureSceneCallback()
     state.sceneCallback = onStateChange
 end
 
+local function ensureAchievementEvents()
+    if eventsRegistered then
+        return
+    end
+
+    local em = GetEventManager()
+    if not em then
+        return
+    end
+
+    local function onAchievementsUpdated(_eventCode)
+        if SCENE_MANAGER and type(SCENE_MANAGER.IsShowing) == "function" and SCENE_MANAGER:IsShowing("achievements") then
+            safeCall(Summary.Refresh, Summary)
+        end
+    end
+
+    local function onAchievementUpdated(_eventCode, achievementId)
+        local recentData = Nvk3UT and Nvk3UT.RecentData
+        if recentData and type(recentData.Touch) == "function" then
+            safeCall(recentData.Touch, recentData, achievementId)
+        end
+    end
+
+    local function onAchievementAwarded(_eventCode, _, _, achievementId)
+        local recentData = Nvk3UT and Nvk3UT.RecentData
+        if recentData and type(recentData.Clear) == "function" then
+            safeCall(recentData.Clear, recentData, achievementId)
+        end
+    end
+
+    em:RegisterForEvent(EVENT_NAMESPACE, EVENT_ACHIEVEMENTS_UPDATED, onAchievementsUpdated)
+    em:RegisterForEvent(EVENT_NAMESPACE, EVENT_ACHIEVEMENT_UPDATED, onAchievementUpdated)
+    em:RegisterForEvent(EVENT_NAMESPACE, EVENT_ACHIEVEMENT_AWARDED, onAchievementAwarded)
+
+    eventsRegistered = true
+end
+
 local function setupScrollList()
     local scrollList = ensureScrollList()
     if not scrollList then
@@ -288,6 +336,7 @@ function Summary:Init(parentOrContainer)
     setupScrollList()
     updateScrollList()
     ensureSceneCallback()
+    ensureAchievementEvents()
 
     return state.container or state.scrollList
 end
@@ -315,6 +364,41 @@ function Summary:GetHeight()
         return container:GetHeight()
     end
     return 0
+end
+
+function Nvk3UT_EnableRecentSummary(...)
+    logShim("Init")
+    if type(Summary.Init) ~= "function" then
+        return nil
+    end
+
+    local result = safeCall(Summary.Init, Summary, ...)
+    ensureAchievementEvents()
+    return result
+end
+
+function Nvk3UT_RefreshRecentSummary(...)
+    logShim("Refresh")
+    if type(Summary.Refresh) ~= "function" then
+        return nil
+    end
+    return safeCall(Summary.Refresh, Summary, ...)
+end
+
+function Nvk3UT_SetRecentSummaryVisible(...)
+    logShim("SetVisible")
+    if type(Summary.SetVisible) ~= "function" then
+        return nil
+    end
+    return safeCall(Summary.SetVisible, Summary, ...)
+end
+
+function Nvk3UT_GetRecentSummaryHeight(...)
+    if type(Summary.GetHeight) ~= "function" then
+        return 0
+    end
+    local height = safeCall(Summary.GetHeight, Summary, ...)
+    return tonumber(height) or 0
 end
 
 return Summary

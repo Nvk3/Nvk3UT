@@ -3,6 +3,7 @@ Nvk3UT = Nvk3UT or {}
 local Category = {}
 Nvk3UT.FavoritesCategory = Category
 
+local Diagnostics = Nvk3UT and Nvk3UT.Diagnostics
 local Utils = Nvk3UT and Nvk3UT.Utils
 local Data = Nvk3UT and Nvk3UT.FavoritesData
 
@@ -36,6 +37,12 @@ end
 local function ensureData()
     if Data and Data.InitSavedVars then
         safeCall(Data.InitSavedVars)
+    end
+end
+
+local function logShim(action)
+    if Diagnostics and Diagnostics.Debug then
+        Diagnostics.Debug("Favorites SHIM -> %s", tostring(action))
     end
 end
 
@@ -249,6 +256,50 @@ function Category:Remove(achievementId)
     end
 
     return removedAny
+end
+
+local Shim = {}
+Nvk3UT.Favorites = Shim
+
+function Shim.Init(...)
+    logShim("Init")
+    if type(Category.Init) ~= "function" then
+        return nil
+    end
+    return safeCall(Category.Init, Category, ...)
+end
+
+function Shim.Refresh(...)
+    logShim("Refresh")
+    if type(Category.Refresh) ~= "function" then
+        return nil
+    end
+    return safeCall(Category.Refresh, Category, ...)
+end
+
+function Shim.SetVisible(...)
+    logShim("SetVisible")
+    if type(Category.SetVisible) ~= "function" then
+        return nil
+    end
+    return safeCall(Category.SetVisible, Category, ...)
+end
+
+function Shim.GetHeight(...)
+    if type(Category.GetHeight) ~= "function" then
+        return 0
+    end
+    local height = safeCall(Category.GetHeight, Category, ...)
+    return tonumber(height) or 0
+end
+
+function Shim.Remove(...)
+    logShim("Remove")
+    if type(Category.Remove) ~= "function" then
+        return false
+    end
+    local result = safeCall(Category.Remove, Category, ...)
+    return result and true or false
 end
 
 return Category

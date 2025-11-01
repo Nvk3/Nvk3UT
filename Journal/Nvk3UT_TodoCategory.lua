@@ -3,6 +3,7 @@ Nvk3UT = Nvk3UT or {}
 local Category = {}
 Nvk3UT.TodoCategory = Category
 
+local Diagnostics = Nvk3UT and Nvk3UT.Diagnostics
 local List = Nvk3UT and Nvk3UT.AchievementList
 local TodoData = Nvk3UT and Nvk3UT.TodoData
 
@@ -32,6 +33,12 @@ local function safeCall(func, ...)
 
     table.remove(results, 1)
     return tableUnpack(results)
+end
+
+local function logShim(action)
+    if Diagnostics and Diagnostics.Debug then
+        Diagnostics.Debug("Todo SHIM -> %s", tostring(action))
+    end
 end
 
 local function ensureTodoData()
@@ -178,6 +185,41 @@ function Category:GetHeight()
         return container:GetHeight()
     end
     return 0
+end
+
+local Shim = {}
+Nvk3UT.Todo = Shim
+
+function Shim.Init(...)
+    logShim("Init")
+    if type(Category.Init) ~= "function" then
+        return nil
+    end
+    return safeCall(Category.Init, Category, ...)
+end
+
+function Shim.Refresh(...)
+    logShim("Refresh")
+    if type(Category.Refresh) ~= "function" then
+        return nil
+    end
+    return safeCall(Category.Refresh, Category, ...)
+end
+
+function Shim.SetVisible(...)
+    logShim("SetVisible")
+    if type(Category.SetVisible) ~= "function" then
+        return nil
+    end
+    return safeCall(Category.SetVisible, Category, ...)
+end
+
+function Shim.GetHeight(...)
+    if type(Category.GetHeight) ~= "function" then
+        return 0
+    end
+    local height = safeCall(Category.GetHeight, Category, ...)
+    return tonumber(height) or 0
 end
 
 return Category
