@@ -3276,46 +3276,76 @@ function QuestTracker:EnsurePools(parent)
     state.parentControl = parent
     self.parentControl = parent
 
-    state.categoryPool = ZO_ControlPool:New("CategoryHeader_Template", parent, CATEGORY_POOL_PREFIX)
-    state.questPool = ZO_ControlPool:New("QuestHeader_Template", parent, QUEST_POOL_PREFIX)
-    state.conditionPool = ZO_ControlPool:New("QuestCondition_Template", parent, CONDITION_POOL_PREFIX)
+    state.poolCounters = state.poolCounters or {}
 
-    self.categoryPool = state.categoryPool
-    self.questPool = state.questPool
-    self.conditionPool = state.conditionPool
+    local function nextControlName(prefix)
+        local counters = state.poolCounters
+        counters[prefix] = (counters[prefix] or 0) + 1
+        return string.format("%s%d", prefix, counters[prefix])
+    end
 
-    local function resetControl(control)
+    local function resetCommon(control)
         if not control then
             return
         end
-        control:SetHidden(true)
+
+        if control.SetHidden then
+            control:SetHidden(true)
+        end
+        if control.ClearAnchors then
+            control:ClearAnchors()
+        end
+        if control.SetParent then
+            control:SetParent(parent)
+        end
+
         control.data = nil
         control.currentIndent = nil
         control.baseColor = nil
         control.isExpanded = nil
+        control.poolKey = nil
     end
 
-    if state.categoryPool and state.categoryPool.SetCustomResetBehavior then
-        state.categoryPool:SetCustomResetBehavior(function(control)
-            resetControl(control)
-            if control and control.toggle then
-                if control.toggle.SetTexture then
-                    control.toggle:SetTexture(SelectCategoryToggleTexture(false, false))
-                end
-                if control.toggle.SetHidden then
-                    control.toggle:SetHidden(false)
-                end
+    local function newCategoryControl()
+        local controlName = nextControlName(CATEGORY_POOL_PREFIX)
+        local control = CreateControlFromVirtual(controlName, parent, "CategoryHeader_Template")
+        control:SetHidden(true)
+        return control
+    end
+
+    local function newQuestControl()
+        local controlName = nextControlName(QUEST_POOL_PREFIX)
+        local control = CreateControlFromVirtual(controlName, parent, "QuestHeader_Template")
+        control:SetHidden(true)
+        return control
+    end
+
+    local function newConditionControl()
+        local controlName = nextControlName(CONDITION_POOL_PREFIX)
+        local control = CreateControlFromVirtual(controlName, parent, "QuestCondition_Template")
+        control:SetHidden(true)
+        return control
+    end
+
+    local function resetCategory(control)
+        resetCommon(control)
+        if control and control.toggle then
+            if control.toggle.SetTexture then
+                control.toggle:SetTexture(SelectCategoryToggleTexture(false, false))
             end
-        end)
+            if control.toggle.SetHidden then
+                control.toggle:SetHidden(false)
+            end
+        end
     end
 
-    if state.questPool and state.questPool.SetCustomResetBehavior then
-        state.questPool:SetCustomResetBehavior(function(control)
-            resetControl(control)
-            if control and control.label and control.label.SetText then
+    local function resetQuest(control)
+        resetCommon(control)
+        if control then
+            if control.label and control.label.SetText then
                 control.label:SetText("")
             end
-            if control and control.iconSlot then
+            if control.iconSlot then
                 if control.iconSlot.SetTexture then
                     control.iconSlot:SetTexture(nil)
                 end
@@ -3326,12 +3356,23 @@ function QuestTracker:EnsurePools(parent)
                     control.iconSlot:SetHidden(false)
                 end
             end
-        end)
+        end
     end
 
-    if state.conditionPool and state.conditionPool.SetCustomResetBehavior then
-        state.conditionPool:SetCustomResetBehavior(resetControl)
+    local function resetCondition(control)
+        resetCommon(control)
+        if control and control.label and control.label.SetText then
+            control.label:SetText("")
+        end
     end
+
+    state.categoryPool = ZO_ObjectPool:New(newCategoryControl, resetCategory)
+    state.questPool = ZO_ObjectPool:New(newQuestControl, resetQuest)
+    state.conditionPool = ZO_ObjectPool:New(newConditionControl, resetCondition)
+
+    self.categoryPool = state.categoryPool
+    self.questPool = state.questPool
+    self.conditionPool = state.conditionPool
 
     state.poolsInitialized = true
     self._poolsInited = true
@@ -3672,7 +3713,8 @@ local function Rebuild()
 end
 
 local function RefreshVisibility()
-    if not state.control then
+    local control = state.control
+    if not (control and control.SetHidden) then
         return
     end
 
@@ -3684,7 +3726,7 @@ local function RefreshVisibility()
         hidden = state.combatHidden
     end
 
-    state.control:SetHidden(hidden)
+    control:SetHidden(hidden)
     NotifyHostContentChanged()
 end
 
