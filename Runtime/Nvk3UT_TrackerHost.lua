@@ -94,6 +94,8 @@ local DEFAULT_COLOR_FALLBACK = { r = 1, g = 1, b = 1, a = 1 }
 local LEFT_MOUSE_BUTTON = _G.MOUSE_BUTTON_INDEX_LEFT or 1
 local unpack = unpack or table.unpack
 
+local SECTION_ORDER = { "quest", "achievement" }
+
 local state = {
     initialized = false,
     root = nil,
@@ -1141,6 +1143,74 @@ measureTrackerContent = function(container, trackerModule)
     return width, height
 end
 
+function TrackerHost.GetSectionOrder()
+    return { unpack(SECTION_ORDER) }
+end
+
+function TrackerHost.GetSectionParent()
+    return state.contentStack or state.scrollContent or state.root
+end
+
+function TrackerHost.GetSectionGap()
+    local layout = state.layout or ensureLayoutSettings()
+    if layout and layout.sectionGap ~= nil then
+        local gap = tonumber(layout.sectionGap)
+        if gap then
+            return math.max(0, gap)
+        end
+    end
+
+    return 0
+end
+
+function TrackerHost.GetSectionContainer(sectionId)
+    if sectionId == "quest" then
+        return state.questContainer
+    elseif sectionId == "achievement" then
+        return state.achievementContainer
+    end
+
+    return nil
+end
+
+function TrackerHost.GetSectionTracker(sectionId)
+    if sectionId == "quest" then
+        return Nvk3UT and Nvk3UT.QuestTracker
+    elseif sectionId == "achievement" then
+        return Nvk3UT and Nvk3UT.AchievementTracker
+    end
+
+    return nil
+end
+
+function TrackerHost.GetSectionMeasurements(sectionId)
+    local container = TrackerHost.GetSectionContainer(sectionId)
+    local tracker = TrackerHost.GetSectionTracker(sectionId)
+    return measureTrackerContent(container, tracker)
+end
+
+function TrackerHost.ReportSectionMissing(sectionId)
+    if sectionId == "quest" then
+        if not state.anchorWarnings.questMissing then
+            debugLog("Quest container not ready for anchoring")
+            state.anchorWarnings.questMissing = true
+        end
+    elseif sectionId == "achievement" then
+        if not state.anchorWarnings.achievementMissing then
+            debugLog("Achievement container not ready for anchoring")
+            state.anchorWarnings.achievementMissing = true
+        end
+    end
+end
+
+function TrackerHost.ReportSectionAnchored(sectionId)
+    if sectionId == "quest" then
+        state.anchorWarnings.questMissing = false
+    elseif sectionId == "achievement" then
+        state.anchorWarnings.achievementMissing = false
+    end
+end
+
 local function measureContentSize()
     local totalHeight = 0
     local maxWidth = 0
@@ -1333,28 +1403,37 @@ local function anchorContainers()
     end
 
     local parent = contentStack or scrollContent
-
-    if not (parent and questContainer) then
-        if not questContainer and not state.anchorWarnings.questMissing then
-            debugLog("Quest container not ready for anchoring")
-            state.anchorWarnings.questMissing = true
-        end
+    if not parent then
         return
     end
 
-    questContainer:ClearAnchors()
-    questContainer:SetAnchor(TOPLEFT, parent, TOPLEFT, 0, 0)
-    questContainer:SetAnchor(TOPRIGHT, parent, TOPRIGHT, 0, 0)
-    state.anchorWarnings.questMissing = false
+    local layoutModule = Nvk3UT and Nvk3UT.TrackerHostLayout
+    if layoutModule and type(layoutModule.ApplyLayout) == "function" then
+        layoutModule.ApplyLayout(TrackerHost)
+        return
+    end
+
+    if not questContainer then
+        TrackerHost.ReportSectionMissing("quest")
+        return
+    end
+
+    if questContainer.ClearAnchors then
+        questContainer:ClearAnchors()
+        questContainer:SetAnchor(TOPLEFT, parent, TOPLEFT, 0, 0)
+        questContainer:SetAnchor(TOPRIGHT, parent, TOPRIGHT, 0, 0)
+    end
+    TrackerHost.ReportSectionAnchored("quest")
 
     if achievementContainer then
-        achievementContainer:ClearAnchors()
-        achievementContainer:SetAnchor(TOPLEFT, questContainer, BOTTOMLEFT, 0, 0)
-        achievementContainer:SetAnchor(TOPRIGHT, questContainer, BOTTOMRIGHT, 0, 0)
-        state.anchorWarnings.achievementMissing = false
-    elseif not state.anchorWarnings.achievementMissing then
-        debugLog("Achievement container not ready for anchoring")
-        state.anchorWarnings.achievementMissing = true
+        if achievementContainer.ClearAnchors then
+            achievementContainer:ClearAnchors()
+            achievementContainer:SetAnchor(TOPLEFT, questContainer, BOTTOMLEFT, 0, 0)
+            achievementContainer:SetAnchor(TOPRIGHT, questContainer, BOTTOMRIGHT, 0, 0)
+        end
+        TrackerHost.ReportSectionAnchored("achievement")
+    else
+        TrackerHost.ReportSectionMissing("achievement")
     end
 end
 
