@@ -837,34 +837,29 @@ end
 -- TEMP_BOOTSTRAP: Scene/HUD/Cursor/Combat forwarding only; no visibility toggles. Remove in EVENTS_012/013/014_SWITCH.
 applyBootstrapVisibility = function(isVisible)
     local visible = isVisible ~= false
-    local previousVisible = state.bootstrapHudVisible
-    local previousSceneHidden = state.sceneHidden == true
-
-    state.bootstrapHudVisible = visible
-
-    local newSceneHidden = not visible
-    local sceneChanged = previousSceneHidden ~= newSceneHidden
-    local visibilityChanged = previousVisible ~= visible
-
-    if not sceneChanged and not visibilityChanged then
+    if state.bootstrapHudVisible == visible then
         return
     end
 
+    local previousSceneHidden = state.sceneHidden == true
+    local newSceneHidden = not visible
+
+    state.bootstrapHudVisible = visible
     state.sceneHidden = newSceneHidden
 
-    if state.fragment and state.fragment.SetHiddenForReason then
-        state.fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, newSceneHidden)
-    end
+    diagnosticsDebug("TrackerHost HUD visibility changed: %s", tostring(visible))
 
-    if state.root then
-        applyWindowVisibility()
-    end
+    if previousSceneHidden ~= newSceneHidden then
+        if state.fragment and state.fragment.SetHiddenForReason then
+            state.fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, newSceneHidden)
+        end
 
-    if sceneChanged or visibilityChanged then
+        if state.root then
+            applyWindowVisibility()
+        end
+
         queueRuntimeLayout()
     end
-
-    diagnosticsDebug("TrackerHost HUD visibility changed: %s", tostring(visible))
 end
 
 local function handleHudSceneState()
