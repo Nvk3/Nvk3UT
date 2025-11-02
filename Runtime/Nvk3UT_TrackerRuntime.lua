@@ -23,6 +23,7 @@ Runtime._isInCursorMode = Runtime._isInCursorMode == true
 Runtime._scheduled = Runtime._scheduled == true
 Runtime._scheduledCallId = Runtime._scheduledCallId or nil
 Runtime._initialized = Runtime._initialized == true
+Runtime._interactivityDirty = Runtime._interactivityDirty == true
 
 local function debug(fmt, ...)
     if Addon and type(Addon.Debug) == "function" then
@@ -263,6 +264,14 @@ local function hasDirtyFlags()
     return dirty.quest or dirty.achievement or dirty.layout
 end
 
+local function hasInteractivityWork()
+    return Runtime._interactivityDirty == true
+end
+
+local function hasPendingWork()
+    return hasDirtyFlags() or hasInteractivityWork()
+end
+
 local function executeProcessing()
     Runtime._scheduled = false
     Runtime._scheduledCallId = nil
@@ -278,7 +287,7 @@ local function scheduleProcessing()
         return
     end
 
-    if not hasDirtyFlags() then
+    if not hasPendingWork() then
         return
     end
 
@@ -294,8 +303,10 @@ end
 
 function Runtime:Init(hostWindow)
     setHostWindow(hostWindow)
+    self._interactivityDirty = true
     self._initialized = true
     debug("TrackerRuntime.Init(%s)", tostring(hostWindow))
+    scheduleProcessing()
 end
 
 function Runtime:QueueDirty(channel, opts)
@@ -328,7 +339,7 @@ function Runtime:QueueDirty(channel, opts)
         end
     end
 
-    if hasDirtyFlags() then
+    if hasPendingWork() then
         scheduleProcessing()
     end
 end
@@ -338,7 +349,7 @@ function Runtime:ProcessFrame(nowMs)
         return
     end
 
-    if not hasDirtyFlags() then
+    if not hasPendingWork() then
         return
     end
 
@@ -387,6 +398,14 @@ function Runtime:ProcessFrame(nowMs)
             applyTrackerHostLayout()
         end
 
+        if Runtime._interactivityDirty == true then
+            Runtime._interactivityDirty = false
+            local hostWindow = getHostWindow()
+            if hostWindow and type(hostWindow.SetMouseEnabled) == "function" then
+                safeCall(hostWindow.SetMouseEnabled, hostWindow, self._isInCursorMode == true)
+            end
+        end
+
         local queuedLog = ensureQueuedLogTable()
         local logQueued = nil
         if next(queuedLog) ~= nil then
@@ -411,7 +430,7 @@ function Runtime:ProcessFrame(nowMs)
 
     self._isProcessingFrame = false
 
-    if hasDirtyFlags() then
+    if hasPendingWork() then
         scheduleProcessing()
     end
 
@@ -441,7 +460,9 @@ function Runtime:SetCursorMode(isInCursorMode)
     end
 
     self._isInCursorMode = normalized
-    self:QueueDirty("layout")
+    self._interactivityDirty = true
+    debug("Runtime: cursor mode changed -> %s", tostring(normalized))
+    scheduleProcessing()
 end
 
 return Runtime

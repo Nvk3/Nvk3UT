@@ -948,7 +948,6 @@ local function updateCursorModeState(isInCursorMode)
     state.bootstrapCursorMode = normalized
     diagnosticsDebug("TrackerHost cursor mode changed: %s", tostring(normalized))
     callRuntime("SetCursorMode", normalized)
-    queueRuntimeLayout()
 end
 
 local function updateCombatState(inCombat)
