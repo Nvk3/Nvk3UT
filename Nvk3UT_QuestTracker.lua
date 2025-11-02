@@ -11,7 +11,14 @@ local EVENT_NAMESPACE = MODULE_NAME .. "_Event"
 local Utils = Nvk3UT and Nvk3UT.Utils
 local QuestState = Nvk3UT and Nvk3UT.QuestState
 local QuestSelection = Nvk3UT and Nvk3UT.QuestSelection
-local Rows = Nvk3UT and Nvk3UT.QuestTrackerRows
+
+local function GetRows()
+    local namespace = Nvk3UT
+    if namespace then
+        return namespace.QuestTrackerRows
+    end
+    return nil
+end
 local FormatCategoryHeaderText =
     (Utils and Utils.FormatCategoryHeaderText)
     or function(baseText, count, showCounts)
@@ -2552,6 +2559,7 @@ local function UpdateContentSize()
     local totalHeight = 0
     local visibleCount = 0
 
+    local Rows = GetRows()
     if Rows and Rows.SetContentWidth then
         Rows:SetContentWidth(GetContainerWidth())
     end
@@ -2723,6 +2731,7 @@ local function BuildConditionRowData(condition)
 end
 
 local function AcquireRowControl(rowType)
+    local Rows = GetRows()
     if not Rows then
         return nil
     end
@@ -2731,6 +2740,7 @@ local function AcquireRowControl(rowType)
 end
 
 local function ApplyRow(control, rowData, indent)
+    local Rows = GetRows()
     if not (Rows and control and rowData) then
         return
     end
@@ -2814,12 +2824,13 @@ end
 local function RelayoutFromCategoryIndex()
     ApplyActiveQuestFromSaved()
 
-    if not Rows then
-        return
-    end
+    local Rows = GetRows()
 
-    if not state.snapshot or not state.snapshot.categories or not state.snapshot.categories.ordered then
-        Rows:ReleaseAll()
+    local hasSnapshot = state.snapshot and state.snapshot.categories and state.snapshot.categories.ordered
+    if not hasSnapshot then
+        if Rows and Rows.ReleaseAll then
+            Rows:ReleaseAll()
+        end
         ResetLayoutState()
         UpdateContentSize()
         NotifyHostContentChanged()
@@ -2827,8 +2838,20 @@ local function RelayoutFromCategoryIndex()
         return
     end
 
-    Rows:SetContentWidth(GetContainerWidth())
-    Rows:ReleaseAll()
+    if not Rows then
+        ResetLayoutState()
+        UpdateContentSize()
+        NotifyHostContentChanged()
+        ProcessPendingExternalReveal()
+        return
+    end
+
+    if Rows.SetContentWidth then
+        Rows:SetContentWidth(GetContainerWidth())
+    end
+    if Rows.ReleaseAll then
+        Rows:ReleaseAll()
+    end
     ResetLayoutState()
 
     PrimeInitialSavedState()
@@ -2945,9 +2968,19 @@ function QuestTracker.Init(parentControl, opts)
         state.control:SetResizeToFitDescendents(true)
     end
 
+    local Rows = GetRows()
     if Rows and Rows.Init then
-        Rows:Init(state.container)
-        Rows:SetContentWidth(GetContainerWidth())
+        local ok, err = pcall(Rows.Init, Rows, state.container)
+        if ok then
+            if Rows.SetContentWidth then
+                Rows:SetContentWidth(GetContainerWidth())
+            end
+            DebugLog("QuestRows.Init ok")
+        else
+            DebugLog("QuestRows.Init failed", tostring(err))
+        end
+    else
+        DebugLog("QuestRows not available (deferred)")
     end
 
     EnsureSavedVars()
@@ -2997,6 +3030,7 @@ function QuestTracker.Shutdown()
     UnregisterTrackingEvents()
     UnsubscribeFromQuestModel()
 
+    local Rows = GetRows()
     if Rows and Rows.ReleaseAll then
         Rows:ReleaseAll()
     end
