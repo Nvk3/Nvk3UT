@@ -661,10 +661,15 @@ local function ApplyCategoryRowData(control, rowData)
     control.rowContext = rowData.context
     control.data = rowData.data
 
-    ApplyFont(control.label, rowData.fonts and rowData.fonts.label, DEFAULT_FONTS.category)
-    ApplyFont(control.toggle, rowData.fonts and rowData.fonts.toggle, DEFAULT_FONTS.toggle)
+    local label = control and control.label
+    local toggle = control and control.toggle
 
-    control.label:SetText(rowData.labelText or "")
+    ApplyFont(label, rowData.fonts and rowData.fonts.label, DEFAULT_FONTS.category)
+    ApplyFont(toggle, rowData.fonts and rowData.fonts.toggle, DEFAULT_FONTS.toggle)
+
+    if label and label.SetText then
+        label:SetText(rowData.labelText or "")
+    end
     ApplyBaseColor(control, rowData.baseColor)
 
     UpdateCategoryToggle(control, rowData.isExpanded)
@@ -674,9 +679,13 @@ local function ApplyQuestRowData(control, rowData)
     control.rowContext = rowData.context
     control.data = { quest = rowData.quest }
 
-    ApplyFont(control.label, rowData.fonts and rowData.fonts.label, DEFAULT_FONTS.quest)
+    local label = control and control.label
 
-    control.label:SetText(rowData.labelText or "")
+    ApplyFont(label, rowData.fonts and rowData.fonts.label, DEFAULT_FONTS.quest)
+
+    if label and label.SetText then
+        label:SetText(rowData.labelText or "")
+    end
     ApplyBaseColor(control, rowData.baseColor)
 
     UpdateQuestIconSlot(control, rowData)
@@ -687,9 +696,13 @@ local function ApplyConditionRowData(control, rowData)
     control.rowContext = rowData.context
     control.data = rowData.data
 
-    ApplyFont(control.label, rowData.fonts and rowData.fonts.label, DEFAULT_FONTS.condition)
+    local label = control and control.label
 
-    control.label:SetText(rowData.labelText or "")
+    ApplyFont(label, rowData.fonts and rowData.fonts.label, DEFAULT_FONTS.condition)
+
+    if label and label.SetText then
+        label:SetText(rowData.labelText or "")
+    end
     ApplyBaseColor(control, rowData.baseColor)
 end
 
@@ -708,12 +721,18 @@ function Rows:ApplyRowData(control, rowData)
         ApplyConditionRowData(control, rowData)
     end
 
-    control:SetHidden(false)
+    if control.SetHidden then
+        control:SetHidden(false)
+    end
     if control.RefreshRowMetrics then
         control:RefreshRowMetrics()
     end
 
-    return control:GetHeight() or 0
+    if control.GetHeight then
+        return control:GetHeight() or 0
+    end
+
+    return 0
 end
 
 Nvk3UT.QuestTrackerRows = Rows

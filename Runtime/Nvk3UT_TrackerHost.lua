@@ -3029,8 +3029,12 @@ function TrackerHost.IsVisible()
     return true
 end
 
-function TrackerHost.GetRootWindow()
+function TrackerHost:GetRootControl()
     return state.root
+end
+
+function TrackerHost.GetRootWindow()
+    return TrackerHost:GetRootControl()
 end
 
 function TrackerHost.ApplySettings()

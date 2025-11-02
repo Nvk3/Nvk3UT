@@ -12,8 +12,6 @@ local Runtime = Addon.TrackerRuntime
 local WEAK_VALUE_MT = { __mode = "v" }
 local unpack = unpack or table.unpack
 
-local SCROLL_CONTAINER_NAME = addonName .. "_ScrollContainer"
-
 Runtime._hostRef = Runtime._hostRef or setmetatable({}, WEAK_VALUE_MT)
 Runtime._dirty = Runtime._dirty or {}
 Runtime._dirty.quest = Runtime._dirty.quest == true
@@ -569,55 +567,39 @@ function Runtime:ProcessFrame(nowMs)
         end
 
         if interactivityDirty then
-            local hostWindow = getHostWindow()
             local cursorEnabled = self._isInCursorMode == true
+            local trackerHost = rawget(Addon, "TrackerHost")
+            local hostControl
 
-            if hostWindow then
-                local scrollContainer = hostWindow.scroll or hostWindow.scrollContainer
-                if not scrollContainer and hostWindow.GetNamedChild then
-                    scrollContainer = hostWindow:GetNamedChild(SCROLL_CONTAINER_NAME)
+            if trackerHost then
+                if type(trackerHost.GetRootControl) == "function" then
+                    hostControl = trackerHost:GetRootControl()
+                elseif type(trackerHost.GetRootWindow) == "function" then
+                    hostControl = trackerHost.GetRootWindow()
                 end
+            end
 
-                local rowsModule = rawget(Addon, "QuestTrackerRows")
-                local rowsReady = rowsModule and rowsModule.isInitialized == true
-                if not scrollContainer or not rowsReady then
-                    self._interactivityDirty = true
-                else
-                    local toggled = 0
+            if not hostControl then
+                hostControl = getHostWindow()
+            end
 
-                    if type(hostWindow.SetMouseEnabled) == "function" then
-                        hostWindow:SetMouseEnabled(cursorEnabled)
-                        toggled = toggled + 1
-                    end
-
-                    if scrollContainer ~= hostWindow and type(scrollContainer.SetMouseEnabled) == "function" then
-                        scrollContainer:SetMouseEnabled(cursorEnabled)
-                        toggled = toggled + 1
-                    end
-
-                    local interactiveControls
-                    if rowsModule and type(rowsModule.GetInteractiveControls) == "function" then
-                        interactiveControls = rowsModule:GetInteractiveControls()
-                    end
-
-                    if type(interactiveControls) == "table" then
-                        for index = 1, #interactiveControls do
-                            local control = interactiveControls[index]
-                            if control and control.SetMouseEnabled then
-                                control:SetMouseEnabled(cursorEnabled)
-                                toggled = toggled + 1
-                            end
-                        end
-                    end
-
-                    debug(
-                        "interactivity: toggled %d controls (cursor=%s)",
-                        toggled,
-                        tostring(cursorEnabled)
-                    )
-                end
+            if not (hostControl and type(hostControl.SetMouseEnabled) == "function") then
+                debug(
+                    "interactivity: skipped (host missing, cursor=%s)",
+                    tostring(cursorEnabled)
+                )
             else
-                self._interactivityDirty = false
+                hostControl:SetMouseEnabled(cursorEnabled)
+
+                if trackerHost and type(trackerHost.ApplyVisibilityRules) == "function" then
+                    trackerHost.ApplyVisibilityRules()
+                end
+
+                debug(
+                    "interactivity: toggled %d controls (cursor=%s)",
+                    1,
+                    tostring(cursorEnabled)
+                )
             end
         end
 
