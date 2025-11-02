@@ -18,6 +18,8 @@ Runtime._dirty.layout = Runtime._dirty.layout == true
 Runtime._queuedChannelsForLog = Runtime._queuedChannelsForLog or {}
 Runtime._isProcessingFrame = Runtime._isProcessingFrame == true
 Runtime._lastProcessFrameMs = Runtime._lastProcessFrameMs or nil
+Runtime._geometry = Runtime._geometry or {}
+Runtime._deferredProcessFrame = Runtime._deferredProcessFrame == true
 Runtime._isInCombat = Runtime._isInCombat == true
 Runtime._isInCursorMode = Runtime._isInCursorMode == true
 Runtime._scheduled = Runtime._scheduled == true
@@ -36,11 +38,16 @@ local function safeCall(fn, ...)
         return Addon.SafeCall(fn, ...)
     end
 
-    if type(fn) == "function" then
-        local ok, result = pcall(fn, ...)
-        if ok then
-            return result
-        end
+    if type(fn) ~= "function" then
+        return nil
+    end
+
+    local ok, resultTable = pcall(function(...)
+        return { fn(...) }
+    end, ...)
+
+    if ok and type(resultTable) == "table" then
+        return unpack(resultTable)
     end
 
     return nil
@@ -91,6 +98,97 @@ local function ensureQueuedLogTable()
     return queued
 end
 
+local function ensureGeometryState()
+    local geometry = Runtime._geometry
+    if type(geometry) ~= "table" then
+        geometry = {}
+        Runtime._geometry = geometry
+    end
+
+    return geometry
+end
+
+local function normalizeLength(value)
+    local numeric = tonumber(value)
+    if not numeric then
+        return 0
+    end
+
+    if numeric ~= numeric then
+        return 0
+    end
+
+    if numeric < 0 then
+        numeric = 0
+    end
+
+    return numeric
+end
+
+local GEOMETRY_TOLERANCE = 0.1
+
+local function recordSectionGeometry(sectionId, width, height)
+    if type(sectionId) ~= "string" then
+        return false
+    end
+
+    local geometry = ensureGeometryState()
+    local entry = geometry[sectionId]
+    if type(entry) ~= "table" then
+        entry = {}
+        geometry[sectionId] = entry
+    end
+
+    width = normalizeLength(width)
+    height = normalizeLength(height)
+
+    local previousWidth = entry.width
+    local previousHeight = entry.height
+
+    entry.width = width
+    entry.height = height
+
+    if previousWidth == nil or previousHeight == nil then
+        return true
+    end
+
+    if math.abs(previousWidth - width) > GEOMETRY_TOLERANCE then
+        return true
+    end
+
+    if math.abs(previousHeight - height) > GEOMETRY_TOLERANCE then
+        return true
+    end
+
+    return false
+end
+
+local function updateTrackerGeometry(sectionId)
+    local trackerKey
+    if sectionId == "achievement" then
+        trackerKey = "AchievementTracker"
+    else
+        trackerKey = "QuestTracker"
+    end
+
+    local tracker = rawget(Addon, trackerKey)
+    if type(tracker) ~= "table" then
+        return false
+    end
+
+    local getSize = tracker.GetContentSize
+    if type(getSize) ~= "function" then
+        return false
+    end
+
+    local invoked, width, height = callWithOptionalSelf(tracker, getSize, false)
+    if not invoked then
+        return false
+    end
+
+    return recordSectionGeometry(sectionId, width, height)
+end
+
 local function getFrameTimeMs()
     if type(GetFrameTimeMilliseconds) == "function" then
         return GetFrameTimeMilliseconds()
@@ -124,78 +222,102 @@ local function callWithOptionalSelf(targetTable, fn, preferPlainCall, ...)
         return false
     end
 
-    local invoked = false
     local args = { ... }
+    local invoked = false
+    local results = nil
 
     local function tryInvoke(withSelf)
         if withSelf and targetTable == nil then
             return false
         end
 
-        local ok
-        if withSelf then
-            ok = pcall(fn, targetTable, unpack(args))
-        else
-            ok = pcall(fn, unpack(args))
+        if Addon and type(Addon.SafeCall) == "function" then
+            if withSelf then
+                results = { Addon.SafeCall(fn, targetTable, unpack(args)) }
+            else
+                results = { Addon.SafeCall(fn, unpack(args)) }
+            end
+            invoked = true
+            return true
         end
 
-        if ok then
+        local ok, callResults = pcall(function()
+            if withSelf then
+                return { fn(targetTable, unpack(args)) }
+            end
+
+            return { fn(unpack(args)) }
+        end)
+
+        if ok and type(callResults) == "table" then
             invoked = true
+            results = callResults
             return true
         end
 
         return false
     end
 
-    safeCall(function()
-        if preferPlainCall then
-            if tryInvoke(false) then
-                return
-            end
+    if preferPlainCall then
+        if not tryInvoke(false) then
             tryInvoke(true)
-            return
         end
-
-        if tryInvoke(true) then
-            return
+    else
+        if not tryInvoke(true) then
+            tryInvoke(false)
         end
+    end
 
-        tryInvoke(false)
-    end)
+    if results == nil then
+        return invoked
+    end
 
-    return invoked
+    return invoked, unpack(results)
 end
 
 local function buildQuestViewModel()
     local controller = rawget(Addon, "QuestTrackerController")
     if type(controller) ~= "table" then
-        return false
+        return nil, false
     end
 
     local build = controller.BuildViewModel or controller.Build
     if type(build) ~= "function" then
-        return false
+        return nil, false
     end
 
-    return callWithOptionalSelf(controller, build, false)
+    local invoked, viewModel = callWithOptionalSelf(controller, build, false)
+    if not invoked then
+        return nil, false
+    end
+
+    return viewModel, true
 end
 
-local function refreshQuestTracker()
+local function refreshQuestTracker(viewModel)
     local tracker = rawget(Addon, "QuestTracker")
     if type(tracker) ~= "table" then
         return false
     end
 
+    local refreshWithModel = tracker.RefreshWithViewModel or tracker.RefreshFromViewModel
+    if type(refreshWithModel) == "function" then
+        local invoked = callWithOptionalSelf(tracker, refreshWithModel, false, viewModel)
+        if invoked then
+            return true
+        end
+    end
+
     local requestRefresh = tracker.RequestRefresh
     if type(requestRefresh) == "function" then
-        safeCall(requestRefresh)
+        callWithOptionalSelf(tracker, requestRefresh, false)
         return true
     end
 
     local refresh = tracker.Refresh
     if type(refresh) == "function" then
-        safeCall(refresh)
-        return true
+        local invoked = callWithOptionalSelf(tracker, refresh, false, viewModel)
+        return invoked
     end
 
     return false
@@ -204,33 +326,46 @@ end
 local function buildAchievementViewModel()
     local controller = rawget(Addon, "AchievementTrackerController")
     if type(controller) ~= "table" then
-        return false
+        return nil, false
     end
 
     local build = controller.BuildViewModel or controller.Build
     if type(build) ~= "function" then
-        return false
+        return nil, false
     end
 
-    return callWithOptionalSelf(controller, build, false)
+    local invoked, viewModel = callWithOptionalSelf(controller, build, false)
+    if not invoked then
+        return nil, false
+    end
+
+    return viewModel, true
 end
 
-local function refreshAchievementTracker()
+local function refreshAchievementTracker(viewModel)
     local tracker = rawget(Addon, "AchievementTracker")
     if type(tracker) ~= "table" then
         return false
     end
 
+    local refreshWithModel = tracker.RefreshWithViewModel or tracker.RefreshFromViewModel
+    if type(refreshWithModel) == "function" then
+        local invoked = callWithOptionalSelf(tracker, refreshWithModel, false, viewModel)
+        if invoked then
+            return true
+        end
+    end
+
     local requestRefresh = tracker.RequestRefresh
     if type(requestRefresh) == "function" then
-        safeCall(requestRefresh)
+        callWithOptionalSelf(tracker, requestRefresh, false)
         return true
     end
 
     local refresh = tracker.Refresh
     if type(refresh) == "function" then
-        safeCall(refresh)
-        return true
+        local invoked = callWithOptionalSelf(tracker, refresh, false, viewModel)
+        return invoked
     end
 
     return false
@@ -269,7 +404,11 @@ local function hasInteractivityWork()
 end
 
 local function hasPendingWork()
-    return hasDirtyFlags() or hasInteractivityWork()
+    if hasDirtyFlags() or hasInteractivityWork() then
+        return true
+    end
+
+    return Runtime._deferredProcessFrame == true
 end
 
 local function executeProcessing()
@@ -305,6 +444,7 @@ function Runtime:Init(hostWindow)
     setHostWindow(hostWindow)
     self._interactivityDirty = true
     self._initialized = true
+    self._deferredProcessFrame = false
     debug("TrackerRuntime.Init(%s)", tostring(hostWindow))
     scheduleProcessing()
 end
@@ -346,6 +486,7 @@ end
 
 function Runtime:ProcessFrame(nowMs)
     if self._isProcessingFrame then
+        self._deferredProcessFrame = true
         return
     end
 
@@ -368,61 +509,72 @@ function Runtime:ProcessFrame(nowMs)
 
     local function process()
         local dirty = ensureDirtyState()
-        local questDirty = dirty.quest
-        local achievementDirty = dirty.achievement
-        local layoutDirty = dirty.layout
+        local questDirty = dirty.quest == true
+        local achievementDirty = dirty.achievement == true
+        local layoutDirty = dirty.layout == true
 
         dirty.quest = false
         dirty.achievement = false
         dirty.layout = false
 
-        local processedChannels = {}
-        local refreshed = false
+        local interactivityDirty = self._interactivityDirty == true
+        self._interactivityDirty = false
 
+        local questViewModel, questVmBuilt = nil, false
         if questDirty then
-            processedChannels.quest = true
-            local built = buildQuestViewModel()
-            local refreshedQuest = refreshQuestTracker()
-            refreshed = refreshed or refreshedQuest or built
+            questViewModel, questVmBuilt = buildQuestViewModel()
+            if questVmBuilt then
+                debug("Runtime: built quest view model")
+            end
         end
 
+        local achievementViewModel, achievementVmBuilt = nil, false
         if achievementDirty then
-            processedChannels.achievement = true
-            local built = buildAchievementViewModel()
-            local refreshedAchievement = refreshAchievementTracker()
-            refreshed = refreshed or refreshedAchievement or built
+            achievementViewModel, achievementVmBuilt = buildAchievementViewModel()
+            if achievementVmBuilt then
+                debug("Runtime: built achievement view model")
+            end
         end
 
-        if refreshed or layoutDirty then
-            processedChannels.layout = true
-            applyTrackerHostLayout()
+        local questGeometryChanged = false
+        if questDirty or questVmBuilt then
+            local refreshedQuest = refreshQuestTracker(questViewModel)
+            if refreshedQuest then
+                questGeometryChanged = updateTrackerGeometry("quest")
+                if questGeometryChanged then
+                    debug("Runtime: quest tracker refreshed (geometry changed)")
+                end
+            end
         end
 
-        if Runtime._interactivityDirty == true then
-            Runtime._interactivityDirty = false
+        local achievementGeometryChanged = false
+        if achievementDirty or achievementVmBuilt then
+            local refreshedAchievement = refreshAchievementTracker(achievementViewModel)
+            if refreshedAchievement then
+                achievementGeometryChanged = updateTrackerGeometry("achievement")
+                if achievementGeometryChanged then
+                    debug("Runtime: achievement tracker refreshed (geometry changed)")
+                end
+            end
+        end
+
+        if layoutDirty or questGeometryChanged or achievementGeometryChanged then
+            if applyTrackerHostLayout() then
+                debug("Runtime: applied tracker host layout")
+            end
+        end
+
+        if interactivityDirty then
             local hostWindow = getHostWindow()
             if hostWindow and type(hostWindow.SetMouseEnabled) == "function" then
                 safeCall(hostWindow.SetMouseEnabled, hostWindow, self._isInCursorMode == true)
+                debug("Runtime: interactivity updated (cursor=%s)", tostring(self._isInCursorMode == true))
             end
         end
 
         local queuedLog = ensureQueuedLogTable()
-        local logQueued = nil
-        if next(queuedLog) ~= nil then
-            logQueued = formatChannelList(queuedLog)
-        end
-
         for key in pairs(queuedLog) do
             queuedLog[key] = nil
-        end
-
-        local logProcessed = nil
-        if next(processedChannels) ~= nil then
-            logProcessed = formatChannelList(processedChannels)
-        end
-
-        if logQueued or logProcessed then
-            debug("Runtime: queued %s; processed %s", logQueued or "none", logProcessed or "none")
         end
     end
 
@@ -430,7 +582,10 @@ function Runtime:ProcessFrame(nowMs)
 
     self._isProcessingFrame = false
 
-    if hasPendingWork() then
+    local rerun = self._deferredProcessFrame == true
+    self._deferredProcessFrame = false
+
+    if rerun or hasPendingWork() then
         scheduleProcessing()
     end
 
