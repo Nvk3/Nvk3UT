@@ -5,6 +5,8 @@ Nvk3UT = Nvk3UT or {}
 local Rows = {}
 Rows.__index = Rows
 
+Rows.isInitialized = false
+
 local MODULE_NAME = addonName .. "QuestTrackerRows"
 
 local CATEGORY_TOGGLE_TEXTURES = {
@@ -43,6 +45,7 @@ local state = {
     pools = {},
     active = {},
     contentWidth = 0,
+    interactiveCache = {},
 }
 
 local function IsDebugLoggingEnabled()
@@ -555,6 +558,12 @@ end
 function Rows:Init(parentControl)
     state.parent = parentControl
     state.active = {}
+    local cache = state.interactiveCache
+    if type(cache) == "table" then
+        for index = #cache, 1, -1 do
+            cache[index] = nil
+        end
+    end
 
     state.pools.category = ZO_ControlPool:New("CategoryHeader_Template", parentControl)
     state.pools.quest = ZO_ControlPool:New("QuestHeader_Template", parentControl)
@@ -563,6 +572,8 @@ function Rows:Init(parentControl)
     state.pools.category:SetCustomResetBehavior(ResetCategoryControl)
     state.pools.quest:SetCustomResetBehavior(ResetQuestControl)
     state.pools.condition:SetCustomResetBehavior(ResetConditionControl)
+
+    Rows.isInitialized = true
 
     DebugLog("Initialized row pools")
 end
@@ -580,6 +591,13 @@ function Rows:ReleaseAll()
     end
 
     state.active = {}
+
+    local cache = state.interactiveCache
+    if type(cache) == "table" then
+        for index = #cache, 1, -1 do
+            cache[index] = nil
+        end
+    end
 end
 
 function Rows:Acquire(rowType)
@@ -595,6 +613,48 @@ end
 
 function Rows:SetContentWidth(width)
     state.contentWidth = width or 0
+end
+
+function Rows:GetInteractiveControls()
+    local cache = state.interactiveCache
+    if type(cache) ~= "table" then
+        cache = {}
+        state.interactiveCache = cache
+    end
+
+    for index = #cache, 1, -1 do
+        cache[index] = nil
+    end
+
+    local active = state.active
+    if type(active) ~= "table" then
+        return cache
+    end
+
+    local count = 0
+    for index = 1, #active do
+        local control = active[index]
+        if control then
+            if control.SetMouseEnabled then
+                count = count + 1
+                cache[count] = control
+            end
+
+            local toggle = control.toggle
+            if toggle and toggle.SetMouseEnabled then
+                count = count + 1
+                cache[count] = toggle
+            end
+
+            local iconSlot = control.iconSlot
+            if iconSlot and iconSlot.SetMouseEnabled then
+                count = count + 1
+                cache[count] = iconSlot
+            end
+        end
+    end
+
+    return cache
 end
 
 local function ApplyCategoryRowData(control, rowData)

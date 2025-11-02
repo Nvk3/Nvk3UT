@@ -1,6 +1,8 @@
 -- Runtime/Nvk3UT_TrackerRuntime.lua
 -- Central runtime scheduler that batches tracker refresh work.
 
+local addonName = "Nvk3UT"
+
 Nvk3UT = Nvk3UT or {}
 local Addon = Nvk3UT
 
@@ -9,6 +11,8 @@ local Runtime = Addon.TrackerRuntime
 
 local WEAK_VALUE_MT = { __mode = "v" }
 local unpack = unpack or table.unpack
+
+local SCROLL_CONTAINER_NAME = addonName .. "_ScrollContainer"
 
 Runtime._hostRef = Runtime._hostRef or setmetatable({}, WEAK_VALUE_MT)
 Runtime._dirty = Runtime._dirty or {}
@@ -51,6 +55,18 @@ local function safeCall(fn, ...)
     end
 
     return nil
+end
+
+local function SetMouseEnabledSafe(control, enabled)
+    if not (control and type(control.SetMouseEnabled) == "function") then
+        return false
+    end
+
+    safeCall(function()
+        control:SetMouseEnabled(enabled)
+    end)
+
+    return true
 end
 
 local function getHostWindow()
@@ -566,11 +582,54 @@ function Runtime:ProcessFrame(nowMs)
 
         if interactivityDirty then
             local hostWindow = getHostWindow()
-            if hostWindow and type(hostWindow.SetMouseEnabled) == "function" then
-                safeCall(function()
-                    hostWindow:SetMouseEnabled(self._isInCursorMode == true)
-                end)
-                debug("Runtime: interactivity updated (cursor=%s)", tostring(self._isInCursorMode == true))
+            local cursorEnabled = self._isInCursorMode == true
+
+            local function deferInteractivity()
+                self._interactivityDirty = true
+            end
+
+            if not hostWindow then
+                deferInteractivity()
+            else
+                local scrollContainer = hostWindow.scroll or hostWindow.scrollContainer
+                if not scrollContainer and hostWindow.GetNamedChild then
+                    scrollContainer = hostWindow:GetNamedChild(SCROLL_CONTAINER_NAME)
+                end
+
+                local rowsModule = rawget(Addon, "QuestTrackerRows")
+                local rowsReady = rowsModule and rowsModule.isInitialized == true
+                if not scrollContainer or not rowsReady then
+                    deferInteractivity()
+                else
+                    local toggled = 0
+
+                    if SetMouseEnabledSafe(hostWindow, cursorEnabled) then
+                        toggled = toggled + 1
+                    end
+
+                    if scrollContainer ~= hostWindow and SetMouseEnabledSafe(scrollContainer, cursorEnabled) then
+                        toggled = toggled + 1
+                    end
+
+                    local interactiveControls
+                    if rowsModule and type(rowsModule.GetInteractiveControls) == "function" then
+                        interactiveControls = rowsModule:GetInteractiveControls()
+                    end
+
+                    if type(interactiveControls) == "table" then
+                        for index = 1, #interactiveControls do
+                            if SetMouseEnabledSafe(interactiveControls[index], cursorEnabled) then
+                                toggled = toggled + 1
+                            end
+                        end
+                    end
+
+                    debug(
+                        "interactivity: toggled %d controls (cursor=%s)",
+                        toggled,
+                        tostring(cursorEnabled)
+                    )
+                end
             end
         end
 
