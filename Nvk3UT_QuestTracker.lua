@@ -92,7 +92,6 @@ local state = {
     snapshot = nil,
     categoryControls = {},
     questControls = {},
-    combatHidden = false,
     pendingRefresh = false,
     contentWidth = 0,
     contentHeight = 0,
@@ -3582,35 +3581,10 @@ local function RefreshVisibility()
         return
     end
 
-    local hidden = false
-
-    if state.opts.active == false then
-        hidden = true
-    elseif state.opts.hideInCombat then
-        hidden = state.combatHidden
-    end
+    local hidden = state.opts.active == false
 
     state.control:SetHidden(hidden)
     NotifyHostContentChanged()
-end
-
-local function OnCombatState(_, inCombat)
-    state.combatHidden = inCombat
-    RefreshVisibility()
-end
-
-local function RegisterCombatEvents()
-    if not state.opts.hideInCombat then
-        return
-    end
-
-    EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. "Combat", EVENT_PLAYER_COMBAT_STATE, OnCombatState)
-    state.combatHidden = IsUnitInCombat and IsUnitInCombat("player") or false
-    RefreshVisibility()
-end
-
-local function UnregisterCombatEvents()
-    EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "Combat", EVENT_PLAYER_COMBAT_STATE)
 end
 
 function QuestTracker.Init(parentControl, opts)
@@ -3643,12 +3617,6 @@ function QuestTracker.Init(parentControl, opts)
         QuestTracker.ApplySettings(opts)
     end
 
-    if state.opts.hideInCombat then
-        RegisterCombatEvents()
-    else
-        UnregisterCombatEvents()
-    end
-
     RegisterTrackingEvents()
 
     SubscribeToQuestModel()
@@ -3676,7 +3644,6 @@ function QuestTracker.Shutdown()
         return
     end
 
-    UnregisterCombatEvents()
     UnregisterTrackingEvents()
     UnsubscribeFromQuestModel()
 
@@ -3734,19 +3701,9 @@ function QuestTracker.ApplySettings(settings)
         return
     end
 
-    state.opts.hideInCombat = settings.hideInCombat and true or false
     state.opts.autoExpand = settings.autoExpand ~= false
     state.opts.autoTrack = settings.autoTrack ~= false
     state.opts.active = (settings.active ~= false)
-
-    if state.isInitialized then
-        if state.opts.hideInCombat then
-            RegisterCombatEvents()
-        else
-            UnregisterCombatEvents()
-            state.combatHidden = false
-        end
-    end
 
     RefreshVisibility()
     RequestRefresh()

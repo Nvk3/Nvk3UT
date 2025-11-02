@@ -24,9 +24,11 @@ local SCROLL_OVERSHOOT_PADDING = 100 -- allow scrolling so the last entry can si
 local FRAGMENT_RETRY_DELAY_MS = 200
 local MAX_BAR_HEIGHT = 250
 
-local FRAGMENT_REASON_SUPPRESSED = addonName .. "_HostSuppressed"
-local FRAGMENT_REASON_USER = addonName .. "_HostHiddenBySettings"
-local FRAGMENT_REASON_SCENE = addonName .. "_HostSceneHidden"
+local FRAGMENT_REASON_SUPPRESSED = "NVK3UT_SUPPRESSED"
+local FRAGMENT_REASON_USER = "NVK3UT_USER"
+local FRAGMENT_REASON_SCENE = "NVK3UT_SCENE"
+local FRAGMENT_REASON_COMBAT = "NVK3UT_COMBAT"
+local FRAGMENT_REASON_LAM = "NVK3UT_LAM"
 
 local DEFAULT_APPEARANCE = {
     enabled = true,
@@ -91,6 +93,10 @@ local DEFAULT_TRACKER_COLORS = {
 
 local DEFAULT_COLOR_FALLBACK = { r = 1, g = 1, b = 1, a = 1 }
 
+local DEFAULT_HOST_SETTINGS = {
+    HideInCombat = false,
+}
+
 local LEFT_MOUSE_BUTTON = _G.MOUSE_BUTTON_INDEX_LEFT or 1
 local unpack = unpack or table.unpack
 
@@ -123,6 +129,7 @@ local state = {
     appearance = nil,
     features = nil,
     windowBars = nil,
+    hostSettings = nil,
     anchorWarnings = {
         questMissing = false,
         achievementMissing = false,
@@ -142,6 +149,10 @@ local state = {
     cursorBootstrapRegistered = false,
     combatBootstrapRegistered = false,
     runtimeInitialized = false,
+    isInCombat = false,
+    isInHUDScene = true,
+    isLAMOpen = false,
+    visibilityGates = nil,
 }
 
 local lamPreview = {
@@ -168,6 +179,9 @@ local applyBootstrapVisibility
 local startWindowDrag
 local stopWindowDrag
 local getCurrentScrollOffset
+local ensureVisibilityGates
+local setVisibilityGate
+local refreshVisibilityGates
 
 local function getSavedVars()
     return Nvk3UT and Nvk3UT.sv
@@ -269,6 +283,33 @@ local function ensureAppearanceColorDefaults()
     end
 
     return sv.appearance
+end
+
+local function ensureHostSettings()
+    local sv = getSavedVars()
+    if not sv then
+        return cloneTable(DEFAULT_HOST_SETTINGS)
+    end
+
+    sv.Settings = sv.Settings or {}
+    sv.Settings.Host = sv.Settings.Host or {}
+
+    local hostSettings = sv.Settings.Host
+    if hostSettings.HideInCombat == nil then
+        hostSettings.HideInCombat = DEFAULT_HOST_SETTINGS.HideInCombat
+    else
+        hostSettings.HideInCombat = hostSettings.HideInCombat == true
+    end
+
+    return hostSettings
+end
+
+local function getHostSettings()
+    if state.hostSettings == nil then
+        state.hostSettings = ensureHostSettings()
+    end
+
+    return state.hostSettings
 end
 
 local function getDefaultColor(trackerType, role)
@@ -752,6 +793,78 @@ queueRuntimeLayout = function()
     callRuntime("QueueDirty", "layout")
 end
 
+ensureVisibilityGates = function()
+    if not state.visibilityGates then
+        state.visibilityGates = {
+            scene = false,
+            combat = false,
+            lam = false,
+        }
+    end
+
+    return state.visibilityGates
+end
+
+setVisibilityGate = function(gateName, value)
+    if type(gateName) ~= "string" then
+        return false
+    end
+
+    local gates = ensureVisibilityGates()
+    local normalized = value == true
+
+    if gates[gateName] == normalized then
+        return false
+    end
+
+    gates[gateName] = normalized
+    return true
+end
+
+refreshVisibilityGates = function(hostSettings)
+    local gates = ensureVisibilityGates()
+
+    gates.scene = state.isInHUDScene ~= true
+
+    local hideInCombatSetting = false
+    if hostSettings and hostSettings.HideInCombat == true then
+        hideInCombatSetting = true
+    end
+
+    gates.combat = hideInCombatSetting and state.isInCombat == true or false
+    gates.lam = state.isLAMOpen == true
+
+    return gates
+end
+
+function TrackerHost.SetCombatState(selfOrFlag, maybeFlag)
+    local targetFlag
+    if selfOrFlag == TrackerHost then
+        targetFlag = maybeFlag
+    else
+        targetFlag = selfOrFlag
+    end
+
+    local normalized = targetFlag == true
+    local previous = state.isInCombat == true
+    if previous == normalized then
+        return false
+    end
+
+    state.isInCombat = normalized
+
+    local hostSettings = getHostSettings()
+    setVisibilityGate("combat", hostSettings and hostSettings.HideInCombat == true and normalized)
+
+    diagnosticsDebug("Host combat: %s -> ApplyVisibilityRules()", tostring(normalized))
+
+    local visibilityChanged = TrackerHost.ApplyVisibilityRules()
+
+    callRuntime("SetCombatState", normalized)
+
+    return visibilityChanged == true
+end
+
 local BOOTSTRAP_NAMESPACE = addonName .. "_TrackerHostBootstrap"
 
 ensureRuntimeInitialized = function()
@@ -835,76 +948,36 @@ local function updateCursorModeState(isInCursorMode)
     state.bootstrapCursorMode = normalized
     diagnosticsDebug("TrackerHost cursor mode changed: %s", tostring(normalized))
     callRuntime("SetCursorMode", normalized)
-    queueRuntimeLayout()
 end
 
 local function updateCombatState(inCombat)
     local normalized = inCombat == true
-    if state.bootstrapCombatState == normalized then
+    if state.bootstrapCombatState == normalized and state.isInCombat == normalized then
         return
     end
 
     state.bootstrapCombatState = normalized
-    diagnosticsDebug("TrackerHost combat state changed: %s", tostring(normalized))
-    callRuntime("SetCombatState", normalized)
-    queueRuntimeLayout()
+    TrackerHost.SetCombatState(normalized)
 end
 
 -- TEMP_BOOTSTRAP: Scene/HUD/Cursor/Combat forwarding only; no visibility toggles. Remove in EVENTS_012/013/014_SWITCH.
 local function applyBootstrapVisibility(host)
-    if not host or type(host.SetVisible) ~= "function" then
+    if not host then
         return
     end
 
     local shouldShow = isGameHUDActive()
-    local lastApplied = state.bootstrapHudVisible
-
-    local currentVisible
-    if type(host.IsVisible) == "function" then
-        local ok, result = pcall(host.IsVisible, host)
-        if ok then
-            currentVisible = result
-        end
-    end
-
-    if currentVisible ~= nil and currentVisible == shouldShow then
-        state.bootstrapHudVisible = shouldShow
-        return
-    end
-
-    if lastApplied ~= nil and lastApplied == shouldShow then
-        state.bootstrapHudVisible = shouldShow
+    if state.bootstrapHudVisible == shouldShow and state.isInHUDScene == shouldShow then
         return
     end
 
     state.bootstrapHudVisible = shouldShow
+    state.isInHUDScene = shouldShow
+    setVisibilityGate("scene", not shouldShow)
     diagnosticsDebug("TrackerHost HUD visibility changed: %s", tostring(shouldShow))
 
-    local function applyVisibility()
-        if type(host.SetVisible) ~= "function" then
-            return
-        end
-
-        if type(host.IsVisible) == "function" then
-            local ok, current = pcall(host.IsVisible, host)
-            if ok and current == shouldShow then
-                return
-            end
-        end
-
-        state.handlingBootstrapVisibility = true
-        safeCall(function()
-            host:SetVisible(shouldShow)
-        end)
-        state.handlingBootstrapVisibility = false
-    end
-
-    if zo_callLater then
-        zo_callLater(function()
-            safeCall(applyVisibility)
-        end, 0)
-    else
-        safeCall(applyVisibility)
+    if TrackerHost.ApplyVisibilityRules() then
+        queueRuntimeLayout()
     end
 end
 
@@ -2249,34 +2322,102 @@ local function applyWindowVisibility()
 
     local userHidden = state.window and state.window.visible == false
     local suppressed = state.initializing == true
-    local sceneHidden = state.sceneHidden == true
+    local gates = ensureVisibilityGates()
+    local lamOverrideActive = gates.lam == true
+    local hideForSceneGate = gates.scene == true
+    local hideForCombatGate = gates.combat == true
     local previewActive = state.lamPreviewForceVisible == true and not userHidden
-    local hideForScene = sceneHidden and not previewActive
-    local shouldHideForSettings = (suppressed or userHidden) and not previewActive
+    local shouldHideForSettings = (suppressed or userHidden) and not (previewActive or lamOverrideActive)
 
-    if state.fragment and state.fragment.SetHiddenForReason then
-        if previewActive then
-            state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, false)
-            state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, false)
-            state.fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, false)
+    local fragment = state.fragment
+    local fragmentSupportsReason = fragment and fragment.SetHiddenForReason
+    local hideForScene = hideForSceneGate and not lamOverrideActive
+    local hideForCombat = hideForCombatGate and not lamOverrideActive
+    local hideForSceneOrCombat = hideForScene or hideForCombat
+
+    if fragmentSupportsReason then
+        if previewActive or lamOverrideActive then
+            fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, false)
+            fragment:SetHiddenForReason(FRAGMENT_REASON_USER, false)
+            fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, false)
+            fragment:SetHiddenForReason(FRAGMENT_REASON_COMBAT, false)
+            fragment:SetHiddenForReason(FRAGMENT_REASON_LAM, false)
         else
-            state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, suppressed)
-            state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, userHidden)
-            state.fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, sceneHidden)
+            fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, suppressed)
+            fragment:SetHiddenForReason(FRAGMENT_REASON_USER, userHidden)
+            fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, hideForScene)
+            fragment:SetHiddenForReason(FRAGMENT_REASON_COMBAT, hideForCombat)
+            fragment:SetHiddenForReason(FRAGMENT_REASON_LAM, false)
         end
     end
 
-    if shouldHideForSettings or (hideForScene and not state.fragment) then
+    if shouldHideForSettings then
         state.root:SetHidden(true)
-    elseif not hideForScene then
+    elseif fragmentSupportsReason then
         state.root:SetHidden(false)
+    else
+        if hideForSceneOrCombat then
+            state.root:SetHidden(true)
+        else
+            state.root:SetHidden(false)
+        end
     end
 
     if lamPreview.active and previewActive then
         lamPreview.windowPreviewApplied = true
     end
 
-    return shouldHideForSettings or hideForScene
+    return shouldHideForSettings or hideForSceneOrCombat
+end
+
+function TrackerHost.ApplyVisibilityRules()
+    local hostSettings = getHostSettings()
+    local previousSceneHidden = state.sceneHidden == true
+
+    local gates = refreshVisibilityGates(hostSettings)
+    local lamOverride = gates.lam == true
+    local hideForScene = gates.scene == true
+    local hideForCombat = gates.combat == true
+
+    local applyLabel
+    if lamOverride then
+        applyLabel = "LAM override"
+    elseif hideForScene then
+        applyLabel = "scene"
+    elseif hideForCombat then
+        applyLabel = "combat"
+    else
+        applyLabel = "hud"
+    end
+
+    diagnosticsDebug(
+        "Host gates: scene=%s combat=%s lam=%s → apply=%s",
+        tostring(hideForScene),
+        tostring(hideForCombat),
+        tostring(lamOverride),
+        applyLabel
+    )
+
+    if lamOverride then
+        state.sceneHidden = false
+    else
+        local effectiveSceneHidden = hideForScene == true
+        local effectiveCombatHidden = hideForCombat == true
+        state.sceneHidden = effectiveSceneHidden or effectiveCombatHidden
+    end
+
+    applyWindowVisibility()
+
+    local changed = previousSceneHidden ~= (state.sceneHidden == true)
+    if changed then
+        diagnosticsDebug(
+            "Host visibility -> %s (%s)",
+            state.sceneHidden and "hidden" or "visible",
+            applyLabel
+        )
+    end
+
+    return changed
 end
 
 local function refreshWindowLayout(targetOffset)
@@ -2449,6 +2590,7 @@ local function applyWindowTopmost()
 end
 
 local function applyWindowSettings()
+    state.hostSettings = ensureHostSettings()
     state.window = ensureWindowSettings()
     state.appearance = ensureAppearanceSettings()
     state.layout = ensureLayoutSettings()
@@ -2593,7 +2735,11 @@ local function ensureSceneFragmentInternal(hostRoot)
             fragment:SetHideOnSceneHidden(false)
         end
         if fragment.SetHiddenForReason then
+            fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, false)
+            fragment:SetHiddenForReason(FRAGMENT_REASON_USER, false)
             fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, false)
+            fragment:SetHiddenForReason(FRAGMENT_REASON_COMBAT, false)
+            fragment:SetHiddenForReason(FRAGMENT_REASON_LAM, false)
         end
     end
 
@@ -2776,6 +2922,7 @@ function TrackerHost.Init()
 
     state.initializing = true
 
+    state.hostSettings = ensureHostSettings()
     state.window = ensureWindowSettings()
     state.appearance = ensureAppearanceSettings()
     state.layout = ensureLayoutSettings()
@@ -2812,6 +2959,12 @@ function TrackerHost.Init()
     ensureSceneFragment(state.root)
 
     ensureBootstraps()
+
+    state.isInHUDScene = isGameHUDActive()
+    state.isInCombat = state.bootstrapCombatState == true
+    if TrackerHost.ApplyVisibilityRules() then
+        queueRuntimeLayout()
+    end
 
     debugLog("Host window initialized")
 end
@@ -2888,6 +3041,10 @@ function TrackerHost.ApplySettings()
     end
 
     TrackerHost.ApplyAppearance()
+
+    if TrackerHost.ApplyVisibilityRules() then
+        queueRuntimeLayout()
+    end
 end
 
 function TrackerHost.ApplyTheme()
@@ -2999,6 +3156,8 @@ function TrackerHost.SetTrackerColor(trackerType, role, r, g, b, a)
 end
 
 function TrackerHost.OnLamPanelOpened()
+    state.isLAMOpen = true
+    setVisibilityGate("lam", true)
     lamPreview.active = true
     lamPreview.windowSettingOnOpen = isWindowOptionEnabled()
 
@@ -3011,6 +3170,9 @@ function TrackerHost.OnLamPanelOpened()
     if not lamPreview.windowSettingOnOpen then
         state.lamPreviewForceVisible = false
         lamPreview.windowPreviewApplied = false
+        if TrackerHost.ApplyVisibilityRules() then
+            queueRuntimeLayout()
+        end
         return
     end
 
@@ -3027,6 +3189,10 @@ function TrackerHost.OnLamPanelOpened()
     if TrackerHost.Refresh then
         TrackerHost.Refresh()
     end
+
+    if TrackerHost.ApplyVisibilityRules() then
+        queueRuntimeLayout()
+    end
 end
 
 function TrackerHost.OnLamPanelClosed()
@@ -3036,6 +3202,8 @@ function TrackerHost.OnLamPanelClosed()
 
     lamPreview.active = false
     state.lamPreviewForceVisible = false
+    state.isLAMOpen = false
+    setVisibilityGate("lam", false)
 
     applyWindowVisibility()
 
@@ -3053,6 +3221,10 @@ function TrackerHost.OnLamPanelClosed()
     lamPreview.windowPreviewApplied = false
     lamPreview.windowSettingOnOpen = nil
     lamPreview.wasWindowVisibleBeforeLAM = nil
+
+    if TrackerHost.ApplyVisibilityRules() then
+        queueRuntimeLayout()
+    end
 end
 
 function TrackerHost.Shutdown()
@@ -3061,6 +3233,10 @@ function TrackerHost.Shutdown()
     lamPreview.wasWindowVisibleBeforeLAM = nil
     lamPreview.windowPreviewApplied = false
     state.lamPreviewForceVisible = false
+    state.isLAMOpen = false
+    state.isInHUDScene = true
+    state.isInCombat = false
+    state.visibilityGates = nil
 
     if state.previousDefaultQuestTrackerHidden ~= nil and ZO_QuestTracker and ZO_QuestTracker.SetHidden then
         ZO_QuestTracker:SetHidden(state.previousDefaultQuestTrackerHidden)
@@ -3166,6 +3342,8 @@ function TrackerHost.Shutdown()
         state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, true)
         state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, true)
         state.fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, false)
+        state.fragment:SetHiddenForReason(FRAGMENT_REASON_COMBAT, false)
+        state.fragment:SetHiddenForReason(FRAGMENT_REASON_LAM, false)
     end
     state.fragment = nil
     state.fragmentRetryScheduled = false

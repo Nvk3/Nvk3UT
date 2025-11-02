@@ -11,14 +11,19 @@ local WEAK_VALUE_MT = { __mode = "v" }
 local unpack = unpack or table.unpack
 
 Runtime._hostRef = Runtime._hostRef or setmetatable({}, WEAK_VALUE_MT)
-Runtime._questDirty = Runtime._questDirty == true
-Runtime._achievementDirty = Runtime._achievementDirty == true
-Runtime._layoutDirty = Runtime._layoutDirty == true
+Runtime._dirty = Runtime._dirty or {}
+Runtime._dirty.quest = Runtime._dirty.quest == true
+Runtime._dirty.achievement = Runtime._dirty.achievement == true
+Runtime._dirty.layout = Runtime._dirty.layout == true
+Runtime._queuedChannelsForLog = Runtime._queuedChannelsForLog or {}
+Runtime._isProcessingFrame = Runtime._isProcessingFrame == true
+Runtime._lastProcessFrameMs = Runtime._lastProcessFrameMs or nil
 Runtime._isInCombat = Runtime._isInCombat == true
 Runtime._isInCursorMode = Runtime._isInCursorMode == true
 Runtime._scheduled = Runtime._scheduled == true
 Runtime._scheduledCallId = Runtime._scheduledCallId or nil
 Runtime._initialized = Runtime._initialized == true
+Runtime._interactivityDirty = Runtime._interactivityDirty == true
 
 local function debug(fmt, ...)
     if Addon and type(Addon.Debug) == "function" then
@@ -58,6 +63,60 @@ local function setHostWindow(hostWindow)
     end
 
     ref.hostWindow = hostWindow
+end
+
+local DIRTY_CHANNEL_ORDER = { "quest", "achievement", "layout" }
+
+local function ensureDirtyState()
+    local dirty = Runtime._dirty
+    if type(dirty) ~= "table" then
+        dirty = {}
+        Runtime._dirty = dirty
+    end
+
+    dirty.quest = dirty.quest == true
+    dirty.achievement = dirty.achievement == true
+    dirty.layout = dirty.layout == true
+
+    return dirty
+end
+
+local function ensureQueuedLogTable()
+    local queued = Runtime._queuedChannelsForLog
+    if type(queued) ~= "table" then
+        queued = {}
+        Runtime._queuedChannelsForLog = queued
+    end
+
+    return queued
+end
+
+local function getFrameTimeMs()
+    if type(GetFrameTimeMilliseconds) == "function" then
+        return GetFrameTimeMilliseconds()
+    end
+
+    if type(GetGameTimeMilliseconds) == "function" then
+        return GetGameTimeMilliseconds()
+    end
+
+    return nil
+end
+
+local function formatChannelList(set)
+    local ordered = {}
+    for index = 1, #DIRTY_CHANNEL_ORDER do
+        local channel = DIRTY_CHANNEL_ORDER[index]
+        if set and set[channel] then
+            ordered[#ordered + 1] = channel
+        end
+    end
+
+    if #ordered == 0 then
+        return "none"
+    end
+
+    return table.concat(ordered, "/")
 end
 
 local function callWithOptionalSelf(targetTable, fn, preferPlainCall, ...)
@@ -201,21 +260,25 @@ local function applyTrackerHostLayout()
 end
 
 local function hasDirtyFlags()
-    return Runtime._questDirty or Runtime._achievementDirty or Runtime._layoutDirty
+    local dirty = ensureDirtyState()
+    return dirty.quest or dirty.achievement or dirty.layout
 end
 
-local function clearDirtyFlags()
-    Runtime._questDirty = false
-    Runtime._achievementDirty = false
-    Runtime._layoutDirty = false
+local function hasInteractivityWork()
+    return Runtime._interactivityDirty == true
+end
+
+local function hasPendingWork()
+    return hasDirtyFlags() or hasInteractivityWork()
 end
 
 local function executeProcessing()
     Runtime._scheduled = false
     Runtime._scheduledCallId = nil
 
+    local nowMs = getFrameTimeMs()
     safeCall(function()
-        Runtime:ProcessFrame()
+        Runtime:ProcessFrame(nowMs)
     end)
 end
 
@@ -224,7 +287,7 @@ local function scheduleProcessing()
         return
     end
 
-    if not hasDirtyFlags() then
+    if not hasPendingWork() then
         return
     end
 
@@ -240,63 +303,139 @@ end
 
 function Runtime:Init(hostWindow)
     setHostWindow(hostWindow)
+    self._interactivityDirty = true
     self._initialized = true
     debug("TrackerRuntime.Init(%s)", tostring(hostWindow))
-end
-
-function Runtime:QueueDirty(kind)
-    if kind == "quest" then
-        self._questDirty = true
-    elseif kind == "achievement" then
-        self._achievementDirty = true
-    elseif kind == "layout" then
-        self._layoutDirty = true
-    else
-        debug("TrackerRuntime.QueueDirty ignored unknown kind '%s'", tostring(kind))
-        return
-    end
-
     scheduleProcessing()
 end
 
-function Runtime:ProcessFrame()
-    if not hasDirtyFlags() then
+function Runtime:QueueDirty(channel, opts)
+    local dirty = ensureDirtyState()
+    local queuedLog = ensureQueuedLogTable()
+
+    local normalized = type(channel) == "string" and channel or "all"
+    local applyAll = normalized == "all"
+
+    if not applyAll then
+        local isKnown = normalized == "quest" or normalized == "achievement" or normalized == "layout"
+        if not isKnown then
+            debug("Runtime: QueueDirty unknown channel '%s', defaulting to all", tostring(channel))
+            applyAll = true
+        end
+    end
+
+    if applyAll then
+        for index = 1, #DIRTY_CHANNEL_ORDER do
+            local key = DIRTY_CHANNEL_ORDER[index]
+            if not dirty[key] then
+                dirty[key] = true
+                queuedLog[key] = true
+            end
+        end
+    else
+        if not dirty[normalized] then
+            dirty[normalized] = true
+            queuedLog[normalized] = true
+        end
+    end
+
+    if hasPendingWork() then
+        scheduleProcessing()
+    end
+end
+
+function Runtime:ProcessFrame(nowMs)
+    if self._isProcessingFrame then
         return
     end
 
-    debug("TrackerRuntime.ProcessFrame begin")
-
-    local questDirty = self._questDirty
-    local achievementDirty = self._achievementDirty
-    local layoutDirty = self._layoutDirty
-
-    clearDirtyFlags()
-
-    local refreshed = false
-
-    if questDirty then
-        debug("TrackerRuntime processing quest dirty")
-        local built = buildQuestViewModel()
-        local refreshedQuest = refreshQuestTracker()
-        refreshed = refreshed or refreshedQuest or built
+    if not hasPendingWork() then
+        return
     end
 
-    if achievementDirty then
-        debug("TrackerRuntime processing achievement dirty")
-        local built = buildAchievementViewModel()
-        local refreshedAchievement = refreshAchievementTracker()
-        refreshed = refreshed or refreshedAchievement or built
+    local frameStamp = nowMs
+    if frameStamp == nil then
+        frameStamp = getFrameTimeMs()
     end
 
-    if refreshed or layoutDirty then
-        debug("TrackerRuntime applying layout (refreshed=%s, layoutDirty=%s)", tostring(refreshed), tostring(layoutDirty))
-        applyTrackerHostLayout()
-    end
-
-    debug("TrackerRuntime.ProcessFrame end")
-
-    if hasDirtyFlags() then
+    if frameStamp ~= nil and self._lastProcessFrameMs ~= nil and frameStamp == self._lastProcessFrameMs then
         scheduleProcessing()
+        return
+    end
+
+    self._isProcessingFrame = true
+    self._lastProcessFrameMs = frameStamp
+
+    local function process()
+        local dirty = ensureDirtyState()
+        local questDirty = dirty.quest
+        local achievementDirty = dirty.achievement
+        local layoutDirty = dirty.layout
+
+        dirty.quest = false
+        dirty.achievement = false
+        dirty.layout = false
+
+        local processedChannels = {}
+        local refreshed = false
+
+        if questDirty then
+            processedChannels.quest = true
+            local built = buildQuestViewModel()
+            local refreshedQuest = refreshQuestTracker()
+            refreshed = refreshed or refreshedQuest or built
+        end
+
+        if achievementDirty then
+            processedChannels.achievement = true
+            local built = buildAchievementViewModel()
+            local refreshedAchievement = refreshAchievementTracker()
+            refreshed = refreshed or refreshedAchievement or built
+        end
+
+        if refreshed or layoutDirty then
+            processedChannels.layout = true
+            applyTrackerHostLayout()
+        end
+
+        if Runtime._interactivityDirty == true then
+            Runtime._interactivityDirty = false
+            local hostWindow = getHostWindow()
+            if hostWindow and type(hostWindow.SetMouseEnabled) == "function" then
+                safeCall(hostWindow.SetMouseEnabled, hostWindow, self._isInCursorMode == true)
+            end
+        end
+
+        local queuedLog = ensureQueuedLogTable()
+        local logQueued = nil
+        if next(queuedLog) ~= nil then
+            logQueued = formatChannelList(queuedLog)
+        end
+
+        for key in pairs(queuedLog) do
+            queuedLog[key] = nil
+        end
+
+        local logProcessed = nil
+        if next(processedChannels) ~= nil then
+            logProcessed = formatChannelList(processedChannels)
+        end
+
+        if logQueued or logProcessed then
+            debug("Runtime: queued %s; processed %s", logQueued or "none", logProcessed or "none")
+        end
+    end
+
+    local ok, err = pcall(process)
+
+    self._isProcessingFrame = false
+
+    if hasPendingWork() then
+        scheduleProcessing()
+    end
+
+    if not ok then
+        error(err)
     end
 end
 
@@ -306,9 +445,12 @@ function Runtime:SetCombatState(isInCombat)
         return
     end
 
+    local wasInCombat = self._isInCombat == true
     self._isInCombat = normalized
-    self._layoutDirty = true
-    scheduleProcessing()
+
+    if wasInCombat and not normalized then
+        self:QueueDirty("layout")
+    end
 end
 
 function Runtime:SetCursorMode(isInCursorMode)
@@ -318,7 +460,8 @@ function Runtime:SetCursorMode(isInCursorMode)
     end
 
     self._isInCursorMode = normalized
-    self._layoutDirty = true
+    self._interactivityDirty = true
+    debug("Runtime: cursor mode changed -> %s", tostring(normalized))
     scheduleProcessing()
 end
 

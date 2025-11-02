@@ -127,6 +127,24 @@ local function getGeneral()
     return general
 end
 
+local function getSettings()
+    local sv = getSavedVars()
+    sv.Settings = sv.Settings or {}
+    return sv.Settings
+end
+
+local function getHostSettings()
+    local settings = getSettings()
+    settings.Host = settings.Host or {}
+    local host = settings.Host
+    if host.HideInCombat == nil then
+        host.HideInCombat = false
+    else
+        host.HideInCombat = host.HideInCombat == true
+    end
+    return host
+end
+
 local function getFeatures()
     local general = getGeneral()
     general.features = general.features or {}
@@ -1049,6 +1067,37 @@ local function registerPanel(displayTitle)
 
     options[#options + 1] = {
         type = "submenu",
+        name = "Host",
+        controls = (function()
+            local controls = {}
+
+            controls[#controls + 1] = { type = "header", name = "Host" }
+
+            controls[#controls + 1] = {
+                type = "checkbox",
+                name = "Hide tracker during combat",
+                tooltip = "When enabled, the entire tracker host hides while you are in combat. The tracker remains visible while the AddOn Settings (LAM) are open.",
+                getFunc = function()
+                    local settings = getHostSettings()
+                    return settings.HideInCombat == true
+                end,
+                setFunc = function(value)
+                    local settings = getHostSettings()
+                    settings.HideInCombat = value == true
+                    local host = Nvk3UT and Nvk3UT.TrackerHost
+                    if host and host.ApplyVisibilityRules then
+                        host:ApplyVisibilityRules()
+                    end
+                end,
+                default = false,
+            }
+
+            return controls
+        end)(),
+    }
+
+    options[#options + 1] = {
+        type = "submenu",
         name = "Quest Tracker",
         controls = (function()
             local controls = {}
@@ -1072,21 +1121,6 @@ local function registerPanel(displayTitle)
                     end
                 end,
                 default = true,
-            }
-
-            controls[#controls + 1] = {
-                type = "checkbox",
-                name = "Im Kampf verstecken",
-                getFunc = function()
-                    local settings = getQuestSettings()
-                    return settings.hideInCombat == true
-                end,
-                setFunc = function(value)
-                    local settings = getQuestSettings()
-                    settings.hideInCombat = value
-                    applyQuestSettings()
-                end,
-                default = false,
             }
 
             controls[#controls + 1] = {
