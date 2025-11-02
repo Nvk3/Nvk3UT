@@ -567,7 +567,9 @@ function Runtime:ProcessFrame(nowMs)
         if interactivityDirty then
             local hostWindow = getHostWindow()
             if hostWindow and type(hostWindow.SetMouseEnabled) == "function" then
-                safeCall(hostWindow.SetMouseEnabled, hostWindow, self._isInCursorMode == true)
+                safeCall(function()
+                    hostWindow:SetMouseEnabled(self._isInCursorMode == true)
+                end)
                 debug("Runtime: interactivity updated (cursor=%s)", tostring(self._isInCursorMode == true))
             end
         end

@@ -2826,23 +2826,30 @@ local function RelayoutFromCategoryIndex()
 
     local Rows = GetRows()
 
+    local function finalizeRelayout()
+        UpdateContentSize()
+        NotifyHostContentChanged()
+        ProcessPendingExternalReveal()
+        DebugLog(string.format(
+            "Relayout: rows=%d, h=%d",
+            #state.orderedControls,
+            state.contentHeight or 0
+        ))
+    end
+
     local hasSnapshot = state.snapshot and state.snapshot.categories and state.snapshot.categories.ordered
     if not hasSnapshot then
         if Rows and Rows.ReleaseAll then
             Rows:ReleaseAll()
         end
         ResetLayoutState()
-        UpdateContentSize()
-        NotifyHostContentChanged()
-        ProcessPendingExternalReveal()
+        finalizeRelayout()
         return
     end
 
     if not Rows then
         ResetLayoutState()
-        UpdateContentSize()
-        NotifyHostContentChanged()
-        ProcessPendingExternalReveal()
+        finalizeRelayout()
         return
     end
 
@@ -2863,9 +2870,7 @@ local function RelayoutFromCategoryIndex()
         end
     end
 
-    UpdateContentSize()
-    NotifyHostContentChanged()
-    ProcessPendingExternalReveal()
+    finalizeRelayout()
 end
 
 local function ApplySnapshot(snapshot, context)
@@ -2969,15 +2974,13 @@ function QuestTracker.Init(parentControl, opts)
     end
 
     local Rows = GetRows()
-    if Rows and Rows.Init then
-        local ok, err = pcall(Rows.Init, Rows, state.container)
-        if ok then
-            if Rows.SetContentWidth then
-                Rows:SetContentWidth(GetContainerWidth())
-            end
-            DebugLog("QuestRows.Init ok")
-        else
-            DebugLog("QuestRows.Init failed", tostring(err))
+    if Rows then
+        if Rows.Init then
+            Rows:Init(state.container)
+            DebugLog("Rows.Init done")
+        end
+        if Rows.SetContentWidth then
+            Rows:SetContentWidth(GetContainerWidth())
         end
     else
         DebugLog("QuestRows not available (deferred)")
@@ -3106,6 +3109,10 @@ end
 
 function QuestTracker.RequestRefresh()
     RequestRefresh()
+end
+
+function QuestTracker.GetHeight()
+    return (state and state.contentHeight) or 0
 end
 
 function QuestTracker.GetContentSize()

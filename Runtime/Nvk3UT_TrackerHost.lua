@@ -1263,11 +1263,22 @@ measureTrackerContent = function(container, trackerModule)
     local width = 0
     local height = 0
 
-    if trackerModule and trackerModule.GetContentSize then
-        local ok, trackerWidth, trackerHeight = pcall(trackerModule.GetContentSize)
-        if ok then
-            width = tonumber(trackerWidth) or 0
-            height = tonumber(trackerHeight) or 0
+    if trackerModule then
+        if trackerModule.GetHeight then
+            local ok, trackerHeight = pcall(trackerModule.GetHeight)
+            if ok then
+                height = tonumber(trackerHeight) or 0
+            end
+        end
+
+        if trackerModule.GetContentSize then
+            local ok, trackerWidth, trackerHeight = pcall(trackerModule.GetContentSize)
+            if ok then
+                width = tonumber(trackerWidth) or 0
+                if height <= 0 then
+                    height = tonumber(trackerHeight) or height
+                end
+            end
         end
     end
 
