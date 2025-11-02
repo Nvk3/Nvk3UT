@@ -150,6 +150,7 @@ local state = {
     isInCombat = false,
     isInHUDScene = true,
     isLAMOpen = false,
+    visibilityGates = nil,
 }
 
 local lamPreview = {
@@ -176,6 +177,9 @@ local applyBootstrapVisibility
 local startWindowDrag
 local stopWindowDrag
 local getCurrentScrollOffset
+local ensureVisibilityGates
+local setVisibilityGate
+local refreshVisibilityGates
 
 local function getSavedVars()
     return Nvk3UT and Nvk3UT.sv
@@ -787,6 +791,50 @@ queueRuntimeLayout = function()
     callRuntime("QueueDirty", "layout")
 end
 
+ensureVisibilityGates = function()
+    if not state.visibilityGates then
+        state.visibilityGates = {
+            scene = false,
+            combat = false,
+            lam = false,
+        }
+    end
+
+    return state.visibilityGates
+end
+
+setVisibilityGate = function(gateName, value)
+    if type(gateName) ~= "string" then
+        return false
+    end
+
+    local gates = ensureVisibilityGates()
+    local normalized = value == true
+
+    if gates[gateName] == normalized then
+        return false
+    end
+
+    gates[gateName] = normalized
+    return true
+end
+
+refreshVisibilityGates = function(hostSettings)
+    local gates = ensureVisibilityGates()
+
+    gates.scene = state.isInHUDScene ~= true
+
+    local hideInCombatSetting = false
+    if hostSettings and hostSettings.HideInCombat == true then
+        hideInCombatSetting = true
+    end
+
+    gates.combat = hideInCombatSetting and state.isInCombat == true or false
+    gates.lam = state.isLAMOpen == true
+
+    return gates
+end
+
 function TrackerHost.SetCombatState(selfOrFlag, maybeFlag)
     local targetFlag
     if selfOrFlag == TrackerHost then
@@ -802,6 +850,9 @@ function TrackerHost.SetCombatState(selfOrFlag, maybeFlag)
     end
 
     state.isInCombat = normalized
+
+    local hostSettings = getHostSettings()
+    setVisibilityGate("combat", hostSettings and hostSettings.HideInCombat == true and normalized)
 
     diagnosticsDebug("Host combat: %s -> ApplyVisibilityRules()", tostring(normalized))
 
@@ -921,6 +972,7 @@ local function applyBootstrapVisibility(host)
 
     state.bootstrapHudVisible = shouldShow
     state.isInHUDScene = shouldShow
+    setVisibilityGate("scene", not shouldShow)
     diagnosticsDebug("TrackerHost HUD visibility changed: %s", tostring(shouldShow))
 
     if TrackerHost.ApplyVisibilityRules() then
@@ -2303,23 +2355,33 @@ function TrackerHost.ApplyVisibilityRules()
     local hostSettings = getHostSettings()
     local previousSceneHidden = state.sceneHidden == true
 
-    local lamOverride = state.isLAMOpen == true
-    local hideForScene = state.isInHUDScene ~= true
-    local hideForCombat = hostSettings and hostSettings.HideInCombat == true and state.isInCombat == true
-    local hideReason = "hud"
+    local gates = refreshVisibilityGates(hostSettings)
+    local lamOverride = gates.lam == true
+    local hideForScene = gates.scene == true
+    local hideForCombat = gates.combat == true
+
+    local applyLabel
+    if lamOverride then
+        applyLabel = "LAM override"
+    elseif hideForScene then
+        applyLabel = "scene"
+    elseif hideForCombat then
+        applyLabel = "combat"
+    else
+        applyLabel = "hud"
+    end
+
+    diagnosticsDebug(
+        "Host gates: scene=%s combat=%s lam=%s → apply=%s",
+        tostring(hideForScene),
+        tostring(hideForCombat),
+        tostring(lamOverride),
+        applyLabel
+    )
 
     if lamOverride then
         state.sceneHidden = false
-        hideReason = "LAM override"
     else
-        if hideForScene then
-            hideReason = "scene"
-        elseif hideForCombat then
-            hideReason = "combat"
-        else
-            hideReason = "hud"
-        end
-
         state.sceneHidden = hideForScene or hideForCombat
     end
 
@@ -2330,7 +2392,7 @@ function TrackerHost.ApplyVisibilityRules()
         diagnosticsDebug(
             "Host visibility -> %s (%s)",
             state.sceneHidden and "hidden" or "visible",
-            hideReason
+            applyLabel
         )
     end
 
@@ -3070,6 +3132,7 @@ end
 
 function TrackerHost.OnLamPanelOpened()
     state.isLAMOpen = true
+    setVisibilityGate("lam", true)
     lamPreview.active = true
     lamPreview.windowSettingOnOpen = isWindowOptionEnabled()
 
@@ -3115,6 +3178,7 @@ function TrackerHost.OnLamPanelClosed()
     lamPreview.active = false
     state.lamPreviewForceVisible = false
     state.isLAMOpen = false
+    setVisibilityGate("lam", false)
 
     applyWindowVisibility()
 
@@ -3147,6 +3211,7 @@ function TrackerHost.Shutdown()
     state.isLAMOpen = false
     state.isInHUDScene = true
     state.isInCombat = false
+    state.visibilityGates = nil
 
     if state.previousDefaultQuestTrackerHidden ~= nil and ZO_QuestTracker and ZO_QuestTracker.SetHidden then
         ZO_QuestTracker:SetHidden(state.previousDefaultQuestTrackerHidden)
