@@ -24,10 +24,11 @@ local SCROLL_OVERSHOOT_PADDING = 100 -- allow scrolling so the last entry can si
 local FRAGMENT_RETRY_DELAY_MS = 200
 local MAX_BAR_HEIGHT = 250
 
-local FRAGMENT_REASON_SUPPRESSED = addonName .. "_HostSuppressed"
-local FRAGMENT_REASON_USER = addonName .. "_HostHiddenBySettings"
-local FRAGMENT_REASON_SCENE = addonName .. "_HostSceneHidden"
-local FRAGMENT_REASON_COMBAT = addonName .. "_HostCombatHidden"
+local FRAGMENT_REASON_SUPPRESSED = "NVK3UT_SUPPRESSED"
+local FRAGMENT_REASON_USER = "NVK3UT_USER"
+local FRAGMENT_REASON_SCENE = "NVK3UT_SCENE"
+local FRAGMENT_REASON_COMBAT = "NVK3UT_COMBAT"
+local FRAGMENT_REASON_LAM = "NVK3UT_LAM"
 
 local DEFAULT_APPEARANCE = {
     enabled = true,
@@ -2329,28 +2330,38 @@ local function applyWindowVisibility()
     local previewActive = state.lamPreviewForceVisible == true and not userHidden
     local shouldHideForSettings = (suppressed or userHidden) and not (previewActive or lamOverrideActive)
 
+    local fragment = state.fragment
+    local fragmentSupportsReason = fragment and fragment.SetHiddenForReason
     local hideForScene = hideForSceneGate and not lamOverrideActive
     local hideForCombat = hideForCombatGate and not lamOverrideActive
     local hideForSceneOrCombat = hideForScene or hideForCombat
 
-    if state.fragment and state.fragment.SetHiddenForReason then
+    if fragmentSupportsReason then
         if previewActive or lamOverrideActive then
-            state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, false)
-            state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, false)
-            state.fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, false)
-            state.fragment:SetHiddenForReason(FRAGMENT_REASON_COMBAT, false)
+            fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, false)
+            fragment:SetHiddenForReason(FRAGMENT_REASON_USER, false)
+            fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, false)
+            fragment:SetHiddenForReason(FRAGMENT_REASON_COMBAT, false)
+            fragment:SetHiddenForReason(FRAGMENT_REASON_LAM, false)
         else
-            state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, suppressed)
-            state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, userHidden)
-            state.fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, hideForScene)
-            state.fragment:SetHiddenForReason(FRAGMENT_REASON_COMBAT, hideForCombat)
+            fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, suppressed)
+            fragment:SetHiddenForReason(FRAGMENT_REASON_USER, userHidden)
+            fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, hideForScene)
+            fragment:SetHiddenForReason(FRAGMENT_REASON_COMBAT, hideForCombat)
+            fragment:SetHiddenForReason(FRAGMENT_REASON_LAM, false)
         end
     end
 
-    if shouldHideForSettings or (hideForSceneOrCombat and not state.fragment) then
+    if shouldHideForSettings then
         state.root:SetHidden(true)
-    elseif not hideForSceneOrCombat and not shouldHideForSettings then
+    elseif fragmentSupportsReason then
         state.root:SetHidden(false)
+    else
+        if hideForSceneOrCombat then
+            state.root:SetHidden(true)
+        else
+            state.root:SetHidden(false)
+        end
     end
 
     if lamPreview.active and previewActive then
@@ -2725,7 +2736,11 @@ local function ensureSceneFragmentInternal(hostRoot)
             fragment:SetHideOnSceneHidden(false)
         end
         if fragment.SetHiddenForReason then
+            fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, false)
+            fragment:SetHiddenForReason(FRAGMENT_REASON_USER, false)
             fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, false)
+            fragment:SetHiddenForReason(FRAGMENT_REASON_COMBAT, false)
+            fragment:SetHiddenForReason(FRAGMENT_REASON_LAM, false)
         end
     end
 
@@ -3328,6 +3343,8 @@ function TrackerHost.Shutdown()
         state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, true)
         state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, true)
         state.fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, false)
+        state.fragment:SetHiddenForReason(FRAGMENT_REASON_COMBAT, false)
+        state.fragment:SetHiddenForReason(FRAGMENT_REASON_LAM, false)
     end
     state.fragment = nil
     state.fragmentRetryScheduled = false
