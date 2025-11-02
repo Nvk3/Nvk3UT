@@ -57,18 +57,6 @@ local function safeCall(fn, ...)
     return nil
 end
 
-local function SetMouseEnabledSafe(control, enabled)
-    if not (control and type(control.SetMouseEnabled) == "function") then
-        return false
-    end
-
-    safeCall(function()
-        control:SetMouseEnabled(enabled)
-    end)
-
-    return true
-end
-
 local function getHostWindow()
     local ref = Runtime._hostRef
     if type(ref) ~= "table" then
@@ -584,13 +572,7 @@ function Runtime:ProcessFrame(nowMs)
             local hostWindow = getHostWindow()
             local cursorEnabled = self._isInCursorMode == true
 
-            local function deferInteractivity()
-                self._interactivityDirty = true
-            end
-
-            if not hostWindow then
-                deferInteractivity()
-            else
+            if hostWindow then
                 local scrollContainer = hostWindow.scroll or hostWindow.scrollContainer
                 if not scrollContainer and hostWindow.GetNamedChild then
                     scrollContainer = hostWindow:GetNamedChild(SCROLL_CONTAINER_NAME)
@@ -599,15 +581,17 @@ function Runtime:ProcessFrame(nowMs)
                 local rowsModule = rawget(Addon, "QuestTrackerRows")
                 local rowsReady = rowsModule and rowsModule.isInitialized == true
                 if not scrollContainer or not rowsReady then
-                    deferInteractivity()
+                    self._interactivityDirty = true
                 else
                     local toggled = 0
 
-                    if SetMouseEnabledSafe(hostWindow, cursorEnabled) then
+                    if type(hostWindow.SetMouseEnabled) == "function" then
+                        hostWindow:SetMouseEnabled(cursorEnabled)
                         toggled = toggled + 1
                     end
 
-                    if scrollContainer ~= hostWindow and SetMouseEnabledSafe(scrollContainer, cursorEnabled) then
+                    if scrollContainer ~= hostWindow and type(scrollContainer.SetMouseEnabled) == "function" then
+                        scrollContainer:SetMouseEnabled(cursorEnabled)
                         toggled = toggled + 1
                     end
 
@@ -618,7 +602,9 @@ function Runtime:ProcessFrame(nowMs)
 
                     if type(interactiveControls) == "table" then
                         for index = 1, #interactiveControls do
-                            if SetMouseEnabledSafe(interactiveControls[index], cursorEnabled) then
+                            local control = interactiveControls[index]
+                            if control and control.SetMouseEnabled then
+                                control:SetMouseEnabled(cursorEnabled)
                                 toggled = toggled + 1
                             end
                         end
@@ -630,6 +616,8 @@ function Runtime:ProcessFrame(nowMs)
                         tostring(cursorEnabled)
                     )
                 end
+            else
+                self._interactivityDirty = false
             end
         end
 
