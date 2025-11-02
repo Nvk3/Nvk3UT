@@ -27,6 +27,7 @@ local MAX_BAR_HEIGHT = 250
 local FRAGMENT_REASON_SUPPRESSED = addonName .. "_HostSuppressed"
 local FRAGMENT_REASON_USER = addonName .. "_HostHiddenBySettings"
 local FRAGMENT_REASON_SCENE = addonName .. "_HostSceneHidden"
+local FRAGMENT_REASON_COMBAT = addonName .. "_HostCombatHidden"
 
 local DEFAULT_APPEARANCE = {
     enabled = true,
@@ -2321,26 +2322,34 @@ local function applyWindowVisibility()
 
     local userHidden = state.window and state.window.visible == false
     local suppressed = state.initializing == true
-    local sceneHidden = state.sceneHidden == true
+    local gates = ensureVisibilityGates()
+    local lamOverrideActive = gates.lam == true
+    local hideForSceneGate = gates.scene == true
+    local hideForCombatGate = gates.combat == true
     local previewActive = state.lamPreviewForceVisible == true and not userHidden
-    local hideForScene = sceneHidden and not previewActive
-    local shouldHideForSettings = (suppressed or userHidden) and not previewActive
+    local shouldHideForSettings = (suppressed or userHidden) and not (previewActive or lamOverrideActive)
+
+    local hideForScene = hideForSceneGate and not lamOverrideActive
+    local hideForCombat = hideForCombatGate and not lamOverrideActive
+    local hideForSceneOrCombat = hideForScene or hideForCombat
 
     if state.fragment and state.fragment.SetHiddenForReason then
-        if previewActive then
+        if previewActive or lamOverrideActive then
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, false)
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, false)
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, false)
+            state.fragment:SetHiddenForReason(FRAGMENT_REASON_COMBAT, false)
         else
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, suppressed)
             state.fragment:SetHiddenForReason(FRAGMENT_REASON_USER, userHidden)
-            state.fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, sceneHidden)
+            state.fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, hideForScene)
+            state.fragment:SetHiddenForReason(FRAGMENT_REASON_COMBAT, hideForCombat)
         end
     end
 
-    if shouldHideForSettings or (hideForScene and not state.fragment) then
+    if shouldHideForSettings or (hideForSceneOrCombat and not state.fragment) then
         state.root:SetHidden(true)
-    elseif not hideForScene then
+    elseif not hideForSceneOrCombat and not shouldHideForSettings then
         state.root:SetHidden(false)
     end
 
@@ -2348,7 +2357,7 @@ local function applyWindowVisibility()
         lamPreview.windowPreviewApplied = true
     end
 
-    return shouldHideForSettings or hideForScene
+    return shouldHideForSettings or hideForSceneOrCombat
 end
 
 function TrackerHost.ApplyVisibilityRules()
@@ -2382,7 +2391,9 @@ function TrackerHost.ApplyVisibilityRules()
     if lamOverride then
         state.sceneHidden = false
     else
-        state.sceneHidden = hideForScene or hideForCombat
+        local effectiveSceneHidden = hideForScene == true
+        local effectiveCombatHidden = hideForCombat == true
+        state.sceneHidden = effectiveSceneHidden or effectiveCombatHidden
     end
 
     applyWindowVisibility()
