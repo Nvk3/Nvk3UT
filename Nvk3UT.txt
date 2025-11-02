@@ -42,6 +42,7 @@ Runtime/Nvk3UT_TrackerHost.lua
 Runtime/Nvk3UT_TrackerHostLayout.lua
 ## === Tracker ===
 Nvk3UT_QuestTracker.xml
+Tracker/Quest/Nvk3UT_QuestTrackerRows.lua
 Nvk3UT_QuestTracker.lua
 Nvk3UT_AchievementTracker.xml
 Nvk3UT_AchievementTracker.lua

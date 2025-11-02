@@ -11,6 +11,7 @@ local EVENT_NAMESPACE = MODULE_NAME .. "_Event"
 local Utils = Nvk3UT and Nvk3UT.Utils
 local QuestState = Nvk3UT and Nvk3UT.QuestState
 local QuestSelection = Nvk3UT and Nvk3UT.QuestSelection
+local Rows = Nvk3UT and Nvk3UT.QuestTrackerRows
 local FormatCategoryHeaderText =
     (Utils and Utils.FormatCategoryHeaderText)
     or function(baseText, count, showCounts)
@@ -22,36 +23,15 @@ local FormatCategoryHeaderText =
         return text
     end
 
-local CATEGORY_TOGGLE_TEXTURES = {
-    expanded = {
-        up = "EsoUI/Art/Buttons/tree_open_up.dds",
-        over = "EsoUI/Art/Buttons/tree_open_over.dds",
-    },
-    collapsed = {
-        up = "EsoUI/Art/Buttons/tree_closed_up.dds",
-        over = "EsoUI/Art/Buttons/tree_closed_over.dds",
-    },
-}
-
-local QUEST_SELECTED_ICON_TEXTURE = "EsoUI/Art/Journal/journal_Quest_Selected.dds"
-
 local CATEGORY_INDENT_X = 0
 local QUEST_INDENT_X = 18
 local QUEST_ICON_SLOT_WIDTH = 18
-local QUEST_ICON_SLOT_HEIGHT = 18
 local QUEST_ICON_SLOT_PADDING_X = 6
 local QUEST_LABEL_INDENT_X = QUEST_INDENT_X + QUEST_ICON_SLOT_WIDTH + QUEST_ICON_SLOT_PADDING_X
 -- keep objective indentation ahead of quest titles even with the persistent icon slot
 local CONDITION_RELATIVE_INDENT = 18
 local CONDITION_INDENT_X = QUEST_LABEL_INDENT_X + CONDITION_RELATIVE_INDENT
 local VERTICAL_PADDING = 3
-
-local CATEGORY_MIN_HEIGHT = 26
-local QUEST_MIN_HEIGHT = 24
-local CONDITION_MIN_HEIGHT = 20
-local ROW_TEXT_PADDING_Y = 8
-local TOGGLE_LABEL_PADDING_X = 4
-local CATEGORY_TOGGLE_WIDTH = 20
 
 local DEFAULT_FONTS = {
     category = "$(BOLD_FONT)|20|soft-shadow-thick",
@@ -84,9 +64,6 @@ local state = {
     saved = nil,
     control = nil,
     container = nil,
-    categoryPool = nil,
-    questPool = nil,
-    conditionPool = nil,
     orderedControls = {},
     lastAnchoredControl = nil,
     snapshot = nil,
@@ -858,116 +835,6 @@ local function PrimeInitialSavedState()
             primedCategories,
             primedQuests
         ))
-    end
-end
-
-local function ApplyLabelDefaults(label)
-    if not label or not label.SetHorizontalAlignment then
-        return
-    end
-
-    label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
-    if label.SetVerticalAlignment then
-        label:SetVerticalAlignment(TEXT_ALIGN_TOP)
-    end
-    if label.SetWrapMode then
-        label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
-    end
-end
-
-local function ApplyToggleDefaults(toggle)
-    if not toggle or not toggle.SetVerticalAlignment then
-        return
-    end
-
-    toggle:SetVerticalAlignment(TEXT_ALIGN_TOP)
-end
-
-local function GetToggleWidth(toggle, fallback)
-    if toggle then
-        if toggle.IsHidden and toggle:IsHidden() then
-            return 0
-        end
-
-        if toggle.GetWidth then
-            local width = toggle:GetWidth()
-            if width and width > 0 then
-                return width
-            end
-        end
-    end
-
-    return fallback or 0
-end
-
-local function GetContainerWidth()
-    if not state.container or not state.container.GetWidth then
-        return 0
-    end
-
-    local width = state.container:GetWidth()
-    if not width or width <= 0 then
-        return 0
-    end
-
-    return width
-end
-
-local function ApplyRowMetrics(control, indent, toggleWidth, leftPadding, rightPadding, minHeight)
-    if not control or not control.label then
-        return
-    end
-
-    indent = indent or 0
-    toggleWidth = toggleWidth or 0
-    leftPadding = leftPadding or 0
-    rightPadding = rightPadding or 0
-
-    local containerWidth = GetContainerWidth()
-    local availableWidth = containerWidth - indent - toggleWidth - leftPadding - rightPadding
-    if availableWidth < 0 then
-        availableWidth = 0
-    end
-
-    control.label:SetWidth(availableWidth)
-
-    local textHeight = control.label:GetTextHeight() or 0
-    local targetHeight = textHeight + ROW_TEXT_PADDING_Y
-    if minHeight then
-        targetHeight = math.max(minHeight, targetHeight)
-    end
-
-    control:SetHeight(targetHeight)
-end
-
-local function RefreshControlMetrics(control)
-    if not control or not control.label then
-        return
-    end
-
-    local indent = control.currentIndent or 0
-    local rowType = control.rowType
-
-    if rowType == "category" then
-        ApplyRowMetrics(
-            control,
-            indent,
-            GetToggleWidth(control.toggle, CATEGORY_TOGGLE_WIDTH),
-            TOGGLE_LABEL_PADDING_X,
-            0,
-            CATEGORY_MIN_HEIGHT
-        )
-    elseif rowType == "quest" then
-        ApplyRowMetrics(
-            control,
-            indent,
-            QUEST_ICON_SLOT_WIDTH,
-            QUEST_ICON_SLOT_PADDING_X,
-            0,
-            QUEST_MIN_HEIGHT
-        )
-    elseif rowType == "condition" then
-        ApplyRowMetrics(control, indent, 0, 0, 0, CONDITION_MIN_HEIGHT)
     end
 end
 
@@ -2648,10 +2515,17 @@ local function ResetLayoutState()
     state.questControls = {}
 end
 
-local function ReleaseAll(pool)
-    if pool then
-        pool:ReleaseAllObjects()
+local function GetContainerWidth()
+    if not state.container or not state.container.GetWidth then
+        return 0
     end
+
+    local width = state.container:GetWidth()
+    if not width or width <= 0 then
+        return 0
+    end
+
+    return width
 end
 
 local function AnchorControl(control, indentX)
@@ -2678,10 +2552,14 @@ local function UpdateContentSize()
     local totalHeight = 0
     local visibleCount = 0
 
+    if Rows and Rows.SetContentWidth then
+        Rows:SetContentWidth(GetContainerWidth())
+    end
+
     for index = 1, #state.orderedControls do
         local control = state.orderedControls[index]
-        if control then
-            RefreshControlMetrics(control)
+        if control and control.RefreshRowMetrics then
+            control:RefreshRowMetrics()
         end
         if control and not control:IsHidden() then
             visibleCount = visibleCount + 1
@@ -2700,645 +2578,53 @@ local function UpdateContentSize()
     state.contentHeight = totalHeight
 end
 
-local function SelectCategoryToggleTexture(expanded, isMouseOver)
-    local textures = expanded and CATEGORY_TOGGLE_TEXTURES.expanded or CATEGORY_TOGGLE_TEXTURES.collapsed
-    if isMouseOver then
-        return textures.over
-    end
-    return textures.up
+local CATEGORY_ROW_CONTEXT = {
+    hoverColor = COLOR_ROW_HOVER,
+    clickContext = { trigger = "click", source = "QuestTracker:OnCategoryClick" },
+}
+
+CATEGORY_ROW_CONTEXT.IsCategoryExpanded = function(categoryKey)
+    return IsCategoryExpanded(categoryKey)
 end
 
-local function UpdateCategoryToggle(control, expanded)
-    if not (control and control.toggle and control.toggle.SetTexture) then
-        return
-    end
-
-    local isMouseOver = false
-    if control.IsMouseOver and control:IsMouseOver() then
-        isMouseOver = true
-    elseif control.toggle and control.toggle.IsMouseOver and control.toggle:IsMouseOver() then
-        isMouseOver = true
-    end
-
-    local texture = SelectCategoryToggleTexture(expanded, isMouseOver)
-    control.toggle:SetTexture(texture)
-    control.isExpanded = expanded and true or false
+CATEGORY_ROW_CONTEXT.SetCategoryExpanded = function(categoryKey, expanded, context)
+    return SetCategoryExpanded(categoryKey, expanded, context)
 end
 
-local function UpdateQuestIconSlot(control)
-    if not (control and control.iconSlot) then
-        return
-    end
-
-    local questData = control.data and control.data.quest
-    local isSelected = false
-    if questData then
-        local questKey = NormalizeQuestKey(questData.journalIndex)
-        if questKey and state.selectedQuestKey then
-            isSelected = questKey == state.selectedQuestKey
-        elseif state.trackedQuestIndex then
-            isSelected = questData.journalIndex == state.trackedQuestIndex
-        end
-    end
-
-    if isSelected then
-        if control.iconSlot.SetTexture then
-            control.iconSlot:SetTexture(QUEST_SELECTED_ICON_TEXTURE)
-        end
-        if control.iconSlot.SetAlpha then
-            control.iconSlot:SetAlpha(1)
-        end
-        if control.iconSlot.SetHidden then
-            control.iconSlot:SetHidden(false)
-        end
-    else
-        if control.iconSlot.SetTexture then
-            control.iconSlot:SetTexture(nil)
-        end
-        if control.iconSlot.SetAlpha then
-            control.iconSlot:SetAlpha(0)
-        end
-        if control.iconSlot.SetHidden then
-            control.iconSlot:SetHidden(false)
-        end
-    end
-end
-
-local function GetDefaultCategoryExpanded()
-    if QuestState and QuestState.GetCategoryDefaultExpanded then
-        local savedDefault = QuestState.GetCategoryDefaultExpanded()
-        if savedDefault ~= nil then
-            return savedDefault and true or false
-        end
-    elseif state.saved and state.saved.defaults and state.saved.defaults.categoryExpanded ~= nil then
-        return state.saved.defaults.categoryExpanded and true or false
-    end
-
-    return state.opts.autoExpand ~= false
-end
-
-local function GetDefaultQuestExpanded()
-    if QuestState and QuestState.GetQuestDefaultExpanded then
-        local savedDefault = QuestState.GetQuestDefaultExpanded()
-        if savedDefault ~= nil then
-            return savedDefault and true or false
-        end
-    elseif state.saved and state.saved.defaults and state.saved.defaults.questExpanded ~= nil then
-        return state.saved.defaults.questExpanded and true or false
-    end
-
-    return state.opts.autoExpand ~= false
-end
-
-local function IsCategoryExpanded(categoryKey)
-    local key = NormalizeCategoryKey(categoryKey)
-    if not key then
-        return GetDefaultCategoryExpanded()
-    end
-
-    if QuestState and QuestState.IsCategoryExpanded then
-        local stored = QuestState.IsCategoryExpanded(key)
-        if stored ~= nil then
-            return stored and true or false
-        end
-    elseif state.saved and state.saved.cat then
-        local entry = state.saved.cat[key]
-        if entry and entry.expanded ~= nil then
-            return entry.expanded and true or false
-        end
-    end
-
-    return GetDefaultCategoryExpanded()
-end
-
-IsQuestExpanded = function(journalIndex)
-    local key = NormalizeQuestKey(journalIndex)
-    if not key then
-        return GetDefaultQuestExpanded()
-    end
-
-    if QuestState and QuestState.IsQuestExpanded then
-        local stored = QuestState.IsQuestExpanded(key)
-        if stored ~= nil then
-            return stored and true or false
-        end
-    elseif state.saved and state.saved.quest then
-        local entry = state.saved.quest[key]
-        if entry and entry.expanded ~= nil then
-            return entry.expanded and true or false
-        end
-    end
-
-    return GetDefaultQuestExpanded()
-end
-
-SetCategoryExpanded = function(categoryKey, expanded, context)
-    if not state.saved then
-        EnsureSavedVars()
-    end
-
-    local key = NormalizeCategoryKey(categoryKey)
-    if not key then
-        return false
-    end
-
-    local beforeExpanded = IsCategoryExpanded(key)
-    local stateSource = ResolveStateSource(context, expanded and "auto" or "auto")
-    local writeOptions
-    if context and context.forceWrite and expanded and not beforeExpanded then
-        writeOptions = { force = true }
-    end
-
-    if context and (context.trigger == "click" or context.trigger == "click-select") then
-        writeOptions = writeOptions or {}
-        writeOptions.force = true
-        writeOptions.allowTimestampRegression = true
-    end
-
-    local changed = WriteCategoryState(key, expanded, stateSource, writeOptions)
-    if not changed then
-        return false
-    end
-
-    DebugDeselect("SetCategoryExpanded", {
-        categoryKey = key,
-        previous = tostring(beforeExpanded),
-        newValue = tostring(expanded),
-    })
-
-    local manualCollapseRespected
-    if context and context.manualCollapseRespected ~= nil then
-        manualCollapseRespected = context.manualCollapseRespected and true or false
-    elseif context and context.trigger == "click" then
-        manualCollapseRespected = true
-    end
-
-    local extraFields
-    if IsDebugLoggingEnabled() then
-        if manualCollapseRespected ~= nil then
-            extraFields = extraFields or {}
-            extraFields[#extraFields + 1] = {
-                key = "manualCollapseRespected",
-                value = manualCollapseRespected,
-            }
-        end
-    end
-
-    LogCategoryExpansion(
-        expanded and "expand" or "collapse",
-        (context and context.trigger) or "unknown",
-        key,
-        beforeExpanded,
-        expanded,
-        (context and context.source) or "QuestTracker:SetCategoryExpanded",
-        extraFields
-    )
-
-    return true
-end
-
-SetQuestExpanded = function(journalIndex, expanded, context)
-    if not state.saved then
-        EnsureSavedVars()
-    end
-
-    local key = NormalizeQuestKey(journalIndex)
-    if not key then
-        return false
-    end
-
-    local beforeExpanded = IsQuestExpanded(key)
-    local stateSource = ResolveStateSource(context, expanded and "auto" or "auto")
-    local writeOptions
-    if context and context.forceWrite and expanded and not beforeExpanded then
-        writeOptions = { force = true }
-    end
-
-    if context and (context.trigger == "click" or context.trigger == "click-select") then
-        writeOptions = writeOptions or {}
-        writeOptions.force = true
-        writeOptions.allowTimestampRegression = true
-    end
-
-    local changed = WriteQuestState(key, expanded, stateSource, writeOptions)
-    if not changed then
-        return false
-    end
-
-    DebugDeselect("SetQuestExpanded", {
-        journalIndex = key,
-        previous = tostring(beforeExpanded),
-        newValue = tostring(expanded),
-    })
-
-    local numericIndex = QuestKeyToJournalIndex(key) or key
-
-    LogQuestExpansion(
-        expanded and "expand" or "collapse",
-        (context and context.trigger) or "unknown",
-        numericIndex,
-        beforeExpanded,
-        expanded,
-        (context and context.source) or "QuestTracker:SetQuestExpanded"
-    )
-
-    return true
-end
-
-local function ToggleQuestExpansion(journalIndex, context)
-    if not journalIndex then
-        return false
-    end
-
-    local expanded = IsQuestExpanded(journalIndex)
-    local toggleContext = context or {}
-    if toggleContext.trigger == nil then
-        toggleContext = {
-            trigger = "unknown",
-            source = toggleContext.source,
-        }
-    elseif toggleContext.source == nil then
-        toggleContext = {
-            trigger = toggleContext.trigger,
-            source = nil,
-        }
-    end
-    if not toggleContext.source then
-        toggleContext.source = "QuestTracker:ToggleQuestExpansion"
-    end
-
-    local changed = SetQuestExpanded(journalIndex, not expanded, toggleContext)
-    if changed then
+CATEGORY_ROW_CONTEXT.Refresh = function()
+    if QuestTracker and QuestTracker.Refresh then
         QuestTracker.Refresh()
     end
-
-    return changed
 end
 
-local function FormatConditionText(condition)
-    if not condition then
-        return ""
-    end
+local QUEST_ROW_CONTEXT = {
+    hoverColor = COLOR_ROW_HOVER,
+    iconToggleContext = { trigger = "click", source = "QuestTracker:OnToggleClick" },
+    rowToggleContext = { trigger = "click", source = "QuestTracker:OnRowClickToggle" },
+    manualToggleContext = { trigger = "click", source = "QuestTracker:OnRowClickManualToggle" },
+}
 
-    local text = condition.displayText or condition.text
-    if type(text) ~= "string" or text == "" then
-        return ""
-    end
-
-    if condition.isTurnIn then
-        text = string.format("* %s", text)
-    end
-
-    if zo_strformat then
-        return zo_strformat("<<1>>", text)
-    end
-
-    return text
+QUEST_ROW_CONTEXT.ToggleQuestExpansion = function(journalIndex, context)
+    return ToggleQuestExpansion(journalIndex, context)
 end
 
-local function AcquireCategoryControl()
-    local control, key = state.categoryPool:AcquireObject()
-    if not control.initialized then
-        control.label = control:GetNamedChild("Label")
-        control.toggle = control:GetNamedChild("Toggle")
-        if control.toggle and control.toggle.SetTexture then
-            control.toggle:SetTexture(SelectCategoryToggleTexture(false, false))
-        end
-        control.isExpanded = false
-        control:SetHandler("OnMouseUp", function(ctrl, button, upInside)
-            if not upInside or button ~= MOUSE_BUTTON_INDEX_LEFT then
-                return
-            end
-            local catKey = ctrl.data and ctrl.data.categoryKey
-            if not catKey then
-                return
-            end
-            local expanded = not IsCategoryExpanded(catKey)
-            local changed = SetCategoryExpanded(catKey, expanded, {
-                trigger = "click",
-                source = "QuestTracker:OnCategoryClick",
-            })
-            if changed then
-                QuestTracker.Refresh()
-            end
-        end)
-        control:SetHandler("OnMouseEnter", function(ctrl)
-            if ctrl.label then
-                ctrl.label:SetColor(unpack(COLOR_ROW_HOVER))
-            end
-            local expanded = ctrl.isExpanded
-            if expanded == nil then
-                local catKey = ctrl.data and ctrl.data.categoryKey
-                expanded = IsCategoryExpanded(catKey)
-            end
-            UpdateCategoryToggle(ctrl, expanded)
-        end)
-        control:SetHandler("OnMouseExit", function(ctrl)
-            if ctrl.label and ctrl.baseColor then
-                ctrl.label:SetColor(unpack(ctrl.baseColor))
-            end
-            local expanded = ctrl.isExpanded
-            if expanded == nil then
-                local catKey = ctrl.data and ctrl.data.categoryKey
-                expanded = IsCategoryExpanded(catKey)
-            end
-            UpdateCategoryToggle(ctrl, expanded)
-        end)
-        control.initialized = true
-    end
-    control.rowType = "category"
-    control.poolKey = key
-    ApplyLabelDefaults(control.label)
-    ApplyToggleDefaults(control.toggle)
-    ApplyFont(control.label, state.fonts.category, DEFAULT_FONTS.category)
-    ApplyFont(control.toggle, state.fonts.toggle, DEFAULT_FONTS.toggle)
-    return control, key
+QUEST_ROW_CONTEXT.HandleQuestRowClick = function(journalIndex)
+    return HandleQuestRowClick(journalIndex)
 end
 
-local function AcquireQuestControl()
-    local control, key = state.questPool:AcquireObject()
-    if not control.initialized then
-        control.label = control:GetNamedChild("Label")
-        control.iconSlot = control:GetNamedChild("IconSlot")
-        if control.iconSlot then
-            control.iconSlot:SetDimensions(QUEST_ICON_SLOT_WIDTH, QUEST_ICON_SLOT_HEIGHT)
-            control.iconSlot:ClearAnchors()
-            control.iconSlot:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
-            if control.iconSlot.SetTexture then
-                control.iconSlot:SetTexture(nil)
-            end
-            if control.iconSlot.SetAlpha then
-                control.iconSlot:SetAlpha(0)
-            end
-            if control.iconSlot.SetHidden then
-                control.iconSlot:SetHidden(false)
-            end
-            if control.iconSlot.SetMouseEnabled then
-                control.iconSlot:SetMouseEnabled(true)
-            end
-            control.iconSlot:SetHandler("OnMouseUp", function(toggleCtrl, button, upInside)
-                if not upInside or button ~= MOUSE_BUTTON_INDEX_LEFT then
-                    return
-                end
-                local parent = toggleCtrl:GetParent()
-                local questData = parent and parent.data and parent.data.quest
-                if not questData then
-                    return
-                end
-                local journalIndex = questData.journalIndex
-                ToggleQuestExpansion(journalIndex, {
-                    trigger = "click",
-                    source = "QuestTracker:OnToggleClick",
-                })
-            end)
-        end
-        if control.label then
-            control.label:ClearAnchors()
-            if control.iconSlot then
-                control.label:SetAnchor(TOPLEFT, control.iconSlot, TOPRIGHT, QUEST_ICON_SLOT_PADDING_X, 0)
-            else
-                control.label:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
-            end
-            control.label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
-        end
-        control:SetHandler("OnMouseUp", function(ctrl, button, upInside)
-            if not upInside then
-                return
-            end
-            if button == MOUSE_BUTTON_INDEX_LEFT then
-                local questData = ctrl.data and ctrl.data.quest
-                if not questData then
-                    return
-                end
-                local journalIndex = questData.journalIndex
-                local toggleMouseOver = false
-                if ctrl.iconSlot then
-                    local toggleIsMouseOver = ctrl.iconSlot.IsMouseOver
-                    if type(toggleIsMouseOver) == "function" then
-                        toggleMouseOver = toggleIsMouseOver(ctrl.iconSlot)
-                    end
-                end
-
-                if toggleMouseOver then
-                    ToggleQuestExpansion(journalIndex, {
-                        trigger = "click",
-                        source = "QuestTracker:OnRowClickToggle",
-                    })
-                    return
-                end
-
-                if state.opts.autoTrack == false then
-                    ToggleQuestExpansion(journalIndex, {
-                        trigger = "click",
-                        source = "QuestTracker:OnRowClickManualToggle",
-                    })
-                    return
-                end
-
-                HandleQuestRowClick(journalIndex)
-            elseif button == MOUSE_BUTTON_INDEX_RIGHT then
-                local questData = ctrl.data and ctrl.data.quest
-                if not questData then
-                    return
-                end
-                ShowQuestContextMenu(ctrl, questData.journalIndex)
-            end
-        end)
-        control:SetHandler("OnMouseEnter", function(ctrl)
-            if ctrl.label then
-                ctrl.label:SetColor(unpack(COLOR_ROW_HOVER))
-            end
-        end)
-        control:SetHandler("OnMouseExit", function(ctrl)
-            if ctrl.label and ctrl.baseColor then
-                ctrl.label:SetColor(unpack(ctrl.baseColor))
-            end
-        end)
-        control.initialized = true
-    end
-    control.rowType = "quest"
-    control.poolKey = key
-    ApplyLabelDefaults(control.label)
-    ApplyFont(control.label, state.fonts.quest, DEFAULT_FONTS.quest)
-    return control, key
+QUEST_ROW_CONTEXT.ShowQuestContextMenu = function(control, journalIndex)
+    return ShowQuestContextMenu(control, journalIndex)
 end
 
-local function AcquireConditionControl()
-    local control, key = state.conditionPool:AcquireObject()
-    if not control.initialized then
-        control.label = control:GetNamedChild("Label")
-        control.initialized = true
-    end
-    control.rowType = "condition"
-    control.poolKey = key
-    ApplyLabelDefaults(control.label)
-    ApplyFont(control.label, state.fonts.condition, DEFAULT_FONTS.condition)
-    return control, key
-end
-
-local function ShouldDisplayCondition(condition)
-    if not condition then
-        return false
+local function BuildCategoryRowData(category)
+    if not category then
+        return nil
     end
 
-    if condition.forceDisplay then
-        local text = condition.displayText or condition.text
-        return type(text) == "string" and text ~= ""
-    end
-
-    if condition.isVisible == false then
-        return false
-    end
-
-    if condition.isComplete then
-        return false
-    end
-
-    if condition.isFailCondition then
-        return false
-    end
-
-    local text = condition.displayText or condition.text
-    if not text or text == "" then
-        return false
-    end
-
-    return true
-end
-
-local function AttachBackdrop()
-    EnsureBackdrop()
-end
-
-local function EnsurePools()
-    if state.categoryPool then
-        return
-    end
-
-    state.categoryPool = ZO_ControlPool:New("CategoryHeader_Template", state.container)
-    state.questPool = ZO_ControlPool:New("QuestHeader_Template", state.container)
-    state.conditionPool = ZO_ControlPool:New("QuestCondition_Template", state.container)
-
-    local function resetControl(control)
-        control:SetHidden(true)
-        control.data = nil
-        control.currentIndent = nil
-        control.baseColor = nil
-        control.isExpanded = nil
-    end
-
-    state.categoryPool:SetCustomResetBehavior(function(control)
-        resetControl(control)
-        if control.toggle then
-            if control.toggle.SetTexture then
-                control.toggle:SetTexture(SelectCategoryToggleTexture(false, false))
-            end
-            if control.toggle.SetHidden then
-                control.toggle:SetHidden(false)
-            end
-        end
-    end)
-    state.questPool:SetCustomResetBehavior(function(control)
-        resetControl(control)
-        if control.label and control.label.SetText then
-            control.label:SetText("")
-        end
-        if control.iconSlot then
-            if control.iconSlot.SetTexture then
-                control.iconSlot:SetTexture(nil)
-            end
-            if control.iconSlot.SetAlpha then
-                control.iconSlot:SetAlpha(0)
-            end
-            if control.iconSlot.SetHidden then
-                control.iconSlot:SetHidden(false)
-            end
-        end
-    end)
-    state.conditionPool:SetCustomResetBehavior(resetControl)
-end
-
-local function LayoutCondition(condition)
-    if not ShouldDisplayCondition(condition) then
-        return
-    end
-
-    local control = AcquireConditionControl()
-    control.data = { condition = condition }
-    control.label:SetText(FormatConditionText(condition))
-    if control.label then
-        local r, g, b, a = GetQuestTrackerColor("objectiveText")
-        control.label:SetColor(r, g, b, a)
-    end
-    ApplyRowMetrics(control, CONDITION_INDENT_X, 0, 0, 0, CONDITION_MIN_HEIGHT)
-    control:SetHidden(false)
-    AnchorControl(control, CONDITION_INDENT_X)
-end
-
-local function LayoutQuest(quest)
-    local control = AcquireQuestControl()
-    control.data = { quest = quest }
-    control.label:SetText(quest.name or "")
-
-    local colorRole = DetermineQuestColorRole(quest)
-    local r, g, b, a = GetQuestTrackerColor(colorRole)
-    ApplyBaseColor(control, r, g, b, a)
-
-    local questKey = NormalizeQuestKey(quest.journalIndex)
-    local expanded = IsQuestExpanded(quest.journalIndex)
-    if IsDebugLoggingEnabled() then
-        DebugLog(string.format(
-            "BUILD_APPLY quest=%s expanded=%s",
-            tostring(questKey or quest.journalIndex),
-            tostring(expanded)
-        ))
-    end
-    UpdateQuestIconSlot(control)
-    ApplyRowMetrics(
-        control,
-        QUEST_INDENT_X,
-        QUEST_ICON_SLOT_WIDTH,
-        QUEST_ICON_SLOT_PADDING_X,
-        0,
-        QUEST_MIN_HEIGHT
-    )
-    control:SetHidden(false)
-    AnchorControl(control, QUEST_INDENT_X)
-
-    if quest and quest.journalIndex then
-        state.questControls[quest.journalIndex] = control
-    end
-
-    if expanded then
-        for stepIndex = 1, #quest.steps do
-            local step = quest.steps[stepIndex]
-            if step.isVisible ~= false then
-                for conditionIndex = 1, #step.conditions do
-                    LayoutCondition(step.conditions[conditionIndex])
-                end
-            end
-        end
-    end
-end
-
-local function LayoutCategory(category)
-    local control = AcquireCategoryControl()
-    control.data = {
-        categoryKey = category.key,
-        parentKey = category.parent and category.parent.key or nil,
-        parentName = category.parent and category.parent.name or nil,
-        groupKey = category.groupKey,
-        groupName = category.groupName,
-        categoryType = category.type,
-        groupOrder = category.groupOrder,
-    }
-    local normalizedKey = NormalizeCategoryKey(category.key)
-    if normalizedKey then
-        state.categoryControls[normalizedKey] = control
-    end
-    local count = #category.quests
-    control.label:SetText(FormatCategoryHeaderText(category.name or "", count, "quest"))
+    local count = type(category.quests) == "table" and #category.quests or 0
+    local labelText = FormatCategoryHeaderText(category.name or "", count, "quest")
     local expanded = IsCategoryExpanded(category.key)
+
     if IsDebugLoggingEnabled() then
         DebugLog(string.format(
             "BUILD_APPLY cat=%s expanded=%s",
@@ -3346,98 +2632,194 @@ local function LayoutCategory(category)
             tostring(expanded)
         ))
     end
+
     local colorRole = expanded and "activeTitle" or "categoryTitle"
     local r, g, b, a = GetQuestTrackerColor(colorRole)
-    ApplyBaseColor(control, r, g, b, a)
-    UpdateCategoryToggle(control, expanded)
-    ApplyRowMetrics(
-        control,
-        CATEGORY_INDENT_X,
-        GetToggleWidth(control.toggle, CATEGORY_TOGGLE_WIDTH),
-        TOGGLE_LABEL_PADDING_X,
-        0,
-        CATEGORY_MIN_HEIGHT
-    )
-    control:SetHidden(false)
-    AnchorControl(control, CATEGORY_INDENT_X)
 
-    if expanded then
-        for index = 1, count do
-            LayoutQuest(category.quests[index])
-        end
-    end
+    return {
+        rowType = "category",
+        labelText = labelText,
+        baseColor = { r, g, b, a },
+        isExpanded = expanded,
+        fonts = {
+            label = state.fonts.category,
+            toggle = state.fonts.toggle,
+        },
+        data = {
+            categoryKey = category.key,
+            parentKey = category.parent and category.parent.key or nil,
+            parentName = category.parent and category.parent.name or nil,
+            groupKey = category.groupKey,
+            groupName = category.groupName,
+            categoryType = category.type,
+            groupOrder = category.groupOrder,
+        },
+        context = CATEGORY_ROW_CONTEXT,
+    }
 end
 
-local function ReleaseRowControl(control)
+local function BuildQuestRowData(quest)
+    if not quest then
+        return nil
+    end
+
+    local colorRole = DetermineQuestColorRole(quest)
+    local r, g, b, a = GetQuestTrackerColor(colorRole)
+    local questKey = NormalizeQuestKey(quest.journalIndex)
+    local expanded = IsQuestExpanded(quest.journalIndex)
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format(
+            "BUILD_APPLY quest=%s expanded=%s",
+            tostring(questKey or quest.journalIndex),
+            tostring(expanded)
+        ))
+    end
+
+    local isSelected = false
+    if questKey and state.selectedQuestKey then
+        isSelected = questKey == state.selectedQuestKey
+    elseif state.trackedQuestIndex then
+        isSelected = quest.journalIndex == state.trackedQuestIndex
+    end
+
+    QUEST_ROW_CONTEXT.autoTrackEnabled = state.opts.autoTrack ~= false
+
+    return {
+        rowType = "quest",
+        labelText = quest.name or "",
+        baseColor = { r, g, b, a },
+        isExpanded = expanded,
+        quest = quest,
+        isSelected = isSelected,
+        fonts = {
+            label = state.fonts.quest,
+        },
+        context = QUEST_ROW_CONTEXT,
+    }
+end
+
+local function BuildConditionRowData(condition)
+    if not condition then
+        return nil
+    end
+
+    local text = FormatConditionText(condition)
+    if not text or text == "" then
+        return nil
+    end
+
+    local r, g, b, a = GetQuestTrackerColor("objectiveText")
+
+    return {
+        rowType = "condition",
+        labelText = text,
+        baseColor = { r, g, b, a },
+        fonts = {
+            label = state.fonts.condition,
+        },
+        data = { condition = condition },
+    }
+end
+
+local function AcquireRowControl(rowType)
+    if not Rows then
+        return nil
+    end
+
+    return Rows:Acquire(rowType)
+end
+
+local function ApplyRow(control, rowData, indent)
+    if not (Rows and control and rowData) then
+        return
+    end
+
+    Rows:ApplyRowData(control, rowData)
+    AnchorControl(control, indent)
+end
+
+local function AddConditionRow(condition)
+    if not ShouldDisplayCondition(condition) then
+        return
+    end
+
+    local rowData = BuildConditionRowData(condition)
+    if not rowData then
+        return
+    end
+
+    local control = AcquireRowControl(rowData.rowType)
     if not control then
         return
     end
 
-    local rowType = control.rowType
-    if rowType == "category" then
-        local normalized = control.data and NormalizeCategoryKey(control.data.categoryKey)
-        if normalized then
-            state.categoryControls[normalized] = nil
-        end
-        if state.categoryPool and control.poolKey then
-            state.categoryPool:ReleaseObject(control.poolKey)
-        end
-    elseif rowType == "quest" then
-        local questData = control.data and control.data.quest
-        if questData and questData.journalIndex then
-            state.questControls[questData.journalIndex] = nil
-        end
-        if state.questPool and control.poolKey then
-            state.questPool:ReleaseObject(control.poolKey)
-        end
-    else
-        if state.conditionPool and control.poolKey then
-            state.conditionPool:ReleaseObject(control.poolKey)
-        end
-    end
+    ApplyRow(control, rowData, CONDITION_INDENT_X)
 end
 
-local function TrimOrderedControlsToCategory(keepCategoryCount)
-    if keepCategoryCount <= 0 then
-        ReleaseAll(state.categoryPool)
-        ReleaseAll(state.questPool)
-        ReleaseAll(state.conditionPool)
-        ResetLayoutState()
+local function AddQuestRow(quest)
+    local rowData = BuildQuestRowData(quest)
+    if not rowData then
         return
     end
 
-    local categoryCounter = 0
-    local releaseStartIndex = nil
+    local control = AcquireRowControl(rowData.rowType)
+    if not control then
+        return
+    end
 
-    for index = 1, #state.orderedControls do
-        local control = state.orderedControls[index]
-        if control and control.rowType == "category" then
-            categoryCounter = categoryCounter + 1
-            if categoryCounter > keepCategoryCount then
-                releaseStartIndex = index
-                break
+    ApplyRow(control, rowData, QUEST_INDENT_X)
+
+    if quest and quest.journalIndex then
+        state.questControls[quest.journalIndex] = control
+    end
+
+    if rowData.isExpanded and quest and quest.steps then
+        for stepIndex = 1, #quest.steps do
+            local step = quest.steps[stepIndex]
+            if step and step.isVisible ~= false then
+                for conditionIndex = 1, #step.conditions do
+                    AddConditionRow(step.conditions[conditionIndex])
+                end
             end
         end
     end
-
-    if releaseStartIndex then
-        for index = #state.orderedControls, releaseStartIndex, -1 do
-            ReleaseRowControl(state.orderedControls[index])
-            table.remove(state.orderedControls, index)
-        end
-    end
-
-    state.lastAnchoredControl = state.orderedControls[#state.orderedControls]
 end
 
-local function RelayoutFromCategoryIndex(startCategoryIndex)
+local function AddCategoryRow(category)
+    local rowData = BuildCategoryRowData(category)
+    if not rowData then
+        return
+    end
+
+    local control = AcquireRowControl(rowData.rowType)
+    if not control then
+        return
+    end
+
+    ApplyRow(control, rowData, CATEGORY_INDENT_X)
+
+    local normalizedKey = NormalizeCategoryKey(category.key)
+    if normalizedKey then
+        state.categoryControls[normalizedKey] = control
+    end
+
+    if rowData.isExpanded and type(category.quests) == "table" then
+        for index = 1, #category.quests do
+            AddQuestRow(category.quests[index])
+        end
+    end
+end
+
+local function RelayoutFromCategoryIndex()
     ApplyActiveQuestFromSaved()
-    EnsurePools()
+
+    if not Rows then
+        return
+    end
 
     if not state.snapshot or not state.snapshot.categories or not state.snapshot.categories.ordered then
-        ReleaseAll(state.categoryPool)
-        ReleaseAll(state.questPool)
-        ReleaseAll(state.conditionPool)
+        Rows:ReleaseAll()
         ResetLayoutState()
         UpdateContentSize()
         NotifyHostContentChanged()
@@ -3445,22 +2827,16 @@ local function RelayoutFromCategoryIndex(startCategoryIndex)
         return
     end
 
-    if startCategoryIndex <= 1 then
-        ReleaseAll(state.categoryPool)
-        ReleaseAll(state.questPool)
-        ReleaseAll(state.conditionPool)
-        ResetLayoutState()
-        startCategoryIndex = 1
-    else
-        TrimOrderedControlsToCategory(startCategoryIndex - 1)
-    end
+    Rows:SetContentWidth(GetContainerWidth())
+    Rows:ReleaseAll()
+    ResetLayoutState()
 
     PrimeInitialSavedState()
 
-    for index = startCategoryIndex, #state.snapshot.categories.ordered do
+    for index = 1, #state.snapshot.categories.ordered do
         local category = state.snapshot.categories.ordered[index]
         if category and category.quests and #category.quests > 0 then
-            LayoutCategory(category)
+            AddCategoryRow(category)
         end
     end
 
@@ -3494,7 +2870,7 @@ local function OnQuestModelSnapshotUpdated(snapshot, context)
         return
     end
 
-    RelayoutFromCategoryIndex(1)
+    RelayoutFromCategoryIndex()
 end
 
 -- Listen for snapshot updates from the quest model so the tracker stays in sync with game events.
@@ -3537,38 +2913,7 @@ local function Rebuild()
     end
 
     state.isRebuildInProgress = true
-    ApplyActiveQuestFromSaved()
-
-    EnsurePools()
-
-    ReleaseAll(state.categoryPool)
-    ReleaseAll(state.questPool)
-    ReleaseAll(state.conditionPool)
-    ResetLayoutState()
-
-    if not state.snapshot or not state.snapshot.categories or not state.snapshot.categories.ordered then
-        UpdateContentSize()
-        NotifyHostContentChanged()
-        state.isRebuildInProgress = false
-        if IsDebugLoggingEnabled() then
-            DebugLog("REBUILD_END")
-        end
-        return
-    end
-
-    PrimeInitialSavedState()
-
-    for index = 1, #state.snapshot.categories.ordered do
-        local category = state.snapshot.categories.ordered[index]
-        if category and category.quests and #category.quests > 0 then
-            LayoutCategory(category)
-        end
-    end
-
-    UpdateContentSize()
-    NotifyHostContentChanged()
-    ProcessPendingExternalReveal()
-
+    RelayoutFromCategoryIndex()
     state.isRebuildInProgress = false
 
     if IsDebugLoggingEnabled() then
@@ -3598,6 +2943,11 @@ function QuestTracker.Init(parentControl, opts)
     state.container = parentControl
     if state.control and state.control.SetResizeToFitDescendents then
         state.control:SetResizeToFitDescendents(true)
+    end
+
+    if Rows and Rows.Init then
+        Rows:Init(state.container)
+        Rows:SetContentWidth(GetContainerWidth())
     end
 
     EnsureSavedVars()
@@ -3647,19 +2997,8 @@ function QuestTracker.Shutdown()
     UnregisterTrackingEvents()
     UnsubscribeFromQuestModel()
 
-    if state.categoryPool then
-        state.categoryPool:ReleaseAllObjects()
-        state.categoryPool = nil
-    end
-
-    if state.questPool then
-        state.questPool:ReleaseAllObjects()
-        state.questPool = nil
-    end
-
-    if state.conditionPool then
-        state.conditionPool:ReleaseAllObjects()
-        state.conditionPool = nil
+    if Rows and Rows.ReleaseAll then
+        Rows:ReleaseAll()
     end
 
     state.container = nil
