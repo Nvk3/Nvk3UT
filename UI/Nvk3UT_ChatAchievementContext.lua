@@ -24,22 +24,22 @@ local function registerString(id, text)
 end
 
 local function ensureStringIds()
-    registerString("SI_NVK3UT_CTX_OPEN_ACHIEVEMENT", "Open achievement")
-    registerString("SI_NVK3UT_CTX_FAVORITE_ADD", "Add to favorites")
-    registerString("SI_NVK3UT_CTX_FAVORITE_REMOVE", "Remove from favorites")
+    registerString("SI_NVK3UT_CTX_OPEN_ACHIEVEMENT", "In Errungenschaften öffnen")
+    registerString("SI_NVK3UT_CTX_FAVORITE_ADD", "Zu Favoriten hinzufügen")
+    registerString("SI_NVK3UT_CTX_FAVORITE_REMOVE", "Von Favoriten entfernen")
 end
 
 local function openAchievement(achievementId)
-    if type(ZO_Achievements_OpenToAchievement) == "function" then
-        local ok = pcall(ZO_Achievements_OpenToAchievement, achievementId)
+    local achievements = (SYSTEMS and SYSTEMS.GetObject and SYSTEMS:GetObject("achievements")) or ACHIEVEMENTS
+    if achievements and type(achievements.OpenToAchievement) == "function" then
+        local ok = pcall(achievements.OpenToAchievement, achievements, achievementId)
         if ok then
             return true
         end
     end
 
-    local achievements = (SYSTEMS and SYSTEMS.GetObject and SYSTEMS:GetObject("achievements")) or ACHIEVEMENTS
-    if achievements and type(achievements.OpenToAchievement) == "function" then
-        local ok = pcall(achievements.OpenToAchievement, achievements, achievementId)
+    if type(ZO_Achievements_OpenToAchievement) == "function" then
+        local ok = pcall(ZO_Achievements_OpenToAchievement, achievementId)
         if ok then
             return true
         end
