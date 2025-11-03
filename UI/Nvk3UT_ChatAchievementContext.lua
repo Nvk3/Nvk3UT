@@ -110,18 +110,13 @@ local function addMenuEntry(label, callback)
         return false
     end
 
-    if LibCustomMenu and type(AddCustomMenuItem) == "function" then
-        local optionType = MENU_ADD_OPTION_LABEL or MENU_OPTION_LABEL or 1
-        local ok = pcall(AddCustomMenuItem, label, callback, optionType)
-        return ok == true
+    if type(AddCustomMenuItem) ~= "function" then
+        return false
     end
 
-    if type(AddMenuItem) == "function" then
-        local ok = pcall(AddMenuItem, label, callback)
-        return ok == true
-    end
-
-    return false
+    local optionType = MENU_ADD_OPTION_LABEL or MENU_OPTION_LABEL or 1
+    local ok = pcall(AddCustomMenuItem, label, callback, optionType)
+    return ok == true
 end
 
 local function appendMenuEntries(achievementId)
@@ -149,8 +144,130 @@ local function appendMenuEntries(achievementId)
     end
 
     if addedAny then
-        debug("Appended chat context entries for achievement %d", achievementId)
+        debug("appended items for achievement %d", achievementId)
     end
+end
+
+local function fetchLibCustomMenu()
+    local lib = rawget(_G, "LibCustomMenu")
+    if type(lib) == "table" then
+        return lib
+    end
+
+    if type(LibStub) == "function" then
+        local ok, instance = pcall(LibStub, "LibCustomMenu", true)
+        if ok and type(instance) == "table" then
+            return instance
+        end
+    end
+
+    return nil
+end
+
+local function extractLinkContextParams(...)
+    local link
+    local button
+    local control
+
+    for i = 1, select("#", ...) do
+        local value = select(i, ...)
+        local valueType = type(value)
+
+        if valueType == "string" then
+            if not link and value:find("|H") then
+                link = value
+            end
+        elseif valueType == "number" then
+            if not button and (value == MOUSE_BUTTON_INDEX_LEFT or value == MOUSE_BUTTON_INDEX_MIDDLE or value == MOUSE_BUTTON_INDEX_RIGHT) then
+                button = value
+            end
+        elseif valueType == "userdata" then
+            control = control or value
+        elseif valueType == "table" then
+            if not link and type(value.link) == "string" then
+                link = value.link
+            end
+
+            if not button and type(value.button) == "number" then
+                button = value.button
+            end
+
+            if not control then
+                if type(value.control) == "userdata" then
+                    control = value.control
+                elseif type(value.owner) == "userdata" then
+                    control = value.owner
+                elseif type(value.menuOwner) == "userdata" then
+                    control = value.menuOwner
+                end
+            end
+        end
+    end
+
+    return link, button, control
+end
+
+local function handleLinkContextMenu(...)
+    if type(ZO_LinkHandler_ParseLink) ~= "function" then
+        return
+    end
+
+    local link, button = extractLinkContextParams(...)
+    if type(link) ~= "string" or button ~= MOUSE_BUTTON_INDEX_RIGHT then
+        return
+    end
+
+    local linkType, data1 = ZO_LinkHandler_ParseLink(link)
+    if linkType ~= "achievement" then
+        return
+    end
+
+    local achievementId = tonumber(data1)
+    if not achievementId or achievementId <= 0 then
+        return
+    end
+
+    appendMenuEntries(achievementId)
+end
+
+local function registerWithLibCustomMenu()
+    local lib = fetchLibCustomMenu()
+    if type(lib) ~= "table" then
+        debug("LibCustomMenu unavailable; chat context disabled")
+        return false
+    end
+
+    local registered = false
+    local function contextMenuCallback(...)
+        handleLinkContextMenu(...)
+        return false
+    end
+
+    local function fireCallback(...)
+        handleLinkContextMenu(...)
+    end
+
+    if type(lib.RegisterContextMenu) == "function" and lib.CATEGORY_LINK ~= nil then
+        local ok = pcall(lib.RegisterContextMenu, lib, contextMenuCallback, lib.CATEGORY_LINK)
+        if ok then
+            registered = true
+        end
+    end
+
+    if not registered and type(lib.RegisterCallback) == "function" and lib.CALLBACK_LINK_CONTEXT_MENU ~= nil then
+        local ok = pcall(lib.RegisterCallback, lib, lib.CALLBACK_LINK_CONTEXT_MENU, fireCallback)
+        if ok then
+            registered = true
+        end
+    end
+
+    if registered then
+        debug("LCM link-context registered")
+    else
+        debug("LibCustomMenu missing link-context API; chat context disabled")
+    end
+
+    return registered
 end
 
 function ChatContext.Init()
@@ -161,47 +278,7 @@ function ChatContext.Init()
 
     ensureStringIds()
 
-    debug("init")
-
-    local function onPopulateLinkContextMenu(link, button, control)
-        if not ChatContext._hookFireLogged then
-            ChatContext._hookFireLogged = true
-            debug("hook fired")
-        end
-
-        if button ~= MOUSE_BUTTON_INDEX_RIGHT then
-            return
-        end
-
-        if type(ZO_LinkHandler_ParseLink) ~= "function" then
-            return
-        end
-
-        local linkType, data1 = ZO_LinkHandler_ParseLink(link)
-        if linkType ~= "achievement" then
-            return
-        end
-
-        local achievementId = tonumber(data1)
-        if not achievementId or achievementId <= 0 then
-            return
-        end
-
-        if control and type(control.IsHidden) == "function" then
-            local ok, hidden = pcall(control.IsHidden, control)
-            if ok and hidden then
-                return
-            end
-        end
-
-        appendMenuEntries(achievementId)
-    end
-
-    if type(SecurePostHook) == "function" then
-        SecurePostHook("ZO_LinkHandler_PopulateLinkContextMenu", onPopulateLinkContextMenu)
-    else
-        debug("Context menu hook unavailable; right-click integration disabled")
-    end
+    registerWithLibCustomMenu()
 end
 
 return ChatContext
