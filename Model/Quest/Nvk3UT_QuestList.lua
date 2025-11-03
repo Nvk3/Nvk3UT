@@ -5,6 +5,59 @@ Nvk3UT = Nvk3UT or {}
 Nvk3UT.QuestList = Nvk3UT.QuestList or {}
 
 local QuestList = Nvk3UT.QuestList
+local Diagnostics = Nvk3UT and Nvk3UT.Diagnostics
+
+local localeAwareToLower = rawget(_G, "LocaleAwareToLower")
+local hasWarnedSafeLowerCast = false
+
+local function GetDiagnostics()
+    Diagnostics = Diagnostics or (Nvk3UT and Nvk3UT.Diagnostics)
+    return Diagnostics
+end
+
+local function SafeLower(value)
+    if value == nil then
+        return ""
+    end
+
+    if type(value) ~= "string" then
+        if not hasWarnedSafeLowerCast then
+            local diagnostics = GetDiagnostics()
+            if diagnostics and diagnostics.IsDebugEnabled and diagnostics.IsDebugEnabled() and diagnostics.Warn then
+                diagnostics.Warn(
+                    "QuestList.SafeLower casting non-string value (type=%s, value=%s)",
+                    type(value),
+                    tostring(value)
+                )
+            end
+            hasWarnedSafeLowerCast = true
+        end
+
+        value = tostring(value)
+    end
+
+    local lowerFn = localeAwareToLower
+    if type(lowerFn) ~= "function" then
+        lowerFn = rawget(_G, "LocaleAwareToLower")
+        if type(lowerFn) == "function" then
+            localeAwareToLower = lowerFn
+        end
+    end
+
+    if type(lowerFn) == "function" then
+        local ok, lowered = pcall(lowerFn, value)
+        if ok and type(lowered) == "string" then
+            return lowered
+        end
+    end
+
+    local ok, lowered = pcall(string.lower, value)
+    if ok and type(lowered) == "string" then
+        return lowered
+    end
+
+    return tostring(value)
+end
 
 local QUEST_LOG_LIMIT = rawget(_G, "MAX_JOURNAL_QUESTS") or 25
 
@@ -1207,13 +1260,15 @@ local function CompareStrings(left, right)
         return -1
     end
 
-    local leftLower = string.lower(left)
-    local rightLower = string.lower(right)
+    local leftLower = SafeLower(left)
+    local rightLower = SafeLower(right)
 
     if leftLower == rightLower then
-        if left < right then
+        local leftValue = tostring(left)
+        local rightValue = tostring(right)
+        if leftValue < rightValue then
             return -1
-        elseif left > right then
+        elseif leftValue > rightValue then
             return 1
         end
         return 0
@@ -1262,14 +1317,28 @@ local function CompareQuestEntries(left, right)
         return leftOrder < rightOrder
     end
 
-    local zoneCompare = CompareStrings(left.zoneName, right.zoneName)
-    if zoneCompare ~= 0 then
-        return zoneCompare < 0
+    local leftZoneLower = SafeLower(left.zoneName)
+    local rightZoneLower = SafeLower(right.zoneName)
+    if leftZoneLower ~= rightZoneLower then
+        return leftZoneLower < rightZoneLower
     end
 
-    local nameCompare = CompareStrings(left.name, right.name)
-    if nameCompare ~= 0 then
-        return nameCompare < 0
+    local leftZoneValue = tostring(left.zoneName or "")
+    local rightZoneValue = tostring(right.zoneName or "")
+    if leftZoneValue ~= rightZoneValue then
+        return leftZoneValue < rightZoneValue
+    end
+
+    local leftNameLower = SafeLower(left.name)
+    local rightNameLower = SafeLower(right.name)
+    if leftNameLower ~= rightNameLower then
+        return leftNameLower < rightNameLower
+    end
+
+    local leftNameValue = tostring(left.name or "")
+    local rightNameValue = tostring(right.name or "")
+    if leftNameValue ~= rightNameValue then
+        return leftNameValue < rightNameValue
     end
 
     if left.questId and right.questId then
@@ -1331,6 +1400,10 @@ local function BuildQuestEntry(journalQuestIndex)
         location = CollectLocationInfo(journalQuestIndex),
         description = questDescription,
     }
+
+    questEntry.name = questEntry.name or ""
+    questEntry.zoneName = questEntry.zoneName or ""
+    questEntry.category = questEntry.category or {}
 
     questEntry.meta = {
         questType = questType,
