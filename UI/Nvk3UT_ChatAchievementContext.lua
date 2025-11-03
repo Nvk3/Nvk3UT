@@ -64,6 +64,29 @@ local function getCategoryIndicesForAchievement(achievementId)
     return nil, nil
 end
 
+local function scrollIntoView(container, control)
+    if not container or not control then
+        return
+    end
+
+    if type(ZO_Scroll_ScrollIntoView) == "function" then
+        ZO_Scroll_ScrollIntoView(container, control, 20)
+    elseif type(ZO_Scroll_ScrollControlIntoCentralView) == "function" then
+        ZO_Scroll_ScrollControlIntoCentralView(container, control)
+    end
+end
+
+local function resolveContentContainer(achievements)
+    if not achievements then
+        return nil
+    end
+
+    return achievements.contentListScroll or achievements.contentList or achievements.listControl or achievements.scroll
+end
+
+local NAVIGATION_RETRY_MS = 50
+local NAVIGATION_MAX_ATTEMPTS = 10
+
 local function focusAchievementEntry(achievements, achievementId)
     if not achievements then
         return false
@@ -91,10 +114,10 @@ local function focusAchievementEntry(achievements, achievementId)
             if type(entry.Select) == "function" then
                 local ok, result = pcall(entry.Select, entry)
                 if ok and result ~= false then
-                    if type(entry.GetControl) == "function" and achievements.contentList and type(ZO_Scroll_ScrollControlIntoCentralView) == "function" then
+                    if type(entry.GetControl) == "function" then
                         local control = entry:GetControl()
                         if control then
-                            ZO_Scroll_ScrollControlIntoCentralView(achievements.contentList, control)
+                            scrollIntoView(resolveContentContainer(achievements), control)
                         end
                     end
                     return true
@@ -191,42 +214,125 @@ local function focusAchievementEntry(achievements, achievementId)
         end
     end
 
-    if type(achievements.SelectAchievement) == "function" then
-        local ok, result = pcall(achievements.SelectAchievement, achievements, numeric)
-        if ok and result ~= false then
-            return true
+    return false
+end
+
+local function selectCategoryForAchievement(achievements, categoryIndex, subCategoryIndex)
+    if not achievements or not categoryIndex then
+        return false
+    end
+
+    local selectors = {
+        "SelectCategoryByIndices",
+        "SelectCategoryIndices",
+        "SelectCategory",
+        "OpenCategory",
+        "NavigateToCategory",
+    }
+
+    for i = 1, #selectors do
+        local method = achievements[selectors[i]]
+        if type(method) == "function" then
+            local ok = pcall(method, achievements, categoryIndex, subCategoryIndex)
+            if ok then
+                return true
+            end
+        end
+    end
+
+    local manager = rawget(_G, "ACHIEVEMENTS_MANAGER")
+    if manager then
+        local managerSelectors = {
+            "SelectCategoryByIndices",
+            "SetCategory",
+        }
+
+        for i = 1, #managerSelectors do
+            local method = manager[managerSelectors[i]]
+            if type(method) == "function" then
+                local ok = pcall(method, manager, categoryIndex, subCategoryIndex)
+                if ok then
+                    return true
+                end
+            end
+        end
+    end
+
+    local tree = achievements.categoryTree
+    if tree and type(tree.SelectNode) == "function" then
+        local root
+        if type(tree.GetRootNode) == "function" then
+            local ok, result = pcall(tree.GetRootNode, tree)
+            if ok then
+                root = result
+            end
+        end
+        root = root or tree.rootNode
+
+        local function selectNode(node)
+            if not node then
+                return false
+            end
+            local ok = pcall(tree.SelectNode, tree, node)
+            if ok then
+                return true
+            end
+            if type(node.Select) == "function" then
+                local nodeOk = pcall(node.Select, node)
+                if nodeOk then
+                    return true
+                end
+            end
+            return false
+        end
+
+        if root and type(root.children) == "table" then
+            local categoryNode = root.children[categoryIndex]
+            if categoryNode then
+                if subCategoryIndex and type(categoryNode.children) == "table" then
+                    local subNode = categoryNode.children[subCategoryIndex]
+                    if selectNode(subNode) then
+                        return true
+                    end
+                end
+                if selectNode(categoryNode) then
+                    return true
+                end
+            end
         end
     end
 
     return false
 end
 
-local function openAchievementFallback(achievementId)
-    local numeric = tonumber(achievementId)
-    if not numeric or numeric <= 0 then
-        return false
-    end
-
-    if type(GetAchievementInfo) == "function" then
-        local ok, name = pcall(GetAchievementInfo, numeric)
-        if not ok then
-            return false
-        end
-        if type(name) == "string" and name == "" then
-            return false
-        end
-    end
-
+local function showAchievementsScene()
     local sceneManager = SCENE_MANAGER
     if sceneManager and type(sceneManager.Show) == "function" then
         sceneManager:Show("achievements")
-    elseif MAIN_MENU_KEYBOARD and type(MAIN_MENU_KEYBOARD.ShowScene) == "function" then
-        MAIN_MENU_KEYBOARD:ShowScene("achievements")
+        return true
     end
 
-    local manager = ACHIEVEMENTS_MANAGER
+    if MAIN_MENU_KEYBOARD and type(MAIN_MENU_KEYBOARD.ShowScene) == "function" then
+        MAIN_MENU_KEYBOARD:ShowScene("achievements")
+        return true
+    end
+
+    return false
+end
+
+local function doNavigateToAchievement(navigation)
+    if type(navigation) ~= "table" then
+        return false
+    end
+
+    local achievementId = navigation.id
+    if not achievementId then
+        return false
+    end
+
+    local manager = rawget(_G, "ACHIEVEMENTS_MANAGER")
     if manager and type(manager.ShowAchievement) == "function" then
-        local ok, result = pcall(manager.ShowAchievement, manager, numeric)
+        local ok, result = pcall(manager.ShowAchievement, manager, achievementId)
         if ok and result ~= false then
             return true
         end
@@ -237,49 +343,145 @@ local function openAchievementFallback(achievementId)
         return false
     end
 
-    if achievements.contentSearchEditBox and type(achievements.contentSearchEditBox.GetText) == "function" and achievements.contentSearchEditBox:GetText() ~= "" then
-        if type(achievements.contentSearchEditBox.SetText) == "function" then
-            achievements.contentSearchEditBox:SetText("")
-        end
-        if manager and type(manager.ClearSearch) == "function" then
-            pcall(manager.ClearSearch, manager, true)
-        end
-    end
-
-    local categoryIndex, subCategoryIndex = getCategoryIndicesForAchievement(numeric)
-    if categoryIndex then
-        if type(achievements.OpenCategory) == "function" then
-            local ok, opened = pcall(achievements.OpenCategory, achievements, categoryIndex, subCategoryIndex)
-            if not ok then
-                opened = false
-            end
-            if not opened and type(achievements.SelectCategory) == "function" then
-                pcall(achievements.SelectCategory, achievements, categoryIndex, subCategoryIndex)
-            end
-        elseif type(achievements.SelectCategory) == "function" then
-            pcall(achievements.SelectCategory, achievements, categoryIndex, subCategoryIndex)
-        end
-    end
-
-    if focusAchievementEntry(achievements, numeric) then
-        return true
-    end
-
-    if manager and type(manager.SelectAchievement) == "function" then
-        local ok, result = pcall(manager.SelectAchievement, manager, numeric)
-        if ok and result ~= false then
-            return true
-        end
-    end
-
     if type(achievements.OpenToAchievement) == "function" then
-        local ok = pcall(achievements.OpenToAchievement, achievements, numeric)
+        local ok = pcall(achievements.OpenToAchievement, achievements, achievementId)
         if ok then
             return true
         end
     end
 
+    if navigation.categoryIndex then
+        selectCategoryForAchievement(achievements, navigation.categoryIndex, navigation.subCategoryIndex)
+    end
+
+    if focusAchievementEntry(achievements, achievementId) then
+        return true
+    end
+
+    if type(achievements.SelectAchievement) == "function" then
+        local ok, result = pcall(achievements.SelectAchievement, achievements, achievementId)
+        if ok and result ~= false then
+            return true
+        end
+    end
+
+    if manager and type(manager.SelectAchievement) == "function" then
+        local ok, result = pcall(manager.SelectAchievement, manager, achievementId)
+        if ok and result ~= false then
+            return true
+        end
+    end
+
     return false
+end
+
+local function runPendingNavigation()
+    local navigation = ChatContext._pendingNavigation
+    if not navigation then
+        return
+    end
+
+    navigation.attempts = (navigation.attempts or 0) + 1
+
+    if doNavigateToAchievement(navigation) then
+        ChatContext._pendingNavigation = nil
+        return
+    end
+
+    if navigation.attempts >= NAVIGATION_MAX_ATTEMPTS then
+        ChatContext._pendingNavigation = nil
+        return
+    end
+
+    if type(zo_callLater) == "function" then
+        zo_callLater(runPendingNavigation, NAVIGATION_RETRY_MS)
+    end
+end
+
+local function registerSceneNavigationCallback()
+    local sceneManager = SCENE_MANAGER
+    local scene
+
+    if sceneManager and type(sceneManager.GetScene) == "function" then
+        local ok, result = pcall(sceneManager.GetScene, sceneManager, "achievements")
+        if ok then
+            scene = result
+        end
+    end
+
+    if not scene and type(ACHIEVEMENTS_SCENE) == "table" then
+        scene = ACHIEVEMENTS_SCENE
+    end
+
+    if not scene or type(scene.RegisterCallback) ~= "function" or type(scene.UnregisterCallback) ~= "function" then
+        return false
+    end
+
+    local function onStateChange(oldState, newState)
+        if newState == SCENE_SHOWN then
+            scene:UnregisterCallback("StateChange", onStateChange)
+            ChatContext._sceneCallback = nil
+            if type(zo_callLater) == "function" then
+                zo_callLater(runPendingNavigation, 0)
+            else
+                runPendingNavigation()
+            end
+        elseif newState == SCENE_HIDDEN then
+            scene:UnregisterCallback("StateChange", onStateChange)
+            ChatContext._sceneCallback = nil
+            ChatContext._pendingNavigation = nil
+        end
+    end
+
+    ChatContext._sceneCallback = onStateChange
+    scene:RegisterCallback("StateChange", onStateChange)
+
+    if type(scene.GetState) == "function" then
+        local ok, state = pcall(scene.GetState, scene)
+        if ok and state == SCENE_SHOWN then
+            if type(zo_callLater) == "function" then
+                zo_callLater(runPendingNavigation, 0)
+            else
+                runPendingNavigation()
+            end
+        end
+    end
+
+    return true
+end
+
+local function openAchievementFallback(achievementId)
+    local numeric = tonumber(achievementId)
+    if not numeric or numeric <= 0 then
+        return false
+    end
+
+    local categoryIndex, subCategoryIndex = getCategoryIndicesForAchievement(numeric)
+
+    ChatContext._pendingNavigation = {
+        id = numeric,
+        categoryIndex = categoryIndex,
+        subCategoryIndex = subCategoryIndex,
+        attempts = 0,
+    }
+
+    if not ChatContext._sceneCallback then
+        registerSceneNavigationCallback()
+    end
+
+    showAchievementsScene()
+
+    if not ChatContext._sceneCallback then
+        if type(zo_callLater) == "function" then
+            zo_callLater(runPendingNavigation, 0)
+        else
+            runPendingNavigation()
+        end
+    end
+
+    debug("open fallback used for %d (cat=%s sub=%s)", numeric, tostring(categoryIndex), tostring(subCategoryIndex))
+
+    return true
 end
 
 local function openAchievement(achievementId)
@@ -298,12 +500,7 @@ local function openAchievement(achievementId)
         end
     end
 
-    local opened = openAchievementFallback(achievementId)
-    if opened ~= nil then
-        debug("open fallback path used for %d", achievementId)
-    end
-
-    return opened
+    return openAchievementFallback(achievementId)
 end
 
 local function isFavorite(achievementId)
@@ -393,11 +590,8 @@ local function addMenuEntry(label, callback)
     end
 
     local optionType = MENU_ADD_OPTION_LABEL or MENU_OPTION_LABEL or 1
-    local ok, err = pcall(AddCustomMenuItem, label, callback, optionType)
+    local ok = pcall(AddCustomMenuItem, label, callback, optionType)
     if not ok then
-        if type(err) == "string" then
-            debug("AddCustomMenuItem failed: %s", err)
-        end
         return false
     end
 
@@ -427,10 +621,6 @@ local function appendMenuEntries(achievementId)
         end
     end) then
         addedAny = true
-    end
-
-    if addedAny then
-        debug("appended items for achievement %d", achievementId)
     end
 
     return addedAny
@@ -472,13 +662,11 @@ function ChatContext.Init()
     ensureStringIds()
 
     if not hasLibCustomMenu() then
-        debug("LibCustomMenu unavailable; chat context disabled")
         return
     end
 
     local handler = rawget(_G, "LINK_HANDLER")
     if type(handler) ~= "table" or type(handler.RegisterCallback) ~= "function" or handler.LINK_MOUSE_UP_EVENT == nil then
-        debug("LINK_HANDLER unavailable; chat context disabled")
         return
     end
 
@@ -494,7 +682,6 @@ function ChatContext.Init()
     end
 
     ChatContext._callbackRegistered = true
-    debug("LCM link-context registered")
 end
 
 return ChatContext
