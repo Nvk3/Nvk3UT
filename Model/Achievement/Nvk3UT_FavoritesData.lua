@@ -149,6 +149,59 @@ local function buildScopeOrder(scopeOverride)
     return order
 end
 
+local function queueAchievementDirty()
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and type(runtime.QueueDirty) == "function" then
+        pcall(runtime.QueueDirty, runtime, "achievement")
+    end
+end
+
+local function touchFavoriteTimestamp(achievementId)
+    local State = Nvk3UT and Nvk3UT.AchievementState
+    local touch = State and State.TouchTimestamp
+    if type(touch) ~= "function" then
+        return
+    end
+
+    local ok, key = pcall(string.format, "favorite:%d", achievementId)
+    if not ok then
+        key = "favorite:" .. tostring(achievementId)
+    end
+
+    pcall(touch, key)
+end
+
+local function removeFavoritedIdInternal(normalized, scopeOverride)
+    local removedCount = 0
+    local scopes = buildScopeOrder(scopeOverride)
+    local stringKey = tostring(normalized)
+
+    for index = 1, #scopes do
+        local scope = scopes[index]
+        local set = ensureSet(scope, false)
+        if type(set) == "table" then
+            if set[normalized] ~= nil then
+                set[normalized] = nil
+                removedCount = removedCount + 1
+            end
+            if stringKey and set[stringKey] ~= nil then
+                set[stringKey] = nil
+                removedCount = removedCount + 1
+            end
+        end
+    end
+
+    return removedCount
+end
+
+local function removeFavoritedIdWithTimestamp(normalized, scopeOverride)
+    local removedCount = removeFavoritedIdInternal(normalized, scopeOverride)
+    if removedCount > 0 then
+        touchFavoriteTimestamp(normalized)
+    end
+    return removedCount
+end
+
 local function NotifyFavoritesChanged()
     local Model = Nvk3UT and Nvk3UT.AchievementModel
     if Model and Model.OnFavoritesChanged then
@@ -159,6 +212,8 @@ local function NotifyFavoritesChanged()
     if tracker and tracker.RequestRefresh then
         pcall(tracker.RequestRefresh)
     end
+
+    queueAchievementDirty()
 end
 
 function FavoritesData.InitSavedVars()
@@ -251,6 +306,29 @@ function FavoritesData.SetFavorited(id, shouldFavorite, source, scopeOverride)
     return true
 end
 
+function FavoritesData.RemoveFavorite(id, scopeOverride)
+    local normalized = FavoritesData.NormalizeId(id)
+    if not normalized then
+        return false
+    end
+
+    local removedCount = removeFavoritedIdWithTimestamp(normalized, scopeOverride)
+    if removedCount <= 0 then
+        return false
+    end
+
+    emitDebugMessage(
+        "remove id=%d scope=%s removed=%d",
+        normalized,
+        tostring(scopeOverride or "all"),
+        removedCount
+    )
+
+    NotifyFavoritesChanged()
+
+    return true
+end
+
 function FavoritesData.ToggleFavorited(id, source, scopeOverride)
     local normalized = FavoritesData.NormalizeId(id)
     if not normalized then
@@ -281,6 +359,92 @@ end
 
 function FavoritesData.Iterate(scopeOverride)
     return FavoritesData.GetAllFavorites(scopeOverride)
+end
+
+function FavoritesData.IsCompleted(achievementId)
+    local normalized = FavoritesData.NormalizeId(achievementId)
+    if not normalized then
+        return false
+    end
+
+    local Completed = Nvk3UT and Nvk3UT.CompletedData
+    if Completed and type(Completed.IsCompleted) == "function" then
+        local ok, result = pcall(Completed.IsCompleted, normalized)
+        if ok then
+            return result == true
+        end
+    end
+
+    if type(IsAchievementComplete) == "function" then
+        local ok, result = pcall(IsAchievementComplete, normalized)
+        if ok and result ~= nil then
+            return result == true
+        end
+    end
+
+    if type(GetAchievementInfo) == "function" then
+        local ok, _, _, _, _, completed = pcall(GetAchievementInfo, normalized)
+        if ok and completed ~= nil then
+            return completed == true
+        end
+    end
+
+    return false
+end
+
+function FavoritesData.RemoveIfCompleted(achievementId)
+    local normalized = FavoritesData.NormalizeId(achievementId)
+    if not normalized then
+        return false
+    end
+
+    if not FavoritesData.IsFavorited(normalized) then
+        return false
+    end
+
+    if not FavoritesData.IsCompleted(normalized) then
+        return false
+    end
+
+    return FavoritesData.RemoveFavorite(normalized)
+end
+
+function FavoritesData.PruneCompletedFavorites()
+    local candidates = {}
+    local scopes = { ACCOUNT_SCOPE, CHARACTER_SCOPE }
+
+    for index = 1, #scopes do
+        local scope = scopes[index]
+        local set = ensureSet(scope, false)
+        if type(set) == "table" then
+            for rawId, flagged in pairs(set) do
+                if flagged then
+                    local normalized = FavoritesData.NormalizeId(rawId)
+                    if normalized and FavoritesData.IsCompleted(normalized) then
+                        candidates[normalized] = true
+                    end
+                end
+            end
+        end
+    end
+
+    local removedEntries = 0
+    local uniqueRemoved = 0
+
+    for normalized in pairs(candidates) do
+        local removedCount = removeFavoritedIdWithTimestamp(normalized, nil)
+        if removedCount > 0 then
+            removedEntries = removedEntries + removedCount
+            uniqueRemoved = uniqueRemoved + 1
+        end
+    end
+
+    if removedEntries > 0 then
+        emitDebugMessage("prune removed=%d unique=%d", removedEntries, uniqueRemoved)
+        NotifyFavoritesChanged()
+    end
+
+    return removedEntries
 end
 
 function FavoritesData.MigrateScope(fromScope, toScope)

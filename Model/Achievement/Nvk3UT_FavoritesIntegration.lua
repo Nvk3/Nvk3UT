@@ -21,6 +21,8 @@ local function getAchievementState()
     return Nvk3UT and Nvk3UT.AchievementState
 end
 
+local hasPrunedCompletedFavorites = false
+
 local U = Nvk3UT.Utils
 local favProvide_lastTs, favProvide_lastCount = 0, -1
 
@@ -373,6 +375,22 @@ local function HookAchievementContext()
 end
 
 function Nvk3UT_EnableFavorites()
+    if not hasPrunedCompletedFavorites then
+        hasPrunedCompletedFavorites = true
+        local Fav = getFavoritesModule()
+        if Fav and Fav.PruneCompletedFavorites then
+            -- TODO(Events-Migration): Move this call into Events/Nvk3UT_AchievementEventHandler.lua during SWITCH token.
+            local ok, removed = pcall(Fav.PruneCompletedFavorites)
+            local removedCount = (ok and tonumber(removed)) or 0
+            if removedCount > 0 then
+                local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+                if runtime and type(runtime.QueueDirty) == "function" then
+                    pcall(runtime.QueueDirty, runtime, "achievement")
+                end
+            end
+        end
+    end
+
     local AchievementsClass = getmetatable(ACHIEVEMENTS).__index
     AddFavoritesTopCategory(AchievementsClass)
     OverrideOnCategorySelected(AchievementsClass)

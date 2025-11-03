@@ -273,10 +273,25 @@ local function forceRebuild(self, reason)
     performRebuild(self, reason)
 end
 
-local function onAchievementChanged(...)
+local function onAchievementChanged(eventCode, ...)
     local self = AchievementModel
     if not self.isInitialized then
         return
+    end
+
+    if eventCode == EVENT_ACHIEVEMENT_AWARDED then
+        local _, _, achievementId = ...
+        local Fav = Nvk3UT and Nvk3UT.FavoritesData
+        if Fav and type(Fav.RemoveIfCompleted) == "function" then
+            -- TODO(Events-Migration): Move this call into Events/Nvk3UT_AchievementEventHandler.lua during SWITCH token.
+            local ok, removed = pcall(Fav.RemoveIfCompleted, achievementId)
+            if ok and removed then
+                local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+                if runtime and type(runtime.QueueDirty) == "function" then
+                    pcall(runtime.QueueDirty, runtime, "achievement")
+                end
+            end
+        end
     end
 
     scheduleRebuild(self, "event")
