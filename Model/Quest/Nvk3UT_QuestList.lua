@@ -7,6 +7,17 @@ Nvk3UT.QuestList = Nvk3UT.QuestList or {}
 local QuestList = Nvk3UT.QuestList
 local Diagnostics = Nvk3UT and Nvk3UT.Diagnostics
 
+local DEFAULT_OBJECTIVE_MODE = "focused"
+QuestList.OBJECTIVE_MODE = QuestList.OBJECTIVE_MODE or DEFAULT_OBJECTIVE_MODE
+
+local function GetObjectiveMode()
+    local mode = QuestList.OBJECTIVE_MODE
+    if mode == nil then
+        return DEFAULT_OBJECTIVE_MODE
+    end
+    return mode
+end
+
 local localeAwareToLower = rawget(_G, "LocaleAwareToLower")
 local hasWarnedSafeLowerCast = false
 
@@ -166,7 +177,33 @@ local function AcquireTimestampMs()
     return nil
 end
 
-local function CollectActiveObjectives(journalIndex, questIsComplete)
+local function EvaluateStepVisibility(visibility)
+    if visibility == nil then
+        return true
+    end
+
+    local hiddenConstant = rawget(_G, "QUEST_STEP_VISIBILITY_HIDDEN")
+    if hiddenConstant ~= nil then
+        return visibility ~= hiddenConstant
+    end
+
+    return visibility ~= false
+end
+
+local function GetTotalStepConditions(journalQuestIndex, stepIndex, reportedTotal)
+    local totalConditions = tonumber(reportedTotal) or 0
+
+    if type(GetJournalQuestNumConditions) == "function" then
+        local countedConditions = GetJournalQuestNumConditions(journalQuestIndex, stepIndex)
+        if type(countedConditions) == "number" and countedConditions > totalConditions then
+            totalConditions = countedConditions
+        end
+    end
+
+    return totalConditions
+end
+
+local function CollectActiveObjectivesExpanded(journalIndex, questIsComplete)
     if type(GetJournalQuestNumSteps) ~= "function" or type(GetJournalQuestStepInfo) ~= "function" then
         return {}, nil
     end
@@ -187,15 +224,7 @@ local function CollectActiveObjectives(journalIndex, questIsComplete)
         local sanitizedStepText = StripProgressDecorations(stepText)
         local fallbackObjectiveCandidate = nil
 
-        local stepIsVisible = true
-        if visibility ~= nil then
-            local hiddenConstant = rawget(_G, "QUEST_STEP_VISIBILITY_HIDDEN")
-            if hiddenConstant ~= nil then
-                stepIsVisible = (visibility ~= hiddenConstant)
-            else
-                stepIsVisible = (visibility ~= false)
-            end
-        end
+        local stepIsVisible = EvaluateStepVisibility(visibility)
 
         if questIsComplete and not stepIsVisible then
             stepIsVisible = true
@@ -214,13 +243,7 @@ local function CollectActiveObjectives(journalIndex, questIsComplete)
 
             local addedObjectiveForStep = false
 
-            local totalConditions = tonumber(stepNumConditions) or 0
-            if type(GetJournalQuestNumConditions) == "function" then
-                local countedConditions = GetJournalQuestNumConditions(journalIndex, stepIndex)
-                if type(countedConditions) == "number" and countedConditions > totalConditions then
-                    totalConditions = countedConditions
-                end
-            end
+            local totalConditions = GetTotalStepConditions(journalIndex, stepIndex, stepNumConditions)
 
             if totalConditions > 0 and type(GetJournalQuestConditionInfo) == "function" then
                 for conditionIndex = 1, totalConditions do
@@ -276,7 +299,7 @@ local function CollectActiveObjectives(journalIndex, questIsComplete)
     return objectiveList, fallbackStepText
 end
 
-local function CollectQuestSteps(journalQuestIndex)
+local function CollectQuestStepsExpanded(journalQuestIndex)
     local questSteps = {}
 
     local isComplete = false
@@ -287,7 +310,7 @@ local function CollectQuestSteps(journalQuestIndex)
     end
 
     local fallbackHeaderText = nil
-    local objectives, fallbackStepText = CollectActiveObjectives(journalQuestIndex, isComplete)
+    local objectives, fallbackStepText = CollectActiveObjectivesExpanded(journalQuestIndex, isComplete)
 
     if type(GetJournalQuestNumSteps) == "function" and type(GetJournalQuestStepInfo) == "function" then
         local numSteps = GetJournalQuestNumSteps(journalQuestIndex) or 0
@@ -296,13 +319,7 @@ local function CollectQuestSteps(journalQuestIndex)
             local stepObjectives = {}
             local stepHeader = nil
 
-            local totalConditions = tonumber(numConditions) or 0
-            if type(GetJournalQuestNumConditions) == "function" then
-                local countedConditions = GetJournalQuestNumConditions(journalQuestIndex, stepIndex)
-                if type(countedConditions) == "number" and countedConditions > totalConditions then
-                    totalConditions = countedConditions
-                end
-            end
+            local totalConditions = GetTotalStepConditions(journalQuestIndex, stepIndex, numConditions)
 
             local hasVisibleConditions = false
 
@@ -387,6 +404,136 @@ local function CollectQuestSteps(journalQuestIndex)
     end
 
     return questSteps
+end
+
+local function CollectQuestStepsFocused(journalQuestIndex)
+    local steps = {}
+
+    if type(GetJournalQuestNumSteps) ~= "function" or type(GetJournalQuestStepInfo) ~= "function" then
+        return steps
+    end
+
+    local numSteps = GetJournalQuestNumSteps(journalQuestIndex)
+    if type(numSteps) ~= "number" or numSteps <= 0 then
+        return steps
+    end
+
+    local firstVisibleStep = nil
+    local focusedStep = nil
+
+    for stepIndex = 1, numSteps do
+        local stepText, visibility, stepType, trackerOverrideText, stepNumConditions = GetJournalQuestStepInfo(journalQuestIndex, stepIndex)
+
+        local isStepVisible = EvaluateStepVisibility(visibility)
+        local stepData = {
+            stepIndex = stepIndex,
+            stepText = stepText,
+            stepType = stepType,
+            trackerOverrideText = trackerOverrideText,
+            isVisible = isStepVisible,
+            totalConditions = GetTotalStepConditions(journalQuestIndex, stepIndex, stepNumConditions),
+            conditions = {},
+            hasVisibleIncomplete = false,
+        }
+
+        if isStepVisible and not firstVisibleStep then
+            firstVisibleStep = stepData
+        end
+
+        if stepData.totalConditions > 0 and type(GetJournalQuestConditionInfo) == "function" then
+            for conditionIndex = 1, stepData.totalConditions do
+                local conditionText, current, maxValue, isFailCondition, isConditionComplete, _, isConditionVisible = GetJournalQuestConditionInfo(journalQuestIndex, stepIndex, conditionIndex)
+                local visibleCondition = (isConditionVisible ~= false)
+
+                if visibleCondition and type(conditionText) == "string" and conditionText ~= "" then
+                    local conditionEntry = {
+                        displayText = conditionText,
+                        text = conditionText,
+                        current = tonumber(current) or 0,
+                        max = tonumber(maxValue) or 0,
+                        complete = (isConditionComplete == true),
+                        isTurnIn = false,
+                        isVisible = true,
+                        isFailCondition = (isFailCondition == true),
+                    }
+
+                    stepData.conditions[#stepData.conditions + 1] = conditionEntry
+
+                    if not conditionEntry.complete and not conditionEntry.isFailCondition then
+                        stepData.hasVisibleIncomplete = true
+                    end
+                end
+            end
+        end
+
+        if isStepVisible then
+            local hasOverride = type(trackerOverrideText) == "string" and trackerOverrideText ~= ""
+            if hasOverride or stepData.hasVisibleIncomplete then
+                focusedStep = stepData
+                break
+            end
+        end
+    end
+
+    local selectedStep = focusedStep or firstVisibleStep
+    if not selectedStep or not selectedStep.isVisible then
+        return steps
+    end
+
+    local trackerOverrideText = nil
+    if type(selectedStep.trackerOverrideText) == "string" and selectedStep.trackerOverrideText ~= "" then
+        trackerOverrideText = selectedStep.trackerOverrideText
+    end
+
+    local conditionList = {}
+
+    if trackerOverrideText then
+        conditionList[1] = {
+            displayText = trackerOverrideText,
+            text = trackerOverrideText,
+            current = 0,
+            max = 0,
+            complete = false,
+            isTurnIn = false,
+            isVisible = true,
+            isFailCondition = false,
+            forceDisplay = true,
+        }
+    else
+        for index = 1, #selectedStep.conditions do
+            local condition = selectedStep.conditions[index]
+            if condition and condition.isVisible ~= false and not condition.isFailCondition and not condition.complete then
+                conditionList[#conditionList + 1] = condition
+            end
+        end
+    end
+
+    local stepIsComplete = false
+    if not trackerOverrideText and #conditionList == 0 then
+        stepIsComplete = true
+    end
+
+    steps[1] = {
+        stepIndex = selectedStep.stepIndex,
+        stepText = selectedStep.stepText,
+        stepType = selectedStep.stepType,
+        isVisible = selectedStep.isVisible ~= false,
+        isComplete = stepIsComplete,
+        isOptional = false,
+        isTracked = false,
+        conditions = conditionList,
+        headerText = nil,
+    }
+
+    return steps
+end
+
+local function CollectQuestSteps(journalQuestIndex)
+    if GetObjectiveMode() == "expanded" then
+        return CollectQuestStepsExpanded(journalQuestIndex)
+    end
+
+    return CollectQuestStepsFocused(journalQuestIndex)
 end
 
 local function CollectLocationInfo(journalQuestIndex)
