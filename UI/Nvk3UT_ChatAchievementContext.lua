@@ -178,39 +178,31 @@ local function appendMenuEntries(achievementId)
     return addedAny
 end
 
-local function resolveAchievementId(link, linkType, data1)
-    if linkType ~= "achievement" then
-        if type(ZO_LinkHandler_ParseLink) == "function" and type(link) == "string" then
-            local parsedType, parsedData1 = ZO_LinkHandler_ParseLink(link)
-            linkType, data1 = parsedType, parsedData1
-        end
-    end
-
-    if linkType ~= "achievement" then
-        return nil
+local function OnLinkMouseUpContext(link, button, text, linkStyle, linkType, data1, ...)
+    if button ~= MOUSE_BUTTON_INDEX_RIGHT or linkType ~= "achievement" then
+        ChatContext._pendingId = nil
+        return
     end
 
     local numericId = tonumber(data1)
-    if not numericId or numericId <= 0 then
-        return nil
+    if numericId and numericId > 0 then
+        ChatContext._pendingId = numericId
+    else
+        ChatContext._pendingId = nil
     end
-
-    return numericId
 end
 
-local function OnLinkMouseUpContext(link, button, text, linkStyle, linkType, data1, ...)
-    if button ~= MOUSE_BUTTON_INDEX_RIGHT then
-        return
-    end
-
-    local achievementId = resolveAchievementId(link, linkType, data1)
+local function OnShowMenuPreHook(control)
+    local achievementId = ChatContext._pendingId
     if not achievementId then
-        return
+        return false
     end
 
-    if appendMenuEntries(achievementId) and type(ShowMenu) == "function" then
-        ShowMenu()
-    end
+    ChatContext._pendingId = nil
+
+    appendMenuEntries(achievementId)
+
+    return false
 end
 
 function ChatContext.Init()
@@ -237,6 +229,12 @@ function ChatContext.Init()
     end
 
     handler:RegisterCallback(handler.LINK_MOUSE_UP_EVENT, OnLinkMouseUpContext)
+
+    if not ChatContext._showMenuHooked then
+        ZO_PreHook("ShowMenu", OnShowMenuPreHook)
+        ChatContext._showMenuHooked = true
+    end
+
     ChatContext._callbackRegistered = true
     debug("LCM link-context registered")
 end
