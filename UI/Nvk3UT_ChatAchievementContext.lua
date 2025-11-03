@@ -40,6 +40,42 @@ local function getAchievementsSystem()
     return ACHIEVEMENTS
 end
 
+local function callMethod(target, methodName, ...)
+    if not target or type(methodName) ~= "string" then
+        return false
+    end
+
+    local method = target[methodName]
+    if type(method) ~= "function" then
+        return false
+    end
+
+    local ok, result = pcall(method, target, ...)
+    if not ok then
+        return false
+    end
+
+    if result == false then
+        return false
+    end
+
+    return true
+end
+
+local function callAny(target, methodNames, ...)
+    if not target or type(methodNames) ~= "table" then
+        return false
+    end
+
+    for i = 1, #methodNames do
+        if callMethod(target, methodNames[i], ...) then
+            return true
+        end
+    end
+
+    return false
+end
+
 local function getCategoryIndicesForAchievement(achievementId)
     local numeric = tonumber(achievementId)
     if not numeric or numeric <= 0 then
@@ -64,161 +100,11 @@ local function getCategoryIndicesForAchievement(achievementId)
     return nil, nil
 end
 
-local function scrollIntoView(container, control)
-    if not container or not control then
-        return
-    end
-
-    if type(ZO_Scroll_ScrollIntoView) == "function" then
-        ZO_Scroll_ScrollIntoView(container, control, 20)
-    elseif type(ZO_Scroll_ScrollControlIntoCentralView) == "function" then
-        ZO_Scroll_ScrollControlIntoCentralView(container, control)
-    end
-end
-
-local function resolveContentContainer(achievements)
-    if not achievements then
-        return nil
-    end
-
-    return achievements.contentListScroll or achievements.contentList or achievements.listControl or achievements.scroll
-end
-
 local NAVIGATION_RETRY_MS = 50
 local NAVIGATION_MAX_ATTEMPTS = 10
 
-local function focusAchievementEntry(achievements, achievementId)
-    if not achievements then
-        return false
-    end
-
-    local numeric = tonumber(achievementId)
-    if not numeric or numeric <= 0 then
-        return false
-    end
-
-    if type(achievements.FocusAchievement) == "function" then
-        local ok = pcall(achievements.FocusAchievement, achievements, numeric)
-        if ok then
-            return true
-        end
-    end
-
-    local byId = achievements.achievementsById
-    if type(byId) == "table" then
-        local entry = byId[achievementId] or byId[numeric] or byId[tostring(achievementId)]
-        if entry then
-            if type(entry.Expand) == "function" then
-                pcall(entry.Expand, entry)
-            end
-            if type(entry.Select) == "function" then
-                local ok, result = pcall(entry.Select, entry)
-                if ok and result ~= false then
-                    if type(entry.GetControl) == "function" then
-                        local control = entry:GetControl()
-                        if control then
-                            scrollIntoView(resolveContentContainer(achievements), control)
-                        end
-                    end
-                    return true
-                end
-            end
-            if type(entry.Show) == "function" then
-                local ok = pcall(entry.Show, entry)
-                if ok then
-                    return true
-                end
-            end
-        end
-    end
-
-    local tree = achievements.categoryTree
-    if not tree then
-        return false
-    end
-
-    local lookupSources = {
-        tree.nodeLookupData,
-        achievements.nodeLookupData,
-    }
-    for _, lookup in ipairs(lookupSources) do
-        if type(lookup) == "table" then
-            local node = lookup[achievementId] or lookup[numeric] or lookup[tostring(achievementId)]
-            if node then
-                if type(tree.SelectNode) == "function" then
-                    local ok, result = pcall(tree.SelectNode, tree, node)
-                    if ok and result ~= false then
-                        return true
-                    end
-                end
-                if type(node.Select) == "function" then
-                    local ok = pcall(node.Select, node)
-                    if ok then
-                        return true
-                    end
-                end
-            end
-        end
-    end
-
-    local visited = {}
-    local function visit(node)
-        if not node or visited[node] then
-            return nil
-        end
-        visited[node] = true
-
-        local data = node.data
-        if data then
-            local dataId = data.achievementId or data.id
-            if dataId == achievementId or dataId == numeric then
-                return node
-            end
-        end
-
-        local children = node.children
-        if type(children) == "table" then
-            for i = 1, #children do
-                local found = visit(children[i])
-                if found then
-                    return found
-                end
-            end
-        end
-
-        return nil
-    end
-
-    local root
-    if type(tree.GetRootNode) == "function" then
-        local ok, result = pcall(tree.GetRootNode, tree)
-        if ok then
-            root = result
-        end
-    end
-    root = root or tree.rootNode
-
-    local target = visit(root)
-    if target then
-        if type(tree.SelectNode) == "function" then
-            local ok, result = pcall(tree.SelectNode, tree, target)
-            if ok and result ~= false then
-                return true
-            end
-        end
-        if type(target.Select) == "function" then
-            local ok = pcall(target.Select, target)
-            if ok then
-                return true
-            end
-        end
-    end
-
-    return false
-end
-
-local function selectCategoryForAchievement(achievements, categoryIndex, subCategoryIndex)
-    if not achievements or not categoryIndex then
+local function selectCategoryForAchievement(achievements, manager, categoryIndex, subCategoryIndex)
+    if not categoryIndex then
         return false
     end
 
@@ -230,79 +116,71 @@ local function selectCategoryForAchievement(achievements, categoryIndex, subCate
         "NavigateToCategory",
     }
 
-    for i = 1, #selectors do
-        local method = achievements[selectors[i]]
-        if type(method) == "function" then
-            local ok = pcall(method, achievements, categoryIndex, subCategoryIndex)
-            if ok then
-                return true
-            end
-        end
+    if callAny(achievements, selectors, categoryIndex, subCategoryIndex) then
+        return true
     end
 
-    local manager = rawget(_G, "ACHIEVEMENTS_MANAGER")
     if manager then
         local managerSelectors = {
             "SelectCategoryByIndices",
+            "SelectCategoryIndices",
             "SetCategory",
+            "NavigateToCategory",
         }
 
-        for i = 1, #managerSelectors do
-            local method = manager[managerSelectors[i]]
-            if type(method) == "function" then
-                local ok = pcall(method, manager, categoryIndex, subCategoryIndex)
-                if ok then
-                    return true
-                end
-            end
+        if callAny(manager, managerSelectors, categoryIndex, subCategoryIndex) then
+            return true
         end
-    end
 
-    local tree = achievements.categoryTree
-    if tree and type(tree.SelectNode) == "function" then
-        local root
-        if type(tree.GetRootNode) == "function" then
-            local ok, result = pcall(tree.GetRootNode, tree)
-            if ok then
-                root = result
-            end
-        end
-        root = root or tree.rootNode
-
-        local function selectNode(node)
-            if not node then
-                return false
-            end
-            local ok = pcall(tree.SelectNode, tree, node)
-            if ok then
+        if subCategoryIndex then
+            if callAny(manager, managerSelectors, categoryIndex) then
                 return true
-            end
-            if type(node.Select) == "function" then
-                local nodeOk = pcall(node.Select, node)
-                if nodeOk then
-                    return true
-                end
-            end
-            return false
-        end
-
-        if root and type(root.children) == "table" then
-            local categoryNode = root.children[categoryIndex]
-            if categoryNode then
-                if subCategoryIndex and type(categoryNode.children) == "table" then
-                    local subNode = categoryNode.children[subCategoryIndex]
-                    if selectNode(subNode) then
-                        return true
-                    end
-                end
-                if selectNode(categoryNode) then
-                    return true
-                end
             end
         end
     end
 
     return false
+end
+
+local function focusAchievementWithSystem(achievements, manager, achievementId)
+    if not achievementId then
+        return false
+    end
+
+    local focused = false
+
+    local achievementSelectors = {
+        "ShowAchievement",
+        "SelectAchievementById",
+        "SelectAchievement",
+        "FocusAchievement",
+        "TrySelectAchievement",
+    }
+
+    if callAny(achievements, achievementSelectors, achievementId) then
+        focused = true
+    elseif callAny(manager, {
+        "ShowAchievement",
+        "SelectAchievement",
+        "FocusAchievement",
+    }, achievementId) then
+        focused = true
+    end
+
+    if not focused then
+        return false
+    end
+
+    local scrollers = {
+        "ScrollToAchievement",
+        "EnsureAchievementVisible",
+        "EnsureAchievementIsVisible",
+    }
+
+    callAny(achievements, scrollers, achievementId)
+    callAny(manager, scrollers, achievementId)
+
+    return true
 end
 
 local function showAchievementsScene()
@@ -330,46 +208,31 @@ local function doNavigateToAchievement(navigation)
         return false
     end
 
-    local manager = rawget(_G, "ACHIEVEMENTS_MANAGER")
-    if manager and type(manager.ShowAchievement) == "function" then
-        local ok, result = pcall(manager.ShowAchievement, manager, achievementId)
-        if ok and result ~= false then
-            return true
-        end
-    end
-
     local achievements = getAchievementsSystem()
-    if not achievements then
-        return false
-    end
-
-    if type(achievements.OpenToAchievement) == "function" then
-        local ok = pcall(achievements.OpenToAchievement, achievements, achievementId)
-        if ok then
-            return true
-        end
-    end
+    local manager = rawget(_G, "ACHIEVEMENTS_MANAGER")
 
     if navigation.categoryIndex then
-        selectCategoryForAchievement(achievements, navigation.categoryIndex, navigation.subCategoryIndex)
+        selectCategoryForAchievement(achievements, manager, navigation.categoryIndex, navigation.subCategoryIndex)
     end
 
-    if focusAchievementEntry(achievements, achievementId) then
+    if focusAchievementWithSystem(achievements, manager, achievementId) then
         return true
     end
 
-    if type(achievements.SelectAchievement) == "function" then
-        local ok, result = pcall(achievements.SelectAchievement, achievements, achievementId)
-        if ok and result ~= false then
-            return true
-        end
+    if callAny(manager, {
+        "ShowAchievement",
+        "SelectAchievement",
+        "FocusAchievement",
+    }, achievementId) then
+        return true
     end
 
-    if manager and type(manager.SelectAchievement) == "function" then
-        local ok, result = pcall(manager.SelectAchievement, manager, achievementId)
-        if ok and result ~= false then
-            return true
-        end
+    if callAny(achievements, {
+        "ShowAchievement",
+        "SelectAchievement",
+        "FocusAchievement",
+    }, achievementId) then
+        return true
     end
 
     return false
@@ -486,16 +349,16 @@ end
 
 local function openAchievement(achievementId)
     if type(ZO_Achievements_OpenToAchievement) == "function" then
-        local ok = pcall(ZO_Achievements_OpenToAchievement, achievementId)
-        if ok then
+        local ok, result = pcall(ZO_Achievements_OpenToAchievement, achievementId)
+        if ok and result ~= false then
             return true
         end
     end
 
     local achievements = getAchievementsSystem()
     if achievements and type(achievements.OpenToAchievement) == "function" then
-        local ok = pcall(achievements.OpenToAchievement, achievements, achievementId)
-        if ok then
+        local ok, result = pcall(achievements.OpenToAchievement, achievements, achievementId)
+        if ok and result ~= false then
             return true
         end
     end
