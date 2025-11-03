@@ -54,6 +54,11 @@ local function _print(level, msg)
     end
 end
 
+local LOCAL_COALESCE_WINDOW_MS = 700
+local DEFAULT_COALESCE_WINDOW_MS = 500
+
+local coalesceBuckets = {}
+
 function Diagnostics.SetDebugEnabled(enabled)
     Diagnostics.debugEnabled = not not enabled
 end
@@ -81,6 +86,129 @@ function Diagnostics.Debug(fmt, ...)
 
     ensureRoot()
     _print("Nvk3UT DEBUG", _fmt(fmt, ...))
+end
+
+local function buildCoalescedMessage(makeLineFn, count, lastArgs)
+    if type(makeLineFn) ~= "function" then
+        return nil, "makeLineFn missing"
+    end
+
+    local ok, line = pcall(makeLineFn, count, lastArgs)
+    if ok then
+        return line
+    end
+
+    return nil, line
+end
+
+function Diagnostics:DebugCoalesced(key, windowMs, makeLineFn, lastArgsTable)
+    if not self.debugEnabled then
+        return
+    end
+
+    if type(key) ~= "string" or key == "" then
+        return
+    end
+
+    local bucket = coalesceBuckets[key]
+    if not bucket then
+        bucket = {
+            count = 0,
+        }
+        coalesceBuckets[key] = bucket
+    end
+
+    bucket.count = (bucket.count or 0) + 1
+    bucket.lastArgs = lastArgsTable
+
+    if bucket.timerActive then
+        return
+    end
+
+    bucket.timerActive = true
+
+    local delay = tonumber(windowMs) or DEFAULT_COALESCE_WINDOW_MS
+    if delay < 0 then
+        delay = DEFAULT_COALESCE_WINDOW_MS
+    end
+
+    local function flush()
+        local count = bucket.count or 0
+        local args = bucket.lastArgs
+
+        coalesceBuckets[key] = nil
+
+        bucket.timerActive = nil
+        bucket.count = 0
+        bucket.lastArgs = nil
+
+        if not Diagnostics.debugEnabled then
+            return
+        end
+
+        local line, err = buildCoalescedMessage(makeLineFn, count, args)
+        if not line or line == "" then
+            if err and Diagnostics.debugEnabled then
+                Diagnostics.Debug("DebugCoalesced build failed for %s: %s", tostring(key), tostring(err))
+            end
+            return
+        end
+
+        Diagnostics.Debug(line)
+    end
+
+    if type(zo_callLater) == "function" and delay > 0 then
+        zo_callLater(function()
+            flush()
+        end, delay)
+    else
+        flush()
+    end
+end
+
+local function toNumberOrZero(value)
+    return tonumber(value) or 0
+end
+
+local function toStringOrNone(value)
+    if value == nil then
+        return "nil"
+    end
+    return tostring(value)
+end
+
+function Diagnostics.Debug_AchStagePending(id, stageId, index)
+    Diagnostics:DebugCoalesced("ach_stage_pending", LOCAL_COALESCE_WINDOW_MS, function(count, last)
+        last = last or {}
+        return string.format(
+            "Achievement stage pending: collapsed %d updates (last id=%d stage=%d index=%d)",
+            toNumberOrZero(count),
+            toNumberOrZero(last.id),
+            toNumberOrZero(last.stageId),
+            toNumberOrZero(last.index)
+        )
+    end, {
+        id = tonumber(id),
+        stageId = tonumber(stageId),
+        index = tonumber(index),
+    })
+end
+
+function Diagnostics.Debug_Todo_ListOpenForTop(topIndex, count, phase)
+    Diagnostics:DebugCoalesced("todo_listopenfortop", LOCAL_COALESCE_WINDOW_MS, function(total, last)
+        last = last or {}
+        return string.format(
+            "[TodoData] ListOpenForTop: collapsed %d calls (last phase=%s top=%d count=%d)",
+            toNumberOrZero(total),
+            toStringOrNone(last.phase),
+            toNumberOrZero(last.top),
+            toNumberOrZero(last.count)
+        )
+    end, {
+        top = tonumber(topIndex),
+        count = tonumber(count),
+        phase = phase,
+    })
 end
 
 function Diagnostics.Warn(fmt, ...)
