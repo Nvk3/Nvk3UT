@@ -110,28 +110,18 @@ local function addMenuEntry(label, callback)
         return false
     end
 
-    local added = false
-
     if LibCustomMenu and type(AddCustomMenuItem) == "function" then
         local optionType = MENU_ADD_OPTION_LABEL or MENU_OPTION_LABEL or 1
         local ok = pcall(AddCustomMenuItem, label, callback, optionType)
-        if ok then
-            added = true
-        end
-    elseif type(AddMenuItem) == "function" then
-        local ok = pcall(AddMenuItem, label, callback)
-        if ok then
-            added = true
-        end
-    elseif type(AddCustomMenuItem) == "function" then
-        local optionType = MENU_ADD_OPTION_LABEL or MENU_OPTION_LABEL or 1
-        local ok = pcall(AddCustomMenuItem, label, callback, optionType)
-        if ok then
-            added = true
-        end
+        return ok == true
     end
 
-    return added
+    if type(AddMenuItem) == "function" then
+        local ok = pcall(AddMenuItem, label, callback)
+        return ok == true
+    end
+
+    return false
 end
 
 local function appendMenuEntries(achievementId)
@@ -174,6 +164,11 @@ function ChatContext.Init()
     debug("init")
 
     local function onPopulateLinkContextMenu(link, button, control)
+        if not ChatContext._hookFireLogged then
+            ChatContext._hookFireLogged = true
+            debug("hook fired")
+        end
+
         if button ~= MOUSE_BUTTON_INDEX_RIGHT then
             return
         end
@@ -192,13 +187,9 @@ function ChatContext.Init()
             return
         end
 
-        if control then
-            if type(control.IsHidden) == "function" then
-                local ok, hidden = pcall(control.IsHidden, control)
-                if ok and hidden then
-                    return
-                end
-            elseif control.IsHidden == true then
+        if control and type(control.IsHidden) == "function" then
+            local ok, hidden = pcall(control.IsHidden, control)
+            if ok and hidden then
                 return
             end
         end
@@ -206,14 +197,8 @@ function ChatContext.Init()
         appendMenuEntries(achievementId)
     end
 
-    local hookFunction = function(link, button, control)
-        onPopulateLinkContextMenu(link, button, control)
-    end
-
     if type(SecurePostHook) == "function" then
-        SecurePostHook("ZO_LinkHandler_PopulateLinkContextMenu", hookFunction)
-    elseif type(ZO_PostHook) == "function" then
-        ZO_PostHook("ZO_LinkHandler_PopulateLinkContextMenu", hookFunction)
+        SecurePostHook("ZO_LinkHandler_PopulateLinkContextMenu", onPopulateLinkContextMenu)
     else
         debug("Context menu hook unavailable; right-click integration disabled")
     end
