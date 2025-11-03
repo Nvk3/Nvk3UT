@@ -8,7 +8,7 @@ Nvk3UT.ChatAchievementContext = ChatContext
 
 local function debug(fmt, ...)
     local diag = Nvk3UT and Nvk3UT.Diagnostics
-    if diag and diag.Debug then
+    if diag and type(diag.Debug) == "function" then
         diag.Debug("[ChatAchievementContext] " .. tostring(fmt), ...)
     end
 end
@@ -73,7 +73,7 @@ local function setFavorite(achievementId, shouldFavorite)
     if state and type(state.SetFavorited) == "function" then
         local ok, result = pcall(state.SetFavorited, achievementId, shouldFavorite, "ChatAchievementContext:Toggle")
         if ok then
-            return result and true or false
+            return result
         end
     end
 
@@ -81,7 +81,7 @@ local function setFavorite(achievementId, shouldFavorite)
     if fav and type(fav.SetFavorited) == "function" then
         local ok, result = pcall(fav.SetFavorited, achievementId, shouldFavorite, "ChatAchievementContext:Toggle")
         if ok then
-            return result and true or false
+            return result
         end
     end
 
@@ -105,6 +105,26 @@ local function refreshAfterFavoriteChange()
     end
 end
 
+local function hasLibCustomMenu()
+    if type(AddCustomMenuItem) == "function" then
+        return true
+    end
+
+    local lib = rawget(_G, "LibCustomMenu")
+    if type(lib) == "table" and type(lib.AddCustomMenuItem) == "function" then
+        return true
+    end
+
+    if type(LibStub) == "function" then
+        local ok, instance = pcall(LibStub, "LibCustomMenu", true)
+        if ok and type(instance) == "table" and type(instance.AddCustomMenuItem) == "function" then
+            return true
+        end
+    end
+
+    return false
+end
+
 local function addMenuEntry(label, callback)
     if type(label) ~= "string" or label == "" or type(callback) ~= "function" then
         return false
@@ -115,13 +135,20 @@ local function addMenuEntry(label, callback)
     end
 
     local optionType = MENU_ADD_OPTION_LABEL or MENU_OPTION_LABEL or 1
-    local ok = pcall(AddCustomMenuItem, label, callback, optionType)
-    return ok == true
+    local ok, err = pcall(AddCustomMenuItem, label, callback, optionType)
+    if not ok then
+        if type(err) == "string" then
+            debug("AddCustomMenuItem failed: %s", err)
+        end
+        return false
+    end
+
+    return true
 end
 
 local function appendMenuEntries(achievementId)
     if not achievementId then
-        return
+        return false
     end
 
     local addedAny = false
@@ -135,8 +162,9 @@ local function appendMenuEntries(achievementId)
     local favoriteNow = isFavorite(achievementId)
     local toggleLabelId = favoriteNow and SI_NVK3UT_CTX_FAVORITE_REMOVE or SI_NVK3UT_CTX_FAVORITE_ADD
     if addMenuEntry(GetString(toggleLabelId), function()
-        local changed = setFavorite(achievementId, not favoriteNow)
-        if changed then
+        local desired = not favoriteNow
+        local changed = setFavorite(achievementId, desired)
+        if changed ~= false then
             refreshAfterFavoriteChange()
         end
     end) then
@@ -146,128 +174,43 @@ local function appendMenuEntries(achievementId)
     if addedAny then
         debug("appended items for achievement %d", achievementId)
     end
+
+    return addedAny
 end
 
-local function fetchLibCustomMenu()
-    local lib = rawget(_G, "LibCustomMenu")
-    if type(lib) == "table" then
-        return lib
-    end
-
-    if type(LibStub) == "function" then
-        local ok, instance = pcall(LibStub, "LibCustomMenu", true)
-        if ok and type(instance) == "table" then
-            return instance
-        end
-    end
-
-    return nil
-end
-
-local function extractLinkContextParams(...)
-    local link
-    local button
-    local control
-
-    for i = 1, select("#", ...) do
-        local value = select(i, ...)
-        local valueType = type(value)
-
-        if valueType == "string" then
-            if not link and value:find("|H") then
-                link = value
-            end
-        elseif valueType == "number" then
-            if not button and (value == MOUSE_BUTTON_INDEX_LEFT or value == MOUSE_BUTTON_INDEX_MIDDLE or value == MOUSE_BUTTON_INDEX_RIGHT) then
-                button = value
-            end
-        elseif valueType == "userdata" then
-            control = control or value
-        elseif valueType == "table" then
-            if not link and type(value.link) == "string" then
-                link = value.link
-            end
-
-            if not button and type(value.button) == "number" then
-                button = value.button
-            end
-
-            if not control then
-                if type(value.control) == "userdata" then
-                    control = value.control
-                elseif type(value.owner) == "userdata" then
-                    control = value.owner
-                elseif type(value.menuOwner) == "userdata" then
-                    control = value.menuOwner
-                end
-            end
-        end
-    end
-
-    return link, button, control
-end
-
-local function handleLinkContextMenu(...)
-    if type(ZO_LinkHandler_ParseLink) ~= "function" then
-        return
-    end
-
-    local link, button = extractLinkContextParams(...)
-    if type(link) ~= "string" or button ~= MOUSE_BUTTON_INDEX_RIGHT then
-        return
-    end
-
-    local linkType, data1 = ZO_LinkHandler_ParseLink(link)
+local function resolveAchievementId(link, linkType, data1)
     if linkType ~= "achievement" then
-        return
+        if type(ZO_LinkHandler_ParseLink) == "function" and type(link) == "string" then
+            local parsedType, parsedData1 = ZO_LinkHandler_ParseLink(link)
+            linkType, data1 = parsedType, parsedData1
+        end
     end
 
-    local achievementId = tonumber(data1)
-    if not achievementId or achievementId <= 0 then
-        return
+    if linkType ~= "achievement" then
+        return nil
     end
 
-    appendMenuEntries(achievementId)
+    local numericId = tonumber(data1)
+    if not numericId or numericId <= 0 then
+        return nil
+    end
+
+    return numericId
 end
 
-local function registerWithLibCustomMenu()
-    local lib = fetchLibCustomMenu()
-    if type(lib) ~= "table" then
-        debug("LibCustomMenu unavailable; chat context disabled")
-        return false
+local function OnLinkMouseUpContext(link, button, text, linkStyle, linkType, data1, ...)
+    if button ~= MOUSE_BUTTON_INDEX_RIGHT then
+        return
     end
 
-    local registered = false
-    local function contextMenuCallback(...)
-        handleLinkContextMenu(...)
-        return false
+    local achievementId = resolveAchievementId(link, linkType, data1)
+    if not achievementId then
+        return
     end
 
-    local function fireCallback(...)
-        handleLinkContextMenu(...)
+    if appendMenuEntries(achievementId) and type(ShowMenu) == "function" then
+        ShowMenu()
     end
-
-    if type(lib.RegisterContextMenu) == "function" and lib.CATEGORY_LINK ~= nil then
-        local ok = pcall(lib.RegisterContextMenu, lib, contextMenuCallback, lib.CATEGORY_LINK)
-        if ok then
-            registered = true
-        end
-    end
-
-    if not registered and type(lib.RegisterCallback) == "function" and lib.CALLBACK_LINK_CONTEXT_MENU ~= nil then
-        local ok = pcall(lib.RegisterCallback, lib, lib.CALLBACK_LINK_CONTEXT_MENU, fireCallback)
-        if ok then
-            registered = true
-        end
-    end
-
-    if registered then
-        debug("LCM link-context registered")
-    else
-        debug("LibCustomMenu missing link-context API; chat context disabled")
-    end
-
-    return registered
 end
 
 function ChatContext.Init()
@@ -278,7 +221,24 @@ function ChatContext.Init()
 
     ensureStringIds()
 
-    registerWithLibCustomMenu()
+    if not hasLibCustomMenu() then
+        debug("LibCustomMenu unavailable; chat context disabled")
+        return
+    end
+
+    local handler = rawget(_G, "LINK_HANDLER")
+    if type(handler) ~= "table" or type(handler.RegisterCallback) ~= "function" or handler.LINK_MOUSE_UP_EVENT == nil then
+        debug("LINK_HANDLER unavailable; chat context disabled")
+        return
+    end
+
+    if ChatContext._callbackRegistered then
+        return
+    end
+
+    handler:RegisterCallback(handler.LINK_MOUSE_UP_EVENT, OnLinkMouseUpContext)
+    ChatContext._callbackRegistered = true
+    debug("LCM link-context registered")
 end
 
 return ChatContext
