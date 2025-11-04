@@ -203,6 +203,10 @@ local function _updateFavoritesTooltip(ach)
     ach._nvkFavoritesData = data
 end
 
+function Nvk3UT.UpdateFavoritesTooltip(ach)
+    return _updateFavoritesTooltip(ach)
+end
+
 local function AddFavoritesTopCategory(AchievementsClass)
     local orgAddTopLevelCategory = AchievementsClass.AddTopLevelCategory
     function AchievementsClass:AddTopLevelCategory(...)
@@ -455,10 +459,6 @@ local function HookAchievementContext()
                                     chainId = GetNextAchievementInLine(chainId)
                                 end
                                 local U = Nvk3UT and Nvk3UT.Utils; if U and U.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then U.d("[Nvk3UT][Favorites][Toggle] remove", "data={rootId:", ACHIEVEMENTS:GetBaseAchievementId(self:GetId()), "}") end
-                                if ACHIEVEMENTS and ACHIEVEMENTS.refreshGroups then ACHIEVEMENTS.refreshGroups:RefreshAll("FullUpdate") end
-                                ForceAchievementRefresh("FavoritesIntegration:RemoveFromMenu")
-                                _updateFavoritesTooltip(ACHIEVEMENTS)
-                                if Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then Nvk3UT.UI.UpdateStatus() end
                                 if removedAny then
                                     applyFavoriteStateToLocalModel(changedIds, false)
                                     queueAchievementTrackerDirty({ hard = true })
@@ -492,9 +492,6 @@ local function HookAchievementContext()
                                     end
                                 end
                                 local U = Nvk3UT and Nvk3UT.Utils; if U and U.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then U.d("[Nvk3UT][Favorites][Toggle] add", "data={id:", id, ", scope:"..tostring(__scope).."}") end
-                                ForceAchievementRefresh("FavoritesIntegration:AddFromMenu")
-                                _updateFavoritesTooltip(ACHIEVEMENTS)
-                                if Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then Nvk3UT.UI.UpdateStatus() end
                                 if addedAny then
                                     local changed = { id }
                                     applyFavoriteStateToLocalModel(changed, true)

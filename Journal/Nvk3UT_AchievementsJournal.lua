@@ -285,11 +285,6 @@ function JournalApi:ForceBasegameAchievementsFullUpdate()
 end
 
 function JournalApi:RefreshFavoritesNow(context)
-    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
-    if runtime and type(runtime.QueueDirty) == "function" then
-        pcall(runtime.QueueDirty, runtime, "achievement")
-    end
-
     local normalizedContext = normalizeFavoritesContext(context)
     if not normalizedContext then
         normalizedContext = { reason = "immediate" }
@@ -297,7 +292,32 @@ function JournalApi:RefreshFavoritesNow(context)
         normalizedContext.reason = "immediate"
     end
 
+    local achievements = ACHIEVEMENTS
     local ok = self:ForceBasegameAchievementsFullUpdate()
+
+    if achievements then
+        local rebuildSelected = Nvk3UT and Nvk3UT.RebuildSelected
+        if type(rebuildSelected) == "function" then
+            pcall(rebuildSelected, achievements)
+        elseif type(achievements.RebuildSelected) == "function" then
+            pcall(achievements.RebuildSelected, achievements)
+        end
+
+        local updateTooltip = Nvk3UT and Nvk3UT.UpdateFavoritesTooltip
+        if type(updateTooltip) == "function" then
+            pcall(updateTooltip, achievements)
+        end
+
+        local ui = Nvk3UT and Nvk3UT.UI
+        if ui and type(ui.UpdateStatus) == "function" then
+            pcall(ui.UpdateStatus, ui)
+        end
+    end
+
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and type(runtime.QueueDirty) == "function" then
+        pcall(runtime.QueueDirty, runtime, "achievement")
+    end
 
     local reasonLabel = nil
     if type(normalizedContext) == "table" and normalizedContext.reason ~= nil then
