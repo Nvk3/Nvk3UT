@@ -1035,6 +1035,29 @@ local function ReleaseAll(pool)
     end
 end
 
+local function ReleaseTrackerRows(isHard)
+    ReleaseAll(state.categoryPool)
+    ReleaseAll(state.achievementPool)
+    ReleaseAll(state.objectivePool)
+
+    if isHard and state.container and state.container.GetNumChildren then
+        local childCount = state.container:GetNumChildren()
+        for index = 1, childCount do
+            local child = state.container:GetChild(index)
+            if child then
+                if child.SetHidden then
+                    child:SetHidden(true)
+                end
+                if child.ClearAnchors then
+                    child:ClearAnchors()
+                end
+            end
+        end
+    end
+
+    ResetLayoutState()
+end
+
 local function AnchorControl(control, indentX)
     indentX = indentX or 0
     control:ClearAnchors()
@@ -1593,18 +1616,19 @@ local function LayoutCategory()
     end
 end
 
-local function Rebuild()
+local function Rebuild(opts)
     if not state.container then
         return
     end
 
     EnsurePools()
 
-    ReleaseAll(state.categoryPool)
-    ReleaseAll(state.achievementPool)
-    ReleaseAll(state.objectivePool)
+    local hardRefresh = false
+    if type(opts) == "table" and opts.hard == true then
+        hardRefresh = true
+    end
 
-    ResetLayoutState()
+    ReleaseTrackerRows(hardRefresh)
 
     LayoutCategory()
 
@@ -1676,7 +1700,21 @@ function AchievementTracker.Init(parentControl, opts)
     AchievementTracker.Refresh()
 end
 
-function AchievementTracker.Refresh()
+local function ExtractRefreshOptions(...)
+    local count = select('#', ...)
+    if count == 0 then
+        return nil
+    end
+
+    local candidate = select(count, ...)
+    if type(candidate) == "table" then
+        return candidate
+    end
+
+    return nil
+end
+
+function AchievementTracker.Refresh(...)
     if not state.isInitialized then
         return
     end
@@ -1685,7 +1723,9 @@ function AchievementTracker.Refresh()
         state.snapshot = Nvk3UT.AchievementModel.GetViewData() or state.snapshot
     end
 
-    Rebuild()
+    local opts = ExtractRefreshOptions(...)
+
+    Rebuild(opts)
 end
 
 function AchievementTracker.Shutdown()

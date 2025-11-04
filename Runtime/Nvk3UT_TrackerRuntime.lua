@@ -15,6 +15,7 @@ Runtime._dirty = Runtime._dirty or {}
 Runtime._dirty.quest = Runtime._dirty.quest == true
 Runtime._dirty.achievement = Runtime._dirty.achievement == true
 Runtime._dirty.layout = Runtime._dirty.layout == true
+Runtime._dirty.achievementHard = Runtime._dirty.achievementHard == true
 Runtime._queuedChannelsForLog = Runtime._queuedChannelsForLog or {}
 Runtime._isProcessingFrame = Runtime._isProcessingFrame == true
 Runtime._lastProcessFrameMs = Runtime._lastProcessFrameMs or nil
@@ -87,6 +88,7 @@ local function ensureDirtyState()
     dirty.quest = dirty.quest == true
     dirty.achievement = dirty.achievement == true
     dirty.layout = dirty.layout == true
+    dirty.achievementHard = dirty.achievementHard == true
 
     return dirty
 end
@@ -501,7 +503,7 @@ local function buildAchievementViewModel()
     return viewModel, true
 end
 
-local function refreshAchievementTracker(viewModel)
+local function refreshAchievementTracker(viewModel, opts)
     local tracker = rawget(Addon, "AchievementTracker")
     if type(tracker) ~= "table" then
         return false
@@ -509,7 +511,7 @@ local function refreshAchievementTracker(viewModel)
 
     local refreshWithModel = tracker.RefreshWithViewModel or tracker.RefreshFromViewModel
     if type(refreshWithModel) == "function" then
-        local invoked = callWithOptionalSelf(tracker, refreshWithModel, false, viewModel)
+        local invoked = callWithOptionalSelf(tracker, refreshWithModel, false, viewModel, opts)
         if invoked then
             return true
         end
@@ -523,7 +525,7 @@ local function refreshAchievementTracker(viewModel)
 
     local refresh = tracker.Refresh
     if type(refresh) == "function" then
-        local invoked = callWithOptionalSelf(tracker, refresh, false, viewModel)
+        local invoked = callWithOptionalSelf(tracker, refresh, false, viewModel, opts)
         return invoked
     end
 
@@ -643,6 +645,22 @@ function Runtime:QueueDirty(channel, opts)
     end
 end
 
+function Runtime:QueueAchievementHard()
+    local dirty = ensureDirtyState()
+    local queuedLog = ensureQueuedLogTable()
+
+    if not dirty.achievement then
+        dirty.achievement = true
+    end
+
+    dirty.achievementHard = true
+    queuedLog.achievement = true
+
+    if hasPendingWork() then
+        scheduleProcessing()
+    end
+end
+
 function Runtime:RecordAchievementStagePending(id, stageId, index)
     if Addon and type(Addon.IsDebugEnabled) == "function" then
         if not Addon:IsDebugEnabled() then
@@ -723,9 +741,16 @@ function Runtime:ProcessFrame(nowMs)
             end
         end
 
+        local achievementHard = dirty.achievementHard == true
+        dirty.achievementHard = false
+
         local achievementGeometryChanged = false
         if achievementDirty or achievementVmBuilt then
-            local refreshedAchievement = refreshAchievementTracker(achievementViewModel)
+            local refreshOpts = nil
+            if achievementHard then
+                refreshOpts = { hard = true }
+            end
+            local refreshedAchievement = refreshAchievementTracker(achievementViewModel, refreshOpts)
             if refreshedAchievement then
                 achievementGeometryChanged = updateTrackerGeometry("achievement")
                 if achievementGeometryChanged then
@@ -746,7 +771,8 @@ function Runtime:ProcessFrame(nowMs)
             end
         end
 
-        if layoutDirty or questGeometryChanged or achievementGeometryChanged then
+        local layoutShouldApply = layoutDirty or questGeometryChanged or achievementGeometryChanged or achievementHard
+        if layoutShouldApply then
             if applyTrackerHostLayout() then
                 debug("Runtime: applied tracker host layout")
             end

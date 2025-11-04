@@ -70,9 +70,17 @@ local function applyFavoriteStateToLocalModel(changedIds, flag)
     end
 end
 
-local function queueAchievementTrackerDirty()
+local function queueAchievementTrackerDirty(opts)
     local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
     if type(runtime) ~= "table" or type(runtime.QueueDirty) ~= "function" then
+        if type(runtime) == "table" and opts and opts.hard and type(runtime.QueueAchievementHard) == "function" then
+            pcall(runtime.QueueAchievementHard, runtime)
+        end
+        return
+    end
+
+    if opts and opts.hard and type(runtime.QueueAchievementHard) == "function" then
+        pcall(runtime.QueueAchievementHard, runtime)
         return
     end
 
@@ -453,7 +461,7 @@ local function HookAchievementContext()
                                 if Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then Nvk3UT.UI.UpdateStatus() end
                                 if removedAny then
                                     applyFavoriteStateToLocalModel(changedIds, false)
-                                    queueAchievementTrackerDirty()
+                                    queueAchievementTrackerDirty({ hard = true })
                                     refreshJournalFavorites({ reason = "FavoritesIntegration:ContextToggle", flag = false }, changedIds)
                                 end
                             end)
@@ -490,7 +498,7 @@ local function HookAchievementContext()
                                 if addedAny then
                                     local changed = { id }
                                     applyFavoriteStateToLocalModel(changed, true)
-                                    queueAchievementTrackerDirty()
+                                    queueAchievementTrackerDirty({ hard = true })
                                     refreshJournalFavorites({ reason = "FavoritesIntegration:ContextToggle", flag = true }, changed)
                                 end
                             end)
