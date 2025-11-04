@@ -1468,15 +1468,18 @@ local function registerPanel(displayTitle)
                 type = "slider",
                 name = "Favoriten - sichtbare Einträge:",
                 min = 5,
-                max = 50,
+                max = 100,
                 step = 1,
                 getFunc = function()
                     local general = getGeneral()
-                    return math.max(5, math.min(50, general.favoritesVisibleCap or 20))
+                    local configured = general.favoritesCap or general.favoritesVisibleCap or 20
+                    return math.max(5, math.min(100, configured))
                 end,
                 setFunc = function(value)
                     local general = getGeneral()
-                    general.favoritesVisibleCap = math.floor(value or 20)
+                    local cap = math.floor(value or 20)
+                    general.favoritesCap = cap
+                    general.favoritesVisibleCap = cap
                     refreshAchievementTracker()
                     local journal = Nvk3UT and Nvk3UT.Journal
                     if journal and type(journal.RefreshFavoritesIfVisible) == "function" then

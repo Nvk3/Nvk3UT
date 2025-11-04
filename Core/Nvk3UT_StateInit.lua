@@ -64,6 +64,7 @@ local defaults = {
     General = {
         showStatus = true,
         favScope = "account",
+        favoritesCap = 20,
         favoritesVisibleCap = 20,
         recentWindow = 0,
         recentMax = 100,
