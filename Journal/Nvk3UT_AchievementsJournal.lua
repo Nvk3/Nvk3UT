@@ -61,8 +61,90 @@ local REFRESH_DEBOUNCE_MS = 80
 local favoritesRefreshState = {
     pending = false,
     callId = nil,
-    lastReason = nil,
+    lastContext = nil,
 }
+
+local function cloneTable(source)
+    if type(source) ~= "table" then
+        return nil
+    end
+
+    local target = {}
+    for key, value in pairs(source) do
+        target[key] = value
+    end
+    return target
+end
+
+local function normalizeFavoritesContext(context)
+    if context == nil then
+        return nil
+    end
+
+    if type(context) == "table" then
+        local payload = cloneTable(context) or {}
+        if type(payload.changedIds) == "table" then
+            local copy = {}
+            for index = 1, #payload.changedIds do
+                copy[index] = payload.changedIds[index]
+            end
+            payload.changedIds = copy
+        end
+        return payload
+    end
+
+    return { reason = context }
+end
+
+local function mergeChangedIds(target, source)
+    if type(source) ~= "table" then
+        return
+    end
+
+    target.changedIds = target.changedIds or {}
+    local lookup = {}
+
+    for index = 1, #target.changedIds do
+        lookup[target.changedIds[index]] = true
+    end
+
+    for index = 1, #source do
+        local entry = source[index]
+        if (type(entry) == "number" or type(entry) == "string") and not lookup[entry] then
+            target.changedIds[#target.changedIds + 1] = entry
+            lookup[entry] = true
+        end
+    end
+end
+
+local function mergeFavoritesContext(existing, incoming)
+    if not incoming then
+        return existing
+    end
+
+    if not existing then
+        return normalizeFavoritesContext(incoming)
+    end
+
+    local normalizedIncoming = normalizeFavoritesContext(incoming)
+    if not normalizedIncoming then
+        return existing
+    end
+
+    if normalizedIncoming.reason ~= nil then
+        existing.reason = normalizedIncoming.reason
+    end
+
+    if normalizedIncoming.changedIds then
+        mergeChangedIds(existing, normalizedIncoming.changedIds)
+    end
+
+    if normalizedIncoming.reason == nil and existing.reason == nil then
+        existing.reason = "aggregated"
+    end
+
+    return existing
+end
 
 local function debugFavoritesRefresh(fmt, ...)
     if not isDebugEnabled() then
@@ -167,20 +249,18 @@ local function scheduleFavoritesDebounce()
     end, REFRESH_DEBOUNCE_MS)
 end
 
-function JournalApi:RefreshFavoritesIfVisible(reason)
+function JournalApi:RefreshFavoritesIfVisible(context)
     if not isFavoritesViewVisible() then
         return false
     end
 
     if favoritesRefreshState.pending then
-        if reason ~= nil then
-            favoritesRefreshState.lastReason = reason
-        end
+        favoritesRefreshState.lastContext = mergeFavoritesContext(favoritesRefreshState.lastContext, context)
         return true
     end
 
     favoritesRefreshState.pending = true
-    favoritesRefreshState.lastReason = reason
+    favoritesRefreshState.lastContext = normalizeFavoritesContext(context)
 
     local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
     if runtime and type(runtime.QueueDirty) == "function" then
@@ -195,25 +275,25 @@ function JournalApi:FlushPendingFavoritesRefresh(context)
     favoritesRefreshState.callId = nil
 
     if not favoritesRefreshState.pending then
-        favoritesRefreshState.lastReason = nil
+        favoritesRefreshState.lastContext = nil
         return false
     end
 
     if not isFavoritesViewVisible() then
         favoritesRefreshState.pending = false
-        favoritesRefreshState.lastReason = nil
+        favoritesRefreshState.lastContext = nil
         return false
     end
 
     favoritesRefreshState.pending = false
-    local reason = context or favoritesRefreshState.lastReason
-    favoritesRefreshState.lastReason = nil
+    local reasonContext = mergeFavoritesContext(normalizeFavoritesContext(context), favoritesRefreshState.lastContext)
+    favoritesRefreshState.lastContext = nil
 
     if not (FavoritesCategory and type(FavoritesCategory.Refresh) == "function") then
         return false
     end
 
-    local ok = pcall(FavoritesCategory.Refresh, FavoritesCategory)
+    local ok = pcall(FavoritesCategory.Refresh, FavoritesCategory, reasonContext)
     if not ok then
         if isDebugEnabled() and Utils and Utils.d then
             Utils.d("[Ach][Journal] FavoritesCategory.Refresh failed during pending flush")
@@ -221,7 +301,19 @@ function JournalApi:FlushPendingFavoritesRefresh(context)
         return false
     end
 
-    debugFavoritesRefresh("Favorites refresh executed (context=%s)", tostring(reason or "runtime"))
+    local reasonLabel = nil
+    if type(reasonContext) == "table" and reasonContext.reason ~= nil then
+        reasonLabel = tostring(reasonContext.reason)
+    else
+        reasonLabel = tostring(reasonContext or "runtime")
+    end
+
+    local changedCount = 0
+    if type(reasonContext) == "table" and type(reasonContext.changedIds) == "table" then
+        changedCount = #reasonContext.changedIds
+    end
+
+    debugFavoritesRefresh("Favorites refresh executed (context=%s, changed=%d)", reasonLabel, changedCount)
     return true
 end
 

@@ -10,15 +10,30 @@ local Data = Nvk3UT and Nvk3UT.FavoritesData
 local state = {
     parent = nil,
     host = nil,
-    scrollList = nil,
     container = nil,
-    dataTypeRegistered = false,
+    scrollChild = nil,
+    rowPool = nil,
     visible = true,
     hasEntries = false,
+    rowOrder = {},
+    rowByAchievementId = {},
+    sortedIds = {},
+    sortedLookup = {},
+    achievementCache = {},
+    pendingRowUpdateIds = {},
+    pendingRowUpdateLookup = {},
+    batchCallId = nil,
 }
 
-local ROW_TYPE_ID = 1
-local SCROLL_LIST_CONTROL_NAME = "Nvk3UT_FavoritesList"
+local ROW_HEIGHT = 36
+local ROW_ICON_SIZE = 28
+local ROW_ICON_OFFSET_X = 6
+local ROW_ICON_OFFSET_Y = 4
+local ROW_LABEL_OFFSET_X = 12
+local ROW_SPACING = 4
+local ROW_BATCH_SIZE = 6
+local DEFAULT_MAX_VISIBLE = 20
+local SCROLL_CONTROL_NAME = "Nvk3UT_FavoritesScroll"
 
 local tableUnpack = table.unpack or unpack
 
@@ -67,6 +82,17 @@ local function resolveFavoritesScope()
     return "account"
 end
 
+local function getMaxVisibleFavorites()
+    local root = Nvk3UT and Nvk3UT.sv
+    local general = root and root.General
+    local configured = general and general.favoritesVisibleCap
+    local numeric = tonumber(configured)
+    if not numeric or numeric <= 0 then
+        numeric = DEFAULT_MAX_VISIBLE
+    end
+    return math.floor(numeric)
+end
+
 local function normalizeAchievementId(id)
     local normalized = safeCall(Utils and Utils.NormalizeAchievementId, id)
     if type(normalized) ~= "number" or normalized <= 0 then
@@ -89,7 +115,6 @@ local function debugLog(fmt, ...)
         return
     end
 
-    local diagnostics = Nvk3UT and Nvk3UT.Diagnostics
     local message
     local ok, formatted = pcall(string.format, fmt, ...)
     if ok then
@@ -98,8 +123,8 @@ local function debugLog(fmt, ...)
         message = tostring(fmt)
     end
 
-    if diagnostics and diagnostics.Debug then
-        diagnostics.Debug("FavoritesCategory %s", message)
+    if Diagnostics and Diagnostics.Debug then
+        Diagnostics.Debug("FavoritesCategory %s", message)
     elseif Utils and Utils.d then
         Utils.d(string.format("[Favorites][Category] %s", message))
     end
@@ -163,9 +188,9 @@ local function resolveHostControl(target)
     return nil
 end
 
-local function ensureScrollList()
-    if state.scrollList and type(state.scrollList) == "userdata" then
-        return state.scrollList
+local function ensureContainer()
+    if state.container and type(state.container) == "userdata" then
+        return state.container
     end
 
     local host = state.host or resolveHostControl(state.parent)
@@ -173,21 +198,12 @@ local function ensureScrollList()
         return nil
     end
 
-    if type(host.GetNamedChild) == "function" then
-        local ok, existing = pcall(host.GetNamedChild, host, SCROLL_LIST_CONTROL_NAME)
-        if ok and existing then
-            state.scrollList = existing
-            state.container = existing
-            return existing
-        end
-    end
-
     local wm = WINDOW_MANAGER
     if not (wm and type(wm.CreateControlFromVirtual) == "function") then
         return nil
     end
 
-    local control = wm:CreateControlFromVirtual(SCROLL_LIST_CONTROL_NAME, host, "ZO_ScrollList")
+    local control = wm:CreateControlFromVirtual(SCROLL_CONTROL_NAME, host, "ZO_ScrollContainer")
     if not control then
         return nil
     end
@@ -197,8 +213,15 @@ local function ensureScrollList()
     control:SetAnchor(BOTTOMRIGHT, host, BOTTOMRIGHT, 0, 0)
     control:SetHidden(true)
 
-    state.scrollList = control
+    local scrollChild = control:GetNamedChild("ScrollChild")
+    if scrollChild then
+        scrollChild:SetResizeToFitDescendents(true)
+        scrollChild:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+        scrollChild:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+    end
+
     state.container = control
+    state.scrollChild = scrollChild
 
     return control
 end
@@ -238,93 +261,238 @@ local function goToAchievement(achievementId)
     end
 end
 
-local function setupDataRow(rowControl, rowData)
-    if not (rowControl and rowData and rowData.achievementId) then
+local function releaseRow(control)
+    if not control then
         return
     end
 
-    local label = rowControl.GetNamedChild and rowControl:GetNamedChild("Text") or rowControl
-    if label and label.SetText then
-        local okName, name = pcall(GetAchievementInfo, rowData.achievementId)
-        if okName and name then
-            label:SetText(zo_strformat("<<1>>", name))
-        else
-            label:SetText(tostring(rowData.achievementId))
-        end
+    if control.highlight then
+        control.highlight:SetHidden(true)
     end
 
-    local function openAchievement()
-        goToAchievement(rowData.achievementId)
+    if control.icon then
+        control.icon:SetTexture("")
     end
 
-    rowControl:SetHandler("OnMouseDoubleClick", function()
-        openAchievement()
-    end)
+    control.achievementId = nil
+    control.currentName = nil
+    control.currentProgress = nil
+    control.currentIcon = nil
+    control.currentCompleted = nil
 
-    rowControl:SetHandler("OnMouseUp", function(control, button, upInside)
-        if button == MOUSE_BUTTON_INDEX_RIGHT and upInside then
-            ClearMenu()
-            AddCustomMenuItem(GetString(SI_ITEM_ACTION_LINK_TO_CHAT), function()
-                local link = ZO_LinkHandler_CreateChatLink(GetAchievementLink, rowData.achievementId)
-                ZO_LinkHandler_InsertLink(link)
-            end)
-            AddCustomMenuItem(GetString(SI_ITEM_ACTION_OPEN), function()
-                openAchievement()
-            end)
-            AddCustomMenuItem("Aus Favoriten entfernen", function()
-                local scope = resolveFavoritesScope()
-                local removed = false
-                if Data and Data.SetFavorited then
-                    local ok, changed = pcall(Data.SetFavorited, rowData.achievementId, false, "FavoritesCategory:ContextRemove", scope)
-                    removed = ok and changed ~= false
-                end
-                if removed then
-                    local journal = Nvk3UT and Nvk3UT.Journal
-                    if journal and type(journal.RefreshFavoritesIfVisible) == "function" then
-                        pcall(journal.RefreshFavoritesIfVisible, journal, "FavoritesCategory:ContextRemove")
-                    end
-                end
-            end)
-            ShowMenu(control)
-        end
-    end)
+    control:ClearAnchors()
+    control:SetHidden(true)
+
+    local pool = state.rowPool
+    if pool and control.poolKey then
+        pool:ReleaseObject(control.poolKey)
+        control.poolKey = nil
+    end
 end
 
-local function setupScrollList()
-    local scrollList = ensureScrollList()
-    if not scrollList then
+local function createRow(pool)
+    local scrollChild = state.scrollChild
+    if not scrollChild then
         return nil
     end
 
-    if not state.dataTypeRegistered then
-        ZO_ScrollList_AddDataType(scrollList, ROW_TYPE_ID, "ZO_SelectableLabel", 24, setupDataRow)
-        state.dataTypeRegistered = true
-    end
+    local wm = WINDOW_MANAGER
+    local rowControl = wm:CreateControl(nil, scrollChild, CT_CONTROL)
+    rowControl:SetMouseEnabled(true)
+    rowControl:SetHeight(ROW_HEIGHT)
+    rowControl:SetHidden(false)
 
-    return scrollList
+    local bg = wm:CreateControl(nil, rowControl, CT_TEXTURE)
+    bg:SetAnchorFill(rowControl)
+    bg:SetTexture("EsoUI/Art/Miscellaneous/listItem_highlight.dds")
+    bg:SetColor(1, 1, 1, 0.15)
+    bg:SetHidden(true)
+
+    local icon = wm:CreateControl(nil, rowControl, CT_TEXTURE)
+    icon:SetDimensions(ROW_ICON_SIZE, ROW_ICON_SIZE)
+    icon:SetAnchor(LEFT, rowControl, LEFT, ROW_ICON_OFFSET_X, ROW_ICON_OFFSET_Y)
+    icon:SetTextureReleaseOption(RELEASE_TEXTURE_AT_ZERO_REFERENCES)
+
+    local label = wm:CreateControl(nil, rowControl, CT_LABEL)
+    label:SetFont("ZoFontGame")
+    label:SetAnchor(LEFT, icon, RIGHT, ROW_LABEL_OFFSET_X, 0)
+    label:SetAnchor(RIGHT, rowControl, RIGHT, -120, 0)
+    label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+    label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
+
+    local progress = wm:CreateControl(nil, rowControl, CT_LABEL)
+    progress:SetFont("ZoFontGameSmall")
+    progress:SetAnchor(RIGHT, rowControl, RIGHT, -10, 0)
+    progress:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+    progress:SetVerticalAlignment(TEXT_ALIGN_CENTER)
+    progress:SetColor(0.7, 0.7, 0.7, 1)
+
+    rowControl.highlight = bg
+    rowControl.icon = icon
+    rowControl.label = label
+    rowControl.progress = progress
+
+    rowControl:SetHandler("OnMouseEnter", function(ctrl)
+        if ctrl.highlight then
+            ctrl.highlight:SetHidden(false)
+        end
+    end)
+    rowControl:SetHandler("OnMouseExit", function(ctrl)
+        if ctrl.highlight then
+            ctrl.highlight:SetHidden(true)
+        end
+    end)
+    rowControl:SetHandler("OnMouseDoubleClick", function(ctrl)
+        if ctrl.achievementId then
+            goToAchievement(ctrl.achievementId)
+        end
+    end)
+    rowControl:SetHandler("OnMouseUp", function(ctrl, button, upInside)
+        if button ~= MOUSE_BUTTON_INDEX_RIGHT or not upInside or not ctrl.achievementId then
+            return
+        end
+
+        ClearMenu()
+        AddCustomMenuItem(GetString(SI_ITEM_ACTION_LINK_TO_CHAT), function()
+            local link = ZO_LinkHandler_CreateChatLink(GetAchievementLink, ctrl.achievementId)
+            ZO_LinkHandler_InsertLink(link)
+        end)
+        AddCustomMenuItem(GetString(SI_ITEM_ACTION_OPEN), function()
+            goToAchievement(ctrl.achievementId)
+        end)
+        AddCustomMenuItem("Aus Favoriten entfernen", function()
+            local scope = resolveFavoritesScope()
+            local removed = false
+            if Data and Data.SetFavorited then
+                local ok, changed = pcall(Data.SetFavorited, ctrl.achievementId, false, "FavoritesCategory:ContextRemove", scope)
+                removed = ok and changed ~= false
+            end
+            if removed then
+                local journal = Nvk3UT and Nvk3UT.Journal
+                if journal and type(journal.RefreshFavoritesIfVisible) == "function" then
+                    pcall(journal.RefreshFavoritesIfVisible, journal, {
+                        changedIds = { ctrl.achievementId },
+                        reason = "FavoritesCategory:ContextRemove",
+                    })
+                end
+            end
+        end)
+        ShowMenu(ctrl)
+    end)
+
+    return rowControl
 end
 
-local function collectFavoriteIds()
+local function resetRow(pool, control)
+    releaseRow(control)
+end
+
+local function ensureRowPool()
+    if not state.rowPool then
+        state.rowPool = ZO_ObjectPool:New(createRow, resetRow)
+    end
+    return state.rowPool
+end
+
+local function acquireRow()
+    local container = ensureContainer()
+    if not container then
+        return nil
+    end
+
+    ensureRowPool()
+    local key, control = state.rowPool:AcquireObject()
+    if not control then
+        return nil
+    end
+
+    control.poolKey = key
+    control:SetHidden(false)
+    return control
+end
+
+local function applyVisibility()
+    local container = state.container
+    if not (container and container.SetHidden) then
+        return
+    end
+
+    local shouldShow = (state.visible ~= false) and state.hasEntries
+    container:SetHidden(not shouldShow)
+end
+
+local function layoutRows()
+    local scrollChild = state.scrollChild
+    if not scrollChild then
+        return
+    end
+
+    local previous
+    for index = 1, #state.rowOrder do
+        local row = state.rowOrder[index]
+        if row then
+            row:ClearAnchors()
+            if previous then
+                row:SetAnchor(TOPLEFT, previous, BOTTOMLEFT, 0, ROW_SPACING)
+                row:SetAnchor(TOPRIGHT, previous, BOTTOMRIGHT, 0, ROW_SPACING)
+            else
+                row:SetAnchor(TOPLEFT, scrollChild, TOPLEFT, 0, 0)
+                row:SetAnchor(TOPRIGHT, scrollChild, TOPRIGHT, 0, 0)
+            end
+            previous = row
+        end
+    end
+end
+
+local function ensureSortedStructures()
+    state.sortedIds = state.sortedIds or {}
+    state.sortedLookup = state.sortedLookup or {}
+end
+
+local function invalidateRowBatches()
+    if state.batchCallId and type(zo_removeCallLater) == "function" then
+        zo_removeCallLater(state.batchCallId)
+    end
+    state.batchCallId = nil
+    state.pendingRowUpdateIds = {}
+    state.pendingRowUpdateLookup = {}
+end
+
+local function clearRows()
+    for index = #state.rowOrder, 1, -1 do
+        local row = state.rowOrder[index]
+        releaseRow(row)
+        state.rowOrder[index] = nil
+    end
+
+    for key in pairs(state.rowByAchievementId) do
+        state.rowByAchievementId[key] = nil
+    end
+
+    invalidateRowBatches()
+
+    state.hasEntries = false
+    applyVisibility()
+end
+
+local function rebuildSortedFavorites()
     ensureData()
-
-    if not (Data and Data.GetAllFavorites) then
-        return {}
-    end
-
-    local scope = resolveFavoritesScope()
-    local iterator, iterState, key = safeCall(Data.GetAllFavorites, scope)
-    if type(iterator) ~= "function" then
-        return {}
-    end
+    ensureSortedStructures()
 
     local ids = {}
-    for rawId, flagged in iterator, iterState, key do
-        if flagged then
-            local normalized = normalizeAchievementId(rawId)
-            if normalized then
-                local okInfo, _ = pcall(GetAchievementInfo, normalized)
-                if okInfo then
-                    ids[#ids + 1] = normalized
+    state.sortedLookup = {}
+
+    if Data and Data.GetAllFavorites then
+        local scope = resolveFavoritesScope()
+        local iterator, iterState, key = safeCall(Data.GetAllFavorites, scope)
+        if type(iterator) == "function" then
+            for rawId, flagged in iterator, iterState, key do
+                if flagged then
+                    local normalized = normalizeAchievementId(rawId)
+                    if normalized then
+                        state.sortedLookup[normalized] = true
+                        ids[#ids + 1] = normalized
+                    end
                 end
             end
         end
@@ -332,46 +500,340 @@ local function collectFavoriteIds()
 
     table.sort(ids)
 
-    return ids
+    state.sortedIds = ids
 end
 
-local function applyVisibility()
-    local scrollList = state.scrollList
-    if not (scrollList and scrollList.SetHidden) then
+local function sortedInsert(achievementId)
+    ensureSortedStructures()
+    if state.sortedLookup[achievementId] then
+        return false
+    end
+
+    local ids = state.sortedIds
+    local inserted = false
+    for index = 1, #ids do
+        if achievementId < ids[index] then
+            table.insert(ids, index, achievementId)
+            inserted = true
+            break
+        end
+    end
+
+    if not inserted then
+        ids[#ids + 1] = achievementId
+    end
+
+    state.sortedLookup[achievementId] = true
+    return true
+end
+
+local function sortedRemove(achievementId)
+    ensureSortedStructures()
+    if not state.sortedLookup[achievementId] then
+        return false
+    end
+
+    state.sortedLookup[achievementId] = nil
+
+    local ids = state.sortedIds
+    for index = 1, #ids do
+        if ids[index] == achievementId then
+            table.remove(ids, index)
+            return true
+        end
+    end
+
+    return false
+end
+
+local function applyDeltaChanges(changedIds)
+    if type(changedIds) ~= "table" or #changedIds == 0 then
+        rebuildSortedFavorites()
+        return 0, 0
+    end
+
+    ensureData()
+    ensureSortedStructures()
+
+    local scope = resolveFavoritesScope()
+    local addedToList = 0
+    local removedFromList = 0
+
+    for index = 1, #changedIds do
+        local normalized = normalizeAchievementId(changedIds[index])
+        if normalized then
+            local isFavorited = false
+            if Data and Data.IsFavorited then
+                local ok, favorited = pcall(Data.IsFavorited, normalized, scope)
+                isFavorited = ok and favorited == true
+            end
+            if isFavorited then
+                if sortedInsert(normalized) then
+                    addedToList = addedToList + 1
+                end
+            else
+                if sortedRemove(normalized) then
+                    removedFromList = removedFromList + 1
+                end
+            end
+            state.achievementCache[normalized] = nil
+        end
+    end
+
+    return addedToList, removedFromList
+end
+
+local function getAchievementPresentation(achievementId)
+    if state.achievementCache[achievementId] then
+        return state.achievementCache[achievementId]
+    end
+
+    local okInfo, name, description, points, icon, completed = pcall(GetAchievementInfo, achievementId)
+    if not okInfo or not name then
+        return nil
+    end
+
+    local progressText = nil
+    local completedCriteria = 0
+    local totalCriteria = 0
+
+    if type(GetAchievementNumCriteria) == "function" and type(GetAchievementCriterion) == "function" then
+        local okNum, total = pcall(GetAchievementNumCriteria, achievementId)
+        if okNum and type(total) == "number" and total > 0 then
+            totalCriteria = 0
+            completedCriteria = 0
+            for index = 1, total do
+                local okCriterion, _, current, maxValue = pcall(GetAchievementCriterion, achievementId, index)
+                if okCriterion then
+                    local required = tonumber(maxValue) or 0
+                    local progress = tonumber(current) or 0
+                    if required > 0 then
+                        totalCriteria = totalCriteria + required
+                        completedCriteria = completedCriteria + math.min(progress, required)
+                    else
+                        totalCriteria = totalCriteria + 1
+                        if progress > 0 then
+                            completedCriteria = completedCriteria + 1
+                        end
+                    end
+                end
+            end
+            progressText = string.format("%d/%d", completedCriteria, totalCriteria)
+        end
+    end
+
+    local displayName = zo_strformat("<<1>>", name)
+    local data = {
+        name = displayName,
+        icon = icon,
+        completed = completed == true,
+        progressText = progressText,
+        completedValue = completedCriteria,
+        totalValue = totalCriteria,
+    }
+    state.achievementCache[achievementId] = data
+    return data
+end
+
+local function applyRowData(rowControl, achievementId, forceRefresh)
+    if not (rowControl and achievementId) then
         return
     end
 
-    local shouldShow = (state.visible ~= false) and state.hasEntries
-    scrollList:SetHidden(not shouldShow)
+    if forceRefresh then
+        state.achievementCache[achievementId] = nil
+    end
+
+    local presentation = getAchievementPresentation(achievementId)
+    if not presentation then
+        rowControl.label:SetText(tostring(achievementId))
+        rowControl.progress:SetText("")
+        if rowControl.icon then
+            rowControl.icon:SetTexture("")
+        end
+        return
+    end
+
+    if rowControl.icon and rowControl.currentIcon ~= presentation.icon then
+        rowControl.icon:SetTexture(presentation.icon or "")
+        rowControl.currentIcon = presentation.icon
+    end
+
+    if rowControl.label and rowControl.currentName ~= presentation.name then
+        rowControl.label:SetText(presentation.name)
+        rowControl.currentName = presentation.name
+    end
+
+    local progressText = presentation.progressText
+    if not progressText or progressText == "0/0" then
+        progressText = presentation.completed and GetString(SI_ACHIEVEMENTS_COMPLETED) or ""
+    end
+
+    if rowControl.progress and rowControl.currentProgress ~= progressText then
+        rowControl.progress:SetText(progressText)
+        rowControl.currentProgress = progressText
+    end
+
+    local completed = presentation.completed == true
+    if rowControl.currentCompleted ~= completed then
+        if completed then
+            rowControl.label:SetColor(0.6, 0.85, 0.5, 1)
+        else
+            rowControl.label:SetColor(1, 1, 1, 1)
+        end
+        rowControl.currentCompleted = completed
+    end
 end
 
-local function updateScrollList()
-    local scrollList = setupScrollList()
-    if not scrollList then
-        state.hasEntries = false
-        return nil, 0
+Category.ApplyRowData = applyRowData
+
+local function processRowBatch()
+    state.batchCallId = nil
+
+    local processed = 0
+    while #state.pendingRowUpdateIds > 0 and processed < ROW_BATCH_SIZE do
+        local achievementId = table.remove(state.pendingRowUpdateIds, 1)
+        state.pendingRowUpdateLookup[achievementId] = nil
+
+        local row = state.rowByAchievementId[achievementId]
+        if row then
+            applyRowData(row, achievementId, false)
+        end
+
+        processed = processed + 1
     end
 
-    local dataList = ZO_ScrollList_GetDataList(scrollList)
-    if not dataList then
-        state.hasEntries = false
-        return scrollList, 0
+    if #state.pendingRowUpdateIds > 0 and type(zo_callLater) == "function" then
+        state.batchCallId = zo_callLater(processRowBatch, 0)
+    end
+end
+
+local function queueRowUpdate(row, achievementId, forceRefresh)
+    if not row or not achievementId then
+        return
     end
 
-    ZO_ScrollList_Clear(scrollList)
+    row.achievementId = achievementId
 
-    local ids = collectFavoriteIds()
-    for index = 1, #ids do
-        local achievementId = ids[index]
-        dataList[#dataList + 1] = ZO_ScrollList_CreateDataEntry(ROW_TYPE_ID, { achievementId = achievementId }, 1)
+    if forceRefresh then
+        state.achievementCache[achievementId] = nil
     end
 
-    ZO_ScrollList_Commit(scrollList)
+    if state.pendingRowUpdateLookup[achievementId] then
+        return
+    end
 
-    state.hasEntries = #ids > 0
+    state.pendingRowUpdateLookup[achievementId] = true
+    state.pendingRowUpdateIds[#state.pendingRowUpdateIds + 1] = achievementId
+
+    if type(zo_callLater) ~= "function" then
+        applyRowData(row, achievementId, forceRefresh)
+        state.pendingRowUpdateLookup[achievementId] = nil
+        state.pendingRowUpdateIds[#state.pendingRowUpdateIds] = nil
+        return
+    end
+
+    if not state.batchCallId then
+        state.batchCallId = zo_callLater(processRowBatch, 0)
+    end
+end
+
+local function syncVisibleRows(maxVisible)
+    local desiredIds = {}
+    local ids = state.sortedIds or {}
+    local limit = math.min(#ids, maxVisible)
+    for index = 1, limit do
+        desiredIds[index] = ids[index]
+    end
+
+    local desiredLookup = {}
+    for index = 1, #desiredIds do
+        desiredLookup[desiredIds[index]] = true
+    end
+
+    local removedRows = 0
+    for index = #state.rowOrder, 1, -1 do
+        local row = state.rowOrder[index]
+        if not row or not desiredLookup[row.achievementId] then
+            if row then
+                state.rowByAchievementId[row.achievementId] = nil
+                releaseRow(row)
+                removedRows = removedRows + 1
+            end
+            table.remove(state.rowOrder, index)
+        end
+    end
+
+    local addedRows = 0
+    for orderIndex = 1, #desiredIds do
+        local achievementId = desiredIds[orderIndex]
+        local row = state.rowByAchievementId[achievementId]
+        if not row then
+            row = acquireRow()
+            if not row then
+                break
+            end
+            addedRows = addedRows + 1
+            state.rowByAchievementId[achievementId] = row
+        end
+
+        local existingIndex
+        for index = 1, #state.rowOrder do
+            if state.rowOrder[index] == row then
+                existingIndex = index
+                break
+            end
+        end
+        if existingIndex then
+            table.remove(state.rowOrder, existingIndex)
+        end
+        table.insert(state.rowOrder, orderIndex, row)
+
+        queueRowUpdate(row, achievementId, true)
+    end
+
+    layoutRows()
+
+    state.hasEntries = (#state.rowOrder > 0)
     applyVisibility()
 
-    return scrollList, #ids
+    return addedRows, removedRows, #state.rowOrder, maxVisible
+end
+
+local function refreshInternal(context)
+    local changedIds = nil
+    local reason = nil
+    if type(context) == "table" then
+        changedIds = context.changedIds
+        reason = context.reason
+    elseif context ~= nil then
+        reason = context
+    end
+
+    local addedFavorites, removedFavorites = applyDeltaChanges(changedIds)
+
+    if not ensureContainer() then
+        clearRows()
+        return nil
+    end
+
+    local maxVisible = getMaxVisibleFavorites()
+    local addedRows, removedRows, materialized, cap = syncVisibleRows(maxVisible)
+
+    if isDebugEnabled() then
+        debugLog(
+            "Favorites Δ-update: +%d / -%d (materialized %d / capped %d, favorites Δlist +%d / -%d, reason=%s)",
+            addedRows,
+            removedRows,
+            materialized,
+            cap,
+            addedFavorites,
+            removedFavorites,
+            tostring(reason or "n/a")
+        )
+    end
+
+    return state.container
 end
 
 ---Initialize the favorites category container.
@@ -382,33 +844,33 @@ function Category:Init(parentOrContainer)
 
     local resolvedHost = resolveHostControl(parentOrContainer)
     if resolvedHost and resolvedHost ~= state.host then
-        state.host = resolvedHost
-        state.scrollList = nil
+        clearRows()
+        state.rowPool = nil
+        state.achievementCache = {}
+        state.sortedIds = {}
+        state.sortedLookup = {}
+        state.pendingRowUpdateIds = {}
+        state.pendingRowUpdateLookup = {}
+        if state.container and state.container.SetHidden then
+            state.container:SetHidden(true)
+        end
         state.container = nil
-        state.dataTypeRegistered = false
-    elseif not state.host then
-        state.host = resolvedHost
+        state.scrollChild = nil
     end
 
-    local scrollList, count = updateScrollList()
+    state.host = resolvedHost or state.host
 
-    if scrollList then
-        debugLog("Initialized favorites list (entries=%d)", count)
-    end
+    rebuildSortedFavorites()
+    local container = refreshInternal({ reason = "init" })
 
-    return scrollList or state.host or parentOrContainer
+    return container or state.host or parentOrContainer
 end
 
 ---Refresh the favorites category view.
+---@param context any
 ---@return any
-function Category:Refresh()
-    local scrollList, count = updateScrollList()
-
-    if scrollList then
-        debugLog("Refresh completed (entries=%d)", count)
-    end
-
-    return scrollList
+function Category:Refresh(context)
+    return refreshInternal(context)
 end
 
 ---Set the visibility of the favorites category container.
@@ -421,7 +883,7 @@ end
 ---Get the measured height of the favorites container.
 ---@return number
 function Category:GetHeight()
-    local container = state.container or state.scrollList or state.host
+    local container = state.container or state.host
     if container and container.GetHeight then
         return container:GetHeight()
     end
@@ -513,3 +975,4 @@ function Shim.Remove(...)
 end
 
 return Category
+

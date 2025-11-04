@@ -233,7 +233,7 @@ local function setFavorite(achievementId, shouldFavorite)
     return false
 end
 
-local function refreshAfterFavoriteChange()
+local function refreshAfterFavoriteChange(achievementId)
     local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
     if runtime and type(runtime.QueueDirty) == "function" then
         pcall(runtime.QueueDirty, runtime, "achievement")
@@ -251,7 +251,11 @@ local function refreshAfterFavoriteChange()
 
     local journal = Nvk3UT and Nvk3UT.Journal
     if journal and type(journal.RefreshFavoritesIfVisible) == "function" then
-        pcall(journal.RefreshFavoritesIfVisible, journal, "ChatAchievementContext")
+        local payload = { reason = "ChatAchievementContext" }
+        if achievementId then
+            payload.changedIds = { achievementId }
+        end
+        pcall(journal.RefreshFavoritesIfVisible, journal, payload)
     end
 end
 
@@ -312,7 +316,7 @@ local function appendMenuEntries(achievementId)
         local desired = not favoriteNow
         local changed = setFavorite(achievementId, desired)
         if changed ~= false then
-            refreshAfterFavoriteChange()
+            refreshAfterFavoriteChange(achievementId)
         end
     end) then
         addedAny = true

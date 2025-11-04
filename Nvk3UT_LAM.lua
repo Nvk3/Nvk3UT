@@ -1465,6 +1465,29 @@ local function registerPanel(displayTitle)
             }
 
             controls[#controls + 1] = {
+                type = "slider",
+                name = "Favoriten - sichtbare Einträge:",
+                min = 5,
+                max = 50,
+                step = 1,
+                getFunc = function()
+                    local general = getGeneral()
+                    return math.max(5, math.min(50, general.favoritesVisibleCap or 20))
+                end,
+                setFunc = function(value)
+                    local general = getGeneral()
+                    general.favoritesVisibleCap = math.floor(value or 20)
+                    refreshAchievementTracker()
+                    local journal = Nvk3UT and Nvk3UT.Journal
+                    if journal and type(journal.RefreshFavoritesIfVisible) == "function" then
+                        pcall(journal.RefreshFavoritesIfVisible, journal, { reason = "LAM:FavoritesCapChanged" })
+                    end
+                end,
+                default = 20,
+                tooltip = "Begrenzt, wie viele Favoriten gleichzeitig im Journal angezeigt werden.",
+            }
+
+            controls[#controls + 1] = {
                 type = "dropdown",
                 name = "Kürzlich-Zeitraum:",
                 choices = { "Alle", "7 Tage", "30 Tage" },

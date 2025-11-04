@@ -33,10 +33,34 @@ local function ForceAchievementRefresh(context)
     end
 end
 
-local function refreshJournalFavorites(reason)
+local function refreshJournalFavorites(reason, changedIds)
     local journal = Nvk3UT and Nvk3UT.Journal
     if journal and type(journal.RefreshFavoritesIfVisible) == "function" then
-        pcall(journal.RefreshFavoritesIfVisible, journal, reason)
+        local payload
+        if type(reason) == "table" then
+            payload = {}
+            for key, value in pairs(reason) do
+                payload[key] = value
+            end
+        elseif reason ~= nil then
+            payload = { reason = reason }
+        else
+            payload = {}
+        end
+
+        if type(changedIds) == "table" and #changedIds > 0 then
+            local buffer = {}
+            for index = 1, #changedIds do
+                buffer[index] = changedIds[index]
+            end
+            payload.changedIds = buffer
+        end
+
+        if not payload.reason then
+            payload.reason = "FavoritesIntegration"
+        end
+
+        pcall(journal.RefreshFavoritesIfVisible, journal, payload)
     end
 end
 
@@ -319,9 +343,11 @@ local function HookAchievementContext()
                             AddCustomMenuItem("Von Favoriten entfernen", function()
                                 -- remove entire line of series
                                 local removedAny = false
+                                local changedIds = {}
                                 local chainId = id
                                 while chainId ~= 0 do
                                     local state = getAchievementState()
+                                    changedIds[#changedIds + 1] = chainId
                                     if state and state.SetFavorited then
                                         local ok, result = pcall(state.SetFavorited, chainId, false, "FavoritesIntegration:ContextRemove")
                                         if ok then
@@ -352,7 +378,7 @@ local function HookAchievementContext()
                                 _updateFavoritesTooltip(ACHIEVEMENTS)
                                 if Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then Nvk3UT.UI.UpdateStatus() end
                                 if removedAny then
-                                    refreshJournalFavorites("FavoritesIntegration:ContextRemove")
+                                    refreshJournalFavorites("FavoritesIntegration:ContextRemove", changedIds)
                                 end
                             end)
                         else
@@ -386,7 +412,7 @@ local function HookAchievementContext()
                                 _updateFavoritesTooltip(ACHIEVEMENTS)
                                 if Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then Nvk3UT.UI.UpdateStatus() end
                                 if addedAny then
-                                    refreshJournalFavorites("FavoritesIntegration:ContextAdd")
+                                    refreshJournalFavorites("FavoritesIntegration:ContextAdd", { id })
                                 end
                             end)
                         end

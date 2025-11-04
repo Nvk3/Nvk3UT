@@ -798,7 +798,10 @@ local function BuildAchievementContextMenuEntries(data)
                 if removed then
                     local journal = Nvk3UT and Nvk3UT.Journal
                     if journal and type(journal.RefreshFavoritesIfVisible) == "function" then
-                        pcall(journal.RefreshFavoritesIfVisible, journal, "AchievementTracker:ContextRemove")
+                        pcall(journal.RefreshFavoritesIfVisible, journal, {
+                            reason = "AchievementTracker:ContextRemove",
+                            changedIds = { achievementId },
+                        })
                     end
                 end
             end
