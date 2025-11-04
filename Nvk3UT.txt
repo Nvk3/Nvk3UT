@@ -50,4 +50,5 @@ Nvk3UT_AchievementTracker.lua
 Nvk3UT_UI.lua
 Nvk3UT_Tooltips.lua
 Nvk3UT_LAM.lua
+UI/Nvk3UT_ChatAchievementContext.lua
 README.txt

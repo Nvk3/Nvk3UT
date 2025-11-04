@@ -303,6 +303,14 @@ function Addon:OnAddonLoaded(actualAddonName)
         end
     end)
 
+    _SafeCall(function()
+        -- TODO UI: relocate chat context bootstrap into Events layer when it exists.
+        local context = Addon.ChatAchievementContext or (Nvk3UT and Nvk3UT.ChatAchievementContext)
+        if context and context.Init then
+            context.Init()
+        end
+    end)
+
     -- TODO UI: move status refresh trigger into HostLayout/UI layer.
     self:UIUpdateStatus()
 

@@ -626,12 +626,17 @@ function Utils.IsAchievementFullyComplete(id)
         local stageComplete = isCriteriaComplete(stageId) or safeAchievementInfo(stageId) == true
         local satisfied = stageComplete or satisfiedUpstream
         if not satisfied then
-            debugInternal(
-                "Achievement stage pending: id=%d stage=%d index=%d",
-                id,
-                stageId,
-                index
-            )
+            local diagnostics = Nvk3UT and Nvk3UT.Diagnostics
+            if diagnostics and diagnostics.Debug_AchStagePending then
+                diagnostics.Debug_AchStagePending(id, stageId, index)
+            else
+                debugInternal(
+                    "Achievement stage pending: id=%d stage=%d index=%d",
+                    id,
+                    stageId,
+                    index
+                )
+            end
             return false
         end
         satisfiedUpstream = satisfied

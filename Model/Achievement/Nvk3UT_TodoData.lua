@@ -230,7 +230,12 @@ function TodoData.ListAllOpen(maxCount, respectSearch)
 end
 
 function TodoData.ListOpenForTop(topIndex, respectSearch)
-    emitDebugMessage("ListOpenForTop start (top=%s, respectSearch=%s)", tostring(topIndex), tostring(respectSearch))
+    local diagnostics = Nvk3UT and Nvk3UT.Diagnostics
+    if diagnostics and diagnostics.Debug_Todo_ListOpenForTop then
+        diagnostics.Debug_Todo_ListOpenForTop(topIndex, 0, "start")
+    else
+        emitDebugMessage("ListOpenForTop start (top=%s, respectSearch=%s)", tostring(topIndex), tostring(respectSearch))
+    end
 
     if not topIndex then
         return {}
@@ -238,7 +243,12 @@ function TodoData.ListOpenForTop(topIndex, respectSearch)
 
     local searchMap = respectSearch and buildSearchMap() or nil
     local results = collectOpenAchievementsForTop(topIndex, searchMap, {})
-    emitDebugMessage("ListOpenForTop done (top=%s, count=%d)", tostring(topIndex), #results)
+    local resultCount = type(results) == "table" and #results or 0
+    if diagnostics and diagnostics.Debug_Todo_ListOpenForTop then
+        diagnostics.Debug_Todo_ListOpenForTop(topIndex, resultCount, "done")
+    else
+        emitDebugMessage("ListOpenForTop done (top=%s, count=%d)", tostring(topIndex), resultCount)
+    end
     return results
 end
 
