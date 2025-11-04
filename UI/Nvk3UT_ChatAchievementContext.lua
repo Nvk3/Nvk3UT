@@ -40,149 +40,6 @@ local function getAchievementsSystem()
     return ACHIEVEMENTS
 end
 
-local function callMethod(target, methodName, ...)
-    if not target or type(methodName) ~= "string" then
-        return false
-    end
-
-    local method = target[methodName]
-    if type(method) ~= "function" then
-        return false
-    end
-
-    local ok, result = pcall(method, target, ...)
-    if not ok then
-        return false
-    end
-
-    if result == false then
-        return false
-    end
-
-    return true
-end
-
-local function callAny(target, methodNames, ...)
-    if not target or type(methodNames) ~= "table" then
-        return false
-    end
-
-    for i = 1, #methodNames do
-        if callMethod(target, methodNames[i], ...) then
-            return true
-        end
-    end
-
-    return false
-end
-
-local function getCategoryIndicesForAchievement(achievementId)
-    local numeric = tonumber(achievementId)
-    if not numeric or numeric <= 0 then
-        return nil, nil
-    end
-
-    local candidates = {
-        _G.GetAchievementCategoryInfoFromAchievementId,
-        _G.GetCategoryInfoFromAchievementId,
-    }
-
-    for index = 1, #candidates do
-        local fn = candidates[index]
-        if type(fn) == "function" then
-            local ok, categoryIndex, subCategoryIndex = pcall(fn, numeric)
-            if ok and categoryIndex then
-                return categoryIndex, subCategoryIndex
-            end
-        end
-    end
-
-    return nil, nil
-end
-
-local NAVIGATION_RETRY_MS = 50
-local NAVIGATION_MAX_ATTEMPTS = 10
-
-local function selectCategoryForAchievement(achievements, manager, categoryIndex, subCategoryIndex)
-    if not categoryIndex then
-        return false
-    end
-
-    local selectors = {
-        "SelectCategoryByIndices",
-        "SelectCategoryIndices",
-        "SelectCategory",
-        "OpenCategory",
-        "NavigateToCategory",
-    }
-
-    if callAny(achievements, selectors, categoryIndex, subCategoryIndex) then
-        return true
-    end
-
-    if manager then
-        local managerSelectors = {
-            "SelectCategoryByIndices",
-            "SelectCategoryIndices",
-            "SetCategory",
-            "NavigateToCategory",
-        }
-
-        if callAny(manager, managerSelectors, categoryIndex, subCategoryIndex) then
-            return true
-        end
-
-        if subCategoryIndex then
-            if callAny(manager, managerSelectors, categoryIndex) then
-                return true
-            end
-        end
-    end
-
-    return false
-end
-
-local function focusAchievementWithSystem(achievements, manager, achievementId)
-    if not achievementId then
-        return false
-    end
-
-    local focused = false
-
-    local achievementSelectors = {
-        "ShowAchievement",
-        "SelectAchievementById",
-        "SelectAchievement",
-        "FocusAchievement",
-        "TrySelectAchievement",
-    }
-
-    if callAny(achievements, achievementSelectors, achievementId) then
-        focused = true
-    elseif callAny(manager, {
-        "ShowAchievement",
-        "SelectAchievement",
-        "FocusAchievement",
-    }, achievementId) then
-        focused = true
-    end
-
-    if not focused then
-        return false
-    end
-
-    local scrollers = {
-        "ScrollToAchievement",
-        "EnsureAchievementVisible",
-        "EnsureAchievementIsVisible",
-    }
-
-    callAny(achievements, scrollers, achievementId)
-    callAny(manager, scrollers, achievementId)
-
-    return true
-end
-
 local function showAchievementsScene()
     local sceneManager = SCENE_MANAGER
     if sceneManager and type(sceneManager.Show) == "function" then
@@ -198,119 +55,84 @@ local function showAchievementsScene()
     return false
 end
 
-local function doNavigateToAchievement(navigation)
-    if type(navigation) ~= "table" then
-        return false
-    end
+local SCROLL_RETRY_MS = 33
+local DEFAULT_SCROLL_TIMEOUT_MS = 1000
 
-    local achievementId = navigation.id
-    if not achievementId then
-        return false
-    end
-
+local function scrollQueuedAchievementIntoView(timeoutMs)
     local achievements = getAchievementsSystem()
-    local manager = rawget(_G, "ACHIEVEMENTS_MANAGER")
-
-    if navigation.categoryIndex then
-        selectCategoryForAchievement(achievements, manager, navigation.categoryIndex, navigation.subCategoryIndex)
-    end
-
-    if focusAchievementWithSystem(achievements, manager, achievementId) then
-        return true
-    end
-
-    if callAny(manager, {
-        "ShowAchievement",
-        "SelectAchievement",
-        "FocusAchievement",
-    }, achievementId) then
-        return true
-    end
-
-    if callAny(achievements, {
-        "ShowAchievement",
-        "SelectAchievement",
-        "FocusAchievement",
-    }, achievementId) then
-        return true
-    end
-
-    return false
-end
-
-local function runPendingNavigation()
-    local navigation = ChatContext._pendingNavigation
-    if not navigation then
-        return
-    end
-
-    navigation.attempts = (navigation.attempts or 0) + 1
-
-    if doNavigateToAchievement(navigation) then
-        ChatContext._pendingNavigation = nil
-        return
-    end
-
-    if navigation.attempts >= NAVIGATION_MAX_ATTEMPTS then
-        ChatContext._pendingNavigation = nil
-        return
-    end
-
-    if type(zo_callLater) == "function" then
-        zo_callLater(runPendingNavigation, NAVIGATION_RETRY_MS)
-    end
-end
-
-local function registerSceneNavigationCallback()
     local sceneManager = SCENE_MANAGER
-    local scene
+    if not achievements or not sceneManager or type(sceneManager.IsShowing) ~= "function" then
+        return
+    end
 
-    if sceneManager and type(sceneManager.GetScene) == "function" then
-        local ok, result = pcall(sceneManager.GetScene, sceneManager, "achievements")
-        if ok then
-            scene = result
+    if not sceneManager:IsShowing("achievements") then
+        return
+    end
+
+    local retryInterval = SCROLL_RETRY_MS
+    local maxDuration = type(timeoutMs) == "number" and timeoutMs or DEFAULT_SCROLL_TIMEOUT_MS
+    if maxDuration < retryInterval then
+        maxDuration = retryInterval
+    end
+
+    local attempts = 0
+    local maxAttempts = math.ceil(maxDuration / retryInterval)
+
+    local function tryScroll()
+        if not sceneManager:IsShowing("achievements") then
+            return
         end
-    end
 
-    if not scene and type(ACHIEVEMENTS_SCENE) == "table" then
-        scene = ACHIEVEMENTS_SCENE
-    end
-
-    if not scene or type(scene.RegisterCallback) ~= "function" or type(scene.UnregisterCallback) ~= "function" then
-        return false
-    end
-
-    local function onStateChange(oldState, newState)
-        if newState == SCENE_SHOWN then
-            scene:UnregisterCallback("StateChange", onStateChange)
-            ChatContext._sceneCallback = nil
-            if type(zo_callLater) == "function" then
-                zo_callLater(runPendingNavigation, 0)
-            else
-                runPendingNavigation()
-            end
-        elseif newState == SCENE_HIDDEN then
-            scene:UnregisterCallback("StateChange", onStateChange)
-            ChatContext._sceneCallback = nil
-            ChatContext._pendingNavigation = nil
+        local queuedId = achievements.queuedScrollToAchievement
+        local byId = type(achievements.achievementsById) == "table" and achievements.achievementsById or nil
+        local entry = byId and byId[queuedId]
+        local control = entry and (entry.control or (type(entry.GetControl) == "function" and entry:GetControl()))
+        if not control and entry and entry.node then
+            control = entry.node.control
         end
-    end
 
-    ChatContext._sceneCallback = onStateChange
-    scene:RegisterCallback("StateChange", onStateChange)
-
-    if type(scene.GetState) == "function" then
-        local ok, state = pcall(scene.GetState, scene)
-        if ok and state == SCENE_SHOWN then
-            if type(zo_callLater) == "function" then
-                zo_callLater(runPendingNavigation, 0)
-            else
-                runPendingNavigation()
+        local container = achievements.contentList or achievements.scrollContainer or achievements.listContainer or achievements.listControl
+        if not container and type(achievements.GetContentList) == "function" then
+            local ok, result = pcall(achievements.GetContentList, achievements)
+            if ok and result then
+                container = result
             end
         end
+        if not container and type(achievements.GetScrollContainer) == "function" then
+            local ok, result = pcall(achievements.GetScrollContainer, achievements)
+            if ok and result then
+                container = result
+            end
+        end
+        if not container and control and type(control.GetParent) == "function" then
+            local parent = control:GetParent()
+            if parent and type(parent.GetParent) == "function" then
+                local grandParent = parent:GetParent()
+                if grandParent then
+                    container = grandParent
+                end
+            end
+        end
+        if control and container then
+            if type(ZO_Scroll_ScrollControlIntoCentralView) == "function" then
+                pcall(ZO_Scroll_ScrollControlIntoCentralView, container, control)
+            elseif type(ZO_Scroll_ScrollIntoView) == "function" then
+                pcall(ZO_Scroll_ScrollIntoView, container, control)
+            end
+            return
+        end
+
+        attempts = attempts + 1
+        if attempts >= maxAttempts then
+            return
+        end
+
+        if type(zo_callLater) == "function" then
+            zo_callLater(tryScroll, retryInterval)
+        end
     end
 
-    return true
+    tryScroll()
 end
 
 local function openAchievementFallback(achievementId)
@@ -319,32 +141,37 @@ local function openAchievementFallback(achievementId)
         return false
     end
 
-    local categoryIndex, subCategoryIndex = getCategoryIndicesForAchievement(numeric)
-
-    ChatContext._pendingNavigation = {
-        id = numeric,
-        categoryIndex = categoryIndex,
-        subCategoryIndex = subCategoryIndex,
-        attempts = 0,
-    }
-
-    if not ChatContext._sceneCallback then
-        registerSceneNavigationCallback()
+    local achievements = getAchievementsSystem()
+    if not achievements then
+        return false
     end
+
+    local sceneManager = SCENE_MANAGER
+    local wasShowing = sceneManager and type(sceneManager.IsShowing) == "function" and sceneManager:IsShowing("achievements")
 
     showAchievementsScene()
 
-    if not ChatContext._sceneCallback then
-        if type(zo_callLater) == "function" then
-            zo_callLater(runPendingNavigation, 0)
-        else
-            runPendingNavigation()
+    local handled = false
+    if type(achievements.ShowAchievement) == "function" then
+        local ok, result = pcall(achievements.ShowAchievement, achievements, numeric)
+        handled = ok and result ~= false
+    end
+
+    if not handled then
+        local manager = rawget(_G, "ACHIEVEMENTS_MANAGER")
+        if manager and type(manager.ShowAchievement) == "function" then
+            local ok, result = pcall(manager.ShowAchievement, manager, numeric)
+            handled = ok and result ~= false
         end
     end
 
-    debug("open fallback used for %d (cat=%s sub=%s)", numeric, tostring(categoryIndex), tostring(subCategoryIndex))
+    if wasShowing or (sceneManager and type(sceneManager.IsShowing) == "function" and sceneManager:IsShowing("achievements")) then
+        scrollQueuedAchievementIntoView(DEFAULT_SCROLL_TIMEOUT_MS)
+    end
 
-    return true
+    debug("open fallback used for %d", numeric)
+
+    return handled or true
 end
 
 local function openAchievement(achievementId)
