@@ -11,7 +11,23 @@ Nvk3UT_Diagnostics = Nvk3UT_Diagnostics or {}
 
 local Diagnostics = Nvk3UT_Diagnostics
 
-Diagnostics.debugEnabled = (Diagnostics.debugEnabled ~= nil) and Diagnostics.debugEnabled or true
+local function coerceToBoolean(value)
+    if value == nil then
+        return nil
+    end
+
+    return value and true or false
+end
+
+local initialDebugState = false
+if type(Nvk3UT) == "table" and type(Nvk3UT.IsDebugEnabled) == "function" then
+    local ok, enabled = pcall(Nvk3UT.IsDebugEnabled, Nvk3UT)
+    if ok and enabled ~= nil then
+        initialDebugState = enabled and true or false
+    end
+end
+
+Diagnostics.debugEnabled = (Diagnostics.debugEnabled ~= nil) and Diagnostics.debugEnabled or initialDebugState
 
 local isAttachedToRoot = false
 
@@ -101,8 +117,15 @@ function Diagnostics.SyncFromSavedVariables(sv)
         return
     end
 
-    if sv.debugEnabled ~= nil then
-        Diagnostics.debugEnabled = not not sv.debugEnabled
+    local flag = nil
+    if sv.debug ~= nil then
+        flag = coerceToBoolean(sv.debug)
+    elseif sv.debugEnabled ~= nil then
+        flag = coerceToBoolean(sv.debugEnabled)
+    end
+
+    if flag ~= nil then
+        Diagnostics.SetDebugEnabled(flag)
     end
 
     -- TODO: wire additional diagnostics verbosity flags once SavedVariables schema is finalized.

@@ -119,7 +119,12 @@ function Addon:IsDebugEnabled()
 end
 
 function Addon:SetDebugEnabled(enabled)
-    self.debugEnabled = enabled and true or false
+    local flag = enabled and true or false
+    self.debugEnabled = flag
+
+    if Nvk3UT_Diagnostics and type(Nvk3UT_Diagnostics.SetDebugEnabled) == "function" then
+        pcall(Nvk3UT_Diagnostics.SetDebugEnabled, flag)
+    end
 end
 
 ---Initialises SavedVariables and exposes them on the addon table.

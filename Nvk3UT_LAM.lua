@@ -1569,7 +1569,12 @@ local function registerPanel(displayTitle)
                 end,
                 setFunc = function(value)
                     local sv = getSavedVars()
-                    sv.debug = value and true or false
+                    local flag = value and true or false
+                    sv.debug = flag
+
+                    if Nvk3UT and type(Nvk3UT.SetDebugEnabled) == "function" then
+                        pcall(Nvk3UT.SetDebugEnabled, Nvk3UT, flag)
+                    end
                 end,
                 default = false,
             }
