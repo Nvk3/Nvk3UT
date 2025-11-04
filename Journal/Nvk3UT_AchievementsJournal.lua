@@ -284,6 +284,38 @@ function JournalApi:ForceBasegameAchievementsFullUpdate()
     return false
 end
 
+function JournalApi:RefreshFavoritesNow(context)
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and type(runtime.QueueDirty) == "function" then
+        pcall(runtime.QueueDirty, runtime, "achievement")
+    end
+
+    local normalizedContext = normalizeFavoritesContext(context)
+    if not normalizedContext then
+        normalizedContext = { reason = "immediate" }
+    elseif normalizedContext.reason == nil then
+        normalizedContext.reason = "immediate"
+    end
+
+    local ok = self:ForceBasegameAchievementsFullUpdate()
+
+    local reasonLabel = nil
+    if type(normalizedContext) == "table" and normalizedContext.reason ~= nil then
+        reasonLabel = tostring(normalizedContext.reason)
+    else
+        reasonLabel = tostring(normalizedContext or "immediate")
+    end
+
+    local changedCount = 0
+    if type(normalizedContext) == "table" and type(normalizedContext.changedIds) == "table" then
+        changedCount = #normalizedContext.changedIds
+    end
+
+    debugFavoritesRefresh("Favorites refresh executed (context=%s, changed=%d, basegame=%s)", reasonLabel, changedCount, ok and "ok" or "fail")
+
+    return ok
+end
+
 function JournalApi:RefreshFavoritesIfVisible(context)
     if not isFavoritesViewVisible() then
         return false

@@ -250,12 +250,17 @@ local function refreshAfterFavoriteChange(achievementId)
     end
 
     local journal = Nvk3UT and Nvk3UT.Journal
-    if journal and type(journal.RefreshFavoritesIfVisible) == "function" then
+    if journal then
         local payload = { reason = "ChatAchievementContext" }
         if achievementId then
             payload.changedIds = { achievementId }
         end
-        pcall(journal.RefreshFavoritesIfVisible, journal, payload)
+
+        if type(journal.RefreshFavoritesNow) == "function" then
+            pcall(journal.RefreshFavoritesNow, journal, payload)
+        elseif type(journal.ForceBasegameAchievementsFullUpdate) == "function" then
+            pcall(journal.ForceBasegameAchievementsFullUpdate, journal)
+        end
     end
 end
 

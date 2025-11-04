@@ -35,7 +35,7 @@ end
 
 local function refreshJournalFavorites(reason, changedIds)
     local journal = Nvk3UT and Nvk3UT.Journal
-    if journal and type(journal.RefreshFavoritesIfVisible) == "function" then
+    if journal then
         local payload
         if type(reason) == "table" then
             payload = {}
@@ -60,7 +60,11 @@ local function refreshJournalFavorites(reason, changedIds)
             payload.reason = "FavoritesIntegration"
         end
 
-        pcall(journal.RefreshFavoritesIfVisible, journal, payload)
+        if type(journal.RefreshFavoritesNow) == "function" then
+            pcall(journal.RefreshFavoritesNow, journal, payload)
+        elseif type(journal.ForceBasegameAchievementsFullUpdate) == "function" then
+            pcall(journal.ForceBasegameAchievementsFullUpdate, journal)
+        end
     end
 end
 
