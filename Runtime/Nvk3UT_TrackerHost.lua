@@ -740,6 +740,36 @@ local function diagnosticsDebug(fmt, ...)
     end
 end
 
+local DEBUG_RATE_LIMIT_MS = 1000
+
+local function emitHostDebug(key, fmt, ...)
+    local diagnostics = Nvk3UT and Nvk3UT.Diagnostics
+    if diagnostics and type(diagnostics.DebugRateLimited) == "function" then
+        local args = { ... }
+        return diagnostics:DebugRateLimited(key, DEBUG_RATE_LIMIT_MS, function()
+            local template = tostring(fmt or "")
+            if #args == 0 then
+                return template
+            end
+            return string.format(template, unpack(args))
+        end)
+    end
+
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        if not diagnostics:IsDebugEnabled() then
+            return false
+        end
+    else
+        local sv = getSavedVars()
+        if not (sv and sv.debug) then
+            return false
+        end
+    end
+
+    diagnosticsDebug(fmt, ...)
+    return true
+end
+
 local function safeCall(fn, ...)
     local safe = Nvk3UT and Nvk3UT.SafeCall
     if type(safe) == "function" then
@@ -974,7 +1004,7 @@ local function applyBootstrapVisibility(host)
     state.bootstrapHudVisible = shouldShow
     state.isInHUDScene = shouldShow
     setVisibilityGate("scene", not shouldShow)
-    diagnosticsDebug("TrackerHost HUD visibility changed: %s", tostring(shouldShow))
+    emitHostDebug("host-hud-visibility", "TrackerHost HUD visibility changed: %s", tostring(shouldShow))
 
     if TrackerHost.ApplyVisibilityRules() then
         queueRuntimeLayout()
@@ -2390,7 +2420,8 @@ function TrackerHost.ApplyVisibilityRules()
         applyLabel = "hud"
     end
 
-    diagnosticsDebug(
+    emitHostDebug(
+        "host-gates",
         "Host gates: scene=%s combat=%s lam=%s → apply=%s",
         tostring(hideForScene),
         tostring(hideForCombat),
@@ -2410,7 +2441,8 @@ function TrackerHost.ApplyVisibilityRules()
 
     local changed = previousSceneHidden ~= (state.sceneHidden == true)
     if changed then
-        diagnosticsDebug(
+        emitHostDebug(
+            "host-visibility",
             "Host visibility -> %s (%s)",
             state.sceneHidden and "hidden" or "visible",
             applyLabel
