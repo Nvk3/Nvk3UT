@@ -26,6 +26,8 @@ Runtime._scheduled = Runtime._scheduled == true
 Runtime._scheduledCallId = Runtime._scheduledCallId or nil
 Runtime._initialized = Runtime._initialized == true
 Runtime._interactivityDirty = Runtime._interactivityDirty == true
+Runtime._missingHeightWarned = Runtime._missingHeightWarned or {}
+Runtime._pendingStageLog = Runtime._pendingStageLog or {}
 
 local function debug(fmt, ...)
     if Addon and type(Addon.Debug) == "function" then
@@ -108,6 +110,16 @@ local function ensureGeometryState()
     return geometry
 end
 
+local function ensureMissingHeightWarnings()
+    local warned = Runtime._missingHeightWarned
+    if type(warned) ~= "table" then
+        warned = {}
+        Runtime._missingHeightWarned = warned
+    end
+
+    return warned
+end
+
 local function normalizeLength(value)
     local numeric = tonumber(value)
     if not numeric then
@@ -126,6 +138,7 @@ local function normalizeLength(value)
 end
 
 local GEOMETRY_TOLERANCE = 0.1
+local PENDING_STAGE_LOG_THROTTLE_MS = 2000
 
 local function recordSectionGeometry(sectionId, width, height)
     if type(sectionId) ~= "string" then
@@ -163,6 +176,67 @@ local function recordSectionGeometry(sectionId, width, height)
     return false
 end
 
+local function warnMissingTrackerHeight(trackerKey)
+    local warned = ensureMissingHeightWarnings()
+    if warned[trackerKey] then
+        return
+    end
+
+    warned[trackerKey] = true
+    debug("Runtime: tracker '%s' missing GetHeight()/getSize() API", tostring(trackerKey))
+end
+
+local function ensurePendingStageLogState()
+    local state = Runtime._pendingStageLog
+    if type(state) ~= "table" then
+        state = {}
+        Runtime._pendingStageLog = state
+    end
+
+    state.count = tonumber(state.count) or 0
+
+    return state
+end
+
+local function flushPendingStageLog(frameStamp)
+    local state = ensurePendingStageLogState()
+    if not state.dirty or state.count <= 0 then
+        return
+    end
+
+    local now = frameStamp
+    if now == nil then
+        now = getFrameTimeMs()
+    end
+    if now == nil and type(GetGameTimeMilliseconds) == "function" then
+        now = GetGameTimeMilliseconds()
+    end
+
+    if now ~= nil and state.lastLogMs ~= nil then
+        if (now - state.lastLogMs) < PENDING_STAGE_LOG_THROTTLE_MS then
+            return
+        end
+    end
+
+    if type(now) == "number" then
+        state.lastLogMs = now
+    end
+
+    debug(
+        "Achievement stage pending: collapsed %d updates (last id=%d stage=%d index=%d)",
+        tonumber(state.count) or 0,
+        tonumber(state.lastId) or 0,
+        tonumber(state.lastStageId) or 0,
+        tonumber(state.lastIndex) or 0
+    )
+
+    state.count = 0
+    state.lastId = nil
+    state.lastStageId = nil
+    state.lastIndex = nil
+    state.dirty = false
+end
+
 local function updateTrackerGeometry(sectionId)
     local trackerKey
     if sectionId == "achievement" then
@@ -176,14 +250,51 @@ local function updateTrackerGeometry(sectionId)
         return false
     end
 
-    local getSize = tracker.GetContentSize
-    if type(getSize) ~= "function" then
+    local getHeightFn = tracker.GetHeight or tracker.getSize
+    if type(getHeightFn) ~= "function" then
+        warnMissingTrackerHeight(trackerKey)
         return false
     end
 
-    local invoked, width, height = callWithOptionalSelf(tracker, getSize, false)
+    local invoked, firstValue, secondValue = callWithOptionalSelf(tracker, getHeightFn, false)
     if not invoked then
         return false
+    end
+
+    local width = nil
+    local height = nil
+
+    if secondValue ~= nil then
+        width = firstValue
+        height = secondValue
+    else
+        height = firstValue
+    end
+
+    local getSize = tracker.GetContentSize
+    if type(getSize) == "function" then
+        local sizeInvoked, sizeWidth, sizeHeight = callWithOptionalSelf(tracker, getSize, false)
+        if sizeInvoked then
+            if sizeWidth ~= nil then
+                width = sizeWidth
+            end
+            if height == nil and sizeHeight ~= nil then
+                height = sizeHeight
+            end
+        end
+    end
+
+    if width == nil or height == nil then
+        local geometry = ensureGeometryState()
+        local previous = geometry[sectionId]
+        if type(previous) == "table" then
+            if width == nil then
+                width = previous.width
+            end
+            if height == nil then
+                height = previous.height
+            end
+        end
     end
 
     return recordSectionGeometry(sectionId, width, height)
@@ -484,6 +595,23 @@ function Runtime:QueueDirty(channel, opts)
     end
 end
 
+function Runtime:RecordAchievementStagePending(id, stageId, index)
+    if Addon and type(Addon.IsDebugEnabled) == "function" then
+        if not Addon:IsDebugEnabled() then
+            return
+        end
+    end
+
+    local state = ensurePendingStageLogState()
+    state.count = state.count + 1
+    state.lastId = tonumber(id) or id
+    state.lastStageId = tonumber(stageId) or stageId
+    state.lastIndex = tonumber(index) or index
+    state.dirty = true
+
+    scheduleProcessing()
+end
+
 function Runtime:ProcessFrame(nowMs)
     if self._isProcessingFrame then
         self._deferredProcessFrame = true
@@ -576,6 +704,8 @@ function Runtime:ProcessFrame(nowMs)
                 debug("Runtime: interactivity updated (cursor=%s)", tostring(self._isInCursorMode == true))
             end
         end
+
+        flushPendingStageLog(frameStamp)
 
         local queuedLog = ensureQueuedLogTable()
         for key in pairs(queuedLog) do

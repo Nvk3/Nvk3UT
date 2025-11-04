@@ -178,6 +178,12 @@ local function toStringOrNone(value)
 end
 
 function Diagnostics.Debug_AchStagePending(id, stageId, index)
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and type(runtime.RecordAchievementStagePending) == "function" then
+        runtime:RecordAchievementStagePending(id, stageId, index)
+        return
+    end
+
     Diagnostics:DebugCoalesced("ach_stage_pending", LOCAL_COALESCE_WINDOW_MS, function(count, last)
         last = last or {}
         return string.format(

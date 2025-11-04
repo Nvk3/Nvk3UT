@@ -1786,6 +1786,22 @@ function AchievementTracker.GetContentSize()
     return state.contentWidth or 0, state.contentHeight or 0
 end
 
+function AchievementTracker.GetHeight()
+    local _, height = AchievementTracker.GetContentSize()
+    return height or 0
+end
+
+function AchievementTracker.getSize(self)
+    if self and type(self.GetHeight) == "function" then
+        local height = self:GetHeight()
+        if height ~= nil then
+            return height
+        end
+    end
+
+    return AchievementTracker.GetHeight()
+end
+
 -- Ensure the container exists before populating entries during init
 Nvk3UT.AchievementTracker = AchievementTracker
 
