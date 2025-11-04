@@ -249,6 +249,41 @@ local function scheduleFavoritesDebounce()
     end, REFRESH_DEBOUNCE_MS)
 end
 
+function JournalApi:ForceBasegameAchievementsFullUpdate()
+    local achievements = ACHIEVEMENTS
+    if not achievements then
+        return false
+    end
+
+    local refreshGroups = achievements.refreshGroups
+    if refreshGroups and type(refreshGroups.RefreshAll) == "function" then
+        local ok = pcall(refreshGroups.RefreshAll, refreshGroups, "FullUpdate")
+        if ok then
+            return true
+        end
+    end
+
+    if type(achievements.RefreshVisibleCategories) == "function" then
+        local ok = pcall(achievements.RefreshVisibleCategories, achievements)
+        if ok then
+            return true
+        end
+    end
+
+    local categoryTree = achievements.categoryTree
+    if categoryTree and type(categoryTree.GetSelectedNode) == "function" and type(achievements.OnCategorySelected) == "function" then
+        local okNode, selectedNode = pcall(categoryTree.GetSelectedNode, categoryTree)
+        if okNode and selectedNode then
+            local ok = pcall(achievements.OnCategorySelected, achievements, categoryTree, selectedNode)
+            if ok then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
 function JournalApi:RefreshFavoritesIfVisible(context)
     if not isFavoritesViewVisible() then
         return false
@@ -289,17 +324,7 @@ function JournalApi:FlushPendingFavoritesRefresh(context)
     local reasonContext = mergeFavoritesContext(normalizeFavoritesContext(context), favoritesRefreshState.lastContext)
     favoritesRefreshState.lastContext = nil
 
-    if not (FavoritesCategory and type(FavoritesCategory.Refresh) == "function") then
-        return false
-    end
-
-    local ok = pcall(FavoritesCategory.Refresh, FavoritesCategory, reasonContext)
-    if not ok then
-        if isDebugEnabled() and Utils and Utils.d then
-            Utils.d("[Ach][Journal] FavoritesCategory.Refresh failed during pending flush")
-        end
-        return false
-    end
+    local ok = self:ForceBasegameAchievementsFullUpdate()
 
     local reasonLabel = nil
     if type(reasonContext) == "table" and reasonContext.reason ~= nil then
@@ -313,8 +338,8 @@ function JournalApi:FlushPendingFavoritesRefresh(context)
         changedCount = #reasonContext.changedIds
     end
 
-    debugFavoritesRefresh("Favorites refresh executed (context=%s, changed=%d)", reasonLabel, changedCount)
-    return true
+    debugFavoritesRefresh("Favorites refresh executed (context=%s, changed=%d, basegame=%s)", reasonLabel, changedCount, ok and "ok" or "fail")
+    return ok
 end
 
 local function buildCriteriaSnapshot(achievementId)
