@@ -182,15 +182,36 @@ local function ResolveTrackerHeight(tracker, trackerKey)
         return nil
     end
 
-    if type(tracker.GetHeight) == "function" then
-        local ok, height = pcall(tracker.GetHeight, tracker)
+    local diagnostics = getDiagnostics()
+
+    local function warnBadHandle(label)
+        if diagnostics and type(diagnostics.WarnOnce) == "function" then
+            diagnostics:WarnOnce(
+                string.format("bad-fn-%s-%s", tostring(trackerKey), tostring(label)),
+                string.format(
+                    "Runtime tried to call a non-function on tracker %s (%s)",
+                    tostring(trackerKey),
+                    tostring(label)
+                )
+            )
+        end
+    end
+
+    local getHeightFn = tracker.GetHeight
+    if getHeightFn ~= nil and type(getHeightFn) ~= "function" then
+        warnBadHandle("GetHeight")
+    elseif type(getHeightFn) == "function" then
+        local ok, height = pcall(getHeightFn, tracker)
         if ok and type(height) == "number" then
             return height
         end
     end
 
-    if type(tracker.getSize) == "function" then
-        local ok, height = pcall(tracker.getSize, tracker)
+    local getSizeFn = tracker.getSize
+    if getSizeFn ~= nil and type(getSizeFn) ~= "function" then
+        warnBadHandle("getSize")
+    elseif type(getSizeFn) == "function" then
+        local ok, height = pcall(getSizeFn, tracker)
         if ok and type(height) == "number" then
             return height
         end
