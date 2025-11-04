@@ -33,6 +33,9 @@ local function ForceAchievementRefresh(context)
     end
 end
 
+local isFavRefreshScheduled = false
+local pendingFavoritesRefreshPayload = nil
+
 local function refreshJournalFavorites(reason, changedIds)
     local journal = Nvk3UT and Nvk3UT.Journal
     if journal then
@@ -60,11 +63,30 @@ local function refreshJournalFavorites(reason, changedIds)
             payload.reason = "FavoritesIntegration"
         end
 
-        if type(journal.RefreshFavoritesNow) == "function" then
-            pcall(journal.RefreshFavoritesNow, journal, payload)
-        elseif type(journal.ForceBasegameAchievementsFullUpdate) == "function" then
-            pcall(journal.ForceBasegameAchievementsFullUpdate, journal)
+        pendingFavoritesRefreshPayload = payload
+
+        if isFavRefreshScheduled then
+            return
         end
+
+        isFavRefreshScheduled = true
+
+        zo_callLater(function()
+            isFavRefreshScheduled = false
+            local dispatchPayload = pendingFavoritesRefreshPayload
+            pendingFavoritesRefreshPayload = nil
+
+            local journalNow = Nvk3UT and Nvk3UT.Journal
+            if not journalNow then
+                return
+            end
+
+            if type(journalNow.RefreshFavoritesNow) == "function" then
+                pcall(journalNow.RefreshFavoritesNow, journalNow, dispatchPayload)
+            elseif type(journalNow.ForceBasegameAchievementsFullUpdate) == "function" then
+                pcall(journalNow.ForceBasegameAchievementsFullUpdate, journalNow)
+            end
+        end, 0)
     end
 end
 
