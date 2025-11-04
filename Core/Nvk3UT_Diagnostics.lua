@@ -59,8 +59,6 @@ local DEFAULT_COALESCE_WINDOW_MS = 500
 local DEFAULT_RATE_LIMIT_MS = 2000
 
 local coalesceBuckets = {}
-local warnOnceKeys = {}
-local rateLimitedBuckets = {}
 local achStageFallbackState = {}
 local todoListOpenState = {}
 
@@ -197,27 +195,34 @@ function Diagnostics:DebugCoalesced(key, windowMs, makeLineFn, lastArgsTable)
     end
 end
 
-function Diagnostics:WarnOnce(key, fmt, ...)
+function Diagnostics:WarnOnce(key, msg)
     if type(key) ~= "string" or key == "" then
         return false
     end
 
-    if warnOnceKeys[key] then
+    self._once = self._once or {}
+    if self._once[key] then
         return false
     end
 
-    warnOnceKeys[key] = true
+    self._once[key] = true
 
-    if fmt == nil then
+    if not self:IsDebugEnabled() then
         return false
     end
 
-    Diagnostics.Warn(fmt, ...)
+    if msg == nil then
+        return false
+    end
+
+    ensureRoot()
+    _print("Nvk3UT WARN", tostring(msg))
+
     return true
 end
 
-function Diagnostics:DebugRateLimited(key, intervalMs, buildLineFn)
-    if not self.debugEnabled then
+function Diagnostics:DebugRateLimited(key, intervalMs, msgBuilderFn)
+    if not self:IsDebugEnabled() then
         return false
     end
 
@@ -225,15 +230,11 @@ function Diagnostics:DebugRateLimited(key, intervalMs, buildLineFn)
         return false
     end
 
-    if type(buildLineFn) ~= "function" then
+    if type(msgBuilderFn) ~= "function" then
         return false
     end
 
-    local bucket = rateLimitedBuckets[key]
-    if not bucket then
-        bucket = {}
-        rateLimitedBuckets[key] = bucket
-    end
+    self._rate = self._rate or {}
 
     local interval = tonumber(intervalMs) or DEFAULT_RATE_LIMIT_MS
     if interval < 0 then
@@ -241,13 +242,19 @@ function Diagnostics:DebugRateLimited(key, intervalMs, buildLineFn)
     end
 
     local now = getTimeMilliseconds()
-    if type(bucket.lastLogMs) == "number" and type(now) == "number" then
-        if (now - bucket.lastLogMs) < interval then
+    local last = self._rate[key]
+
+    if type(now) == "number" and type(last) == "number" then
+        if (now - last) < interval then
+            return false
+        end
+    elseif last ~= nil and now == nil then
+        if interval > 0 then
             return false
         end
     end
 
-    local ok, line = pcall(buildLineFn)
+    local ok, line = pcall(msgBuilderFn)
     if not ok then
         Diagnostics.Debug("DebugRateLimited build failed for %s: %s", tostring(key), tostring(line))
         return false
@@ -260,9 +267,9 @@ function Diagnostics:DebugRateLimited(key, intervalMs, buildLineFn)
     Diagnostics.Debug("%s", tostring(line))
 
     if type(now) == "number" then
-        bucket.lastLogMs = now
+        self._rate[key] = now
     else
-        bucket.lastLogMs = (bucket.lastLogMs or 0) + interval
+        self._rate[key] = (type(last) == "number" and last or 0) + interval
     end
 
     return true

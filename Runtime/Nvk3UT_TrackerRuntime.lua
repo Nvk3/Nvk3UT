@@ -26,7 +26,6 @@ Runtime._scheduled = Runtime._scheduled == true
 Runtime._scheduledCallId = Runtime._scheduledCallId or nil
 Runtime._initialized = Runtime._initialized == true
 Runtime._interactivityDirty = Runtime._interactivityDirty == true
-Runtime._missingHeightWarned = Runtime._missingHeightWarned or {}
 Runtime._pendingStageLog = Runtime._pendingStageLog or {}
 
 local function debug(fmt, ...)
@@ -110,16 +109,6 @@ local function ensureGeometryState()
     return geometry
 end
 
-local function ensureMissingHeightWarnings()
-    local warned = Runtime._missingHeightWarned
-    if type(warned) ~= "table" then
-        warned = {}
-        Runtime._missingHeightWarned = warned
-    end
-
-    return warned
-end
-
 local function normalizeLength(value)
     local numeric = tonumber(value)
     if not numeric then
@@ -188,26 +177,7 @@ local function getDiagnostics()
     return nil
 end
 
-local function warnMissingTrackerHeight(trackerKey)
-    local diagnostics = getDiagnostics()
-    local message = string.format("Tracker height missing; skipping geometry this frame (%s)", tostring(trackerKey))
-
-    if diagnostics and type(diagnostics.WarnOnce) == "function" then
-        if diagnostics:WarnOnce("height-missing-" .. tostring(trackerKey), "%s", message) then
-            return
-        end
-    end
-
-    local warned = ensureMissingHeightWarnings()
-    if warned[trackerKey] then
-        return
-    end
-
-    warned[trackerKey] = true
-    debug("%s", message)
-end
-
-local function ResolveTrackerHeight(tracker)
+local function ResolveTrackerHeight(tracker, trackerKey)
     if type(tracker) ~= "table" then
         return nil
     end
@@ -317,9 +287,15 @@ local function updateTrackerGeometry(sectionId)
         return false
     end
 
-    local height = ResolveTrackerHeight(tracker)
+    local height = ResolveTrackerHeight(tracker, trackerKey)
     if height == nil then
-        warnMissingTrackerHeight(trackerKey)
+        local diagnostics = getDiagnostics()
+        if diagnostics and type(diagnostics.WarnOnce) == "function" then
+            diagnostics:WarnOnce(
+                "height-missing-" .. tostring(trackerKey),
+                string.format("Tracker height missing; skipping geometry this frame (%s)", tostring(trackerKey))
+            )
+        end
         return false
     end
 
