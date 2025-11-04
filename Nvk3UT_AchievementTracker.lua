@@ -464,30 +464,46 @@ end
 local function RemoveAchievementFromFavorites(achievementId)
     local numeric = tonumber(achievementId)
     if not numeric or numeric <= 0 then
-        return
+        return false
     end
 
     local achievementState = GetAchievementState()
     if achievementState and achievementState.SetFavorited then
-        achievementState.SetFavorited(numeric, false, "AchievementTracker:RemoveAchievementFromFavorites")
-        return
+        local ok, result = pcall(
+            achievementState.SetFavorited,
+            achievementState,
+            numeric,
+            false,
+            "AchievementTracker:RemoveAchievementFromFavorites"
+        )
+        if not ok then
+            return false
+        end
+        return result ~= false
     end
 
     local Fav = Nvk3UT and Nvk3UT.FavoritesData
     if not (Fav and Fav.SetFavorited) then
-        return
+        return false
     end
 
-    Fav.SetFavorited(
+    local ok, result = pcall(
+        Fav.SetFavorited,
         numeric,
         false,
         "AchievementTracker:RemoveAchievementFromFavorites",
         BuildFavoritesScope()
     )
 
-    if AchievementTracker and AchievementTracker.RequestRefresh then
+    if ok and AchievementTracker and AchievementTracker.RequestRefresh then
         AchievementTracker.RequestRefresh()
     end
+
+    if not ok then
+        return false
+    end
+
+    return result ~= false
 end
 
 local function ResolveAchievementEntry(achievementsSystem, achievementId)
@@ -778,7 +794,13 @@ local function BuildAchievementContextMenuEntries(data)
         end,
         callback = function()
             if achievementId and IsFavoriteAchievement(achievementId) then
-                RemoveAchievementFromFavorites(achievementId)
+                local removed = RemoveAchievementFromFavorites(achievementId)
+                if removed then
+                    local journal = Nvk3UT and Nvk3UT.Journal
+                    if journal and type(journal.RefreshFavoritesIfVisible) == "function" then
+                        pcall(journal.RefreshFavoritesIfVisible, journal, "AchievementTracker:ContextRemove")
+                    end
+                end
             end
         end,
     }

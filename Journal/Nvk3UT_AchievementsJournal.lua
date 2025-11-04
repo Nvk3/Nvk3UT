@@ -1,5 +1,8 @@
 Nvk3UT = Nvk3UT or {}
 
+Nvk3UT.Journal = Nvk3UT.Journal or {}
+local JournalApi = Nvk3UT.Journal
+
 local Journal = {}
 Nvk3UT.AchievementsJournal = Journal
 
@@ -50,6 +53,176 @@ end
 
 local function isDebugEnabled()
     return Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug and Utils and Utils.d
+end
+
+local FAVORITES_CATEGORY_ID = "Nvk3UT_Favorites"
+local REFRESH_DEBOUNCE_MS = 80
+
+local favoritesRefreshState = {
+    pending = false,
+    callId = nil,
+    lastReason = nil,
+}
+
+local function debugFavoritesRefresh(fmt, ...)
+    if not isDebugEnabled() then
+        return
+    end
+
+    local ok, message = pcall(string.format, fmt, ...)
+    message = ok and message or tostring(fmt)
+
+    if Diagnostics and Diagnostics.Debug then
+        Diagnostics.Debug("Journal Favorites -> %s", message)
+    elseif Utils and Utils.d then
+        Utils.d(string.format("[Ach][Journal] %s", message))
+    end
+end
+
+local function isJournalSceneVisible()
+    if not (SCENE_MANAGER and type(SCENE_MANAGER.IsShowing) == "function") then
+        return false
+    end
+
+    if not SCENE_MANAGER:IsShowing("achievements") then
+        return false
+    end
+
+    local achievements = ACHIEVEMENTS
+    if not achievements then
+        return false
+    end
+
+    if type(achievements.IsHidden) == "function" and achievements:IsHidden() then
+        return false
+    end
+
+    local control = achievements.control
+    if control and type(control.IsHidden) == "function" and control:IsHidden() then
+        return false
+    end
+
+    return true
+end
+
+local function getSelectedCategoryData()
+    local achievements = ACHIEVEMENTS
+    if not achievements then
+        return nil
+    end
+
+    local tree = achievements.categoryTree
+    if not (tree and type(tree.GetSelectedData) == "function") then
+        return nil
+    end
+
+    local ok, data = pcall(tree.GetSelectedData, tree)
+    if ok then
+        return data
+    end
+
+    return nil
+end
+
+local function isFavoritesCategory(data)
+    if not data then
+        return false
+    end
+
+    if data.categoryIndex == FAVORITES_CATEGORY_ID or data.isNvkFavorites then
+        return true
+    end
+
+    local nested = data.categoryData or data.data
+    if nested then
+        if nested.categoryIndex == FAVORITES_CATEGORY_ID or nested.isNvkFavorites then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function isFavoritesViewVisible()
+    if not isJournalSceneVisible() then
+        return false
+    end
+
+    return isFavoritesCategory(getSelectedCategoryData())
+end
+
+local function scheduleFavoritesDebounce()
+    if type(zo_callLater) ~= "function" then
+        JournalApi:FlushPendingFavoritesRefresh("immediate")
+        return
+    end
+
+    if favoritesRefreshState.callId then
+        return
+    end
+
+    favoritesRefreshState.callId = zo_callLater(function()
+        favoritesRefreshState.callId = nil
+        JournalApi:FlushPendingFavoritesRefresh("debounce")
+    end, REFRESH_DEBOUNCE_MS)
+end
+
+function JournalApi:RefreshFavoritesIfVisible(reason)
+    if not isFavoritesViewVisible() then
+        return false
+    end
+
+    if favoritesRefreshState.pending then
+        if reason ~= nil then
+            favoritesRefreshState.lastReason = reason
+        end
+        return true
+    end
+
+    favoritesRefreshState.pending = true
+    favoritesRefreshState.lastReason = reason
+
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and type(runtime.QueueDirty) == "function" then
+        pcall(runtime.QueueDirty, runtime, "achievement")
+    end
+
+    scheduleFavoritesDebounce()
+    return true
+end
+
+function JournalApi:FlushPendingFavoritesRefresh(context)
+    favoritesRefreshState.callId = nil
+
+    if not favoritesRefreshState.pending then
+        favoritesRefreshState.lastReason = nil
+        return false
+    end
+
+    if not isFavoritesViewVisible() then
+        favoritesRefreshState.pending = false
+        favoritesRefreshState.lastReason = nil
+        return false
+    end
+
+    favoritesRefreshState.pending = false
+    local reason = context or favoritesRefreshState.lastReason
+    favoritesRefreshState.lastReason = nil
+
+    if not (FavoritesCategory and type(FavoritesCategory.Refresh) == "function") then
+        return false
+    end
+
+    local ok = pcall(FavoritesCategory.Refresh, FavoritesCategory)
+    if not ok then
+        if isDebugEnabled() and Utils and Utils.d then
+            Utils.d("[Ach][Journal] FavoritesCategory.Refresh failed during pending flush")
+        end
+        return false
+    end
+
+    debugFavoritesRefresh("Favorites refresh executed (context=%s)", tostring(reason or "runtime"))
+    return true
 end
 
 local function buildCriteriaSnapshot(achievementId)

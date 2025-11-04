@@ -33,6 +33,13 @@ local function ForceAchievementRefresh(context)
     end
 end
 
+local function refreshJournalFavorites(reason)
+    local journal = Nvk3UT and Nvk3UT.Journal
+    if journal and type(journal.RefreshFavoritesIfVisible) == "function" then
+        pcall(journal.RefreshFavoritesIfVisible, journal, reason)
+    end
+end
+
 local NVK3_FAVORITES_KEY = "Nvk3UT_Favorites"
 local ICON_PATH_FAVORITES = "/esoui/art/guild/guild_rankicon_leader_large.dds"
 local FAVORITES_LOOKUP_KEY = "NVK3UT_FAVORITES_ROOT"
@@ -311,21 +318,30 @@ local function HookAchievementContext()
                         if isFav then
                             AddCustomMenuItem("Von Favoriten entfernen", function()
                                 -- remove entire line of series
+                                local removedAny = false
                                 local chainId = id
                                 while chainId ~= 0 do
                                     local state = getAchievementState()
                                     if state and state.SetFavorited then
-                                        local ok = pcall(state.SetFavorited, chainId, false, "FavoritesIntegration:ContextRemove")
-                                        if not ok then
+                                        local ok, result = pcall(state.SetFavorited, chainId, false, "FavoritesIntegration:ContextRemove")
+                                        if ok then
+                                            removedAny = removedAny or (result ~= false)
+                                        else
                                             local Fav = getFavoritesModule()
                                             if Fav and Fav.SetFavorited then
-                                                Fav.SetFavorited(chainId, false, "FavoritesIntegration:ContextRemove", __scope)
+                                                local okSet, setResult = pcall(Fav.SetFavorited, chainId, false, "FavoritesIntegration:ContextRemove", __scope)
+                                                if okSet then
+                                                    removedAny = removedAny or (setResult ~= false)
+                                                end
                                             end
                                         end
                                     else
                                         local Fav = getFavoritesModule()
                                         if Fav and Fav.SetFavorited then
-                                            Fav.SetFavorited(chainId, false, "FavoritesIntegration:ContextRemove", __scope)
+                                            local okSet, setResult = pcall(Fav.SetFavorited, chainId, false, "FavoritesIntegration:ContextRemove", __scope)
+                                            if okSet then
+                                                removedAny = removedAny or (setResult ~= false)
+                                            end
                                         end
                                     end
                                     chainId = GetNextAchievementInLine(chainId)
@@ -335,28 +351,43 @@ local function HookAchievementContext()
                                 ForceAchievementRefresh("FavoritesIntegration:RemoveFromMenu")
                                 _updateFavoritesTooltip(ACHIEVEMENTS)
                                 if Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then Nvk3UT.UI.UpdateStatus() end
+                                if removedAny then
+                                    refreshJournalFavorites("FavoritesIntegration:ContextRemove")
+                                end
                             end)
                         else
                             AddCustomMenuItem("Zu Favoriten hinzufügen", function()
+                                local addedAny = false
                                 local state = getAchievementState()
                                 if state and state.SetFavorited then
-                                    local ok = pcall(state.SetFavorited, id, true, "FavoritesIntegration:ContextAdd")
-                                    if not ok then
+                                    local ok, result = pcall(state.SetFavorited, id, true, "FavoritesIntegration:ContextAdd")
+                                    if ok then
+                                        addedAny = addedAny or (result ~= false)
+                                    else
                                         local Fav = getFavoritesModule()
                                         if Fav and Fav.SetFavorited then
-                                            Fav.SetFavorited(id, true, "FavoritesIntegration:ContextAdd", __scope)
+                                            local okSet, setResult = pcall(Fav.SetFavorited, id, true, "FavoritesIntegration:ContextAdd", __scope)
+                                            if okSet then
+                                                addedAny = addedAny or (setResult ~= false)
+                                            end
                                         end
                                     end
                                 else
                                     local Fav = getFavoritesModule()
                                     if Fav and Fav.SetFavorited then
-                                        Fav.SetFavorited(id, true, "FavoritesIntegration:ContextAdd", __scope)
+                                        local okSet, setResult = pcall(Fav.SetFavorited, id, true, "FavoritesIntegration:ContextAdd", __scope)
+                                        if okSet then
+                                            addedAny = addedAny or (setResult ~= false)
+                                        end
                                     end
                                 end
                                 local U = Nvk3UT and Nvk3UT.Utils; if U and U.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then U.d("[Nvk3UT][Favorites][Toggle] add", "data={id:", id, ", scope:"..tostring(__scope).."}") end
                                 ForceAchievementRefresh("FavoritesIntegration:AddFromMenu")
                                 _updateFavoritesTooltip(ACHIEVEMENTS)
                                 if Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then Nvk3UT.UI.UpdateStatus() end
+                                if addedAny then
+                                    refreshJournalFavorites("FavoritesIntegration:ContextAdd")
+                                end
                             end)
                         end
                     end

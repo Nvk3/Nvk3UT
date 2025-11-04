@@ -248,6 +248,11 @@ local function refreshAfterFavoriteChange()
     if ui and type(ui.UpdateStatus) == "function" then
         pcall(ui.UpdateStatus)
     end
+
+    local journal = Nvk3UT and Nvk3UT.Journal
+    if journal and type(journal.RefreshFavoritesIfVisible) == "function" then
+        pcall(journal.RefreshFavoritesIfVisible, journal, "ChatAchievementContext")
+    end
 end
 
 local function hasLibCustomMenu()

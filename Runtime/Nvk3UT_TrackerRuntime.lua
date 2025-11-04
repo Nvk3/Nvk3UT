@@ -558,6 +558,11 @@ function Runtime:ProcessFrame(nowMs)
             end
         end
 
+        local journal = rawget(Addon, "Journal")
+        if type(journal) == "table" then
+            callWithOptionalSelf(journal, journal.FlushPendingFavoritesRefresh, false, "runtime")
+        end
+
         if layoutDirty or questGeometryChanged or achievementGeometryChanged then
             if applyTrackerHostLayout() then
                 debug("Runtime: applied tracker host layout")
