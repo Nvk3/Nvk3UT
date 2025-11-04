@@ -3740,12 +3740,12 @@ function QuestTracker.GetContentSize()
     return state.contentWidth or 0, state.contentHeight or 0
 end
 
-function QuestTracker.GetHeight()
+function QuestTracker:GetHeight()
     local _, height = QuestTracker.GetContentSize()
     return height or 0
 end
 
-function QuestTracker.getSize(self)
+function QuestTracker:getSize()
     if self and type(self.GetHeight) == "function" then
         local height = self:GetHeight()
         if height ~= nil then
@@ -3753,7 +3753,7 @@ function QuestTracker.getSize(self)
         end
     end
 
-    return QuestTracker.GetHeight()
+    return QuestTracker:GetHeight()
 end
 
 Nvk3UT.QuestTracker = QuestTracker

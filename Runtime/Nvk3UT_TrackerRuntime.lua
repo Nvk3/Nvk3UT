@@ -176,14 +176,57 @@ local function recordSectionGeometry(sectionId, width, height)
     return false
 end
 
+local function getDiagnostics()
+    if type(Addon) == "table" and type(Addon.Diagnostics) == "table" then
+        return Addon.Diagnostics
+    end
+
+    if type(Nvk3UT_Diagnostics) == "table" then
+        return Nvk3UT_Diagnostics
+    end
+
+    return nil
+end
+
 local function warnMissingTrackerHeight(trackerKey)
+    local diagnostics = getDiagnostics()
+    local message = string.format("Tracker height missing; skipping geometry this frame (%s)", tostring(trackerKey))
+
+    if diagnostics and type(diagnostics.WarnOnce) == "function" then
+        if diagnostics:WarnOnce("height-missing-" .. tostring(trackerKey), "%s", message) then
+            return
+        end
+    end
+
     local warned = ensureMissingHeightWarnings()
     if warned[trackerKey] then
         return
     end
 
     warned[trackerKey] = true
-    debug("Runtime: tracker '%s' missing GetHeight()/getSize() API", tostring(trackerKey))
+    debug("%s", message)
+end
+
+local function ResolveTrackerHeight(tracker)
+    if type(tracker) ~= "table" then
+        return nil
+    end
+
+    if type(tracker.GetHeight) == "function" then
+        local ok, height = pcall(tracker.GetHeight, tracker)
+        if ok and type(height) == "number" then
+            return height
+        end
+    end
+
+    if type(tracker.getSize) == "function" then
+        local ok, height = pcall(tracker.getSize, tracker)
+        if ok and type(height) == "number" then
+            return height
+        end
+    end
+
+    return nil
 end
 
 local function ensurePendingStageLogState()
@@ -204,37 +247,61 @@ local function flushPendingStageLog(frameStamp)
         return
     end
 
-    local now = frameStamp
-    if now == nil then
-        now = getFrameTimeMs()
-    end
-    if now == nil and type(GetGameTimeMilliseconds) == "function" then
-        now = GetGameTimeMilliseconds()
-    end
+    local diagnostics = getDiagnostics()
+    local emitted = false
 
-    if now ~= nil and state.lastLogMs ~= nil then
-        if (now - state.lastLogMs) < PENDING_STAGE_LOG_THROTTLE_MS then
-            return
+    if diagnostics and type(diagnostics.DebugRateLimited) == "function" then
+        local count = tonumber(state.count) or 0
+        local lastId = tonumber(state.lastId) or 0
+        local lastStageId = tonumber(state.lastStageId) or 0
+        local lastIndex = tonumber(state.lastIndex) or 0
+
+        emitted = diagnostics:DebugRateLimited("achv-stage", PENDING_STAGE_LOG_THROTTLE_MS, function()
+            return string.format(
+                "Achievement stage pending: collapsed %d updates (last id=%d stage=%d index=%d)",
+                count,
+                lastId,
+                lastStageId,
+                lastIndex
+            )
+        end)
+    else
+        local now = frameStamp
+        if now == nil then
+            now = getFrameTimeMs()
         end
+        if now == nil and type(GetGameTimeMilliseconds) == "function" then
+            now = GetGameTimeMilliseconds()
+        end
+
+        if now ~= nil and state.lastLogMs ~= nil then
+            if (now - state.lastLogMs) < PENDING_STAGE_LOG_THROTTLE_MS then
+                return
+            end
+        end
+
+        if type(now) == "number" then
+            state.lastLogMs = now
+        end
+
+        debug(
+            "Achievement stage pending: collapsed %d updates (last id=%d stage=%d index=%d)",
+            tonumber(state.count) or 0,
+            tonumber(state.lastId) or 0,
+            tonumber(state.lastStageId) or 0,
+            tonumber(state.lastIndex) or 0
+        )
+
+        emitted = true
     end
 
-    if type(now) == "number" then
-        state.lastLogMs = now
+    if emitted then
+        state.count = 0
+        state.lastId = nil
+        state.lastStageId = nil
+        state.lastIndex = nil
+        state.dirty = false
     end
-
-    debug(
-        "Achievement stage pending: collapsed %d updates (last id=%d stage=%d index=%d)",
-        tonumber(state.count) or 0,
-        tonumber(state.lastId) or 0,
-        tonumber(state.lastStageId) or 0,
-        tonumber(state.lastIndex) or 0
-    )
-
-    state.count = 0
-    state.lastId = nil
-    state.lastStageId = nil
-    state.lastIndex = nil
-    state.dirty = false
 end
 
 local function updateTrackerGeometry(sectionId)
@@ -250,26 +317,13 @@ local function updateTrackerGeometry(sectionId)
         return false
     end
 
-    local getHeightFn = tracker.GetHeight or tracker.getSize
-    if type(getHeightFn) ~= "function" then
+    local height = ResolveTrackerHeight(tracker)
+    if height == nil then
         warnMissingTrackerHeight(trackerKey)
         return false
     end
 
-    local invoked, firstValue, secondValue = callWithOptionalSelf(tracker, getHeightFn, false)
-    if not invoked then
-        return false
-    end
-
     local width = nil
-    local height = nil
-
-    if secondValue ~= nil then
-        width = firstValue
-        height = secondValue
-    else
-        height = firstValue
-    end
 
     local getSize = tracker.GetContentSize
     if type(getSize) == "function" then
@@ -278,22 +332,17 @@ local function updateTrackerGeometry(sectionId)
             if sizeWidth ~= nil then
                 width = sizeWidth
             end
-            if height == nil and sizeHeight ~= nil then
+            if height == nil and sizeHeight ~= nil and type(sizeHeight) == "number" then
                 height = sizeHeight
             end
         end
     end
 
-    if width == nil or height == nil then
+    if width == nil then
         local geometry = ensureGeometryState()
         local previous = geometry[sectionId]
         if type(previous) == "table" then
-            if width == nil then
-                width = previous.width
-            end
-            if height == nil then
-                height = previous.height
-            end
+            width = previous.width
         end
     end
 

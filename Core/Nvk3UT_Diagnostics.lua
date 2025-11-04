@@ -56,8 +56,39 @@ end
 
 local LOCAL_COALESCE_WINDOW_MS = 700
 local DEFAULT_COALESCE_WINDOW_MS = 500
+local DEFAULT_RATE_LIMIT_MS = 2000
 
 local coalesceBuckets = {}
+local warnOnceKeys = {}
+local rateLimitedBuckets = {}
+local achStageFallbackState = {}
+local todoListOpenState = {}
+
+local function getTimeMilliseconds()
+    if type(GetFrameTimeMilliseconds) == "function" then
+        return GetFrameTimeMilliseconds()
+    end
+
+    if type(GetGameTimeMilliseconds) == "function" then
+        return GetGameTimeMilliseconds()
+    end
+
+    if type(GetFrameTimeSeconds) == "function" then
+        local seconds = GetFrameTimeSeconds()
+        if type(seconds) == "number" then
+            return seconds * 1000
+        end
+    end
+
+    if type(GetTimeStamp) == "function" then
+        local seconds = GetTimeStamp()
+        if type(seconds) == "number" then
+            return seconds * 1000
+        end
+    end
+
+    return nil
+end
 
 function Diagnostics.SetDebugEnabled(enabled)
     Diagnostics.debugEnabled = not not enabled
@@ -166,6 +197,77 @@ function Diagnostics:DebugCoalesced(key, windowMs, makeLineFn, lastArgsTable)
     end
 end
 
+function Diagnostics:WarnOnce(key, fmt, ...)
+    if type(key) ~= "string" or key == "" then
+        return false
+    end
+
+    if warnOnceKeys[key] then
+        return false
+    end
+
+    warnOnceKeys[key] = true
+
+    if fmt == nil then
+        return false
+    end
+
+    Diagnostics.Warn(fmt, ...)
+    return true
+end
+
+function Diagnostics:DebugRateLimited(key, intervalMs, buildLineFn)
+    if not self.debugEnabled then
+        return false
+    end
+
+    if type(key) ~= "string" or key == "" then
+        return false
+    end
+
+    if type(buildLineFn) ~= "function" then
+        return false
+    end
+
+    local bucket = rateLimitedBuckets[key]
+    if not bucket then
+        bucket = {}
+        rateLimitedBuckets[key] = bucket
+    end
+
+    local interval = tonumber(intervalMs) or DEFAULT_RATE_LIMIT_MS
+    if interval < 0 then
+        interval = DEFAULT_RATE_LIMIT_MS
+    end
+
+    local now = getTimeMilliseconds()
+    if type(bucket.lastLogMs) == "number" and type(now) == "number" then
+        if (now - bucket.lastLogMs) < interval then
+            return false
+        end
+    end
+
+    local ok, line = pcall(buildLineFn)
+    if not ok then
+        Diagnostics.Debug("DebugRateLimited build failed for %s: %s", tostring(key), tostring(line))
+        return false
+    end
+
+    if line == nil or line == "" then
+        return false
+    end
+
+    Diagnostics.Debug("%s", tostring(line))
+
+    if type(now) == "number" then
+        bucket.lastLogMs = now
+    else
+        bucket.lastLogMs = (bucket.lastLogMs or 0) + interval
+    end
+
+    return true
+end
+
 local function toNumberOrZero(value)
     return tonumber(value) or 0
 end
@@ -184,37 +286,51 @@ function Diagnostics.Debug_AchStagePending(id, stageId, index)
         return
     end
 
-    Diagnostics:DebugCoalesced("ach_stage_pending", LOCAL_COALESCE_WINDOW_MS, function(count, last)
-        last = last or {}
+    achStageFallbackState.count = (achStageFallbackState.count or 0) + 1
+    achStageFallbackState.lastId = tonumber(id) or id
+    achStageFallbackState.lastStageId = tonumber(stageId) or stageId
+    achStageFallbackState.lastIndex = tonumber(index) or index
+
+    local emitted = Diagnostics:DebugRateLimited("achv-stage", DEFAULT_RATE_LIMIT_MS, function()
         return string.format(
             "Achievement stage pending: collapsed %d updates (last id=%d stage=%d index=%d)",
-            toNumberOrZero(count),
-            toNumberOrZero(last.id),
-            toNumberOrZero(last.stageId),
-            toNumberOrZero(last.index)
+            toNumberOrZero(achStageFallbackState.count),
+            toNumberOrZero(achStageFallbackState.lastId),
+            toNumberOrZero(achStageFallbackState.lastStageId),
+            toNumberOrZero(achStageFallbackState.lastIndex)
         )
-    end, {
-        id = tonumber(id),
-        stageId = tonumber(stageId),
-        index = tonumber(index),
-    })
+    end)
+
+    if emitted then
+        achStageFallbackState.count = 0
+        achStageFallbackState.lastId = nil
+        achStageFallbackState.lastStageId = nil
+        achStageFallbackState.lastIndex = nil
+    end
 end
 
 function Diagnostics.Debug_Todo_ListOpenForTop(topIndex, count, phase)
-    Diagnostics:DebugCoalesced("todo_listopenfortop", LOCAL_COALESCE_WINDOW_MS, function(total, last)
-        last = last or {}
+    todoListOpenState.count = (todoListOpenState.count or 0) + 1
+    todoListOpenState.lastTop = tonumber(topIndex) or topIndex
+    todoListOpenState.lastCount = tonumber(count) or count
+    todoListOpenState.lastPhase = phase
+
+    local emitted = Diagnostics:DebugRateLimited("todo-openfortop", DEFAULT_RATE_LIMIT_MS, function()
         return string.format(
             "[TodoData] ListOpenForTop: collapsed %d calls (last phase=%s top=%d count=%d)",
-            toNumberOrZero(total),
-            toStringOrNone(last.phase),
-            toNumberOrZero(last.top),
-            toNumberOrZero(last.count)
+            toNumberOrZero(todoListOpenState.count),
+            toStringOrNone(todoListOpenState.lastPhase),
+            toNumberOrZero(todoListOpenState.lastTop),
+            toNumberOrZero(todoListOpenState.lastCount)
         )
-    end, {
-        top = tonumber(topIndex),
-        count = tonumber(count),
-        phase = phase,
-    })
+    end)
+
+    if emitted then
+        todoListOpenState.count = 0
+        todoListOpenState.lastTop = nil
+        todoListOpenState.lastCount = nil
+        todoListOpenState.lastPhase = nil
+    end
 end
 
 function Diagnostics.Warn(fmt, ...)
