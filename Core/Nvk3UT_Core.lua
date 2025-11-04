@@ -17,6 +17,8 @@ Addon._rebuild_lock = Addon._rebuild_lock or false
 Addon.initialized  = Addon.initialized or false
 Addon.playerActivated = Addon.playerActivated or false
 
+local unpack = unpack or table.unpack
+
 if Nvk3UT_Utils and type(Nvk3UT_Utils.AttachToRoot) == "function" then
     Nvk3UT_Utils.AttachToRoot(Addon)
 end
@@ -81,11 +83,13 @@ local function _SafeCall(fn, ...)
         return err
     end
 
-    local ok, result = xpcall(fn, _errHandler, ...)
-    if ok then
-        return result
+    local params = { ... }
+    local ok, results = xpcall(function()
+        return { fn(unpack(params)) }
+    end, _errHandler)
+    if ok and type(results) == "table" then
+        return unpack(results)
     end
-
     return nil
 end
 
