@@ -54,6 +54,8 @@ local function safeCall(fn, ...)
     return nil
 end
 
+local callWithOptionalSelf
+
 local function getHostWindow()
     local ref = Runtime._hostRef
     if type(ref) ~= "table" then
@@ -374,7 +376,7 @@ local function formatChannelList(set)
     return table.concat(ordered, "/")
 end
 
-local function callWithOptionalSelf(targetTable, fn, preferPlainCall, ...)
+function callWithOptionalSelf(targetTable, fn, preferPlainCall, ...)
     if type(fn) ~= "function" then
         return false
     end
