@@ -36,6 +36,54 @@ end
 local isFavRefreshScheduled = false
 local pendingFavoritesRefreshPayload = nil
 
+local function resolveAchievementListModule()
+    local root = Nvk3UT and Nvk3UT.Model
+    if type(root) == "table" then
+        local listModule = root.AchievementList
+        if type(listModule) == "table" then
+            return listModule
+        end
+    end
+
+    return Nvk3UT and Nvk3UT.AchievementList
+end
+
+local function applyFavoriteStateToLocalModel(changedIds, flag)
+    if type(changedIds) ~= "table" or #changedIds == 0 then
+        return
+    end
+
+    local listModule = resolveAchievementListModule()
+    if type(listModule) == "table" and type(listModule.ApplyFavoriteFlag) == "function" then
+        for index = 1, #changedIds do
+            local achievementId = changedIds[index]
+            if achievementId ~= nil then
+                pcall(listModule.ApplyFavoriteFlag, listModule, achievementId, flag)
+            end
+        end
+        return
+    end
+
+    local model = Nvk3UT and Nvk3UT.AchievementModel
+    if type(model) == "table" and type(model.RefreshFromGame) == "function" then
+        pcall(model.RefreshFromGame, "favorites-toggle")
+    end
+end
+
+local function queueAchievementTrackerDirty()
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if type(runtime) ~= "table" or type(runtime.QueueDirty) ~= "function" then
+        return
+    end
+
+    local dirty = runtime._dirty
+    if type(dirty) == "table" and dirty.achievement == true then
+        return
+    end
+
+    pcall(runtime.QueueDirty, runtime, "achievement")
+end
+
 local function refreshJournalFavorites(reason, changedIds)
     local journal = Nvk3UT and Nvk3UT.Journal
     if journal then
@@ -404,7 +452,9 @@ local function HookAchievementContext()
                                 _updateFavoritesTooltip(ACHIEVEMENTS)
                                 if Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then Nvk3UT.UI.UpdateStatus() end
                                 if removedAny then
-                                    refreshJournalFavorites("FavoritesIntegration:ContextRemove", changedIds)
+                                    applyFavoriteStateToLocalModel(changedIds, false)
+                                    queueAchievementTrackerDirty()
+                                    refreshJournalFavorites({ reason = "FavoritesIntegration:ContextToggle", flag = false }, changedIds)
                                 end
                             end)
                         else
@@ -438,7 +488,10 @@ local function HookAchievementContext()
                                 _updateFavoritesTooltip(ACHIEVEMENTS)
                                 if Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then Nvk3UT.UI.UpdateStatus() end
                                 if addedAny then
-                                    refreshJournalFavorites("FavoritesIntegration:ContextAdd", { id })
+                                    local changed = { id }
+                                    applyFavoriteStateToLocalModel(changed, true)
+                                    queueAchievementTrackerDirty()
+                                    refreshJournalFavorites({ reason = "FavoritesIntegration:ContextToggle", flag = true }, changed)
                                 end
                             end)
                         end
