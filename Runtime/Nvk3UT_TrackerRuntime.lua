@@ -736,7 +736,14 @@ function Runtime:ProcessFrame(nowMs)
 
         local journal = rawget(Addon, "Journal")
         if type(journal) == "table" then
-            callWithOptionalSelf(journal, journal.FlushPendingFavoritesRefresh, false, "runtime")
+            local flushFavorites = journal.FlushPendingFavoritesRefresh
+            if type(flushFavorites) == "function" then
+                if Addon and type(Addon.SafeCall) == "function" then
+                    Addon.SafeCall(flushFavorites, journal, "runtime")
+                else
+                    pcall(flushFavorites, journal, "runtime")
+                end
+            end
         end
 
         if layoutDirty or questGeometryChanged or achievementGeometryChanged then
