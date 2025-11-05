@@ -11,7 +11,40 @@ Nvk3UT_Diagnostics = Nvk3UT_Diagnostics or {}
 
 local Diagnostics = Nvk3UT_Diagnostics
 
-Diagnostics.debugEnabled = (Diagnostics.debugEnabled ~= nil) and Diagnostics.debugEnabled or true
+local function readSavedDebugFlag()
+    local root = rawget(_G, "Nvk3UT")
+    if type(root) ~= "table" then
+        return nil
+    end
+
+    local sv = rawget(root, "sv") or rawget(root, "SV")
+    if type(sv) ~= "table" then
+        return nil
+    end
+
+    local flag = sv.debug
+    if flag == nil then
+        flag = sv.debugEnabled
+    end
+
+    if flag == nil then
+        return nil
+    end
+
+    return flag == true
+end
+
+local initialDebug = Diagnostics.debugEnabled
+if type(initialDebug) ~= "boolean" then
+    local saved = readSavedDebugFlag()
+    if type(saved) == "boolean" then
+        initialDebug = saved
+    else
+        initialDebug = false
+    end
+end
+
+Diagnostics.debugEnabled = initialDebug == true
 
 local isAttachedToRoot = false
 
@@ -60,11 +93,40 @@ local DEFAULT_COALESCE_WINDOW_MS = 500
 local coalesceBuckets = {}
 
 function Diagnostics.SetDebugEnabled(enabled)
-    Diagnostics.debugEnabled = not not enabled
+    Diagnostics.debugEnabled = enabled == true
 end
 
-function Diagnostics.IsDebugEnabled()
-    return Diagnostics.debugEnabled == true
+function Diagnostics:IsDebugEnabled()
+    local enabled = self.debugEnabled
+    if type(enabled) ~= "boolean" then
+        local saved = readSavedDebugFlag()
+        if type(saved) == "boolean" then
+            enabled = saved
+            self.debugEnabled = enabled
+        else
+            enabled = false
+            self.debugEnabled = enabled
+        end
+    end
+
+    return enabled == true
+end
+
+function Diagnostics:DebugIfEnabled(tag, fmt, ...)
+    if not self:IsDebugEnabled() then
+        return
+    end
+
+    local debugFn = self.Debug
+    if type(debugFn) ~= "function" then
+        return
+    end
+
+    if fmt == nil then
+        return debugFn(tag, ...)
+    end
+
+    return debugFn(fmt, ...)
 end
 
 function Diagnostics.SyncFromSavedVariables(sv)
@@ -72,15 +134,17 @@ function Diagnostics.SyncFromSavedVariables(sv)
         return
     end
 
-    if sv.debugEnabled ~= nil then
-        Diagnostics.debugEnabled = not not sv.debugEnabled
+    if sv.debug ~= nil then
+        Diagnostics.SetDebugEnabled(sv.debug)
+    elseif sv.debugEnabled ~= nil then
+        Diagnostics.SetDebugEnabled(sv.debugEnabled)
     end
 
     -- TODO: wire additional diagnostics verbosity flags once SavedVariables schema is finalized.
 end
 
 function Diagnostics.Debug(fmt, ...)
-    if not Diagnostics.debugEnabled then
+    if not Diagnostics:IsDebugEnabled() then
         return
     end
 
@@ -102,7 +166,7 @@ local function buildCoalescedMessage(makeLineFn, count, lastArgs)
 end
 
 function Diagnostics:DebugCoalesced(key, windowMs, makeLineFn, lastArgsTable)
-    if not self.debugEnabled then
+    if not self:IsDebugEnabled() then
         return
     end
 
@@ -142,13 +206,13 @@ function Diagnostics:DebugCoalesced(key, windowMs, makeLineFn, lastArgsTable)
         bucket.count = 0
         bucket.lastArgs = nil
 
-        if not Diagnostics.debugEnabled then
+        if not Diagnostics:IsDebugEnabled() then
             return
         end
 
         local line, err = buildCoalescedMessage(makeLineFn, count, args)
         if not line or line == "" then
-            if err and Diagnostics.debugEnabled then
+            if err and Diagnostics:IsDebugEnabled() then
                 Diagnostics.Debug("DebugCoalesced build failed for %s: %s", tostring(key), tostring(err))
             end
             return

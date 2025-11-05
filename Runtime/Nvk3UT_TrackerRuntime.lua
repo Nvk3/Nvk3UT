@@ -33,6 +33,20 @@ local function debug(fmt, ...)
     end
 end
 
+local function debugVisibility(fmt, ...)
+    local diagnostics = Addon and Addon.Diagnostics
+    if type(diagnostics) ~= "table" then
+        diagnostics = Nvk3UT and Nvk3UT.Diagnostics
+    end
+
+    if diagnostics and type(diagnostics.DebugIfEnabled) == "function" then
+        diagnostics:DebugIfEnabled("TrackerRuntime", fmt, ...)
+        return
+    end
+
+    debug(fmt, ...)
+end
+
 local function safeCall(fn, ...)
     if Addon and type(Addon.SafeCall) == "function" then
         return Addon.SafeCall(fn, ...)
@@ -560,7 +574,7 @@ function Runtime:ProcessFrame(nowMs)
 
         if layoutDirty or questGeometryChanged or achievementGeometryChanged then
             if applyTrackerHostLayout() then
-                debug("Runtime: applied tracker host layout")
+                debugVisibility("Runtime: applied tracker host layout")
             end
         end
 
@@ -568,7 +582,7 @@ function Runtime:ProcessFrame(nowMs)
             local hostWindow = getHostWindow()
             if hostWindow and type(hostWindow.SetMouseEnabled) == "function" then
                 safeCall(hostWindow.SetMouseEnabled, hostWindow, self._isInCursorMode == true)
-                debug("Runtime: interactivity updated (cursor=%s)", tostring(self._isInCursorMode == true))
+                debugVisibility("Runtime: interactivity updated (cursor=%s)", tostring(self._isInCursorMode == true))
             end
         end
 
@@ -616,7 +630,7 @@ function Runtime:SetCursorMode(isInCursorMode)
 
     self._isInCursorMode = normalized
     self._interactivityDirty = true
-    debug("Runtime: cursor mode changed -> %s", tostring(normalized))
+    debugVisibility("Runtime: cursor mode changed -> %s", tostring(normalized))
     scheduleProcessing()
 end
 

@@ -740,6 +740,16 @@ local function diagnosticsDebug(fmt, ...)
     end
 end
 
+local function visibilityDebug(fmt, ...)
+    local diagnostics = Nvk3UT and Nvk3UT.Diagnostics
+    if diagnostics and type(diagnostics.DebugIfEnabled) == "function" then
+        diagnostics:DebugIfEnabled("TrackerHost", fmt, ...)
+        return
+    end
+
+    diagnosticsDebug(fmt, ...)
+end
+
 local function safeCall(fn, ...)
     local safe = Nvk3UT and Nvk3UT.SafeCall
     if type(safe) == "function" then
@@ -856,7 +866,7 @@ function TrackerHost.SetCombatState(selfOrFlag, maybeFlag)
     local hostSettings = getHostSettings()
     setVisibilityGate("combat", hostSettings and hostSettings.HideInCombat == true and normalized)
 
-    diagnosticsDebug("Host combat: %s -> ApplyVisibilityRules()", tostring(normalized))
+    visibilityDebug("Host combat: %s -> ApplyVisibilityRules()", tostring(normalized))
 
     local visibilityChanged = TrackerHost.ApplyVisibilityRules()
 
@@ -889,7 +899,7 @@ ensureRuntimeInitialized = function()
 
     if initialized then
         state.runtimeInitialized = true
-        diagnosticsDebug("TrackerHost runtime initialized (root=%s)", tostring(state.root))
+        visibilityDebug("TrackerHost runtime initialized (root=%s)", tostring(state.root))
     end
 end
 
@@ -946,7 +956,7 @@ local function updateCursorModeState(isInCursorMode)
     end
 
     state.bootstrapCursorMode = normalized
-    diagnosticsDebug("TrackerHost cursor mode changed: %s", tostring(normalized))
+    visibilityDebug("TrackerHost cursor mode changed: %s", tostring(normalized))
     callRuntime("SetCursorMode", normalized)
 end
 
@@ -974,7 +984,7 @@ local function applyBootstrapVisibility(host)
     state.bootstrapHudVisible = shouldShow
     state.isInHUDScene = shouldShow
     setVisibilityGate("scene", not shouldShow)
-    diagnosticsDebug("TrackerHost HUD visibility changed: %s", tostring(shouldShow))
+    visibilityDebug("TrackerHost HUD visibility changed: %s", tostring(shouldShow))
 
     if TrackerHost.ApplyVisibilityRules() then
         queueRuntimeLayout()
@@ -2390,7 +2400,7 @@ function TrackerHost.ApplyVisibilityRules()
         applyLabel = "hud"
     end
 
-    diagnosticsDebug(
+    visibilityDebug(
         "Host gates: scene=%s combat=%s lam=%s → apply=%s",
         tostring(hideForScene),
         tostring(hideForCombat),
@@ -2410,7 +2420,7 @@ function TrackerHost.ApplyVisibilityRules()
 
     local changed = previousSceneHidden ~= (state.sceneHidden == true)
     if changed then
-        diagnosticsDebug(
+        visibilityDebug(
             "Host visibility -> %s (%s)",
             state.sceneHidden and "hidden" or "visible",
             applyLabel
