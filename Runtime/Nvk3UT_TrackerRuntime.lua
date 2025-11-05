@@ -177,27 +177,73 @@ local function recordSectionGeometry(sectionId, width, height)
     return false
 end
 
-local function updateTrackerGeometry(sectionId)
-    local trackerKey
-    if sectionId == "achievement" then
-        trackerKey = "AchievementTracker"
-    else
-        trackerKey = "QuestTracker"
-    end
-
-    local tracker = rawget(Addon, trackerKey)
+local function tryTrackerMethod(tracker, ...)
     if type(tracker) ~= "table" then
+        return nil
+    end
+
+    local methodNames = { ... }
+    for index = 1, #methodNames do
+        local methodName = methodNames[index]
+        if methodName then
+            local candidate = tracker[methodName]
+            if type(candidate) == "function" then
+                return candidate, methodName
+            end
+        end
+    end
+
+    return nil, nil
+end
+
+local function updateTrackerGeometry(sectionId, trackerKey, tracker)
+    local resolvedKey = trackerKey
+    if type(resolvedKey) ~= "string" then
+        if sectionId == "achievement" then
+            resolvedKey = "AchievementTracker"
+        else
+            resolvedKey = "QuestTracker"
+        end
+    end
+
+    local resolvedTracker = tracker
+    if type(resolvedTracker) ~= "table" then
+        resolvedTracker = rawget(Addon, resolvedKey)
+    end
+
+    if type(resolvedTracker) ~= "table" then
         return false
     end
 
-    local getSize = tracker.GetContentSize
-    if type(getSize) ~= "function" then
+    local sizeFn, sizeMode = tryTrackerMethod(resolvedTracker, "GetHeight", "GetSize", "GetContentHeight", "GetContentSize")
+    if type(sizeFn) ~= "function" then
         return false
     end
 
-    local invoked, width, height = callWithOptionalSelf(tracker, getSize, false)
-    if not invoked then
+    local ok, valueA, valueB = pcall(sizeFn, resolvedTracker)
+    if not ok then
+        debugVisibility("Runtime: tracker size query failed (%s)", tostring(resolvedKey or sectionId))
         return false
+    end
+
+    local width, height = 0, 0
+    if sizeMode == "GetHeight" or sizeMode == "GetContentHeight" then
+        height = valueA
+
+        local widthFn = tryTrackerMethod(resolvedTracker, "GetWidth", "GetContentWidth")
+        if type(widthFn) == "function" then
+            local widthOk, measuredWidth = pcall(widthFn, resolvedTracker)
+            if widthOk and measuredWidth ~= nil then
+                width = measuredWidth
+            end
+        end
+    else
+        width = valueA
+        height = valueB
+
+        if height == nil then
+            height = valueA
+        end
     end
 
     return recordSectionGeometry(sectionId, width, height)
@@ -565,9 +611,13 @@ function Runtime:ProcessFrame(nowMs)
         if achievementDirty or achievementVmBuilt then
             local refreshedAchievement = refreshAchievementTracker(achievementViewModel)
             if refreshedAchievement then
-                achievementGeometryChanged = updateTrackerGeometry("achievement")
-                if achievementGeometryChanged then
-                    debug("Runtime: achievement tracker refreshed (geometry changed)")
+                if not achievementVmBuilt then
+                    debug("Runtime: deferred achievement geometry update (view model not built)")
+                else
+                    achievementGeometryChanged = updateTrackerGeometry("achievement")
+                    if achievementGeometryChanged then
+                        debug("Runtime: achievement tracker refreshed (geometry changed)")
+                    end
                 end
             end
         end

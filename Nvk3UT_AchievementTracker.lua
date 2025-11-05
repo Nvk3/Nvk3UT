@@ -121,7 +121,25 @@ local state = {
     pendingRefresh = false,
     contentWidth = 0,
     contentHeight = 0,
+    lastHeight = 0,
 }
+
+local function NormalizeMetric(value)
+    local numeric = tonumber(value)
+    if not numeric then
+        return 0
+    end
+
+    if numeric ~= numeric then
+        return 0
+    end
+
+    if numeric < 0 then
+        return 0
+    end
+
+    return numeric
+end
 
 local function ApplyLabelDefaults(label)
     if not label or not label.SetHorizontalAlignment then
@@ -1054,6 +1072,7 @@ local function UpdateContentSize()
 
     state.contentWidth = maxWidth
     state.contentHeight = totalHeight
+    state.lastHeight = NormalizeMetric(totalHeight)
 end
 
 local function IsCategoryExpanded()
@@ -1686,6 +1705,7 @@ function AchievementTracker.Shutdown()
     state.pendingRefresh = false
     state.contentWidth = 0
     state.contentHeight = 0
+    state.lastHeight = 0
     NotifyHostContentChanged()
 end
 
@@ -1754,6 +1774,18 @@ end
 
 function AchievementTracker.RefreshVisibility()
     RefreshVisibility()
+end
+
+function AchievementTracker.GetHeight()
+    if state.isInitialized and state.container then
+        UpdateContentSize()
+    end
+
+    if state.lastHeight ~= nil then
+        return NormalizeMetric(state.lastHeight)
+    end
+
+    return NormalizeMetric(state.contentHeight)
 end
 
 function AchievementTracker.GetContentSize()
