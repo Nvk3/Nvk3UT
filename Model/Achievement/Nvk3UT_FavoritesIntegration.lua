@@ -26,6 +26,10 @@ local hasPrunedCompletedFavorites = false
 local U = Nvk3UT.Utils
 local favProvide_lastTs, favProvide_lastCount = 0, -1
 
+local NVK3_FAVORITES_KEY = "Nvk3UT_Favorites"
+local ICON_PATH_FAVORITES = "/esoui/art/guild/guild_rankicon_leader_large.dds"
+local FAVORITES_LOOKUP_KEY = "NVK3UT_FAVORITES_ROOT"
+
 local function ForceAchievementRefresh(context)
     local Rebuild = Nvk3UT and Nvk3UT.Rebuild
     if Rebuild and Rebuild.ForceAchievementRefresh then
@@ -33,9 +37,216 @@ local function ForceAchievementRefresh(context)
     end
 end
 
-local NVK3_FAVORITES_KEY = "Nvk3UT_Favorites"
-local ICON_PATH_FAVORITES = "/esoui/art/guild/guild_rankicon_leader_large.dds"
-local FAVORITES_LOOKUP_KEY = "NVK3UT_FAVORITES_ROOT"
+local _liveRefreshFavoritesIfActive
+local unpackResults = table.unpack or unpack
+
+local function _getAchievementsScrollList()
+    local achievements = ACHIEVEMENTS
+    if not achievements then
+        return nil
+    end
+
+    local list = achievements.list or achievements.contentList or achievements.scrollList or achievements.listControl
+    if not list and type(achievements.GetList) == "function" then
+        local ok, result = pcall(achievements.GetList, achievements)
+        if ok and result then
+            list = result
+        end
+    end
+
+    return list
+end
+
+local function _captureScrollState(list)
+    if not list then
+        return nil
+    end
+
+    local scrollBar = list.scrollBar
+    if scrollBar and scrollBar.GetValue then
+        local ok, value = pcall(scrollBar.GetValue, scrollBar)
+        if ok then
+            return { kind = "scrollBar", control = scrollBar, value = value }
+        end
+    end
+
+    if type(list.GetVerticalScroll) == "function" then
+        local ok, value = pcall(list.GetVerticalScroll, list)
+        if ok then
+            return { kind = "vertical", control = list, value = value }
+        end
+    end
+
+    if type(list.GetScrollPosition) == "function" then
+        local ok, value = pcall(list.GetScrollPosition, list)
+        if ok then
+            return { kind = "position", control = list, value = value }
+        end
+    end
+
+    return nil
+end
+
+local function _restoreScrollState(state)
+    if not state then
+        return
+    end
+
+    if state.kind == "scrollBar" then
+        local bar = state.control
+        if bar and bar.SetValue then
+            pcall(bar.SetValue, bar, state.value)
+        end
+    elseif state.kind == "vertical" then
+        local control = state.control
+        if control and control.SetVerticalScroll then
+            pcall(control.SetVerticalScroll, control, state.value)
+        end
+    elseif state.kind == "position" then
+        local control = state.control
+        if control and control.SetScrollPosition then
+            pcall(control.SetScrollPosition, control, state.value)
+        end
+    end
+end
+
+local function _extractAchievementIdFromData(data)
+    if type(data) ~= "table" then
+        return nil
+    end
+
+    return data.id or data.achievementId or data.achievementID or data.achievement or data.achievementIndex
+end
+
+local function _captureSelectionState(list)
+    if not (list and ZO_ScrollList_GetSelectedData) then
+        return nil
+    end
+
+    local selectedEntry = ZO_ScrollList_GetSelectedData(list)
+    if type(selectedEntry) ~= "table" then
+        return nil
+    end
+
+    local entryData = selectedEntry.data or selectedEntry
+    local id = _extractAchievementIdFromData(entryData)
+    local index
+    if ZO_ScrollList_GetSelectedIndex then
+        index = ZO_ScrollList_GetSelectedIndex(list)
+    end
+
+    return { id = id, index = index }
+end
+
+local function _restoreSelectionState(list, state)
+    if not (list and state and ZO_ScrollList_GetDataList) then
+        return
+    end
+
+    local targetIndex = state.index
+    local targetId = state.id
+
+    if targetId then
+        local entries = ZO_ScrollList_GetDataList(list)
+        if type(entries) == "table" then
+            for index = 1, #entries do
+                local entry = entries[index]
+                local data = entry and (entry.data or entry)
+                if data and _extractAchievementIdFromData(data) == targetId then
+                    targetIndex = index
+                    break
+                end
+            end
+        end
+    end
+
+    if targetIndex and targetIndex > 0 and ZO_ScrollList_SetSelectedIndex then
+        ZO_ScrollList_SetSelectedIndex(list, targetIndex)
+    end
+end
+
+local _isRefreshingFavorites = false
+
+local function _shouldRefreshFavorites()
+    if not _nvk3ut_is_enabled("favorites") then
+        return false
+    end
+
+    local achievements = ACHIEVEMENTS
+    if not achievements then
+        return false
+    end
+
+    local control = achievements.control
+    if control and control.IsHidden and control:IsHidden() then
+        return false
+    end
+
+    local sceneManager = SCENE_MANAGER
+    if sceneManager and sceneManager.IsShowing and not sceneManager:IsShowing("achievements") then
+        return false
+    end
+
+    local tree = achievements.categoryTree
+    if not (tree and tree.GetSelectedData) then
+        return false
+    end
+
+    local selectedData = tree:GetSelectedData()
+    if not (selectedData and selectedData.categoryIndex == NVK3_FAVORITES_KEY) then
+        return false
+    end
+
+    return true, achievements, tree, selectedData
+end
+
+local function _reselectFavoritesCategory(achievements, tree, data)
+    local nodeLookup = achievements and (achievements.nodeLookupData or (tree and tree.nodeLookupData))
+    local node = nodeLookup and nodeLookup[FAVORITES_LOOKUP_KEY]
+    if node and tree and tree.SelectNode then
+        local selectedNode = tree.GetSelectedNode and tree:GetSelectedNode()
+        if selectedNode ~= node then
+            pcall(tree.SelectNode, tree, node)
+            return
+        end
+    end
+
+    if achievements and achievements.OnCategorySelected then
+        pcall(achievements.OnCategorySelected, achievements, data, true)
+    end
+end
+
+_liveRefreshFavoritesIfActive = function()
+    if _isRefreshingFavorites then
+        return
+    end
+
+    local shouldRefresh, achievements, tree, data = _shouldRefreshFavorites()
+    if not shouldRefresh then
+        return
+    end
+
+    _isRefreshingFavorites = true
+
+    local list = _getAchievementsScrollList()
+    local scrollState = _captureScrollState(list)
+    local selectionState = _captureSelectionState(list)
+
+    _reselectFavoritesCategory(achievements, tree, data)
+
+    if achievements and achievements.RefreshVisible then
+        pcall(achievements.RefreshVisible, achievements)
+    elseif achievements and achievements.RefreshVisibleCategory then
+        pcall(achievements.RefreshVisibleCategory, achievements)
+    end
+
+    if list then
+        _restoreScrollState(scrollState)
+        _restoreSelectionState(list, selectionState)
+    end
+
+    _isRefreshingFavorites = false
+end
 
 local function sanitizePlainName(name)
   if U and U.StripLeadingIconTag then
@@ -151,6 +362,48 @@ local function OverrideOnCategorySelected(AchievementsClass)
             return org(...)
         end
     end
+end
+
+local function _wrapFavoritesMutation(methodName, evaluateChanged)
+    local Fav = getFavoritesModule()
+    if not Fav then
+        return
+    end
+
+    local original = Fav[methodName]
+    if type(original) ~= "function" then
+        return
+    end
+
+    Fav[methodName] = function(...)
+        local results = { original(...) }
+        local shouldRefresh = evaluateChanged and evaluateChanged(results)
+        if shouldRefresh then
+            _liveRefreshFavoritesIfActive()
+        end
+        return unpackResults(results)
+    end
+end
+
+local function _ensureFavoritesMutationHooks()
+    local Fav = getFavoritesModule()
+    if not Fav or Fav._nvkFavoritesRefreshHooked then
+        return
+    end
+
+    Fav._nvkFavoritesRefreshHooked = true
+
+    _wrapFavoritesMutation("SetFavorited", function(results)
+        return results[1] == true
+    end)
+
+    _wrapFavoritesMutation("RemoveFavorite", function(results)
+        return results[1] == true
+    end)
+
+    _wrapFavoritesMutation("ToggleFavorited", function(results)
+        return results[2] == true
+    end)
 end
 
 local function OverrideGetCategoryInfoFromData(AchievementsClass)
@@ -333,6 +586,7 @@ local function HookAchievementContext()
                                 local U = Nvk3UT and Nvk3UT.Utils; if U and U.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then U.d("[Nvk3UT][Favorites][Toggle] remove", "data={rootId:", ACHIEVEMENTS:GetBaseAchievementId(self:GetId()), "}") end
                                 if ACHIEVEMENTS and ACHIEVEMENTS.refreshGroups then ACHIEVEMENTS.refreshGroups:RefreshAll("FullUpdate") end
                                 ForceAchievementRefresh("FavoritesIntegration:RemoveFromMenu")
+                                _liveRefreshFavoritesIfActive()
                                 _updateFavoritesTooltip(ACHIEVEMENTS)
                                 if Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then Nvk3UT.UI.UpdateStatus() end
                             end)
@@ -355,6 +609,7 @@ local function HookAchievementContext()
                                 end
                                 local U = Nvk3UT and Nvk3UT.Utils; if U and U.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then U.d("[Nvk3UT][Favorites][Toggle] add", "data={id:", id, ", scope:"..tostring(__scope).."}") end
                                 ForceAchievementRefresh("FavoritesIntegration:AddFromMenu")
+                                _liveRefreshFavoritesIfActive()
                                 _updateFavoritesTooltip(ACHIEVEMENTS)
                                 if Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then Nvk3UT.UI.UpdateStatus() end
                             end)
@@ -398,4 +653,5 @@ function Nvk3UT_EnableFavorites()
     OverrideOnAchievementUpdated(AchievementsClass)
     Override_ZO_GetAchievementIds()
     HookAchievementContext()
+    _ensureFavoritesMutationHooks()
 end
