@@ -413,6 +413,7 @@ local function BuildAchievementEntry(achievementId)
 
     local entry = {
         id = achievementId,
+        key = achievementId,
         name = (name and name ~= "" and name) or string.format("Achievement %d", achievementId),
         description = description,
         icon = icon,
