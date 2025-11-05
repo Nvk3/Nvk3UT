@@ -121,8 +121,6 @@ local state = {
     pendingRefresh = false,
     contentWidth = 0,
     contentHeight = 0,
-    favoriteRows = {},
-    favoriteRowsNext = nil,
 }
 
 local function ApplyLabelDefaults(label)
@@ -1037,151 +1035,6 @@ local function ReleaseAll(pool)
     end
 end
 
-local function EnsureFavoriteRowState()
-    if type(state.favoriteRows) ~= "table" then
-        state.favoriteRows = {}
-    end
-end
-
-local function BuildFavoriteRowKey(entry)
-    if not entry then
-        return nil
-    end
-    return entry.key or entry.id
-end
-
-local function ReleaseFavoriteRow(control)
-    if not control then
-        return
-    end
-
-    if control.SetHidden then
-        control:SetHidden(true)
-    end
-
-    local pool = state.achievementPool
-    if not pool then
-        return
-    end
-
-    local poolKey = control._nvkPoolKey
-    if poolKey ~= nil then
-        pool:ReleaseObject(poolKey)
-    else
-        pool:ReleaseObject(control)
-    end
-
-    control._nvkPoolKey = nil
-    control._nvkFavoriteKey = nil
-end
-
-local function ReconcileFavoriteRows(newKeysSet)
-    EnsureFavoriteRowState()
-
-    if not state.favoriteRows then
-        return
-    end
-
-    local keysToRemove = {}
-    for key, control in pairs(state.favoriteRows) do
-        if not (newKeysSet and newKeysSet[key]) then
-            keysToRemove[#keysToRemove + 1] = key
-            ReleaseFavoriteRow(control)
-        end
-    end
-
-    for index = 1, #keysToRemove do
-        state.favoriteRows[keysToRemove[index]] = nil
-    end
-end
-
-local function BeginFavoriteRowsPass(newKeysSet)
-    EnsureFavoriteRowState()
-    ReconcileFavoriteRows(newKeysSet)
-    state.favoriteRowsNext = {}
-end
-
-local function AcquireFavoriteRowControl(achievement)
-    EnsureFavoriteRowState()
-    if type(state.favoriteRowsNext) ~= "table" then
-        state.favoriteRowsNext = {}
-    end
-
-    local key = BuildFavoriteRowKey(achievement)
-    local control
-
-    if key ~= nil and state.favoriteRows then
-        control = state.favoriteRows[key]
-        if control then
-            state.favoriteRows[key] = nil
-        end
-    end
-
-    if not control then
-        control = AcquireAchievementControl()
-    end
-
-    if not control then
-        return nil, key
-    end
-
-    control._nvkFavoriteKey = key
-
-    if key ~= nil then
-        state.favoriteRowsNext[key] = control
-    end
-
-    return control, key
-end
-
-local function CommitFavoriteRowsPass()
-    if state.favoriteRows then
-        for _, control in pairs(state.favoriteRows) do
-            ReleaseFavoriteRow(control)
-        end
-    end
-
-    if type(state.favoriteRowsNext) == "table" then
-        state.favoriteRows = state.favoriteRowsNext
-    else
-        state.favoriteRows = {}
-    end
-
-    state.favoriteRowsNext = nil
-end
-
-local function ReleaseTrackerRows(isHard)
-    ReleaseAll(state.categoryPool)
-    ReleaseAll(state.objectivePool)
-
-    state.favoriteRowsNext = nil
-
-    if isHard then
-        ReleaseAll(state.achievementPool)
-        state.favoriteRows = {}
-
-        if state.container and state.container.GetNumChildren then
-            local childCount = state.container:GetNumChildren()
-            for index = childCount, 1, -1 do
-                local child = state.container:GetChild(index)
-                if child then
-                    if child.SetHidden then
-                        child:SetHidden(true)
-                    end
-                    if child.ClearAnchors then
-                        child:ClearAnchors()
-                    end
-                    if child.SetParent then
-                        child:SetParent(nil)
-                    end
-                end
-            end
-        end
-    end
-
-    ResetLayoutState()
-end
-
 local function AnchorControl(control, indentX)
     indentX = indentX or 0
     control:ClearAnchors()
@@ -1461,10 +1314,7 @@ local function AcquireCategoryControl()
 end
 
 local function AcquireAchievementControl()
-    local control, poolKey = state.achievementPool:AcquireObject()
-    if control then
-        control._nvkPoolKey = poolKey
-    end
+    local control = state.achievementPool:AcquireObject()
     if not control.initialized then
         control.label = control:GetNamedChild("Label")
         control.iconSlot = control:GetNamedChild("IconSlot")
@@ -1570,14 +1420,12 @@ local function EnsurePools()
                 control.iconSlot:SetTexture(nil)
             end
             if control.iconSlot.SetAlpha then
-                control.iconSlot:SetAlpha(0)
+                control.iconSlot.SetAlpha(0)
             end
             if control.iconSlot.SetHidden then
                 control.iconSlot:SetHidden(false)
             end
         end
-        control._nvkPoolKey = nil
-        control._nvkFavoriteKey = nil
     end)
 
     state.objectivePool:SetCustomResetBehavior(function(control)
@@ -1614,7 +1462,7 @@ local function LayoutObjective(achievement, objective)
 end
 
 local function LayoutAchievement(achievement)
-    local control = AcquireFavoriteRowControl(achievement)
+    local control = AcquireAchievementControl()
     if not control then
         return
     end
@@ -1714,20 +1562,9 @@ local function LayoutCategory()
         end
     end
 
-    local favoriteKeys = {}
-    for index = 1, #visibleEntries do
-        local key = BuildFavoriteRowKey(visibleEntries[index])
-        if key ~= nil then
-            favoriteKeys[key] = true
-        end
-    end
-
-    BeginFavoriteRowsPass(favoriteKeys)
-
     local total = #visibleEntries
 
     if not HasAnyFavoriteAchievements() then
-        CommitFavoriteRowsPass()
         return
     end
 
@@ -1757,24 +1594,20 @@ local function LayoutCategory()
             LayoutAchievement(visibleEntries[index])
         end
     end
-
-    CommitFavoriteRowsPass()
 end
 
-local function Rebuild(opts)
+local function Rebuild()
     if not state.container then
         return
     end
 
     EnsurePools()
 
-    local hardRefresh = false
-    if type(opts) == "table" and opts.hard == true then
-        hardRefresh = true
-    end
+    ReleaseAll(state.categoryPool)
+    ReleaseAll(state.achievementPool)
+    ReleaseAll(state.objectivePool)
 
-    ReleaseTrackerRows(hardRefresh)
-
+    ResetLayoutState()
     LayoutCategory()
 
     UpdateContentSize()
@@ -1845,21 +1678,7 @@ function AchievementTracker.Init(parentControl, opts)
     AchievementTracker.Refresh()
 end
 
-local function ExtractRefreshOptions(...)
-    local count = select('#', ...)
-    if count == 0 then
-        return nil
-    end
-
-    local candidate = select(count, ...)
-    if type(candidate) == "table" then
-        return candidate
-    end
-
-    return nil
-end
-
-function AchievementTracker.Refresh(...)
+function AchievementTracker.Refresh()
     if not state.isInitialized then
         return
     end
@@ -1868,9 +1687,7 @@ function AchievementTracker.Refresh(...)
         state.snapshot = Nvk3UT.AchievementModel.GetViewData() or state.snapshot
     end
 
-    local opts = ExtractRefreshOptions(...)
-
-    Rebuild(opts)
+    Rebuild()
 end
 
 function AchievementTracker.Shutdown()
@@ -1891,8 +1708,6 @@ function AchievementTracker.Shutdown()
     state.lastAnchoredControl = nil
     state.fonts = {}
     state.opts = {}
-    state.favoriteRows = {}
-    state.favoriteRowsNext = nil
 
     state.isInitialized = false
     state.pendingRefresh = false
