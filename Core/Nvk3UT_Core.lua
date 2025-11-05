@@ -3,6 +3,7 @@
 
 local ADDON_NAME    = ADDON_NAME    or "Nvk3UT"
 local ADDON_VERSION = ADDON_VERSION or "0.10.2" -- TODO: keep in sync with manifest when version updates
+local unpack = unpack or table.unpack
 
 Nvk3UT = Nvk3UT or {}
 local Addon = Nvk3UT
@@ -81,9 +82,13 @@ local function _SafeCall(fn, ...)
         return err
     end
 
-    local ok, result = xpcall(fn, _errHandler, ...)
-    if ok then
-        return result
+    local params = { ... }
+    local ok, results = xpcall(function()
+        return { fn(unpack(params)) }
+    end, _errHandler)
+
+    if ok and type(results) == "table" then
+        return unpack(results)
     end
 
     return nil
