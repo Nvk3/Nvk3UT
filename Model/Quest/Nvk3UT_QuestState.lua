@@ -316,10 +316,16 @@ function QuestState.Bind(root)
         return nil
     end
 
-    local questTracker = root.QuestTracker
+    local questTracker = root.questState
     if type(questTracker) ~= "table" then
         questTracker = {}
-        root.QuestTracker = questTracker
+        root.questState = questTracker
+    end
+
+    if type(root.QuestTracker) == "table" and next(questTracker) == nil then
+        for key, value in pairs(root.QuestTracker) do
+            questTracker[key] = value
+        end
     end
 
     if type(questTracker.stateVersion) ~= "number" or questTracker.stateVersion < STATE_VERSION then

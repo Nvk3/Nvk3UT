@@ -72,26 +72,28 @@ local DEFAULT_WINDOW_BARS = {
     footerHeightPx = 100,
 }
 
-local DEFAULT_TRACKER_COLORS = {
+local COLOR_PALETTE = {
+    parchment = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
+    highlight = { r = 1, g = 1, b = 0, a = 1 },
+    bright = { r = 1, g = 1, b = 1, a = 1 },
+}
+
+local DEFAULT_TRACKER_COLOR_IDS = {
     questTracker = {
-        colors = {
-            categoryTitle = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
-            objectiveText = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
-            entryTitle = { r = 1, g = 1, b = 0, a = 1 },
-            activeTitle = { r = 1, g = 1, b = 1, a = 1 },
-        },
+        categoryTitle = "parchment",
+        objectiveText = "parchment",
+        entryTitle = "highlight",
+        activeTitle = "bright",
     },
     achievementTracker = {
-        colors = {
-            categoryTitle = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
-            objectiveText = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
-            entryTitle = { r = 1, g = 1, b = 0, a = 1 },
-            activeTitle = { r = 1, g = 1, b = 1, a = 1 },
-        },
+        categoryTitle = "parchment",
+        objectiveText = "parchment",
+        entryTitle = "highlight",
+        activeTitle = "bright",
     },
 }
 
-local DEFAULT_COLOR_FALLBACK = { r = 1, g = 1, b = 1, a = 1 }
+local DEFAULT_COLOR_FALLBACK = COLOR_PALETTE.bright
 
 local DEFAULT_HOST_SETTINGS = {
     HideInCombat = false,
@@ -248,6 +250,108 @@ local function ensureColorComponents(color, defaults)
     return target
 end
 
+local function encodeColorString(r, g, b, a)
+    local function toByte(component)
+        component = normalizeColorComponent(component, 1)
+        local channel = math.floor(component * 255 + 0.5)
+        if channel < 0 then
+            channel = 0
+        elseif channel > 255 then
+            channel = 255
+        end
+        return channel
+    end
+
+    return string.format("#%02X%02X%02X%02X", toByte(r), toByte(g), toByte(b), toByte(a))
+end
+
+local function decodeHexColor(value)
+    if type(value) ~= "string" then
+        return nil
+    end
+
+    local hex = value
+    if hex:sub(1, 1) == "#" then
+        hex = hex:sub(2)
+    end
+
+    if #hex ~= 6 and #hex ~= 8 then
+        return nil
+    end
+
+    local function channelToNumber(component)
+        local numeric = tonumber(component, 16)
+        if not numeric then
+            return nil
+        end
+        return clamp(numeric / 255, 0, 1)
+    end
+
+    local r = channelToNumber(hex:sub(1, 2))
+    local g = channelToNumber(hex:sub(3, 4))
+    local b = channelToNumber(hex:sub(5, 6))
+    local a = 1
+
+    if #hex == 8 then
+        a = channelToNumber(hex:sub(7, 8))
+    end
+
+    if r and g and b and a then
+        return { r = r, g = g, b = b, a = a }
+    end
+
+    return nil
+end
+
+local function resolveDefaultColor(trackerType, role)
+    local defaults = DEFAULT_TRACKER_COLOR_IDS[trackerType]
+    local paletteId = defaults and defaults[role]
+    return COLOR_PALETTE[paletteId] or DEFAULT_COLOR_FALLBACK
+end
+
+local function canonicalizeColorEntry(entry, trackerType, role)
+    local defaults = resolveDefaultColor(trackerType, role)
+
+    if type(entry) == "string" then
+        if COLOR_PALETTE[entry] then
+            return entry
+        end
+
+        local decoded = decodeHexColor(entry)
+        if decoded then
+            return encodeColorString(decoded.r, decoded.g, decoded.b, decoded.a)
+        end
+
+        return encodeColorString(defaults.r, defaults.g, defaults.b, defaults.a)
+    end
+
+    if type(entry) == "table" then
+        local normalized = ensureColorComponents(entry, defaults)
+        return encodeColorString(normalized.r, normalized.g, normalized.b, normalized.a)
+    end
+
+    local paletteId = DEFAULT_TRACKER_COLOR_IDS[trackerType] and DEFAULT_TRACKER_COLOR_IDS[trackerType][role]
+    return paletteId or encodeColorString(defaults.r, defaults.g, defaults.b, defaults.a)
+end
+
+local function resolveColorEntry(entry, trackerType, role)
+    if type(entry) == "string" then
+        local paletteColor = COLOR_PALETTE[entry]
+        if paletteColor then
+            return paletteColor
+        end
+
+        local decoded = decodeHexColor(entry)
+        if decoded then
+            return ensureColorComponents(decoded, resolveDefaultColor(trackerType, role))
+        end
+    elseif type(entry) == "table" then
+        return ensureColorComponents(entry, resolveDefaultColor(trackerType, role))
+    end
+
+    return resolveDefaultColor(trackerType, role)
+end
+
 local function ensureTrackerColorConfig(sv, trackerType)
     if not (sv and trackerType) then
         return nil
@@ -262,10 +366,10 @@ local function ensureTrackerColorConfig(sv, trackerType)
 
     tracker.colors = tracker.colors or {}
 
-    local defaults = DEFAULT_TRACKER_COLORS[trackerType]
-    if defaults and defaults.colors then
-        for role, defaultColor in pairs(defaults.colors) do
-            tracker.colors[role] = ensureColorComponents(tracker.colors[role], defaultColor)
+    local defaults = DEFAULT_TRACKER_COLOR_IDS[trackerType]
+    if defaults then
+        for role, defaultId in pairs(defaults) do
+            tracker.colors[role] = canonicalizeColorEntry(tracker.colors[role], trackerType, role)
         end
     end
 
@@ -278,7 +382,7 @@ local function ensureAppearanceColorDefaults()
         return nil
     end
 
-    for trackerType in pairs(DEFAULT_TRACKER_COLORS) do
+    for trackerType in pairs(DEFAULT_TRACKER_COLOR_IDS) do
         ensureTrackerColorConfig(sv, trackerType)
     end
 
@@ -313,9 +417,7 @@ local function getHostSettings()
 end
 
 local function getDefaultColor(trackerType, role)
-    local defaults = DEFAULT_TRACKER_COLORS[trackerType]
-    local colors = defaults and defaults.colors or nil
-    local color = colors and colors[role] or DEFAULT_COLOR_FALLBACK
+    local color = resolveDefaultColor(trackerType, role)
     local r = color.r or DEFAULT_COLOR_FALLBACK.r
     local g = color.g or DEFAULT_COLOR_FALLBACK.g
     local b = color.b or DEFAULT_COLOR_FALLBACK.b
@@ -3133,10 +3235,11 @@ function TrackerHost.GetTrackerColor(trackerType, role)
         return fallbackR, fallbackG, fallbackB, fallbackA
     end
 
-    local r = normalizeColorComponent(color.r, fallbackR)
-    local g = normalizeColorComponent(color.g, fallbackG)
-    local b = normalizeColorComponent(color.b, fallbackB)
-    local a = normalizeColorComponent(color.a, fallbackA)
+    local resolved = resolveColorEntry(color, trackerType, role)
+    local r = normalizeColorComponent(resolved.r, fallbackR)
+    local g = normalizeColorComponent(resolved.g, fallbackG)
+    local b = normalizeColorComponent(resolved.b, fallbackB)
+    local a = normalizeColorComponent(resolved.a, fallbackA)
     return r, g, b, a
 end
 
@@ -3157,12 +3260,13 @@ function TrackerHost.SetTrackerColor(trackerType, role, r, g, b, a)
 
     tracker.colors = tracker.colors or {}
     local defaultR, defaultG, defaultB, defaultA = getDefaultColor(trackerType, role)
-    local color = tracker.colors[role] or {}
-    color.r = normalizeColorComponent(r, defaultR)
-    color.g = normalizeColorComponent(g, defaultG)
-    color.b = normalizeColorComponent(b, defaultB)
-    color.a = normalizeColorComponent(a, defaultA)
-    tracker.colors[role] = color
+    local encoded = encodeColorString(
+        normalizeColorComponent(r, defaultR),
+        normalizeColorComponent(g, defaultG),
+        normalizeColorComponent(b, defaultB),
+        normalizeColorComponent(a, defaultA)
+    )
+    tracker.colors[role] = encoded
 end
 
 function TrackerHost.OnLamPanelOpened()

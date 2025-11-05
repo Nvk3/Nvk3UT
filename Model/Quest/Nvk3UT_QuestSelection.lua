@@ -174,10 +174,16 @@ function QuestSelection.Bind(root, questTrackerOverride)
             return AssignSaved(nil)
         end
 
-        container = root.QuestTracker
+        container = root.questState
         if type(container) ~= "table" then
             container = {}
-            root.QuestTracker = container
+            root.questState = container
+        end
+
+        if type(root.QuestTracker) == "table" and next(container) == nil then
+            for key, value in pairs(root.QuestTracker) do
+                container[key] = value
+            end
         end
     end
 
