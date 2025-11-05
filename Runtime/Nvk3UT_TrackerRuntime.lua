@@ -15,7 +15,7 @@ Runtime._dirty = Runtime._dirty or {}
 Runtime._dirty.quest = Runtime._dirty.quest == true
 Runtime._dirty.achievement = Runtime._dirty.achievement == true
 Runtime._dirty.layout = Runtime._dirty.layout == true
-Runtime._dirty.achievementHard = Runtime._dirty.achievementHard == true
+Runtime._achievementHard = Runtime._achievementHard == true
 Runtime._queuedChannelsForLog = Runtime._queuedChannelsForLog or {}
 Runtime._isProcessingFrame = Runtime._isProcessingFrame == true
 Runtime._lastProcessFrameMs = Runtime._lastProcessFrameMs or nil
@@ -88,8 +88,6 @@ local function ensureDirtyState()
     dirty.quest = dirty.quest == true
     dirty.achievement = dirty.achievement == true
     dirty.layout = dirty.layout == true
-    dirty.achievementHard = dirty.achievementHard == true
-
     return dirty
 end
 
@@ -653,7 +651,7 @@ function Runtime:QueueAchievementHard()
         dirty.achievement = true
     end
 
-    dirty.achievementHard = true
+    self._achievementHard = true
     queuedLog.achievement = true
 
     if hasPendingWork() then
@@ -741,8 +739,8 @@ function Runtime:ProcessFrame(nowMs)
             end
         end
 
-        local achievementHard = dirty.achievementHard == true
-        dirty.achievementHard = false
+        local achievementHard = self._achievementHard == true
+        self._achievementHard = false
 
         local achievementGeometryChanged = false
         if achievementDirty or achievementVmBuilt then

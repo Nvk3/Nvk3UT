@@ -92,6 +92,18 @@ local function queueAchievementTrackerDirty(opts)
     pcall(runtime.QueueDirty, runtime, "achievement")
 end
 
+local function queueAchievementHardRefresh()
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if type(runtime) == "table" and type(runtime.QueueAchievementHard) == "function" then
+        local ok = pcall(runtime.QueueAchievementHard, runtime)
+        if ok then
+            return
+        end
+    end
+
+    queueAchievementTrackerDirty()
+end
+
 local function refreshJournalFavorites(reason, changedIds)
     local journal = Nvk3UT and Nvk3UT.Journal
     if journal then
@@ -461,7 +473,7 @@ local function HookAchievementContext()
                                 local U = Nvk3UT and Nvk3UT.Utils; if U and U.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then U.d("[Nvk3UT][Favorites][Toggle] remove", "data={rootId:", ACHIEVEMENTS:GetBaseAchievementId(self:GetId()), "}") end
                                 if removedAny then
                                     applyFavoriteStateToLocalModel(changedIds, false)
-                                    queueAchievementTrackerDirty({ hard = true })
+                                    queueAchievementHardRefresh()
                                     refreshJournalFavorites({ reason = "FavoritesIntegration:ContextToggle", flag = false }, changedIds)
                                 end
                             end)
@@ -495,7 +507,7 @@ local function HookAchievementContext()
                                 if addedAny then
                                     local changed = { id }
                                     applyFavoriteStateToLocalModel(changed, true)
-                                    queueAchievementTrackerDirty({ hard = true })
+                                    queueAchievementHardRefresh()
                                     refreshJournalFavorites({ reason = "FavoritesIntegration:ContextToggle", flag = true }, changed)
                                 end
                             end)

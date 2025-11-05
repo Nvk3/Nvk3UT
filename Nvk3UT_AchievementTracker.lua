@@ -1042,7 +1042,7 @@ local function ReleaseTrackerRows(isHard)
 
     if isHard and state.container and state.container.GetNumChildren then
         local childCount = state.container:GetNumChildren()
-        for index = 1, childCount do
+        for index = childCount, 1, -1 do
             local child = state.container:GetChild(index)
             if child then
                 if child.SetHidden then
@@ -1050,6 +1050,9 @@ local function ReleaseTrackerRows(isHard)
                 end
                 if child.ClearAnchors then
                     child:ClearAnchors()
+                end
+                if child.SetParent then
+                    child:SetParent(nil)
                 end
             end
         end
