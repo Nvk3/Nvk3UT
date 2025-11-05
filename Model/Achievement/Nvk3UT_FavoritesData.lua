@@ -164,6 +164,39 @@ local function getSet(scope)
     return saved or EMPTY_SET
 end
 
+local function iterateFavoritedSet(state)
+    if type(state) ~= "table" then
+        return nil
+    end
+
+    local set = state.set
+    local rawKey = state.lastRaw
+
+    local emitted = state.emitted
+    if emitted == nil then
+        emitted = {}
+        state.emitted = emitted
+    end
+
+    while true do
+        local nextKey, value = next(set, rawKey)
+        if nextKey == nil then
+            state.lastRaw = nil
+            state.emitted = nil
+            return nil
+        end
+
+        rawKey = nextKey
+        state.lastRaw = rawKey
+
+        local normalized = normalizeIdInternal(rawKey)
+        if normalized and value and not emitted[normalized] then
+            emitted[normalized] = true
+            return normalized, value and true or false
+        end
+    end
+end
+
 local function isFavoritedInScope(id, scope)
     local set = ensureSet(scope, false)
     if not set then
@@ -403,10 +436,10 @@ function FavoritesData.GetAllFavorites(scopeOverride)
     local set = getSet(scope)
 
     if type(set) ~= "table" then
-        return next, EMPTY_SET, nil
+        return iterateFavoritedSet, { set = EMPTY_SET, lastRaw = nil }, nil
     end
 
-    return next, set, nil
+    return iterateFavoritedSet, { set = set, lastRaw = nil }, nil
 end
 
 function FavoritesData.Iterate(scopeOverride)
@@ -467,14 +500,11 @@ function FavoritesData.PruneCompletedFavorites()
 
     for index = 1, #scopes do
         local scope = scopes[index]
-        local set = ensureSet(scope, false)
-        if type(set) == "table" then
-            for rawId, flagged in pairs(set) do
-                if flagged then
-                    local normalized = FavoritesData.NormalizeId(rawId)
-                    if normalized and FavoritesData.IsCompleted(normalized) then
-                        candidates[normalized] = true
-                    end
+        local iterator, state, key = FavoritesData.GetAllFavorites(scope)
+        if type(iterator) == "function" then
+            for achievementId, flagged in iterator, state, key do
+                if flagged and FavoritesData.IsCompleted(achievementId) then
+                    candidates[achievementId] = true
                 end
             end
         end
