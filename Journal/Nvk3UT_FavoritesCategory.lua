@@ -11,6 +11,7 @@ local state = {
     parent = nil,
     host = nil,
     container = nil,
+    hasFavorites = false,
 }
 
 local tableUnpack = table.unpack or unpack
@@ -118,6 +119,7 @@ function Category:Init(parentOrContainer)
     state.parent = parentOrContainer
     state.host = nil
     state.container = nil
+    state.hasFavorites = false
 
     if type(parentOrContainer) == "userdata" then
         state.host = parentOrContainer
@@ -169,6 +171,60 @@ local function toggleContainerHidden(isVisible)
     end
 end
 
+local function getFavoritesScope()
+    if Data and type(Data.GetFavoritesScope) == "function" then
+        local scope = safeCall(Data.GetFavoritesScope)
+        if type(scope) == "string" and scope ~= "" then
+            return scope
+        end
+    end
+
+    local general = Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.General
+    return (general and general.favScope) or "account"
+end
+
+local function hasFavoritesInScope(scope)
+    if not (Data and Data.GetAllFavorites) then
+        return false
+    end
+
+    local iterator, iterState, key = safeCall(Data.GetAllFavorites, scope)
+    if type(iterator) ~= "function" then
+        return false
+    end
+
+    for _, flagged in iterator, iterState, key do
+        if flagged then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function isFavoritesCategoryActive()
+    local achievements = ACHIEVEMENTS
+    if not achievements then
+        return false
+    end
+
+    local tree = achievements.categoryTree
+    if tree and tree.GetSelectedData then
+        local selected = tree:GetSelectedData()
+        if type(selected) == "table" then
+            if selected.isNvkFavorites then
+                return true
+            end
+
+            if selected.categoryIndex == "Nvk3UT_Favorites" then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
 ---Refresh the favorites category view.
 ---@return any
 function Category:Refresh()
@@ -180,25 +236,40 @@ function Category:Refresh()
     -- The current journal shim still delegates rendering to the base UI
     -- integrations. For now, simply ensure the container's visibility reflects
     -- whether we have any favorites so later passes can flesh out the layout.
-    local hasFavorites = false
+    local previousHasFavorites = state.hasFavorites == true
 
     ensureData()
 
-    if Data and Data.GetAllFavorites then
-        local scope = Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.General
-        scope = scope and scope.favScope or "account"
-        local iterator, iterState, key = safeCall(Data.GetAllFavorites, scope)
-        if type(iterator) == "function" then
-            for _, flagged in iterator, iterState, key do
-                if flagged then
-                    hasFavorites = true
-                    break
-                end
-            end
+    local scope = getFavoritesScope()
+    local hasFavorites = hasFavoritesInScope(scope)
+
+    local otherScopeHasFavorites = false
+    if not hasFavorites then
+        local alternate = scope == "account" and "character" or (scope == "character" and "account" or nil)
+        if alternate then
+            otherScopeHasFavorites = hasFavoritesInScope(alternate)
         end
     end
 
+    state.hasFavorites = hasFavorites
+
     toggleContainerHidden(not hasFavorites)
+
+    local shouldRefreshJournal = false
+    if hasFavorites ~= previousHasFavorites and isFavoritesCategoryActive() then
+        shouldRefreshJournal = true
+    elseif not hasFavorites and otherScopeHasFavorites and isFavoritesCategoryActive() then
+        shouldRefreshJournal = true
+    end
+
+    if shouldRefreshJournal then
+        local achievements = ACHIEVEMENTS
+        local refreshGroups = achievements and achievements.refreshGroups
+        if refreshGroups and refreshGroups.RefreshAll then
+            refreshGroups:RefreshAll("FullUpdate")
+        end
+    end
+
     return container
 end
 

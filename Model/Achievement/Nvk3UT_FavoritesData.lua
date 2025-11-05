@@ -74,17 +74,50 @@ local function normalizeScope(scope)
     return nil
 end
 
+local function readConfiguredScope()
+    local root = Nvk3UT and Nvk3UT.sv
+    if type(root) ~= "table" then
+        return nil
+    end
+
+    local ui = root.ui
+    if type(ui) == "table" then
+        local configured = normalizeScope(ui.favScope)
+        if configured then
+            return configured
+        end
+
+        local favorites = ui.favorites
+        if type(favorites) == "table" then
+            local scoped = normalizeScope(favorites.scope)
+            if scoped then
+                return scoped
+            end
+        end
+    end
+
+    local general = root.General
+    if type(general) == "table" then
+        local configured = normalizeScope(general.favScope)
+        if configured then
+            return configured
+        end
+    end
+
+    return nil
+end
+
 local function resolveScope(scopeOverride)
     local normalizedOverride = normalizeScope(scopeOverride)
     if normalizedOverride then
         return normalizedOverride
     end
 
-    local general = Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.General
-    local configured = general and general.favScope
-    local normalizedConfigured = normalizeScope(configured)
+    return readConfiguredScope() or ACCOUNT_SCOPE
+end
 
-    return normalizedConfigured or ACCOUNT_SCOPE
+function FavoritesData.GetFavoritesScope(scopeOverride)
+    return resolveScope(scopeOverride)
 end
 
 local function ensureSavedVars()
@@ -251,7 +284,7 @@ local function buildScopeOrder(scopeOverride)
         return order
     end
 
-    push(resolveScope(nil))
+    push(FavoritesData.GetFavoritesScope(nil))
     push(ACCOUNT_SCOPE)
     push(CHARACTER_SCOPE)
 
@@ -261,8 +294,11 @@ end
 local function queueAchievementDirty()
     local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
     if runtime and type(runtime.QueueDirty) == "function" then
-        pcall(runtime.QueueDirty, runtime, "achievement")
+        local ok = pcall(runtime.QueueDirty, runtime, "achievement")
+        return ok ~= false
     end
+
+    return false
 end
 
 local function touchFavoriteTimestamp(achievementId)
@@ -313,17 +349,38 @@ end
 
 local function NotifyFavoritesChanged()
     local Model = Nvk3UT and Nvk3UT.AchievementModel
-    if Model and Model.OnFavoritesChanged then
+    if Model and type(Model.OnFavoritesChanged) == "function" then
         pcall(Model.OnFavoritesChanged)
     end
 
+    local queued = queueAchievementDirty()
+
     local tracker = Nvk3UT and Nvk3UT.AchievementTracker
-    if tracker and tracker.RequestRefresh then
+    if tracker and type(tracker.RequestRefresh) == "function" then
         pcall(tracker.RequestRefresh)
     end
 
-    queueAchievementDirty()
+    local Integration = Nvk3UT and Nvk3UT.FavoritesIntegration
+    if Integration and type(Integration.OnFavoritesChanged) == "function" then
+        pcall(Integration.OnFavoritesChanged, Integration)
+    end
+
+    local UI = Nvk3UT and Nvk3UT.UI
+    if UI and type(UI.UpdateStatus) == "function" then
+        pcall(UI.UpdateStatus)
+    elseif Nvk3UT and type(Nvk3UT.UIUpdateStatus) == "function" then
+        pcall(Nvk3UT.UIUpdateStatus, Nvk3UT)
+    end
+
+    if not queued then
+        local Rebuild = Nvk3UT and Nvk3UT.Rebuild
+        if Rebuild and type(Rebuild.ForceAchievementRefresh) == "function" then
+            pcall(Rebuild.ForceAchievementRefresh, "Favorites:Mutation")
+        end
+    end
 end
+
+FavoritesData.NotifyFavoritesChanged = NotifyFavoritesChanged
 
 function FavoritesData.InitSavedVars()
     if not Nvk3UT_Data_Favorites_Account then

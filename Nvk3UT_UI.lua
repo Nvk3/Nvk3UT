@@ -116,9 +116,7 @@ local function __nvk3_CountFavorites()
   if not Fav or not Fav.GetAllFavorites then
     return 0
   end
-  local sv = Nvk3UT and Nvk3UT.sv
-  local general = sv and sv.General
-  local scope = (general and general.favScope) or "account"
+  local scope = (Fav.GetFavoritesScope and Fav.GetFavoritesScope()) or "account"
   local n = 0
   local iterator, state, key = Fav.GetAllFavorites(scope)
   if type(iterator) ~= "function" then

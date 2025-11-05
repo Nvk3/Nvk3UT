@@ -444,8 +444,12 @@ local function BuildFontString(descriptor, fallback)
 end
 
 local function BuildFavoritesScope()
-    local sv = Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.General
-    return (sv and sv.favScope) or "account"
+    local Fav = Nvk3UT and Nvk3UT.FavoritesData
+    if Fav and type(Fav.GetFavoritesScope) == "function" then
+        return Fav.GetFavoritesScope()
+    end
+
+    return "account"
 end
 
 local function IsFavoriteAchievement(achievementId)
@@ -502,10 +506,6 @@ local function RemoveAchievementFromFavorites(achievementId)
         "AchievementTracker:RemoveAchievementFromFavorites",
         BuildFavoritesScope()
     )
-
-    if AchievementTracker and AchievementTracker.RequestRefresh then
-        AchievementTracker.RequestRefresh()
-    end
 end
 
 local function ResolveAchievementEntry(achievementsSystem, achievementId)

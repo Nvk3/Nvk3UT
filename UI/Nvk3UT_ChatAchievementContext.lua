@@ -233,23 +233,6 @@ local function setFavorite(achievementId, shouldFavorite)
     return false
 end
 
-local function refreshAfterFavoriteChange()
-    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
-    if runtime and type(runtime.QueueDirty) == "function" then
-        pcall(runtime.QueueDirty, runtime, "achievement")
-    end
-
-    local rebuild = Nvk3UT and Nvk3UT.Rebuild
-    if rebuild and type(rebuild.ForceAchievementRefresh) == "function" then
-        pcall(rebuild.ForceAchievementRefresh, "ChatAchievementContext:ToggleFavorite")
-    end
-
-    local ui = Nvk3UT and Nvk3UT.UI
-    if ui and type(ui.UpdateStatus) == "function" then
-        pcall(ui.UpdateStatus)
-    end
-end
-
 local function hasLibCustomMenu()
     if type(AddCustomMenuItem) == "function" then
         return true
@@ -305,10 +288,7 @@ local function appendMenuEntries(achievementId)
     local toggleLabelId = favoriteNow and SI_NVK3UT_CTX_FAVORITE_REMOVE or SI_NVK3UT_CTX_FAVORITE_ADD
     if addMenuEntry(GetString(toggleLabelId), function()
         local desired = not favoriteNow
-        local changed = setFavorite(achievementId, desired)
-        if changed ~= false then
-            refreshAfterFavoriteChange()
-        end
+        setFavorite(achievementId, desired)
     end) then
         addedAny = true
     end

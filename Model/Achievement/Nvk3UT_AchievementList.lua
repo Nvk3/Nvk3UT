@@ -107,9 +107,17 @@ end
 
 local function BuildFavoriteScopes()
     local scope = "account"
-    local general = Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.General
-    if general and type(general.favScope) == "string" and general.favScope ~= "" then
-        scope = general.favScope
+    local Fav = Nvk3UT and Nvk3UT.FavoritesData
+    if Fav and type(Fav.GetFavoritesScope) == "function" then
+        local ok, result = pcall(Fav.GetFavoritesScope)
+        if ok and type(result) == "string" and result ~= "" then
+            scope = result
+        end
+    else
+        local general = Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.General
+        if general and type(general.favScope) == "string" and general.favScope ~= "" then
+            scope = general.favScope
+        end
     end
 
     local ordered = {}

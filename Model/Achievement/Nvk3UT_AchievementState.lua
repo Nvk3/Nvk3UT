@@ -368,14 +368,30 @@ function AchievementState.ToggleGroupExpanded(groupId, source)
     return AchievementState.IsGroupExpanded(groupId), changed
 end
 
-local function resolveFavoritesScope()
+local function resolveFavoritesScope(scopeOverride)
+    local Fav = getFavoritesModule()
+    if Fav and type(Fav.GetFavoritesScope) == "function" then
+        local ok, result = pcall(Fav.GetFavoritesScope, scopeOverride)
+        if ok and type(result) == "string" and result ~= "" then
+            return result
+        end
+    end
+
     local root = savedRoot or (Nvk3UT and Nvk3UT.sv)
     local general = root and root.General
-    local scope = "account"
-    if general and type(general.favScope) == "string" and general.favScope ~= "" then
-        scope = general.favScope
+    local scope = general and general.favScope
+    if type(scope) == "string" and scope ~= "" then
+        return scope
     end
-    return scope
+
+    if type(scopeOverride) == "string" and scopeOverride ~= "" then
+        local normalized = scopeOverride:lower()
+        if normalized == "account" or normalized == "character" then
+            return normalized
+        end
+    end
+
+    return "account"
 end
 
 local function getFavoritesModule()

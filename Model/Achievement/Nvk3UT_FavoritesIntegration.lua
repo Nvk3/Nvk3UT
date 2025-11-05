@@ -1,9 +1,25 @@
 Nvk3UT = Nvk3UT or {}
+Nvk3UT.FavoritesIntegration = Nvk3UT.FavoritesIntegration or {}
+
+local Integration = Nvk3UT.FavoritesIntegration
+
 local function _nvk3ut_is_enabled(key)
   return (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.features and Nvk3UT.sv.features[key]) and true or false
 end
 
-local function resolveFavoritesScope()
+local function resolveFavoritesScope(scopeOverride)
+    local Fav = Nvk3UT and Nvk3UT.FavoritesData
+    if Fav and type(Fav.GetFavoritesScope) == "function" then
+        return Fav.GetFavoritesScope(scopeOverride)
+    end
+
+    if scopeOverride ~= nil then
+        local normalized = tostring(scopeOverride)
+        if normalized == normalized:lower() and (normalized == "account" or normalized == "character") then
+            return normalized
+        end
+    end
+
     local root = Nvk3UT and Nvk3UT.sv
     local general = root and root.General
     local scope = general and general.favScope
@@ -301,6 +317,28 @@ local function _updateFavoritesTooltip(ach)
     ach._nvkFavoritesData = data
 end
 
+local function refreshFavoritesTooltip()
+    local achievements = ACHIEVEMENTS
+    if achievements then
+        _updateFavoritesTooltip(achievements)
+    end
+end
+
+function Integration:GetFavoritesScope(scopeOverride)
+    return resolveFavoritesScope(scopeOverride)
+end
+
+function Integration:OnFavoritesChanged()
+    refreshFavoritesTooltip()
+
+    local achievements = ACHIEVEMENTS
+    if achievements and achievements.refreshGroups then
+        achievements.refreshGroups:RefreshAll("FullUpdate")
+    end
+
+    _liveRefreshFavoritesIfActive()
+end
+
 local function AddFavoritesTopCategory(AchievementsClass)
     local orgAddTopLevelCategory = AchievementsClass.AddTopLevelCategory
     function AchievementsClass:AddTopLevelCategory(...)
@@ -364,7 +402,7 @@ local function OverrideOnCategorySelected(AchievementsClass)
     end
 end
 
-local function _wrapFavoritesMutation(methodName, evaluateChanged)
+local function _wrapFavoritesMutation(methodName)
     local Fav = getFavoritesModule()
     if not Fav then
         return
@@ -377,10 +415,6 @@ local function _wrapFavoritesMutation(methodName, evaluateChanged)
 
     Fav[methodName] = function(...)
         local results = { original(...) }
-        local shouldRefresh = evaluateChanged and evaluateChanged(results)
-        if shouldRefresh then
-            _liveRefreshFavoritesIfActive()
-        end
         return unpackResults(results)
     end
 end
@@ -393,17 +427,9 @@ local function _ensureFavoritesMutationHooks()
 
     Fav._nvkFavoritesRefreshHooked = true
 
-    _wrapFavoritesMutation("SetFavorited", function(results)
-        return results[1] == true
-    end)
-
-    _wrapFavoritesMutation("RemoveFavorite", function(results)
-        return results[1] == true
-    end)
-
-    _wrapFavoritesMutation("ToggleFavorited", function(results)
-        return results[2] == true
-    end)
+    _wrapFavoritesMutation("SetFavorited")
+    _wrapFavoritesMutation("RemoveFavorite")
+    _wrapFavoritesMutation("ToggleFavorited")
 end
 
 local function OverrideGetCategoryInfoFromData(AchievementsClass)
@@ -584,11 +610,6 @@ local function HookAchievementContext()
                                     chainId = GetNextAchievementInLine(chainId)
                                 end
                                 local U = Nvk3UT and Nvk3UT.Utils; if U and U.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then U.d("[Nvk3UT][Favorites][Toggle] remove", "data={rootId:", ACHIEVEMENTS:GetBaseAchievementId(self:GetId()), "}") end
-                                if ACHIEVEMENTS and ACHIEVEMENTS.refreshGroups then ACHIEVEMENTS.refreshGroups:RefreshAll("FullUpdate") end
-                                ForceAchievementRefresh("FavoritesIntegration:RemoveFromMenu")
-                                _liveRefreshFavoritesIfActive()
-                                _updateFavoritesTooltip(ACHIEVEMENTS)
-                                if Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then Nvk3UT.UI.UpdateStatus() end
                             end)
                         else
                             AddCustomMenuItem("Zu Favoriten hinzufügen", function()
@@ -608,10 +629,6 @@ local function HookAchievementContext()
                                     end
                                 end
                                 local U = Nvk3UT and Nvk3UT.Utils; if U and U.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then U.d("[Nvk3UT][Favorites][Toggle] add", "data={id:", id, ", scope:"..tostring(__scope).."}") end
-                                ForceAchievementRefresh("FavoritesIntegration:AddFromMenu")
-                                _liveRefreshFavoritesIfActive()
-                                _updateFavoritesTooltip(ACHIEVEMENTS)
-                                if Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then Nvk3UT.UI.UpdateStatus() end
                             end)
                         end
                     end
