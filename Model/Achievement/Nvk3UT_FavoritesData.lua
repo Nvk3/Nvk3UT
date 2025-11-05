@@ -11,6 +11,10 @@ local CHARACTER_VERSION = 1
 
 local EMPTY_SET = {}
 
+local function emptyIterator()
+    return nil
+end
+
 local function normalizeIdInternal(id)
     if id == nil then
         return nil
@@ -169,8 +173,13 @@ local function iterateFavoritedSet(state)
         return nil
     end
 
-    local set = state.set
-    local rawKey = state.lastRaw
+    local iterFn = state.iterFn
+    local iterState = state.iterState
+    local lastKey = state.lastKey
+
+    if type(iterFn) ~= "function" then
+        return nil
+    end
 
     local emitted = state.emitted
     if emitted == nil then
@@ -179,20 +188,23 @@ local function iterateFavoritedSet(state)
     end
 
     while true do
-        local nextKey, value = next(set, rawKey)
-        if nextKey == nil then
-            state.lastRaw = nil
+        local rawKey, value = iterFn(iterState, lastKey)
+        if rawKey == nil then
+            state.iterFn = nil
+            state.iterState = nil
+            state.lastKey = nil
             state.emitted = nil
             return nil
         end
 
-        rawKey = nextKey
-        state.lastRaw = rawKey
+        lastKey = rawKey
+        state.lastKey = rawKey
 
         local normalized = normalizeIdInternal(rawKey)
-        if normalized and value and not emitted[normalized] then
+        local flagged = value and true or false
+        if normalized and flagged and not emitted[normalized] then
             emitted[normalized] = true
-            return normalized, value and true or false
+            return normalized, flagged
         end
     end
 end
@@ -436,10 +448,17 @@ function FavoritesData.GetAllFavorites(scopeOverride)
     local set = getSet(scope)
 
     if type(set) ~= "table" then
-        return iterateFavoritedSet, { set = EMPTY_SET, lastRaw = nil }, nil
+        return iterateFavoritedSet, { iterFn = emptyIterator, iterState = nil, lastKey = nil }, nil
     end
 
-    return iterateFavoritedSet, { set = set, lastRaw = nil }, nil
+    local iterFn, iterState, iterKey = pairs(set)
+    local state = {
+        iterFn = iterFn,
+        iterState = iterState,
+        lastKey = iterKey,
+    }
+
+    return iterateFavoritedSet, state, nil
 end
 
 function FavoritesData.Iterate(scopeOverride)
