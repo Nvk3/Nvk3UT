@@ -7,6 +7,8 @@ Nvk3UT.RecentData = RecentData
 
 local defaults = { progress = {} }
 
+local MAX_PERSISTED_PROGRESS = 100
+
 local function ensureSavedVars()
     if not Nvk3UT._recentSV then
         Nvk3UT._recentSV = ZO_SavedVars:NewAccountWide("Nvk3UT_Data_Recent", 1, nil, defaults)
@@ -16,6 +18,8 @@ local function ensureSavedVars()
     if type(saved.progress) ~= "table" then
         saved.progress = {}
     end
+
+    RecentData.Trim(saved.progress, MAX_PERSISTED_PROGRESS)
 
     return saved
 end
@@ -201,6 +205,7 @@ function RecentData.Touch(id, timestamp)
     end
 
     sv.progress[storeId] = timestamp or now() or GetTimeStamp()
+    RecentData.Trim(sv.progress, MAX_PERSISTED_PROGRESS)
 end
 
 function RecentData.Clear(id)
@@ -283,6 +288,44 @@ function RecentData.List(maxCount, sinceTs)
     end
 
     return res
+end
+
+function RecentData.Trim(progress, limit)
+    if type(progress) ~= "table" then
+        return
+    end
+
+    local maxEntries = tonumber(limit) or MAX_PERSISTED_PROGRESS
+    if maxEntries <= 0 then
+        ZO_ClearTable(progress)
+        return
+    end
+
+    local count = 0
+    for _ in pairs(progress) do
+        count = count + 1
+        if count > maxEntries * 2 then
+            break
+        end
+    end
+
+    if count <= maxEntries then
+        return
+    end
+
+    local entries = {}
+    for id, ts in pairs(progress) do
+        entries[#entries + 1] = { id = id, ts = tonumber(ts) or 0 }
+    end
+
+    table.sort(entries, function(a, b)
+        return a.ts > b.ts
+    end)
+
+    for index = maxEntries + 1, #entries do
+        local entry = entries[index]
+        progress[entry.id] = nil
+    end
 end
 
 local function getConfigWindow()
@@ -445,6 +488,8 @@ function RecentData.BuildInitial()
             sv.progress[storeId] = stamp
         end
     end
+
+    RecentData.Trim(sv.progress, MAX_PERSISTED_PROGRESS)
 
     return added
 end

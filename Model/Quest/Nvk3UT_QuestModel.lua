@@ -77,6 +77,71 @@ local function CopyTable(value)
     return copy
 end
 
+local function CompactQuestEntry(quest)
+    if type(quest) ~= "table" then
+        return nil
+    end
+
+    local compact = {
+        questId = quest.questId,
+        journalIndex = quest.journalIndex,
+        name = quest.name,
+        level = quest.level,
+        questType = quest.questType,
+        instanceDisplayType = quest.instanceDisplayType,
+        displayType = quest.displayType,
+    }
+
+    if type(quest.flags) == "table" then
+        compact.flags = {
+            tracked = quest.flags.tracked == true,
+            assisted = quest.flags.assisted == true,
+            isComplete = quest.flags.isComplete == true,
+            isRepeatable = quest.flags.isRepeatable == true,
+            isDaily = quest.flags.isDaily == true,
+        }
+    end
+
+    if type(quest.category) == "table" then
+        compact.category = {
+            key = quest.category.key,
+            name = quest.category.name,
+            order = quest.category.order,
+            type = quest.category.type,
+            groupKey = quest.category.groupKey,
+            groupName = quest.category.groupName,
+            groupOrder = quest.category.groupOrder,
+            groupType = quest.category.groupType,
+            rawOrder = quest.category.rawOrder,
+            identifier = quest.category.identifier,
+        }
+
+        if type(quest.category.parent) == "table" then
+            compact.category.parent = {
+                key = quest.category.parent.key,
+                name = quest.category.parent.name,
+                order = quest.category.parent.order,
+                type = quest.category.parent.type,
+            }
+        end
+    end
+
+    if type(quest.meta) == "table" then
+        compact.meta = {
+            questType = quest.meta.questType,
+            displayType = quest.meta.displayType,
+            categoryType = quest.meta.categoryType,
+            categoryKey = quest.meta.categoryKey,
+            groupKey = quest.meta.groupKey,
+            parentKey = quest.meta.parentKey,
+            isRepeatable = quest.meta.isRepeatable == true,
+            isDaily = quest.meta.isDaily == true,
+        }
+    end
+
+    return compact
+end
+
 local function BindQuestList(savedVars)
     local questList = GetQuestListModule()
     if questList and questList.Bind then
@@ -164,7 +229,10 @@ local function PersistQuests(quests)
     local stored = {}
     if type(quests) == "table" then
         for index = 1, #quests do
-            stored[index] = CopyTable(quests[index])
+            local compact = CompactQuestEntry(quests[index])
+            if compact then
+                stored[#stored + 1] = compact
+            end
         end
     end
 

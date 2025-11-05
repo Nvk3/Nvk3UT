@@ -312,6 +312,8 @@ local function getTrackerColorDefaultTable(trackerType, role)
     return { r = r, g = g, b = b, a = a }
 end
 
+local StateInit = Nvk3UT_StateInit
+
 local function setTrackerColor(trackerType, role, r, g, b, a)
     local host = Nvk3UT and Nvk3UT.TrackerHost
     if host and host.SetTrackerColor then
@@ -329,12 +331,21 @@ local function setTrackerColor(trackerType, role, r, g, b, a)
     sv.appearance[trackerType] = sv.appearance[trackerType] or {}
     local tracker = sv.appearance[trackerType]
     tracker.colors = tracker.colors or {}
-    tracker.colors[role] = {
-        r = r or 1,
-        g = g or 1,
-        b = b or 1,
-        a = a or 1,
-    }
+    if StateInit and StateInit.EncodeColor then
+        tracker.colors[role] = StateInit.EncodeColor({
+            r = r or 1,
+            g = g or 1,
+            b = b or 1,
+            a = a or 1,
+        })
+    else
+        tracker.colors[role] = {
+            r = r or 1,
+            g = g or 1,
+            b = b or 1,
+            a = a or 1,
+        }
+    end
 end
 
 local function ensureFont(settings, key, defaults)

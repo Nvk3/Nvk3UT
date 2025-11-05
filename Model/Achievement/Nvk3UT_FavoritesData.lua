@@ -11,6 +11,26 @@ local CHARACTER_VERSION = 1
 
 local EMPTY_SET = {}
 
+local function normalizeIdInternal(id)
+    if id == nil then
+        return nil
+    end
+
+    if type(id) == "number" then
+        if id > 0 then
+            return math.floor(id)
+        end
+        return nil
+    end
+
+    local numeric = tonumber(id)
+    if numeric and numeric > 0 then
+        return math.floor(numeric)
+    end
+
+    return nil
+end
+
 local function isDebugEnabled()
     local root = Nvk3UT
     return root and root.sv and root.sv.debug == true
@@ -69,6 +89,47 @@ local function ensureSavedVars()
     end
 end
 
+local function migrateLegacySet(saved)
+    if type(saved) ~= "table" then
+        return
+    end
+
+    if type(saved.list) == "table" then
+        for id, flag in pairs(saved.list) do
+            if flag then
+                local normalized = normalizeIdInternal(id)
+                if normalized then
+                    saved[normalized] = true
+                end
+            end
+        end
+        saved.list = nil
+    end
+
+    for key, value in pairs(saved) do
+        if key ~= "list" then
+            local normalized = nil
+            if type(key) == "number" then
+                normalized = normalizeIdInternal(key)
+            elseif type(key) == "string" and key:match("^%d+$") then
+                normalized = normalizeIdInternal(key)
+            end
+
+            if normalized then
+                if value then
+                    saved[normalized] = true
+                else
+                    saved[normalized] = nil
+                end
+
+                if normalized ~= key then
+                    saved[key] = nil
+                end
+            end
+        end
+    end
+end
+
 local function ensureSet(scope, create)
     if scope ~= ACCOUNT_SCOPE and scope ~= CHARACTER_SCOPE then
         return nil
@@ -76,39 +137,26 @@ local function ensureSet(scope, create)
 
     ensureSavedVars()
 
+    local saved
     if scope == ACCOUNT_SCOPE then
-        local saved = Nvk3UT_Data_Favorites_Account
-        if not saved then
-            if create then
-                FavoritesData.InitSavedVars()
-                saved = Nvk3UT_Data_Favorites_Account
-            else
-                return nil
-            end
+        saved = Nvk3UT_Data_Favorites_Account
+        if not saved and create then
+            FavoritesData.InitSavedVars()
+            saved = Nvk3UT_Data_Favorites_Account
         end
-
-        if type(saved.list) ~= "table" and create then
-            saved.list = {}
-        end
-
-        return saved and saved.list or nil
-    end
-
-    local saved = Nvk3UT_Data_Favorites_Characters
-    if not saved then
-        if create then
+    else
+        saved = Nvk3UT_Data_Favorites_Characters
+        if not saved and create then
             FavoritesData.InitSavedVars()
             saved = Nvk3UT_Data_Favorites_Characters
-        else
-            return nil
         end
     end
 
-    if type(saved.list) ~= "table" and create then
-        saved.list = {}
+    if type(saved) ~= "table" then
+        return nil
     end
 
-    return saved and saved.list or nil
+    return saved
 end
 
 local function getSet(scope)
@@ -122,7 +170,23 @@ local function isFavoritedInScope(id, scope)
         return false
     end
 
-    return set[id] and true or false
+    if set[id] ~= nil then
+        return set[id] and true or false
+    end
+
+    local normalized = normalizeIdInternal(id)
+    if normalized ~= nil then
+        if set[normalized] ~= nil then
+            return set[normalized] and true or false
+        end
+
+        local stringKey = tostring(normalized)
+        if set[stringKey] ~= nil then
+            return set[stringKey] and true or false
+        end
+    end
+
+    return false
 end
 
 local function buildScopeOrder(scopeOverride)
@@ -219,37 +283,20 @@ end
 function FavoritesData.InitSavedVars()
     if not Nvk3UT_Data_Favorites_Account then
         Nvk3UT_Data_Favorites_Account =
-            ZO_SavedVars:NewAccountWide("Nvk3UT_Data_Favorites", ACCOUNT_VERSION, "account", { list = {} })
-    elseif type(Nvk3UT_Data_Favorites_Account.list) ~= "table" then
-        Nvk3UT_Data_Favorites_Account.list = {}
+            ZO_SavedVars:NewAccountWide("Nvk3UT_Data_Favorites", ACCOUNT_VERSION, "account", {})
     end
 
     if not Nvk3UT_Data_Favorites_Characters then
         Nvk3UT_Data_Favorites_Characters =
-            ZO_SavedVars:NewCharacterIdSettings("Nvk3UT_Data_Favorites", CHARACTER_VERSION, "characters", { list = {} })
-    elseif type(Nvk3UT_Data_Favorites_Characters.list) ~= "table" then
-        Nvk3UT_Data_Favorites_Characters.list = {}
+            ZO_SavedVars:NewCharacterIdSettings("Nvk3UT_Data_Favorites", CHARACTER_VERSION, "characters", {})
     end
+
+    migrateLegacySet(Nvk3UT_Data_Favorites_Account)
+    migrateLegacySet(Nvk3UT_Data_Favorites_Characters)
 end
 
 function FavoritesData.NormalizeId(id)
-    if id == nil then
-        return nil
-    end
-
-    if type(id) == "number" then
-        if id > 0 then
-            return math.floor(id)
-        end
-        return nil
-    end
-
-    local numeric = tonumber(id)
-    if numeric and numeric > 0 then
-        return math.floor(numeric)
-    end
-
-    return nil
+    return normalizeIdInternal(id)
 end
 
 function FavoritesData.IsFavorited(id, scopeOverride)
@@ -291,6 +338,11 @@ function FavoritesData.SetFavorited(id, shouldFavorite, source, scopeOverride)
         set[normalized] = true
     else
         set[normalized] = nil
+    end
+
+    local stringKey = tostring(normalized)
+    if stringKey then
+        set[stringKey] = nil
     end
 
     emitDebugMessage(

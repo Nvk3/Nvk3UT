@@ -72,21 +72,23 @@ local DEFAULT_WINDOW_BARS = {
     footerHeightPx = 100,
 }
 
+local StateInit = Nvk3UT_StateInit
+
 local DEFAULT_TRACKER_COLORS = {
     questTracker = {
         colors = {
-            categoryTitle = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
-            objectiveText = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
-            entryTitle = { r = 1, g = 1, b = 0, a = 1 },
-            activeTitle = { r = 1, g = 1, b = 1, a = 1 },
+            categoryTitle = "warmKhaki",
+            objectiveText = "warmKhaki",
+            entryTitle = "brightYellow",
+            activeTitle = "pureWhite",
         },
     },
     achievementTracker = {
         colors = {
-            categoryTitle = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
-            objectiveText = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
-            entryTitle = { r = 1, g = 1, b = 0, a = 1 },
-            activeTitle = { r = 1, g = 1, b = 1, a = 1 },
+            categoryTitle = "warmKhaki",
+            objectiveText = "warmKhaki",
+            entryTitle = "brightYellow",
+            activeTitle = "pureWhite",
         },
     },
 }
@@ -262,10 +264,25 @@ local function ensureTrackerColorConfig(sv, trackerType)
 
     tracker.colors = tracker.colors or {}
 
-    local defaults = DEFAULT_TRACKER_COLORS[trackerType]
-    if defaults and defaults.colors then
-        for role, defaultColor in pairs(defaults.colors) do
-            tracker.colors[role] = ensureColorComponents(tracker.colors[role], defaultColor)
+    if StateInit and StateInit.EncodeColor then
+        for role, value in pairs(tracker.colors) do
+            tracker.colors[role] = StateInit.EncodeColor(value)
+        end
+
+        local defaults = DEFAULT_TRACKER_COLORS[trackerType]
+        if defaults and defaults.colors then
+            for role, defaultValue in pairs(defaults.colors) do
+                if tracker.colors[role] == nil then
+                    tracker.colors[role] = StateInit.EncodeColor(defaultValue)
+                end
+            end
+        end
+    else
+        local defaults = DEFAULT_TRACKER_COLORS[trackerType]
+        if defaults and defaults.colors then
+            for role, defaultColor in pairs(defaults.colors) do
+                tracker.colors[role] = ensureColorComponents(tracker.colors[role], defaultColor)
+            end
         end
     end
 
@@ -315,7 +332,17 @@ end
 local function getDefaultColor(trackerType, role)
     local defaults = DEFAULT_TRACKER_COLORS[trackerType]
     local colors = defaults and defaults.colors or nil
-    local color = colors and colors[role] or DEFAULT_COLOR_FALLBACK
+    local colorValue = colors and colors[role]
+
+    if StateInit and StateInit.ResolveColor then
+        local r, g, b, a = StateInit.ResolveColor(colorValue)
+        return r or DEFAULT_COLOR_FALLBACK.r,
+            g or DEFAULT_COLOR_FALLBACK.g,
+            b or DEFAULT_COLOR_FALLBACK.b,
+            a or DEFAULT_COLOR_FALLBACK.a
+    end
+
+    local color = colorValue or DEFAULT_COLOR_FALLBACK
     local r = color.r or DEFAULT_COLOR_FALLBACK.r
     local g = color.g or DEFAULT_COLOR_FALLBACK.g
     local b = color.b or DEFAULT_COLOR_FALLBACK.b
@@ -3128,7 +3155,20 @@ function TrackerHost.GetTrackerColor(trackerType, role)
     local appearance = ensureAppearanceColorDefaults()
     local tracker = appearance and appearance[trackerType]
     local colors = tracker and tracker.colors
-    local color = colors and colors[role]
+    local colorValue = colors and colors[role]
+
+    if StateInit and StateInit.EncodeColor and type(colorValue) == "table" then
+        local encoded = StateInit.EncodeColor(colorValue)
+        colors[role] = encoded
+        colorValue = encoded
+    end
+
+    if StateInit and StateInit.ResolveColor then
+        local r, g, b, a = StateInit.ResolveColor(colorValue)
+        return r or fallbackR, g or fallbackG, b or fallbackB, a or fallbackA
+    end
+
+    local color = colorValue
     if not color then
         return fallbackR, fallbackG, fallbackB, fallbackA
     end
@@ -3157,12 +3197,18 @@ function TrackerHost.SetTrackerColor(trackerType, role, r, g, b, a)
 
     tracker.colors = tracker.colors or {}
     local defaultR, defaultG, defaultB, defaultA = getDefaultColor(trackerType, role)
-    local color = tracker.colors[role] or {}
-    color.r = normalizeColorComponent(r, defaultR)
-    color.g = normalizeColorComponent(g, defaultG)
-    color.b = normalizeColorComponent(b, defaultB)
-    color.a = normalizeColorComponent(a, defaultA)
-    tracker.colors[role] = color
+    local normalized = {
+        r = normalizeColorComponent(r, defaultR),
+        g = normalizeColorComponent(g, defaultG),
+        b = normalizeColorComponent(b, defaultB),
+        a = normalizeColorComponent(a, defaultA),
+    }
+
+    if StateInit and StateInit.EncodeColor then
+        tracker.colors[role] = StateInit.EncodeColor(normalized)
+    else
+        tracker.colors[role] = normalized
+    end
 end
 
 function TrackerHost.OnLamPanelOpened()
