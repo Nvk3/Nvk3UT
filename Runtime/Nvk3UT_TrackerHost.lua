@@ -190,6 +190,234 @@ local ensureVisibilityGates
 local setVisibilityGate
 local refreshVisibilityGates
 
+local round = zo_round or function(value)
+    if value == nil then
+        return 0
+    end
+    return math.floor(value + 0.5)
+end
+
+-- SV Helpers (single source of truth for host placement & folds)
+local function SV_EnsureUI()
+    local sv = getSavedVars()
+    if not sv then
+        return nil
+    end
+
+    local ui = sv.ui
+    if type(ui) ~= "table" then
+        ui = {}
+        sv.ui = ui
+    end
+
+    local host = ui.host
+    if type(host) ~= "table" then
+        host = {}
+        ui.host = host
+    end
+
+    local pos = host.pos
+    if type(pos) ~= "table" then
+        pos = {}
+        host.pos = pos
+    end
+    if pos.x == nil then
+        pos.x = 200
+    else
+        pos.x = tonumber(pos.x) or 200
+    end
+    if pos.y == nil then
+        pos.y = 200
+    else
+        pos.y = tonumber(pos.y) or 200
+    end
+
+    local folds = ui.folds
+    if type(folds) ~= "table" then
+        folds = { categories = {}, quests = {} }
+        ui.folds = folds
+    end
+    if type(folds.categories) ~= "table" then
+        folds.categories = {}
+    end
+    if type(folds.quests) ~= "table" then
+        folds.quests = {}
+    end
+
+    return ui
+end
+
+local uiMigrationApplied = false
+
+local function SV_MigrateUI()
+    if uiMigrationApplied then
+        return
+    end
+
+    local sv = getSavedVars()
+    if not sv then
+        return
+    end
+
+    local ui = SV_EnsureUI()
+    if not ui then
+        return
+    end
+
+    if ui.treeState then
+        ui.folds.categories = ui.folds.categories or {}
+        ui.folds.quests = ui.folds.quests or {}
+
+        local treeCategories = ui.treeState.categories
+        if type(treeCategories) == "table" then
+            for key, value in pairs(treeCategories) do
+                if type(value) == "boolean" then
+                    if ui.folds.categories[key] == nil then
+                        ui.folds.categories[key] = not value
+                    end
+                end
+            end
+        end
+
+        local treeQuests = ui.treeState.quests
+        if type(treeQuests) == "table" then
+            for key, value in pairs(treeQuests) do
+                local questKey = tostring(key)
+                if type(value) == "boolean" then
+                    if ui.folds.quests[questKey] == nil then
+                        ui.folds.quests[questKey] = not value
+                    end
+                end
+            end
+        end
+
+        ui.treeState = nil
+    end
+
+    local host = ui.host or {}
+    if type(host.anchor) == "table" and (host.anchor.x ~= nil or host.anchor.y ~= nil) then
+        local currentPos = host.pos or {}
+        host.pos = {
+            x = tonumber(host.anchor.x) or currentPos.x or 200,
+            y = tonumber(host.anchor.y) or currentPos.y or 200,
+        }
+        host.anchor = nil
+    end
+
+    if host.pos then
+        host.pos.x = tonumber(host.pos.x) or 200
+        host.pos.y = tonumber(host.pos.y) or 200
+    end
+
+    local quests = ui.folds and ui.folds.quests
+    if type(quests) == "table" then
+        local replacements = {}
+        for key, value in pairs(quests) do
+            if type(key) ~= "string" then
+                replacements[#replacements + 1] = { tostring(key), value }
+                quests[key] = nil
+            end
+        end
+        for index = 1, #replacements do
+            local replacement = replacements[index]
+            quests[replacement[1]] = replacement[2]
+        end
+    end
+
+    uiMigrationApplied = true
+end
+
+local function QuestKey(journalIndex)
+    if not journalIndex then
+        return nil
+    end
+
+    local numeric = tonumber(journalIndex) or journalIndex
+    if GetJournalQuestUniqueId then
+        local ok, uid = pcall(GetJournalQuestUniqueId, numeric)
+        if ok and uid then
+            return tostring(uid)
+        end
+    end
+
+    return tostring(numeric)
+end
+
+local function SaveHostPos(control)
+    if not control then
+        return
+    end
+
+    SV_MigrateUI()
+
+    local ui = SV_EnsureUI()
+    if not ui then
+        return
+    end
+
+    local pos = ui.host.pos
+    pos.x = round(control:GetLeft() or pos.x or 200)
+    pos.y = round(control:GetTop() or pos.y or 200)
+
+    if state.window then
+        state.window.left = pos.x
+        state.window.top = pos.y
+    end
+end
+
+local function SaveHostSize(control, widthOverride, heightOverride)
+    if not control then
+        return
+    end
+
+    SV_MigrateUI()
+
+    local ui = SV_EnsureUI()
+    if not ui then
+        return
+    end
+
+    ui.host.size = ui.host.size or {}
+    local width = widthOverride or control:GetWidth() or ui.host.size.width or (state.window and state.window.width) or DEFAULT_WINDOW.width
+    local height = heightOverride or control:GetHeight() or ui.host.size.height or (state.window and state.window.height) or DEFAULT_WINDOW.height
+    ui.host.size.width = round(width)
+    ui.host.size.height = round(height)
+
+    if state.window then
+        state.window.width = ui.host.size.width
+        state.window.height = ui.host.size.height
+    end
+end
+
+local function ApplyHostPlacement(control)
+    if not (control and GuiRoot) then
+        return
+    end
+
+    SV_MigrateUI()
+
+    local ui = SV_EnsureUI()
+    if not ui then
+        return
+    end
+
+    local pos = ui.host.pos or {}
+    local x = round(tonumber(pos.x) or 200)
+    local y = round(tonumber(pos.y) or 200)
+
+    control:ClearAnchors()
+    control:SetAnchor(TOPLEFT, GuiRoot, TOPLEFT, x, y)
+
+    local size = ui.host.size
+    if type(size) == "table" then
+        local width = tonumber(size.width)
+        local height = tonumber(size.height)
+        if width and height then
+            control:SetDimensions(math.max(MIN_WIDTH, width), math.max(MIN_HEIGHT, height))
+        end
+    end
+end
+
 local function getSavedVars()
     return Nvk3UT and Nvk3UT.sv
 end
@@ -239,39 +467,28 @@ local function ensureTrackerConfigRoot(key)
     return tracker, ui
 end
 
-ensureHostStorage = function(ui)
-    ui = ui or ensureUiRoot()
+ensureHostStorage = function()
+    SV_MigrateUI()
+
+    local ui = SV_EnsureUI()
     if not ui then
-        return nil, nil
+        state.host = nil
+        state.folds = nil
+        return nil, nil, nil
     end
 
-    local host = ui.host
-    if type(host) ~= "table" then
-        host = {}
-        ui.host = host
-    end
-
-    if type(host.anchor) ~= "table" then
-        host.anchor = {}
-    end
-
+    local host = ui.host or {}
+    host.pos = host.pos or { x = 200, y = 200 }
     if type(host.size) ~= "table" then
-        host.size = {}
+        host.size = nil
     end
 
-    local folds = ui.folds
-    if type(folds) ~= "table" then
-        folds = {}
-        ui.folds = folds
-    end
+    local folds = ui.folds or {}
+    folds.categories = folds.categories or {}
+    folds.quests = folds.quests or {}
 
-    if type(folds.categories) ~= "table" then
-        folds.categories = {}
-    end
-
-    if type(folds.quests) ~= "table" then
-        folds.quests = {}
-    end
+    ui.host = host
+    ui.folds = folds
 
     state.host = host
     state.folds = folds
@@ -280,7 +497,7 @@ ensureHostStorage = function(ui)
 end
 
 ensureFoldStorage = function()
-    local host, folds = ensureHostStorage()
+    local _, folds = ensureHostStorage()
     if not folds then
         return nil, nil
     end
@@ -618,7 +835,7 @@ local function ensureAppearanceSettings()
 
     migrateHostSettings(ui)
 
-    ensureHostStorage(ui)
+    ensureHostStorage()
     questTracker.background = questTracker.background or {}
     local appearance = questTracker.background
 
@@ -861,42 +1078,49 @@ local function ensureWindowSettings()
 
     migrateHostSettings(ui)
 
-    local host = ensureHostStorage(ui)
-    local anchor = host and host.anchor or {}
-    local size = host and host.size or {}
+    local host = ensureHostStorage()
+    local hostPos = host and host.pos or nil
+    if type(hostPos) ~= "table" then
+        hostPos = nil
+    end
 
-    local left = anchor.left
-    if type(left) ~= "number" then
+    local left = hostPos and tonumber(hostPos.x)
+    if left == nil then
         left = tonumber(window.left)
     end
-    if type(left) ~= "number" then
+    if left == nil then
         left = DEFAULT_WINDOW.left
     end
     left = math.floor(left + 0.5)
 
-    local top = anchor.top
-    if type(top) ~= "number" then
+    local top = hostPos and tonumber(hostPos.y)
+    if top == nil then
         top = tonumber(window.top)
     end
-    if type(top) ~= "number" then
+    if top == nil then
         top = DEFAULT_WINDOW.top
     end
     top = math.floor(top + 0.5)
 
-    local width = size.width
-    if type(width) ~= "number" then
+    local hostSize = host and host.size or nil
+    if type(hostSize) ~= "table" then
+        hostSize = nil
+    end
+
+    local width = hostSize and tonumber(hostSize.width)
+    if width == nil then
         width = tonumber(window.width)
     end
-    if type(width) ~= "number" then
+    if width == nil then
         width = DEFAULT_WINDOW.width
     end
     width = math.max(MIN_WIDTH, math.floor(width + 0.5))
 
-    local height = size.height
-    if type(height) ~= "number" then
+    local height = hostSize and tonumber(hostSize.height)
+    if height == nil then
         height = tonumber(window.height)
     end
-    if type(height) ~= "number" then
+    if height == nil then
         height = DEFAULT_WINDOW.height
     end
     height = math.max(MIN_HEIGHT, math.floor(height + 0.5))
@@ -906,10 +1130,19 @@ local function ensureWindowSettings()
     window.width = width
     window.height = height
 
-    anchor.left = left
-    anchor.top = top
-    size.width = width
-    size.height = height
+    if host then
+        host.pos = host.pos or {}
+        host.pos.x = left
+        host.pos.y = top
+        if host.size == nil then
+            host.size = {}
+        end
+        if type(host.size) ~= "table" then
+            host.size = {}
+        end
+        host.size.width = width
+        host.size.height = height
+    end
 
     if window.locked == nil then
         window.locked = DEFAULT_WINDOW.locked
@@ -962,22 +1195,19 @@ local function clampWindowToScreen(width, height)
     window.top = math.min(math.max(window.top or 0, 0), maxTop)
 end
 
-local function saveWindowPosition()
-    if not (state.root and state.window) then
+local function saveWindowPosition(control)
+    local rootControl = control or state.root
+    if not (rootControl and state.window) then
         return
     end
 
-    local left = state.root:GetLeft() or state.window.left or 0
-    local top = state.root:GetTop() or state.window.top or 0
+    local left = rootControl:GetLeft() or state.window.left or 0
+    local top = rootControl:GetTop() or state.window.top or 0
 
     state.window.left = math.floor(left + 0.5)
     state.window.top = math.floor(top + 0.5)
 
-    local host = ensureHostStorage()
-    if host and host.anchor then
-        host.anchor.left = state.window.left
-        host.anchor.top = state.window.top
-    end
+    SaveHostPos(rootControl)
 end
 
 local function saveWindowSize()
@@ -999,11 +1229,7 @@ local function saveWindowSize()
     state.window.width = math.floor(width + 0.5)
     state.window.height = math.floor(height + 0.5)
 
-    local host = ensureHostStorage()
-    if host and host.size then
-        host.size.width = state.window.width
-        host.size.height = state.window.height
-    end
+    SaveHostSize(state.root, state.window.width, state.window.height)
 end
 
 startWindowDrag = function()
@@ -1129,20 +1355,7 @@ local function normalizeCategoryFoldKey(categoryKey)
 end
 
 local function questKeyFromJournalIndex(journalIndex)
-    if not journalIndex then
-        return nil
-    end
-
-    local questIndex = tonumber(journalIndex) or journalIndex
-
-    if GetJournalQuestUniqueId then
-        local ok, uid = pcall(GetJournalQuestUniqueId, questIndex)
-        if ok and uid then
-            return tostring(uid)
-        end
-    end
-
-    return tostring(questIndex)
+    return QuestKey(journalIndex)
 end
 
 local function getCategoryFoldTable()
@@ -3128,6 +3341,7 @@ local function applyWindowSettings(options)
     end
 
     createContainers()
+    ApplyHostPlacement(state.root)
 
     applyWindowBars()
     applyLayoutConstraints()
@@ -3338,11 +3552,13 @@ local function createRootControl()
         end
     end)
 
-    control:SetHandler("OnMoveStop", function()
-        saveWindowPosition()
+    control:SetHandler("OnMoveStop", function(ctrl)
+        SaveHostPos(ctrl)
+        saveWindowPosition(ctrl)
     end)
 
-    control:SetHandler("OnResizeStop", function()
+    control:SetHandler("OnResizeStop", function(ctrl)
+        SaveHostSize(ctrl)
         saveWindowSize()
         updateSectionLayout()
         notifyContentChanged()
@@ -3448,6 +3664,8 @@ function TrackerHost.Init()
         return
     end
 
+    SV_MigrateUI()
+
     state.initializing = true
 
     state.hostSettings = ensureHostSettings()
@@ -3513,6 +3731,10 @@ function TrackerHost.Init()
 
     state.initialized = true
     state.initializing = false
+
+    if state.root then
+        ApplyHostPlacement(state.root)
+    end
 
     if TrackerHost.ApplyVisibilityRules() then
         queueRuntimeLayout()

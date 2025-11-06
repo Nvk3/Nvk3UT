@@ -3121,7 +3121,8 @@ local function AcquireCategoryControl()
             if not upInside or button ~= MOUSE_BUTTON_INDEX_LEFT then
                 return
             end
-            local catKey = ctrl.data and ctrl.data.categoryKey
+            local data = ctrl.data
+            local catKey = data and (data.key or data.categoryKey)
             if not catKey then
                 return
             end
@@ -3155,7 +3156,8 @@ local function AcquireCategoryControl()
             end
             local expanded = ctrl.isExpanded
             if expanded == nil then
-                local catKey = ctrl.data and ctrl.data.categoryKey
+                local data = ctrl.data
+                local catKey = data and (data.key or data.categoryKey)
                 expanded = IsCategoryExpanded(catKey)
             end
             UpdateCategoryToggle(ctrl, expanded)
@@ -3166,7 +3168,8 @@ local function AcquireCategoryControl()
             end
             local expanded = ctrl.isExpanded
             if expanded == nil then
-                local catKey = ctrl.data and ctrl.data.categoryKey
+                local data = ctrl.data
+                local catKey = data and (data.key or data.categoryKey)
                 expanded = IsCategoryExpanded(catKey)
             end
             UpdateCategoryToggle(ctrl, expanded)
@@ -3404,7 +3407,11 @@ end
 
 local function LayoutQuest(quest)
     local control = AcquireQuestControl()
-    control.data = { quest = quest }
+    control.data = {
+        type = "quest",
+        quest = quest,
+        journalIndex = quest and quest.journalIndex or nil,
+    }
     control.label:SetText(quest.name or "")
 
     local colorRole = DetermineQuestColorRole(quest)
@@ -3454,7 +3461,10 @@ end
 
 local function LayoutCategory(category)
     local control = AcquireCategoryControl()
+    local normalizedKey = NormalizeCategoryKey(category.key)
     control.data = {
+        type = "category",
+        key = normalizedKey,
         categoryKey = category.key,
         parentKey = category.parent and category.parent.key or nil,
         parentName = category.parent and category.parent.name or nil,
@@ -3463,7 +3473,6 @@ local function LayoutCategory(category)
         categoryType = category.type,
         groupOrder = category.groupOrder,
     }
-    local normalizedKey = NormalizeCategoryKey(category.key)
     if normalizedKey then
         state.categoryControls[normalizedKey] = control
     end
