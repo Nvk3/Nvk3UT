@@ -165,6 +165,7 @@ local lamPreview = {
 }
 
 local ensureSceneFragment
+local migrateHostSettings
 local refreshScroll
 local applyViewportPadding
 local measureTrackerContent
@@ -615,7 +616,7 @@ local function ensureAppearanceSettings()
     return appearance
 end
 
-local function migrateHostSettings(ui)
+function migrateHostSettings(ui)
     if type(ui) ~= "table" then
         return
     end
@@ -3225,6 +3226,10 @@ function TrackerHost.Init()
 
     state.initialized = true
     state.initializing = false
+
+    if TrackerHost.ApplyVisibilityRules() then
+        queueRuntimeLayout()
+    end
 
     debugLog("Host window initialized")
 end
