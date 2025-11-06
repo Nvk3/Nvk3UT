@@ -34,7 +34,7 @@ local function SafeLower(value)
     if type(value) ~= "string" then
         if not hasWarnedSafeLowerCast then
             local diagnostics = GetDiagnostics()
-            if diagnostics and diagnostics.IsDebugEnabled and diagnostics.IsDebugEnabled() and diagnostics.Warn then
+            if diagnostics and diagnostics.IsDebugEnabled and diagnostics:IsDebugEnabled() and diagnostics.Warn then
                 diagnostics.Warn(
                     "QuestList.SafeLower casting non-string value (type=%s, value=%s)",
                     type(value),
