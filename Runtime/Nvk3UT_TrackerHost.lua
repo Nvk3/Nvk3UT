@@ -155,6 +155,8 @@ local state = {
     isInHUDScene = true,
     isLAMOpen = false,
     visibilityGates = nil,
+    host = nil,
+    folds = nil,
 }
 
 local lamPreview = {
@@ -166,6 +168,8 @@ local lamPreview = {
 
 local ensureSceneFragment
 local migrateHostSettings
+local ensureHostStorage
+local ensureFoldStorage
 local refreshScroll
 local applyViewportPadding
 local measureTrackerContent
@@ -233,6 +237,55 @@ local function ensureTrackerConfigRoot(key)
     end
 
     return tracker, ui
+end
+
+ensureHostStorage = function(ui)
+    ui = ui or ensureUiRoot()
+    if not ui then
+        return nil, nil
+    end
+
+    local host = ui.host
+    if type(host) ~= "table" then
+        host = {}
+        ui.host = host
+    end
+
+    if type(host.anchor) ~= "table" then
+        host.anchor = {}
+    end
+
+    if type(host.size) ~= "table" then
+        host.size = {}
+    end
+
+    local folds = ui.folds
+    if type(folds) ~= "table" then
+        folds = {}
+        ui.folds = folds
+    end
+
+    if type(folds.categories) ~= "table" then
+        folds.categories = {}
+    end
+
+    if type(folds.quests) ~= "table" then
+        folds.quests = {}
+    end
+
+    state.host = host
+    state.folds = folds
+
+    return host, folds, ui
+end
+
+ensureFoldStorage = function()
+    local host, folds = ensureHostStorage()
+    if not folds then
+        return nil, nil
+    end
+
+    return folds.categories, folds.quests
 end
 
 local function clamp(value, minimum, maximum)
@@ -565,6 +618,7 @@ local function ensureAppearanceSettings()
 
     migrateHostSettings(ui)
 
+    ensureHostStorage(ui)
     questTracker.background = questTracker.background or {}
     local appearance = questTracker.background
 
@@ -807,27 +861,55 @@ local function ensureWindowSettings()
 
     migrateHostSettings(ui)
 
-    if type(window.left) ~= "number" then
-        window.left = math.floor(tonumber(window.left) or DEFAULT_WINDOW.left)
-    else
-        window.left = math.floor(window.left + 0.5)
-    end
+    local host = ensureHostStorage(ui)
+    local anchor = host and host.anchor or {}
+    local size = host and host.size or {}
 
-    if type(window.top) ~= "number" then
-        window.top = math.floor(tonumber(window.top) or DEFAULT_WINDOW.top)
-    else
-        window.top = math.floor(window.top + 0.5)
+    local left = anchor.left
+    if type(left) ~= "number" then
+        left = tonumber(window.left)
     end
+    if type(left) ~= "number" then
+        left = DEFAULT_WINDOW.left
+    end
+    left = math.floor(left + 0.5)
 
-    if type(window.width) ~= "number" then
-        window.width = tonumber(window.width) or DEFAULT_WINDOW.width
+    local top = anchor.top
+    if type(top) ~= "number" then
+        top = tonumber(window.top)
     end
-    window.width = math.max(MIN_WIDTH, math.floor(window.width + 0.5))
+    if type(top) ~= "number" then
+        top = DEFAULT_WINDOW.top
+    end
+    top = math.floor(top + 0.5)
 
-    if type(window.height) ~= "number" then
-        window.height = tonumber(window.height) or DEFAULT_WINDOW.height
+    local width = size.width
+    if type(width) ~= "number" then
+        width = tonumber(window.width)
     end
-    window.height = math.max(MIN_HEIGHT, math.floor(window.height + 0.5))
+    if type(width) ~= "number" then
+        width = DEFAULT_WINDOW.width
+    end
+    width = math.max(MIN_WIDTH, math.floor(width + 0.5))
+
+    local height = size.height
+    if type(height) ~= "number" then
+        height = tonumber(window.height)
+    end
+    if type(height) ~= "number" then
+        height = DEFAULT_WINDOW.height
+    end
+    height = math.max(MIN_HEIGHT, math.floor(height + 0.5))
+
+    window.left = left
+    window.top = top
+    window.width = width
+    window.height = height
+
+    anchor.left = left
+    anchor.top = top
+    size.width = width
+    size.height = height
 
     if window.locked == nil then
         window.locked = DEFAULT_WINDOW.locked
@@ -890,6 +972,12 @@ local function saveWindowPosition()
 
     state.window.left = math.floor(left + 0.5)
     state.window.top = math.floor(top + 0.5)
+
+    local host = ensureHostStorage()
+    if host and host.anchor then
+        host.anchor.left = state.window.left
+        host.anchor.top = state.window.top
+    end
 end
 
 local function saveWindowSize()
@@ -910,6 +998,12 @@ local function saveWindowSize()
 
     state.window.width = math.floor(width + 0.5)
     state.window.height = math.floor(height + 0.5)
+
+    local host = ensureHostStorage()
+    if host and host.size then
+        host.size.width = state.window.width
+        host.size.height = state.window.height
+    end
 end
 
 startWindowDrag = function()
@@ -1022,6 +1116,131 @@ queueRuntimeLayout = function()
     callRuntime("QueueDirty", "layout")
 end
 
+local function normalizeCategoryFoldKey(categoryKey)
+    if categoryKey == nil then
+        return nil
+    end
+
+    if type(categoryKey) == "number" then
+        return tostring(math.floor(categoryKey + 0.5))
+    end
+
+    return tostring(categoryKey)
+end
+
+local function questKeyFromJournalIndex(journalIndex)
+    if not journalIndex then
+        return nil
+    end
+
+    local questIndex = tonumber(journalIndex) or journalIndex
+
+    if GetJournalQuestUniqueId then
+        local ok, uid = pcall(GetJournalQuestUniqueId, questIndex)
+        if ok and uid then
+            return tostring(uid)
+        end
+    end
+
+    return tostring(questIndex)
+end
+
+local function getCategoryFoldTable()
+    local categories = state.folds and state.folds.categories
+    if type(categories) == "table" then
+        return categories
+    end
+
+    local ensured = ensureFoldStorage()
+    if ensured then
+        categories = ensured
+    end
+
+    categories = state.folds and state.folds.categories
+    if type(categories) ~= "table" then
+        return nil
+    end
+
+    return categories
+end
+
+local function getQuestFoldTable()
+    local quests = state.folds and state.folds.quests
+    if type(quests) == "table" then
+        return quests
+    end
+
+    local _, ensured = ensureFoldStorage()
+    if ensured then
+        quests = ensured
+    end
+
+    quests = state.folds and state.folds.quests
+    if type(quests) ~= "table" then
+        return nil
+    end
+
+    return quests
+end
+
+local function setCategoryCollapsedInternal(categoryKey, collapsed)
+    local categories = getCategoryFoldTable()
+    if not categories then
+        return false
+    end
+
+    local key = normalizeCategoryFoldKey(categoryKey)
+    if not key then
+        return false
+    end
+
+    local isCollapsed = categories[key] == true
+
+    if collapsed then
+        if isCollapsed then
+            return false
+        end
+        categories[key] = true
+        return true
+    end
+
+    if categories[key] ~= nil then
+        categories[key] = nil
+        return isCollapsed == true
+    end
+
+    return isCollapsed == true
+end
+
+local function setQuestCollapsedInternal(journalIndex, collapsed)
+    local quests = getQuestFoldTable()
+    if not quests then
+        return false
+    end
+
+    local key = questKeyFromJournalIndex(journalIndex)
+    if not key then
+        return false
+    end
+
+    local isCollapsed = quests[key] == true
+
+    if collapsed then
+        if isCollapsed then
+            return false
+        end
+        quests[key] = true
+        return true
+    end
+
+    if quests[key] ~= nil then
+        quests[key] = nil
+        return isCollapsed == true
+    end
+
+    return isCollapsed == true
+end
+
 ensureVisibilityGates = function()
     if not state.visibilityGates then
         state.visibilityGates = {
@@ -1032,6 +1251,74 @@ ensureVisibilityGates = function()
     end
 
     return state.visibilityGates
+end
+
+function TrackerHost.IsCategoryCollapsed(categoryKey)
+    local categories = getCategoryFoldTable()
+    if not categories then
+        return false, false
+    end
+
+    local key = normalizeCategoryFoldKey(categoryKey)
+    if not key then
+        return false, false
+    end
+
+    local value = categories[key]
+    if value == nil then
+        return false, false
+    end
+
+    return value == true, true
+end
+
+function TrackerHost.SetCategoryCollapsed(categoryKey, collapsed, options)
+    local changed = setCategoryCollapsedInternal(categoryKey, collapsed)
+    if changed and not (options and options.skipLayout) then
+        queueRuntimeLayout()
+    end
+    return changed
+end
+
+function TrackerHost.ToggleCategory(categoryKey, options)
+    local collapsed = TrackerHost.IsCategoryCollapsed(categoryKey)
+    local newCollapsed = not collapsed
+    local changed = TrackerHost.SetCategoryCollapsed(categoryKey, newCollapsed, options)
+    return changed, newCollapsed
+end
+
+function TrackerHost.IsQuestCollapsed(journalIndex)
+    local quests = getQuestFoldTable()
+    if not quests then
+        return false, false
+    end
+
+    local key = questKeyFromJournalIndex(journalIndex)
+    if not key then
+        return false, false
+    end
+
+    local value = quests[key]
+    if value == nil then
+        return false, false
+    end
+
+    return value == true, true
+end
+
+function TrackerHost.SetQuestCollapsed(journalIndex, collapsed, options)
+    local changed = setQuestCollapsedInternal(journalIndex, collapsed)
+    if changed and not (options and options.skipLayout) then
+        queueRuntimeLayout()
+    end
+    return changed
+end
+
+function TrackerHost.ToggleQuest(journalIndex, options)
+    local collapsed = TrackerHost.IsQuestCollapsed(journalIndex)
+    local newCollapsed = not collapsed
+    local changed = TrackerHost.SetQuestCollapsed(journalIndex, newCollapsed, options)
+    return changed, newCollapsed
 end
 
 setVisibilityGate = function(gateName, value)
@@ -3658,6 +3945,8 @@ function TrackerHost.Shutdown()
     state.layout = nil
     state.features = nil
     state.windowBars = nil
+    state.host = nil
+    state.folds = nil
     state.initialized = false
     state.previousDefaultQuestTrackerHidden = nil
     state.initializing = false

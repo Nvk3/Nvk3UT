@@ -111,6 +111,34 @@ local state = {
     questModelSubscription = nil,
 }
 
+local function ResolveHostCategoryExpanded(categoryKey)
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if not (host and host.IsCategoryCollapsed) then
+        return nil, false
+    end
+
+    local collapsed, hasValue = host.IsCategoryCollapsed(categoryKey)
+    if hasValue then
+        return not collapsed, true
+    end
+
+    return nil, false
+end
+
+local function ResolveHostQuestExpanded(journalIndex)
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if not (host and host.IsQuestCollapsed) then
+        return nil, false
+    end
+
+    local collapsed, hasValue = host.IsQuestCollapsed(journalIndex)
+    if hasValue then
+        return not collapsed, true
+    end
+
+    return nil, false
+end
+
 local PRIORITY = {
     manual = 5,
     ["click-select"] = 4,
@@ -2838,6 +2866,11 @@ local function GetDefaultQuestExpanded()
 end
 
 local function IsCategoryExpanded(categoryKey)
+    local hostExpanded, hasHostValue = ResolveHostCategoryExpanded(categoryKey)
+    if hasHostValue then
+        return hostExpanded
+    end
+
     local key = NormalizeCategoryKey(categoryKey)
     if not key then
         return GetDefaultCategoryExpanded()
@@ -2860,6 +2893,11 @@ local function IsCategoryExpanded(categoryKey)
 end
 
 IsQuestExpanded = function(journalIndex)
+    local hostExpanded, hasHostValue = ResolveHostQuestExpanded(journalIndex)
+    if hasHostValue then
+        return hostExpanded
+    end
+
     local key = NormalizeQuestKey(journalIndex)
     if not key then
         return GetDefaultQuestExpanded()
@@ -2943,6 +2981,11 @@ SetCategoryExpanded = function(categoryKey, expanded, context)
         extraFields
     )
 
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if host and host.SetCategoryCollapsed and (not context or context.updateHost ~= false) then
+        host.SetCategoryCollapsed(categoryKey, not expanded, { skipLayout = true })
+    end
+
     return true
 end
 
@@ -2991,6 +3034,11 @@ SetQuestExpanded = function(journalIndex, expanded, context)
         (context and context.source) or "QuestTracker:SetQuestExpanded"
     )
 
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if host and host.SetQuestCollapsed and (not context or context.updateHost ~= false) then
+        host.SetQuestCollapsed(journalIndex, not expanded, { skipLayout = true })
+    end
+
     return true
 end
 
@@ -3014,6 +3062,21 @@ local function ToggleQuestExpansion(journalIndex, context)
     end
     if not toggleContext.source then
         toggleContext.source = "QuestTracker:ToggleQuestExpansion"
+    end
+
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if host and host.ToggleQuest then
+        local changed, collapsed = host.ToggleQuest(journalIndex)
+        if changed then
+            local expandedAfter = not collapsed
+            SetQuestExpanded(journalIndex, expandedAfter, {
+                trigger = toggleContext.trigger,
+                source = toggleContext.source,
+                updateHost = false,
+            })
+            QuestTracker.Refresh()
+        end
+        return changed
     end
 
     local changed = SetQuestExpanded(journalIndex, not expanded, toggleContext)
@@ -3062,6 +3125,21 @@ local function AcquireCategoryControl()
             if not catKey then
                 return
             end
+            local host = Nvk3UT and Nvk3UT.TrackerHost
+            if host and host.ToggleCategory then
+                local changed, collapsed = host.ToggleCategory(catKey)
+                if changed then
+                    local expanded = not collapsed
+                    SetCategoryExpanded(catKey, expanded, {
+                        trigger = "click",
+                        source = "QuestTracker:OnCategoryClick",
+                        updateHost = false,
+                    })
+                    QuestTracker.Refresh()
+                end
+                return
+            end
+
             local expanded = not IsCategoryExpanded(catKey)
             local changed = SetCategoryExpanded(catKey, expanded, {
                 trigger = "click",
@@ -3334,7 +3412,11 @@ local function LayoutQuest(quest)
     ApplyBaseColor(control, r, g, b, a)
 
     local questKey = NormalizeQuestKey(quest.journalIndex)
-    local expanded = IsQuestExpanded(quest.journalIndex)
+    local hostExpanded, hasHostValue = ResolveHostQuestExpanded(quest.journalIndex)
+    local expanded = hostExpanded
+    if not hasHostValue then
+        expanded = IsQuestExpanded(quest.journalIndex)
+    end
     if IsDebugLoggingEnabled() then
         DebugLog(string.format(
             "BUILD_APPLY quest=%s expanded=%s",
@@ -3387,7 +3469,11 @@ local function LayoutCategory(category)
     end
     local count = #category.quests
     control.label:SetText(FormatCategoryHeaderText(category.name or "", count, "quest"))
-    local expanded = IsCategoryExpanded(category.key)
+    local hostExpanded, hasHostValue = ResolveHostCategoryExpanded(category.key)
+    local expanded = hostExpanded
+    if not hasHostValue then
+        expanded = IsCategoryExpanded(category.key)
+    end
     if IsDebugLoggingEnabled() then
         DebugLog(string.format(
             "BUILD_APPLY cat=%s expanded=%s",
