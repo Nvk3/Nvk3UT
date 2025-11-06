@@ -119,6 +119,46 @@ local PRIORITY = {
     init = 1,
 }
 
+local function EnsureFallbackCategoryTable()
+    if not state.saved then
+        return nil
+    end
+
+    local saved = state.saved
+    local categories = saved.expandedCategories
+    if type(categories) ~= "table" then
+        if type(saved.cat) == "table" then
+            categories = saved.cat
+        else
+            categories = {}
+        end
+        saved.expandedCategories = categories
+    end
+
+    saved.cat = categories
+    return categories
+end
+
+local function EnsureFallbackQuestTable()
+    if not state.saved then
+        return nil
+    end
+
+    local saved = state.saved
+    local quests = saved.expandedQuests
+    if type(quests) ~= "table" then
+        if type(saved.quest) == "table" then
+            quests = saved.quest
+        else
+            quests = {}
+        end
+        saved.expandedQuests = quests
+    end
+
+    saved.quest = quests
+    return quests
+end
+
 NVK_DEBUG_DESELECT = NVK_DEBUG_DESELECT or false
 
 local function IsDebugLoggingEnabled()
@@ -631,9 +671,12 @@ local function WriteCategoryState(categoryKey, expanded, source, options)
 
     source = source or "auto"
     options = options or {}
-    state.saved.cat = state.saved.cat or {}
+    local categories = EnsureFallbackCategoryTable()
+    if not categories then
+        return false
+    end
 
-    local prev = state.saved.cat[key]
+    local prev = categories[key]
     local priorityOverride = options.priorityOverride
     local priority = priorityOverride or PRIORITY[source] or 0
     local prevPriority = prev and (PRIORITY[prev.source] or 0) or 0
@@ -655,7 +698,7 @@ local function WriteCategoryState(categoryKey, expanded, source, options)
 
     local newExpanded = expanded and true or false
 
-    state.saved.cat[key] = {
+    categories[key] = {
         expanded = newExpanded,
         source = source,
         ts = now,
@@ -690,9 +733,12 @@ local function WriteQuestState(questKey, expanded, source, options)
 
     source = source or "auto"
     options = options or {}
-    state.saved.quest = state.saved.quest or {}
+    local quests = EnsureFallbackQuestTable()
+    if not quests then
+        return false
+    end
 
-    local prev = state.saved.quest[key]
+    local prev = quests[key]
     local priorityOverride = options.priorityOverride
     local priority = priorityOverride or PRIORITY[source] or 0
     local prevPriority = prev and (PRIORITY[prev.source] or 0) or 0
@@ -714,7 +760,7 @@ local function WriteQuestState(questKey, expanded, source, options)
 
     local newExpanded = expanded and true or false
 
-    state.saved.quest[key] = {
+    quests[key] = {
         expanded = newExpanded,
         source = source,
         ts = now,
@@ -816,7 +862,8 @@ local function PrimeInitialSavedState()
         if category then
             local catKey = NormalizeCategoryKey(category.key)
             if catKey then
-                local entry = state.saved.cat and state.saved.cat[catKey]
+                local categories = EnsureFallbackCategoryTable()
+                local entry = categories and categories[catKey]
                 local entryTs = (entry and entry.ts) or 0
                 if entryTs < initTimestamp or not entry then
                     if WriteCategoryState(catKey, true, "init", { timestamp = initTimestamp }) then
@@ -831,7 +878,8 @@ local function PrimeInitialSavedState()
                     if quest then
                         local questKey = NormalizeQuestKey(quest.journalIndex)
                         if questKey then
-                            local entry = state.saved.quest and state.saved.quest[questKey]
+                            local quests = EnsureFallbackQuestTable()
+                            local entry = quests and quests[questKey]
                             local entryTs = (entry and entry.ts) or 0
                             if entryTs < initTimestamp or not entry then
                                 if WriteQuestState(questKey, true, "init", { timestamp = initTimestamp }) then
@@ -1838,15 +1886,11 @@ local function AutoExpandQuestForTracking(journalIndex, forceExpand, context)
 
     local questKey = NormalizeQuestKey(journalIndex)
 
+    local quests = state.saved and EnsureFallbackQuestTable()
     DebugDeselect("AutoExpandQuestForTracking", {
         journalIndex = journalIndex,
         forceExpand = tostring(forceExpand),
-        previous = tostring(
-            state.saved
-                and state.saved.quest
-                and state.saved.quest[questKey]
-                and state.saved.quest[questKey].expanded
-        ),
+        previous = tostring(quests and quests[questKey] and quests[questKey].expanded),
     })
 
     local logContext = {
@@ -2578,9 +2622,12 @@ local function EnsureSavedVars()
             QuestSelection.Bind(Nvk3UT.sv, saved)
         end
     else
-        local saved = Nvk3UT.sv.QuestTracker or {}
+        local saved = Nvk3UT.sv.questState or {}
+        Nvk3UT.sv.questState = saved
         Nvk3UT.sv.QuestTracker = saved
         state.saved = saved
+        EnsureFallbackCategoryTable()
+        EnsureFallbackQuestTable()
         EnsureActiveSavedState()
         if QuestSelection and QuestSelection.Bind then
             QuestSelection.Bind(Nvk3UT.sv, saved)
@@ -2801,8 +2848,9 @@ local function IsCategoryExpanded(categoryKey)
         if stored ~= nil then
             return stored and true or false
         end
-    elseif state.saved and state.saved.cat then
-        local entry = state.saved.cat[key]
+    elseif state.saved then
+        local categories = EnsureFallbackCategoryTable()
+        local entry = categories and categories[key]
         if entry and entry.expanded ~= nil then
             return entry.expanded and true or false
         end
@@ -2822,8 +2870,9 @@ IsQuestExpanded = function(journalIndex)
         if stored ~= nil then
             return stored and true or false
         end
-    elseif state.saved and state.saved.quest then
-        local entry = state.saved.quest[key]
+    elseif state.saved then
+        local quests = EnsureFallbackQuestTable()
+        local entry = quests and quests[key]
         if entry and entry.expanded ~= nil then
             return entry.expanded and true or false
         end

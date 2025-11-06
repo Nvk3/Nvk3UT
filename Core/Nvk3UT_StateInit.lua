@@ -385,6 +385,62 @@ local function normalizeUI(source)
     return ui
 end
 
+local function ensureQuestStateTables(saved)
+    if type(saved) ~= "table" then
+        return
+    end
+
+    local questState = saved.questState
+    if type(questState) ~= "table" then
+        questState = {}
+        saved.questState = questState
+    end
+
+    local categories = questState.expandedCategories
+    if type(categories) ~= "table" then
+        if type(questState.cat) == "table" then
+            categories = questState.cat
+        elseif type(questState.categories) == "table" then
+            categories = questState.categories
+        else
+            categories = {}
+        end
+    end
+    questState.expandedCategories = categories
+    questState.cat = categories
+
+    local quests = questState.expandedQuests
+    if type(quests) ~= "table" then
+        if type(questState.quest) == "table" then
+            quests = questState.quest
+        elseif type(questState.quests) == "table" then
+            quests = questState.quests
+        else
+            quests = {}
+        end
+    end
+    questState.expandedQuests = quests
+    questState.quest = quests
+
+    local defaults = questState.defaults
+    if type(defaults) ~= "table" then
+        defaults = {}
+        questState.defaults = defaults
+    end
+
+    if defaults.categoryExpanded == nil then
+        defaults.categoryExpanded = true
+    else
+        defaults.categoryExpanded = defaults.categoryExpanded and true or false
+    end
+
+    if defaults.questExpanded == nil then
+        defaults.questExpanded = true
+    else
+        defaults.questExpanded = defaults.questExpanded and true or false
+    end
+end
+
 local function migrateLegacy(saved)
     if type(saved) ~= "table" then
         return copyTable(ROOT_DEFAULTS)
@@ -439,6 +495,11 @@ local function ensureSchema(saved)
     saved.ui = normalizeUI(saved.ui)
     if type(saved.questState) ~= "table" then
         saved.questState = {}
+    end
+    ensureQuestStateTables(saved)
+
+    if type(saved.questSelection) ~= "table" then
+        saved.questSelection = saved.questState
     end
     saved.schema = SCHEMA_VERSION
 
@@ -650,6 +711,9 @@ function Nvk3UT_StateInit.BootstrapSavedVariables(addonTable)
 
     addonTable.SV = sv
     addonTable.sv = sv
+    addonTable.ui = sv.ui
+    addonTable.questState = sv.questState
+    addonTable.questSelection = sv.questSelection
 
     if type(addonTable.SetDebugEnabled) == "function" then
         addonTable:SetDebugEnabled(sv.debug)

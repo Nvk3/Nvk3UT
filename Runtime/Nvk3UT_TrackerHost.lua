@@ -189,6 +189,51 @@ local function getSavedVars()
     return Nvk3UT and Nvk3UT.sv
 end
 
+local function ensureUiRoot()
+    local sv = getSavedVars()
+    if not sv then
+        return nil
+    end
+
+    local ui = sv.ui
+    if type(ui) ~= "table" then
+        ui = {}
+        sv.ui = ui
+    end
+
+    return ui
+end
+
+local function ensureUiSubTable(field)
+    local ui = ensureUiRoot()
+    if not ui then
+        return nil, nil
+    end
+
+    local child = ui[field]
+    if type(child) ~= "table" then
+        child = {}
+        ui[field] = child
+    end
+
+    return child, ui
+end
+
+local function ensureTrackerConfigRoot(key)
+    local ui = ensureUiRoot()
+    if not ui then
+        return nil, nil
+    end
+
+    local tracker = ui[key]
+    if type(tracker) ~= "table" then
+        tracker = {}
+        ui[key] = tracker
+    end
+
+    return tracker, ui
+end
+
 local function clamp(value, minimum, maximum)
     if value == nil then
         return minimum
@@ -431,8 +476,8 @@ local function isWindowOptionEnabled()
     end
 
     local sv = getSavedVars()
-    local general = sv and sv.General
-    local window = general and general.window
+    local ui = sv and sv.ui
+    local window = ui and ui.window
     if window and window.visible ~= nil then
         return window.visible ~= false
     end
@@ -441,13 +486,21 @@ local function isWindowOptionEnabled()
 end
 
 local function migrateAppearanceSettings(target)
+    if type(target) ~= "table" then
+        return
+    end
+
     local sv = getSavedVars()
     if not sv then
         return
     end
 
-    local quest = sv.QuestTracker and sv.QuestTracker.background
-    local achievement = sv.AchievementTracker and sv.AchievementTracker.background
+    local legacyQuest = rawget(sv, "QuestTracker")
+    legacyQuest = legacyQuest and legacyQuest.background
+    local legacyAchievement = rawget(sv, "AchievementTracker")
+    legacyAchievement = legacyAchievement and legacyAchievement.background
+    local legacyGeneral = rawget(sv, "General")
+    legacyGeneral = legacyGeneral and legacyGeneral.Appearance
 
     local function applySource(source)
         if type(source) ~= "table" then
@@ -467,63 +520,92 @@ local function migrateAppearanceSettings(target)
             target.edgeAlpha = clamp(tonumber(source.edgeAlpha) or DEFAULT_APPEARANCE.edgeAlpha, 0, 1)
             used = true
         end
+        if source.edgeEnabled ~= nil and target.edgeEnabled == nil then
+            target.edgeEnabled = source.edgeEnabled ~= false
+            used = true
+        end
+        if source.edgeThickness ~= nil and target.edgeThickness == nil then
+            local thickness = tonumber(source.edgeThickness) or DEFAULT_APPEARANCE.edgeThickness
+            target.edgeThickness = math.max(1, math.floor(thickness + 0.5))
+            used = true
+        end
         if source.padding ~= nil and target.padding == nil then
             local padding = tonumber(source.padding) or DEFAULT_APPEARANCE.padding
             target.padding = math.max(0, math.floor(padding + 0.5))
+            used = true
+        end
+        if source.cornerRadius ~= nil and target.cornerRadius == nil then
+            local radius = tonumber(source.cornerRadius) or DEFAULT_APPEARANCE.cornerRadius
+            target.cornerRadius = math.max(0, math.floor(radius + 0.5))
+            used = true
+        end
+        if source.theme ~= nil and target.theme == nil then
+            target.theme = tostring(source.theme)
             used = true
         end
         return used
     end
 
     local migrated = false
-    migrated = applySource(quest) or migrated
-    migrated = applySource(achievement) or migrated
+    migrated = applySource(legacyQuest) or migrated
+    migrated = applySource(legacyAchievement) or migrated
+    migrated = applySource(legacyGeneral) or migrated
 
-    if migrated then
-        target.edgeEnabled = target.edgeEnabled ~= false and (target.edgeAlpha or DEFAULT_APPEARANCE.edgeAlpha) > 0
+    if migrated and (target.edgeAlpha or DEFAULT_APPEARANCE.edgeAlpha) <= 0 then
+        target.edgeEnabled = false
     end
 end
 
 local function ensureAppearanceSettings()
-    local sv = getSavedVars()
-    if not sv then
+    local questTracker, ui = ensureTrackerConfigRoot("questTracker")
+    if not questTracker then
         return cloneTable(DEFAULT_APPEARANCE)
     end
 
-    sv.General = sv.General or {}
-    sv.General.Appearance = sv.General.Appearance or {}
+    migrateHostSettings(ui)
 
-    local appearance = sv.General.Appearance
-    if not appearance._migrated then
-        migrateAppearanceSettings(appearance)
-        appearance._migrated = true
-    end
+    questTracker.background = questTracker.background or {}
+    local appearance = questTracker.background
+
+    migrateAppearanceSettings(appearance)
 
     if appearance.enabled == nil then
         appearance.enabled = DEFAULT_APPEARANCE.enabled
+    else
+        appearance.enabled = appearance.enabled ~= false
     end
+
     appearance.alpha = clamp(tonumber(appearance.alpha) or DEFAULT_APPEARANCE.alpha, 0, 1)
+
     if appearance.edgeEnabled == nil then
         appearance.edgeEnabled = DEFAULT_APPEARANCE.edgeEnabled
     else
         appearance.edgeEnabled = appearance.edgeEnabled ~= false
     end
+
     appearance.edgeAlpha = clamp(tonumber(appearance.edgeAlpha) or DEFAULT_APPEARANCE.edgeAlpha, 0, 1)
+    if appearance.edgeAlpha <= 0 then
+        appearance.edgeEnabled = false
+    end
+
     local thickness = tonumber(appearance.edgeThickness)
     if thickness == nil then
         thickness = DEFAULT_APPEARANCE.edgeThickness
     end
     appearance.edgeThickness = math.max(1, math.floor(thickness + 0.5))
+
     local padding = tonumber(appearance.padding)
     if padding == nil then
         padding = DEFAULT_APPEARANCE.padding
     end
     appearance.padding = math.max(0, math.floor(padding + 0.5))
+
     local cornerRadius = tonumber(appearance.cornerRadius)
     if cornerRadius == nil then
         cornerRadius = DEFAULT_APPEARANCE.cornerRadius
     end
     appearance.cornerRadius = math.max(0, math.floor(cornerRadius + 0.5))
+
     if type(appearance.theme) ~= "string" or appearance.theme == "" then
         appearance.theme = DEFAULT_APPEARANCE.theme
     else
@@ -533,65 +615,98 @@ local function ensureAppearanceSettings()
     return appearance
 end
 
-local function migrateHostSettings(general)
-    local sv = getSavedVars()
-    if not sv or type(general) ~= "table" then
+local function migrateHostSettings(ui)
+    if type(ui) ~= "table" then
         return
     end
 
-    if general._hostMigrated then
+    if ui._hostMigrated then
         return
     end
 
-    general.window = general.window or {}
-    general.features = general.features or {}
-    general.layout = general.layout or {}
+    ui.questTracker = type(ui.questTracker) == "table" and ui.questTracker or {}
+    ui.achievementTracker = type(ui.achievementTracker) == "table" and ui.achievementTracker or {}
+    ui.window = type(ui.window) == "table" and ui.window or {}
+    ui.features = type(ui.features) == "table" and ui.features or {}
+    ui.layout = type(ui.layout) == "table" and ui.layout or {}
+    ui.windowBars = type(ui.windowBars) == "table" and ui.windowBars or {}
 
-    local quest = sv.QuestTracker
-    local achievement = sv.AchievementTracker
+    local quest = ui.questTracker
+    local achievement = ui.achievementTracker
+    local window = ui.window
 
-    if general.window.locked == nil then
-        if quest and quest.lock ~= nil then
-            general.window.locked = quest.lock and true or false
-        elseif achievement and achievement.lock ~= nil then
-            general.window.locked = achievement.lock and true or false
+    if window.locked == nil then
+        if quest.lock ~= nil then
+            window.locked = quest.lock and true or false
+        elseif achievement.lock ~= nil then
+            window.locked = achievement.lock and true or false
+        else
+            window.locked = DEFAULT_WINDOW.locked
         end
     end
 
-    if general.features.hideDefaultQuestTracker == nil and quest and quest.hideDefault ~= nil then
-        general.features.hideDefaultQuestTracker = quest.hideDefault and true or false
-    end
-
-    if general.layout.autoGrowV == nil then
-        if quest and quest.autoGrowV ~= nil then
-            general.layout.autoGrowV = quest.autoGrowV ~= false
-        elseif achievement and achievement.autoGrowV ~= nil then
-            general.layout.autoGrowV = achievement.autoGrowV ~= false
+    local features = ui.features
+    if features.hideDefaultQuestTracker == nil then
+        if quest.hideDefault ~= nil then
+            features.hideDefaultQuestTracker = quest.hideDefault and true or false
+        else
+            features.hideDefaultQuestTracker = false
         end
     end
 
-    if general.layout.autoGrowH == nil then
-        if quest and quest.autoGrowH ~= nil then
-            general.layout.autoGrowH = quest.autoGrowH and true or false
-        elseif achievement and achievement.autoGrowH ~= nil then
-            general.layout.autoGrowH = achievement.autoGrowH and true or false
+    local layout = ui.layout
+    if layout.autoGrowV == nil then
+        if quest.autoGrowV ~= nil then
+            layout.autoGrowV = quest.autoGrowV ~= false
+        elseif achievement.autoGrowV ~= nil then
+            layout.autoGrowV = achievement.autoGrowV ~= false
+        else
+            layout.autoGrowV = DEFAULT_LAYOUT.autoGrowV
         end
     end
 
-    general._hostMigrated = true
+    if layout.autoGrowH == nil then
+        if quest.autoGrowH ~= nil then
+            layout.autoGrowH = quest.autoGrowH == true
+        elseif achievement.autoGrowH ~= nil then
+            layout.autoGrowH = achievement.autoGrowH == true
+        else
+            layout.autoGrowH = DEFAULT_LAYOUT.autoGrowH
+        end
+    end
+
+    if layout.minWidth == nil then
+        layout.minWidth = DEFAULT_LAYOUT.minWidth
+    end
+    if layout.maxWidth == nil then
+        layout.maxWidth = DEFAULT_LAYOUT.maxWidth
+    end
+    if layout.minHeight == nil then
+        layout.minHeight = DEFAULT_LAYOUT.minHeight
+    end
+    if layout.maxHeight == nil then
+        layout.maxHeight = DEFAULT_LAYOUT.maxHeight
+    end
+
+    local bars = ui.windowBars
+    if bars.headerHeightPx == nil then
+        bars.headerHeightPx = DEFAULT_WINDOW_BARS.headerHeightPx
+    end
+    if bars.footerHeightPx == nil then
+        bars.footerHeightPx = DEFAULT_WINDOW_BARS.footerHeightPx
+    end
+
+    ui._hostMigrated = true
 end
 
 local function ensureFeatureSettings()
-    local sv = getSavedVars()
-    if not sv then
+    local features, ui = ensureUiSubTable("features")
+    if not features then
         return { hideDefaultQuestTracker = false }
     end
 
-    sv.General = sv.General or {}
-    migrateHostSettings(sv.General)
-    sv.General.features = sv.General.features or {}
+    migrateHostSettings(ui)
 
-    local features = sv.General.features
     if features.hideDefaultQuestTracker == nil then
         features.hideDefaultQuestTracker = false
     else
@@ -602,16 +717,12 @@ local function ensureFeatureSettings()
 end
 
 local function ensureLayoutSettings()
-    local sv = getSavedVars()
-    if not sv then
+    local layout, ui = ensureUiSubTable("layout")
+    if not layout then
         return cloneTable(DEFAULT_LAYOUT)
     end
 
-    sv.General = sv.General or {}
-    migrateHostSettings(sv.General)
-    sv.General.layout = sv.General.layout or {}
-
-    local layout = sv.General.layout
+    migrateHostSettings(ui)
 
     if layout.autoGrowV == nil then
         layout.autoGrowV = DEFAULT_LAYOUT.autoGrowV
@@ -658,29 +769,24 @@ local function ensureLayoutSettings()
 end
 
 local function ensureWindowBarSettings()
-    local sv = getSavedVars()
-    if not sv then
+    local bars, ui = ensureUiSubTable("windowBars")
+    if not bars then
         return cloneTable(DEFAULT_WINDOW_BARS)
     end
 
-    sv.General = sv.General or {}
-    sv.General.WindowBars = sv.General.WindowBars or {}
-
-    local bars = sv.General.WindowBars
+    migrateHostSettings(ui)
 
     local headerHeight = tonumber(bars.headerHeightPx)
     if headerHeight == nil then
         headerHeight = DEFAULT_WINDOW_BARS.headerHeightPx
     end
-    headerHeight = clamp(math.floor(headerHeight + 0.5), 0, MAX_BAR_HEIGHT)
-    bars.headerHeightPx = headerHeight
+    bars.headerHeightPx = clamp(math.floor(headerHeight + 0.5), 0, MAX_BAR_HEIGHT)
 
     local footerHeight = tonumber(bars.footerHeightPx)
     if footerHeight == nil then
         footerHeight = DEFAULT_WINDOW_BARS.footerHeightPx
     end
-    footerHeight = clamp(math.floor(footerHeight + 0.5), 0, MAX_BAR_HEIGHT)
-    bars.footerHeightPx = footerHeight
+    bars.footerHeightPx = clamp(math.floor(footerHeight + 0.5), 0, MAX_BAR_HEIGHT)
 
     return bars
 end
@@ -693,43 +799,53 @@ local function getEffectiveBarHeights()
 end
 
 local function ensureWindowSettings()
-    local sv = getSavedVars()
-    if not sv then
+    local window, ui = ensureUiSubTable("window")
+    if not window then
         return cloneTable(DEFAULT_WINDOW)
     end
 
-    sv.General = sv.General or {}
-    migrateHostSettings(sv.General)
-    sv.General.window = sv.General.window or {}
+    migrateHostSettings(ui)
 
-    local window = sv.General.window
     if type(window.left) ~= "number" then
-        window.left = tonumber(window.left) or DEFAULT_WINDOW.left
+        window.left = math.floor(tonumber(window.left) or DEFAULT_WINDOW.left)
+    else
+        window.left = math.floor(window.left + 0.5)
     end
+
     if type(window.top) ~= "number" then
-        window.top = tonumber(window.top) or DEFAULT_WINDOW.top
+        window.top = math.floor(tonumber(window.top) or DEFAULT_WINDOW.top)
+    else
+        window.top = math.floor(window.top + 0.5)
     end
+
     if type(window.width) ~= "number" then
         window.width = tonumber(window.width) or DEFAULT_WINDOW.width
     end
+    window.width = math.max(MIN_WIDTH, math.floor(window.width + 0.5))
+
     if type(window.height) ~= "number" then
         window.height = tonumber(window.height) or DEFAULT_WINDOW.height
     end
+    window.height = math.max(MIN_HEIGHT, math.floor(window.height + 0.5))
+
     if window.locked == nil then
         window.locked = DEFAULT_WINDOW.locked
     else
         window.locked = window.locked == true
     end
+
     if window.visible == nil then
         window.visible = DEFAULT_WINDOW.visible
     else
         window.visible = window.visible ~= false
     end
+
     if window.clamp == nil then
         window.clamp = DEFAULT_WINDOW.clamp
     else
         window.clamp = window.clamp ~= false
     end
+
     if window.onTop == nil then
         window.onTop = DEFAULT_WINDOW.onTop
     else

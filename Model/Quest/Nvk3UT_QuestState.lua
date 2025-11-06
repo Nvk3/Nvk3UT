@@ -108,15 +108,34 @@ local function MigrateLegacySavedState(target)
         return
     end
 
-    target.cat = target.cat or {}
-    target.quest = target.quest or {}
+    local categories = target.expandedCategories
+    if type(categories) ~= "table" then
+        if type(target.cat) == "table" then
+            categories = target.cat
+        else
+            categories = {}
+        end
+        target.expandedCategories = categories
+    end
+    target.cat = categories
+
+    local quests = target.expandedQuests
+    if type(quests) ~= "table" then
+        if type(target.quest) == "table" then
+            quests = target.quest
+        else
+            quests = {}
+        end
+        target.expandedQuests = quests
+    end
+    target.quest = quests
 
     local legacyCategories = target.catExpanded
     if type(legacyCategories) == "table" then
         for key, value in pairs(legacyCategories) do
             local normalized = NormalizeCategoryKey(key)
             if normalized then
-                target.cat[normalized] = {
+                categories[normalized] = {
                     expanded = value and true or false,
                     source = "init",
                     ts = 0,
@@ -131,7 +150,7 @@ local function MigrateLegacySavedState(target)
         for key, value in pairs(legacyQuests) do
             local normalized = NormalizeQuestKey(key)
             if normalized then
-                target.quest[normalized] = {
+                quests[normalized] = {
                     expanded = value and true or false,
                     source = "init",
                     ts = 0,
@@ -191,9 +210,29 @@ local function EnsureSavedTables(target)
         return nil, nil
     end
 
-    target.cat = target.cat or {}
-    target.quest = target.quest or {}
-    return target.cat, target.quest
+    local categories = target.expandedCategories
+    if type(categories) ~= "table" then
+        if type(target.cat) == "table" then
+            categories = target.cat
+        else
+            categories = {}
+        end
+        target.expandedCategories = categories
+    end
+    target.cat = categories
+
+    local quests = target.expandedQuests
+    if type(quests) ~= "table" then
+        if type(target.quest) == "table" then
+            quests = target.quest
+        else
+            quests = {}
+        end
+        target.expandedQuests = quests
+    end
+    target.quest = quests
+
+    return categories, quests
 end
 
 local function ResolveWrite(source, options, previous)
@@ -407,7 +446,7 @@ function QuestState.IsCategoryExpanded(categoryKey)
         return nil
     end
 
-    local catTable = saved.cat
+    local catTable = EnsureSavedTables(saved)
     if type(catTable) ~= "table" then
         return nil
     end
@@ -430,7 +469,7 @@ function QuestState.IsQuestExpanded(questKey)
         return nil
     end
 
-    local questTable = saved.quest
+    local _, questTable = EnsureSavedTables(saved)
     if type(questTable) ~= "table" then
         return nil
     end
