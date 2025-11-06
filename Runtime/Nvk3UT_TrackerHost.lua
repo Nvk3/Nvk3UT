@@ -1087,6 +1087,9 @@ function TrackerHost.SetCombatState(selfOrFlag, maybeFlag)
     visibilityDebug("Host combat: %s -> ApplyVisibilityRules()", tostring(normalized))
 
     local visibilityChanged = TrackerHost.ApplyVisibilityRules()
+    if visibilityChanged then
+        queueRuntimeLayout()
+    end
 
     callRuntime("SetCombatState", normalized)
 
@@ -2655,7 +2658,7 @@ local function refreshWindowLayout(targetOffset)
 
     ensureSceneFragment(state.root)
     updateWindowGeometry()
-    applyWindowVisibility()
+    TrackerHost.ApplyVisibilityRules()
     refreshScroll(targetOffset)
 end
 
@@ -2817,7 +2820,14 @@ local function applyWindowTopmost()
     end
 end
 
-local function applyWindowSettings()
+local function applyWindowSettings(options)
+    local skipVisibility = false
+    if type(options) == "table" then
+        skipVisibility = options.skipVisibility == true
+    elseif options ~= nil then
+        skipVisibility = options == true
+    end
+
     state.hostSettings = ensureHostSettings()
     state.window = ensureWindowSettings()
     state.appearance = ensureAppearanceSettings()
@@ -2839,7 +2849,9 @@ local function applyWindowSettings()
     applyWindowLock()
     applyWindowTopmost()
     ensureSceneFragment(state.root)
-    applyWindowVisibility()
+    if not skipVisibility then
+        applyWindowVisibility()
+    end
     refreshScroll()
 end
 
@@ -3159,7 +3171,7 @@ function TrackerHost.Init()
 
     createRootControl()
     createContainers()
-    applyWindowSettings()
+    applyWindowSettings({ skipVisibility = true })
 
     local debugEnabled = (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug) == true
 
@@ -3179,20 +3191,40 @@ function TrackerHost.Init()
         pcall(TrackerHost.Refresh)
     end
 
-    state.initialized = true
-    state.initializing = false
-
     notifyContentChanged()
 
     ensureSceneFragment(state.root)
 
+    state.isInHUDScene = isGameHUDActive()
+    setVisibilityGate("scene", not state.isInHUDScene)
+
+    state.isLAMOpen = false
+    state.lamPreviewForceVisible = false
+    setVisibilityGate("lam", false)
+
+    state.isInCombat = false
+    local hideInCombatSetting = state.hostSettings and state.hostSettings.HideInCombat == true
+    setVisibilityGate("combat", hideInCombatSetting and state.isInCombat == true)
+
+    local initialVisibilityChanged = TrackerHost.ApplyVisibilityRules()
+
+    visibilityDebug(
+        "Host init: inHUD=%s visible=%s",
+        tostring(state.isInHUDScene),
+        tostring(TrackerHost.IsVisible())
+    )
+
     ensureBootstraps()
 
     state.isInHUDScene = isGameHUDActive()
-    state.isInCombat = state.bootstrapCombatState == true
-    if TrackerHost.ApplyVisibilityRules() then
+
+    local finalVisibilityChanged = TrackerHost.ApplyVisibilityRules()
+    if initialVisibilityChanged or finalVisibilityChanged then
         queueRuntimeLayout()
     end
+
+    state.initialized = true
+    state.initializing = false
 
     debugLog("Host window initialized")
 end
@@ -3216,7 +3248,7 @@ function TrackerHost.SetVisible(isVisible)
     end
 
     if state.root then
-        applyWindowVisibility()
+        TrackerHost.ApplyVisibilityRules()
     end
 
     local newVisible = TrackerHost.IsVisible()
@@ -3255,7 +3287,9 @@ function TrackerHost.ApplySettings()
         return
     end
 
-    applyWindowSettings()
+    local skipVisibility = state.initializing == true
+
+    applyWindowSettings({ skipVisibility = skipVisibility })
     applyFeatureSettings()
 
     local sv = getSavedVars()
@@ -3270,7 +3304,7 @@ function TrackerHost.ApplySettings()
 
     TrackerHost.ApplyAppearance()
 
-    if TrackerHost.ApplyVisibilityRules() then
+    if not skipVisibility and TrackerHost.ApplyVisibilityRules() then
         queueRuntimeLayout()
     end
 end
@@ -3400,9 +3434,8 @@ function TrackerHost.OnLamPanelOpened()
     if not lamPreview.windowSettingOnOpen then
         state.lamPreviewForceVisible = false
         lamPreview.windowPreviewApplied = false
-        if TrackerHost.ApplyVisibilityRules() then
-            queueRuntimeLayout()
-        end
+        TrackerHost.ApplyVisibilityRules()
+        queueRuntimeLayout()
         return
     end
 
@@ -3420,9 +3453,8 @@ function TrackerHost.OnLamPanelOpened()
         TrackerHost.Refresh()
     end
 
-    if TrackerHost.ApplyVisibilityRules() then
-        queueRuntimeLayout()
-    end
+    TrackerHost.ApplyVisibilityRules()
+    queueRuntimeLayout()
 end
 
 function TrackerHost.OnLamPanelClosed()
@@ -3435,7 +3467,7 @@ function TrackerHost.OnLamPanelClosed()
     state.isLAMOpen = false
     setVisibilityGate("lam", false)
 
-    applyWindowVisibility()
+    TrackerHost.ApplyVisibilityRules()
 
     local currentWindowSetting = isWindowOptionEnabled()
     if
@@ -3452,9 +3484,7 @@ function TrackerHost.OnLamPanelClosed()
     lamPreview.windowSettingOnOpen = nil
     lamPreview.wasWindowVisibleBeforeLAM = nil
 
-    if TrackerHost.ApplyVisibilityRules() then
-        queueRuntimeLayout()
-    end
+    queueRuntimeLayout()
 end
 
 function TrackerHost.Shutdown()
