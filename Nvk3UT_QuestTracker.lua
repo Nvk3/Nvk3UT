@@ -13,39 +13,28 @@ local QuestState = Nvk3UT and Nvk3UT.QuestState
 local QuestSelection = Nvk3UT and Nvk3UT.QuestSelection
 local QuestModel = Nvk3UT and Nvk3UT.QuestModel
 
-local function EnsureQuestModel()
-    if not QuestModel and Nvk3UT then
-        QuestModel = Nvk3UT.QuestModel
-    end
-
-    return QuestModel
-end
-
-local function GetJournalIndex(questId)
-    local numericQuestId = tonumber(questId)
-    if not numericQuestId or numericQuestId <= 0 then
-        return nil
-    end
-
-    numericQuestId = math.floor(numericQuestId)
-
+local GetJournalIndex -- forward declaration for the global journal lookup helper
+GetJournalIndex = function(questId)
     local questModel = Nvk3UT and Nvk3UT.QuestModel
     local resolver = questModel and questModel.GetJournalIndexForQuestId
     if type(resolver) ~= "function" then
         return nil
     end
 
-    local ok, journalIndex = pcall(resolver, numericQuestId)
-    if not ok then
+    local numericQuestId = tonumber(questId)
+    if not numericQuestId or numericQuestId <= 0 then
         return nil
     end
 
-    local numericIndex = tonumber(journalIndex)
-    if not numericIndex or numericIndex <= 0 then
-        return nil
+    return resolver(math.floor(numericQuestId))
+end
+
+local function EnsureQuestModel()
+    if not QuestModel and Nvk3UT then
+        QuestModel = Nvk3UT.QuestModel
     end
 
-    return math.floor(numericIndex)
+    return QuestModel
 end
 local FormatCategoryHeaderText =
     (Utils and Utils.FormatCategoryHeaderText)
