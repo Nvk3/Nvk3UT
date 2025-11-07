@@ -26,6 +26,18 @@ if Nvk3UT_SelfTest and type(Nvk3UT_SelfTest.AttachToRoot) == "function" then
     Nvk3UT_SelfTest.AttachToRoot(Addon)
 end
 
+if Nvk3UT_StateRepo and type(Nvk3UT_StateRepo.AttachToRoot) == "function" then
+    Nvk3UT_StateRepo.AttachToRoot(Addon)
+end
+
+if Nvk3UT_StateRepo_Achievements and type(Nvk3UT_StateRepo_Achievements.AttachToRoot) == "function" then
+    Nvk3UT_StateRepo_Achievements.AttachToRoot(Addon)
+end
+
+if Nvk3UT_StateRepo_Quests and type(Nvk3UT_StateRepo_Quests.AttachToRoot) == "function" then
+    Nvk3UT_StateRepo_Quests.AttachToRoot(Addon)
+end
+
 local function formatMessage(prefix, fmt, ...)
     if not fmt then
         return prefix
@@ -131,17 +143,35 @@ end
 function Addon:InitSavedVariables()
     local stateInit = Nvk3UT_StateInit
     if stateInit and stateInit.BootstrapSavedVariables then
-        local sv = stateInit.BootstrapSavedVariables(self)
-        if type(sv) == "table" then
-            self.SV = sv
+        local account, character = stateInit.BootstrapSavedVariables(self)
+        if type(account) == "table" then
+            self.SV = account
+        end
+        if type(character) == "table" then
+            self.SVCharacter = character
         end
     end
 
     local sv = self.SV
+    local character = self.SVCharacter
     if type(sv) == "table" then
-        self.sv = sv -- legacy alias consumed by existing modules
+        local facadeCreator = stateInit and stateInit.CreateLegacyFacade
+        local facade = facadeCreator and facadeCreator(sv, character) or sv
+        self.sv = facade -- legacy alias consumed by existing modules
+        if type(character) == "table" then
+            self.svCharacter = character
+        end
         if type(self.SetDebugEnabled) == "function" then
             self:SetDebugEnabled(sv.debug)
+        end
+        if Nvk3UT_StateRepo and Nvk3UT_StateRepo.Init then
+            Nvk3UT_StateRepo.Init(sv)
+        end
+        if Nvk3UT_StateRepo_Achievements and Nvk3UT_StateRepo_Achievements.Init then
+            Nvk3UT_StateRepo_Achievements.Init(sv)
+        end
+        if Nvk3UT_StateRepo_Quests and Nvk3UT_StateRepo_Quests.Init then
+            Nvk3UT_StateRepo_Quests.Init(character)
         end
     end
 

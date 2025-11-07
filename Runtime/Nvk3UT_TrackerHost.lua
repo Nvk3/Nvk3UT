@@ -102,6 +102,10 @@ local unpack = unpack or table.unpack
 
 local SECTION_ORDER = { "quest", "achievement" }
 
+local function getStateRepo()
+    return Nvk3UT_StateRepo or (Nvk3UT and Nvk3UT.StateRepo)
+end
+
 local state = {
     initialized = false,
     root = nil,
@@ -233,83 +237,78 @@ local function normalizeColorComponent(value, fallback)
     return clamp(numeric, 0, 1)
 end
 
-local function ensureColorComponents(color, defaults)
-    local target = color
-    if type(target) ~= "table" then
-        target = {}
+local function rgbaToHex(r, g, b, a)
+    local function component(value)
+        local normalized = normalizeColorComponent(value, 1)
+        return string.format("%02X", math.floor(normalized * 255 + 0.5))
     end
 
-    local defaultColor = defaults or DEFAULT_COLOR_FALLBACK
-    target.r = normalizeColorComponent(target.r, defaultColor.r)
-    target.g = normalizeColorComponent(target.g, defaultColor.g)
-    target.b = normalizeColorComponent(target.b, defaultColor.b)
-    target.a = normalizeColorComponent(target.a, defaultColor.a)
-
-    return target
+    return string.format("#%s%s%s%s", component(r), component(g), component(b), component(a))
 end
 
-local function ensureTrackerColorConfig(sv, trackerType)
-    if not (sv and trackerType) then
-        return nil
+local function hexToRgba(hex, fallback)
+    if type(hex) ~= "string" then
+        return fallback.r, fallback.g, fallback.b, fallback.a
     end
 
-    sv.appearance = sv.appearance or {}
-    local tracker = sv.appearance[trackerType]
-    if type(tracker) ~= "table" then
-        tracker = {}
-        sv.appearance[trackerType] = tracker
+    local sanitized = hex:match("^#?(%x%x%x%x%x%x%x%x)$")
+    if not sanitized then
+        return fallback.r, fallback.g, fallback.b, fallback.a
     end
 
-    tracker.colors = tracker.colors or {}
-
-    local defaults = DEFAULT_TRACKER_COLORS[trackerType]
-    if defaults and defaults.colors then
-        for role, defaultColor in pairs(defaults.colors) do
-            tracker.colors[role] = ensureColorComponents(tracker.colors[role], defaultColor)
-        end
+    local function channel(offset)
+        local value = tonumber(sanitized:sub(offset, offset + 1), 16) or 0
+        return normalizeColorComponent(value / 255, 1)
     end
 
-    return tracker
+    return channel(1), channel(3), channel(5), channel(7)
 end
 
-local function ensureAppearanceColorDefaults()
-    local sv = getSavedVars()
-    if not sv then
-        return nil
+local function refreshHostCacheFromRect(rect)
+    if type(rect) ~= "table" then
+        rect = cloneTable(DEFAULT_WINDOW)
     end
 
-    for trackerType in pairs(DEFAULT_TRACKER_COLORS) do
-        ensureTrackerColorConfig(sv, trackerType)
-    end
+    local window = state.window or {}
+    state.window = window
+    window.left = rect.x or rect.left or DEFAULT_WINDOW.left
+    window.top = rect.y or rect.top or DEFAULT_WINDOW.top
+    window.width = rect.width or DEFAULT_WINDOW.width
+    window.height = rect.height or DEFAULT_WINDOW.height
+    window.locked = rect.locked == true
+    window.visible = rect.visible ~= false
+    window.clamp = rect.clamp ~= false
+    window.onTop = rect.onTop == true
+    window.hideInCombat = rect.hideInCombat == true
 
-    return sv.appearance
+    state.hostSettings = state.hostSettings or {}
+    state.hostSettings.HideInCombat = window.hideInCombat == true
+
+    return window
+end
+
+local function refreshHostCache()
+    local repo = getStateRepo()
+    local rect = repo and repo.Host_GetRect and repo.Host_GetRect()
+    return refreshHostCacheFromRect(rect)
+end
+
+local function mergeHostRect(partial)
+    local repo = getStateRepo()
+    local rect = nil
+    if repo and repo.Host_SetRect then
+        rect = repo.Host_SetRect(partial or {})
+    end
+    return refreshHostCacheFromRect(rect)
 end
 
 local function ensureHostSettings()
-    local sv = getSavedVars()
-    if not sv then
-        return cloneTable(DEFAULT_HOST_SETTINGS)
-    end
-
-    sv.Settings = sv.Settings or {}
-    sv.Settings.Host = sv.Settings.Host or {}
-
-    local hostSettings = sv.Settings.Host
-    if hostSettings.HideInCombat == nil then
-        hostSettings.HideInCombat = DEFAULT_HOST_SETTINGS.HideInCombat
-    else
-        hostSettings.HideInCombat = hostSettings.HideInCombat == true
-    end
-
-    return hostSettings
+    refreshHostCache()
+    return state.hostSettings or cloneTable(DEFAULT_HOST_SETTINGS)
 end
 
 local function getHostSettings()
-    if state.hostSettings == nil then
-        state.hostSettings = ensureHostSettings()
-    end
-
-    return state.hostSettings
+    return ensureHostSettings()
 end
 
 local function getDefaultColor(trackerType, role)
@@ -591,50 +590,7 @@ local function getEffectiveBarHeights()
 end
 
 local function ensureWindowSettings()
-    local sv = getSavedVars()
-    if not sv then
-        return cloneTable(DEFAULT_WINDOW)
-    end
-
-    sv.General = sv.General or {}
-    migrateHostSettings(sv.General)
-    sv.General.window = sv.General.window or {}
-
-    local window = sv.General.window
-    if type(window.left) ~= "number" then
-        window.left = tonumber(window.left) or DEFAULT_WINDOW.left
-    end
-    if type(window.top) ~= "number" then
-        window.top = tonumber(window.top) or DEFAULT_WINDOW.top
-    end
-    if type(window.width) ~= "number" then
-        window.width = tonumber(window.width) or DEFAULT_WINDOW.width
-    end
-    if type(window.height) ~= "number" then
-        window.height = tonumber(window.height) or DEFAULT_WINDOW.height
-    end
-    if window.locked == nil then
-        window.locked = DEFAULT_WINDOW.locked
-    else
-        window.locked = window.locked == true
-    end
-    if window.visible == nil then
-        window.visible = DEFAULT_WINDOW.visible
-    else
-        window.visible = window.visible ~= false
-    end
-    if window.clamp == nil then
-        window.clamp = DEFAULT_WINDOW.clamp
-    else
-        window.clamp = window.clamp ~= false
-    end
-    if window.onTop == nil then
-        window.onTop = DEFAULT_WINDOW.onTop
-    else
-        window.onTop = window.onTop == true
-    end
-
-    return window
+    return refreshHostCache()
 end
 
 local function clampWindowToScreen(width, height)
@@ -654,11 +610,18 @@ local function clampWindowToScreen(width, height)
         return
     end
 
+    local previousLeft = window.left or 0
+    local previousTop = window.top or 0
+
     local maxLeft = math.max(0, rootWidth - width)
     local maxTop = math.max(0, rootHeight - height)
 
     window.left = math.min(math.max(window.left or 0, 0), maxLeft)
     window.top = math.min(math.max(window.top or 0, 0), maxTop)
+
+    if window.left ~= previousLeft or window.top ~= previousTop then
+        mergeHostRect({ x = window.left, y = window.top })
+    end
 end
 
 local function saveWindowPosition()
@@ -669,8 +632,10 @@ local function saveWindowPosition()
     local left = state.root:GetLeft() or state.window.left or 0
     local top = state.root:GetTop() or state.window.top or 0
 
-    state.window.left = math.floor(left + 0.5)
-    state.window.top = math.floor(top + 0.5)
+    mergeHostRect({
+        x = math.floor(left + 0.5),
+        y = math.floor(top + 0.5),
+    })
 end
 
 local function saveWindowSize()
@@ -689,8 +654,10 @@ local function saveWindowSize()
     local width = clamp(state.root:GetWidth() or state.window.width or minWidth, minWidth, maxWidth)
     local height = clamp(state.root:GetHeight() or state.window.height or minHeight, minHeight, maxHeight)
 
-    state.window.width = math.floor(width + 0.5)
-    state.window.height = math.floor(height + 0.5)
+    mergeHostRect({
+        width = math.floor(width + 0.5),
+        height = math.floor(height + 0.5),
+    })
 end
 
 startWindowDrag = function()
@@ -714,17 +681,45 @@ stopWindowDrag = function()
     saveWindowPosition()
 end
 
-local function debugLog(...)
-    local sv = getSavedVars()
-    if not (sv and sv.debug) then
+local function debugLog(fmt, ...)
+    local addon = Nvk3UT
+    if not (addon and addon.IsDebugEnabled and addon:IsDebugEnabled()) then
         return
     end
 
     local prefix = string.format("[%s]", addonName .. ".TrackerHost")
+
+    if addon and addon.Debug then
+        if fmt == nil then
+            addon.Debug("%s", prefix)
+        elseif select("#", ...) > 0 then
+            addon.Debug("%s %s", prefix, string.format(tostring(fmt), ...))
+        else
+            addon.Debug("%s %s", prefix, tostring(fmt))
+        end
+        return
+    end
+
+    local message = fmt
+    if fmt ~= nil and select("#", ...) > 0 then
+        local ok, formatted = pcall(string.format, tostring(fmt), ...)
+        if ok then
+            message = formatted
+        end
+    end
+
     if d then
-        d(prefix, ...)
+        if message ~= nil then
+            d(prefix .. " " .. tostring(message))
+        else
+            d(prefix)
+        end
     elseif print then
-        print(prefix, ...)
+        if message ~= nil then
+            print(prefix .. " " .. tostring(message))
+        else
+            print(prefix)
+        end
     end
 end
 
@@ -2994,6 +2989,7 @@ function TrackerHost.SetVisible(isVisible)
         local window = state.window
         local previousSetting = window.visible ~= false
         window.visible = visible
+        mergeHostRect({ visible = visible })
         changed = changed or (previousSetting ~= visible)
     end
 
@@ -3116,7 +3112,23 @@ function TrackerHost.ApplyAppearance()
 end
 
 function TrackerHost.EnsureAppearanceDefaults()
-    return ensureAppearanceColorDefaults()
+    local repo = getStateRepo()
+    if not repo or not repo.UI_GetOption then
+        return false
+    end
+
+    for trackerType, defaults in pairs(DEFAULT_TRACKER_COLORS) do
+        local colors = defaults and defaults.colors or {}
+        for role, color in pairs(colors) do
+            local key = string.format("colors.%s.%s", trackerType, role)
+            local value = repo.UI_GetOption(key)
+            if value == nil and repo.UI_SetOption then
+                repo.UI_SetOption(key, rgbaToHex(color.r, color.g, color.b, color.a))
+            end
+        end
+    end
+
+    return true
 end
 
 function TrackerHost.GetDefaultTrackerColor(trackerType, role)
@@ -3125,19 +3137,16 @@ end
 
 function TrackerHost.GetTrackerColor(trackerType, role)
     local fallbackR, fallbackG, fallbackB, fallbackA = getDefaultColor(trackerType, role)
-    local appearance = ensureAppearanceColorDefaults()
-    local tracker = appearance and appearance[trackerType]
-    local colors = tracker and tracker.colors
-    local color = colors and colors[role]
-    if not color then
-        return fallbackR, fallbackG, fallbackB, fallbackA
+    local repo = getStateRepo()
+    if repo and repo.UI_GetOption then
+        local key = string.format("colors.%s.%s", tostring(trackerType), tostring(role))
+        local hex = repo.UI_GetOption(key)
+        if type(hex) == "string" then
+            local fallback = { r = fallbackR, g = fallbackG, b = fallbackB, a = fallbackA }
+            return hexToRgba(hex, fallback)
+        end
     end
-
-    local r = normalizeColorComponent(color.r, fallbackR)
-    local g = normalizeColorComponent(color.g, fallbackG)
-    local b = normalizeColorComponent(color.b, fallbackB)
-    local a = normalizeColorComponent(color.a, fallbackA)
-    return r, g, b, a
+    return fallbackR, fallbackG, fallbackB, fallbackA
 end
 
 function TrackerHost.SetTrackerColor(trackerType, role, r, g, b, a)
@@ -3145,24 +3154,11 @@ function TrackerHost.SetTrackerColor(trackerType, role, r, g, b, a)
         return
     end
 
-    local sv = getSavedVars()
-    if not sv then
-        return
+    local repo = getStateRepo()
+    if repo and repo.UI_SetOption then
+        local key = string.format("colors.%s.%s", trackerType, role)
+        repo.UI_SetOption(key, rgbaToHex(r, g, b, a))
     end
-
-    local tracker = ensureTrackerColorConfig(sv, trackerType)
-    if not tracker then
-        return
-    end
-
-    tracker.colors = tracker.colors or {}
-    local defaultR, defaultG, defaultB, defaultA = getDefaultColor(trackerType, role)
-    local color = tracker.colors[role] or {}
-    color.r = normalizeColorComponent(r, defaultR)
-    color.g = normalizeColorComponent(g, defaultG)
-    color.b = normalizeColorComponent(b, defaultB)
-    color.a = normalizeColorComponent(a, defaultA)
-    tracker.colors[role] = color
 end
 
 function TrackerHost.OnLamPanelOpened()

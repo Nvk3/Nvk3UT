@@ -6,6 +6,10 @@ Nvk3UT.AchievementState = AchievementState
 local savedRoot
 local savedTracker
 
+local function getAchievementRepo()
+    return Nvk3UT_StateRepo_Achievements or (Nvk3UT and Nvk3UT.AchievementRepo)
+end
+
 local LEGACY_CATEGORY_KEY = "achievements"
 local LEGACY_CATEGORY_ALIASES = {
     ["achievements"] = true,
@@ -157,6 +161,11 @@ local function normalizeGroupId(groupId)
 end
 
 local function readCategoryExpanded(createDefault)
+    local repo = getAchievementRepo()
+    if repo and repo.AC_Block_IsCollapsed then
+        return repo.AC_Block_IsCollapsed() ~= true
+    end
+
     local tracker = ensureTrackerSaved()
     if not tracker then
         return true
@@ -176,6 +185,12 @@ local function readCategoryExpanded(createDefault)
 end
 
 local function writeCategoryExpanded(expanded)
+    local repo = getAchievementRepo()
+    if repo and repo.AC_Block_SetCollapsed then
+        local desiredCollapsed = expanded ~= true
+        return repo.AC_Block_SetCollapsed(desiredCollapsed)
+    end
+
     local tracker = ensureTrackerSaved()
     if not tracker then
         return false
@@ -219,6 +234,11 @@ local function writeGroupExpanded(groupKey, expanded)
 end
 
 local function readEntryExpanded(entryId, createDefault)
+    local repo = getAchievementRepo()
+    if repo and repo.AC_IsCollapsed then
+        return repo.AC_IsCollapsed(entryId) ~= true
+    end
+
     local entries = ensureEntryTable(createDefault)
     if not entries then
         return true
@@ -238,6 +258,12 @@ local function readEntryExpanded(entryId, createDefault)
 end
 
 local function writeEntryExpanded(entryId, expanded)
+    local repo = getAchievementRepo()
+    if repo and repo.AC_SetCollapsed then
+        local desiredCollapsed = expanded ~= true
+        return repo.AC_SetCollapsed(entryId, desiredCollapsed)
+    end
+
     local entries = ensureEntryTable(true)
     if not entries then
         return false
@@ -304,7 +330,9 @@ function AchievementState.Init(root)
         root.AchievementTracker = tracker
     end
 
-    tracker.entryExpanded = tracker.entryExpanded or {}
+    if not getAchievementRepo() then
+        tracker.entryExpanded = tracker.entryExpanded or {}
+    end
     tracker.timestamps = tracker.timestamps or {}
     savedTracker = tracker
     AchievementState._saved = savedTracker
