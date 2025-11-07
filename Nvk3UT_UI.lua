@@ -30,8 +30,8 @@ function M.ApplyFeatureToggles()
   end
   -- Toggle category tooltips
   if Nvk3UT and Nvk3UT.Tooltips and Nvk3UT.Tooltips.Enable then
-    local general = Nvk3UT.sv and Nvk3UT.sv.General
-    local features = general and general.features or (Nvk3UT.sv and Nvk3UT.sv.features)
+    local sv = Nvk3UT.sv
+    local features = sv and sv.features
     local on = features and (features.tooltips ~= false)
     Nvk3UT.Tooltips.Enable(on)
   end
@@ -106,8 +106,7 @@ end
 
 local function __nvk3_IsOn(key)
   local sv = Nvk3UT and Nvk3UT.sv
-  local general = sv and sv.General
-  local features = general and general.features or (sv and sv.features)
+  local features = sv and sv.features
   return features and features[key] == true
 end
 
@@ -117,8 +116,8 @@ local function __nvk3_CountFavorites()
     return 0
   end
   local sv = Nvk3UT and Nvk3UT.sv
-  local general = sv and sv.General
-  local scope = (general and general.favScope) or "account"
+  local ui = sv and sv.ui
+  local scope = (ui and ui.favoritesScope) or "account"
   local n = 0
   local iterator, state, key = Fav.GetAllFavorites(scope)
   if type(iterator) ~= "function" then
@@ -246,10 +245,10 @@ end
 do
   local ns = Nvk3UT and Nvk3UT.UI
   local function __nvk3_UpdateStatus_impl()
-    if not (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.General) then
+    if not (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.ui) then
       return
     end
-    local show = Nvk3UT.sv.General.showStatus ~= false
+    local show = Nvk3UT.sv.ui.statusVisible ~= false
     local getLabel = (ns and ns.GetStatusLabel) or (M and M.GetStatusLabel)
     if not getLabel then
       return

@@ -5,19 +5,29 @@ local Utils = Nvk3UT and Nvk3UT.Utils
 local RecentData = {}
 Nvk3UT.RecentData = RecentData
 
-local defaults = { progress = {} }
+local DEFAULT_RECENT_LIMIT = 100
 
 local function ensureSavedVars()
-    if not Nvk3UT._recentSV then
-        Nvk3UT._recentSV = ZO_SavedVars:NewAccountWide("Nvk3UT_Data_Recent", 1, nil, defaults)
+    local root = Nvk3UT
+    local saved = root and (root.SV or root.sv)
+    local ac = saved and saved.ac
+    local recent = ac and ac.recent
+    if not recent then
+        return nil
     end
 
-    local saved = Nvk3UT._recentSV
-    if type(saved.progress) ~= "table" then
-        saved.progress = {}
+    if type(recent.list) ~= "table" then
+        recent.list = {}
+    end
+    if type(recent.progress) ~= "table" then
+        recent.progress = {}
     end
 
-    return saved
+    if tonumber(recent.limit) ~= 50 and tonumber(recent.limit) ~= 100 and tonumber(recent.limit) ~= 250 then
+        recent.limit = DEFAULT_RECENT_LIMIT
+    end
+
+    return recent
 end
 
 local function now()
@@ -116,47 +126,8 @@ local function normalizeIdForStorage(id)
     return id
 end
 
--- Migration: merge all character buckets into the account-wide bucket
-function RecentData.MigrateToAccountWide()
-    local raw = _G["Nvk3UT_Data_Recent"]
-    local accountName = (GetDisplayName and GetDisplayName()) or nil
-    if not (raw and raw["Default"] and accountName and raw["Default"][accountName]) then
-        return 0
-    end
-
-    local root = raw["Default"][accountName]
-    local accNode = root["$AccountWide"] or {}
-    accNode["progress"] = accNode["progress"] or {}
-    local accProg = accNode["progress"]
-    local moved = 0
-
-    for key, node in pairs(root) do
-        if key ~= "$AccountWide" and type(key) == "string" and key:match("^%d+$") then
-            local prog = node and node["progress"]
-            if type(prog) == "table" then
-                for storedId, ts in pairs(prog) do
-                    if ts then
-                        if not accProg[storedId] or (type(ts) == "number" and ts > accProg[storedId]) then
-                            accProg[storedId] = ts
-                        end
-                        prog[storedId] = nil
-                        moved = moved + 1
-                    end
-                end
-            end
-        end
-    end
-
-    root["$AccountWide"] = accNode
-    return moved
-end
-
 function RecentData.InitSavedVars()
-    local sv = ensureSavedVars()
-    if RecentData.MigrateToAccountWide then
-        pcall(RecentData.MigrateToAccountWide)
-    end
-    return sv
+    return ensureSavedVars()
 end
 
 local function IsOpen(id)
@@ -194,13 +165,16 @@ function RecentData.Touch(id, timestamp)
         return
     end
 
-    local sv = ensureSavedVars()
+    local recent = ensureSavedVars()
+    if not recent then
+        return
+    end
     local storeId = normalizeIdForStorage(id)
     if not storeId then
         return
     end
 
-    sv.progress[storeId] = timestamp or now() or GetTimeStamp()
+    recent.progress[storeId] = timestamp or now() or GetTimeStamp()
 end
 
 function RecentData.Clear(id)
@@ -208,13 +182,16 @@ function RecentData.Clear(id)
         return
     end
 
-    local sv = ensureSavedVars()
+    local recent = ensureSavedVars()
+    if not recent then
+        return
+    end
     local storeId = normalizeIdForStorage(id)
     if not storeId then
         return
     end
 
-    sv.progress[storeId] = nil
+    recent.progress[storeId] = nil
 end
 
 function RecentData.GetTimestamp(id)
@@ -222,8 +199,11 @@ function RecentData.GetTimestamp(id)
         return nil
     end
 
-    local sv = ensureSavedVars()
-    local progress = sv.progress
+    local recent = ensureSavedVars()
+    if not recent then
+        return nil
+    end
+    local progress = recent.progress
     local keys = collectCandidateKeys(id)
 
     for index = 1, #keys do
@@ -242,16 +222,22 @@ function RecentData.Contains(id)
 end
 
 function RecentData.IterateProgress()
-    local sv = ensureSavedVars()
-    return next, sv.progress, nil
+    local recent = ensureSavedVars()
+    if not recent then
+        return function() end, nil, nil
+    end
+    return next, recent.progress, nil
 end
 
 -- Build a sorted list of IDs by timestamp (desc); optional sinceTs and maxCount
 function RecentData.List(maxCount, sinceTs)
-    local sv = ensureSavedVars()
+    local recent = ensureSavedVars()
+    if not recent then
+        return {}
+    end
     local t = {}
 
-    for id, ts in pairs(sv.progress) do
+    for id, ts in pairs(recent.progress) do
         if (not sinceTs) or (type(ts) == "number" and ts >= sinceTs) then
             t[#t + 1] = { id = id, ts = ts or 0 }
         end
@@ -270,7 +256,14 @@ function RecentData.List(maxCount, sinceTs)
         local open = IsOpen(entryId)
         if open then
             if limit == 0 or #res < limit then
-                res[#res + 1] = entryId
+                local storeValue = entryId
+                if type(storeValue) == "string" then
+                    local numeric = tonumber(storeValue)
+                    if numeric then
+                        storeValue = numeric
+                    end
+                end
+                res[#res + 1] = storeValue
             end
         elseif entryId then
             RecentData.Clear(entryId)
@@ -282,14 +275,24 @@ function RecentData.List(maxCount, sinceTs)
         emitDebugMessage("List filtered", "removed:", removed)
     end
 
+    local limitCount = tonumber(recent.limit) or DEFAULT_RECENT_LIMIT
+    local capped = {}
+    local cap = math.min(#res, limitCount)
+    for index = 1, cap do
+        capped[index] = res[index]
+    end
+    recent.list = capped
+
     return res
 end
 
 local function getConfigWindow()
-    local sv = Nvk3UT and Nvk3UT.sv or { General = {} }
-    local general = sv.General or {}
-    local win = general.recentWindow or 0
-    local maxc = general.recentMax or 100
+    local sv = Nvk3UT and Nvk3UT.sv
+    local ui = sv and sv.ui or {}
+    local ac = sv and sv.ac or {}
+    local recent = ac.recent or {}
+    local win = ui.recentWindow or 0
+    local maxc = recent.limit or DEFAULT_RECENT_LIMIT
     local sinceTs = nil
 
     if win == 7 then
@@ -316,8 +319,12 @@ end
 
 -- Seed the account-wide recent list with up to 50 entries (only if empty)
 function RecentData.BuildInitial()
-    local sv = ensureSavedVars()
-    if next(sv.progress) ~= nil then
+    local recent = ensureSavedVars()
+    if not recent then
+        return 0
+    end
+
+    if next(recent.progress) ~= nil then
         return 0
     end
 
@@ -439,10 +446,10 @@ function RecentData.BuildInitial()
     for index = 1, math.min(INIT_CAP, #candidates) do
         local storeId = candidates[index]
         if storeId then
-            if sv.progress[storeId] == nil then
+            if recent.progress[storeId] == nil then
                 added = added + 1
             end
-            sv.progress[storeId] = stamp
+            recent.progress[storeId] = stamp
         end
     end
 

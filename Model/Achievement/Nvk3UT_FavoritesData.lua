@@ -6,7 +6,6 @@ Nvk3UT.FavoritesData = FavoritesData
 local ACCOUNT_SCOPE = "account"
 local CHARACTER_SCOPE = "character"
 
-local ACCOUNT_VERSION = 1
 local CHARACTER_VERSION = 1
 
 local EMPTY_SET = {}
@@ -56,17 +55,11 @@ local function resolveScope(scopeOverride)
         return normalizedOverride
     end
 
-    local general = Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.General
-    local configured = general and general.favScope
+    local ui = Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.ui
+    local configured = ui and ui.favoritesScope
     local normalizedConfigured = normalizeScope(configured)
 
     return normalizedConfigured or ACCOUNT_SCOPE
-end
-
-local function ensureSavedVars()
-    if not Nvk3UT_Data_Favorites_Account or not Nvk3UT_Data_Favorites_Characters then
-        FavoritesData.InitSavedVars()
-    end
 end
 
 local function ensureSet(scope, create)
@@ -74,24 +67,24 @@ local function ensureSet(scope, create)
         return nil
     end
 
-    ensureSavedVars()
-
     if scope == ACCOUNT_SCOPE then
-        local saved = Nvk3UT_Data_Favorites_Account
-        if not saved then
-            if create then
-                FavoritesData.InitSavedVars()
-                saved = Nvk3UT_Data_Favorites_Account
-            else
+        local root = Nvk3UT
+        local saved = root and (root.SV or root.sv)
+        local ac = saved and saved.ac
+        local favorites = ac and ac.favorites
+        if type(favorites) ~= "table" then
+            if not create or not ac then
                 return nil
             end
+            favorites = {}
+            ac.favorites = favorites
         end
 
-        if type(saved.list) ~= "table" and create then
-            saved.list = {}
-        end
+        return favorites
+    end
 
-        return saved and saved.list or nil
+    if not Nvk3UT_Data_Favorites_Characters and create then
+        FavoritesData.InitSavedVars()
     end
 
     local saved = Nvk3UT_Data_Favorites_Characters
@@ -217,11 +210,13 @@ local function NotifyFavoritesChanged()
 end
 
 function FavoritesData.InitSavedVars()
-    if not Nvk3UT_Data_Favorites_Account then
-        Nvk3UT_Data_Favorites_Account =
-            ZO_SavedVars:NewAccountWide("Nvk3UT_Data_Favorites", ACCOUNT_VERSION, "account", { list = {} })
-    elseif type(Nvk3UT_Data_Favorites_Account.list) ~= "table" then
-        Nvk3UT_Data_Favorites_Account.list = {}
+    local root = Nvk3UT
+    local saved = root and (root.SV or root.sv)
+    local ac = saved and saved.ac
+    if ac then
+        if type(ac.favorites) ~= "table" then
+            ac.favorites = {}
+        end
     end
 
     if not Nvk3UT_Data_Favorites_Characters then

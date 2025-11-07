@@ -139,7 +139,9 @@ function Addon:InitSavedVariables()
 
     local sv = self.SV
     if type(sv) == "table" then
-        self.sv = sv -- legacy alias consumed by existing modules
+        local facadeCreator = stateInit and stateInit.CreateLegacyFacade
+        local facade = facadeCreator and facadeCreator(sv) or sv
+        self.sv = facade -- legacy alias consumed by existing modules
         if type(self.SetDebugEnabled) == "function" then
             self:SetDebugEnabled(sv.debug)
         end

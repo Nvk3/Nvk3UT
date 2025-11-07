@@ -444,8 +444,8 @@ local function BuildFontString(descriptor, fallback)
 end
 
 local function BuildFavoritesScope()
-    local sv = Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.General
-    return (sv and sv.favScope) or "account"
+    local ui = Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.ui
+    return (ui and ui.favoritesScope) or "account"
 end
 
 local function IsFavoriteAchievement(achievementId)

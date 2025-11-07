@@ -180,31 +180,36 @@ local function checkSavedVariables()
         return false, "Nvk3UT.SV is not a table"
     end
 
-    local general = sv.General
-    local questTracker = sv.QuestTracker
-    local achievementTracker = sv.AchievementTracker
-    local appearance = sv.appearance
+    local ui = sv.ui
+    local features = sv.features
+    local host = sv.host
+    local ac = sv.ac
 
     local missing = {}
-    if type(general) ~= "table" then
-        missing[#missing + 1] = "General"
+    if type(ui) ~= "table" then
+        missing[#missing + 1] = "ui"
     end
-    if type(questTracker) ~= "table" then
-        missing[#missing + 1] = "QuestTracker"
+    if type(features) ~= "table" then
+        missing[#missing + 1] = "features"
     end
-    if type(achievementTracker) ~= "table" then
-        missing[#missing + 1] = "AchievementTracker"
+    if type(host) ~= "table" then
+        missing[#missing + 1] = "host"
     end
-    if type(appearance) ~= "table" then
-        missing[#missing + 1] = "appearance"
+    if type(ac) ~= "table" then
+        missing[#missing + 1] = "ac"
     end
 
     if #missing > 0 then
         return false, "SavedVariables missing tables: " .. table.concat(missing, ", ")
     end
 
-    if rawget(Nvk3UT, "sv") ~= sv then
-        return false, "Legacy alias Nvk3UT.sv not pointing at Nvk3UT.SV"
+    local facade = rawget(Nvk3UT, "sv")
+    if type(facade) ~= "table" then
+        return false, "Legacy alias Nvk3UT.sv missing"
+    end
+
+    if facade.General == nil or facade.Settings == nil then
+        return false, "SavedVariables facade missing legacy tables"
     end
 
     return true, "SavedVariables structure looks sane"
@@ -263,8 +268,10 @@ local function checkRecentData()
         return false, "RecentData missing API: " .. table.concat(missing, ", ")
     end
 
-    local sv = rawget(_G, "Nvk3UT_Data_Recent")
-    if type(sv) ~= "table" then
+    local sv = rawget(Nvk3UT, "SV") or rawget(Nvk3UT, "sv")
+    local ac = sv and sv.ac
+    local recent = ac and ac.recent
+    if type(recent) ~= "table" then
         return nil, "Recent SavedVariables not initialized yet"
     end
 
