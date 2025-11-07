@@ -79,6 +79,7 @@ local RefreshQuestCategories -- forward declaration for quest-driven refreshes
 local RefreshCategoriesForKeys -- forward declaration for bulk category refreshes
 local UpdateRepoQuestFlags -- forward declaration for quest flag persistence helpers
 local DoesJournalQuestExist -- forward declaration for journal lookups
+local ApplyActiveQuestVisuals -- forward declaration for targeted active quest styling
 -- Forward declaration so SafeCall is visible to functions defined above its body.
 -- Without this, calling SafeCall in ResolveQuestDebugInfo during quest accept can crash
 -- because SafeCall would still be nil at that point.
@@ -117,6 +118,7 @@ local state = {
     isRebuildInProgress = false,
     questModelSubscription = nil,
     repoPrimed = false,
+    activeQuestId = nil,
 }
 
 local PRIORITY = {
@@ -437,6 +439,31 @@ local function GetJournalIndexForQuestKey(questKey)
     end
 
     return nil
+end
+
+local function GetQuestIdForJournalIndex(journalIndex)
+    local numericIndex = tonumber(journalIndex)
+    if not numericIndex or numericIndex <= 0 then
+        return nil
+    end
+
+    numericIndex = math.floor(numericIndex)
+
+    if type(GetJournalQuestId) ~= "function" then
+        return nil
+    end
+
+    local ok, questId = pcall(GetJournalQuestId, numericIndex)
+    if not ok then
+        return nil
+    end
+
+    local numericQuestId = tonumber(questId)
+    if not numericQuestId or numericQuestId <= 0 then
+        return nil
+    end
+
+    return math.floor(numericQuestId)
 end
 
 local function ForEachQuest(callback)
@@ -837,6 +864,7 @@ local function SyncSelectedQuestFromSaved()
 end
 
 local function ApplyActiveQuestFromSaved()
+    local previousActiveQuestId = state.activeQuestId
     local questKey = SyncSelectedQuestFromSaved()
     local journalIndex = GetJournalIndexForQuestKey(questKey)
 
@@ -846,6 +874,29 @@ local function ApplyActiveQuestFromSaved()
         state.trackedCategoryKeys = CollectCategoryKeysForQuest(journalIndex)
     else
         state.trackedCategoryKeys = {}
+    end
+
+    local newActiveQuestId
+    if journalIndex then
+        newActiveQuestId = GetQuestIdForJournalIndex(journalIndex)
+    end
+
+    if not newActiveQuestId then
+        newActiveQuestId = ResolveQuestIdFromKey(questKey)
+    end
+
+    if newActiveQuestId then
+        local numericQuestId = tonumber(newActiveQuestId)
+        if numericQuestId and numericQuestId > 0 then
+            newActiveQuestId = math.floor(numericQuestId)
+        else
+            newActiveQuestId = nil
+        end
+    end
+
+    if previousActiveQuestId ~= newActiveQuestId then
+        state.activeQuestId = newActiveQuestId
+        ApplyActiveQuestVisuals(previousActiveQuestId, newActiveQuestId)
     end
 
     return journalIndex
@@ -1744,6 +1795,111 @@ local function FindQuestControlByJournalIndex(journalIndex)
     end
 
     return nil
+end
+
+local function ApplyQuestControlVisualState(control)
+    if not control then
+        return false
+    end
+
+    local quest = control.data and control.data.quest
+    if not quest then
+        return false
+    end
+
+    local colorRole = DetermineQuestColorRole(quest)
+    local r, g, b, a = GetQuestTrackerColor(colorRole)
+    ApplyBaseColor(control, r, g, b, a)
+    UpdateQuestIconSlot(control)
+
+    return true
+end
+
+local function ResolveQuestControlForQuestId(questId)
+    local numericQuestId = tonumber(questId)
+    if not numericQuestId or numericQuestId <= 0 then
+        return nil
+    end
+
+    numericQuestId = math.floor(numericQuestId)
+
+    local questModel = Nvk3UT and Nvk3UT.QuestModel
+    local journalIndex = nil
+
+    if questModel and questModel.GetJournalIndexForQuestId then
+        journalIndex = questModel.GetJournalIndexForQuestId(numericQuestId)
+    end
+
+    if not journalIndex and state.questControls then
+        for _, control in pairs(state.questControls) do
+            local questData = control and control.data and control.data.quest
+            if questData then
+                local questDataId = tonumber(questData.questId)
+                if questDataId and math.floor(questDataId) == numericQuestId then
+                    journalIndex = questData.journalIndex
+                    break
+                end
+
+                local fallbackId = tonumber(questData.journalIndex)
+                if fallbackId and math.floor(fallbackId) == numericQuestId then
+                    journalIndex = questData.journalIndex
+                    break
+                end
+            end
+        end
+    end
+
+    if not journalIndex then
+        return nil
+    end
+
+    local control = FindQuestControlByJournalIndex(journalIndex)
+    if not control then
+        return nil
+    end
+
+    local questData = control.data and control.data.quest
+    if not questData then
+        return nil
+    end
+
+    return control
+end
+
+local function ApplyActiveQuestVisuals(oldQuestId, newQuestId)
+    if oldQuestId == newQuestId then
+        oldQuestId = nil
+    end
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format(
+            "ACTIVE_VISUAL %s -> %s",
+            tostring(oldQuestId),
+            tostring(newQuestId)
+        ))
+    end
+
+    if not state.isInitialized then
+        return false
+    end
+
+    local updated = false
+
+    if oldQuestId then
+        local control = ResolveQuestControlForQuestId(oldQuestId)
+        if ApplyQuestControlVisualState(control) then
+            updated = true
+        end
+    end
+
+    if newQuestId then
+        local control = ResolveQuestControlForQuestId(newQuestId)
+        if ApplyQuestControlVisualState(control) then
+            updated = true
+        end
+    end
+
+    return updated
 end
 
 local function EnsureQuestRowVisible(journalIndex, options)
@@ -3850,6 +4006,10 @@ function QuestTracker.Refresh()
     Rebuild()
 end
 
+function QuestTracker.ApplyActiveQuestVisuals(oldQuestId, newQuestId)
+    return ApplyActiveQuestVisuals(oldQuestId, newQuestId)
+end
+
 function QuestTracker.Shutdown()
     if not state.isInitialized then
         return
@@ -3902,6 +4062,7 @@ function QuestTracker.Shutdown()
     state.isRebuildInProgress = false
     state.questModelSubscription = nil
     state.repoPrimed = false
+    state.activeQuestId = nil
     NotifyHostContentChanged()
 end
 
