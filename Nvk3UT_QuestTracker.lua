@@ -105,6 +105,7 @@ local RefreshCategoriesForKeys -- forward declaration for bulk category refreshe
 local UpdateRepoQuestFlags -- forward declaration for quest flag persistence helpers
 local DoesJournalQuestExist -- forward declaration for journal lookups
 local ApplyActiveQuestVisuals -- forward declaration for targeted active quest styling
+local UpdateQuestIconSlot -- forward declaration so quest row styling can safely call into the icon refresher
 local ApplyActiveQuestFromSaved -- forward declaration for active quest state sync
 -- Forward declaration so SafeCall is visible to functions defined above its body.
 -- Without this, calling SafeCall in ResolveQuestDebugInfo during quest accept can crash
@@ -3336,7 +3337,7 @@ local function UpdateCategoryToggle(control, expanded)
     control.isExpanded = expanded and true or false
 end
 
-local function UpdateQuestIconSlot(control)
+UpdateQuestIconSlot = function(control)
     if not (control and control.iconSlot) then
         return
     end
