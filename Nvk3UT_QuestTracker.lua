@@ -367,8 +367,38 @@ local function QuestKeyToJournalIndex(questKey)
     end
 
     local numeric = tonumber(questKey)
-    if numeric and numeric > 0 then
-        return numeric
+    if not (numeric and numeric > 0) then
+        return nil
+    end
+
+    local questId = math.floor(numeric)
+
+    local resolved
+    ForEachQuest(function(quest)
+        if resolved then
+            return
+        end
+        if quest and quest.questId then
+            local stored = tonumber(quest.questId)
+            if stored and stored == questId then
+                resolved = quest.journalIndex
+            end
+        end
+    end)
+
+    if resolved then
+        return resolved
+    end
+
+    if questId <= 50 then
+        if IsValidJournalQuestIndex and IsValidJournalQuestIndex(questId) then
+            return questId
+        elseif GetJournalQuestName then
+            local name = GetJournalQuestName(questId)
+            if name and name ~= "" then
+                return questId
+            end
+        end
     end
 
     return nil
@@ -439,6 +469,55 @@ local function ForEachQuestIndex(callback)
                 callback(index, nil, nil)
             end
         end
+    end
+end
+
+local function SyncQuestFlagsFromSnapshot(snapshot)
+    if not QuestState or not QuestState.UpdateQuestFlagsFromQuest then
+        return
+    end
+
+    local current = snapshot or state.snapshot
+    local categories = current and current.categories and current.categories.ordered
+    if type(categories) ~= "table" then
+        if QuestState.PruneQuestFlags then
+            QuestState.PruneQuestFlags({})
+        end
+        return
+    end
+
+    local valid = {}
+
+    for index = 1, #categories do
+        local category = categories[index]
+        if category and type(category.quests) == "table" then
+            for questIndex = 1, #category.quests do
+                local quest = category.quests[questIndex]
+                if quest then
+                    if QuestState.UpdateQuestFlagsFromQuest then
+                        QuestState.UpdateQuestFlagsFromQuest(quest)
+                    end
+
+                    local questId
+                    if QuestState.NormalizeQuestKey then
+                        questId = QuestState.NormalizeQuestKey(quest.questId or quest.journalIndex)
+                    end
+                    if not questId then
+                        questId = tonumber(quest.questId) or tonumber(quest.journalIndex)
+                        if questId then
+                            questId = math.floor(questId)
+                        end
+                    end
+                    if questId then
+                        valid[questId] = true
+                    end
+                end
+            end
+        end
+    end
+
+    if QuestState.PruneQuestFlags then
+        QuestState.PruneQuestFlags(valid)
     end
 end
 
@@ -2572,18 +2651,22 @@ local function EnsureSavedVars()
     Nvk3UT.sv = Nvk3UT.sv or {}
 
     if QuestState and QuestState.Bind then
-        local saved = QuestState.Bind(Nvk3UT.sv)
-        state.saved = saved
+        local characterSaved = QuestState.Bind(Nvk3UT.sv)
+        state.characterSaved = characterSaved
         if QuestSelection and QuestSelection.Bind then
-            QuestSelection.Bind(Nvk3UT.sv, saved)
+            QuestSelection.Bind(Nvk3UT.sv, characterSaved)
         end
-    else
-        local saved = Nvk3UT.sv.QuestTracker or {}
-        Nvk3UT.sv.QuestTracker = saved
-        state.saved = saved
+    end
+
+    local accountSV = Nvk3UT.sv
+    local questSettings = accountSV.QuestTracker or {}
+    accountSV.QuestTracker = questSettings
+    state.saved = questSettings
+
+    if not QuestState or not QuestState.Bind then
         EnsureActiveSavedState()
         if QuestSelection and QuestSelection.Bind then
-            QuestSelection.Bind(Nvk3UT.sv, saved)
+            QuestSelection.Bind(Nvk3UT.sv, questSettings)
         end
     end
 
@@ -3471,6 +3554,7 @@ end
 
 local function ApplySnapshot(snapshot, context)
     state.snapshot = snapshot
+    SyncQuestFlagsFromSnapshot(snapshot)
 
     local trackingContext = {
         trigger = (context and context.trigger) or "refresh",
@@ -3665,6 +3749,9 @@ function QuestTracker.Shutdown()
     state.container = nil
     state.control = nil
     state.snapshot = nil
+    if QuestState and QuestState.PruneQuestFlags then
+        QuestState.PruneQuestFlags({})
+    end
     state.orderedControls = {}
     state.lastAnchoredControl = nil
     state.categoryControls = {}

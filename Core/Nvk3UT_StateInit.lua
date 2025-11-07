@@ -132,6 +132,17 @@ local DEFAULTS = {
     },
 }
 
+local CHARACTER_DEFAULTS = {
+    schemaVersion = SCHEMA_VERSION,
+    quests = {
+        state = {
+            zones = {},
+            quests = {},
+        },
+        flags = {},
+    },
+}
+
 local function ensureTable(parent, key)
     if type(parent) ~= "table" then
         return {}
@@ -381,6 +392,130 @@ local function normalizeRoot(saved)
     normalizeFeatureStructure(saved)
     normalizeHostStructure(saved)
     normalizeAcStructure(saved)
+end
+
+local function normalizeCharacterCollapseMap(source, keyNormalizer)
+    local normalized = {}
+
+    if type(source) ~= "table" then
+        return normalized
+    end
+
+    for key, value in pairs(source) do
+        local numeric = keyNormalizer and keyNormalizer(key) or tonumber(key)
+        if numeric and numeric > 0 then
+            if value == true or value == 1 or value == "true" then
+                normalized[math.floor(numeric)] = true
+            end
+        end
+    end
+
+    return normalized
+end
+
+local function normalizeQuestFlags(source)
+    if type(source) ~= "table" then
+        return {}
+    end
+
+    local normalized = {}
+
+    for questId, flags in pairs(source) do
+        local numericId = tonumber(questId)
+        if numericId and numericId > 0 and type(flags) == "table" then
+            local entry = {}
+
+            if flags.tracked == true then
+                entry.tracked = true
+            end
+
+            if flags.assisted == true then
+                entry.assisted = true
+            end
+
+            if flags.isDaily == true then
+                entry.isDaily = true
+            end
+
+            local categoryKey = tonumber(flags.categoryKey)
+            if categoryKey and categoryKey > 0 then
+                entry.categoryKey = math.floor(categoryKey)
+            end
+
+            local journalIndex = tonumber(flags.journalIndex)
+            if journalIndex and journalIndex > 0 then
+                entry.journalIndex = math.floor(journalIndex)
+            end
+
+            if next(entry) ~= nil then
+                normalized[math.floor(numericId)] = entry
+            end
+        end
+    end
+
+    return normalized
+end
+
+local function normalizeCharacterRoot(saved)
+    if type(saved) ~= "table" then
+        return
+    end
+
+    if tonumber(saved.schemaVersion) ~= SCHEMA_VERSION then
+        saved.schemaVersion = SCHEMA_VERSION
+    end
+
+    local quests = ensureTable(saved, "quests")
+    quests.state = quests.state or {}
+    quests.flags = normalizeQuestFlags(quests.flags)
+
+    local state = quests.state
+    if type(state) ~= "table" then
+        state = {}
+        quests.state = state
+    end
+
+    local zones = normalizeCharacterCollapseMap(state.zones, function(key)
+        local numeric = tonumber(key)
+        if numeric and numeric > 0 then
+            return math.floor(numeric)
+        end
+        return nil
+    end)
+
+    if next(zones) ~= nil then
+        state.zones = zones
+    else
+        state.zones = nil
+    end
+
+    local questsMap = normalizeCharacterCollapseMap(state.quests, function(key)
+        local numeric = tonumber(key)
+        if numeric and numeric > 0 then
+            return math.floor(numeric)
+        end
+        return nil
+    end)
+
+    if next(questsMap) ~= nil then
+        state.quests = questsMap
+    else
+        state.quests = nil
+    end
+
+    if next(state) ~= nil then
+        quests.state = state
+    else
+        quests.state = nil
+    end
+
+    if next(quests.flags) ~= nil then
+        quests.flags = quests.flags
+    else
+        quests.flags = nil
+    end
+
+    saved.quests = quests
 end
 
 local function createWindowFacade(saved)
@@ -653,7 +788,7 @@ local function createSettingsFacade(saved)
     return settings
 end
 
-function Nvk3UT_StateInit.CreateLegacyFacade(saved)
+function Nvk3UT_StateInit.CreateLegacyFacade(saved, character)
     if type(saved) ~= "table" then
         return nil
     end
@@ -676,6 +811,10 @@ function Nvk3UT_StateInit.CreateLegacyFacade(saved)
                 return saved.host
             elseif key == "ac" then
                 return saved.ac
+            elseif key == "character" or key == "Character" then
+                return character
+            elseif key == "QuestTracker" then
+                return character and character.quests
             end
             return saved[key]
         end,
@@ -708,6 +847,24 @@ local function createSavedVars()
     return sv
 end
 
+local function createCharacterSavedVars()
+    local lib = LibSavedVars
+    local sv
+
+    if lib and lib.NewCharacterIdSettings then
+        sv = lib:NewCharacterIdSettings(SAVED_VARIABLES_NAME, SCHEMA_VERSION, CHARACTER_DEFAULTS)
+        if sv and sv.EnableDefaultsTrimming then
+            sv = sv:EnableDefaultsTrimming()
+        end
+    end
+
+    if not sv and ZO_SavedVars then
+        sv = ZO_SavedVars:NewCharacterIdSettings(SAVED_VARIABLES_NAME, SCHEMA_VERSION, nil, CHARACTER_DEFAULTS)
+    end
+
+    return sv
+end
+
 ---Create or load SavedVariables and ensure all required subtables/fields exist.
 ---addonTable is expected to be the global addon table Nvk3UT.
 ---Returns the SavedVariables table.
@@ -716,28 +873,35 @@ function Nvk3UT_StateInit.BootstrapSavedVariables(addonTable)
         return nil
     end
 
-    local sv = addonTable.SV
-    if type(sv) ~= "table" then
-        sv = createSavedVars()
+    local account = addonTable.SV
+    if type(account) ~= "table" then
+        account = createSavedVars()
     end
 
-    if type(sv) ~= "table" then
-        return nil
+    if type(account) == "table" then
+        normalizeRoot(account)
+        addonTable.SV = account
     end
 
-    normalizeRoot(sv)
-
-    addonTable.SV = sv
-
-    if type(addonTable.SetDebugEnabled) == "function" then
-        addonTable:SetDebugEnabled(sv.debug)
+    local character = addonTable.SVCharacter
+    if type(character) ~= "table" then
+        character = createCharacterSavedVars()
     end
 
-    if Nvk3UT_Diagnostics and Nvk3UT_Diagnostics.SyncFromSavedVariables then
-        Nvk3UT_Diagnostics.SyncFromSavedVariables(sv)
+    if type(character) == "table" then
+        normalizeCharacterRoot(character)
+        addonTable.SVCharacter = character
     end
 
-    return sv
+    if type(addonTable.SetDebugEnabled) == "function" and type(account) == "table" then
+        addonTable:SetDebugEnabled(account.debug)
+    end
+
+    if Nvk3UT_Diagnostics and Nvk3UT_Diagnostics.SyncFromSavedVariables and type(account) == "table" then
+        Nvk3UT_Diagnostics.SyncFromSavedVariables(account)
+    end
+
+    return account, character
 end
 
 return Nvk3UT_StateInit

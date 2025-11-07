@@ -131,17 +131,24 @@ end
 function Addon:InitSavedVariables()
     local stateInit = Nvk3UT_StateInit
     if stateInit and stateInit.BootstrapSavedVariables then
-        local sv = stateInit.BootstrapSavedVariables(self)
-        if type(sv) == "table" then
-            self.SV = sv
+        local account, character = stateInit.BootstrapSavedVariables(self)
+        if type(account) == "table" then
+            self.SV = account
+        end
+        if type(character) == "table" then
+            self.SVCharacter = character
         end
     end
 
     local sv = self.SV
+    local character = self.SVCharacter
     if type(sv) == "table" then
         local facadeCreator = stateInit and stateInit.CreateLegacyFacade
-        local facade = facadeCreator and facadeCreator(sv) or sv
+        local facade = facadeCreator and facadeCreator(sv, character) or sv
         self.sv = facade -- legacy alias consumed by existing modules
+        if type(character) == "table" then
+            self.svCharacter = character
+        end
         if type(self.SetDebugEnabled) == "function" then
             self:SetDebugEnabled(sv.debug)
         end

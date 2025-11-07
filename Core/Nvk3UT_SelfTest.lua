@@ -212,6 +212,59 @@ local function checkSavedVariables()
         return false, "SavedVariables facade missing legacy tables"
     end
 
+    local characterSV = rawget(Nvk3UT, "SVCharacter")
+    if characterSV == nil then
+        return nil, "Character SavedVariables not initialized yet"
+    end
+
+    if type(characterSV) ~= "table" then
+        return false, "Nvk3UT.SVCharacter is not a table"
+    end
+
+    local quests = characterSV.quests
+    if type(quests) ~= "table" then
+        return false, "Character quests table missing"
+    end
+
+    local state = quests.state
+    if state ~= nil and type(state) ~= "table" then
+        return false, "Character quests.state malformed"
+    end
+
+    local function validateCollapseMap(map, label)
+        if map == nil then
+            return true
+        end
+        if type(map) ~= "table" then
+            return false, label .. " collapse map not a table"
+        end
+        for key, value in pairs(map) do
+            local numeric = tonumber(key)
+            if not (numeric and numeric > 0) then
+                return false, string.format("%s collapse key %s is not numeric", label, tostring(key))
+            end
+            if value ~= true then
+                return false, string.format("%s collapse entry for %s must be true", label, tostring(key))
+            end
+        end
+        return true
+    end
+
+    local okZones, zonesError = validateCollapseMap(state and state.zones, "zones")
+    if not okZones then
+        return false, zonesError
+    end
+
+    local okQuests, questsError = validateCollapseMap(state and state.quests, "quests")
+    if not okQuests then
+        return false, questsError
+    end
+
+    local flags = quests.flags
+    if flags ~= nil and type(flags) ~= "table" then
+        return false, "Character quests.flags malformed"
+    end
+
     return true, "SavedVariables structure looks sane"
 end
 
@@ -237,9 +290,9 @@ local function checkFavoritesData()
         return false, "FavoritesData missing API: " .. table.concat(missing, ", ")
     end
 
-    local accountSV = rawget(_G, "Nvk3UT_Data_Favorites_Account")
-    local characterSV = rawget(_G, "Nvk3UT_Data_Favorites_Characters")
-    if accountSV == nil or characterSV == nil then
+    local sv = rawget(Nvk3UT, "SV")
+    local favorites = sv and sv.ac and sv.ac.favorites
+    if type(favorites) ~= "table" then
         return nil, "Favorites SavedVariables not initialized yet"
     end
 
