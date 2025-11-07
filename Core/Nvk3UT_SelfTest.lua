@@ -290,10 +290,11 @@ local function checkFavoritesData()
         return false, "FavoritesData missing API: " .. table.concat(missing, ", ")
     end
 
-    local sv = rawget(Nvk3UT, "SV")
-    local favorites = sv and sv.ac and sv.ac.favorites
-    if type(favorites) ~= "table" then
-        return nil, "Favorites SavedVariables not initialized yet"
+    local repo = Nvk3UT_StateRepo_Achievements or (Nvk3UT and Nvk3UT.AchievementRepo)
+    if repo and repo.AC_Fav_List then
+        repo.AC_Fav_List()
+    else
+        return nil, "Achievement repository not initialised"
     end
 
     return true, "FavoritesData ready"
@@ -321,11 +322,14 @@ local function checkRecentData()
         return false, "RecentData missing API: " .. table.concat(missing, ", ")
     end
 
-    local sv = rawget(Nvk3UT, "SV") or rawget(Nvk3UT, "sv")
-    local ac = sv and sv.ac
-    local recent = ac and ac.recent
-    if type(recent) ~= "table" then
-        return nil, "Recent SavedVariables not initialized yet"
+    local repo = Nvk3UT_StateRepo_Achievements or (Nvk3UT and Nvk3UT.AchievementRepo)
+    if not (repo and repo.AC_Recent_GetStorage) then
+        return nil, "Achievement repository not initialised"
+    end
+
+    local storage = repo.AC_Recent_GetStorage(true)
+    if type(storage) ~= "table" then
+        return nil, "Recent storage not initialised"
     end
 
     return true, "RecentData ready"

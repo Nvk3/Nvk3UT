@@ -7,27 +7,27 @@ Nvk3UT.RecentData = RecentData
 
 local DEFAULT_RECENT_LIMIT = 100
 
+local function getRepo()
+    return Nvk3UT_StateRepo_Achievements or (Nvk3UT and Nvk3UT.AchievementRepo)
+end
+
+local function getUiRepo()
+    return Nvk3UT_StateRepo or (Nvk3UT and Nvk3UT.StateRepo)
+end
+
 local function ensureSavedVars()
-    local root = Nvk3UT
-    local saved = root and (root.SV or root.sv)
-    local ac = saved and saved.ac
-    local recent = ac and ac.recent
-    if not recent then
-        return nil
+    local repo = getRepo()
+    if repo and repo.AC_Recent_GetStorage then
+        local recent = repo.AC_Recent_GetStorage(true)
+        if recent then
+            if type(recent.progress) ~= "table" then
+                recent.progress = {}
+            end
+            return recent
+        end
     end
 
-    if type(recent.list) ~= "table" then
-        recent.list = {}
-    end
-    if type(recent.progress) ~= "table" then
-        recent.progress = {}
-    end
-
-    if tonumber(recent.limit) ~= 50 and tonumber(recent.limit) ~= 100 and tonumber(recent.limit) ~= 250 then
-        recent.limit = DEFAULT_RECENT_LIMIT
-    end
-
-    return recent
+    return nil
 end
 
 local function now()
@@ -175,6 +175,11 @@ function RecentData.Touch(id, timestamp)
     end
 
     recent.progress[storeId] = timestamp or now() or GetTimeStamp()
+
+    local repo = getRepo()
+    if repo and repo.AC_Recent_Touch then
+        repo.AC_Recent_Touch(storeId)
+    end
 end
 
 function RecentData.Clear(id)
@@ -275,24 +280,38 @@ function RecentData.List(maxCount, sinceTs)
         emitDebugMessage("List filtered", "removed:", removed)
     end
 
-    local limitCount = tonumber(recent.limit) or DEFAULT_RECENT_LIMIT
+    local repo = getRepo()
+    local limitCount = (repo and repo.AC_Recent_GetLimit and repo.AC_Recent_GetLimit()) or DEFAULT_RECENT_LIMIT
     local capped = {}
     local cap = math.min(#res, limitCount)
     for index = 1, cap do
         capped[index] = res[index]
     end
-    recent.list = capped
+    if repo and repo.AC_Recent_SetList then
+        repo.AC_Recent_SetList(capped)
+    else
+        recent.list = capped
+    end
 
     return res
 end
 
 local function getConfigWindow()
-    local sv = Nvk3UT and Nvk3UT.sv
-    local ui = sv and sv.ui or {}
-    local ac = sv and sv.ac or {}
-    local recent = ac.recent or {}
-    local win = ui.recentWindow or 0
-    local maxc = recent.limit or DEFAULT_RECENT_LIMIT
+    local repo = getRepo()
+    local uiRepo = getUiRepo()
+    local win = 0
+    if uiRepo and uiRepo.UI_GetOption then
+        local configured = uiRepo.UI_GetOption("recentWindow")
+        if type(configured) == "number" then
+            win = configured
+        else
+            win = 0
+        end
+    else
+        win = 0
+    end
+
+    local maxc = (repo and repo.AC_Recent_GetLimit and repo.AC_Recent_GetLimit()) or DEFAULT_RECENT_LIMIT
     local sinceTs = nil
 
     if win == 7 then

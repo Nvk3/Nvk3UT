@@ -10,6 +10,10 @@ local CHARACTER_VERSION = 1
 
 local EMPTY_SET = {}
 
+local function getRepo()
+    return Nvk3UT_StateRepo_Achievements or (Nvk3UT and Nvk3UT.AchievementRepo)
+end
+
 local function isDebugEnabled()
     local root = Nvk3UT
     return root and root.sv and root.sv.debug == true
@@ -68,19 +72,7 @@ local function ensureSet(scope, create)
     end
 
     if scope == ACCOUNT_SCOPE then
-        local root = Nvk3UT
-        local saved = root and (root.SV or root.sv)
-        local ac = saved and saved.ac
-        local favorites = ac and ac.favorites
-        if type(favorites) ~= "table" then
-            if not create or not ac then
-                return nil
-            end
-            favorites = {}
-            ac.favorites = favorites
-        end
-
-        return favorites
+        return nil
     end
 
     if not Nvk3UT_Data_Favorites_Characters and create then
@@ -105,11 +97,32 @@ local function ensureSet(scope, create)
 end
 
 local function getSet(scope)
+    if scope == ACCOUNT_SCOPE then
+        local repo = getRepo()
+        if repo and repo.AC_Fav_List then
+            local snapshot = {}
+            local list = repo.AC_Fav_List()
+            for index = 1, #list do
+                snapshot[list[index]] = true
+            end
+            return snapshot
+        end
+        return EMPTY_SET
+    end
+
     local saved = ensureSet(scope, false)
     return saved or EMPTY_SET
 end
 
 local function isFavoritedInScope(id, scope)
+    if scope == ACCOUNT_SCOPE then
+        local repo = getRepo()
+        if repo and repo.AC_Fav_Has then
+            return repo.AC_Fav_Has(id)
+        end
+        return false
+    end
+
     local set = ensureSet(scope, false)
     if not set then
         return false
@@ -167,19 +180,26 @@ end
 local function removeFavoritedIdInternal(normalized, scopeOverride)
     local removedCount = 0
     local scopes = buildScopeOrder(scopeOverride)
-    local stringKey = tostring(normalized)
 
     for index = 1, #scopes do
         local scope = scopes[index]
-        local set = ensureSet(scope, false)
-        if type(set) == "table" then
-            if set[normalized] ~= nil then
-                set[normalized] = nil
+        if scope == ACCOUNT_SCOPE then
+            local repo = getRepo()
+            if repo and repo.AC_Fav_Remove and repo.AC_Fav_Remove(normalized) then
                 removedCount = removedCount + 1
             end
-            if stringKey and set[stringKey] ~= nil then
-                set[stringKey] = nil
-                removedCount = removedCount + 1
+        else
+            local set = ensureSet(scope, false)
+            if type(set) == "table" then
+                if set[normalized] ~= nil then
+                    set[normalized] = nil
+                    removedCount = removedCount + 1
+                end
+                local stringKey = tostring(normalized)
+                if stringKey and set[stringKey] ~= nil then
+                    set[stringKey] = nil
+                    removedCount = removedCount + 1
+                end
             end
         end
     end
@@ -210,13 +230,9 @@ local function NotifyFavoritesChanged()
 end
 
 function FavoritesData.InitSavedVars()
-    local root = Nvk3UT
-    local saved = root and (root.SV or root.sv)
-    local ac = saved and saved.ac
-    if ac then
-        if type(ac.favorites) ~= "table" then
-            ac.favorites = {}
-        end
+    local repo = getRepo()
+    if repo and repo.AC_Fav_List then
+        repo.AC_Fav_List()
     end
 
     if not Nvk3UT_Data_Favorites_Characters then
@@ -271,21 +287,39 @@ function FavoritesData.SetFavorited(id, shouldFavorite, source, scopeOverride)
     end
 
     local scope = resolveScope(scopeOverride)
-    local set = ensureSet(scope, true)
-    if not set then
-        return false
-    end
-
     local desired = shouldFavorite and true or false
-    local current = set[normalized] and true or false
-    if current == desired then
-        return false
+    local changed = false
+
+    if scope == ACCOUNT_SCOPE then
+        local repo = getRepo()
+        if not repo then
+            return false
+        end
+        if desired then
+            changed = repo.AC_Fav_Add and repo.AC_Fav_Add(normalized)
+        else
+            changed = repo.AC_Fav_Remove and repo.AC_Fav_Remove(normalized)
+        end
+    else
+        local set = ensureSet(scope, true)
+        if not set then
+            return false
+        end
+        local current = set[normalized] and true or false
+        if current == desired then
+            return false
+        end
+
+        if desired then
+            set[normalized] = true
+        else
+            set[normalized] = nil
+        end
+        changed = true
     end
 
-    if desired then
-        set[normalized] = true
-    else
-        set[normalized] = nil
+    if not changed then
+        return false
     end
 
     emitDebugMessage(

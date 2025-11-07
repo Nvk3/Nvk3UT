@@ -11,6 +11,7 @@ Core/Nvk3UT_Diagnostics.lua
 Core/Nvk3UT_SelfTest.lua
 Core/Nvk3UT_StateInit.lua
 Core/Nvk3UT_StateRepo.lua
+Core/Nvk3UT_StateRepo_Achievements.lua
 Core/Nvk3UT_Rebuild.lua
 Core/Nvk3UT_Core.lua
 Model/Quest/Nvk3UT_QuestState.lua

@@ -70,6 +70,10 @@ local function getRepo()
     return Nvk3UT_StateRepo or (Nvk3UT and Nvk3UT.StateRepo)
 end
 
+local function getAchievementRepo()
+    return Nvk3UT_StateRepo_Achievements or (Nvk3UT and Nvk3UT.AchievementRepo)
+end
+
 local function rgbaToHex(r, g, b, a)
     local function component(value)
         local numeric = tonumber(value) or 0
@@ -537,6 +541,7 @@ end
 
 local function createWindowFacade(saved)
     local proxy = {}
+    local achievementRepo = getAchievementRepo()
 
     local function readRect()
         local repo = getRepo()
@@ -801,7 +806,11 @@ local function createGeneralFacade(saved)
                 rawset(proxy, key, value)
                 return value
             elseif key == "recentMax" then
-                local limit = ac.recent.limit or DEFAULT_AC_RECENT_LIMIT
+                local limit
+                if achievementRepo and achievementRepo.AC_Recent_GetLimit then
+                    limit = achievementRepo.AC_Recent_GetLimit()
+                end
+                limit = limit or DEFAULT_AC_RECENT_LIMIT
                 rawset(proxy, key, limit)
                 return limit
             end
@@ -863,7 +872,11 @@ local function createGeneralFacade(saved)
                 if limit ~= 50 and limit ~= 100 and limit ~= 250 then
                     limit = DEFAULT_AC_RECENT_LIMIT
                 end
-                ac.recent.limit = limit
+                if achievementRepo and achievementRepo.AC_Recent_SetLimit then
+                    limit = achievementRepo.AC_Recent_SetLimit(limit)
+                elseif ac and ac.recent then
+                    ac.recent.limit = limit
+                end
                 rawset(proxy, key, limit)
                 return
             end
@@ -879,7 +892,11 @@ local function createGeneralFacade(saved)
     proxy.showStatus = getOption("statusVisible", DEFAULT_UI.statusVisible, true)
     proxy.favScope = getOption("favoritesScope", DEFAULT_UI.favoritesScope)
     proxy.recentWindow = getOption("recentWindow", DEFAULT_UI.recentWindow)
-    proxy.recentMax = ac.recent.limit
+    if achievementRepo and achievementRepo.AC_Recent_GetLimit then
+        proxy.recentMax = achievementRepo.AC_Recent_GetLimit()
+    else
+        proxy.recentMax = ac.recent.limit or DEFAULT_AC_RECENT_LIMIT
+    end
     proxy.showQuestCategoryCounts = getOption("categoryCounts.quest", DEFAULT_UI.categoryCounts.quest, true)
     proxy.showAchievementCategoryCounts = getOption("categoryCounts.achievement", DEFAULT_UI.categoryCounts.achievement, true)
     updateShowCategoryCounts()
