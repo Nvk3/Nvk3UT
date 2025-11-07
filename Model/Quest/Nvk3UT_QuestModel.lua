@@ -122,6 +122,9 @@ local function EnsureSavedVars()
 
     if type(sv.quests) ~= "table" then
         sv.quests = {}
+    elseif next(sv.quests) ~= nil then
+        -- Objectives/steps are no longer persisted; clear legacy data eagerly.
+        sv.quests = {}
     end
 
     if type(sv.settings) ~= "table" then
@@ -161,16 +164,9 @@ local function PersistQuests(quests)
         return 0
     end
 
-    local stored = {}
-    if type(quests) == "table" then
-        for index = 1, #quests do
-            stored[index] = CopyTable(quests[index])
-        end
-    end
-
-    sv.quests = stored
+    sv.quests = {}
     MarkInitialized(sv)
-    return #stored
+    return 0
 end
 
 local function ShouldBootstrap(sv)
@@ -180,11 +176,6 @@ local function ShouldBootstrap(sv)
 
     if not sv then
         return false
-    end
-
-    local hasQuests = type(sv.quests) == "table" and next(sv.quests) ~= nil
-    if not hasQuests then
-        return true
     end
 
     if type(sv.meta) ~= "table" or sv.meta.initialized ~= true then
@@ -200,31 +191,11 @@ local function BuildSnapshotFromSaved()
         return nil
     end
 
-    if type(sv.quests) ~= "table" or next(sv.quests) == nil then
-        return nil
+    if type(sv.quests) == "table" and next(sv.quests) ~= nil then
+        sv.quests = {}
     end
 
-    local quests = {}
-    for index = 1, #sv.quests do
-        quests[index] = CopyTable(sv.quests[index])
-    end
-
-    local questList = GetQuestListModule()
-    if questList and questList.BuildSnapshotFromQuests then
-        return questList:BuildSnapshotFromQuests(quests)
-    end
-
-    return {
-        updatedAtMs = nil,
-        quests = quests,
-        categories = {
-            ordered = {},
-            byKey = {},
-        },
-        signature = nil,
-        questById = {},
-        questByJournalIndex = {},
-    }
+    return nil
 end
 
 local function BootstrapQuestData()
