@@ -53,6 +53,23 @@ local DEFAULT_HOST = {
 
 local DEFAULT_AC_RECENT_LIMIT = 100
 
+local function deepCopy(value)
+    if type(value) ~= "table" then
+        return value
+    end
+
+    local copy = {}
+    for key, field in pairs(value) do
+        copy[key] = deepCopy(field)
+    end
+
+    return copy
+end
+
+local function getRepo()
+    return Nvk3UT_StateRepo or (Nvk3UT and Nvk3UT.StateRepo)
+end
+
 local function rgbaToHex(r, g, b, a)
     local function component(value)
         local numeric = tonumber(value) or 0
@@ -519,157 +536,231 @@ local function normalizeCharacterRoot(saved)
 end
 
 local function createWindowFacade(saved)
-    local host = ensureTable(saved, "host")
     local proxy = {}
 
-    local function readNumeric(field, fallback)
-        local value = tonumber(host[field])
-        if not value then
-            value = fallback
-            host[field] = value
+    local function readRect()
+        local repo = getRepo()
+        local rect = repo and repo.Host_GetRect and repo.Host_GetRect()
+        if type(rect) ~= "table" then
+            rect = deepCopy(DEFAULT_HOST)
         end
-        rawset(proxy, field == "x" and "left" or field == "y" and "top" or field, value)
-        return value
+        return rect
     end
 
-    local function readBoolean(field, fallback, trueWhenTrue)
-        local value = host[field]
-        if value == nil then
-            value = fallback
-            host[field] = value
+    local function readField(key)
+        local rect = readRect()
+        if key == "left" then
+            return rect.x or rect.left or DEFAULT_HOST.x
+        elseif key == "top" then
+            return rect.y or rect.top or DEFAULT_HOST.y
+        elseif key == "width" then
+            return rect.width or DEFAULT_HOST.width
+        elseif key == "height" then
+            return rect.height or DEFAULT_HOST.height
+        elseif key == "locked" then
+            return rect.locked == true
+        elseif key == "visible" then
+            return rect.visible ~= false
+        elseif key == "clamp" then
+            return rect.clamp ~= false
+        elseif key == "onTop" then
+            return rect.onTop == true
+        end
+        return nil
+    end
+
+    local function writeField(key, value)
+        local repo = getRepo()
+        if not (repo and repo.Host_SetRect) then
+            return
+        end
+
+        local payload = {}
+        if key == "left" then
+            payload.x = value
+        elseif key == "top" then
+            payload.y = value
+        elseif key == "width" then
+            payload.width = value
+        elseif key == "height" then
+            payload.height = value
+        elseif key == "locked" then
+            payload.locked = value
+        elseif key == "visible" then
+            payload.visible = value
+        elseif key == "clamp" then
+            payload.clamp = value
+        elseif key == "onTop" then
+            payload.onTop = value
         else
-            value = value == trueWhenTrue
+            payload[key] = value
         end
-        local key
-        if field == "locked" then
-            key = "locked"
-        elseif field == "visible" then
-            key = "visible"
-        elseif field == "clamp" then
-            key = "clamp"
-        elseif field == "onTop" then
-            key = "onTop"
-        else
-            key = field
-        end
-        rawset(proxy, key, value)
-        return value
+
+        repo.Host_SetRect(payload)
     end
 
-    local function refresh()
-        readNumeric("x", DEFAULT_HOST.x)
-        readNumeric("y", DEFAULT_HOST.y)
-        readNumeric("width", DEFAULT_HOST.width)
-        readNumeric("height", DEFAULT_HOST.height)
-        readBoolean("locked", DEFAULT_HOST.locked, true)
-        readBoolean("visible", DEFAULT_HOST.visible, true)
-        readBoolean("clamp", DEFAULT_HOST.clamp, true)
-        readBoolean("onTop", DEFAULT_HOST.onTop, true)
+    local function snapshot()
+        local rect = readRect()
+        return {
+            left = rect.x or rect.left or DEFAULT_HOST.x,
+            top = rect.y or rect.top or DEFAULT_HOST.y,
+            width = rect.width or DEFAULT_HOST.width,
+            height = rect.height or DEFAULT_HOST.height,
+            locked = rect.locked == true,
+            visible = rect.visible ~= false,
+            clamp = rect.clamp ~= false,
+            onTop = rect.onTop == true,
+        }
     end
 
-    local mt = {
+    setmetatable(proxy, {
         __index = function(_, key)
-            if key == "left" then
-                return readNumeric("x", DEFAULT_HOST.x)
-            elseif key == "top" then
-                return readNumeric("y", DEFAULT_HOST.y)
-            elseif key == "width" then
-                return readNumeric("width", DEFAULT_HOST.width)
-            elseif key == "height" then
-                return readNumeric("height", DEFAULT_HOST.height)
-            elseif key == "locked" then
-                return readBoolean("locked", DEFAULT_HOST.locked, true)
-            elseif key == "visible" then
-                return readBoolean("visible", DEFAULT_HOST.visible, true)
-            elseif key == "clamp" then
-                return readBoolean("clamp", DEFAULT_HOST.clamp, true)
-            elseif key == "onTop" then
-                return readBoolean("onTop", DEFAULT_HOST.onTop, true)
+            if key == "left" or key == "top" or key == "width" or key == "height" or
+                key == "locked" or key == "visible" or key == "clamp" or key == "onTop" then
+                return readField(key)
             end
             return rawget(proxy, key)
         end,
         __newindex = function(_, key, value)
-            if key == "left" then
-                host.x = math.floor((tonumber(value) or host.x or DEFAULT_HOST.x) + 0.5)
-                rawset(proxy, key, host.x)
-                return
-            elseif key == "top" then
-                host.y = math.floor((tonumber(value) or host.y or DEFAULT_HOST.y) + 0.5)
-                rawset(proxy, key, host.y)
-                return
-            elseif key == "width" then
-                host.width = math.floor((tonumber(value) or host.width or DEFAULT_HOST.width) + 0.5)
-                rawset(proxy, key, host.width)
-                return
-            elseif key == "height" then
-                host.height = math.floor((tonumber(value) or host.height or DEFAULT_HOST.height) + 0.5)
-                rawset(proxy, key, host.height)
-                return
-            elseif key == "locked" then
-                host.locked = value and true or false
-                rawset(proxy, key, host.locked)
-                return
-            elseif key == "visible" then
-                host.visible = value ~= false
-                rawset(proxy, key, host.visible)
-                return
-            elseif key == "clamp" then
-                host.clamp = value ~= false
-                rawset(proxy, key, host.clamp)
-                return
-            elseif key == "onTop" then
-                host.onTop = value and true or false
-                rawset(proxy, key, host.onTop)
+            if key == "left" or key == "top" or key == "width" or key == "height" or
+                key == "locked" or key == "visible" or key == "clamp" or key == "onTop" then
+                writeField(key, value)
                 return
             end
             rawset(proxy, key, value)
         end,
-    }
+        __pairs = function()
+            local values = snapshot()
+            return next, values, nil
+        end,
+    })
 
-    setmetatable(proxy, mt)
-    refresh()
     return proxy
 end
 
 local function createHostSettingsFacade(saved)
-    local host = ensureTable(saved, "host")
     local proxy = {}
 
     setmetatable(proxy, {
         __index = function(_, key)
             if key == "HideInCombat" then
-                local value = host.hideInCombat == true
-                rawset(proxy, key, value)
-                return value
+                local repo = getRepo()
+                local rect = repo and repo.Host_GetRect and repo.Host_GetRect()
+                return rect and rect.hideInCombat == true or false
             end
             return rawget(proxy, key)
         end,
         __newindex = function(_, key, value)
             if key == "HideInCombat" then
-                host.hideInCombat = value == true
-                rawset(proxy, key, host.hideInCombat)
+                local repo = getRepo()
+                if repo and repo.Host_SetRect then
+                    repo.Host_SetRect({ hideInCombat = value })
+                end
                 return
             end
             rawset(proxy, key, value)
         end,
     })
 
-    proxy.HideInCombat = host.hideInCombat == true
+    local repo = getRepo()
+    local rect = repo and repo.Host_GetRect and repo.Host_GetRect()
+    proxy.HideInCombat = rect and rect.hideInCombat == true or false
+    return proxy
+end
+
+local function createUiProxy(path, defaults)
+    local proxy = {}
+
+    local function buildPath(key)
+        key = tostring(key)
+        if path and path ~= "" then
+            return string.format("%s.%s", path, key)
+        end
+        return key
+    end
+
+    local function snapshot()
+        local values = {}
+        if defaults then
+            for key, defaultValue in pairs(defaults) do
+                values[key] = deepCopy(defaultValue)
+            end
+        end
+
+        local repo = getRepo()
+        if repo and repo.UI_GetOption then
+            local current = repo.UI_GetOption(path or "")
+            if type(current) == "table" then
+                for key, value in pairs(current) do
+                    values[key] = value
+                end
+            end
+        end
+
+        return values
+    end
+
+    setmetatable(proxy, {
+        __index = function(_, key)
+            local fullPath = buildPath(key)
+            local defaultValue = defaults and defaults[key]
+            local repo = getRepo()
+            local value = repo and repo.UI_GetOption and repo.UI_GetOption(fullPath) or nil
+
+            if type(defaultValue) == "table" or type(value) == "table" then
+                return createUiProxy(fullPath, defaultValue)
+            end
+
+            if value == nil then
+                value = defaultValue
+            end
+            return value
+        end,
+        __newindex = function(_, key, value)
+            local repo = getRepo()
+            if repo and repo.UI_SetOption then
+                repo.UI_SetOption(buildPath(key), value)
+            end
+        end,
+        __pairs = function()
+            local values = snapshot()
+            return next, values, nil
+        end,
+    })
+
     return proxy
 end
 
 local function createGeneralFacade(saved)
-    local ui = ensureTable(saved, "ui")
     local ac = ensureTable(saved, "ac")
     ac.recent = ac.recent or {}
     local features = ensureTable(saved, "features")
 
     local proxy = {}
     local windowFacade = createWindowFacade(saved)
+    local layoutProxy = createUiProxy("layout", DEFAULT_UI.layout)
+    local appearanceProxy = createUiProxy("appearance", DEFAULT_UI.appearance)
+    local windowBarsProxy = createUiProxy("windowBars", DEFAULT_WINDOW_BARS)
+
+    local function getOption(path, default, coerceBoolean)
+        local repo = getRepo()
+        local value = repo and repo.UI_GetOption and repo.UI_GetOption(path)
+        if value == nil then
+            value = default
+        end
+        if coerceBoolean then
+            if default == true then
+                return value == true
+            end
+            return value ~= false
+        end
+        return value
+    end
 
     local function updateShowCategoryCounts()
-        local flag = (ui.categoryCounts.quest ~= false) and (ui.categoryCounts.achievement ~= false)
-        rawset(proxy, "showCategoryCounts", flag)
+        local quest = getOption("categoryCounts.quest", DEFAULT_UI.categoryCounts.quest, true)
+        local achievement = getOption("categoryCounts.achievement", DEFAULT_UI.categoryCounts.achievement, true)
+        rawset(proxy, "showCategoryCounts", quest and achievement)
     end
 
     setmetatable(proxy, {
@@ -679,22 +770,22 @@ local function createGeneralFacade(saved)
             elseif key == "features" then
                 return features
             elseif key == "layout" then
-                return ui.layout
+                return layoutProxy
             elseif key == "Appearance" then
-                return ui.appearance
+                return appearanceProxy
             elseif key == "WindowBars" then
-                return ui.windowBars
+                return windowBarsProxy
             elseif key == "showStatus" then
-                local value = ui.statusVisible ~= false
+                local value = getOption("statusVisible", DEFAULT_UI.statusVisible, true)
                 rawset(proxy, key, value)
                 return value
             elseif key == "showQuestCategoryCounts" then
-                local value = ui.categoryCounts.quest ~= false
+                local value = getOption("categoryCounts.quest", DEFAULT_UI.categoryCounts.quest, true)
                 rawset(proxy, key, value)
                 updateShowCategoryCounts()
                 return value
             elseif key == "showAchievementCategoryCounts" then
-                local value = ui.categoryCounts.achievement ~= false
+                local value = getOption("categoryCounts.achievement", DEFAULT_UI.categoryCounts.achievement, true)
                 rawset(proxy, key, value)
                 updateShowCategoryCounts()
                 return value
@@ -702,12 +793,13 @@ local function createGeneralFacade(saved)
                 updateShowCategoryCounts()
                 return rawget(proxy, key)
             elseif key == "favScope" then
-                local value = ui.favoritesScope or DEFAULT_UI.favoritesScope
+                local value = getOption("favoritesScope", DEFAULT_UI.favoritesScope)
                 rawset(proxy, key, value)
                 return value
             elseif key == "recentWindow" then
-                rawset(proxy, key, ui.recentWindow)
-                return ui.recentWindow
+                local value = getOption("recentWindow", DEFAULT_UI.recentWindow)
+                rawset(proxy, key, value)
+                return value
             elseif key == "recentMax" then
                 local limit = ac.recent.limit or DEFAULT_AC_RECENT_LIMIT
                 rawset(proxy, key, limit)
@@ -716,24 +808,33 @@ local function createGeneralFacade(saved)
             return rawget(proxy, key)
         end,
         __newindex = function(_, key, value)
+            local repo = getRepo()
             if key == "showStatus" then
-                ui.statusVisible = value ~= false
-                rawset(proxy, key, ui.statusVisible)
+                if repo and repo.UI_SetOption then
+                    repo.UI_SetOption("statusVisible", value)
+                end
+                rawset(proxy, key, value ~= false)
                 return
             elseif key == "showQuestCategoryCounts" then
-                ui.categoryCounts.quest = value ~= false
-                rawset(proxy, key, ui.categoryCounts.quest)
+                if repo and repo.UI_SetOption then
+                    repo.UI_SetOption("categoryCounts.quest", value)
+                end
+                rawset(proxy, key, value ~= false)
                 updateShowCategoryCounts()
                 return
             elseif key == "showAchievementCategoryCounts" then
-                ui.categoryCounts.achievement = value ~= false
-                rawset(proxy, key, ui.categoryCounts.achievement)
+                if repo and repo.UI_SetOption then
+                    repo.UI_SetOption("categoryCounts.achievement", value)
+                end
+                rawset(proxy, key, value ~= false)
                 updateShowCategoryCounts()
                 return
             elseif key == "showCategoryCounts" then
                 local flag = value ~= false
-                ui.categoryCounts.quest = flag
-                ui.categoryCounts.achievement = flag
+                if repo and repo.UI_SetOption then
+                    repo.UI_SetOption("categoryCounts.quest", flag)
+                    repo.UI_SetOption("categoryCounts.achievement", flag)
+                end
                 rawset(proxy, "showQuestCategoryCounts", flag)
                 rawset(proxy, "showAchievementCategoryCounts", flag)
                 rawset(proxy, key, flag)
@@ -742,7 +843,9 @@ local function createGeneralFacade(saved)
                 if type(value) ~= "string" or value == "" then
                     value = DEFAULT_UI.favoritesScope
                 end
-                ui.favoritesScope = value
+                if repo and repo.UI_SetOption then
+                    repo.UI_SetOption("favoritesScope", value)
+                end
                 rawset(proxy, key, value)
                 return
             elseif key == "recentWindow" then
@@ -750,7 +853,9 @@ local function createGeneralFacade(saved)
                 if not numeric then
                     numeric = DEFAULT_UI.recentWindow
                 end
-                ui.recentWindow = numeric
+                if repo and repo.UI_SetOption then
+                    repo.UI_SetOption("recentWindow", numeric)
+                end
                 rawset(proxy, key, numeric)
                 return
             elseif key == "recentMax" then
@@ -768,15 +873,15 @@ local function createGeneralFacade(saved)
 
     proxy.window = windowFacade
     proxy.features = features
-    proxy.layout = ui.layout
-    proxy.Appearance = ui.appearance
-    proxy.WindowBars = ui.windowBars
-    proxy.showStatus = ui.statusVisible ~= false
-    proxy.favScope = ui.favoritesScope
-    proxy.recentWindow = ui.recentWindow
+    proxy.layout = layoutProxy
+    proxy.Appearance = appearanceProxy
+    proxy.WindowBars = windowBarsProxy
+    proxy.showStatus = getOption("statusVisible", DEFAULT_UI.statusVisible, true)
+    proxy.favScope = getOption("favoritesScope", DEFAULT_UI.favoritesScope)
+    proxy.recentWindow = getOption("recentWindow", DEFAULT_UI.recentWindow)
     proxy.recentMax = ac.recent.limit
-    proxy.showQuestCategoryCounts = ui.categoryCounts.quest ~= false
-    proxy.showAchievementCategoryCounts = ui.categoryCounts.achievement ~= false
+    proxy.showQuestCategoryCounts = getOption("categoryCounts.quest", DEFAULT_UI.categoryCounts.quest, true)
+    proxy.showAchievementCategoryCounts = getOption("categoryCounts.achievement", DEFAULT_UI.categoryCounts.achievement, true)
     updateShowCategoryCounts()
 
     return proxy
@@ -795,6 +900,7 @@ function Nvk3UT_StateInit.CreateLegacyFacade(saved, character)
 
     local generalFacade = createGeneralFacade(saved)
     local settingsFacade = createSettingsFacade(saved)
+    local uiFacade = createUiProxy(nil, DEFAULT_UI)
 
     local proxy = {}
     setmetatable(proxy, {
@@ -806,7 +912,7 @@ function Nvk3UT_StateInit.CreateLegacyFacade(saved, character)
             elseif key == "features" then
                 return saved.features
             elseif key == "ui" then
-                return saved.ui
+                return uiFacade
             elseif key == "host" then
                 return saved.host
             elseif key == "ac" then
@@ -902,6 +1008,18 @@ function Nvk3UT_StateInit.BootstrapSavedVariables(addonTable)
     end
 
     return account, character
+end
+
+function Nvk3UT_StateInit.GetAccountDefaults()
+    return deepCopy(DEFAULTS)
+end
+
+function Nvk3UT_StateInit.GetUIDefaults()
+    return deepCopy(DEFAULT_UI)
+end
+
+function Nvk3UT_StateInit.GetHostDefaults()
+    return deepCopy(DEFAULT_HOST)
 end
 
 return Nvk3UT_StateInit

@@ -26,6 +26,10 @@ if Nvk3UT_SelfTest and type(Nvk3UT_SelfTest.AttachToRoot) == "function" then
     Nvk3UT_SelfTest.AttachToRoot(Addon)
 end
 
+if Nvk3UT_StateRepo and type(Nvk3UT_StateRepo.AttachToRoot) == "function" then
+    Nvk3UT_StateRepo.AttachToRoot(Addon)
+end
+
 local function formatMessage(prefix, fmt, ...)
     if not fmt then
         return prefix
@@ -151,6 +155,9 @@ function Addon:InitSavedVariables()
         end
         if type(self.SetDebugEnabled) == "function" then
             self:SetDebugEnabled(sv.debug)
+        end
+        if Nvk3UT_StateRepo and Nvk3UT_StateRepo.Init then
+            Nvk3UT_StateRepo.Init(sv)
         end
     end
 
