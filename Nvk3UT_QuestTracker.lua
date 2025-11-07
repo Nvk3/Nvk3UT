@@ -20,6 +20,39 @@ local function EnsureQuestModel()
 
     return QuestModel
 end
+
+local function GetJournalIndex(questId)
+    local numericQuestId = tonumber(questId)
+    if not numericQuestId or numericQuestId <= 0 then
+        return nil
+    end
+
+    numericQuestId = math.floor(numericQuestId)
+
+    EnsureQuestModel()
+
+    local model = QuestModel
+    if not model then
+        return nil
+    end
+
+    local resolver = model.GetJournalIndexForQuestId
+    if type(resolver) ~= "function" then
+        return nil
+    end
+
+    local ok, journalIndex = pcall(resolver, numericQuestId)
+    if not ok then
+        return nil
+    end
+
+    local numericIndex = tonumber(journalIndex)
+    if not numericIndex or numericIndex <= 0 then
+        return nil
+    end
+
+    return math.floor(numericIndex)
+end
 local FormatCategoryHeaderText =
     (Utils and Utils.FormatCategoryHeaderText)
     or function(baseText, count, showCounts)
@@ -89,6 +122,7 @@ local RefreshCategoriesForKeys -- forward declaration for bulk category refreshe
 local UpdateRepoQuestFlags -- forward declaration for quest flag persistence helpers
 local DoesJournalQuestExist -- forward declaration for journal lookups
 local ApplyActiveQuestVisuals -- forward declaration for targeted active quest styling
+local ApplyActiveQuestFromSaved -- forward declaration for active quest state sync
 -- Forward declaration so SafeCall is visible to functions defined above its body.
 -- Without this, calling SafeCall in ResolveQuestDebugInfo during quest accept can crash
 -- because SafeCall would still be nil at that point.
@@ -128,7 +162,53 @@ local state = {
     questModelSubscription = nil,
     repoPrimed = false,
     activeQuestId = nil,
+    reposReady = false,
+    reposReadyCallbackRef = nil,
+    playerActivated = false,
+    pendingActiveQuestApply = false,
 }
+
+local function UpdateReposReadyState()
+    if state.reposReady then
+        return true
+    end
+
+    if Nvk3UT and Nvk3UT.reposReady == true then
+        state.reposReady = true
+        if state.reposReadyCallbackRef and CALLBACK_MANAGER then
+            CALLBACK_MANAGER:UnregisterCallback("Nvk3UT_REPOS_READY", state.reposReadyCallbackRef)
+            state.reposReadyCallbackRef = nil
+        end
+        return true
+    end
+
+    return false
+end
+
+local function ClearReposReadySubscription()
+    if state.reposReadyCallbackRef and CALLBACK_MANAGER then
+        CALLBACK_MANAGER:UnregisterCallback("Nvk3UT_REPOS_READY", state.reposReadyCallbackRef)
+    end
+
+    state.reposReadyCallbackRef = nil
+end
+
+local function EnsureReposReadySubscription()
+    if state.reposReady or state.reposReadyCallbackRef or not CALLBACK_MANAGER then
+        return
+    end
+
+    state.reposReadyCallbackRef = function()
+        state.reposReady = true
+        ClearReposReadySubscription()
+
+        if state.pendingActiveQuestApply or state.playerActivated then
+            ApplyActiveQuestFromSaved()
+        end
+    end
+
+    CALLBACK_MANAGER:RegisterCallback("Nvk3UT_REPOS_READY", state.reposReadyCallbackRef)
+end
 
 local PRIORITY = {
     manual = 5,
@@ -421,13 +501,9 @@ local function GetJournalIndexForQuestKey(questKey)
 
     local questId = ResolveQuestIdFromKey(questKey)
 
-    EnsureQuestModel()
-
-    if questId and QuestModel and QuestModel.GetJournalIndexForQuestId then
-        local journalIndex = QuestModel.GetJournalIndexForQuestId(questId)
-        if journalIndex then
-            return journalIndex
-        end
+    local journalIndex = GetJournalIndex(questId)
+    if journalIndex then
+        return journalIndex
     end
 
     if type(questKey) == "table" and questKey.journalIndex ~= nil then
@@ -873,7 +949,7 @@ local function SyncSelectedQuestFromSaved()
     return questKey
 end
 
-local function ApplyActiveQuestFromSaved()
+local function PerformApplyActiveQuestFromSaved()
     local previousActiveQuestId = state.activeQuestId
     local questKey = SyncSelectedQuestFromSaved()
     local journalIndex = GetJournalIndexForQuestKey(questKey)
@@ -923,6 +999,23 @@ local function ApplyActiveQuestFromSaved()
     end
 
     return journalIndex
+end
+
+ApplyActiveQuestFromSaved = function()
+    local reposReady = UpdateReposReadyState()
+    if not reposReady then
+        state.pendingActiveQuestApply = true
+        EnsureReposReadySubscription()
+        return nil
+    end
+
+    if not state.playerActivated then
+        state.pendingActiveQuestApply = true
+        return nil
+    end
+
+    state.pendingActiveQuestApply = false
+    return PerformApplyActiveQuestFromSaved()
 end
 
 -- TEMP SHIM (QMODEL_001): TODO remove on SWITCH token; forwards category expansion state to Nvk3UT.QuestState.
@@ -1846,13 +1939,7 @@ local function ResolveQuestControlForQuestId(questId)
 
     numericQuestId = math.floor(numericQuestId)
 
-    local journalIndex = nil
-
-    EnsureQuestModel()
-
-    if QuestModel and QuestModel.GetJournalIndexForQuestId then
-        journalIndex = QuestModel.GetJournalIndexForQuestId(numericQuestId)
-    end
+    local journalIndex = GetJournalIndex(numericQuestId)
 
     if not journalIndex and state.questControls then
         for _, control in pairs(state.questControls) do
@@ -2899,12 +2986,17 @@ local function OnFocusedTrackerAssistChanged(_, assistedData)
 end
 
 local function OnPlayerActivated()
+    state.playerActivated = true
+    UpdateReposReadyState()
+
     local function execute()
         SyncTrackedQuestState(nil, true, {
             trigger = "init",
             source = "QuestTracker:OnPlayerActivated",
             isExternal = true,
         })
+
+        ApplyActiveQuestFromSaved()
     end
 
     if zo_callLater then
@@ -3994,6 +4086,19 @@ function QuestTracker.Init(parentControl, opts)
     end
 
     EnsureSavedVars()
+
+    if not UpdateReposReadyState() then
+        EnsureReposReadySubscription()
+    end
+
+    if Nvk3UT and Nvk3UT.playerActivated == true then
+        state.playerActivated = true
+    end
+
+    if state.playerActivated then
+        ApplyActiveQuestFromSaved()
+    end
+
     state.opts = {}
     state.fonts = {}
     state.pendingSelection = nil
@@ -4044,6 +4149,7 @@ function QuestTracker.Shutdown()
 
     UnregisterTrackingEvents()
     UnsubscribeFromQuestModel()
+    ClearReposReadySubscription()
 
     if state.categoryPool then
         state.categoryPool:ReleaseAllObjects()
@@ -4090,6 +4196,9 @@ function QuestTracker.Shutdown()
     state.questModelSubscription = nil
     state.repoPrimed = false
     state.activeQuestId = nil
+    state.reposReady = false
+    state.playerActivated = false
+    state.pendingActiveQuestApply = false
     NotifyHostContentChanged()
 end
 

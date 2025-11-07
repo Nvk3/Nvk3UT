@@ -6,15 +6,13 @@
 ## DependsOn: LibAddonMenu-2.0 LibSavedVars
 ## OptionalDependsOn: LibCustomMenu-2.0
 ## SavedVariables: Nvk3UT_SV
+## === Core ===
 Core/Nvk3UT_Utils.lua
 Core/Nvk3UT_Diagnostics.lua
 Core/Nvk3UT_SelfTest.lua
 Core/Nvk3UT_StateInit.lua
-Core/Nvk3UT_StateRepo.lua
-Core/Nvk3UT_StateRepo_Achievements.lua
-Core/Nvk3UT_StateRepo_Quests.lua
 Core/Nvk3UT_Rebuild.lua
-Core/Nvk3UT_Core.lua
+## === Model ===
 Model/Quest/Nvk3UT_QuestState.lua
 Model/Quest/Nvk3UT_QuestSelection.lua
 Model/Quest/Nvk3UT_QuestList.lua
@@ -30,6 +28,12 @@ Model/Achievement/Nvk3UT_TodoIntegration.lua
 Model/Achievement/Nvk3UT_CompletedIntegration.lua
 Model/Achievement/Nvk3UT_AchievementList.lua
 Model/Achievement/Nvk3UT_AchievementModel.lua
+## === Repo ===
+Core/Nvk3UT_StateRepo.lua
+Core/Nvk3UT_StateRepo_Achievements.lua
+Core/Nvk3UT_StateRepo_Quests.lua
+## === Core Root ===
+Core/Nvk3UT_Core.lua
 ## === Journal ===
 Journal/Nvk3UT_AchievementsJournal.lua
 Journal/Nvk3UT_FavoritesCategory.lua
