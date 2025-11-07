@@ -66,6 +66,23 @@ local function NormalizeCategoryKey(categoryKey)
         categoryKey = categoryKey.key
     end
 
+    if type(categoryKey) == "string" then
+        local idString = categoryKey:match("^ZONE:(%d+):") or categoryKey:match("^ZONE_STORY:(%d+):")
+        if idString then
+            local numericId = tonumber(idString)
+            if numericId and numericId > 0 then
+                return math.floor(numericId)
+            end
+        end
+
+        local numericFromString = tonumber(categoryKey)
+        if numericFromString and numericFromString > 0 then
+            return math.floor(numericFromString)
+        end
+
+        return nil
+    end
+
     local numeric = tonumber(categoryKey)
     if numeric and numeric > 0 then
         return math.floor(numeric)
