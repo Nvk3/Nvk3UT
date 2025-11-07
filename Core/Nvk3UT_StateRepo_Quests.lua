@@ -344,22 +344,36 @@ end
 function Repo.Q_IsZoneCollapsed(zoneKey)
     local normalized = normalizeKey(zoneKey)
     if not normalized then
+        debugLog("Repo.Q_IsZoneCollapsed key=nil (source=%s) -> false", tostring(zoneKey))
         return false
     end
 
     local zones = ensureZones(false)
-    if not zones then
-        return false
+    local collapsed = false
+    if zones then
+        collapsed = zones[normalized] == true
     end
 
-    return zones[normalized] == true
+    debugLog("Repo.Q_IsZoneCollapsed key=%s -> %s", tostring(normalized), tostring(collapsed))
+    return collapsed
 end
 
 function Repo.Q_SetZoneCollapsed(zoneKey, collapsed)
     local normalized = normalizeKey(zoneKey)
     if not normalized then
+        debugLog(
+            "Repo.Q_SetZoneCollapsed key=nil (source=%s) collapsed=%s -> false",
+            tostring(zoneKey),
+            tostring(collapsed)
+        )
         return false
     end
+
+    debugLog(
+        "Repo.Q_SetZoneCollapsed key=%s collapsed=%s",
+        tostring(normalized),
+        tostring(collapsed)
+    )
 
     if collapsed then
         local zones = ensureZones(true)
@@ -372,7 +386,6 @@ function Repo.Q_SetZoneCollapsed(zoneKey, collapsed)
         end
 
         zones[normalized] = true
-        debugLog("Zone %d collapsed", normalized)
         return true
     end
 
@@ -383,7 +396,6 @@ function Repo.Q_SetZoneCollapsed(zoneKey, collapsed)
 
     zones[normalized] = nil
     pruneEmpty()
-    debugLog("Zone %d expanded (trimmed)", normalized)
     return true
 end
 

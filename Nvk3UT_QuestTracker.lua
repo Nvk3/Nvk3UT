@@ -3432,6 +3432,15 @@ end
 
 SetCategoryExpanded = function(categoryKey, expanded, context)
     local key = NormalizeCategoryKey(categoryKey)
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format(
+            "CAT_SET key=%s norm=%s expanded=%s ctx=%s",
+            tostring(categoryKey),
+            tostring(key),
+            tostring(expanded),
+            context and tostring(context.trigger) or "nil"
+        ))
+    end
     if not key then
         return false, nil
     end
@@ -3617,6 +3626,13 @@ local function AcquireCategoryControl()
             local catKey = ctrl.data and ctrl.data.categoryKey
             if not catKey then
                 return
+            end
+            if IsDebugLoggingEnabled() then
+                DebugLog(string.format(
+                    "CAT_CLICK key=%s norm=%s",
+                    tostring(catKey),
+                    tostring(NormalizeCategoryKey(catKey))
+                ))
             end
             local expanded = not IsCategoryExpanded(catKey)
             SetCategoryExpanded(catKey, expanded, {

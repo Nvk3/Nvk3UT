@@ -31,6 +31,54 @@ QuestState._runtimeCategories = runtimeCategories
 QuestState._runtimeQuests = runtimeQuests
 QuestState._runtimeActive = runtimeActive
 
+local function getAddon()
+    return Nvk3UT
+end
+
+local function isDebugEnabled()
+    local addon = getAddon()
+    if not addon then
+        return false
+    end
+
+    local accessor = addon.IsDebugEnabled
+    if type(accessor) == "function" then
+        local ok, result = pcall(accessor, addon)
+        if ok then
+            return result == true
+        end
+    end
+
+    if addon.debugEnabled ~= nil then
+        return addon.debugEnabled == true
+    end
+
+    return addon.debug == true
+end
+
+local function debugLog(fmt, ...)
+    if not isDebugEnabled() then
+        return
+    end
+
+    local addon = getAddon()
+    if addon and type(addon.Debug) == "function" then
+        addon.Debug("[QuestState] " .. tostring(fmt), ...)
+        return
+    end
+
+    local ok, message = pcall(string.format, tostring(fmt), ...)
+    if not ok then
+        message = tostring(fmt)
+    end
+
+    if d then
+        d(string.format("[Nvk3UT][QuestState] %s", message))
+    elseif print then
+        print("[Nvk3UT][QuestState]", message)
+    end
+end
+
 local function GetQuestListModule()
     return Nvk3UT and Nvk3UT.QuestList
 end
@@ -67,7 +115,7 @@ local function NormalizeCategoryKey(categoryKey)
     end
 
     if type(categoryKey) == "string" then
-        local idString = categoryKey:match("^ZONE:(%d+):") or categoryKey:match("^ZONE_STORY:(%d+):")
+        local idString = categoryKey:match("^%%w+:(%d+):") or categoryKey:match("^%%w+:(%d+)$")
         if idString then
             local numericId = tonumber(idString)
             if numericId and numericId > 0 then
@@ -80,6 +128,13 @@ local function NormalizeCategoryKey(categoryKey)
             return math.floor(numericFromString)
         end
 
+        return nil
+    end
+
+    if type(categoryKey) == "number" then
+        if categoryKey > 0 then
+            return math.floor(categoryKey)
+        end
         return nil
     end
 
@@ -281,6 +336,11 @@ function QuestState.SetCategoryExpanded(categoryKey, expanded, source, options)
 
     local key = NormalizeCategoryKey(categoryKey)
     if not key then
+        debugLog(
+            "QS_WRITE key=nil expanded=%s (source=%s)",
+            tostring(expanded),
+            tostring(source)
+        )
         return false
     end
 
@@ -288,8 +348,23 @@ function QuestState.SetCategoryExpanded(categoryKey, expanded, source, options)
     if not shouldWrite then
         local collapsed = repo.Q_IsZoneCollapsed(key)
         local isExpanded = collapsed ~= true
+        debugLog(
+            "QS_AFTER key=%s collapsed=%s changed=false (skipped)",
+            tostring(key),
+            tostring(collapsed)
+        )
         return false, key, isExpanded, priority, resolvedSource
     end
+
+    local forceOption = options and options.force
+    local allowRegression = options and options.allowTimestampRegression
+    debugLog(
+        "QS_WRITE key=%s expanded=%s force=%s tsreg=%s",
+        tostring(key),
+        tostring(expanded),
+        tostring(forceOption),
+        tostring(allowRegression)
+    )
 
     local changed
     if expanded then
@@ -300,6 +375,13 @@ function QuestState.SetCategoryExpanded(categoryKey, expanded, source, options)
 
     local collapsed = repo.Q_IsZoneCollapsed(key)
     local isExpanded = collapsed ~= true
+
+    debugLog(
+        "QS_AFTER key=%s collapsed=%s changed=%s",
+        tostring(key),
+        tostring(collapsed),
+        tostring(changed)
+    )
 
     if changed then
         commitMeta(runtimeCategories, key, priority, timestamp, resolvedSource)
