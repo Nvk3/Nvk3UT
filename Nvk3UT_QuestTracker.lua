@@ -1923,22 +1923,107 @@ local function FindQuestControlByJournalIndex(journalIndex)
     return nil
 end
 
-local function ApplyQuestControlVisualState(control)
+local function ApplyQuestControlVisualState(control, visualState, isActive)
     if not control then
         return false
     end
 
-    local quest = control.data and control.data.quest
-    if not quest then
-        return false
+    local function applyDefault()
+        local quest = control.data and control.data.quest
+        if not quest then
+            return false
+        end
+
+        local colorRole = DetermineQuestColorRole(quest)
+        local r, g, b, a = GetQuestTrackerColor(colorRole)
+        ApplyBaseColor(control, r, g, b, a)
+        UpdateQuestIconSlot(control)
+
+        return true
     end
 
-    local colorRole = DetermineQuestColorRole(quest)
-    local r, g, b, a = GetQuestTrackerColor(colorRole)
-    ApplyBaseColor(control, r, g, b, a)
-    UpdateQuestIconSlot(control)
+    local normalizedState
+    if visualState ~= nil then
+        if type(visualState) == "string" then
+            normalizedState = visualState
+        else
+            normalizedState = tostring(visualState)
+        end
+    end
 
-    return true
+    if normalizedState == nil then
+        local current = control.visualState or (control.data and control.data.visualState)
+        if type(current) == "string" then
+            normalizedState = current
+        elseif current ~= nil then
+            normalizedState = tostring(current)
+        end
+    end
+
+    local appliers = control.visualStateAppliers
+        or (control.data and control.data.visualStateAppliers)
+
+    local handler
+    if type(appliers) == "table" then
+        if normalizedState ~= nil then
+            handler = appliers[normalizedState]
+            if type(handler) ~= "function" and type(normalizedState) == "string" and string and string.lower then
+                local lowered = string.lower(normalizedState)
+                if lowered ~= normalizedState then
+                    handler = appliers[lowered]
+                end
+            end
+        end
+
+        if type(handler) ~= "function" then
+            handler = appliers.normal or appliers.default
+        end
+    end
+
+    if type(handler) ~= "function" then
+        if type(appliers) == "table" and IsDebugLoggingEnabled() then
+            DebugLog(
+                string.format(
+                    "VISUAL_STATE_FALLBACK state=%s handler=%s",
+                    tostring(normalizedState),
+                    tostring(handler)
+                )
+            )
+        end
+
+        return applyDefault()
+    end
+
+    local safeCall = SafeCall
+    if type(safeCall) ~= "function" and Nvk3UT and type(Nvk3UT.SafeCall) == "function" then
+        safeCall = Nvk3UT.SafeCall
+    end
+
+    local ok, result
+    if type(safeCall) == "function" then
+        ok, result = safeCall(handler, control, isActive, normalizedState)
+    else
+        ok, result = pcall(handler, control, isActive, normalizedState)
+    end
+
+    if not ok then
+        if IsDebugLoggingEnabled() then
+            DebugLog(
+                string.format(
+                    "VISUAL_STATE_ERROR state=%s",
+                    tostring(normalizedState)
+                )
+            )
+        end
+
+        return applyDefault()
+    end
+
+    if result == nil then
+        return true
+    end
+
+    return result ~= false
 end
 
 local function ResolveQuestControlForQuestId(questId)
@@ -2008,14 +2093,14 @@ ApplyActiveQuestVisuals = function(oldQuestId, newQuestId)
 
     if oldQuestId then
         local control = ResolveQuestControlForQuestId(oldQuestId)
-        if ApplyQuestControlVisualState(control) then
+        if ApplyQuestControlVisualState(control, "normal", false) then
             updated = true
         end
     end
 
     if newQuestId then
         local control = ResolveQuestControlForQuestId(newQuestId)
-        if ApplyQuestControlVisualState(control) then
+        if ApplyQuestControlVisualState(control, "active", true) then
             updated = true
         end
     end
@@ -2694,15 +2779,14 @@ local function RequestRefreshInternal()
 
     state.pendingRefresh = true
 
-    local function execute()
+    if zo_callLater then
+        zo_callLater(function()
+            state.pendingRefresh = false
+            QuestTracker.Refresh()
+        end, REFRESH_DEBOUNCE_MS)
+    else
         state.pendingRefresh = false
         QuestTracker.Refresh()
-    end
-
-    if zo_callLater then
-        zo_callLater(execute, REFRESH_DEBOUNCE_MS)
-    else
-        execute()
     end
 end
 
@@ -3020,7 +3104,17 @@ local function OnPlayerActivated()
     state.playerActivated = true
     UpdateReposReadyState()
 
-    local function execute()
+    if zo_callLater then
+        zo_callLater(function()
+            SyncTrackedQuestState(nil, true, {
+                trigger = "init",
+                source = "QuestTracker:OnPlayerActivated",
+                isExternal = true,
+            })
+
+            ApplyActiveQuestFromSaved()
+        end, 20)
+    else
         SyncTrackedQuestState(nil, true, {
             trigger = "init",
             source = "QuestTracker:OnPlayerActivated",
@@ -3028,12 +3122,6 @@ local function OnPlayerActivated()
         })
 
         ApplyActiveQuestFromSaved()
-    end
-
-    if zo_callLater then
-        zo_callLater(execute, 20)
-    else
-        execute()
     end
 end
 
