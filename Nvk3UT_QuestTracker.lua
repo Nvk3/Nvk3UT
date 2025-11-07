@@ -29,14 +29,8 @@ local function GetJournalIndex(questId)
 
     numericQuestId = math.floor(numericQuestId)
 
-    EnsureQuestModel()
-
-    local model = QuestModel
-    if not model then
-        return nil
-    end
-
-    local resolver = model.GetJournalIndexForQuestId
+    local questModel = Nvk3UT and Nvk3UT.QuestModel
+    local resolver = questModel and questModel.GetJournalIndexForQuestId
     if type(resolver) ~= "function" then
         return nil
     end
@@ -952,6 +946,25 @@ end
 local function PerformApplyActiveQuestFromSaved()
     local previousActiveQuestId = state.activeQuestId
     local questKey = SyncSelectedQuestFromSaved()
+    local gi = GetJournalIndex
+    if type(gi) ~= "function" then
+        state.trackedQuestIndex = nil
+        state.trackedCategoryKeys = {}
+
+        if previousActiveQuestId ~= nil or state.activeQuestId ~= nil then
+            if IsDebugLoggingEnabled() then
+                DebugLog(string.format(
+                    "ACTIVE_SYNC_ABORT helper_missing questKey=%s",
+                    tostring(questKey)
+                ))
+            end
+
+            state.activeQuestId = nil
+            ApplyActiveQuestVisuals(previousActiveQuestId, nil)
+        end
+
+        return nil
+    end
     local journalIndex = GetJournalIndexForQuestKey(questKey)
 
     state.trackedQuestIndex = journalIndex
@@ -1052,6 +1065,14 @@ end
 
 -- TEMP SHIM (QMODEL_002): TODO remove on SWITCH token; forwards active quest state to QuestSelection.
 local function WriteActiveQuest(questKey, source, options)
+    local gi = GetJournalIndex
+    if type(gi) ~= "function" then
+        if IsDebugLoggingEnabled() then
+            DebugLog("WRITE_ACTIVE_ABORT helper_missing")
+        end
+        return false
+    end
+
     if QuestSelection and QuestSelection.SetActive then
         local changed, normalizedKey, priority, resolvedSource =
             QuestSelection.SetActive(questKey, source, options)
@@ -2090,6 +2111,16 @@ local function GetFocusedQuestIndex()
 end
 
 local function UpdateTrackedQuestCache(forcedIndex, context)
+    local gi = GetJournalIndex
+    if type(gi) ~= "function" then
+        if IsDebugLoggingEnabled() then
+            DebugDeselect("UpdateTrackedQuestCache:helper-missing", {
+                forcedIndex = forcedIndex,
+            })
+        end
+        return
+    end
+
     local function normalize(index)
         local resolved = GetJournalIndexForQuestKey(index)
         if resolved then
@@ -2401,6 +2432,17 @@ local function SyncTrackedQuestState(forcedIndex, forceExpand, context)
             forcedIndex = forcedIndex,
             forceExpand = tostring(forceExpand),
         })
+        return
+    end
+
+    local gi = GetJournalIndex
+    if type(gi) ~= "function" then
+        if IsDebugLoggingEnabled() then
+            DebugDeselect("SyncTrackedQuestState:helper-missing", {
+                forcedIndex = forcedIndex,
+                forceExpand = tostring(forceExpand),
+            })
+        end
         return
     end
 
