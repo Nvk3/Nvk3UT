@@ -344,19 +344,15 @@ end
 function Repo.Q_IsZoneCollapsed(zoneKey)
     local normalized = normalizeKey(zoneKey)
     if not normalized then
-        return nil
+        return false
     end
 
     local zones = ensureZones(false)
     if not zones then
-        return nil
+        return false
     end
 
-    if zones[normalized] == true then
-        return true
-    end
-
-    return nil
+    return zones[normalized] == true
 end
 
 function Repo.Q_SetZoneCollapsed(zoneKey, collapsed)
@@ -394,19 +390,15 @@ end
 function Repo.Q_IsQuestCollapsed(questId)
     local normalized = normalizeKey(questId)
     if not normalized then
-        return nil
+        return false
     end
 
     local questsCollapsed = ensureQuestCollapses(false)
     if not questsCollapsed then
-        return nil
+        return false
     end
 
-    if questsCollapsed[normalized] == true then
-        return true
-    end
-
-    return nil
+    return questsCollapsed[normalized] == true
 end
 
 function Repo.Q_SetQuestCollapsed(questId, collapsed)

@@ -493,23 +493,32 @@ end
 
 function Repo.Host_GetRect()
     ensureDefaults()
-    local defaults = state.defaults.host or {}
+    local defaults = state.defaults.host
+    local fallback = defaults and deepCopy(defaults) or {}
     local host = ensureHostTable()
     if not host then
-        return defaults and deepCopy(defaults) or nil
+        return fallback
     end
 
     local rect = {}
-    for key, default in pairs(defaults) do
-        local stored = host[key]
-        if stored == nil then
-            rect[key] = default
-        else
-            rect[key] = sanitizeHostField(key, stored, default)
+    if defaults then
+        for key, default in pairs(defaults) do
+            local stored = host[key]
+            if stored == nil then
+                rect[key] = default
+            else
+                rect[key] = sanitizeHostField(key, stored, default)
+            end
         end
     end
 
-    return deepCopy(rect)
+    for key, value in pairs(host) do
+        if defaults == nil or defaults[key] == nil then
+            rect[key] = value
+        end
+    end
+
+    return rect
 end
 
 function Repo.Host_SetRect(partial)

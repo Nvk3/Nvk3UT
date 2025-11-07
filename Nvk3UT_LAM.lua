@@ -68,6 +68,13 @@ local DEFAULT_WINDOW_BARS = {
 
 local MAX_BAR_HEIGHT = 250
 
+local registerReposReadyCallback
+local unregisterReposReadyCallback
+
+local function areReposReady()
+    return Nvk3UT and Nvk3UT.reposReady == true
+end
+
 local function clamp(value, minimum, maximum)
     if value == nil then
         return minimum
@@ -288,8 +295,25 @@ local function getWindowBarSettings()
     return bars
 end
 
+local function createQuestSettingsDefaults()
+    return {
+        active = true,
+        autoExpand = true,
+        autoTrack = true,
+        fonts = {},
+    }
+end
+
 local function getQuestSettings()
+    if not areReposReady() then
+        return createQuestSettingsDefaults()
+    end
+
     local sv = getSavedVars()
+    if type(sv) ~= "table" then
+        return createQuestSettingsDefaults()
+    end
+
     sv.QuestTracker = sv.QuestTracker or {}
     sv.QuestTracker.fonts = sv.QuestTracker.fonts or {}
     return sv.QuestTracker
@@ -1727,6 +1751,14 @@ local function registerPanel(displayTitle)
 
     registerLamCallbacks(LAM, panelName, panel)
 
+    if unregisterReposReadyCallback then
+        unregisterReposReadyCallback()
+    end
+
+    if Nvk3UT and type(Nvk3UT.Debug) == "function" then
+        Nvk3UT.Debug("LAM panel registered")
+    end
+
     L._registered = true
     return true
 end
@@ -1782,18 +1814,56 @@ local function waitForLam()
     end
 end
 
-function L.Build(displayTitle)
+local function attemptPanelRegistration()
     if L._registered then
-        return
+        return true
     end
 
-    pendingPanelTitle = displayTitle or pendingPanelTitle or DEFAULT_PANEL_TITLE
+    pendingPanelTitle = pendingPanelTitle or DEFAULT_PANEL_TITLE
 
     if registerPanel(pendingPanelTitle) then
-        return
+        return true
     end
 
     waitForLam()
+    return false
+end
+
+local reposReadyCallbackRef = nil
+
+registerReposReadyCallback = function()
+    if reposReadyCallbackRef or not CALLBACK_MANAGER then
+        return
+    end
+
+    if type(CALLBACK_MANAGER.RegisterCallback) ~= "function" then
+        return
+    end
+
+    reposReadyCallbackRef = function()
+        if L._registered then
+            if unregisterReposReadyCallback then
+                unregisterReposReadyCallback()
+            end
+            return
+        end
+
+        attemptPanelRegistration()
+    end
+
+    CALLBACK_MANAGER:RegisterCallback("Nvk3UT_REPOS_READY", reposReadyCallbackRef)
+end
+
+unregisterReposReadyCallback = function()
+    if not reposReadyCallbackRef then
+        return
+    end
+
+    if CALLBACK_MANAGER and type(CALLBACK_MANAGER.UnregisterCallback) == "function" then
+        CALLBACK_MANAGER:UnregisterCallback("Nvk3UT_REPOS_READY", reposReadyCallbackRef)
+    end
+
+    reposReadyCallbackRef = nil
 end
 
 local function ensureRegisteredWhenReady()
@@ -1801,20 +1871,29 @@ local function ensureRegisteredWhenReady()
         return
     end
 
-    if not (Nvk3UT and Nvk3UT.sv) then
+    pendingPanelTitle = pendingPanelTitle or DEFAULT_PANEL_TITLE
+
+    if not areReposReady() then
+        if registerReposReadyCallback then
+            registerReposReadyCallback()
+        end
         if zo_callLater then
-            zo_callLater(ensureRegisteredWhenReady, 100)
+            zo_callLater(ensureRegisteredWhenReady, 250)
         end
         return
     end
 
-    pendingPanelTitle = pendingPanelTitle or DEFAULT_PANEL_TITLE
+    attemptPanelRegistration()
+end
 
-    if registerPanel(pendingPanelTitle) then
+function L.Build(displayTitle)
+    if L._registered then
         return
     end
 
-    waitForLam()
+    pendingPanelTitle = displayTitle or pendingPanelTitle or DEFAULT_PANEL_TITLE
+
+    ensureRegisteredWhenReady()
 end
 
 if EVENT_MANAGER then
