@@ -335,6 +335,90 @@ local function checkRecentData()
     return true, "RecentData ready"
 end
 
+local function checkQuestRepository()
+    if type(Nvk3UT) ~= "table" then
+        return nil, "Addon root missing; cannot inspect quest repository"
+    end
+
+    local repo = Nvk3UT_StateRepo_Quests or (Nvk3UT and Nvk3UT.QuestRepo)
+    if not (repo and repo.Q_SetZoneCollapsed and repo.Q_SetQuestCollapsed and repo.Q_GetFlags) then
+        return nil, "Quest repository not initialised"
+    end
+
+    local testZone = 987654
+    repo.Q_SetZoneCollapsed(testZone, false)
+    if repo.Q_SetZoneCollapsed(testZone, true) ~= true then
+        return false, "Zone collapse write failed"
+    end
+    if repo.Q_IsZoneCollapsed(testZone) ~= true then
+        repo.Q_SetZoneCollapsed(testZone, false)
+        return false, "Zone collapse state mismatch"
+    end
+    if repo.Q_SetZoneCollapsed(testZone, true) then
+        repo.Q_SetZoneCollapsed(testZone, false)
+        return false, "Zone collapse rewrite should be trimmed"
+    end
+    repo.Q_SetZoneCollapsed(testZone, false)
+    if repo.Q_IsZoneCollapsed(testZone) ~= nil then
+        return false, "Zone collapse not trimmed"
+    end
+
+    local testQuest = 876543
+    repo.Q_SetQuestCollapsed(testQuest, false)
+    if repo.Q_SetQuestCollapsed(testQuest, true) ~= true then
+        return false, "Quest collapse write failed"
+    end
+    if repo.Q_IsQuestCollapsed(testQuest) ~= true then
+        repo.Q_SetQuestCollapsed(testQuest, false)
+        return false, "Quest collapse state mismatch"
+    end
+    if repo.Q_SetQuestCollapsed(testQuest, true) then
+        repo.Q_SetQuestCollapsed(testQuest, false)
+        return false, "Quest collapse rewrite should be trimmed"
+    end
+    repo.Q_SetQuestCollapsed(testQuest, false)
+    if repo.Q_IsQuestCollapsed(testQuest) ~= nil then
+        return false, "Quest collapse not trimmed"
+    end
+
+    local flagsQuest = 765432
+    repo.Q_SetFlags(flagsQuest, nil)
+    local defaults = repo.Q_GetFlags(flagsQuest)
+    if type(defaults) ~= "table" or defaults.tracked ~= false or defaults.assisted ~= false or defaults.isDaily ~= false then
+        return false, "Flag defaults missing"
+    end
+
+    local changed = repo.Q_SetFlags(flagsQuest, {
+        tracked = true,
+        assisted = true,
+        categoryKey = 13579,
+        journalIndex = 7,
+    })
+    if not changed then
+        return false, "Flag write failed"
+    end
+
+    local stored = repo.Q_GetFlags(flagsQuest)
+    if stored.tracked ~= true or stored.assisted ~= true or stored.categoryKey ~= 13579 or stored.journalIndex ~= 7 then
+        repo.Q_SetFlags(flagsQuest, nil)
+        return false, "Flag readback mismatch"
+    end
+
+    if repo.Q_SetFlags(flagsQuest, {
+        tracked = true,
+        assisted = true,
+        categoryKey = 13579,
+        journalIndex = 7,
+    }) then
+        repo.Q_SetFlags(flagsQuest, nil)
+        return false, "Flag rewrite should be a no-op"
+    end
+
+    repo.Q_SetFlags(flagsQuest, nil)
+
+    return true, "Quest repository ready"
+end
+
 local function summarize(results)
     _info(
         "SelfTest summary: passed=%d, skipped=%d, failed=%d",
@@ -360,6 +444,7 @@ function SelfTest.RunCoreSanityCheck()
     _runCheck(results, "SavedVariables", checkSavedVariables)
     _runCheck(results, "FavoritesData", checkFavoritesData)
     _runCheck(results, "RecentData", checkRecentData)
+    _runCheck(results, "QuestRepo", checkQuestRepository)
 
     summarize(results)
 

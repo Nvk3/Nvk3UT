@@ -34,6 +34,10 @@ if Nvk3UT_StateRepo_Achievements and type(Nvk3UT_StateRepo_Achievements.AttachTo
     Nvk3UT_StateRepo_Achievements.AttachToRoot(Addon)
 end
 
+if Nvk3UT_StateRepo_Quests and type(Nvk3UT_StateRepo_Quests.AttachToRoot) == "function" then
+    Nvk3UT_StateRepo_Quests.AttachToRoot(Addon)
+end
+
 local function formatMessage(prefix, fmt, ...)
     if not fmt then
         return prefix
@@ -165,6 +169,9 @@ function Addon:InitSavedVariables()
         end
         if Nvk3UT_StateRepo_Achievements and Nvk3UT_StateRepo_Achievements.Init then
             Nvk3UT_StateRepo_Achievements.Init(sv)
+        end
+        if Nvk3UT_StateRepo_Quests and Nvk3UT_StateRepo_Quests.Init then
+            Nvk3UT_StateRepo_Quests.Init(character)
         end
     end
 

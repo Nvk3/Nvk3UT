@@ -1,7 +1,7 @@
 -- Model/Quest/Nvk3UT_QuestState.lua
--- Persists quest tracker UI state in the refreshed character-scoped schema.
--- Stores only collapse deviations and minimal quest flags while keeping runtime
--- metadata for priority-aware writes in memory.
+-- Persists quest tracker UI state through the quest repository so only collapsed
+-- deviations and minimal quest flags reach SavedVariables. Runtime helpers keep
+-- priority-aware writes in memory while storage always routes through the repo.
 
 Nvk3UT = Nvk3UT or {}
 Nvk3UT.QuestState = Nvk3UT.QuestState or {}
@@ -16,12 +16,7 @@ local PRIORITY = {
     init = 1,
 }
 
-local savedRoot = QuestState._saved
-local savedCharacter = QuestState._savedCharacter
-local savedState = QuestState._savedState
-local savedZones = QuestState._savedZones
-local savedQuestCollapses = QuestState._savedQuests
-local savedFlags = QuestState._savedFlags
+local questRepo = QuestState._repo
 
 local runtimeCategories = QuestState._runtimeCategories or {}
 local runtimeQuests = QuestState._runtimeQuests or {}
@@ -153,149 +148,17 @@ local function commitMeta(metaTable, key, priority, timestamp, source)
     }
 end
 
-local function ensureStateContainer()
-    if not savedRoot then
-        return nil
+local function GetRepo()
+    if questRepo then
+        return questRepo
     end
 
-    if not savedState then
-        savedState = {}
-        QuestState._savedState = savedState
-        savedRoot.state = savedState
+    questRepo = Nvk3UT_StateRepo_Quests or (Nvk3UT and Nvk3UT.QuestRepo)
+    if questRepo then
+        QuestState._repo = questRepo
     end
 
-    return savedState
-end
-
-local function syncStateContainer()
-    if not savedRoot then
-        savedState = nil
-        QuestState._savedState = nil
-        return
-    end
-
-    local hasZones = savedZones and next(savedZones) ~= nil
-    local hasQuests = savedQuestCollapses and next(savedQuestCollapses) ~= nil
-
-    if hasZones or hasQuests then
-        ensureStateContainer()
-        if savedState then
-            savedRoot.state = savedState
-        end
-    else
-        savedRoot.state = nil
-        savedState = nil
-        QuestState._savedState = nil
-    end
-end
-
-local function getZoneStorage(create)
-    if not savedRoot then
-        return nil
-    end
-
-    if not savedState and create then
-        ensureStateContainer()
-    end
-
-    if not savedState then
-        return nil
-    end
-
-    if not savedZones and create then
-        savedZones = {}
-        QuestState._savedZones = savedZones
-    end
-
-    return savedZones
-end
-
-local function syncZoneStorage()
-    if not savedState then
-        savedZones = nil
-        QuestState._savedZones = nil
-        syncStateContainer()
-        return
-    end
-
-    if savedZones and next(savedZones) ~= nil then
-        savedState.zones = savedZones
-    else
-        savedState.zones = nil
-        savedZones = nil
-        QuestState._savedZones = nil
-    end
-
-    syncStateContainer()
-end
-
-local function getQuestStorage(create)
-    if not savedRoot then
-        return nil
-    end
-
-    if not savedState and create then
-        ensureStateContainer()
-    end
-
-    if not savedState then
-        return nil
-    end
-
-    if not savedQuestCollapses and create then
-        savedQuestCollapses = {}
-        QuestState._savedQuests = savedQuestCollapses
-    end
-
-    return savedQuestCollapses
-end
-
-local function syncQuestStorage()
-    if not savedState then
-        savedQuestCollapses = nil
-        QuestState._savedQuests = nil
-        syncStateContainer()
-        return
-    end
-
-    if savedQuestCollapses and next(savedQuestCollapses) ~= nil then
-        savedState.quests = savedQuestCollapses
-    else
-        savedState.quests = nil
-        savedQuestCollapses = nil
-        QuestState._savedQuests = nil
-    end
-
-    syncStateContainer()
-end
-
-local function getFlagsStorage(create)
-    if not savedRoot then
-        return nil
-    end
-
-    if not savedFlags and create then
-        savedFlags = {}
-        QuestState._savedFlags = savedFlags
-    end
-
-    return savedFlags
-end
-
-local function syncFlagsStorage()
-    if not savedRoot then
-        savedFlags = nil
-        QuestState._savedFlags = nil
-        return
-    end
-
-    if savedFlags and next(savedFlags) ~= nil then
-        savedRoot.flags = savedFlags
-    else
-        savedRoot.flags = nil
-        savedFlags = nil
-        QuestState._savedFlags = nil
-    end
+    return questRepo
 end
 
 local function sanitizeFlagEntry(flags)
@@ -334,213 +197,6 @@ local function sanitizeFlagEntry(flags)
     return entry
 end
 
-local function flagsEqual(left, right)
-    if left == right then
-        return true
-    end
-    if type(left) ~= "table" or type(right) ~= "table" then
-        return false
-    end
-
-    local keys = {
-        "tracked",
-        "assisted",
-        "isDaily",
-        "categoryKey",
-        "journalIndex",
-    }
-
-    for index = 1, #keys do
-        local key = keys[index]
-        if left[key] ~= right[key] then
-            return false
-        end
-    end
-
-    return true
-end
-
-local function assignSavedReferences(character)
-    savedCharacter = character
-    QuestState._savedCharacter = character
-    savedRoot = character and character.quests or nil
-    QuestState._saved = savedRoot
-
-    if savedRoot then
-        if type(savedRoot.state) == "table" and next(savedRoot.state) ~= nil then
-            savedState = savedRoot.state
-            QuestState._savedState = savedState
-        else
-            savedState = nil
-            savedRoot.state = nil
-            QuestState._savedState = nil
-        end
-
-        if savedState and type(savedState.zones) == "table" and next(savedState.zones) ~= nil then
-            savedZones = savedState.zones
-            QuestState._savedZones = savedZones
-        else
-            savedZones = nil
-            QuestState._savedZones = nil
-        end
-
-        if savedState and type(savedState.quests) == "table" and next(savedState.quests) ~= nil then
-            savedQuestCollapses = savedState.quests
-            QuestState._savedQuests = savedQuestCollapses
-        else
-            savedQuestCollapses = nil
-            QuestState._savedQuests = nil
-        end
-
-        if type(savedRoot.flags) == "table" and next(savedRoot.flags) ~= nil then
-            savedFlags = savedRoot.flags
-            QuestState._savedFlags = savedFlags
-        else
-            savedFlags = nil
-            savedRoot.flags = nil
-            QuestState._savedFlags = nil
-        end
-    else
-        savedState = nil
-        savedZones = nil
-        savedQuestCollapses = nil
-        savedFlags = nil
-        QuestState._savedState = nil
-        QuestState._savedZones = nil
-        QuestState._savedQuests = nil
-        QuestState._savedFlags = nil
-    end
-end
-
-function QuestState.Bind(root)
-    local addon = Nvk3UT
-    local character = addon and (addon.SVCharacter or addon.svCharacter)
-
-    if type(character) ~= "table" then
-        character = root
-    end
-
-    if type(character) ~= "table" then
-        assignSavedReferences(nil)
-        return nil
-    end
-
-    character.quests = character.quests or {}
-    character.quests.state = character.quests.state or {}
-
-    assignSavedReferences(character)
-
-    syncZoneStorage()
-    syncQuestStorage()
-    syncFlagsStorage()
-
-    return savedRoot
-end
-
-function QuestState.GetSaved()
-    return savedRoot
-end
-
-function QuestState.GetCurrentTimeSeconds()
-    return GetCurrentTimeSeconds()
-end
-
-function QuestState.NormalizeCategoryKey(categoryKey)
-    return NormalizeCategoryKey(categoryKey)
-end
-
-function QuestState.NormalizeQuestKey(value)
-    return NormalizeQuestKey(value)
-end
-
-function QuestState.EnsureActiveSavedState()
-    return runtimeActive
-end
-
-function QuestState.SetCategoryExpanded(categoryKey, expanded, source, options)
-    if not savedState then
-        return false
-    end
-
-    local key = NormalizeCategoryKey(categoryKey)
-    if not key then
-        return false
-    end
-
-    local shouldWrite, priority, timestamp, resolvedSource = evaluateWrite(runtimeCategories, key, source, options)
-    if not shouldWrite then
-        local zones = savedZones
-        local isCollapsed = zones and zones[key] == true
-        return false, key, not isCollapsed, priority, resolvedSource
-    end
-
-    local zones = getZoneStorage(not expanded)
-    local changed = false
-
-    if expanded then
-        if zones and zones[key] ~= nil then
-            zones[key] = nil
-            changed = true
-        end
-    else
-        zones = getZoneStorage(true)
-        if zones[key] ~= true then
-            zones[key] = true
-            changed = true
-        end
-    end
-
-    if changed then
-        commitMeta(runtimeCategories, key, priority, timestamp, resolvedSource)
-        syncZoneStorage()
-        return true, key, expanded and true or false, priority, resolvedSource
-    end
-
-    return false, key, expanded and true or false, priority, resolvedSource
-end
-
-function QuestState.SetQuestExpanded(questKey, expanded, source, options)
-    if not savedState then
-        return false
-    end
-
-    local questId = NormalizeQuestKey(questKey)
-    if not questId then
-        return false
-    end
-
-    local shouldWrite, priority, timestamp, resolvedSource = evaluateWrite(runtimeQuests, questId, source, options)
-    if not shouldWrite then
-        local storage = savedQuestCollapses
-        local isCollapsed = storage and storage[questId] == true
-        return false, questId, not isCollapsed, priority, resolvedSource
-    end
-
-    local storage = getQuestStorage(not expanded)
-    local changed = false
-
-    if expanded then
-        if storage and storage[questId] ~= nil then
-            storage[questId] = nil
-            changed = true
-        end
-    else
-        storage = getQuestStorage(true)
-        if storage[questId] ~= true then
-            storage[questId] = true
-            changed = true
-        end
-    end
-
-    if changed then
-        commitMeta(runtimeQuests, questId, priority, timestamp, resolvedSource)
-        syncQuestStorage()
-        return true, questId, expanded and true or false, priority, resolvedSource
-    end
-
-    return false, questId, expanded and true or false, priority, resolvedSource
-end
-
 local function evaluateActiveWrite(source, options)
     options = options or {}
 
@@ -564,6 +220,112 @@ local function evaluateActiveWrite(source, options)
     end
 
     return true, priority, now, source
+end
+
+function QuestState.Bind(root)
+    local repo = GetRepo()
+    if repo and repo.Init then
+        local addon = Nvk3UT
+        local character = addon and (addon.SVCharacter or addon.svCharacter)
+        repo.Init(character)
+    end
+
+    return nil
+end
+
+function QuestState.GetSaved()
+    return nil
+end
+
+function QuestState.GetCurrentTimeSeconds()
+    return GetCurrentTimeSeconds()
+end
+
+function QuestState.NormalizeCategoryKey(categoryKey)
+    return NormalizeCategoryKey(categoryKey)
+end
+
+function QuestState.NormalizeQuestKey(value)
+    return NormalizeQuestKey(value)
+end
+
+function QuestState.EnsureActiveSavedState()
+    runtimeActive.ts = runtimeActive.ts or 0
+    runtimeActive.source = runtimeActive.source or "init"
+    runtimeActive.priority = runtimeActive.priority or PRIORITY.init
+    return runtimeActive
+end
+
+function QuestState.SetCategoryExpanded(categoryKey, expanded, source, options)
+    local repo = GetRepo()
+    if not (repo and repo.Q_SetZoneCollapsed and repo.Q_IsZoneCollapsed) then
+        return false
+    end
+
+    local key = NormalizeCategoryKey(categoryKey)
+    if not key then
+        return false
+    end
+
+    local shouldWrite, priority, timestamp, resolvedSource = evaluateWrite(runtimeCategories, key, source, options)
+    if not shouldWrite then
+        local collapsed = repo.Q_IsZoneCollapsed(key)
+        local isExpanded = collapsed ~= true
+        return false, key, isExpanded, priority, resolvedSource
+    end
+
+    local changed
+    if expanded then
+        changed = repo.Q_SetZoneCollapsed(key, false) == true
+    else
+        changed = repo.Q_SetZoneCollapsed(key, true) == true
+    end
+
+    local collapsed = repo.Q_IsZoneCollapsed(key)
+    local isExpanded = collapsed ~= true
+
+    if changed then
+        commitMeta(runtimeCategories, key, priority, timestamp, resolvedSource)
+        return true, key, isExpanded, priority, resolvedSource
+    end
+
+    return false, key, isExpanded, priority, resolvedSource
+end
+
+function QuestState.SetQuestExpanded(questKey, expanded, source, options)
+    local repo = GetRepo()
+    if not (repo and repo.Q_SetQuestCollapsed and repo.Q_IsQuestCollapsed) then
+        return false
+    end
+
+    local questId = NormalizeQuestKey(questKey)
+    if not questId then
+        return false
+    end
+
+    local shouldWrite, priority, timestamp, resolvedSource = evaluateWrite(runtimeQuests, questId, source, options)
+    if not shouldWrite then
+        local collapsed = repo.Q_IsQuestCollapsed(questId)
+        local isExpanded = collapsed ~= true
+        return false, questId, isExpanded, priority, resolvedSource
+    end
+
+    local changed
+    if expanded then
+        changed = repo.Q_SetQuestCollapsed(questId, false) == true
+    else
+        changed = repo.Q_SetQuestCollapsed(questId, true) == true
+    end
+
+    local collapsed = repo.Q_IsQuestCollapsed(questId)
+    local isExpanded = collapsed ~= true
+
+    if changed then
+        commitMeta(runtimeQuests, questId, priority, timestamp, resolvedSource)
+        return true, questId, isExpanded, priority, resolvedSource
+    end
+
+    return false, questId, isExpanded, priority, resolvedSource
 end
 
 function QuestState.SetSelectedQuestId(questKey, source, options)
@@ -590,7 +352,8 @@ function QuestState.SetSelectedQuestId(questKey, source, options)
 end
 
 function QuestState.IsCategoryExpanded(categoryKey)
-    if not savedState then
+    local repo = GetRepo()
+    if not (repo and repo.Q_IsZoneCollapsed) then
         return nil
     end
 
@@ -599,8 +362,8 @@ function QuestState.IsCategoryExpanded(categoryKey)
         return nil
     end
 
-    local zones = savedZones
-    if zones and zones[key] == true then
+    local collapsed = repo.Q_IsZoneCollapsed(key)
+    if collapsed == true then
         return false
     end
 
@@ -608,7 +371,8 @@ function QuestState.IsCategoryExpanded(categoryKey)
 end
 
 function QuestState.IsQuestExpanded(questKey)
-    if not savedState then
+    local repo = GetRepo()
+    if not (repo and repo.Q_IsQuestCollapsed) then
         return nil
     end
 
@@ -617,8 +381,8 @@ function QuestState.IsQuestExpanded(questKey)
         return nil
     end
 
-    local storage = savedQuestCollapses
-    if storage and storage[questId] == true then
+    local collapsed = repo.Q_IsQuestCollapsed(questId)
+    if collapsed == true then
         return false
     end
 
@@ -638,7 +402,8 @@ function QuestState.GetQuestDefaultExpanded()
 end
 
 function QuestState.SetQuestFlags(questKey, flags)
-    if not savedRoot then
+    local repo = GetRepo()
+    if not (repo and repo.Q_SetFlags) then
         return false
     end
 
@@ -648,27 +413,12 @@ function QuestState.SetQuestFlags(questKey, flags)
     end
 
     local entry = sanitizeFlagEntry(flags)
-    local storage = getFlagsStorage(entry ~= nil)
-    local previous = storage and storage[questId] or nil
-
-    if not entry then
-        if storage and previous then
-            storage[questId] = nil
-            syncFlagsStorage()
-            return true, questId
-        end
-        return false
+    local changed = repo.Q_SetFlags(questId, entry)
+    if changed then
+        return true, questId
     end
 
-    if previous and flagsEqual(previous, entry) then
-        return false, questId
-    end
-
-    storage = storage or getFlagsStorage(true)
-    storage[questId] = entry
-    syncFlagsStorage()
-
-    return true, questId
+    return false
 end
 
 function QuestState.ClearQuestFlags(questKey)
@@ -676,7 +426,8 @@ function QuestState.ClearQuestFlags(questKey)
 end
 
 function QuestState.GetQuestFlags(questKey)
-    if not savedFlags then
+    local repo = GetRepo()
+    if not (repo and repo.Q_GetFlags) then
         return nil
     end
 
@@ -685,15 +436,24 @@ function QuestState.GetQuestFlags(questKey)
         return nil
     end
 
-    local entry = savedFlags[questId]
-    if not entry then
-        return nil
+    local entry = repo.Q_GetFlags(questId)
+    if type(entry) ~= "table" then
+        entry = {
+            tracked = false,
+            assisted = false,
+            isDaily = false,
+            categoryKey = nil,
+            journalIndex = nil,
+        }
     end
 
     local copy = {}
-    for key, value in pairs(entry) do
-        copy[key] = value
-    end
+    copy.tracked = entry.tracked == true
+    copy.assisted = entry.assisted == true
+    copy.isDaily = entry.isDaily == true
+    copy.categoryKey = entry.categoryKey
+    copy.journalIndex = entry.journalIndex
+
     return copy
 end
 
@@ -722,30 +482,12 @@ function QuestState.UpdateQuestFlagsFromQuest(quest)
 end
 
 function QuestState.PruneQuestFlags(valid)
-    if not savedFlags or type(savedFlags) ~= "table" then
+    local repo = GetRepo()
+    if not (repo and repo.Q_PruneFlags) then
         return 0
     end
 
-    local removed = 0
-    for questId in pairs(savedFlags) do
-        local keep = false
-        if type(valid) == "table" then
-            if valid[questId] or valid[tostring(questId)] then
-                keep = true
-            end
-        end
-
-        if not keep then
-            savedFlags[questId] = nil
-            removed = removed + 1
-        end
-    end
-
-    if removed > 0 then
-        syncFlagsStorage()
-    end
-
-    return removed
+    return repo.Q_PruneFlags(valid)
 end
 
 return QuestState
