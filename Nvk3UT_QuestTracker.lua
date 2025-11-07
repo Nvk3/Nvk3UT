@@ -1987,7 +1987,7 @@ local function ResolveQuestControlForQuestId(questId)
     return control
 end
 
-local function ApplyActiveQuestVisuals(oldQuestId, newQuestId)
+ApplyActiveQuestVisuals = function(oldQuestId, newQuestId)
     if oldQuestId == newQuestId then
         oldQuestId = nil
     end
