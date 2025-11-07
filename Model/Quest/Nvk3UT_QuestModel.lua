@@ -9,6 +9,8 @@ end
 local QuestModel = {}
 QuestModel.__index = QuestModel
 
+Nvk3UT.QuestModel = QuestModel
+
 local QUEST_MODEL_NAME = addonName .. "QuestModel"
 local EVENT_NAMESPACE = QUEST_MODEL_NAME .. "_Event"
 local REBUILD_IDENTIFIER = QUEST_MODEL_NAME .. "_Rebuild"
@@ -498,7 +500,7 @@ end
 -- Returns the current journal index for the given quest id.
 -- This function performs a live lookup against the journal APIs and is the
 -- sole source of truth for mapping quest identifiers to journal indices.
-function QuestModel.GetJournalIndexForQuestId(questId)
+function Nvk3UT.QuestModel.GetJournalIndexForQuestId(questId)
     local numericQuestId = tonumber(questId)
     if not numericQuestId or numericQuestId <= 0 then
         return nil
@@ -634,7 +636,5 @@ function QuestModel.Unsubscribe(callback)
         QuestModel.subscribers[callback] = nil
     end
 end
-
-Nvk3UT.QuestModel = QuestModel
 
 return QuestModel

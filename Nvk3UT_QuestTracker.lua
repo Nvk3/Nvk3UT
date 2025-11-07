@@ -11,6 +11,15 @@ local EVENT_NAMESPACE = MODULE_NAME .. "_Event"
 local Utils = Nvk3UT and Nvk3UT.Utils
 local QuestState = Nvk3UT and Nvk3UT.QuestState
 local QuestSelection = Nvk3UT and Nvk3UT.QuestSelection
+local QuestModel = Nvk3UT and Nvk3UT.QuestModel
+
+local function EnsureQuestModel()
+    if not QuestModel and Nvk3UT then
+        QuestModel = Nvk3UT.QuestModel
+    end
+
+    return QuestModel
+end
 local FormatCategoryHeaderText =
     (Utils and Utils.FormatCategoryHeaderText)
     or function(baseText, count, showCounts)
@@ -410,11 +419,12 @@ local function GetJournalIndexForQuestKey(questKey)
         return nil
     end
 
-    local questModel = Nvk3UT and Nvk3UT.QuestModel
     local questId = ResolveQuestIdFromKey(questKey)
 
-    if questId and questModel and questModel.GetJournalIndexForQuestId then
-        local journalIndex = questModel.GetJournalIndexForQuestId(questId)
+    EnsureQuestModel()
+
+    if questId and QuestModel and QuestModel.GetJournalIndexForQuestId then
+        local journalIndex = QuestModel.GetJournalIndexForQuestId(questId)
         if journalIndex then
             return journalIndex
         end
@@ -870,11 +880,24 @@ local function ApplyActiveQuestFromSaved()
 
     state.trackedQuestIndex = journalIndex
 
-    if journalIndex then
-        state.trackedCategoryKeys = CollectCategoryKeysForQuest(journalIndex)
-    else
+    if not journalIndex then
         state.trackedCategoryKeys = {}
+
+        if previousActiveQuestId ~= nil or state.activeQuestId ~= nil then
+            if IsDebugLoggingEnabled() then
+                DebugLog(string.format(
+                    "ACTIVE_SYNC_SKIPPED questKey=%s", tostring(questKey)
+                ))
+            end
+
+            state.activeQuestId = nil
+            ApplyActiveQuestVisuals(previousActiveQuestId, nil)
+        end
+
+        return nil
     end
+
+    state.trackedCategoryKeys = CollectCategoryKeysForQuest(journalIndex)
 
     local newActiveQuestId
     if journalIndex then
@@ -1823,11 +1846,12 @@ local function ResolveQuestControlForQuestId(questId)
 
     numericQuestId = math.floor(numericQuestId)
 
-    local questModel = Nvk3UT and Nvk3UT.QuestModel
     local journalIndex = nil
 
-    if questModel and questModel.GetJournalIndexForQuestId then
-        journalIndex = questModel.GetJournalIndexForQuestId(numericQuestId)
+    EnsureQuestModel()
+
+    if QuestModel and QuestModel.GetJournalIndexForQuestId then
+        journalIndex = QuestModel.GetJournalIndexForQuestId(numericQuestId)
     end
 
     if not journalIndex and state.questControls then
@@ -3870,8 +3894,9 @@ local function SubscribeToQuestModel()
         return
     end
 
-    local questModel = Nvk3UT and Nvk3UT.QuestModel
-    if not (questModel and questModel.Subscribe) then
+    EnsureQuestModel()
+
+    if not (QuestModel and QuestModel.Subscribe) then
         return
     end
 
@@ -3882,13 +3907,14 @@ local function SubscribeToQuestModel()
         })
     end
 
-    questModel.Subscribe(state.questModelSubscription)
+    QuestModel.Subscribe(state.questModelSubscription)
 end
 
 local function UnsubscribeFromQuestModel()
-    local questModel = Nvk3UT and Nvk3UT.QuestModel
-    if state.questModelSubscription and questModel and questModel.Unsubscribe then
-        questModel.Unsubscribe(state.questModelSubscription)
+    EnsureQuestModel()
+
+    if state.questModelSubscription and QuestModel and QuestModel.Unsubscribe then
+        QuestModel.Unsubscribe(state.questModelSubscription)
     end
 
     state.questModelSubscription = nil
@@ -3991,9 +4017,10 @@ function QuestTracker.Init(parentControl, opts)
     state.isInitialized = true
     RefreshVisibility()
 
-    local questModel = Nvk3UT and Nvk3UT.QuestModel
+    EnsureQuestModel()
+
     local snapshot = state.snapshot
-        or (questModel and questModel.GetSnapshot and questModel.GetSnapshot())
+        or (QuestModel and QuestModel.GetSnapshot and QuestModel.GetSnapshot())
 
     OnQuestModelSnapshotUpdated(snapshot, {
         trigger = "init",
