@@ -78,6 +78,7 @@ local RefreshCategoryByKey -- forward declaration for targeted category refreshe
 local RefreshQuestCategories -- forward declaration for quest-driven refreshes
 local RefreshCategoriesForKeys -- forward declaration for bulk category refreshes
 local UpdateRepoQuestFlags -- forward declaration for quest flag persistence helpers
+local DoesJournalQuestExist -- forward declaration for journal lookups
 -- Forward declaration so SafeCall is visible to functions defined above its body.
 -- Without this, calling SafeCall in ResolveQuestDebugInfo during quest accept can crash
 -- because SafeCall would still be nil at that point.
@@ -369,47 +370,69 @@ local function DetermineQuestColorRole(quest)
     return "entryTitle"
 end
 
-local function QuestKeyToJournalIndex(questKey)
+local function ResolveQuestIdFromKey(questKey)
     if questKey == nil then
         return nil
     end
 
-    if type(questKey) == "table" and questKey.questKey then
-        questKey = questKey.questKey
+    if type(questKey) == "table" then
+        if questKey.questId ~= nil then
+            return ResolveQuestIdFromKey(questKey.questId)
+        elseif questKey.questKey ~= nil then
+            return ResolveQuestIdFromKey(questKey.questKey)
+        elseif questKey.journalIndex ~= nil then
+            return ResolveQuestIdFromKey(questKey.journalIndex)
+        end
+    end
+
+    if QuestState and QuestState.NormalizeQuestKey then
+        local normalized = QuestState.NormalizeQuestKey(questKey)
+        if normalized ~= nil then
+            local numeric = tonumber(normalized)
+            if numeric and numeric > 0 then
+                return math.floor(numeric)
+            end
+        end
     end
 
     local numeric = tonumber(questKey)
-    if not (numeric and numeric > 0) then
+    if numeric and numeric > 0 then
+        return math.floor(numeric)
+    end
+
+    return nil
+end
+
+local function GetJournalIndexForQuestKey(questKey)
+    if questKey == nil then
         return nil
     end
 
-    local questId = math.floor(numeric)
+    local questModel = Nvk3UT and Nvk3UT.QuestModel
+    local questId = ResolveQuestIdFromKey(questKey)
 
-    local resolved
-    ForEachQuest(function(quest)
-        if resolved then
-            return
+    if questId and questModel and questModel.GetJournalIndexForQuestId then
+        local journalIndex = questModel.GetJournalIndexForQuestId(questId)
+        if journalIndex then
+            return journalIndex
         end
-        if quest and quest.questId then
-            local stored = tonumber(quest.questId)
-            if stored and stored == questId then
-                resolved = quest.journalIndex
-            end
-        end
-    end)
-
-    if resolved then
-        return resolved
     end
 
-    if questId <= 50 then
-        if IsValidJournalQuestIndex and IsValidJournalQuestIndex(questId) then
-            return questId
-        elseif GetJournalQuestName then
-            local name = GetJournalQuestName(questId)
-            if name and name ~= "" then
-                return questId
+    if type(questKey) == "table" and questKey.journalIndex ~= nil then
+        local numericIndex = tonumber(questKey.journalIndex)
+        if numericIndex and numericIndex > 0 then
+            numericIndex = math.floor(numericIndex)
+            if DoesJournalQuestExist and DoesJournalQuestExist(numericIndex) then
+                return numericIndex
             end
+        end
+    end
+
+    local numeric = tonumber(questKey)
+    if numeric and numeric > 0 then
+        numeric = math.floor(numeric)
+        if not DoesJournalQuestExist or DoesJournalQuestExist(numeric) then
+            return numeric
         end
     end
 
@@ -641,7 +664,7 @@ local function RefreshCategoryByKey(categoryKey)
 end
 
 local function RefreshQuestCategories(questKey)
-    local journalIndex = QuestKeyToJournalIndex(questKey) or questKey
+    local journalIndex = GetJournalIndexForQuestKey(questKey)
     if not journalIndex then
         if RequestRefresh then
             RequestRefresh()
@@ -815,7 +838,7 @@ end
 
 local function ApplyActiveQuestFromSaved()
     local questKey = SyncSelectedQuestFromSaved()
-    local journalIndex = QuestKeyToJournalIndex(questKey)
+    local journalIndex = GetJournalIndexForQuestKey(questKey)
 
     state.trackedQuestIndex = journalIndex
 
@@ -1766,7 +1789,7 @@ local function ProcessPendingExternalReveal()
     EnsureQuestRowVisible(pending.questId, { allowQueue = false })
 end
 
-local function DoesJournalQuestExist(journalIndex)
+DoesJournalQuestExist = function(journalIndex)
     if not (journalIndex and GetJournalQuestName) then
         return false
     end
@@ -1801,13 +1824,17 @@ end
 
 local function UpdateTrackedQuestCache(forcedIndex, context)
     local function normalize(index)
-        local numeric = tonumber(index)
-        if not numeric or numeric <= 0 then
-            return nil
+        local resolved = GetJournalIndexForQuestKey(index)
+        if resolved then
+            return resolved
         end
 
-        if DoesJournalQuestExist(numeric) then
-            return numeric
+        local numeric = tonumber(index)
+        if numeric and numeric > 0 then
+            numeric = math.floor(numeric)
+            if not DoesJournalQuestExist or DoesJournalQuestExist(numeric) then
+                return numeric
+            end
         end
 
         return nil
@@ -1876,21 +1903,26 @@ local function UpdateTrackedQuestCache(forcedIndex, context)
 end
 
 local function EnsureQuestTrackedState(journalIndex)
-    if not (journalIndex and IsJournalQuestTracked and SetTracked) then
+    local numeric = tonumber(journalIndex)
+    if not numeric or numeric <= 0 then
         return
     end
 
-    if IsJournalQuestTracked(journalIndex) then
+    if not (IsJournalQuestTracked and SetTracked) then
         return
     end
 
-    if not SafeCall(SetTracked, TRACK_TYPE_QUEST, journalIndex, true) then
-        SafeCall(SetTracked, TRACK_TYPE_QUEST, journalIndex)
+    if IsJournalQuestTracked(numeric) then
+        return
     end
 
-    UpdateRepoQuestFlags(journalIndex, function(flags)
+    if not SafeCall(SetTracked, TRACK_TYPE_QUEST, numeric, true) then
+        SafeCall(SetTracked, TRACK_TYPE_QUEST, numeric)
+    end
+
+    UpdateRepoQuestFlags(numeric, function(flags)
         flags.tracked = true
-        flags.journalIndex = journalIndex
+        flags.journalIndex = numeric
     end)
 end
 
@@ -2325,23 +2357,33 @@ local function SyncTrackedQuestState(forcedIndex, forceExpand, context)
 end
 
 local function FocusQuestInJournal(journalIndex)
+    local numeric = tonumber(journalIndex)
+    if not numeric or numeric <= 0 then
+        return
+    end
+
     if not (QUEST_JOURNAL_KEYBOARD and QUEST_JOURNAL_KEYBOARD.FocusQuestWithIndex) then
         return
     end
 
     SafeCall(function(journal, index)
         journal:FocusQuestWithIndex(index)
-    end, QUEST_JOURNAL_KEYBOARD, journalIndex)
+    end, QUEST_JOURNAL_KEYBOARD, numeric)
 end
 
 local function ForceAssistTrackedQuest(journalIndex)
+    local numeric = tonumber(journalIndex)
+    if not numeric or numeric <= 0 then
+        return
+    end
+
     if not (FOCUSED_QUEST_TRACKER and FOCUSED_QUEST_TRACKER.ForceAssist) then
         return
     end
 
     SafeCall(function(tracker, index)
         tracker:ForceAssist(index)
-    end, FOCUSED_QUEST_TRACKER, journalIndex)
+    end, FOCUSED_QUEST_TRACKER, numeric)
 end
 
 local function RequestRefreshInternal()
@@ -3101,7 +3143,7 @@ SetQuestExpanded = function(journalIndex, expanded, context)
         newValue = tostring(expanded),
     })
 
-    local numericIndex = QuestKeyToJournalIndex(normalizedKey or key) or key
+    local numericIndex = GetJournalIndexForQuestKey(normalizedKey or key)
 
     LogQuestExpansion(
         expanded and "expand" or "collapse",
