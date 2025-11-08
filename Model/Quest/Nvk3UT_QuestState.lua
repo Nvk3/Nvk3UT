@@ -115,7 +115,12 @@ local function NormalizeCategoryKey(categoryKey)
     end
 
     if type(categoryKey) == "string" then
-        local idString = categoryKey:match("^%%w+:(%d+):") or categoryKey:match("^%%w+:(%d+)$")
+        local trimmed = categoryKey:match("^%s*(.-)%s*$") or ""
+        if trimmed == "" then
+            return nil
+        end
+
+        local idString = trimmed:match("^%%w+:(%d+):") or trimmed:match("^%%w+:(%d+)$")
         if idString then
             local numericId = tonumber(idString)
             if numericId and numericId > 0 then
@@ -123,12 +128,12 @@ local function NormalizeCategoryKey(categoryKey)
             end
         end
 
-        local numericFromString = tonumber(categoryKey)
+        local numericFromString = tonumber(trimmed)
         if numericFromString and numericFromString > 0 then
             return math.floor(numericFromString)
         end
 
-        return nil
+        return trimmed
     end
 
     if type(categoryKey) == "number" then

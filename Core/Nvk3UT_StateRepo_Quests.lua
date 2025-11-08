@@ -84,6 +84,55 @@ local function normalizeKey(value)
     return numeric
 end
 
+local function normalizeZoneKey(value)
+    if value == nil then
+        return nil
+    end
+
+    if type(value) == "table" then
+        if value.key ~= nil then
+            return normalizeZoneKey(value.key)
+        end
+        if value.categoryKey ~= nil then
+            return normalizeZoneKey(value.categoryKey)
+        end
+        if value.zoneKey ~= nil then
+            return normalizeZoneKey(value.zoneKey)
+        end
+        return nil
+    end
+
+    if type(value) == "string" then
+        local trimmed = value:match("^%s*(.-)%s*$") or ""
+        if trimmed == "" then
+            return nil
+        end
+        return trimmed
+    end
+
+    if type(value) == "number" then
+        if value ~= value then
+            return nil
+        end
+        local rounded = math.floor(value + 0.5)
+        if rounded <= 0 then
+            return nil
+        end
+        return tostring(rounded)
+    end
+
+    local numeric = tonumber(value)
+    if numeric then
+        local rounded = math.floor(numeric + 0.5)
+        if rounded <= 0 then
+            return nil
+        end
+        return tostring(rounded)
+    end
+
+    return nil
+end
+
 local function ensureCharacter()
     if type(state.character) == "table" then
         return state.character
@@ -342,7 +391,7 @@ local function copyFlagDefaults(source)
 end
 
 function Repo.Q_IsZoneCollapsed(zoneKey)
-    local normalized = normalizeKey(zoneKey)
+    local normalized = normalizeZoneKey(zoneKey)
     if not normalized then
         debugLog("Repo.Q_IsZoneCollapsed key=nil (source=%s) -> false", tostring(zoneKey))
         return false
@@ -352,6 +401,12 @@ function Repo.Q_IsZoneCollapsed(zoneKey)
     local collapsed = false
     if zones then
         collapsed = zones[normalized] == true
+        if not collapsed then
+            local numericFallback = tonumber(normalized)
+            if numericFallback then
+                collapsed = zones[numericFallback] == true
+            end
+        end
     end
 
     debugLog("Repo.Q_IsZoneCollapsed key=%s -> %s", tostring(normalized), tostring(collapsed))
@@ -359,7 +414,7 @@ function Repo.Q_IsZoneCollapsed(zoneKey)
 end
 
 function Repo.Q_SetZoneCollapsed(zoneKey, collapsed)
-    local normalized = normalizeKey(zoneKey)
+    local normalized = normalizeZoneKey(zoneKey)
     if not normalized then
         debugLog(
             "Repo.Q_SetZoneCollapsed key=nil (source=%s) collapsed=%s -> false",
@@ -386,15 +441,34 @@ function Repo.Q_SetZoneCollapsed(zoneKey, collapsed)
         end
 
         zones[normalized] = true
+        local numericFallback = tonumber(normalized)
+        if numericFallback then
+            zones[numericFallback] = nil
+        end
         return true
     end
 
     local zones = ensureZones(false)
-    if not zones or zones[normalized] == nil then
+    if not zones then
         return false
     end
 
-    zones[normalized] = nil
+    local removed = false
+    if zones[normalized] ~= nil then
+        zones[normalized] = nil
+        removed = true
+    end
+
+    local numericFallback = tonumber(normalized)
+    if numericFallback and zones[numericFallback] ~= nil then
+        zones[numericFallback] = nil
+        removed = true
+    end
+
+    if not removed then
+        return false
+    end
+
     pruneEmpty()
     return true
 end
