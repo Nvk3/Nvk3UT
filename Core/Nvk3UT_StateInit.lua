@@ -415,6 +415,30 @@ local function normalizeRoot(saved)
     normalizeAcStructure(saved)
 end
 
+local function normalizeCategoryKeyString(key)
+    if key == nil then
+        return nil
+    end
+
+    if type(key) == "string" then
+        local trimmed = key:match("^%s*(.-)%s*$") or ""
+        if trimmed == "" then
+            return nil
+        end
+        return trimmed
+    end
+
+    local numeric = tonumber(key)
+    if numeric and numeric == numeric then
+        numeric = math.floor(numeric + 0.5)
+        if numeric > 0 then
+            return tostring(numeric)
+        end
+    end
+
+    return nil
+end
+
 local function normalizeCharacterCollapseMap(source, keyNormalizer)
     local normalized = {}
 
@@ -423,11 +447,15 @@ local function normalizeCharacterCollapseMap(source, keyNormalizer)
     end
 
     for key, value in pairs(source) do
-        local numeric = keyNormalizer and keyNormalizer(key) or tonumber(key)
-        if numeric and numeric > 0 then
-            if value == true or value == 1 or value == "true" then
-                normalized[math.floor(numeric)] = true
-            end
+        local normalizedKey
+        if keyNormalizer then
+            normalizedKey = keyNormalizer(key)
+        else
+            normalizedKey = normalizeCategoryKeyString(key)
+        end
+
+        if normalizedKey and (value == true or value == 1 or value == "true") then
+            normalized[normalizedKey] = true
         end
     end
 
@@ -496,13 +524,7 @@ local function normalizeCharacterRoot(saved)
         quests.state = state
     end
 
-    local zones = normalizeCharacterCollapseMap(state.zones, function(key)
-        local numeric = tonumber(key)
-        if numeric and numeric > 0 then
-            return math.floor(numeric)
-        end
-        return nil
-    end)
+    local zones = normalizeCharacterCollapseMap(state.zones, normalizeCategoryKeyString)
 
     if next(zones) ~= nil then
         state.zones = zones

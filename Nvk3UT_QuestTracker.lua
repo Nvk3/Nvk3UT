@@ -112,6 +112,23 @@ local ApplyActiveQuestFromSaved -- forward declaration for active quest state sy
 -- because SafeCall would still be nil at that point.
 local SafeCall
 
+local function NormalizeMetric(value)
+    local numeric = tonumber(value)
+    if not numeric then
+        return 0
+    end
+
+    if numeric ~= numeric then
+        return 0
+    end
+
+    if numeric < 0 then
+        return 0
+    end
+
+    return numeric
+end
+
 local state = {
     isInitialized = false,
     opts = {},
@@ -150,6 +167,8 @@ local state = {
     reposReadyCallbackRef = nil,
     playerActivated = false,
     pendingActiveQuestApply = false,
+    lastHeight = 0,
+    debugInitLogCount = 0,
 }
 
 local function UpdateReposReadyState()
@@ -1160,12 +1179,29 @@ local function PrimeInitialSavedState()
         timestamp = timestamp,
     }
 
+    state.debugInitLogCount = 0
+
     for index = 1, #ordered do
         local category = ordered[index]
         if category then
             local catKey = NormalizeCategoryKey(category.key)
             if catKey then
-                SetCategoryExpanded(catKey, true, categoryContext)
+                local storedExpanded = IsCategoryExpanded(catKey)
+                local targetExpanded = storedExpanded ~= false
+                if storedExpanded == nil and GetDefaultCategoryExpanded then
+                    targetExpanded = GetDefaultCategoryExpanded()
+                end
+
+                if IsDebugLoggingEnabled() and state.debugInitLogCount < 2 then
+                    DebugLog(string.format(
+                        "INIT cat=%s collapsed=%s",
+                        tostring(catKey),
+                        tostring(targetExpanded == false)
+                    ))
+                    state.debugInitLogCount = state.debugInitLogCount + 1
+                end
+
+                SetCategoryExpanded(catKey, targetExpanded, categoryContext)
             end
 
             if type(category.quests) == "table" then
@@ -1174,7 +1210,9 @@ local function PrimeInitialSavedState()
                     if quest then
                         local questKey = NormalizeQuestKey(quest.journalIndex)
                         if questKey then
-                            SetQuestExpanded(questKey, true, questContext)
+                            local questExpanded = IsQuestExpanded(questKey)
+                            local questTarget = questExpanded ~= false
+                            SetQuestExpanded(questKey, questTarget, questContext)
                         end
                     end
                 end
@@ -3308,8 +3346,15 @@ local function UpdateContentSize()
         end
     end
 
+    totalHeight = math.max(0, totalHeight)
+
     state.contentWidth = maxWidth
     state.contentHeight = totalHeight
+    state.lastHeight = NormalizeMetric(totalHeight)
+
+    if state.container and state.container.SetHeight then
+        state.container:SetHeight(state.lastHeight)
+    end
 end
 
 local function SelectCategoryToggleTexture(expanded, isMouseOver)
@@ -4255,7 +4300,7 @@ function QuestTracker.Init(parentControl, opts)
     state.control = parentControl
     state.container = parentControl
     if state.control and state.control.SetResizeToFitDescendents then
-        state.control:SetResizeToFitDescendents(true)
+        state.control:SetResizeToFitDescendents(false)
     end
 
     EnsureSavedVars()
@@ -4372,6 +4417,8 @@ function QuestTracker.Shutdown()
     state.reposReady = false
     state.playerActivated = false
     state.pendingActiveQuestApply = false
+    state.lastHeight = 0
+    state.debugInitLogCount = 0
     NotifyHostContentChanged()
 end
 
@@ -4418,6 +4465,14 @@ end
 
 function QuestTracker.RequestRefresh()
     RequestRefresh()
+end
+
+function QuestTracker.GetHeight()
+    if state.isInitialized and state.container then
+        UpdateContentSize()
+    end
+
+    return NormalizeMetric(state.lastHeight or state.contentHeight)
 end
 
 function QuestTracker.GetContentSize()

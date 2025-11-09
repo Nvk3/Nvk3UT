@@ -4,6 +4,19 @@ local Addon = Nvk3UT
 Addon.TrackerHostLayout = Addon.TrackerHostLayout or {}
 local Layout = Addon.TrackerHostLayout
 
+local function debugLog(fmt, ...)
+    local diagnostics = Addon and Addon.Diagnostics
+    if diagnostics and type(diagnostics.DebugIfEnabled) == "function" then
+        diagnostics:DebugIfEnabled("TrackerHostLayout", fmt, ...)
+        return
+    end
+
+    local debugFn = Addon and Addon.Debug
+    if debugFn and ((Addon.IsDebugEnabled and Addon:IsDebugEnabled() == true) or Addon.debugEnabled == true) then
+        debugFn("[TrackerHostLayout] " .. tostring(fmt), ...)
+    end
+end
+
 local DEFAULT_SECTION_ORDER = { "quest", "achievement" }
 local ANCHOR_TOLERANCE = 0.01
 
@@ -59,6 +72,14 @@ end
 local function getSectionContainer(host, sectionId)
     if host and type(host.GetSectionContainer) == "function" then
         return host.GetSectionContainer(sectionId)
+    end
+
+    return nil
+end
+
+local function getSectionTracker(host, sectionId)
+    if host and type(host.GetSectionTracker) == "function" then
+        return host.GetSectionTracker(sectionId)
     end
 
     return nil
@@ -292,6 +313,53 @@ local function measureSection(host, sectionId, container)
     end
 
     return width, height
+end
+
+local function resolveSectionHeight(host, sectionId, container)
+    local tracker = getSectionTracker(host, sectionId)
+    local height = 0
+
+    if tracker then
+        local getHeight = tracker.GetHeight or tracker.GetContentHeight
+        if type(getHeight) == "function" then
+            local ok, measured = pcall(getHeight, tracker)
+            if ok and measured ~= nil then
+                height = tonumber(measured) or height
+            end
+        end
+
+        if height <= 0 then
+            local getSize = tracker.GetContentSize or tracker.GetSize
+            if type(getSize) == "function" then
+                local ok, widthOrHeight, maybeHeight = pcall(getSize, tracker)
+                if ok then
+                    if maybeHeight ~= nil then
+                        height = tonumber(maybeHeight) or height
+                    else
+                        height = tonumber(widthOrHeight) or height
+                    end
+                end
+            end
+        end
+    end
+
+    if height <= 0 and container and type(container.GetHeight) == "function" then
+        local ok, measuredHeight = pcall(container.GetHeight, container)
+        if ok and measuredHeight ~= nil then
+            height = tonumber(measuredHeight) or height
+        end
+    end
+
+    if height <= 0 then
+        local _, fallbackHeight = measureSection(host, sectionId, container)
+        height = fallbackHeight
+    end
+
+    if height < 0 or height ~= height then
+        height = 0
+    end
+
+    return height
 end
 
 local function getAnchor(control, index)
@@ -742,6 +810,7 @@ function Layout.ApplyLayout(host, sizes)
     end
 
     local totalHeight = topPadding
+    local accumulatedSectionHeight = 0
     local previousVisible
     local measuredVisibleCount = 0
     local currentTop = startOffset
@@ -752,7 +821,7 @@ function Layout.ApplyLayout(host, sizes)
         if not container then
             reportMissing(host, sectionId)
         else
-            local _, height = measureSection(host, sectionId, container)
+            local height = resolveSectionHeight(host, sectionId, container)
             local sectionVisible = not isControlHidden(container)
             local shouldAnchor = not anchoringStopped
 
@@ -799,6 +868,7 @@ function Layout.ApplyLayout(host, sizes)
                 end
 
                 totalHeight = totalHeight + height
+                accumulatedSectionHeight = accumulatedSectionHeight + height
                 measuredVisibleCount = measuredVisibleCount + 1
 
                 if shouldAnchor then
@@ -816,6 +886,31 @@ function Layout.ApplyLayout(host, sizes)
     end
 
     Layout.UpdateScrollAreaHeight(host, totalHeight, sizes)
+
+    if sizes then
+        local headerHeight = 0
+        if sizes.headerVisible ~= false then
+            headerHeight = sanitizeLength(sizes.headerTargetHeight or sizes.headerHeight)
+        end
+
+        local footerHeight = 0
+        if sizes.footerVisible ~= false then
+            footerHeight = sanitizeLength(sizes.footerTargetHeight or sizes.footerHeight)
+        end
+
+        local scrollChildHeight = headerHeight + totalHeight + footerHeight
+        debugLog(
+            "Layout metrics header=%.2f content=%.2f footer=%.2f scrollChild=%.2f sections=%.2f gapCount=%d",
+            headerHeight,
+            totalHeight,
+            footerHeight,
+            scrollChildHeight,
+            accumulatedSectionHeight,
+            math.max(0, measuredVisibleCount - 1)
+        )
+    else
+        debugLog("Layout metrics content=%.2f (sizes unavailable)", totalHeight)
+    end
 
     return totalHeight
 end

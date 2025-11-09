@@ -1073,6 +1073,10 @@ local function UpdateContentSize()
     state.contentWidth = maxWidth
     state.contentHeight = totalHeight
     state.lastHeight = NormalizeMetric(totalHeight)
+
+    if state.container and state.container.SetHeight then
+        state.container:SetHeight(state.lastHeight)
+    end
 end
 
 local function IsCategoryExpanded()
@@ -1645,7 +1649,7 @@ function AchievementTracker.Init(parentControl, opts)
     state.control = parentControl
     state.container = parentControl
     if state.control and state.control.SetResizeToFitDescendents then
-        state.control:SetResizeToFitDescendents(true)
+        state.control:SetResizeToFitDescendents(false)
     end
     EnsureSavedVars()
 
