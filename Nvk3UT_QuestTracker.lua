@@ -3464,12 +3464,53 @@ SetCategoryExpanded = function(categoryKey, expanded, context)
     end
 
     local changed, normalizedKey = WriteCategoryState(key, expanded, stateSource, writeOptions)
+    local effectiveKey = normalizedKey or key
+
+    local repo = Nvk3UT and Nvk3UT.StateRepo_Quests
+    local collapsedReadback
+    local probeResult
+    if repo and type(repo.Q_IsZoneCollapsed) == "function" then
+        collapsedReadback = repo.Q_IsZoneCollapsed(effectiveKey)
+    end
+    if repo and type(repo.Q_DebugProbeCategory) == "function" then
+        probeResult = repo.Q_DebugProbeCategory(effectiveKey)
+    end
+    if IsDebugLoggingEnabled() then
+        if effectiveKey ~= nil then
+            DebugLog(string.format(
+                "READBACK cat=%s collapsed=%s",
+                tostring(effectiveKey),
+                tostring(collapsedReadback)
+            ))
+        end
+        if type(probeResult) == "table" then
+            DebugLog(string.format(
+                "PROBE key=%s str=%s num=%s",
+                tostring(effectiveKey),
+                tostring(probeResult.valString),
+                tostring(probeResult.valNumeric)
+            ))
+        end
+    end
+
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and type(runtime.QueueDirty) == "function" then
+        local ok, err = pcall(runtime.QueueDirty, runtime, "quest")
+        if not ok and IsDebugLoggingEnabled() then
+            DebugLog(string.format("QUEUE_DIRTY_FAIL err=%s", tostring(err)))
+        end
+    end
+
+    if not (context and context.deferRefresh) and effectiveKey ~= nil then
+        RefreshCategoryByKey(effectiveKey)
+    end
+
     if not changed then
-        return false, normalizedKey
+        return false, effectiveKey
     end
 
     DebugDeselect("SetCategoryExpanded", {
-        categoryKey = normalizedKey or key,
+        categoryKey = effectiveKey,
         previous = tostring(beforeExpanded),
         newValue = tostring(expanded),
     })
@@ -3495,18 +3536,14 @@ SetCategoryExpanded = function(categoryKey, expanded, context)
     LogCategoryExpansion(
         expanded and "expand" or "collapse",
         (context and context.trigger) or "unknown",
-        key,
+        effectiveKey,
         beforeExpanded,
         expanded,
         (context and context.source) or "QuestTracker:SetCategoryExpanded",
         extraFields
     )
 
-    if not (context and context.deferRefresh) then
-        RefreshCategoryByKey(normalizedKey or key)
-    end
-
-    return true, normalizedKey or key
+    return true, effectiveKey
 end
 
 SetQuestExpanded = function(journalIndex, expanded, context)

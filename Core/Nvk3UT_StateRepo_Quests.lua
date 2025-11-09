@@ -473,6 +473,40 @@ function Repo.Q_SetZoneCollapsed(zoneKey, collapsed)
     return true
 end
 
+function Repo.Q_DebugProbeCategory(zoneKey)
+    local normalized = normalizeZoneKey(zoneKey)
+    local numericFallback = normalized and tonumber(normalized) or nil
+
+    local zones = ensureZones(false)
+    local valueString
+    local valueNumeric
+
+    if zones then
+        if normalized then
+            valueString = zones[normalized]
+        end
+
+        if numericFallback then
+            valueNumeric = zones[numericFallback]
+        end
+    end
+
+    if valueString ~= nil then
+        valueString = valueString == true
+    end
+
+    if valueNumeric ~= nil then
+        valueNumeric = valueNumeric == true
+    end
+
+    return {
+        stringKey = normalized,
+        numericKey = numericFallback,
+        valString = valueString,
+        valNumeric = valueNumeric,
+    }
+end
+
 function Repo.Q_IsQuestCollapsed(questId)
     local normalized = normalizeKey(questId)
     if not normalized then
