@@ -576,6 +576,7 @@ function Layout.UpdateHeaderFooterSizes(host)
     local parent = getSectionParent(host)
     local contentStack = getContentStack(host)
     local scrollContent = getScrollContent(host)
+    local scrollContainer = getScrollContainer(host)
 
     local contentTopY
     if parent and contentStack and parent == contentStack then
@@ -586,19 +587,32 @@ function Layout.UpdateHeaderFooterSizes(host)
     contentTopY = sanitizeLength(contentTopY)
 
     local contentBottomY
-    if parent and contentStack and parent == contentStack then
-        local parentHeight = parent.GetHeight and parent:GetHeight()
-        parentHeight = tonumber(parentHeight)
-        if parentHeight and parentHeight > 0 then
-            contentBottomY = math.max(contentTopY, sanitizeLength(parentHeight) - footerPadding)
+
+    if scrollContainer and type(scrollContainer.GetHeight) == "function" then
+        local ok, height = pcall(scrollContainer.GetHeight, scrollContainer)
+        if ok then
+            height = sanitizeLength(height)
+            if height > 0 then
+                contentBottomY = contentTopY + height
+            end
         end
-    else
-        local container = scrollContent or parent
-        local totalHeight = container and container.GetHeight and container:GetHeight()
-        totalHeight = tonumber(totalHeight)
-        if totalHeight and totalHeight > 0 then
-            local candidate = sanitizeLength(totalHeight) - (footerEffectiveHeight + footerPadding)
-            contentBottomY = math.max(contentTopY, candidate)
+    end
+
+    if not contentBottomY then
+        if parent and contentStack and parent == contentStack then
+            local parentHeight = parent.GetHeight and parent:GetHeight()
+            parentHeight = tonumber(parentHeight)
+            if parentHeight and parentHeight > 0 then
+                contentBottomY = math.max(contentTopY, sanitizeLength(parentHeight) - footerPadding)
+            end
+        else
+            local container = scrollContent or parent
+            local totalHeight = container and container.GetHeight and container:GetHeight()
+            totalHeight = tonumber(totalHeight)
+            if totalHeight and totalHeight > 0 then
+                local candidate = sanitizeLength(totalHeight) - (footerEffectiveHeight + footerPadding)
+                contentBottomY = math.max(contentTopY, candidate)
+            end
         end
     end
 
@@ -700,16 +714,16 @@ function Layout.UpdateScrollAreaHeight(host, scrollChildHeight, sizes, viewportH
     local resolvedViewport = viewportHeight
 
     if not resolvedViewport or resolvedViewport <= 0 then
-        if bottomY and bottomY ~= math.huge then
-            resolvedViewport = bottomY - topY
+        if type(scrollContainer.GetHeight) == "function" then
+            local ok, height = pcall(scrollContainer.GetHeight, scrollContainer)
+            if ok then
+                resolvedViewport = height
+            end
         end
     end
 
-    if (not resolvedViewport or resolvedViewport <= 0) and type(scrollContainer.GetHeight) == "function" then
-        local ok, height = pcall(scrollContainer.GetHeight, scrollContainer)
-        if ok then
-            resolvedViewport = height
-        end
+    if (not resolvedViewport or resolvedViewport <= 0) and bottomY and bottomY ~= math.huge then
+        resolvedViewport = bottomY - topY
     end
 
     resolvedViewport = sanitizeLength(resolvedViewport or 0)
@@ -880,17 +894,17 @@ function Layout.ApplyLayout(host, sizes)
 
     local scrollOverhang = sanitizeLength(getScrollOvershootPadding(host))
     local viewportHeight
+    local scrollContainer = getScrollContainer(host)
 
-    if limitBottom and limitBottom ~= math.huge then
-        viewportHeight = limitBottom - startOffset
-    else
-        local scrollContainer = getScrollContainer(host)
-        if scrollContainer and type(scrollContainer.GetHeight) == "function" then
-            local ok, measured = pcall(scrollContainer.GetHeight, scrollContainer)
-            if ok then
-                viewportHeight = measured
-            end
+    if scrollContainer and type(scrollContainer.GetHeight) == "function" then
+        local ok, measured = pcall(scrollContainer.GetHeight, scrollContainer)
+        if ok then
+            viewportHeight = measured
         end
+    end
+
+    if (not viewportHeight or viewportHeight <= 0) and limitBottom and limitBottom ~= math.huge then
+        viewportHeight = limitBottom - startOffset
     end
 
     viewportHeight = sanitizeLength(viewportHeight or 0)
