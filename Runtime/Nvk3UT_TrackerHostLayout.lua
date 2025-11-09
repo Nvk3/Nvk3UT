@@ -743,8 +743,9 @@ function Layout.ApplyLayout(host, sizes)
 
     local totalHeight = topPadding
     local previousVisible
-    local visibleCount = 0
+    local measuredVisibleCount = 0
     local currentTop = startOffset
+    local anchoringStopped = false
 
     for _, sectionId in ipairs(order) do
         local container = getSectionContainer(host, sectionId)
@@ -753,50 +754,57 @@ function Layout.ApplyLayout(host, sizes)
         else
             local _, height = measureSection(host, sectionId, container)
             local sectionVisible = not isControlHidden(container)
+            local shouldAnchor = not anchoringStopped
 
-            if sectionVisible then
+            if sectionVisible and shouldAnchor then
                 local predictedBottom = currentTop + height
                 if limitBottom and predictedBottom > (limitBottom + ANCHOR_TOLERANCE) then
-                    break
+                    shouldAnchor = false
+                    anchoringStopped = true
                 end
             end
 
-            local anchors
-            local offsetY = 0
-            local anchorTarget
+            if shouldAnchor then
+                local anchors
+                local offsetY = 0
+                local anchorTarget
 
-            if previousVisible then
-                anchorTarget = previousVisible
-                offsetY = gap
-                anchors = {
-                    { point = TOPLEFT, relativeTo = anchorTarget, relativePoint = BOTTOMLEFT, offsetX = 0, offsetY = offsetY },
-                    { point = TOPRIGHT, relativeTo = anchorTarget, relativePoint = BOTTOMRIGHT, offsetX = 0, offsetY = offsetY },
-                }
-            else
-                anchorTarget = parent
-                anchors = {
-                    { point = TOPLEFT, relativeTo = anchorTarget, relativePoint = TOPLEFT, offsetX = 0, offsetY = offsetY },
-                    { point = TOPRIGHT, relativeTo = anchorTarget, relativePoint = TOPRIGHT, offsetX = 0, offsetY = offsetY },
-                }
+                if previousVisible then
+                    anchorTarget = previousVisible
+                    offsetY = gap
+                    anchors = {
+                        { point = TOPLEFT, relativeTo = anchorTarget, relativePoint = BOTTOMLEFT, offsetX = 0, offsetY = offsetY },
+                        { point = TOPRIGHT, relativeTo = anchorTarget, relativePoint = BOTTOMRIGHT, offsetX = 0, offsetY = offsetY },
+                    }
+                else
+                    anchorTarget = parent
+                    anchors = {
+                        { point = TOPLEFT, relativeTo = anchorTarget, relativePoint = TOPLEFT, offsetX = 0, offsetY = offsetY },
+                        { point = TOPRIGHT, relativeTo = anchorTarget, relativePoint = TOPRIGHT, offsetX = 0, offsetY = offsetY },
+                    }
+                end
+
+                if not previousVisible then
+                    anchors[1].offsetY = startOffset
+                    anchors[2].offsetY = startOffset
+                end
+
+                applyAnchors(container, anchors)
+                reportAnchored(host, sectionId)
             end
-
-            if not previousVisible then
-                anchors[1].offsetY = startOffset
-                anchors[2].offsetY = startOffset
-            end
-
-            applyAnchors(container, anchors)
-            reportAnchored(host, sectionId)
 
             if sectionVisible then
-                if visibleCount > 0 then
+                if measuredVisibleCount > 0 then
                     totalHeight = totalHeight + gap
                 end
 
                 totalHeight = totalHeight + height
-                currentTop = currentTop + height + gap
-                previousVisible = container
-                visibleCount = visibleCount + 1
+                measuredVisibleCount = measuredVisibleCount + 1
+
+                if shouldAnchor then
+                    currentTop = currentTop + height + gap
+                    previousVisible = container
+                end
             end
         end
     end
