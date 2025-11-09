@@ -120,32 +120,30 @@ local function NormalizeCategoryKey(categoryKey)
             return nil
         end
 
-        local idString = trimmed:match("^%%w+:(%d+):") or trimmed:match("^%%w+:(%d+)$")
-        if idString then
-            local numericId = tonumber(idString)
-            if numericId and numericId > 0 then
-                return math.floor(numericId)
-            end
-        end
-
-        local numericFromString = tonumber(trimmed)
-        if numericFromString and numericFromString > 0 then
-            return math.floor(numericFromString)
-        end
-
         return trimmed
     end
 
     if type(categoryKey) == "number" then
-        if categoryKey > 0 then
-            return math.floor(categoryKey)
+        if categoryKey ~= categoryKey then
+            return nil
         end
-        return nil
+
+        local rounded = math.floor(categoryKey + 0.5)
+        if rounded <= 0 then
+            return nil
+        end
+
+        return tostring(rounded)
     end
 
     local numeric = tonumber(categoryKey)
-    if numeric and numeric > 0 then
-        return math.floor(numeric)
+    if numeric then
+        local rounded = math.floor(numeric + 0.5)
+        if rounded <= 0 then
+            return nil
+        end
+
+        return tostring(rounded)
     end
 
     return nil
