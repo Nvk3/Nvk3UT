@@ -121,7 +121,6 @@ local state = {
     pendingRefresh = false,
     contentWidth = 0,
     contentHeight = 0,
-    lastHeight = 0,
 }
 
 local function NormalizeMetric(value)
@@ -286,7 +285,20 @@ local function RefreshControlMetrics(control)
 end
 
 local function IsDebugLoggingEnabled()
-    local sv = Nvk3UT and Nvk3UT.sv
+    local addon = Nvk3UT
+    if not addon then
+        return false
+    end
+
+    if addon.IsDebugEnabled then
+        return addon:IsDebugEnabled() == true
+    end
+
+    if addon.debugEnabled == true then
+        return true
+    end
+
+    local sv = addon.sv
     return sv and sv.debug == true
 end
 
@@ -444,8 +456,8 @@ local function BuildFontString(descriptor, fallback)
 end
 
 local function BuildFavoritesScope()
-    local sv = Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.General
-    return (sv and sv.favScope) or "account"
+    local ui = Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.ui
+    return (ui and ui.favoritesScope) or "account"
 end
 
 local function IsFavoriteAchievement(achievementId)
@@ -1071,8 +1083,7 @@ local function UpdateContentSize()
     end
 
     state.contentWidth = maxWidth
-    state.contentHeight = totalHeight
-    state.lastHeight = NormalizeMetric(totalHeight)
+    state.contentHeight = NormalizeMetric(totalHeight)
 end
 
 local function IsCategoryExpanded()
@@ -1645,7 +1656,7 @@ function AchievementTracker.Init(parentControl, opts)
     state.control = parentControl
     state.container = parentControl
     if state.control and state.control.SetResizeToFitDescendents then
-        state.control:SetResizeToFitDescendents(true)
+        state.control:SetResizeToFitDescendents(false)
     end
     EnsureSavedVars()
 
@@ -1682,6 +1693,10 @@ function AchievementTracker.Refresh()
     Rebuild()
 end
 
+function AchievementTracker.RefreshFavoritesSection()
+    RequestRefresh()
+end
+
 function AchievementTracker.Shutdown()
     UnsubscribeFromModel()
 
@@ -1705,7 +1720,6 @@ function AchievementTracker.Shutdown()
     state.pendingRefresh = false
     state.contentWidth = 0
     state.contentHeight = 0
-    state.lastHeight = 0
     NotifyHostContentChanged()
 end
 
@@ -1777,15 +1791,11 @@ function AchievementTracker.RefreshVisibility()
 end
 
 function AchievementTracker.GetHeight()
-    if state.isInitialized and state.container then
+    if state.isInitialized then
         UpdateContentSize()
     end
 
-    if state.lastHeight ~= nil then
-        return NormalizeMetric(state.lastHeight)
-    end
-
-    return NormalizeMetric(state.contentHeight)
+    return NormalizeMetric(state.contentHeight or 0)
 end
 
 function AchievementTracker.GetContentSize()

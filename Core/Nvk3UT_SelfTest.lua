@@ -180,31 +180,89 @@ local function checkSavedVariables()
         return false, "Nvk3UT.SV is not a table"
     end
 
-    local general = sv.General
-    local questTracker = sv.QuestTracker
-    local achievementTracker = sv.AchievementTracker
-    local appearance = sv.appearance
+    local ui = sv.ui
+    local features = sv.features
+    local host = sv.host
+    local ac = sv.ac
 
     local missing = {}
-    if type(general) ~= "table" then
-        missing[#missing + 1] = "General"
+    if type(ui) ~= "table" then
+        missing[#missing + 1] = "ui"
     end
-    if type(questTracker) ~= "table" then
-        missing[#missing + 1] = "QuestTracker"
+    if type(features) ~= "table" then
+        missing[#missing + 1] = "features"
     end
-    if type(achievementTracker) ~= "table" then
-        missing[#missing + 1] = "AchievementTracker"
+    if type(host) ~= "table" then
+        missing[#missing + 1] = "host"
     end
-    if type(appearance) ~= "table" then
-        missing[#missing + 1] = "appearance"
+    if type(ac) ~= "table" then
+        missing[#missing + 1] = "ac"
     end
 
     if #missing > 0 then
         return false, "SavedVariables missing tables: " .. table.concat(missing, ", ")
     end
 
-    if rawget(Nvk3UT, "sv") ~= sv then
-        return false, "Legacy alias Nvk3UT.sv not pointing at Nvk3UT.SV"
+    local facade = rawget(Nvk3UT, "sv")
+    if type(facade) ~= "table" then
+        return false, "Legacy alias Nvk3UT.sv missing"
+    end
+
+    if facade.General == nil or facade.Settings == nil then
+        return false, "SavedVariables facade missing legacy tables"
+    end
+
+    local characterSV = rawget(Nvk3UT, "SVCharacter")
+    if characterSV == nil then
+        return nil, "Character SavedVariables not initialized yet"
+    end
+
+    if type(characterSV) ~= "table" then
+        return false, "Nvk3UT.SVCharacter is not a table"
+    end
+
+    local quests = characterSV.quests
+    if type(quests) ~= "table" then
+        return false, "Character quests table missing"
+    end
+
+    local state = quests.state
+    if state ~= nil and type(state) ~= "table" then
+        return false, "Character quests.state malformed"
+    end
+
+    local function validateCollapseMap(map, label)
+        if map == nil then
+            return true
+        end
+        if type(map) ~= "table" then
+            return false, label .. " collapse map not a table"
+        end
+        for key, value in pairs(map) do
+            local numeric = tonumber(key)
+            if not (numeric and numeric > 0) then
+                return false, string.format("%s collapse key %s is not numeric", label, tostring(key))
+            end
+            if value ~= true then
+                return false, string.format("%s collapse entry for %s must be true", label, tostring(key))
+            end
+        end
+        return true
+    end
+
+    local okZones, zonesError = validateCollapseMap(state and state.zones, "zones")
+    if not okZones then
+        return false, zonesError
+    end
+
+    local okQuests, questsError = validateCollapseMap(state and state.quests, "quests")
+    if not okQuests then
+        return false, questsError
+    end
+
+    local flags = quests.flags
+    if flags ~= nil and type(flags) ~= "table" then
+        return false, "Character quests.flags malformed"
     end
 
     return true, "SavedVariables structure looks sane"
@@ -232,10 +290,11 @@ local function checkFavoritesData()
         return false, "FavoritesData missing API: " .. table.concat(missing, ", ")
     end
 
-    local accountSV = rawget(_G, "Nvk3UT_Data_Favorites_Account")
-    local characterSV = rawget(_G, "Nvk3UT_Data_Favorites_Characters")
-    if accountSV == nil or characterSV == nil then
-        return nil, "Favorites SavedVariables not initialized yet"
+    local repo = Nvk3UT_StateRepo_Achievements or (Nvk3UT and Nvk3UT.AchievementRepo)
+    if repo and repo.AC_Fav_List then
+        repo.AC_Fav_List()
+    else
+        return nil, "Achievement repository not initialised"
     end
 
     return true, "FavoritesData ready"
@@ -263,12 +322,101 @@ local function checkRecentData()
         return false, "RecentData missing API: " .. table.concat(missing, ", ")
     end
 
-    local sv = rawget(_G, "Nvk3UT_Data_Recent")
-    if type(sv) ~= "table" then
-        return nil, "Recent SavedVariables not initialized yet"
+    local repo = Nvk3UT_StateRepo_Achievements or (Nvk3UT and Nvk3UT.AchievementRepo)
+    if not (repo and repo.AC_Recent_GetStorage) then
+        return nil, "Achievement repository not initialised"
+    end
+
+    local storage = repo.AC_Recent_GetStorage(true)
+    if type(storage) ~= "table" then
+        return nil, "Recent storage not initialised"
     end
 
     return true, "RecentData ready"
+end
+
+local function checkQuestRepository()
+    if type(Nvk3UT) ~= "table" then
+        return nil, "Addon root missing; cannot inspect quest repository"
+    end
+
+    local repo = Nvk3UT_StateRepo_Quests or (Nvk3UT and Nvk3UT.QuestRepo)
+    if not (repo and repo.Q_SetZoneCollapsed and repo.Q_SetQuestCollapsed and repo.Q_GetFlags) then
+        return nil, "Quest repository not initialised"
+    end
+
+    local testZone = 987654
+    repo.Q_SetZoneCollapsed(testZone, false)
+    if repo.Q_SetZoneCollapsed(testZone, true) ~= true then
+        return false, "Zone collapse write failed"
+    end
+    if repo.Q_IsZoneCollapsed(testZone) ~= true then
+        repo.Q_SetZoneCollapsed(testZone, false)
+        return false, "Zone collapse state mismatch"
+    end
+    if repo.Q_SetZoneCollapsed(testZone, true) then
+        repo.Q_SetZoneCollapsed(testZone, false)
+        return false, "Zone collapse rewrite should be trimmed"
+    end
+    repo.Q_SetZoneCollapsed(testZone, false)
+    if repo.Q_IsZoneCollapsed(testZone) ~= nil then
+        return false, "Zone collapse not trimmed"
+    end
+
+    local testQuest = 876543
+    repo.Q_SetQuestCollapsed(testQuest, false)
+    if repo.Q_SetQuestCollapsed(testQuest, true) ~= true then
+        return false, "Quest collapse write failed"
+    end
+    if repo.Q_IsQuestCollapsed(testQuest) ~= true then
+        repo.Q_SetQuestCollapsed(testQuest, false)
+        return false, "Quest collapse state mismatch"
+    end
+    if repo.Q_SetQuestCollapsed(testQuest, true) then
+        repo.Q_SetQuestCollapsed(testQuest, false)
+        return false, "Quest collapse rewrite should be trimmed"
+    end
+    repo.Q_SetQuestCollapsed(testQuest, false)
+    if repo.Q_IsQuestCollapsed(testQuest) ~= nil then
+        return false, "Quest collapse not trimmed"
+    end
+
+    local flagsQuest = 765432
+    repo.Q_SetFlags(flagsQuest, nil)
+    local defaults = repo.Q_GetFlags(flagsQuest)
+    if type(defaults) ~= "table" or defaults.tracked ~= false or defaults.assisted ~= false or defaults.isDaily ~= false then
+        return false, "Flag defaults missing"
+    end
+
+    local changed = repo.Q_SetFlags(flagsQuest, {
+        tracked = true,
+        assisted = true,
+        categoryKey = 13579,
+        journalIndex = 7,
+    })
+    if not changed then
+        return false, "Flag write failed"
+    end
+
+    local stored = repo.Q_GetFlags(flagsQuest)
+    if stored.tracked ~= true or stored.assisted ~= true or stored.categoryKey ~= 13579 or stored.journalIndex ~= 7 then
+        repo.Q_SetFlags(flagsQuest, nil)
+        return false, "Flag readback mismatch"
+    end
+
+    if repo.Q_SetFlags(flagsQuest, {
+        tracked = true,
+        assisted = true,
+        categoryKey = 13579,
+        journalIndex = 7,
+    }) then
+        repo.Q_SetFlags(flagsQuest, nil)
+        return false, "Flag rewrite should be a no-op"
+    end
+
+    repo.Q_SetFlags(flagsQuest, nil)
+
+    return true, "Quest repository ready"
 end
 
 local function summarize(results)
@@ -296,6 +444,7 @@ function SelfTest.RunCoreSanityCheck()
     _runCheck(results, "SavedVariables", checkSavedVariables)
     _runCheck(results, "FavoritesData", checkFavoritesData)
     _runCheck(results, "RecentData", checkRecentData)
+    _runCheck(results, "QuestRepo", checkQuestRepository)
 
     summarize(results)
 

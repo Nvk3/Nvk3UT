@@ -6,6 +6,8 @@ local DEFAULT_PANEL_TITLE = "Nvk3's Ultimate Tracker"
 local L = {}
 Nvk3UT.LAM = L
 
+local DEFAULT_RECENT_LIMIT = 100
+
 local FONT_FACE_CHOICES = {
     { name = "Bold (Game Default)", face = "$(BOLD_FONT)" },
     { name = "Univers 67 (Game)", face = "EsoUI/Common/Fonts/univers67.otf" },
@@ -66,6 +68,13 @@ local DEFAULT_WINDOW_BARS = {
 
 local MAX_BAR_HEIGHT = 250
 
+local registerReposReadyCallback
+local unregisterReposReadyCallback
+
+local function areReposReady()
+    return Nvk3UT and Nvk3UT.reposReady == true
+end
+
 local function clamp(value, minimum, maximum)
     if value == nil then
         return minimum
@@ -81,6 +90,14 @@ end
 
 local function getSavedVars()
     return Nvk3UT and Nvk3UT.sv
+end
+
+local function getStateRepo()
+    return Nvk3UT_StateRepo or (Nvk3UT and Nvk3UT.StateRepo)
+end
+
+local function getAchievementRepo()
+    return Nvk3UT_StateRepo_Achievements or (Nvk3UT and Nvk3UT.AchievementRepo)
 end
 
 local function getGeneral()
@@ -124,6 +141,20 @@ local function getGeneral()
     if general.showCategoryCounts == nil then
         general.showCategoryCounts = true
     end
+
+    local achievementRepo = getAchievementRepo()
+    local repoLimit = achievementRepo and achievementRepo.AC_Recent_GetLimit and achievementRepo.AC_Recent_GetLimit()
+    local storedLimit = tonumber(general.recentMax)
+    if storedLimit ~= 50 and storedLimit ~= 100 and storedLimit ~= 250 then
+        storedLimit = nil
+    end
+    local limit = repoLimit or storedLimit or DEFAULT_RECENT_LIMIT
+    if limit == DEFAULT_RECENT_LIMIT then
+        general.recentMax = nil
+    else
+        general.recentMax = limit
+    end
+
     return general
 end
 
@@ -264,8 +295,25 @@ local function getWindowBarSettings()
     return bars
 end
 
+local function createQuestSettingsDefaults()
+    return {
+        active = true,
+        autoExpand = true,
+        autoTrack = true,
+        fonts = {},
+    }
+end
+
 local function getQuestSettings()
+    if not areReposReady() then
+        return createQuestSettingsDefaults()
+    end
+
     local sv = getSavedVars()
+    if type(sv) ~= "table" then
+        return createQuestSettingsDefaults()
+    end
+
     sv.QuestTracker = sv.QuestTracker or {}
     sv.QuestTracker.fonts = sv.QuestTracker.fonts or {}
     return sv.QuestTracker
@@ -286,6 +334,52 @@ local function ensureTrackerAppearance()
     end
 end
 
+local function clampColorComponent(value, fallback)
+    local numeric = tonumber(value)
+    if numeric == nil then
+        numeric = fallback ~= nil and fallback or 1
+    end
+    if numeric < 0 then
+        numeric = 0
+    elseif numeric > 1 then
+        numeric = 1
+    end
+    return numeric
+end
+
+local function rgbaToHex(r, g, b, a)
+    local function component(value, fallback)
+        local numeric = clampColorComponent(value, fallback)
+        return string.format("%02X", math.floor(numeric * 255 + 0.5))
+    end
+
+    return string.format(
+        "#%s%s%s%s",
+        component(r, 1),
+        component(g, 1),
+        component(b, 1),
+        component(a, 1)
+    )
+end
+
+local function hexToRgba(hex, fallbackR, fallbackG, fallbackB, fallbackA)
+    if type(hex) ~= "string" then
+        return fallbackR, fallbackG, fallbackB, fallbackA
+    end
+
+    local sanitized = hex:match("^#?(%x%x%x%x%x%x%x%x)$")
+    if not sanitized then
+        return fallbackR, fallbackG, fallbackB, fallbackA
+    end
+
+    local function channel(startIndex)
+        local value = tonumber(sanitized:sub(startIndex, startIndex + 1), 16) or 0
+        return clampColorComponent(value / 255, 1)
+    end
+
+    return channel(1), channel(3), channel(5), channel(7)
+end
+
 local function getTrackerColor(trackerType, role)
     ensureTrackerAppearance()
     local host = Nvk3UT and Nvk3UT.TrackerHost
@@ -294,6 +388,18 @@ local function getTrackerColor(trackerType, role)
     end
     if host and host.GetDefaultTrackerColor then
         return host.GetDefaultTrackerColor(trackerType, role)
+    end
+    local repo = getStateRepo()
+    if repo and repo.UI_GetOption then
+        local key = string.format("colors.%s.%s", tostring(trackerType), tostring(role))
+        local hex = repo.UI_GetOption(key)
+        if type(hex) == "string" then
+            local dr, dg, db, da = 1, 1, 1, 1
+            if host and host.GetDefaultTrackerColor then
+                dr, dg, db, da = host.GetDefaultTrackerColor(trackerType, role)
+            end
+            return hexToRgba(hex, dr, dg, db, da)
+        end
     end
     return 1, 1, 1, 1
 end
@@ -320,21 +426,11 @@ local function setTrackerColor(trackerType, role, r, g, b, a)
         return
     end
 
-    local sv = getSavedVars()
-    if not sv then
-        return
+    local repo = getStateRepo()
+    if repo and repo.UI_SetOption then
+        local key = string.format("colors.%s.%s", tostring(trackerType), tostring(role))
+        repo.UI_SetOption(key, rgbaToHex(r, g, b, a))
     end
-
-    sv.appearance = sv.appearance or {}
-    sv.appearance[trackerType] = sv.appearance[trackerType] or {}
-    local tracker = sv.appearance[trackerType]
-    tracker.colors = tracker.colors or {}
-    tracker.colors[role] = {
-        r = r or 1,
-        g = g or 1,
-        b = b or 1,
-        a = a or 1,
-    }
 end
 
 local function ensureFont(settings, key, defaults)
@@ -393,6 +489,18 @@ local function refreshAchievementTracker()
         elseif Nvk3UT.AchievementTracker.Refresh then
             Nvk3UT.AchievementTracker.Refresh()
         end
+    end
+end
+
+local function refreshRecentPanels()
+    local recentCategory = Nvk3UT and Nvk3UT.RecentCategory
+    if recentCategory and type(recentCategory.Refresh) == "function" then
+        pcall(recentCategory.Refresh, recentCategory)
+    end
+
+    local recentSummary = Nvk3UT and Nvk3UT.RecentSummary
+    if recentSummary and type(recentSummary.Refresh) == "function" then
+        pcall(recentSummary.Refresh, recentSummary)
     end
 end
 
@@ -1488,11 +1596,50 @@ local function registerPanel(displayTitle)
                 choicesValues = { 50, 100, 250 },
                 getFunc = function()
                     local general = getGeneral()
-                    return general.recentMax or 100
+                    local achievementRepo = getAchievementRepo()
+                    local limit = achievementRepo and achievementRepo.AC_Recent_GetLimit and achievementRepo.AC_Recent_GetLimit()
+                    if not limit then
+                        limit = tonumber(general.recentMax)
+                        if limit ~= 50 and limit ~= 100 and limit ~= 250 then
+                            limit = DEFAULT_RECENT_LIMIT
+                        end
+                    end
+                    if limit == DEFAULT_RECENT_LIMIT then
+                        general.recentMax = nil
+                    else
+                        general.recentMax = limit
+                    end
+                    return limit or DEFAULT_RECENT_LIMIT
                 end,
                 setFunc = function(value)
                     local general = getGeneral()
-                    general.recentMax = value or 100
+                    local limit = tonumber(value)
+                    if limit ~= 50 and limit ~= 100 and limit ~= 250 then
+                        limit = DEFAULT_RECENT_LIMIT
+                    end
+
+                    local achievementRepo = getAchievementRepo()
+                    if achievementRepo and achievementRepo.AC_Recent_SetLimit then
+                        local repoLimit = achievementRepo.AC_Recent_SetLimit(limit)
+                        if repoLimit then
+                            limit = repoLimit
+                        end
+                    else
+                        general.recentMax = limit
+                    end
+
+                    if limit == DEFAULT_RECENT_LIMIT then
+                        general.recentMax = nil
+                    else
+                        general.recentMax = limit
+                    end
+
+                    local recent = Nvk3UT and Nvk3UT.RecentData
+                    if recent and recent.ListConfigured then
+                        pcall(recent.ListConfigured)
+                    end
+
+                    refreshRecentPanels()
                     updateStatus()
                 end,
                 tooltip = "Hardcap für die Anzahl der Kürzlich-Einträge.",
@@ -1604,6 +1751,14 @@ local function registerPanel(displayTitle)
 
     registerLamCallbacks(LAM, panelName, panel)
 
+    if unregisterReposReadyCallback then
+        unregisterReposReadyCallback()
+    end
+
+    if Nvk3UT and type(Nvk3UT.Debug) == "function" then
+        Nvk3UT.Debug("LAM panel registered")
+    end
+
     L._registered = true
     return true
 end
@@ -1659,18 +1814,56 @@ local function waitForLam()
     end
 end
 
-function L.Build(displayTitle)
+local function attemptPanelRegistration()
     if L._registered then
-        return
+        return true
     end
 
-    pendingPanelTitle = displayTitle or pendingPanelTitle or DEFAULT_PANEL_TITLE
+    pendingPanelTitle = pendingPanelTitle or DEFAULT_PANEL_TITLE
 
     if registerPanel(pendingPanelTitle) then
-        return
+        return true
     end
 
     waitForLam()
+    return false
+end
+
+local reposReadyCallbackRef = nil
+
+registerReposReadyCallback = function()
+    if reposReadyCallbackRef or not CALLBACK_MANAGER then
+        return
+    end
+
+    if type(CALLBACK_MANAGER.RegisterCallback) ~= "function" then
+        return
+    end
+
+    reposReadyCallbackRef = function()
+        if L._registered then
+            if unregisterReposReadyCallback then
+                unregisterReposReadyCallback()
+            end
+            return
+        end
+
+        attemptPanelRegistration()
+    end
+
+    CALLBACK_MANAGER:RegisterCallback("Nvk3UT_REPOS_READY", reposReadyCallbackRef)
+end
+
+unregisterReposReadyCallback = function()
+    if not reposReadyCallbackRef then
+        return
+    end
+
+    if CALLBACK_MANAGER and type(CALLBACK_MANAGER.UnregisterCallback) == "function" then
+        CALLBACK_MANAGER:UnregisterCallback("Nvk3UT_REPOS_READY", reposReadyCallbackRef)
+    end
+
+    reposReadyCallbackRef = nil
 end
 
 local function ensureRegisteredWhenReady()
@@ -1678,20 +1871,29 @@ local function ensureRegisteredWhenReady()
         return
     end
 
-    if not (Nvk3UT and Nvk3UT.sv) then
+    pendingPanelTitle = pendingPanelTitle or DEFAULT_PANEL_TITLE
+
+    if not areReposReady() then
+        if registerReposReadyCallback then
+            registerReposReadyCallback()
+        end
         if zo_callLater then
-            zo_callLater(ensureRegisteredWhenReady, 100)
+            zo_callLater(ensureRegisteredWhenReady, 250)
         end
         return
     end
 
-    pendingPanelTitle = pendingPanelTitle or DEFAULT_PANEL_TITLE
+    attemptPanelRegistration()
+end
 
-    if registerPanel(pendingPanelTitle) then
+function L.Build(displayTitle)
+    if L._registered then
         return
     end
 
-    waitForLam()
+    pendingPanelTitle = displayTitle or pendingPanelTitle or DEFAULT_PANEL_TITLE
+
+    ensureRegisteredWhenReady()
 end
 
 if EVENT_MANAGER then

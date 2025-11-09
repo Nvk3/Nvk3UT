@@ -17,6 +17,9 @@ Addon.debugEnabled = Addon.debugEnabled or false
 Addon._rebuild_lock = Addon._rebuild_lock or false
 Addon.initialized  = Addon.initialized or false
 Addon.playerActivated = Addon.playerActivated or false
+Addon.reposReady   = Addon.reposReady or false
+
+local REPOS_READY_EVENT = "Nvk3UT_REPOS_READY"
 
 if Nvk3UT_Utils and type(Nvk3UT_Utils.AttachToRoot) == "function" then
     Nvk3UT_Utils.AttachToRoot(Addon)
@@ -24,6 +27,18 @@ end
 
 if Nvk3UT_SelfTest and type(Nvk3UT_SelfTest.AttachToRoot) == "function" then
     Nvk3UT_SelfTest.AttachToRoot(Addon)
+end
+
+if Nvk3UT_StateRepo and type(Nvk3UT_StateRepo.AttachToRoot) == "function" then
+    Nvk3UT_StateRepo.AttachToRoot(Addon)
+end
+
+if Nvk3UT_StateRepo_Achievements and type(Nvk3UT_StateRepo_Achievements.AttachToRoot) == "function" then
+    Nvk3UT_StateRepo_Achievements.AttachToRoot(Addon)
+end
+
+if Nvk3UT_StateRepo_Quests and type(Nvk3UT_StateRepo_Quests.AttachToRoot) == "function" then
+    Nvk3UT_StateRepo_Quests.AttachToRoot(Addon)
 end
 
 local function formatMessage(prefix, fmt, ...)
@@ -131,17 +146,55 @@ end
 function Addon:InitSavedVariables()
     local stateInit = Nvk3UT_StateInit
     if stateInit and stateInit.BootstrapSavedVariables then
-        local sv = stateInit.BootstrapSavedVariables(self)
-        if type(sv) == "table" then
-            self.SV = sv
+        local account, character = stateInit.BootstrapSavedVariables(self)
+        if type(account) == "table" then
+            self.SV = account
+        end
+        if type(character) == "table" then
+            self.SVCharacter = character
         end
     end
 
     local sv = self.SV
+    local character = self.SVCharacter
     if type(sv) == "table" then
-        self.sv = sv -- legacy alias consumed by existing modules
+        local facadeCreator = stateInit and stateInit.CreateLegacyFacade
+        local facade = facadeCreator and facadeCreator(sv, character) or sv
+        self.sv = facade -- legacy alias consumed by existing modules
+        if type(character) == "table" then
+            self.svCharacter = character
+        end
         if type(self.SetDebugEnabled) == "function" then
             self:SetDebugEnabled(sv.debug)
+        end
+        local baseReady = false
+        local achievementsReady = false
+        local questsReady = false
+
+        if Nvk3UT_StateRepo and type(Nvk3UT_StateRepo.Init) == "function" then
+            Nvk3UT_StateRepo.Init(sv)
+            baseReady = true
+        end
+        if Nvk3UT_StateRepo_Achievements and type(Nvk3UT_StateRepo_Achievements.Init) == "function" then
+            Nvk3UT_StateRepo_Achievements.Init(sv)
+            achievementsReady = true
+        end
+        if Nvk3UT_StateRepo_Quests and type(Nvk3UT_StateRepo_Quests.Init) == "function" then
+            Nvk3UT_StateRepo_Quests.Init(character)
+            questsReady = true
+        end
+
+        local reposReady = baseReady and achievementsReady and questsReady
+        local wasReady = self.reposReady == true
+        self.reposReady = reposReady
+
+        if reposReady and not wasReady then
+            if type(self.Debug) == "function" then
+                self.Debug("Repository layer initialised")
+            end
+            if CALLBACK_MANAGER and type(CALLBACK_MANAGER.FireCallbacks) == "function" then
+                CALLBACK_MANAGER:FireCallbacks(REPOS_READY_EVENT)
+            end
         end
     end
 

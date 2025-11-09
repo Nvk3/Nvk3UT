@@ -9,6 +9,8 @@ end
 local QuestModel = {}
 QuestModel.__index = QuestModel
 
+Nvk3UT.QuestModel = QuestModel
+
 local QUEST_MODEL_NAME = addonName .. "QuestModel"
 local EVENT_NAMESPACE = QUEST_MODEL_NAME .. "_Event"
 local REBUILD_IDENTIFIER = QUEST_MODEL_NAME .. "_Rebuild"
@@ -427,6 +429,100 @@ end
 QuestModel.ForceRebuild = ForceRebuildInternal
 QuestModel.forceRebuild = ForceRebuildInternal
 
+local function ComputeMaxJournalIndex()
+    local maxIndex = 0
+
+    if type(GetNumJournalQuests) == "function" then
+        local ok, count = pcall(GetNumJournalQuests)
+        if ok and type(count) == "number" then
+            local numeric = math.floor(count)
+            if numeric > maxIndex then
+                maxIndex = numeric
+            end
+        end
+    end
+
+    if type(MAX_JOURNAL_QUESTS) == "number" then
+        local numeric = math.floor(MAX_JOURNAL_QUESTS)
+        if numeric > maxIndex then
+            maxIndex = numeric
+        end
+    end
+
+    if maxIndex <= 0 then
+        maxIndex = 50
+    end
+
+    return maxIndex
+end
+
+local function IsJournalIndexValid(index)
+    if type(index) ~= "number" or index <= 0 then
+        return false
+    end
+
+    if type(IsValidJournalQuestIndex) == "function" then
+        local ok, valid = pcall(IsValidJournalQuestIndex, index)
+        if ok then
+            return valid == true
+        end
+    end
+
+    if type(GetJournalQuestName) == "function" then
+        local ok, name = pcall(GetJournalQuestName, index)
+        if ok then
+            return type(name) == "string" and name ~= ""
+        end
+    end
+
+    return true
+end
+
+local function MatchesQuestId(index, targetQuestId)
+    if type(GetJournalQuestId) ~= "function" then
+        return false
+    end
+
+    local ok, questIdForIndex = pcall(GetJournalQuestId, index)
+    if not ok then
+        return false
+    end
+
+    local candidate = tonumber(questIdForIndex)
+    if not candidate then
+        return false
+    end
+
+    return math.floor(candidate) == targetQuestId
+end
+
+---
+-- Returns the current journal index for the given quest id.
+-- This function performs a live lookup against the journal APIs and is the
+-- sole source of truth for mapping quest identifiers to journal indices.
+function Nvk3UT.QuestModel.GetJournalIndexForQuestId(questId)
+    local numericQuestId = tonumber(questId)
+    if not numericQuestId or numericQuestId <= 0 then
+        return nil
+    end
+
+    numericQuestId = math.floor(numericQuestId)
+
+    if type(GetJournalQuestId) ~= "function" then
+        return nil
+    end
+
+    local maxIndex = ComputeMaxJournalIndex()
+
+    for index = 1, maxIndex do
+        if IsJournalIndexValid(index) and MatchesQuestId(index, numericQuestId) then
+            return index
+        end
+    end
+
+    return nil
+end
+
 local function OnQuestChanged(_, ...)
     local self = QuestModel
     if not self.isInitialized or not playerState.hasActivated then
@@ -540,7 +636,5 @@ function QuestModel.Unsubscribe(callback)
         QuestModel.subscribers[callback] = nil
     end
 end
-
-Nvk3UT.QuestModel = QuestModel
 
 return QuestModel

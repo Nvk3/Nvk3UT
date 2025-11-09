@@ -600,9 +600,9 @@ function Runtime:ProcessFrame(nowMs)
         if questDirty or questVmBuilt then
             local refreshedQuest = refreshQuestTracker(questViewModel)
             if refreshedQuest then
-                questGeometryChanged = updateTrackerGeometry("quest")
+                questGeometryChanged = updateTrackerGeometry("quest") or questGeometryChanged or true
                 if questGeometryChanged then
-                    debug("Runtime: quest tracker refreshed (geometry changed)")
+                    debug("Runtime: quest tracker refreshed (geometry updated)")
                 end
             end
         end
@@ -611,18 +611,18 @@ function Runtime:ProcessFrame(nowMs)
         if achievementDirty or achievementVmBuilt then
             local refreshedAchievement = refreshAchievementTracker(achievementViewModel)
             if refreshedAchievement then
-                if not achievementVmBuilt then
+                achievementGeometryChanged = updateTrackerGeometry("achievement") or achievementGeometryChanged or true
+                if achievementGeometryChanged and not achievementVmBuilt then
                     debug("Runtime: deferred achievement geometry update (view model not built)")
-                else
-                    achievementGeometryChanged = updateTrackerGeometry("achievement")
-                    if achievementGeometryChanged then
-                        debug("Runtime: achievement tracker refreshed (geometry changed)")
-                    end
+                elseif achievementGeometryChanged then
+                    debug("Runtime: achievement tracker refreshed (geometry updated)")
                 end
             end
         end
 
         if layoutDirty or questGeometryChanged or achievementGeometryChanged then
+            -- Layout must run after both trackers have had a chance to rebuild so their
+            -- containers expose the latest heights before the host measures scroll bounds.
             if applyTrackerHostLayout() then
                 debugVisibility("Runtime: applied tracker host layout")
             end

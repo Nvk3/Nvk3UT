@@ -4,6 +4,19 @@ local Addon = Nvk3UT
 Addon.TrackerHostLayout = Addon.TrackerHostLayout or {}
 local Layout = Addon.TrackerHostLayout
 
+local function debugLog(fmt, ...)
+    local diagnostics = Addon and Addon.Diagnostics
+    if diagnostics and type(diagnostics.DebugIfEnabled) == "function" then
+        diagnostics:DebugIfEnabled("TrackerHostLayout", fmt, ...)
+        return
+    end
+
+    local debugFn = Addon and Addon.Debug
+    if debugFn and ((Addon.IsDebugEnabled and Addon:IsDebugEnabled() == true) or Addon.debugEnabled == true) then
+        debugFn("[TrackerHostLayout] " .. tostring(fmt), ...)
+    end
+end
+
 local DEFAULT_SECTION_ORDER = { "quest", "achievement" }
 local ANCHOR_TOLERANCE = 0.01
 
@@ -59,6 +72,14 @@ end
 local function getSectionContainer(host, sectionId)
     if host and type(host.GetSectionContainer) == "function" then
         return host.GetSectionContainer(sectionId)
+    end
+
+    return nil
+end
+
+local function getSectionTracker(host, sectionId)
+    if host and type(host.GetSectionTracker) == "function" then
+        return host.GetSectionTracker(sectionId)
     end
 
     return nil
@@ -294,6 +315,53 @@ local function measureSection(host, sectionId, container)
     return width, height
 end
 
+local function resolveSectionHeight(host, sectionId, container)
+    local tracker = getSectionTracker(host, sectionId)
+    local height = 0
+
+    if tracker then
+        local getHeight = tracker.GetHeight or tracker.GetContentHeight
+        if type(getHeight) == "function" then
+            local ok, measured = pcall(getHeight, tracker)
+            if ok and measured ~= nil then
+                height = tonumber(measured) or height
+            end
+        end
+
+        if height <= 0 then
+            local getSize = tracker.GetContentSize or tracker.GetSize
+            if type(getSize) == "function" then
+                local ok, widthOrHeight, maybeHeight = pcall(getSize, tracker)
+                if ok then
+                    if maybeHeight ~= nil then
+                        height = tonumber(maybeHeight) or height
+                    else
+                        height = tonumber(widthOrHeight) or height
+                    end
+                end
+            end
+        end
+    end
+
+    if height <= 0 and container and type(container.GetHeight) == "function" then
+        local ok, measuredHeight = pcall(container.GetHeight, container)
+        if ok and measuredHeight ~= nil then
+            height = tonumber(measuredHeight) or height
+        end
+    end
+
+    if height <= 0 then
+        local _, fallbackHeight = measureSection(host, sectionId, container)
+        height = fallbackHeight
+    end
+
+    if height < 0 or height ~= height then
+        height = 0
+    end
+
+    return height
+end
+
 local function getAnchor(control, index)
     if type(control.GetAnchor) ~= "function" then
         return nil
@@ -508,6 +576,7 @@ function Layout.UpdateHeaderFooterSizes(host)
     local parent = getSectionParent(host)
     local contentStack = getContentStack(host)
     local scrollContent = getScrollContent(host)
+    local scrollContainer = getScrollContainer(host)
 
     local contentTopY
     if parent and contentStack and parent == contentStack then
@@ -518,19 +587,32 @@ function Layout.UpdateHeaderFooterSizes(host)
     contentTopY = sanitizeLength(contentTopY)
 
     local contentBottomY
-    if parent and contentStack and parent == contentStack then
-        local parentHeight = parent.GetHeight and parent:GetHeight()
-        parentHeight = tonumber(parentHeight)
-        if parentHeight and parentHeight > 0 then
-            contentBottomY = math.max(contentTopY, sanitizeLength(parentHeight) - footerPadding)
+
+    if scrollContainer and type(scrollContainer.GetHeight) == "function" then
+        local ok, height = pcall(scrollContainer.GetHeight, scrollContainer)
+        if ok then
+            height = sanitizeLength(height)
+            if height > 0 then
+                contentBottomY = contentTopY + height
+            end
         end
-    else
-        local container = scrollContent or parent
-        local totalHeight = container and container.GetHeight and container:GetHeight()
-        totalHeight = tonumber(totalHeight)
-        if totalHeight and totalHeight > 0 then
-            local candidate = sanitizeLength(totalHeight) - (footerEffectiveHeight + footerPadding)
-            contentBottomY = math.max(contentTopY, candidate)
+    end
+
+    if not contentBottomY then
+        if parent and contentStack and parent == contentStack then
+            local parentHeight = parent.GetHeight and parent:GetHeight()
+            parentHeight = tonumber(parentHeight)
+            if parentHeight and parentHeight > 0 then
+                contentBottomY = math.max(contentTopY, sanitizeLength(parentHeight) - footerPadding)
+            end
+        else
+            local container = scrollContent or parent
+            local totalHeight = container and container.GetHeight and container:GetHeight()
+            totalHeight = tonumber(totalHeight)
+            if totalHeight and totalHeight > 0 then
+                local candidate = sanitizeLength(totalHeight) - (footerEffectiveHeight + footerPadding)
+                contentBottomY = math.max(contentTopY, candidate)
+            end
         end
     end
 
@@ -586,7 +668,7 @@ function Layout.UpdateHeaderFooterSizes(host)
     return result
 end
 
-function Layout.UpdateScrollAreaHeight(host, contentHeight, sizes)
+function Layout.UpdateScrollAreaHeight(host, scrollChildHeight, sizes, viewportHeight)
     host = getHost(host)
     if not host then
         return 0
@@ -609,24 +691,9 @@ function Layout.UpdateScrollAreaHeight(host, contentHeight, sizes)
         metrics[host] = last
     end
 
-    local stackHeight = sanitizeLength(contentHeight)
-    if stackHeight < 0 then
-        stackHeight = 0
-    end
-
-    local headerHeight = 0
-    if sizes and sizes.headerVisible ~= false then
-        headerHeight = sanitizeLength(sizes.headerTargetHeight or sizes.headerHeight)
-    end
-
-    local footerHeight = 0
-    if sizes and sizes.footerVisible ~= false then
-        footerHeight = sanitizeLength(sizes.footerTargetHeight or sizes.footerHeight)
-    end
-
-    local scrollChildHeight = headerHeight + stackHeight + footerHeight
-    if scrollChildHeight < 0 then
-        scrollChildHeight = 0
+    local targetHeight = sanitizeLength(scrollChildHeight)
+    if targetHeight < 0 then
+        targetHeight = 0
     end
 
     if type(scrollContent.SetResizeToFitDescendents) == "function" then
@@ -634,40 +701,41 @@ function Layout.UpdateScrollAreaHeight(host, contentHeight, sizes)
     end
 
     if type(scrollContent.SetHeight) == "function" then
-        if not last.scrollChildHeight or numbersDiffer(last.scrollChildHeight, scrollChildHeight) then
-            scrollContent:SetHeight(scrollChildHeight)
-            last.scrollChildHeight = scrollChildHeight
+        if not last.scrollChildHeight or numbersDiffer(last.scrollChildHeight, targetHeight) then
+            scrollContent:SetHeight(targetHeight)
+            last.scrollChildHeight = targetHeight
         end
     else
-        last.scrollChildHeight = scrollChildHeight
+        last.scrollChildHeight = targetHeight
     end
 
     local topY = sizes and sanitizeLength(sizes.contentTopY) or 0
     local bottomY = sizes and tonumber(sizes.contentBottomY)
-    local viewportHeight
+    local resolvedViewport
 
-    if bottomY and bottomY ~= math.huge then
-        viewportHeight = bottomY - topY
-    end
-
-    if not viewportHeight or viewportHeight <= 0 then
-        if type(scrollContainer.GetHeight) == "function" then
-            local ok, height = pcall(scrollContainer.GetHeight, scrollContainer)
-            if ok then
-                viewportHeight = sanitizeLength(height)
-            end
+    if type(scrollContainer.GetHeight) == "function" then
+        local ok, height = pcall(scrollContainer.GetHeight, scrollContainer)
+        if ok then
+            resolvedViewport = height
         end
     end
 
-    viewportHeight = sanitizeLength(viewportHeight or 0)
-    if viewportHeight < 0 then
-        viewportHeight = 0
+    if (not resolvedViewport or resolvedViewport <= 0) and bottomY and bottomY ~= math.huge then
+        resolvedViewport = bottomY - topY
     end
 
-    last.viewportHeight = viewportHeight
+    if (not resolvedViewport or resolvedViewport <= 0) and viewportHeight and viewportHeight > 0 then
+        resolvedViewport = viewportHeight
+    end
 
-    local overshoot = getScrollOvershootPadding(host)
-    local maxOffset = math.max(scrollChildHeight - viewportHeight + overshoot, 0)
+    resolvedViewport = sanitizeLength(resolvedViewport or 0)
+    if resolvedViewport < 0 then
+        resolvedViewport = 0
+    end
+
+    last.viewportHeight = resolvedViewport
+
+    local maxOffset = math.max(targetHeight - resolvedViewport, 0)
 
     if not last.maxOffset or numbersDiffer(last.maxOffset, maxOffset) then
         setScrollMaxOffset(host, maxOffset)
@@ -705,7 +773,7 @@ function Layout.UpdateScrollAreaHeight(host, contentHeight, sizes)
         setScrollOffset(host, maxOffset, true)
     end
 
-    return viewportHeight
+    return resolvedViewport
 end
 
 function Layout.ApplyLayout(host, sizes)
@@ -741,75 +809,138 @@ function Layout.ApplyLayout(host, sizes)
         limitBottom = nil
     end
 
-    local totalHeight = topPadding
+    local accumulatedSectionHeight = 0
+    local measuredGapCount = 0
     local previousVisible
-    local visibleCount = 0
+    local measuredVisibleCount = 0
     local currentTop = startOffset
+    local anchoringStopped = false
 
     for _, sectionId in ipairs(order) do
         local container = getSectionContainer(host, sectionId)
         if not container then
             reportMissing(host, sectionId)
         else
-            local _, height = measureSection(host, sectionId, container)
+            local height = resolveSectionHeight(host, sectionId, container)
             local sectionVisible = not isControlHidden(container)
+            local shouldAnchor = not anchoringStopped
 
-            if sectionVisible then
+            if sectionVisible and shouldAnchor then
                 local predictedBottom = currentTop + height
                 if limitBottom and predictedBottom > (limitBottom + ANCHOR_TOLERANCE) then
-                    break
+                    shouldAnchor = false
+                    anchoringStopped = true
                 end
             end
 
-            local anchors
-            local offsetY = 0
-            local anchorTarget
+            if shouldAnchor then
+                local anchors
+                local offsetY = 0
+                local anchorTarget
 
-            if previousVisible then
-                anchorTarget = previousVisible
-                offsetY = gap
-                anchors = {
-                    { point = TOPLEFT, relativeTo = anchorTarget, relativePoint = BOTTOMLEFT, offsetX = 0, offsetY = offsetY },
-                    { point = TOPRIGHT, relativeTo = anchorTarget, relativePoint = BOTTOMRIGHT, offsetX = 0, offsetY = offsetY },
-                }
-            else
-                anchorTarget = parent
-                anchors = {
-                    { point = TOPLEFT, relativeTo = anchorTarget, relativePoint = TOPLEFT, offsetX = 0, offsetY = offsetY },
-                    { point = TOPRIGHT, relativeTo = anchorTarget, relativePoint = TOPRIGHT, offsetX = 0, offsetY = offsetY },
-                }
+                if previousVisible then
+                    anchorTarget = previousVisible
+                    offsetY = gap
+                    anchors = {
+                        { point = TOPLEFT, relativeTo = anchorTarget, relativePoint = BOTTOMLEFT, offsetX = 0, offsetY = offsetY },
+                        { point = TOPRIGHT, relativeTo = anchorTarget, relativePoint = BOTTOMRIGHT, offsetX = 0, offsetY = offsetY },
+                    }
+                else
+                    anchorTarget = parent
+                    anchors = {
+                        { point = TOPLEFT, relativeTo = anchorTarget, relativePoint = TOPLEFT, offsetX = 0, offsetY = offsetY },
+                        { point = TOPRIGHT, relativeTo = anchorTarget, relativePoint = TOPRIGHT, offsetX = 0, offsetY = offsetY },
+                    }
+                end
+
+                if not previousVisible then
+                    anchors[1].offsetY = startOffset
+                    anchors[2].offsetY = startOffset
+                end
+
+                applyAnchors(container, anchors)
+                reportAnchored(host, sectionId)
             end
-
-            if not previousVisible then
-                anchors[1].offsetY = startOffset
-                anchors[2].offsetY = startOffset
-            end
-
-            applyAnchors(container, anchors)
-            reportAnchored(host, sectionId)
 
             if sectionVisible then
-                if visibleCount > 0 then
-                    totalHeight = totalHeight + gap
+                if measuredVisibleCount > 0 then
+                    measuredGapCount = measuredGapCount + 1
                 end
 
-                totalHeight = totalHeight + height
-                currentTop = currentTop + height + gap
-                previousVisible = container
-                visibleCount = visibleCount + 1
+                accumulatedSectionHeight = accumulatedSectionHeight + height
+                measuredVisibleCount = measuredVisibleCount + 1
+
+                if shouldAnchor then
+                    currentTop = currentTop + height + gap
+                    previousVisible = container
+                end
             end
         end
     end
 
-    totalHeight = totalHeight + bottomPadding
-
-    if totalHeight < 0 then
-        totalHeight = 0
+    local contentHeight = topPadding + accumulatedSectionHeight + (gap * measuredGapCount) + bottomPadding
+    contentHeight = sanitizeLength(contentHeight)
+    if contentHeight < 0 then
+        contentHeight = 0
     end
 
-    Layout.UpdateScrollAreaHeight(host, totalHeight, sizes)
+    local headerHeight = 0
+    if sizes and sizes.headerVisible ~= false then
+        headerHeight = sanitizeLength(sizes.headerTargetHeight or sizes.headerHeight)
+    end
 
-    return totalHeight
+    local footerHeight = 0
+    if sizes and sizes.footerVisible ~= false then
+        footerHeight = sanitizeLength(sizes.footerTargetHeight or sizes.footerHeight)
+    end
+
+    local scrollOverhang = sanitizeLength(getScrollOvershootPadding(host))
+    local viewportHeight
+    local scrollContainer = getScrollContainer(host)
+
+    if scrollContainer and type(scrollContainer.GetHeight) == "function" then
+        local ok, measured = pcall(scrollContainer.GetHeight, scrollContainer)
+        if ok then
+            viewportHeight = measured
+        end
+    end
+
+    if (not viewportHeight or viewportHeight <= 0) and limitBottom and limitBottom ~= math.huge then
+        viewportHeight = limitBottom - startOffset
+    end
+
+    viewportHeight = sanitizeLength(viewportHeight or 0)
+    if viewportHeight < 0 then
+        viewportHeight = 0
+    end
+
+    local scrollChildHeight = headerHeight + contentHeight + footerHeight + scrollOverhang
+    local minScrollChild = viewportHeight + scrollOverhang
+    if scrollChildHeight < minScrollChild then
+        scrollChildHeight = minScrollChild
+    end
+
+    scrollChildHeight = math.ceil(scrollChildHeight)
+    if scrollChildHeight < 0 then
+        scrollChildHeight = 0
+    end
+
+    local resolvedViewport = Layout.UpdateScrollAreaHeight(host, scrollChildHeight, sizes, viewportHeight)
+    resolvedViewport = resolvedViewport or viewportHeight
+
+    debugLog(
+        "Layout metrics header=%.2f content=%.2f footer=%.2f overhang=%.2f viewport=%.2f scrollChild=%.2f sections=%.2f gaps=%d",
+        headerHeight,
+        contentHeight,
+        footerHeight,
+        scrollOverhang,
+        resolvedViewport,
+        scrollChildHeight,
+        accumulatedSectionHeight,
+        measuredGapCount
+    )
+
+    return contentHeight
 end
 
 Layout.Apply = Layout.ApplyLayout
