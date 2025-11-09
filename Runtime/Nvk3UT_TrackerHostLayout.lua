@@ -654,7 +654,7 @@ function Layout.UpdateHeaderFooterSizes(host)
     return result
 end
 
-function Layout.UpdateScrollAreaHeight(host, contentHeight, sizes)
+function Layout.UpdateScrollAreaHeight(host, scrollChildHeight, sizes, viewportHeight)
     host = getHost(host)
     if not host then
         return 0
@@ -677,24 +677,9 @@ function Layout.UpdateScrollAreaHeight(host, contentHeight, sizes)
         metrics[host] = last
     end
 
-    local stackHeight = sanitizeLength(contentHeight)
-    if stackHeight < 0 then
-        stackHeight = 0
-    end
-
-    local headerHeight = 0
-    if sizes and sizes.headerVisible ~= false then
-        headerHeight = sanitizeLength(sizes.headerTargetHeight or sizes.headerHeight)
-    end
-
-    local footerHeight = 0
-    if sizes and sizes.footerVisible ~= false then
-        footerHeight = sanitizeLength(sizes.footerTargetHeight or sizes.footerHeight)
-    end
-
-    local scrollChildHeight = headerHeight + stackHeight + footerHeight
-    if scrollChildHeight < 0 then
-        scrollChildHeight = 0
+    local targetHeight = sanitizeLength(scrollChildHeight)
+    if targetHeight < 0 then
+        targetHeight = 0
     end
 
     if type(scrollContent.SetResizeToFitDescendents) == "function" then
@@ -702,40 +687,39 @@ function Layout.UpdateScrollAreaHeight(host, contentHeight, sizes)
     end
 
     if type(scrollContent.SetHeight) == "function" then
-        if not last.scrollChildHeight or numbersDiffer(last.scrollChildHeight, scrollChildHeight) then
-            scrollContent:SetHeight(scrollChildHeight)
-            last.scrollChildHeight = scrollChildHeight
+        if not last.scrollChildHeight or numbersDiffer(last.scrollChildHeight, targetHeight) then
+            scrollContent:SetHeight(targetHeight)
+            last.scrollChildHeight = targetHeight
         end
     else
-        last.scrollChildHeight = scrollChildHeight
+        last.scrollChildHeight = targetHeight
     end
 
     local topY = sizes and sanitizeLength(sizes.contentTopY) or 0
     local bottomY = sizes and tonumber(sizes.contentBottomY)
-    local viewportHeight
+    local resolvedViewport = viewportHeight
 
-    if bottomY and bottomY ~= math.huge then
-        viewportHeight = bottomY - topY
-    end
-
-    if not viewportHeight or viewportHeight <= 0 then
-        if type(scrollContainer.GetHeight) == "function" then
-            local ok, height = pcall(scrollContainer.GetHeight, scrollContainer)
-            if ok then
-                viewportHeight = sanitizeLength(height)
-            end
+    if not resolvedViewport or resolvedViewport <= 0 then
+        if bottomY and bottomY ~= math.huge then
+            resolvedViewport = bottomY - topY
         end
     end
 
-    viewportHeight = sanitizeLength(viewportHeight or 0)
-    if viewportHeight < 0 then
-        viewportHeight = 0
+    if (not resolvedViewport or resolvedViewport <= 0) and type(scrollContainer.GetHeight) == "function" then
+        local ok, height = pcall(scrollContainer.GetHeight, scrollContainer)
+        if ok then
+            resolvedViewport = height
+        end
     end
 
-    last.viewportHeight = viewportHeight
+    resolvedViewport = sanitizeLength(resolvedViewport or 0)
+    if resolvedViewport < 0 then
+        resolvedViewport = 0
+    end
 
-    local overshoot = getScrollOvershootPadding(host)
-    local maxOffset = math.max(scrollChildHeight - viewportHeight + overshoot, 0)
+    last.viewportHeight = resolvedViewport
+
+    local maxOffset = math.max(targetHeight - resolvedViewport, 0)
 
     if not last.maxOffset or numbersDiffer(last.maxOffset, maxOffset) then
         setScrollMaxOffset(host, maxOffset)
@@ -773,7 +757,7 @@ function Layout.UpdateScrollAreaHeight(host, contentHeight, sizes)
         setScrollOffset(host, maxOffset, true)
     end
 
-    return viewportHeight
+    return resolvedViewport
 end
 
 function Layout.ApplyLayout(host, sizes)
@@ -809,8 +793,8 @@ function Layout.ApplyLayout(host, sizes)
         limitBottom = nil
     end
 
-    local totalHeight = topPadding
     local accumulatedSectionHeight = 0
+    local measuredGapCount = 0
     local previousVisible
     local measuredVisibleCount = 0
     local currentTop = startOffset
@@ -864,10 +848,9 @@ function Layout.ApplyLayout(host, sizes)
 
             if sectionVisible then
                 if measuredVisibleCount > 0 then
-                    totalHeight = totalHeight + gap
+                    measuredGapCount = measuredGapCount + 1
                 end
 
-                totalHeight = totalHeight + height
                 accumulatedSectionHeight = accumulatedSectionHeight + height
                 measuredVisibleCount = measuredVisibleCount + 1
 
@@ -879,40 +862,69 @@ function Layout.ApplyLayout(host, sizes)
         end
     end
 
-    totalHeight = totalHeight + bottomPadding
-
-    if totalHeight < 0 then
-        totalHeight = 0
+    local contentHeight = topPadding + accumulatedSectionHeight + (gap * measuredGapCount) + bottomPadding
+    contentHeight = sanitizeLength(contentHeight)
+    if contentHeight < 0 then
+        contentHeight = 0
     end
 
-    Layout.UpdateScrollAreaHeight(host, totalHeight, sizes)
+    local headerHeight = 0
+    if sizes and sizes.headerVisible ~= false then
+        headerHeight = sanitizeLength(sizes.headerTargetHeight or sizes.headerHeight)
+    end
 
-    if sizes then
-        local headerHeight = 0
-        if sizes.headerVisible ~= false then
-            headerHeight = sanitizeLength(sizes.headerTargetHeight or sizes.headerHeight)
-        end
+    local footerHeight = 0
+    if sizes and sizes.footerVisible ~= false then
+        footerHeight = sanitizeLength(sizes.footerTargetHeight or sizes.footerHeight)
+    end
 
-        local footerHeight = 0
-        if sizes.footerVisible ~= false then
-            footerHeight = sanitizeLength(sizes.footerTargetHeight or sizes.footerHeight)
-        end
+    local scrollOverhang = sanitizeLength(getScrollOvershootPadding(host))
+    local viewportHeight
 
-        local scrollChildHeight = headerHeight + totalHeight + footerHeight
-        debugLog(
-            "Layout metrics header=%.2f content=%.2f footer=%.2f scrollChild=%.2f sections=%.2f gapCount=%d",
-            headerHeight,
-            totalHeight,
-            footerHeight,
-            scrollChildHeight,
-            accumulatedSectionHeight,
-            math.max(0, measuredVisibleCount - 1)
-        )
+    if limitBottom and limitBottom ~= math.huge then
+        viewportHeight = limitBottom - startOffset
     else
-        debugLog("Layout metrics content=%.2f (sizes unavailable)", totalHeight)
+        local scrollContainer = getScrollContainer(host)
+        if scrollContainer and type(scrollContainer.GetHeight) == "function" then
+            local ok, measured = pcall(scrollContainer.GetHeight, scrollContainer)
+            if ok then
+                viewportHeight = measured
+            end
+        end
     end
 
-    return totalHeight
+    viewportHeight = sanitizeLength(viewportHeight or 0)
+    if viewportHeight < 0 then
+        viewportHeight = 0
+    end
+
+    local scrollChildHeight = headerHeight + contentHeight + footerHeight + scrollOverhang
+    local minScrollChild = viewportHeight + scrollOverhang
+    if scrollChildHeight < minScrollChild then
+        scrollChildHeight = minScrollChild
+    end
+
+    scrollChildHeight = math.ceil(scrollChildHeight)
+    if scrollChildHeight < 0 then
+        scrollChildHeight = 0
+    end
+
+    local resolvedViewport = Layout.UpdateScrollAreaHeight(host, scrollChildHeight, sizes, viewportHeight)
+    resolvedViewport = resolvedViewport or viewportHeight
+
+    debugLog(
+        "Layout metrics header=%.2f content=%.2f footer=%.2f overhang=%.2f viewport=%.2f scrollChild=%.2f sections=%.2f gaps=%d",
+        headerHeight,
+        contentHeight,
+        footerHeight,
+        scrollOverhang,
+        resolvedViewport,
+        scrollChildHeight,
+        accumulatedSectionHeight,
+        measuredGapCount
+    )
+
+    return contentHeight
 end
 
 Layout.Apply = Layout.ApplyLayout

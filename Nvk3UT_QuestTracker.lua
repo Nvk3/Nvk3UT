@@ -224,7 +224,20 @@ local PRIORITY = {
 NVK_DEBUG_DESELECT = NVK_DEBUG_DESELECT or false
 
 local function IsDebugLoggingEnabled()
-    local sv = Nvk3UT and Nvk3UT.sv
+    local addon = Nvk3UT
+    if not addon then
+        return false
+    end
+
+    if addon.IsDebugEnabled then
+        return addon:IsDebugEnabled() == true
+    end
+
+    if addon.debugEnabled == true then
+        return true
+    end
+
+    local sv = addon.sv
     return sv and sv.debug == true
 end
 
