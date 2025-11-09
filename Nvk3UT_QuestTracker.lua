@@ -136,6 +136,7 @@ local state = {
     saved = nil,
     control = nil,
     container = nil,
+    contentContainer = nil,
     categoryPool = nil,
     questPool = nil,
     conditionPool = nil,
@@ -169,6 +170,54 @@ local state = {
     pendingActiveQuestApply = false,
     debugInitLogCount = 0,
 }
+
+local function EnsureContentContainer()
+    if not state.container then
+        return nil
+    end
+
+    local parent = state.container
+    local container = state.contentContainer
+
+    if not container then
+        if not WINDOW_MANAGER or type(WINDOW_MANAGER.CreateControl) ~= "function" then
+            return parent
+        end
+
+        local parentName = parent.GetName and parent:GetName()
+        local childName
+        if type(parentName) == "string" and parentName ~= "" then
+            childName = parentName .. "Content"
+        end
+
+        container = WINDOW_MANAGER:CreateControl(childName, parent, CT_CONTROL)
+        if container.SetMouseEnabled then
+            container:SetMouseEnabled(false)
+        end
+        state.contentContainer = container
+    else
+        if container.SetParent then
+            container:SetParent(parent)
+        end
+    end
+
+    if container then
+        if container.ClearAnchors then
+            container:ClearAnchors()
+            container:SetAnchor(TOPLEFT, parent, TOPLEFT, 0, 0)
+            container:SetAnchor(TOPRIGHT, parent, TOPRIGHT, 0, 0)
+        end
+        if container.SetResizeToFitDescendents then
+            container:SetResizeToFitDescendents(true)
+        end
+    end
+
+    return state.contentContainer or parent
+end
+
+local function GetLayoutParent()
+    return state.contentContainer or EnsureContentContainer() or state.container
+end
 
 local function UpdateReposReadyState()
     if state.reposReady then
@@ -3326,8 +3375,9 @@ local function AnchorControl(control, indentX)
         control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, offsetX, VERTICAL_PADDING)
         control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, 0, VERTICAL_PADDING)
     else
-        control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, 0)
-        control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, 0, 0)
+        local parent = GetLayoutParent()
+        control:SetAnchor(TOPLEFT, parent, TOPLEFT, indentX, 0)
+        control:SetAnchor(TOPRIGHT, parent, TOPRIGHT, 0, 0)
     end
 
     state.lastAnchoredControl = control
@@ -3337,8 +3387,6 @@ end
 
 local function UpdateContentSize()
     local maxWidth = 0
-    local totalHeight = 0
-    local visibleCount = 0
 
     for index = 1, #state.orderedControls do
         local control = state.orderedControls[index]
@@ -3346,22 +3394,25 @@ local function UpdateContentSize()
             RefreshControlMetrics(control)
         end
         if control and not control:IsHidden() then
-            visibleCount = visibleCount + 1
             local width = (control:GetWidth() or 0) + (control.currentIndent or 0)
             if width > maxWidth then
                 maxWidth = width
             end
-            totalHeight = totalHeight + (control:GetHeight() or 0)
-            if visibleCount > 1 then
-                totalHeight = totalHeight + VERTICAL_PADDING
-            end
         end
     end
 
-    totalHeight = math.max(0, totalHeight)
-
     state.contentWidth = maxWidth
-    state.contentHeight = NormalizeMetric(totalHeight)
+
+    local parent = GetLayoutParent()
+    local measuredHeight = 0
+    if parent and parent.GetHeight then
+        local ok, height = pcall(parent.GetHeight, parent)
+        if ok and height then
+            measuredHeight = height
+        end
+    end
+
+    state.contentHeight = NormalizeMetric(measuredHeight)
 end
 
 local function SelectCategoryToggleTexture(expanded, isMouseOver)
@@ -3922,9 +3973,10 @@ local function EnsurePools()
         return
     end
 
-    state.categoryPool = ZO_ControlPool:New("CategoryHeader_Template", state.container)
-    state.questPool = ZO_ControlPool:New("QuestHeader_Template", state.container)
-    state.conditionPool = ZO_ControlPool:New("QuestCondition_Template", state.container)
+    local parent = GetLayoutParent()
+    state.categoryPool = ZO_ControlPool:New("CategoryHeader_Template", parent)
+    state.questPool = ZO_ControlPool:New("QuestHeader_Template", parent)
+    state.conditionPool = ZO_ControlPool:New("QuestCondition_Template", parent)
 
     local function resetControl(control)
         control:SetHidden(true)
@@ -3932,6 +3984,9 @@ local function EnsurePools()
         control.currentIndent = nil
         control.baseColor = nil
         control.isExpanded = nil
+        if control.ClearAnchors then
+            control:ClearAnchors()
+        end
     end
 
     state.categoryPool:SetCustomResetBehavior(function(control)
@@ -4249,6 +4304,7 @@ local function Rebuild()
     state.isRebuildInProgress = true
     ApplyActiveQuestFromSaved()
 
+    EnsureContentContainer()
     EnsurePools()
 
     ReleaseAll(state.categoryPool)
@@ -4309,6 +4365,7 @@ function QuestTracker.Init(parentControl, opts)
     if state.control and state.control.SetResizeToFitDescendents then
         state.control:SetResizeToFitDescendents(false)
     end
+    EnsureContentContainer()
 
     EnsureSavedVars()
 
