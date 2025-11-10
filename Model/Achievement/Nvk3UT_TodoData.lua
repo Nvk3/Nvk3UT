@@ -10,6 +10,34 @@ local Utils = Nvk3UT and Nvk3UT.Utils
 
 local EMPTY_TABLE = {}
 
+local cachedAllOpen
+local cachedNames
+local cachedKeys
+local cachedTopIds
+local cachedListsByTop = {}
+local cachedPointsByTop = {}
+
+local function DeepCopy(value)
+    if type(value) ~= "table" then
+        return value
+    end
+
+    local result = {}
+    for key, val in pairs(value) do
+        result[key] = DeepCopy(val)
+    end
+    return result
+end
+
+local function invalidateCache()
+    cachedAllOpen = nil
+    cachedNames = nil
+    cachedKeys = nil
+    cachedTopIds = nil
+    cachedListsByTop = {}
+    cachedPointsByTop = {}
+end
+
 local function isDebugEnabled()
     local root = Nvk3UT
     return root and root.sv and root.sv.debug == true
@@ -211,6 +239,24 @@ end
 function TodoData.ListAllOpen(maxCount, respectSearch)
     emitDebugMessage("ListAllOpen start (max=%s, respectSearch=%s)", tostring(maxCount), tostring(respectSearch))
 
+    local useCache = respectSearch ~= true
+    if useCache and type(cachedAllOpen) == "table" and #cachedAllOpen > 0 then
+        local copy = DeepCopy(cachedAllOpen)
+        local limit = tonumber(maxCount)
+        if limit and limit > 0 and #copy > limit then
+            local trimmed = {}
+            for index = 1, limit do
+                trimmed[index] = copy[index]
+            end
+            return trimmed
+        end
+        return copy
+    end
+
+    if useCache then
+        invalidateCache()
+    end
+
     local results = {}
     local searchMap = respectSearch and buildSearchMap() or nil
     local numCategories = GetNumAchievementCategories and GetNumAchievementCategories() or 0
@@ -225,6 +271,9 @@ function TodoData.ListAllOpen(maxCount, respectSearch)
     sortIdsByName(results)
 
     local limited = copyFirstN(results, tonumber(maxCount))
+    if useCache then
+        cachedAllOpen = DeepCopy(results)
+    end
     emitDebugMessage("ListAllOpen done (count=%d)", #(limited or results))
     return limited or results
 end
@@ -241,6 +290,11 @@ function TodoData.ListOpenForTop(topIndex, respectSearch)
         return {}
     end
 
+    local useCache = respectSearch ~= true
+    if useCache and cachedListsByTop[topIndex] then
+        return DeepCopy(cachedListsByTop[topIndex])
+    end
+
     local searchMap = respectSearch and buildSearchMap() or nil
     local results = collectOpenAchievementsForTop(topIndex, searchMap, {})
     local resultCount = type(results) == "table" and #results or 0
@@ -248,6 +302,9 @@ function TodoData.ListOpenForTop(topIndex, respectSearch)
         diagnostics.Debug_Todo_ListOpenForTop(topIndex, resultCount, "done")
     else
         emitDebugMessage("ListOpenForTop done (top=%s, count=%d)", tostring(topIndex), resultCount)
+    end
+    if useCache then
+        cachedListsByTop[topIndex] = DeepCopy(results)
     end
     return results
 end
@@ -301,6 +358,11 @@ local function summarizeTodoSet()
 end
 
 function TodoData.GetSubcategoryList(respectSearch)
+    local useCache = respectSearch ~= true
+    if useCache and cachedNames and cachedKeys and cachedTopIds then
+        return DeepCopy(cachedNames), DeepCopy(cachedKeys), DeepCopy(cachedTopIds)
+    end
+
     local names, keys, topIds
     if respectSearch then
         names, keys, topIds = {}, {}, {}
@@ -321,10 +383,20 @@ function TodoData.GetSubcategoryList(respectSearch)
         names, keys, topIds = summarizeTodoSet()
     end
 
+    if useCache then
+        cachedNames = DeepCopy(names or {})
+        cachedKeys = DeepCopy(keys or {})
+        cachedTopIds = DeepCopy(topIds or {})
+    end
+
     return names or EMPTY_TABLE, keys or EMPTY_TABLE, topIds or EMPTY_TABLE
 end
 
 function TodoData.PointsForSubcategory(topIndex, respectSearch)
+    if respectSearch ~= true and cachedPointsByTop[topIndex] then
+        return cachedPointsByTop[topIndex]
+    end
+
     local ids = TodoData.ListOpenForTop(topIndex, respectSearch)
     if type(ids) ~= "table" then
         return 0
@@ -337,6 +409,10 @@ function TodoData.PointsForSubcategory(topIndex, respectSearch)
         if ok and tonumber(score) then
             points = points + score
         end
+    end
+
+    if respectSearch ~= true then
+        cachedPointsByTop[topIndex] = points
     end
 
     return points
@@ -374,6 +450,87 @@ end
 
 function TodoData.ToggleTodo(achievementId, source)
     return handleUnsupportedWrite("ToggleTodo", achievementId, source)
+end
+
+function TodoData.ApplyCacheSnapshot(snapshot)
+    if type(snapshot) ~= "table" then
+        return false
+    end
+
+    invalidateCache()
+
+    if type(snapshot.allOpen) == "table" then
+        cachedAllOpen = DeepCopy(snapshot.allOpen)
+    end
+
+    if type(snapshot.names) == "table" then
+        cachedNames = DeepCopy(snapshot.names)
+    end
+    if type(snapshot.keys) == "table" then
+        cachedKeys = DeepCopy(snapshot.keys)
+    end
+    if type(snapshot.topIds) == "table" then
+        cachedTopIds = DeepCopy(snapshot.topIds)
+    end
+
+    if type(snapshot.lists) == "table" then
+        for key, list in pairs(snapshot.lists) do
+            cachedListsByTop[key] = DeepCopy(list)
+        end
+    end
+
+    if type(snapshot.points) == "table" then
+        cachedPointsByTop = DeepCopy(snapshot.points)
+    end
+
+    if type(snapshot.counts) == "table" and type(snapshot.topIds) == "table" then
+        for index = 1, #snapshot.topIds do
+            local topId = snapshot.topIds[index]
+            if cachedListsByTop[topId] then
+                local count = snapshot.counts[topId]
+                if type(count) == "number" and count < #cachedListsByTop[topId] then
+                    -- Trim cached list to match stored count to avoid stale entries.
+                    local trimmed = {}
+                    for i = 1, count do
+                        trimmed[i] = cachedListsByTop[topId][i]
+                    end
+                    cachedListsByTop[topId] = trimmed
+                end
+            end
+        end
+    end
+
+    return true
+end
+
+function TodoData.ExportCacheSnapshot()
+    local names, keys, topIds = TodoData.GetSubcategoryList(false)
+    local snapshot = {
+        names = DeepCopy(names or {}),
+        keys = DeepCopy(keys or {}),
+        topIds = DeepCopy(topIds or {}),
+        lists = {},
+        counts = {},
+        points = {},
+        allOpen = {},
+    }
+
+    local all = cachedAllOpen or TodoData.ListAllOpen(nil, false)
+    if type(all) == "table" then
+        snapshot.allOpen = DeepCopy(all)
+    end
+
+    if type(topIds) == "table" then
+        for index = 1, #topIds do
+            local topId = topIds[index]
+            local list = cachedListsByTop[topId] or TodoData.ListOpenForTop(topId, false)
+            snapshot.lists[topId] = DeepCopy(list)
+            snapshot.counts[topId] = type(list) == "table" and #list or 0
+            snapshot.points[topId] = cachedPointsByTop[topId] or TodoData.PointsForSubcategory(topId, false)
+        end
+    end
+
+    return snapshot
 end
 
 return TodoData

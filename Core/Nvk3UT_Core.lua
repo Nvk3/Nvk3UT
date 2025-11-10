@@ -143,6 +143,11 @@ function Addon:InitSavedVariables()
         if type(self.SetDebugEnabled) == "function" then
             self:SetDebugEnabled(sv.debug)
         end
+
+        local cache = Nvk3UT and Nvk3UT.AchievementCache
+        if cache and type(cache.Init) == "function" then
+            _SafeCall(cache.Init, sv)
+        end
     end
 
     return self.SV
@@ -351,6 +356,11 @@ function Addon:OnPlayerActivated()
             Addon.TrackerHost.Init()
         end
     end)
+
+    local cache = Nvk3UT and Nvk3UT.AchievementCache
+    if cache and cache.SchedulePrebuild then
+        _SafeCall(cache.SchedulePrebuild)
+    end
 
     -- TODO UI: move status refresh trigger into HostLayout/UI layer.
     self:UIUpdateStatus()

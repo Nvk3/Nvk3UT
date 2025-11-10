@@ -214,6 +214,11 @@ local function NotifyFavoritesChanged()
     end
 
     queueAchievementDirty()
+
+    local cache = Nvk3UT and Nvk3UT.AchievementCache
+    if cache and cache.OnFavoritesChanged then
+        pcall(cache.OnFavoritesChanged)
+    end
 end
 
 function FavoritesData.InitSavedVars()

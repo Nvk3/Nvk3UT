@@ -58,6 +58,17 @@ local DEFAULT_HOST_SETTINGS = {
     HideInCombat = false,
 }
 
+local DEFAULT_ACHIEVEMENT_CACHE = {
+    buildHash = "",
+    lastBuildAt = 0,
+    categories = {
+        Favorites = {},
+        Recent = {},
+        Completed = {},
+        ToDo = {},
+    },
+}
+
 local defaults = {
     version = 4,
     debug = false,
@@ -125,7 +136,48 @@ local defaults = {
     Settings = {
         Host = DEFAULT_HOST_SETTINGS,
     },
+    AchievementCache = DEFAULT_ACHIEVEMENT_CACHE,
 }
+
+local function EnsureAchievementCache(saved)
+    local cache = EnsureTable(saved, "AchievementCache")
+    if cache.buildHash == nil then
+        cache.buildHash = ""
+    end
+    if cache.lastBuildAt == nil then
+        cache.lastBuildAt = 0
+    end
+
+    local categories = EnsureTable(cache, "categories")
+    local favorites = EnsureTable(categories, "Favorites")
+    local recent = EnsureTable(categories, "Recent")
+    local completed = EnsureTable(categories, "Completed")
+    local todoPrimary = EnsureTable(categories, "Todo")
+    local todoAlternate = EnsureTable(categories, "ToDo")
+
+    -- Keep Favorites/Recent/Completed references alive even if unused to avoid
+    -- accidental nil assignments by callers expecting tables.
+    favorites = favorites
+    recent = recent
+    completed = completed
+
+    if todoAlternate ~= todoPrimary then
+        if next(todoAlternate) ~= nil and next(todoPrimary) == nil then
+            todoPrimary = todoAlternate
+        elseif next(todoAlternate) ~= nil and next(todoPrimary) ~= nil then
+            for key, value in pairs(todoAlternate) do
+                if todoPrimary[key] == nil then
+                    todoPrimary[key] = value
+                end
+            end
+        end
+    end
+
+    categories.Todo = todoPrimary
+    categories.ToDo = todoPrimary
+
+    return cache
+end
 
 local function MergeDefaults(target, source)
     if type(source) ~= "table" then
@@ -221,6 +273,8 @@ local function EnsureFirstLoginStructures(saved)
     if saved.version == nil then
         saved.version = defaults.version
     end
+
+    EnsureAchievementCache(saved)
 end
 
 -- Create or load SavedVariables and ensure all required subtables/fields exist.

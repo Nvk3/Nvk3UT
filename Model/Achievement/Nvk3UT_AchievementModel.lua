@@ -292,6 +292,11 @@ local function onAchievementChanged(eventCode, ...)
                 end
             end
         end
+
+        local cache = Nvk3UT and Nvk3UT.AchievementCache
+        if cache and cache.OnAchievementAwarded then
+            pcall(cache.OnAchievementAwarded, achievementId)
+        end
     end
 
     scheduleRebuild(self, "event")
