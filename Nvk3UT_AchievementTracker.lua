@@ -1858,6 +1858,44 @@ function AchievementTracker.GetHeight()
     return NormalizeMetric(state.contentHeight or 0)
 end
 
+function AchievementTracker.GetDebugMetrics()
+    if state.isInitialized then
+        UpdateContentSize()
+    end
+
+    local metrics = {
+        height = NormalizeMetric(state.contentHeight or 0),
+        rowCount = 0,
+        categoryCount = 0,
+        achievementCount = 0,
+        objectiveCount = 0,
+    }
+
+    if type(state.orderedControls) == "table" then
+        for index = 1, #state.orderedControls do
+            local control = state.orderedControls[index]
+            if control then
+                local isHidden = control.IsHidden and control:IsHidden()
+                if not isHidden then
+                    local rowType = control.rowType
+                    metrics.rowCount = metrics.rowCount + 1
+                    if rowType == "category" then
+                        metrics.categoryCount = metrics.categoryCount + 1
+                    elseif rowType == "achievement" then
+                        metrics.achievementCount = metrics.achievementCount + 1
+                    elseif rowType == "objective" then
+                        metrics.objectiveCount = metrics.objectiveCount + 1
+                    end
+                end
+            end
+        end
+    end
+
+    metrics.entryCount = metrics.achievementCount + metrics.objectiveCount
+
+    return metrics
+end
+
 function AchievementTracker.GetContentSize()
     UpdateContentSize()
     return state.contentWidth or 0, state.contentHeight or 0

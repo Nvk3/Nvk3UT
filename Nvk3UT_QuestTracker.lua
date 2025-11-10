@@ -4538,6 +4538,44 @@ function QuestTracker.GetHeight()
     return NormalizeMetric(state.contentHeight or 0)
 end
 
+function QuestTracker.GetDebugMetrics()
+    if state.isInitialized then
+        UpdateContentSize()
+    end
+
+    local metrics = {
+        height = NormalizeMetric(state.contentHeight or 0),
+        rowCount = 0,
+        categoryCount = 0,
+        questCount = 0,
+        conditionCount = 0,
+    }
+
+    if type(state.orderedControls) == "table" then
+        for index = 1, #state.orderedControls do
+            local control = state.orderedControls[index]
+            if control then
+                local isHidden = control.IsHidden and control:IsHidden()
+                if not isHidden then
+                    local rowType = control.rowType
+                    metrics.rowCount = metrics.rowCount + 1
+                    if rowType == "category" then
+                        metrics.categoryCount = metrics.categoryCount + 1
+                    elseif rowType == "quest" then
+                        metrics.questCount = metrics.questCount + 1
+                    elseif rowType == "condition" then
+                        metrics.conditionCount = metrics.conditionCount + 1
+                    end
+                end
+            end
+        end
+    end
+
+    metrics.entryCount = metrics.questCount + metrics.conditionCount
+
+    return metrics
+end
+
 function QuestTracker.GetContentSize()
     UpdateContentSize()
     return state.contentWidth or 0, state.contentHeight or 0

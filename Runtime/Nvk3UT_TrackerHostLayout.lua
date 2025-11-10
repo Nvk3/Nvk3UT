@@ -815,6 +815,7 @@ function Layout.ApplyLayout(host, sizes)
     local measuredVisibleCount = 0
     local currentTop = startOffset
     local anchoringStopped = false
+    local sectionDebugData = {}
 
     for _, sectionId in ipairs(order) do
         local container = getSectionContainer(host, sectionId)
@@ -824,6 +825,22 @@ function Layout.ApplyLayout(host, sizes)
             local height = resolveSectionHeight(host, sectionId, container)
             local sectionVisible = not isControlHidden(container)
             local shouldAnchor = not anchoringStopped
+
+            local tracker = getSectionTracker(host, sectionId)
+            local debugMetrics
+            if tracker and type(tracker.GetDebugMetrics) == "function" then
+                local ok, metrics = pcall(tracker.GetDebugMetrics, tracker)
+                if ok and type(metrics) == "table" then
+                    debugMetrics = metrics
+                end
+            end
+
+            table.insert(sectionDebugData, {
+                id = sectionId,
+                height = height,
+                visible = sectionVisible,
+                metrics = debugMetrics,
+            })
 
             if sectionVisible and shouldAnchor then
                 local predictedBottom = currentTop + height
@@ -928,17 +945,77 @@ function Layout.ApplyLayout(host, sizes)
     local resolvedViewport = Layout.UpdateScrollAreaHeight(host, scrollChildHeight, sizes, viewportHeight)
     resolvedViewport = resolvedViewport or viewportHeight
 
+    local maxOffset = math.max(scrollChildHeight - resolvedViewport, 0)
+
     debugLog(
-        "Layout metrics header=%.2f content=%.2f footer=%.2f overhang=%.2f viewport=%.2f scrollChild=%.2f sections=%.2f gaps=%d",
+        "Layout metrics header=%.2f content=%.2f footer=%.2f overhang=%.2f viewport=%.2f scrollChild=%.2f maxOffset=%.2f sections=%.2f gaps=%d",
         headerHeight,
         contentHeight,
         footerHeight,
         scrollOverhang,
         resolvedViewport,
         scrollChildHeight,
+        maxOffset,
         accumulatedSectionHeight,
         measuredGapCount
     )
+
+    if #sectionDebugData > 0 then
+        for _, info in ipairs(sectionDebugData) do
+            local metrics = info.metrics or {}
+            local entryCount = metrics.entryCount or metrics.rowCount or 0
+            local categoryCount = metrics.categoryCount or metrics.categories or 0
+            debugLog(
+                "Section %s visible=%s height=%.2f entries=%d categories=%d",
+                tostring(info.id),
+                tostring(info.visible),
+                sanitizeLength(info.height),
+                entryCount,
+                categoryCount
+            )
+        end
+    end
+
+    local sumSectionHeight = 0
+    for _, info in ipairs(sectionDebugData) do
+        if info.visible then
+            sumSectionHeight = sumSectionHeight + sanitizeLength(info.height)
+        end
+    end
+
+    local expectedContent = topPadding + sumSectionHeight + (gap * measuredGapCount) + bottomPadding
+    if numbersDiffer(contentHeight, expectedContent, 0.5) then
+        debugLog(
+            "WARN contentHeight mismatch content=%.2f expected=%.2f sumSections=%.2f gaps=%d",
+            contentHeight,
+            expectedContent,
+            sumSectionHeight,
+            measuredGapCount
+        )
+    end
+
+    local scrollContent = getScrollContent(host)
+    if scrollContent and type(scrollContent.GetHeight) == "function" then
+        local ok, actualHeight = pcall(scrollContent.GetHeight, scrollContent)
+        if ok then
+            local normalizedActual = sanitizeLength(actualHeight)
+            if numbersDiffer(normalizedActual, scrollChildHeight, 0.5) and normalizedActual + 0.5 < scrollChildHeight then
+                debugLog(
+                    "WARN scrollChild height smaller than requested actual=%.2f target=%.2f",
+                    normalizedActual,
+                    scrollChildHeight
+                )
+            end
+            local contentOnlyHeight = headerHeight + contentHeight + footerHeight
+            if normalizedActual + 0.5 < contentOnlyHeight then
+                debugLog(
+                    "WARN scrollChild height below content actual=%.2f content=%.2f",
+                    normalizedActual,
+                    contentOnlyHeight
+                )
+            end
+        end
+    end
 
     return contentHeight
 end
