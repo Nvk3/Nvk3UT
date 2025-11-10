@@ -1458,6 +1458,10 @@ local function registerPanel(displayTitle)
                     if Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.OnFavoritesChanged then
                         Nvk3UT.AchievementModel.OnFavoritesChanged()
                     end
+                    local cache = Nvk3UT and Nvk3UT.AchievementCache
+                    if cache and cache.OnOptionsChanged then
+                        cache.OnOptionsChanged({ key = "favoritesScope" })
+                    end
                     refreshAchievementTracker()
                     updateStatus()
                 end,
@@ -1476,6 +1480,10 @@ local function registerPanel(displayTitle)
                 setFunc = function(value)
                     local general = getGeneral()
                     general.recentWindow = value or 0
+                    local cache = Nvk3UT and Nvk3UT.AchievementCache
+                    if cache and cache.OnOptionsChanged then
+                        cache.OnOptionsChanged({ key = "recentWindow" })
+                    end
                     updateStatus()
                 end,
                 tooltip = "Wähle, welche Zeitspanne für Kürzlich gezählt/angezeigt wird.",
@@ -1493,6 +1501,10 @@ local function registerPanel(displayTitle)
                 setFunc = function(value)
                     local general = getGeneral()
                     general.recentMax = value or 100
+                    local cache = Nvk3UT and Nvk3UT.AchievementCache
+                    if cache and cache.OnOptionsChanged then
+                        cache.OnOptionsChanged({ key = "recentMax" })
+                    end
                     updateStatus()
                 end,
                 tooltip = "Hardcap für die Anzahl der Kürzlich-Einträge.",
@@ -1520,6 +1532,10 @@ local function registerPanel(displayTitle)
                         local features = getFeatures()
                         features[entry.key] = value
                         applyFeatureToggles()
+                        local cache = Nvk3UT and Nvk3UT.AchievementCache
+                        if cache and cache.OnOptionsChanged then
+                            cache.OnOptionsChanged({ key = entry.key })
+                        end
                     end,
                     default = true,
                 }

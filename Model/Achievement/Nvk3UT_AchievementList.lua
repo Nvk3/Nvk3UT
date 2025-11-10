@@ -8,6 +8,18 @@ local AchievementList = Nvk3UT.AchievementList
 
 local rawData
 
+local function DeepCopy(value)
+    if type(value) ~= "table" then
+        return value
+    end
+
+    local result = {}
+    for key, val in pairs(value) do
+        result[key] = DeepCopy(val)
+    end
+    return result
+end
+
 local function isDebugEnabled()
     local root = Nvk3UT
     return root and root.sv and root.sv.debug == true
@@ -594,6 +606,23 @@ function AchievementList:GetSection(name)
     end
 
     return nil
+end
+
+function AchievementList.ApplyCacheSnapshot(snapshot)
+    if type(snapshot) ~= "table" then
+        return false
+    end
+
+    rawData = DeepCopy(snapshot)
+    return true
+end
+
+function AchievementList.ExportCacheSnapshot()
+    if type(rawData) ~= "table" then
+        return nil
+    end
+
+    return DeepCopy(rawData)
 end
 
 return AchievementList

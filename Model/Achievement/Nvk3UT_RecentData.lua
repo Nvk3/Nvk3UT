@@ -7,6 +7,26 @@ Nvk3UT.RecentData = RecentData
 
 local defaults = { progress = {} }
 
+local cachedIds
+local cachedProgress
+
+local function DeepCopy(value)
+    if type(value) ~= "table" then
+        return value
+    end
+
+    local result = {}
+    for key, val in pairs(value) do
+        result[key] = DeepCopy(val)
+    end
+    return result
+end
+
+local function invalidateCache()
+    cachedIds = nil
+    cachedProgress = nil
+end
+
 local function ensureSavedVars()
     if not Nvk3UT._recentSV then
         Nvk3UT._recentSV = ZO_SavedVars:NewAccountWide("Nvk3UT_Data_Recent", 1, nil, defaults)
@@ -194,6 +214,7 @@ function RecentData.Touch(id, timestamp)
         return
     end
 
+    invalidateCache()
     local sv = ensureSavedVars()
     local storeId = normalizeIdForStorage(id)
     if not storeId then
@@ -201,6 +222,11 @@ function RecentData.Touch(id, timestamp)
     end
 
     sv.progress[storeId] = timestamp or now() or GetTimeStamp()
+
+    local cache = Nvk3UT and Nvk3UT.AchievementCache
+    if cache and cache.MarkDirty then
+        cache.MarkDirty("Recent")
+    end
 end
 
 function RecentData.Clear(id)
@@ -208,6 +234,7 @@ function RecentData.Clear(id)
         return
     end
 
+    invalidateCache()
     local sv = ensureSavedVars()
     local storeId = normalizeIdForStorage(id)
     if not storeId then
@@ -215,6 +242,11 @@ function RecentData.Clear(id)
     end
 
     sv.progress[storeId] = nil
+
+    local cache = Nvk3UT and Nvk3UT.AchievementCache
+    if cache and cache.MarkDirty then
+        cache.MarkDirty("Recent")
+    end
 end
 
 function RecentData.GetTimestamp(id)
@@ -321,6 +353,7 @@ function RecentData.BuildInitial()
         return 0
     end
 
+    invalidateCache()
     local INIT_CAP = 50
     local stamp = now() or GetTimeStamp()
 
@@ -474,6 +507,59 @@ function RecentData.RegisterEvents()
             RecentData.Clear(achievementId)
         end
     end)
+end
+
+function RecentData.ApplyCacheSnapshot(snapshot)
+    if type(snapshot) ~= "table" then
+        return false
+    end
+
+    invalidateCache()
+
+    local sv = ensureSavedVars()
+    if type(snapshot.progress) == "table" then
+        cachedProgress = DeepCopy(snapshot.progress)
+        for key in pairs(sv.progress) do
+            sv.progress[key] = nil
+        end
+        for key, value in pairs(cachedProgress) do
+            sv.progress[key] = value
+        end
+    else
+        cachedProgress = nil
+    end
+
+    if type(snapshot.ids) == "table" then
+        cachedIds = DeepCopy(snapshot.ids)
+    else
+        cachedIds = nil
+    end
+
+    return true
+end
+
+function RecentData.ExportCacheSnapshot()
+    local sv = ensureSavedVars()
+    local snapshot = { ids = {}, progress = {} }
+
+    if type(cachedIds) == "table" then
+        snapshot.ids = DeepCopy(cachedIds)
+    else
+        local list = RecentData.ListConfigured()
+        if type(list) == "table" then
+            snapshot.ids = DeepCopy(list)
+        end
+    end
+
+    if type(cachedProgress) == "table" then
+        snapshot.progress = DeepCopy(cachedProgress)
+    else
+        for key, value in pairs(sv.progress) do
+            snapshot.progress[key] = value
+        end
+    end
+
+    return snapshot
 end
 
 return RecentData

@@ -17,6 +17,20 @@ local monthKeys = {}
 local keyToName = {}
 local keyToList = {}
 
+local cachedSnapshot
+
+local function DeepCopy(value)
+    if type(value) ~= "table" then
+        return value
+    end
+
+    local result = {}
+    for key, val in pairs(value) do
+        result[key] = DeepCopy(val)
+    end
+    return result
+end
+
 local tableUnpack = table.unpack or unpack
 
 local function push(list, value)
@@ -276,6 +290,7 @@ local function scanAllAchievements()
         return left > right
     end)
 
+    cachedSnapshot = nil
     emitDebugMessage("Completed scan (months=%d, last50=%d)", #monthKeys, #last50)
 end
 
@@ -291,6 +306,7 @@ end
 function CompletedData.Rebuild()
     emitDebugMessage("Rebuild requested")
     built = false
+    cachedSnapshot = nil
 end
 
 function CompletedData.GetSubcategoryList()
@@ -377,6 +393,93 @@ end
 
 function CompletedData.GetCompletedMeta(achievementId)
     return buildMeta(achievementId)
+end
+
+function CompletedData.ApplyCacheSnapshot(snapshot)
+    if type(snapshot) ~= "table" then
+        return false
+    end
+
+    cachedSnapshot = nil
+
+    if type(snapshot.constants) == "table" and snapshot.constants.LAST50_KEY then
+        LAST50_KEY = snapshot.constants.LAST50_KEY
+    end
+
+    last50 = {}
+    monthKeys = {}
+    keyToName = {}
+    keyToList = {}
+
+    if type(snapshot.keys) == "table" then
+        monthKeys = DeepCopy(snapshot.keys)
+        table.sort(monthKeys, function(left, right)
+            return left > right
+        end)
+    end
+
+    if type(snapshot.names) == "table" and type(snapshot.keys) == "table" then
+        for index = 1, #snapshot.keys do
+            local key = snapshot.keys[index]
+            keyToName[key] = snapshot.names[index]
+        end
+    end
+
+    if type(snapshot.lists) == "table" then
+        for key, list in pairs(snapshot.lists) do
+            keyToList[key] = DeepCopy(list)
+        end
+    end
+
+    if type(snapshot.last50) == "table" then
+        last50 = DeepCopy(snapshot.last50)
+    elseif type(keyToList[LAST50_KEY]) == "table" then
+        last50 = DeepCopy(keyToList[LAST50_KEY])
+    end
+
+    cachedSnapshot = {
+        names = DeepCopy(snapshot.names or {}),
+        keys = DeepCopy(snapshot.keys or {}),
+        lists = DeepCopy(snapshot.lists or {}),
+        counts = DeepCopy(snapshot.counts or {}),
+        points = DeepCopy(snapshot.points or {}),
+        constants = DeepCopy(snapshot.constants or {}),
+        last50 = DeepCopy(snapshot.last50 or {}),
+    }
+
+    built = true
+    return true
+end
+
+function CompletedData.ExportCacheSnapshot()
+    ensureBuilt()
+
+    local snapshot = {
+        names = {},
+        keys = {},
+        lists = {},
+        counts = {},
+        points = {},
+        constants = CompletedData.Constants(),
+        last50 = DeepCopy(last50),
+    }
+
+    local names, keys = CompletedData.GetSubcategoryList()
+    if type(names) == "table" then
+        snapshot.names = DeepCopy(names)
+    end
+    if type(keys) == "table" then
+        snapshot.keys = DeepCopy(keys)
+        for index = 1, #keys do
+            local key = keys[index]
+            snapshot.lists[key] = DeepCopy(CompletedData.ListForKey(key))
+            local count, score = CompletedData.SummaryCountAndPointsForKey(key)
+            snapshot.counts[key] = count or 0
+            snapshot.points[key] = score or 0
+        end
+    end
+
+    return snapshot
 end
 
 return CompletedData
