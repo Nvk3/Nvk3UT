@@ -305,9 +305,7 @@ local function captureRecentSnapshot()
 
         local iterateProgress = recentData.IterateProgress
         if type(iterateProgress) == "function" then
-            local iterator, state, key = safeCallMulti(function()
-                return iterateProgress(recentData)
-            end)
+            local iterator, state, key = safeCallMulti(iterateProgress)
             if type(iterator) == "function" then
                 local progress = {}
                 for storedId, ts in iterator, state, key do
