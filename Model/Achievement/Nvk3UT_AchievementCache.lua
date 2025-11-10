@@ -40,6 +40,25 @@ local function getCategoriesNode()
     return root and root.categories
 end
 
+local unpack = table.unpack or unpack
+
+local function packArgs(...)
+    return { n = select("#", ...), ... }
+end
+
+local function unpackArgs(packed)
+    if not packed then
+        return
+    end
+
+    local count = packed.n or #packed
+    if count == 0 then
+        return
+    end
+
+    return unpack(packed, 1, count)
+end
+
 local function now()
     if GetTimeStamp then
         return GetTimeStamp()
@@ -80,16 +99,190 @@ local function safeCall(func, ...)
     return nil
 end
 
-local function safeCallMulti(func, ...)
-    if type(func) ~= "function" then
-        return nil
+local function debugTrace(err)
+    if debug and type(debug.traceback) == "function" then
+        return debug.traceback(tostring(err), 2)
     end
-    local results = { pcall(func, ...) }
-    if not results[1] then
-        return nil
+    return tostring(err)
+end
+
+local function appendIfCallable(target, candidate, context)
+    local candidateType = type(candidate)
+    if candidateType == "function" then
+        target[#target + 1] = candidate
+        return true
+    elseif candidateType == "table" then
+        local mt = getmetatable(candidate)
+        if mt and type(mt.__call) == "function" then
+            target[#target + 1] = candidate
+            return true
+        end
+
+        if type(candidate.fn) == "function" then
+            target[#target + 1] = candidate
+            return true
+        end
+
+        if type(candidate.obj) == "table" and type(candidate.method) == "string" then
+            local objMethod = candidate.obj[candidate.method]
+            if type(objMethod) == "function" then
+                target[#target + 1] = candidate
+                return true
+            end
+        end
+
+        if context and type(candidate.method) == "string" and type(context) == "table" then
+            local ctxMethod = context[candidate.method]
+            if type(ctxMethod) == "function" then
+                target[#target + 1] = { obj = context, method = candidate.method }
+                return true
+            end
+        end
+    elseif candidateType == "string" then
+        if type(context) == "table" then
+            local method = context[candidate]
+            if type(method) == "function" then
+                target[#target + 1] = { obj = context, method = candidate }
+                return true
+            end
+        end
     end
-    table.remove(results, 1)
-    return table.unpack(results)
+
+    return false
+end
+
+local function safeCallMulti(callbacks, optsOrArg, ...)
+    if callbacks == nil then
+        return 0, 0
+    end
+
+    local options
+    local argsPack
+    local hasAdditional = select("#", ...) > 0
+
+    if type(optsOrArg) == "table" and (optsOrArg.phase ~= nil or optsOrArg.ctx ~= nil or optsOrArg.obj ~= nil or optsOrArg.context ~= nil) then
+        options = optsOrArg
+        argsPack = hasAdditional and packArgs(...) or packArgs()
+    else
+        if optsOrArg == nil and not hasAdditional then
+            argsPack = packArgs()
+        else
+            argsPack = packArgs(optsOrArg, ...)
+        end
+    end
+
+    local callList = {}
+    local callbacksType = type(callbacks)
+    if callbacksType == "table" then
+        local mt = getmetatable(callbacks)
+        local treatAsArray = callbacks.fn == nil and callbacks.obj == nil and callbacks.method == nil and not (mt and type(mt.__call) == "function" and callbacks[1] == nil)
+        if treatAsArray then
+            for index = 1, #callbacks do
+                callList[#callList + 1] = callbacks[index]
+            end
+        else
+            callList[#callList + 1] = callbacks
+        end
+    elseif callbacksType == "function" or callbacksType == "string" then
+        callList[#callList + 1] = callbacks
+    end
+
+    if #callList == 0 then
+        return 0, 0
+    end
+
+    local okCount = 0
+    local errCount = 0
+    local firstSuccess
+
+    for index = 1, #callList do
+        local entry = callList[index]
+        local entryType = type(entry)
+        local fn
+        local ctx
+
+        if entryType == "function" then
+            fn = entry
+        elseif entryType == "table" then
+            local mt = getmetatable(entry)
+            if mt and type(mt.__call) == "function" then
+                fn = mt.__call
+                ctx = entry
+            elseif type(entry.fn) == "function" then
+                fn = entry.fn
+                ctx = entry.ctx
+            elseif type(entry.obj) == "table" and type(entry.method) == "string" then
+                local method = entry.obj[entry.method]
+                if type(method) == "function" then
+                    fn = method
+                    ctx = entry.obj
+                end
+            elseif type(entry.method) == "string" and type(entry.ctx) == "table" then
+                local method = entry.ctx[entry.method]
+                if type(method) == "function" then
+                    fn = method
+                    ctx = entry.ctx
+                end
+            elseif type(entry[1]) == "function" then
+                fn = entry[1]
+                ctx = entry.ctx or entry[2]
+            end
+        elseif entryType == "string" then
+            local optCtx = options and (options.ctx or options.obj or options.context)
+            if type(optCtx) == "table" then
+                local method = optCtx[entry]
+                if type(method) == "function" then
+                    fn = method
+                    ctx = optCtx
+                end
+            end
+        end
+
+        if type(fn) ~= "function" then
+            if options and options.phase then
+                logDebug("safeCallMulti: skipped invalid cb @index %d (phase=%s)", index, tostring(options.phase))
+            else
+                logDebug("safeCallMulti: skipped invalid cb @index %d", index)
+            end
+        else
+            local function runner()
+                if ctx ~= nil then
+                    return fn(ctx, unpackArgs(argsPack))
+                end
+                return fn(unpackArgs(argsPack))
+            end
+
+            local results = packArgs(xpcall(runner, debugTrace))
+            if results[1] then
+                okCount = okCount + 1
+                if not firstSuccess then
+                    local n = results.n or #results
+                    if n > 1 then
+                        firstSuccess = { n = n - 1 }
+                        for rIndex = 2, n do
+                            firstSuccess[#firstSuccess + 1] = results[rIndex]
+                        end
+                    else
+                        firstSuccess = { n = 0 }
+                    end
+                end
+            else
+                errCount = errCount + 1
+                local message = tostring(results[2])
+                if options and options.phase then
+                    logDebug("cb error (phase=%s): %s", tostring(options.phase), message)
+                else
+                    logDebug("cb error: %s", message)
+                end
+            end
+        end
+    end
+
+    if firstSuccess and (firstSuccess.n or #firstSuccess) > 0 then
+        return okCount, errCount, unpackArgs(firstSuccess)
+    end
+
+    return okCount, errCount
 end
 
 local function deepCopy(value)
@@ -303,10 +496,14 @@ local function captureRecentSnapshot()
             end
         end
 
-        local iterateProgress = recentData.IterateProgress
-        if type(iterateProgress) == "function" then
-            local iterator, state, key = safeCallMulti(iterateProgress)
-            if type(iterator) == "function" then
+        local progressCallbacks = {}
+        appendIfCallable(progressCallbacks, recentData.IterateProgress, recentData)
+
+        if #progressCallbacks == 0 then
+            logDebug("No callbacks registered for Recent progress (skipping)")
+        else
+            local okCount, _, iterator, state, key = safeCallMulti(progressCallbacks, { phase = "RecentProgress" })
+            if okCount > 0 and type(iterator) == "function" then
                 local progress = {}
                 for storedId, ts in iterator, state, key do
                     progress[storedId] = ts
@@ -373,12 +570,34 @@ local function buildCompletedCategory(categoriesNode, onDone)
     if completedModule then
         safeCall(completedModule.Rebuild)
 
-        local names, keys = safeCallMulti(completedModule.GetSubcategoryList)
+        local subcategoryCallbacks = {}
+        appendIfCallable(subcategoryCallbacks, completedModule.GetSubcategoryList, completedModule)
+
+        local names
+        local keys
+
+        if #subcategoryCallbacks == 0 then
+            logDebug("No callbacks registered for Completed subcategories (skipping)")
+        else
+            local okCount, _, resolvedNames, resolvedKeys = safeCallMulti(subcategoryCallbacks, { phase = "Completed:GetSubcategories" })
+            if okCount > 0 then
+                names = resolvedNames
+                keys = resolvedKeys
+            end
+        end
+
         if type(names) == "table" then
             snapshot.names = deepCopy(names)
         end
         if type(keys) == "table" then
             snapshot.keys = deepCopy(keys)
+        end
+
+        local summaryCallbacks = {}
+        appendIfCallable(summaryCallbacks, completedModule.SummaryCountAndPointsForKey, completedModule)
+        local hasSummaryCallbacks = #summaryCallbacks > 0
+        if not hasSummaryCallbacks then
+            logDebug("No callbacks registered for Completed summary (skipping)")
         end
 
         if type(keys) == "table" then
@@ -387,7 +606,16 @@ local function buildCompletedCategory(categoriesNode, onDone)
                 local list = safeCall(completedModule.ListForKey, key) or {}
                 snapshot.lists[key] = deepCopy(list)
 
-                local count, points = safeCallMulti(completedModule.SummaryCountAndPointsForKey, key)
+                local count
+                local points
+                if hasSummaryCallbacks then
+                    local okSummary, _, resolvedCount, resolvedPoints = safeCallMulti(summaryCallbacks, { phase = "Completed:Summary" }, key)
+                    if okSummary > 0 then
+                        count = resolvedCount
+                        points = resolvedPoints
+                    end
+                end
+
                 snapshot.counts[key] = count or (type(list) == "table" and #list or 0)
                 snapshot.points[key] = points or 0
             end
@@ -419,7 +647,24 @@ local function buildTodoCategory(categoriesNode, onDone)
     }
 
     if todoModule then
-        local names, keys, topIds = safeCallMulti(todoModule.GetSubcategoryList, false)
+        local subcategoryCallbacks = {}
+        appendIfCallable(subcategoryCallbacks, todoModule.GetSubcategoryList, todoModule)
+
+        local names
+        local keys
+        local topIds
+
+        if #subcategoryCallbacks == 0 then
+            logDebug("No callbacks registered for ToDo subcategories (skipping)")
+        else
+            local okCount, _, resolvedNames, resolvedKeys, resolvedTopIds = safeCallMulti(subcategoryCallbacks, { phase = "ToDo:GetSubcategories" }, false)
+            if okCount > 0 then
+                names = resolvedNames
+                keys = resolvedKeys
+                topIds = resolvedTopIds
+            end
+        end
+
         if type(names) == "table" then
             snapshot.names = deepCopy(names)
         end
