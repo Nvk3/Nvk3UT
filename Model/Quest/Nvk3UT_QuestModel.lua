@@ -518,6 +518,10 @@ function QuestModel.Shutdown()
     ResetBaseCategoryCache()
 end
 
+function QuestModel.GetSavedVars()
+    return questSavedVars
+end
+
 function QuestModel.GetSnapshot()
     return QuestModel.currentSnapshot
 end

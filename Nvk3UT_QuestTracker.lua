@@ -2571,19 +2571,24 @@ end
 local function EnsureSavedVars()
     Nvk3UT.sv = Nvk3UT.sv or {}
 
+    local questRoot =
+        (Nvk3UT.QuestModel and Nvk3UT.QuestModel.GetSavedVars and Nvk3UT.QuestModel.GetSavedVars())
+        or Nvk3UT.sv
+
     if QuestState and QuestState.Bind then
-        local saved = QuestState.Bind(Nvk3UT.sv)
+        local saved = QuestState.Bind(questRoot)
         state.saved = saved
         if QuestSelection and QuestSelection.Bind then
-            QuestSelection.Bind(Nvk3UT.sv, saved)
+            QuestSelection.Bind(questRoot, saved)
         end
     else
-        local saved = Nvk3UT.sv.QuestTracker or {}
-        Nvk3UT.sv.QuestTracker = saved
+        local root = questRoot or Nvk3UT.sv or {}
+        local saved = root.QuestTracker or {}
+        root.QuestTracker = saved
         state.saved = saved
         EnsureActiveSavedState()
         if QuestSelection and QuestSelection.Bind then
-            QuestSelection.Bind(Nvk3UT.sv, saved)
+            QuestSelection.Bind(root, saved)
         end
     end
 
