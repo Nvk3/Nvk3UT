@@ -13,6 +13,7 @@ local unpack = unpack or table.unpack
 Runtime._hostRef = Runtime._hostRef or setmetatable({}, WEAK_VALUE_MT)
 Runtime._dirty = Runtime._dirty or {}
 Runtime._dirty.quest = Runtime._dirty.quest == true
+Runtime._dirty.endeavor = Runtime._dirty.endeavor == true
 Runtime._dirty.achievement = Runtime._dirty.achievement == true
 Runtime._dirty.layout = Runtime._dirty.layout == true
 Runtime._queuedChannelsForLog = Runtime._queuedChannelsForLog or {}
@@ -26,6 +27,7 @@ Runtime._scheduled = Runtime._scheduled == true
 Runtime._scheduledCallId = Runtime._scheduledCallId or nil
 Runtime._initialized = Runtime._initialized == true
 Runtime._interactivityDirty = Runtime._interactivityDirty == true
+Runtime._endeavorVM = Runtime._endeavorVM
 
 local function debug(fmt, ...)
     if Addon and type(Addon.Debug) == "function" then
@@ -86,7 +88,7 @@ local function setHostWindow(hostWindow)
     ref.hostWindow = hostWindow
 end
 
-local DIRTY_CHANNEL_ORDER = { "quest", "achievement", "layout" }
+local DIRTY_CHANNEL_ORDER = { "quest", "endeavor", "achievement", "layout" }
 
 local function ensureDirtyState()
     local dirty = Runtime._dirty
@@ -96,6 +98,7 @@ local function ensureDirtyState()
     end
 
     dirty.quest = dirty.quest == true
+    dirty.endeavor = dirty.endeavor == true
     dirty.achievement = dirty.achievement == true
     dirty.layout = dirty.layout == true
 
@@ -201,6 +204,8 @@ local function updateTrackerGeometry(sectionId, trackerKey, tracker)
     if type(resolvedKey) ~= "string" then
         if sectionId == "achievement" then
             resolvedKey = "AchievementTracker"
+        elseif sectionId == "endeavor" then
+            resolvedKey = "Endeavor"
         else
             resolvedKey = "QuestTracker"
         end
@@ -209,6 +214,9 @@ local function updateTrackerGeometry(sectionId, trackerKey, tracker)
     local resolvedTracker = tracker
     if type(resolvedTracker) ~= "table" then
         resolvedTracker = rawget(Addon, resolvedKey)
+        if sectionId == "endeavor" and type(resolvedTracker) ~= "table" then
+            resolvedTracker = rawget(Addon, "EndeavorTracker")
+        end
     end
 
     if type(resolvedTracker) ~= "table" then
@@ -383,6 +391,96 @@ local function refreshQuestTracker(viewModel)
     return false
 end
 
+local function buildEndeavorViewModel()
+    local fallback = { items = {}, count = 0 }
+    local controller = rawget(Addon, "EndeavorTrackerController")
+    if type(controller) ~= "table" then
+        return fallback, false
+    end
+
+    local build = controller.BuildViewModel or controller.Build
+    if type(build) ~= "function" then
+        return fallback, false
+    end
+
+    local viewModel, invoked = fallback, false
+    safeCall(function()
+        local called, result = callWithOptionalSelf(controller, build, false)
+        if called and result ~= nil then
+            viewModel = result
+            invoked = true
+        end
+    end)
+
+    if viewModel == nil then
+        viewModel = fallback
+    end
+
+    return viewModel, invoked
+end
+
+local function refreshEndeavorTracker(viewModel)
+    local payload = type(viewModel) == "table" and viewModel or { items = {}, count = 0 }
+    local refreshed = false
+
+    safeCall(function()
+        local facade = rawget(Addon, "Endeavor")
+        if type(facade) == "table" then
+            local refresh = facade.Refresh or facade.RefreshWithViewModel or facade.RefreshFromViewModel
+            if type(refresh) == "function" then
+                local invoked = callWithOptionalSelf(facade, refresh, true, payload)
+                if invoked then
+                    refreshed = true
+                    return
+                end
+            end
+        end
+
+        local tracker = rawget(Addon, "EndeavorTracker")
+        if type(tracker) ~= "table" then
+            return
+        end
+
+        local refresh = tracker.Refresh or tracker.RefreshWithViewModel or tracker.RefreshFromViewModel
+        if type(refresh) ~= "function" then
+            return
+        end
+
+        local invoked = callWithOptionalSelf(tracker, refresh, true, payload)
+        if invoked then
+            refreshed = true
+        end
+    end)
+
+    return refreshed
+end
+
+local function getEndeavorHeight()
+    local facade = rawget(Addon, "Endeavor")
+    if type(facade) == "table" then
+        local getHeight = facade.GetHeight or facade.GetContentHeight or facade.GetSize
+        if type(getHeight) == "function" then
+            local invoked, measured = callWithOptionalSelf(facade, getHeight, true)
+            if invoked and measured ~= nil then
+                return normalizeLength(measured)
+            end
+        end
+    end
+
+    local tracker = rawget(Addon, "EndeavorTracker")
+    if type(tracker) == "table" then
+        local getHeight = tracker.GetHeight or tracker.GetContentHeight or tracker.GetSize
+        if type(getHeight) == "function" then
+            local invoked, measured = callWithOptionalSelf(tracker, getHeight, true)
+            if invoked and measured ~= nil then
+                return normalizeLength(measured)
+            end
+        end
+    end
+
+    return 0
+end
+
 local function buildAchievementViewModel()
     local controller = rawget(Addon, "AchievementTrackerController")
     if type(controller) ~= "table" then
@@ -456,7 +554,7 @@ end
 
 local function hasDirtyFlags()
     local dirty = ensureDirtyState()
-    return dirty.quest or dirty.achievement or dirty.layout
+    return dirty.quest or dirty.endeavor or dirty.achievement or dirty.layout
 end
 
 local function hasInteractivityWork()
@@ -517,7 +615,7 @@ function Runtime:QueueDirty(channel, opts)
     local applyAll = normalized == "all"
 
     if not applyAll then
-        local isKnown = normalized == "quest" or normalized == "achievement" or normalized == "layout"
+        local isKnown = normalized == "quest" or normalized == "endeavor" or normalized == "achievement" or normalized == "layout"
         if not isKnown then
             debug("Runtime: QueueDirty unknown channel '%s', defaulting to all", tostring(channel))
             applyAll = true
@@ -530,12 +628,18 @@ function Runtime:QueueDirty(channel, opts)
             if not dirty[key] then
                 dirty[key] = true
                 queuedLog[key] = true
+                if key == "endeavor" then
+                    debug("Runtime.QueueDirty: endeavor")
+                end
             end
         end
     else
         if not dirty[normalized] then
             dirty[normalized] = true
             queuedLog[normalized] = true
+            if normalized == "endeavor" then
+                debug("Runtime.QueueDirty: endeavor")
+            end
         end
     end
 
@@ -570,10 +674,12 @@ function Runtime:ProcessFrame(nowMs)
     local function process()
         local dirty = ensureDirtyState()
         local questDirty = dirty.quest == true
+        local endeavorDirty = dirty.endeavor == true
         local achievementDirty = dirty.achievement == true
         local layoutDirty = dirty.layout == true
 
         dirty.quest = false
+        dirty.endeavor = false
         dirty.achievement = false
         dirty.layout = false
 
@@ -586,6 +692,28 @@ function Runtime:ProcessFrame(nowMs)
             if questVmBuilt then
                 debug("Runtime: built quest view model")
             end
+        end
+
+        local endeavorViewModel, endeavorVmBuilt = nil, false
+        local endeavorRebuilt = false
+        if endeavorDirty or self._endeavorVM == nil then
+            endeavorViewModel, endeavorVmBuilt = buildEndeavorViewModel()
+            self._endeavorVM = endeavorViewModel
+            endeavorRebuilt = true
+            local endeavorCount = 0
+            if type(endeavorViewModel) == "table" and type(endeavorViewModel.items) == "table" then
+                endeavorCount = #endeavorViewModel.items
+            elseif type(endeavorViewModel) == "table" and type(endeavorViewModel.count) == "number" then
+                endeavorCount = endeavorViewModel.count
+            end
+            debug("Runtime.BuildVM.Endeavor: count=%s", tostring(endeavorCount))
+        else
+            endeavorViewModel = self._endeavorVM
+        end
+
+        if endeavorViewModel == nil then
+            endeavorViewModel = { items = {}, count = 0 }
+            self._endeavorVM = endeavorViewModel
         end
 
         local achievementViewModel, achievementVmBuilt = nil, false
@@ -607,6 +735,19 @@ function Runtime:ProcessFrame(nowMs)
             end
         end
 
+        local endeavorGeometryChanged = false
+        if endeavorDirty or endeavorVmBuilt or endeavorRebuilt then
+            local refreshedEndeavor = refreshEndeavorTracker(endeavorViewModel)
+            local endeavorHeight = getEndeavorHeight()
+            debug("Runtime.Refresh.Endeavor: height=%s", tostring(endeavorHeight))
+            if refreshedEndeavor then
+                endeavorGeometryChanged = updateTrackerGeometry("endeavor", "Endeavor")
+                if endeavorGeometryChanged then
+                    debug("Runtime: endeavor tracker refreshed (geometry changed)")
+                end
+            end
+        end
+
         local achievementGeometryChanged = false
         if achievementDirty or achievementVmBuilt then
             local refreshedAchievement = refreshAchievementTracker(achievementViewModel)
@@ -622,7 +763,7 @@ function Runtime:ProcessFrame(nowMs)
             end
         end
 
-        if layoutDirty or questGeometryChanged or achievementGeometryChanged then
+        if layoutDirty or questGeometryChanged or endeavorGeometryChanged or achievementGeometryChanged then
             if applyTrackerHostLayout() then
                 debugVisibility("Runtime: applied tracker host layout")
             end

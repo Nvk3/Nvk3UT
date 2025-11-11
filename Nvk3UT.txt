@@ -38,12 +38,19 @@ Journal/Nvk3UT_TodoSummary.lua
 Journal/Nvk3UT_CompletedCategory.lua
 Journal/Nvk3UT_CompletedSummary.lua
 ## === Runtime ===
+## Runtime order: Runtime -> Host -> HostLayout (Endeavor sits between Quest & Achievement at layout time)
 Runtime/Nvk3UT_TrackerRuntime.lua
 Runtime/Nvk3UT_TrackerHost.lua
 Runtime/Nvk3UT_TrackerHostLayout.lua
 ## === Tracker ===
+## Tracker order: Quest -> Endeavor -> Achievement
 Nvk3UT_QuestTracker.xml
 Nvk3UT_QuestTracker.lua
+## Endeavor files: Facade -> Tracker -> Rows -> Layout (no events in this token)
+Tracker/Endeavor/Nvk3UT_Endeavor.lua
+Tracker/Endeavor/Nvk3UT_EndeavorTracker.lua
+Tracker/Endeavor/Nvk3UT_EndeavorTrackerRows.lua
+Tracker/Endeavor/Nvk3UT_EndeavorTrackerLayout.lua
 Nvk3UT_AchievementTracker.xml
 Nvk3UT_AchievementTracker.lua
 ## === Events ===
