@@ -119,6 +119,29 @@ local function Num0(v)
     return 0
 end
 
+local function getEndeavorModule()
+    local addon = rawget(_G, addonName)
+    if type(addon) ~= "table" then
+        addon = Nvk3UT
+    end
+
+    if type(addon) ~= "table" then
+        return nil
+    end
+
+    local facade = rawget(addon, "Endeavor")
+    if type(facade) == "table" then
+        return facade
+    end
+
+    local tracker = rawget(addon, "EndeavorTracker")
+    if type(tracker) == "table" then
+        return tracker
+    end
+
+    return nil
+end
+
 local SECTION_ORDER = { "quest", "endeavor", "achievement" }
 
 local state = {
@@ -1351,7 +1374,7 @@ function TrackerHost.GetSectionTracker(sectionId)
     if sectionId == "quest" then
         return Nvk3UT and Nvk3UT.QuestTracker
     elseif sectionId == "endeavor" then
-        return Nvk3UT and Nvk3UT.EndeavorTracker
+        return getEndeavorModule()
     elseif sectionId == "achievement" then
         return Nvk3UT and Nvk3UT.AchievementTracker
     end
@@ -1607,7 +1630,7 @@ local function measureContentSize()
     local questWidth, questHeight = measureTrackerContent(state.questContainer, Nvk3UT and Nvk3UT.QuestTracker)
     local endeavorWidth, endeavorHeight = measureTrackerContent(
         state.endeavorContainer,
-        Nvk3UT and Nvk3UT.EndeavorTracker
+        getEndeavorModule()
     )
     local achievementWidth, achievementHeight = measureTrackerContent(
         state.achievementContainer,
@@ -1921,7 +1944,7 @@ refreshScroll = function(targetOffset)
     local _, questHeight = measureTrackerContent(state.questContainer, Nvk3UT and Nvk3UT.QuestTracker)
     local _, endeavorHeight = measureTrackerContent(
         state.endeavorContainer,
-        Nvk3UT and Nvk3UT.EndeavorTracker
+        getEndeavorModule()
     )
     local _, achievementHeight = measureTrackerContent(
         state.achievementContainer,
@@ -3033,9 +3056,24 @@ local function initTrackers(debugEnabled)
 
     local endeavorOpts = cloneTable(sv.EndeavorTracker or {})
     endeavorOpts.debug = debugEnabled
-    if Nvk3UT.EndeavorTracker and Nvk3UT.EndeavorTracker.Init and state.endeavorContainer then
-        debugLog("Initializing Endeavor tracker via TrackerHost")
-        pcall(Nvk3UT.EndeavorTracker.Init, state.endeavorContainer, endeavorOpts)
+    local endeavorModule = getEndeavorModule()
+    if endeavorModule and type(endeavorModule.Init) == "function" and state.endeavorContainer then
+        local addon = rawget(_G, addonName) or Nvk3UT
+        local moduleLabel = "tracker"
+        if type(addon) == "table" and rawget(addon, "Endeavor") == endeavorModule then
+            moduleLabel = "facade"
+        end
+
+        debugLog(string.format("Initializing Endeavor %s via TrackerHost", moduleLabel))
+
+        local args
+        if moduleLabel == "facade" then
+            args = { state.endeavorContainer }
+        else
+            args = { state.endeavorContainer, endeavorOpts }
+        end
+
+        pcall(endeavorModule.Init, unpack(args))
     end
 
     local achievementOpts = cloneTable(sv.AchievementTracker or {})
