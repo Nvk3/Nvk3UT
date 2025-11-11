@@ -3056,30 +3056,48 @@ local function initTrackers(debugEnabled)
 
     local endeavorOpts = cloneTable(sv.EndeavorTracker or {})
     endeavorOpts.debug = debugEnabled
-    local endeavorModule = getEndeavorModule()
-    if endeavorModule and type(endeavorModule.Init) == "function" and state.endeavorContainer then
-        local addon = rawget(_G, addonName) or Nvk3UT
-        local moduleLabel = "tracker"
-        if type(addon) == "table" and rawget(addon, "Endeavor") == endeavorModule then
-            moduleLabel = "facade"
-        end
+    local endeavorModuleLabel = nil
+    if state.endeavorContainer then
+        endeavorModuleLabel = safeCall(function()
+            local facade = rawget(Nvk3UT, "Endeavor")
+            if type(facade) == "table" and type(facade.Init) == "function" then
+                facade.Init(state.endeavorContainer)
+                return "facade"
+            end
 
-        debugLog(string.format("Initializing Endeavor %s via TrackerHost", moduleLabel))
+            local tracker = rawget(Nvk3UT, "EndeavorTracker") or getEndeavorModule()
+            if type(tracker) == "table" and type(tracker.Init) == "function" then
+                tracker.Init(state.endeavorContainer, endeavorOpts)
+                return "tracker"
+            end
 
-        local args
-        if moduleLabel == "facade" then
-            args = { state.endeavorContainer }
-        else
-            args = { state.endeavorContainer, endeavorOpts }
-        end
+            return nil
+        end)
+    end
 
-        pcall(endeavorModule.Init, unpack(args))
+    if endeavorModuleLabel then
+        debugLog(string.format("Host.Init: Endeavor wired via %s", endeavorModuleLabel))
     end
 
     local achievementOpts = cloneTable(sv.AchievementTracker or {})
     achievementOpts.debug = debugEnabled
     if Nvk3UT.AchievementTracker and Nvk3UT.AchievementTracker.Init and state.achievementContainer then
         pcall(Nvk3UT.AchievementTracker.Init, state.achievementContainer, achievementOpts)
+    end
+
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and type(runtime.QueueDirty) == "function" then
+        safeCall(function()
+            runtime:QueueDirty("endeavor")
+        end)
+
+        if endeavorModuleLabel == "facade" then
+            debugLog("Host.Init: Endeavor wired via facade and queued initial dirty")
+        elseif endeavorModuleLabel then
+            debugLog(string.format("Host.Init: Endeavor wired via %s and queued initial dirty", endeavorModuleLabel))
+        else
+            debugLog("Host.Init: Endeavor queued initial dirty (module unavailable)")
+        end
     end
 end
 

@@ -695,16 +695,18 @@ function Runtime:ProcessFrame(nowMs)
         end
 
         local endeavorViewModel, endeavorVmBuilt = nil, false
-        if endeavorDirty then
+        local endeavorRebuilt = false
+        if endeavorDirty or self._endeavorVM == nil then
             endeavorViewModel, endeavorVmBuilt = buildEndeavorViewModel()
             self._endeavorVM = endeavorViewModel
+            endeavorRebuilt = true
             local endeavorCount = 0
             if type(endeavorViewModel) == "table" and type(endeavorViewModel.items) == "table" then
                 endeavorCount = #endeavorViewModel.items
             elseif type(endeavorViewModel) == "table" and type(endeavorViewModel.count) == "number" then
                 endeavorCount = endeavorViewModel.count
             end
-            debug("Runtime.BuildVM: endeavor items=%s", tostring(endeavorCount))
+            debug("Runtime.BuildVM.Endeavor: count=%s", tostring(endeavorCount))
         else
             endeavorViewModel = self._endeavorVM
         end
@@ -734,10 +736,10 @@ function Runtime:ProcessFrame(nowMs)
         end
 
         local endeavorGeometryChanged = false
-        if endeavorDirty or endeavorVmBuilt then
+        if endeavorDirty or endeavorVmBuilt or endeavorRebuilt then
             local refreshedEndeavor = refreshEndeavorTracker(endeavorViewModel)
             local endeavorHeight = getEndeavorHeight()
-            debug("Runtime.Refresh: endeavor height=%s", tostring(endeavorHeight))
+            debug("Runtime.Refresh.Endeavor: height=%s", tostring(endeavorHeight))
             if refreshedEndeavor then
                 endeavorGeometryChanged = updateTrackerGeometry("endeavor", "Endeavor")
                 if endeavorGeometryChanged then
