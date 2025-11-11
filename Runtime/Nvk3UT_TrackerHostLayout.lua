@@ -4,8 +4,75 @@ local Addon = Nvk3UT
 Addon.TrackerHostLayout = Addon.TrackerHostLayout or {}
 local Layout = Addon.TrackerHostLayout
 
-local DEFAULT_SECTION_ORDER = { "quest", "endeavor", "achievement" }
+local SECTION_DEFINITIONS = {
+    questSectionContainer = { id = "quest", displayName = "Quest" },
+    endeavorSectionContainer = { id = "endeavor", displayName = "Endeavor" },
+    achievementSectionContainer = { id = "achievement", displayName = "Achievement" },
+}
+
+local DEFAULT_SECTION_ORDER = {
+    "questSectionContainer",
+    "endeavorSectionContainer",
+    "achievementSectionContainer",
+}
+
+local function copyOrder(order)
+    local copy = {}
+    for index, value in ipairs(order) do
+        copy[index] = value
+    end
+    return copy
+end
+
+local SECTION_ORDER = copyOrder(DEFAULT_SECTION_ORDER)
+
+local function debugLog(fmt, ...)
+    local diagnostics = Addon and Addon.Diagnostics
+    if diagnostics and type(diagnostics.DebugIfEnabled) == "function" then
+        diagnostics:DebugIfEnabled("TrackerHostLayout", fmt, ...)
+        return
+    end
+
+    if Addon then
+        local debugFn = Addon.Debug
+        if type(debugFn) == "function" then
+            pcall(debugFn, Addon, fmt, ...)
+        end
+    end
+end
 local ANCHOR_TOLERANCE = 0.01
+
+local function normalizeSectionOrder(orderTable)
+    local sanitized = {}
+    local seen = {}
+
+    if type(orderTable) == "table" then
+        for _, key in ipairs(orderTable) do
+            if type(key) == "string" and SECTION_DEFINITIONS[key] and not seen[key] then
+                sanitized[#sanitized + 1] = key
+                seen[key] = true
+            end
+        end
+    end
+
+    for _, key in ipairs(DEFAULT_SECTION_ORDER) do
+        if not seen[key] then
+            sanitized[#sanitized + 1] = key
+            seen[key] = true
+        end
+    end
+
+    return sanitized
+end
+
+function Layout.GetSectionOrder()
+    return copyOrder(SECTION_ORDER)
+end
+
+function Layout.SetSectionOrder(orderTable)
+    SECTION_ORDER = normalizeSectionOrder(orderTable)
+    return Layout.GetSectionOrder()
+end
 
 local function getHost(host)
     if type(host) == "table" then
@@ -19,15 +86,8 @@ local function getHost(host)
     return nil
 end
 
-local function getSectionOrder(host)
-    if host and type(host.GetSectionOrder) == "function" then
-        local order = host.GetSectionOrder()
-        if type(order) == "table" and #order > 0 then
-            return order
-        end
-    end
-
-    return DEFAULT_SECTION_ORDER
+local function getSectionOrder()
+    return Layout.GetSectionOrder()
 end
 
 local function getSectionGap(host)
@@ -56,8 +116,14 @@ local function getSectionParent(host)
     return nil
 end
 
-local function getSectionContainer(host, sectionId)
+local function getSectionContainer(host, sectionKey)
+    if type(host) == "table" and host[sectionKey] ~= nil then
+        return host[sectionKey]
+    end
+
     if host and type(host.GetSectionContainer) == "function" then
+        local definition = SECTION_DEFINITIONS[sectionKey]
+        local sectionId = definition and definition.id or sectionKey
         return host.GetSectionContainer(sectionId)
     end
 
@@ -718,16 +784,10 @@ function Layout.ApplyLayout(host, sizes)
         sizes = Layout.UpdateHeaderFooterSizes(host)
     end
 
-    local order = getSectionOrder(host)
-    local firstSection = order[1]
+    local order = getSectionOrder()
 
     local parent = getSectionParent(host)
-    local firstContainer = getSectionContainer(host, firstSection)
-
-    if not parent or not firstContainer then
-        if not firstContainer then
-            reportMissing(host, firstSection)
-        end
+    if not parent then
         return 0
     end
 
@@ -743,11 +803,13 @@ function Layout.ApplyLayout(host, sizes)
 
     local totalHeight = topPadding
     local previousVisible
-    local visibleCount = 0
+    local placedCount = 0
     local currentTop = startOffset
 
-    for _, sectionId in ipairs(order) do
-        local container = getSectionContainer(host, sectionId)
+    for _, sectionKey in ipairs(order) do
+        local definition = SECTION_DEFINITIONS[sectionKey]
+        local sectionId = definition and definition.id or sectionKey
+        local container = getSectionContainer(host, sectionKey)
         if not container then
             reportMissing(host, sectionId)
         else
@@ -759,45 +821,34 @@ function Layout.ApplyLayout(host, sizes)
                 if limitBottom and predictedBottom > (limitBottom + ANCHOR_TOLERANCE) then
                     break
                 end
-            end
+                local anchorTarget = previousVisible or parent
+                local anchors
 
-            local anchors
-            local offsetY = 0
-            local anchorTarget
+                if previousVisible then
+                    anchors = {
+                        { point = TOPLEFT, relativeTo = anchorTarget, relativePoint = BOTTOMLEFT, offsetX = 0, offsetY = gap },
+                        { point = TOPRIGHT, relativeTo = anchorTarget, relativePoint = BOTTOMRIGHT, offsetX = 0, offsetY = gap },
+                    }
+                else
+                    anchors = {
+                        { point = TOPLEFT, relativeTo = anchorTarget, relativePoint = TOPLEFT, offsetX = 0, offsetY = startOffset },
+                        { point = TOPRIGHT, relativeTo = anchorTarget, relativePoint = TOPRIGHT, offsetX = 0, offsetY = startOffset },
+                    }
+                end
 
-            if previousVisible then
-                anchorTarget = previousVisible
-                offsetY = gap
-                anchors = {
-                    { point = TOPLEFT, relativeTo = anchorTarget, relativePoint = BOTTOMLEFT, offsetX = 0, offsetY = offsetY },
-                    { point = TOPRIGHT, relativeTo = anchorTarget, relativePoint = BOTTOMRIGHT, offsetX = 0, offsetY = offsetY },
-                }
-            else
-                anchorTarget = parent
-                anchors = {
-                    { point = TOPLEFT, relativeTo = anchorTarget, relativePoint = TOPLEFT, offsetX = 0, offsetY = offsetY },
-                    { point = TOPRIGHT, relativeTo = anchorTarget, relativePoint = TOPRIGHT, offsetX = 0, offsetY = offsetY },
-                }
-            end
+                applyAnchors(container, anchors)
 
-            if not previousVisible then
-                anchors[1].offsetY = startOffset
-                anchors[2].offsetY = startOffset
-            end
-
-            applyAnchors(container, anchors)
-            reportAnchored(host, sectionId)
-
-            if sectionVisible then
-                if visibleCount > 0 then
+                if placedCount > 0 then
                     totalHeight = totalHeight + gap
                 end
 
                 totalHeight = totalHeight + height
                 currentTop = currentTop + height + gap
                 previousVisible = container
-                visibleCount = visibleCount + 1
+                placedCount = placedCount + 1
             end
+
+            reportAnchored(host, sectionId)
         end
     end
 
@@ -808,6 +859,14 @@ function Layout.ApplyLayout(host, sizes)
     end
 
     Layout.UpdateScrollAreaHeight(host, totalHeight, sizes)
+
+    local orderLabels = {}
+    for index, key in ipairs(order) do
+        local definition = SECTION_DEFINITIONS[key]
+        orderLabels[index] = definition and definition.displayName or tostring(key)
+    end
+
+    debugLog("HostLayout: section order = %s; placed=%d", table.concat(orderLabels, " → "), placedCount)
 
     return totalHeight
 end

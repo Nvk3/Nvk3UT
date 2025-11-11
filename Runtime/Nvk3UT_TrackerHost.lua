@@ -6,6 +6,10 @@ Nvk3UT.UI = Nvk3UT.UI or {}
 local TrackerHost = {}
 TrackerHost.__index = TrackerHost
 
+TrackerHost.questSectionContainer = nil
+TrackerHost.endeavorSectionContainer = nil
+TrackerHost.achievementSectionContainer = nil
+
 local ROOT_CONTROL_NAME = addonName .. "_UI_Root"
 local QUEST_CONTAINER_NAME = addonName .. "_QuestContainer"
 local ENDEAVOR_CONTAINER_NAME = addonName .. "_EndeavorContainer"
@@ -1749,9 +1753,6 @@ end
 
 local function anchorContainers()
     local scrollContent = state.scrollContent or state.root
-    local questContainer = state.questContainer
-    local endeavorContainer = state.endeavorContainer
-    local achievementContainer = state.achievementContainer
     local headerBar = state.headerBar
     local contentStack = state.contentStack
     local footerBar = state.footerBar
@@ -1813,43 +1814,6 @@ local function anchorContainers()
     if layoutModule and type(layoutModule.ApplyLayout) == "function" then
         layoutModule.ApplyLayout(TrackerHost)
         return
-    end
-
-    if not questContainer then
-        TrackerHost.ReportSectionMissing("quest")
-        return
-    end
-
-    if questContainer.ClearAnchors then
-        questContainer:ClearAnchors()
-        questContainer:SetAnchor(TOPLEFT, parent, TOPLEFT, 0, 0)
-        questContainer:SetAnchor(TOPRIGHT, parent, TOPRIGHT, 0, 0)
-    end
-    TrackerHost.ReportSectionAnchored("quest")
-
-    local previousAnchorTarget = questContainer
-
-    if endeavorContainer then
-        if endeavorContainer.ClearAnchors then
-            endeavorContainer:ClearAnchors()
-            endeavorContainer:SetAnchor(TOPLEFT, questContainer, BOTTOMLEFT, 0, 0)
-            endeavorContainer:SetAnchor(TOPRIGHT, questContainer, BOTTOMRIGHT, 0, 0)
-        end
-        TrackerHost.ReportSectionAnchored("endeavor")
-        previousAnchorTarget = endeavorContainer
-    else
-        TrackerHost.ReportSectionMissing("endeavor")
-    end
-
-    if achievementContainer then
-        if achievementContainer.ClearAnchors then
-            achievementContainer:ClearAnchors()
-            achievementContainer:SetAnchor(TOPLEFT, previousAnchorTarget, BOTTOMLEFT, 0, 0)
-            achievementContainer:SetAnchor(TOPRIGHT, previousAnchorTarget, BOTTOMRIGHT, 0, 0)
-        end
-        TrackerHost.ReportSectionAnchored("achievement")
-    else
-        TrackerHost.ReportSectionMissing("achievement")
     end
 end
 
@@ -2410,6 +2374,7 @@ local function createContainers()
                 adjustScroll(delta)
             end)
             state.questContainer = questContainer
+            TrackerHost.questSectionContainer = questContainer
             Nvk3UT.UI.QuestContainer = questContainer
         end
     end
@@ -2436,6 +2401,7 @@ local function createContainers()
                 adjustScroll(delta)
             end)
             state.endeavorContainer = endeavorContainer
+            TrackerHost.endeavorSectionContainer = endeavorContainer
             Nvk3UT.UI.EndeavorContainer = endeavorContainer
         end
     end
@@ -2456,6 +2422,7 @@ local function createContainers()
                 adjustScroll(delta)
             end)
             state.achievementContainer = achievementContainer
+            TrackerHost.achievementSectionContainer = achievementContainer
             Nvk3UT.UI.AchievementContainer = achievementContainer
         end
     end
@@ -3464,6 +3431,7 @@ function TrackerHost.Shutdown()
         state.achievementContainer:SetParent(nil)
     end
     state.achievementContainer = nil
+    TrackerHost.achievementSectionContainer = nil
     Nvk3UT.UI.AchievementContainer = nil
 
     if state.endeavorContainer then
@@ -3471,6 +3439,7 @@ function TrackerHost.Shutdown()
         state.endeavorContainer:SetParent(nil)
     end
     state.endeavorContainer = nil
+    TrackerHost.endeavorSectionContainer = nil
     Nvk3UT.UI.EndeavorContainer = nil
 
     if state.questContainer then
@@ -3478,6 +3447,7 @@ function TrackerHost.Shutdown()
         state.questContainer:SetParent(nil)
     end
     state.questContainer = nil
+    TrackerHost.questSectionContainer = nil
     Nvk3UT.UI.QuestContainer = nil
 
     if state.footerBar then
