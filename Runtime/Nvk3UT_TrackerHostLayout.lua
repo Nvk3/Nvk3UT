@@ -16,6 +16,8 @@ local DEFAULT_SECTION_ORDER = {
     "achievementSectionContainer",
 }
 
+local SECTION_STACK_GAP = 0
+
 local function copyOrder(order)
     local copy = {}
     for index, value in ipairs(order) do
@@ -88,21 +90,6 @@ end
 
 local function getSectionOrder()
     return Layout.GetSectionOrder()
-end
-
-local function getSectionGap(host)
-    if host and type(host.GetSectionGap) == "function" then
-        local gap = host.GetSectionGap()
-        gap = tonumber(gap)
-        if gap then
-            if gap < 0 then
-                gap = 0
-            end
-            return gap
-        end
-    end
-
-    return 0
 end
 
 local function getSectionParent(host)
@@ -791,7 +778,7 @@ function Layout.ApplyLayout(host, sizes)
         return 0
     end
 
-    local gap = getSectionGap(host)
+    local gap = SECTION_STACK_GAP
 
     local startOffset = sanitizeLength(sizes and sizes.contentTopY)
     local topPadding = sanitizeLength(sizes and sizes.contentTopPadding)
@@ -866,7 +853,12 @@ function Layout.ApplyLayout(host, sizes)
         orderLabels[index] = definition and definition.displayName or tostring(key)
     end
 
-    debugLog("HostLayout: section order = %s; placed=%d", table.concat(orderLabels, " → "), placedCount)
+    debugLog(
+        "HostLayout: section stack gap = %dpx (%s); placed=%d",
+        SECTION_STACK_GAP,
+        table.concat(orderLabels, " → "),
+        placedCount
+    )
 
     return totalHeight
 end

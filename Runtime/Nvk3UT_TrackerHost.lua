@@ -1332,14 +1332,6 @@ function TrackerHost.GetSectionParent()
 end
 
 function TrackerHost.GetSectionGap()
-    local layout = state.layout or ensureLayoutSettings()
-    if layout and layout.sectionGap ~= nil then
-        local gap = tonumber(layout.sectionGap)
-        if gap then
-            return math.max(0, gap)
-        end
-    end
-
     return 0
 end
 
@@ -1632,7 +1624,7 @@ local function measureContentSize()
     local questVisible = questHeight > 0
     local endeavorVisible = endeavorHeight > 0
     local achievementVisible = achievementHeight > 0
-    local gap = math.max(0, Num0(TrackerHost.GetSectionGap()))
+    local gap = 0
 
     if questVisible then
         totalHeight = totalHeight + questHeight
@@ -1940,7 +1932,7 @@ refreshScroll = function(targetOffset)
     endeavorHeight = math.max(0, Num0(endeavorHeight))
     achievementHeight = math.max(0, Num0(achievementHeight))
 
-    local gap = math.max(0, Num0(TrackerHost.GetSectionGap()))
+    local gap = 0
 
     local questVisible = questHeight > 0
     local endeavorVisible = endeavorHeight > 0
