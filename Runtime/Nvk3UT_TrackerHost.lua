@@ -8,6 +8,7 @@ TrackerHost.__index = TrackerHost
 
 local ROOT_CONTROL_NAME = addonName .. "_UI_Root"
 local QUEST_CONTAINER_NAME = addonName .. "_QuestContainer"
+local ENDEAVOR_CONTAINER_NAME = addonName .. "_EndeavorContainer"
 local ACHIEVEMENT_CONTAINER_NAME = addonName .. "_AchievementContainer"
 local SCROLL_CONTAINER_NAME = addonName .. "_ScrollContainer"
 local SCROLL_CONTENT_NAME = SCROLL_CONTAINER_NAME .. "_Content"
@@ -81,6 +82,14 @@ local DEFAULT_TRACKER_COLORS = {
             activeTitle = { r = 1, g = 1, b = 1, a = 1 },
         },
     },
+    endeavorTracker = {
+        colors = {
+            categoryTitle = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
+            objectiveText = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
+            entryTitle = { r = 1, g = 1, b = 0, a = 1 },
+            activeTitle = { r = 1, g = 1, b = 1, a = 1 },
+        },
+    },
     achievementTracker = {
         colors = {
             categoryTitle = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
@@ -100,7 +109,7 @@ local DEFAULT_HOST_SETTINGS = {
 local LEFT_MOUSE_BUTTON = _G.MOUSE_BUTTON_INDEX_LEFT or 1
 local unpack = unpack or table.unpack
 
-local SECTION_ORDER = { "quest", "achievement" }
+local SECTION_ORDER = { "quest", "endeavor", "achievement" }
 
 local state = {
     initialized = false,
@@ -119,6 +128,7 @@ local state = {
     deferredRefreshScheduled = false,
     pendingDeferredOffset = nil,
     questContainer = nil,
+    endeavorContainer = nil,
     achievementContainer = nil,
     contentStack = nil,
     headerBar = nil,
@@ -132,6 +142,7 @@ local state = {
     hostSettings = nil,
     anchorWarnings = {
         questMissing = false,
+        endeavorMissing = false,
         achievementMissing = false,
     },
     previousDefaultQuestTrackerHidden = nil,
@@ -1325,6 +1336,8 @@ end
 function TrackerHost.GetSectionContainer(sectionId)
     if sectionId == "quest" then
         return state.questContainer
+    elseif sectionId == "endeavor" then
+        return state.endeavorContainer
     elseif sectionId == "achievement" then
         return state.achievementContainer
     end
@@ -1335,6 +1348,8 @@ end
 function TrackerHost.GetSectionTracker(sectionId)
     if sectionId == "quest" then
         return Nvk3UT and Nvk3UT.QuestTracker
+    elseif sectionId == "endeavor" then
+        return Nvk3UT and Nvk3UT.EndeavorTracker
     elseif sectionId == "achievement" then
         return Nvk3UT and Nvk3UT.AchievementTracker
     end
@@ -1478,6 +1493,11 @@ function TrackerHost.ReportSectionMissing(sectionId)
             debugLog("Quest container not ready for anchoring")
             state.anchorWarnings.questMissing = true
         end
+    elseif sectionId == "endeavor" then
+        if not state.anchorWarnings.endeavorMissing then
+            debugLog("Endeavor container not ready for anchoring")
+            state.anchorWarnings.endeavorMissing = true
+        end
     elseif sectionId == "achievement" then
         if not state.anchorWarnings.achievementMissing then
             debugLog("Achievement container not ready for anchoring")
@@ -1489,6 +1509,8 @@ end
 function TrackerHost.ReportSectionAnchored(sectionId)
     if sectionId == "quest" then
         state.anchorWarnings.questMissing = false
+    elseif sectionId == "endeavor" then
+        state.anchorWarnings.endeavorMissing = false
     elseif sectionId == "achievement" then
         state.anchorWarnings.achievementMissing = false
     end
@@ -1567,29 +1589,38 @@ local function measureContentSize()
     end
 
     local questWidth, questHeight = measureTrackerContent(state.questContainer, Nvk3UT and Nvk3UT.QuestTracker)
+    local endeavorWidth, endeavorHeight = measureTrackerContent(
+        state.endeavorContainer,
+        Nvk3UT and Nvk3UT.EndeavorTracker
+    )
     local achievementWidth, achievementHeight = measureTrackerContent(
         state.achievementContainer,
         Nvk3UT and Nvk3UT.AchievementTracker
     )
 
-    local questVisible = questHeight > 0
-    local achievementVisible = achievementHeight > 0
+    local sections = {
+        { width = questWidth, height = questHeight },
+        { width = endeavorWidth, height = endeavorHeight },
+        { width = achievementWidth, height = achievementHeight },
+    }
 
-    if questVisible then
-        totalHeight = totalHeight + questHeight
-    end
-
-    if achievementVisible then
-        if questVisible then
-            totalHeight = totalHeight + TrackerHost.GetSectionGap()
+    local visibleCount = 0
+    for _, section in ipairs(sections) do
+        local height = math.max(0, tonumber(section.height) or 0)
+        section.visible = height > 0
+        if section.visible then
+            if visibleCount > 0 then
+                totalHeight = totalHeight + TrackerHost.GetSectionGap()
+            end
+            totalHeight = totalHeight + height
+            visibleCount = visibleCount + 1
         end
-        totalHeight = totalHeight + achievementHeight
     end
 
     totalHeight = totalHeight + topPadding + bottomPadding
     totalHeight = totalHeight + math.max(0, headerHeight) + math.max(0, footerHeight)
 
-    maxWidth = math.max(maxWidth, headerWidth, footerWidth, questWidth, achievementWidth)
+    maxWidth = math.max(maxWidth, headerWidth, footerWidth, questWidth, endeavorWidth, achievementWidth)
 
     return maxWidth, totalHeight
 end
@@ -1688,6 +1719,7 @@ end
 local function anchorContainers()
     local scrollContent = state.scrollContent or state.root
     local questContainer = state.questContainer
+    local endeavorContainer = state.endeavorContainer
     local achievementContainer = state.achievementContainer
     local headerBar = state.headerBar
     local contentStack = state.contentStack
@@ -1754,6 +1786,8 @@ local function anchorContainers()
 
     if not questContainer then
         TrackerHost.ReportSectionMissing("quest")
+        TrackerHost.ReportSectionMissing("endeavor")
+        TrackerHost.ReportSectionMissing("achievement")
         return
     end
 
@@ -1764,11 +1798,23 @@ local function anchorContainers()
     end
     TrackerHost.ReportSectionAnchored("quest")
 
+    if endeavorContainer then
+        if endeavorContainer.ClearAnchors then
+            endeavorContainer:ClearAnchors()
+            endeavorContainer:SetAnchor(TOPLEFT, questContainer, BOTTOMLEFT, 0, 0)
+            endeavorContainer:SetAnchor(TOPRIGHT, questContainer, BOTTOMRIGHT, 0, 0)
+        end
+        TrackerHost.ReportSectionAnchored("endeavor")
+    else
+        TrackerHost.ReportSectionMissing("endeavor")
+    end
+
     if achievementContainer then
         if achievementContainer.ClearAnchors then
             achievementContainer:ClearAnchors()
-            achievementContainer:SetAnchor(TOPLEFT, questContainer, BOTTOMLEFT, 0, 0)
-            achievementContainer:SetAnchor(TOPRIGHT, questContainer, BOTTOMRIGHT, 0, 0)
+            local anchorTarget = endeavorContainer or questContainer
+            achievementContainer:SetAnchor(TOPLEFT, anchorTarget, BOTTOMLEFT, 0, 0)
+            achievementContainer:SetAnchor(TOPRIGHT, anchorTarget, BOTTOMRIGHT, 0, 0)
         end
         TrackerHost.ReportSectionAnchored("achievement")
     else
@@ -1886,19 +1932,29 @@ refreshScroll = function(targetOffset)
     end
 
     local _, questHeight = measureTrackerContent(state.questContainer, Nvk3UT and Nvk3UT.QuestTracker)
+    local _, endeavorHeight = measureTrackerContent(
+        state.endeavorContainer,
+        Nvk3UT and Nvk3UT.EndeavorTracker
+    )
     local _, achievementHeight = measureTrackerContent(
         state.achievementContainer,
         Nvk3UT and Nvk3UT.AchievementTracker
     )
 
     questHeight = math.max(0, tonumber(questHeight) or 0)
+    endeavorHeight = math.max(0, tonumber(endeavorHeight) or 0)
     achievementHeight = math.max(0, tonumber(achievementHeight) or 0)
 
     local questVisible = questHeight > 0
+    local endeavorVisible = endeavorHeight > 0
     local achievementVisible = achievementHeight > 0
 
     if state.questContainer and state.questContainer.SetHeight then
         state.questContainer:SetHeight(questHeight)
+    end
+
+    if state.endeavorContainer and state.endeavorContainer.SetHeight then
+        state.endeavorContainer:SetHeight(endeavorHeight)
     end
 
     if state.achievementContainer and state.achievementContainer.SetHeight then
@@ -1917,15 +1973,22 @@ refreshScroll = function(targetOffset)
         local topPadding = math.max(0, tonumber(sizes.contentTopPadding) or 0)
         local bottomPadding = math.max(0, tonumber(sizes.contentBottomPadding) or 0)
 
+        local sections = {
+            { visible = questVisible, height = questHeight },
+            { visible = endeavorVisible, height = endeavorHeight },
+            { visible = achievementVisible, height = achievementHeight },
+        }
+
         local contentStackHeight = topPadding
-        if questVisible then
-            contentStackHeight = contentStackHeight + questHeight
-        end
-        if achievementVisible then
-            if questVisible then
-                contentStackHeight = contentStackHeight + TrackerHost.GetSectionGap()
+        local previousVisible = false
+        for _, section in ipairs(sections) do
+            if section.visible and section.height > 0 then
+                if previousVisible then
+                    contentStackHeight = contentStackHeight + TrackerHost.GetSectionGap()
+                end
+                contentStackHeight = contentStackHeight + section.height
+                previousVisible = true
             end
-            contentStackHeight = contentStackHeight + achievementHeight
         end
         contentStackHeight = contentStackHeight + bottomPadding
         contentStackHeight = math.max(0, contentStackHeight)
@@ -2010,15 +2073,22 @@ refreshScroll = function(targetOffset)
         local topPadding = 0
         local bottomPadding = 0
 
+        local sections = {
+            { visible = questVisible, height = questHeight },
+            { visible = endeavorVisible, height = endeavorHeight },
+            { visible = achievementVisible, height = achievementHeight },
+        }
+
         local contentStackHeight = topPadding
-        if questVisible then
-            contentStackHeight = contentStackHeight + questHeight
-        end
-        if achievementVisible then
-            if questVisible then
-                contentStackHeight = contentStackHeight + TrackerHost.GetSectionGap()
+        local previousVisible = false
+        for _, section in ipairs(sections) do
+            if section.visible and section.height > 0 then
+                if previousVisible then
+                    contentStackHeight = contentStackHeight + TrackerHost.GetSectionGap()
+                end
+                contentStackHeight = contentStackHeight + section.height
+                previousVisible = true
             end
-            contentStackHeight = contentStackHeight + achievementHeight
         end
         contentStackHeight = contentStackHeight + bottomPadding
         contentStackHeight = math.max(0, contentStackHeight)
@@ -2279,6 +2349,38 @@ local function createContainers()
             end)
             state.questContainer = questContainer
             Nvk3UT.UI.QuestContainer = questContainer
+        end
+    end
+
+    if contentParent then
+        local endeavorContainer = state.endeavorContainer or _G[ENDEAVOR_CONTAINER_NAME]
+        if not endeavorContainer then
+            local ok, control = pcall(
+                WINDOW_MANAGER.CreateControlFromVirtual,
+                WINDOW_MANAGER,
+                ENDEAVOR_CONTAINER_NAME,
+                contentParent,
+                "Nvk3UT_SectionContainerTemplate"
+            )
+            if ok then
+                endeavorContainer = control
+            end
+        else
+            endeavorContainer:SetParent(contentParent)
+        end
+        if not endeavorContainer then
+            endeavorContainer = WINDOW_MANAGER:CreateControl(ENDEAVOR_CONTAINER_NAME, contentParent, CT_CONTROL)
+        end
+        if endeavorContainer then
+            endeavorContainer:SetMouseEnabled(false)
+            if endeavorContainer.SetResizeToFitDescendents then
+                endeavorContainer:SetResizeToFitDescendents(false)
+            end
+            endeavorContainer:SetHandler("OnMouseWheel", function(_, delta)
+                adjustScroll(delta)
+            end)
+            state.endeavorContainer = endeavorContainer
+            Nvk3UT.UI.EndeavorContainer = endeavorContainer
         end
     end
 
@@ -2914,6 +3016,17 @@ local function initTrackers(debugEnabled)
         pcall(Nvk3UT.QuestTracker.Init, state.questContainer, questOpts)
     end
 
+    local endeavorOpts = cloneTable(sv.EndeavorTracker or {})
+    endeavorOpts.debug = debugEnabled
+    if Nvk3UT.EndeavorTracker and Nvk3UT.EndeavorTracker.Init and state.endeavorContainer then
+        pcall(Nvk3UT.EndeavorTracker.Init, state.endeavorContainer, endeavorOpts)
+        if debugEnabled and Nvk3UT and type(Nvk3UT.Debug) == "function" then
+            Nvk3UT.Debug("Endeavor section container initialized between Quest and Achievement")
+        elseif debugEnabled then
+            debugLog("Endeavor section container initialized between Quest and Achievement")
+        end
+    end
+
     local achievementOpts = cloneTable(sv.AchievementTracker or {})
     achievementOpts.debug = debugEnabled
     if Nvk3UT.AchievementTracker and Nvk3UT.AchievementTracker.Init and state.achievementContainer then
@@ -3046,6 +3159,10 @@ function TrackerHost.ApplySettings()
         pcall(Nvk3UT.QuestTracker.ApplySettings, cloneTable(sv.QuestTracker or {}))
     end
 
+    if Nvk3UT.EndeavorTracker and Nvk3UT.EndeavorTracker.ApplySettings then
+        pcall(Nvk3UT.EndeavorTracker.ApplySettings, cloneTable(sv.EndeavorTracker or {}))
+    end
+
     if Nvk3UT.AchievementTracker and Nvk3UT.AchievementTracker.ApplySettings then
         pcall(Nvk3UT.AchievementTracker.ApplySettings, cloneTable(sv.AchievementTracker or {}))
     end
@@ -3066,6 +3183,10 @@ function TrackerHost.ApplyTheme()
 
     if Nvk3UT.QuestTracker and Nvk3UT.QuestTracker.ApplyTheme then
         pcall(Nvk3UT.QuestTracker.ApplyTheme, cloneTable(sv.QuestTracker or {}))
+    end
+
+    if Nvk3UT.EndeavorTracker and Nvk3UT.EndeavorTracker.ApplyTheme then
+        pcall(Nvk3UT.EndeavorTracker.ApplyTheme, cloneTable(sv.EndeavorTracker or {}))
     end
 
     if Nvk3UT.AchievementTracker and Nvk3UT.AchievementTracker.ApplyTheme then
@@ -3091,6 +3212,14 @@ function TrackerHost.Refresh()
             pcall(Nvk3UT.QuestTracker.RequestRefresh)
         elseif Nvk3UT.QuestTracker.Refresh then
             pcall(Nvk3UT.QuestTracker.Refresh)
+        end
+    end
+
+    if Nvk3UT.EndeavorTracker then
+        if Nvk3UT.EndeavorTracker.RequestRefresh then
+            pcall(Nvk3UT.EndeavorTracker.RequestRefresh)
+        elseif Nvk3UT.EndeavorTracker.Refresh then
+            pcall(Nvk3UT.EndeavorTracker.Refresh)
         end
     end
 
@@ -3256,6 +3385,10 @@ function TrackerHost.Shutdown()
         pcall(Nvk3UT.QuestTracker.Shutdown)
     end
 
+    if Nvk3UT.EndeavorTracker and Nvk3UT.EndeavorTracker.Shutdown then
+        pcall(Nvk3UT.EndeavorTracker.Shutdown)
+    end
+
     if Nvk3UT.AchievementTracker and Nvk3UT.AchievementTracker.Shutdown then
         pcall(Nvk3UT.AchievementTracker.Shutdown)
     end
@@ -3267,6 +3400,13 @@ function TrackerHost.Shutdown()
     if Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.Shutdown then
         pcall(Nvk3UT.AchievementModel.Shutdown)
     end
+
+    if state.endeavorContainer then
+        state.endeavorContainer:SetHidden(true)
+        state.endeavorContainer:SetParent(nil)
+    end
+    state.endeavorContainer = nil
+    Nvk3UT.UI.EndeavorContainer = nil
 
     if state.achievementContainer then
         state.achievementContainer:SetHidden(true)
@@ -3396,6 +3536,7 @@ function TrackerHost.Shutdown()
 
     if state.anchorWarnings then
         state.anchorWarnings.questMissing = false
+        state.anchorWarnings.endeavorMissing = false
         state.anchorWarnings.achievementMissing = false
     end
 

@@ -4,7 +4,7 @@ local Addon = Nvk3UT
 Addon.TrackerHostLayout = Addon.TrackerHostLayout or {}
 local Layout = Addon.TrackerHostLayout
 
-local DEFAULT_SECTION_ORDER = { "quest", "achievement" }
+local DEFAULT_SECTION_ORDER = { "quest", "endeavor", "achievement" }
 local ANCHOR_TOLERANCE = 0.01
 
 local function getHost(host)
