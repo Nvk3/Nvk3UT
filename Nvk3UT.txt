@@ -45,6 +45,7 @@ Runtime/Nvk3UT_TrackerHostLayout.lua
 ## === Tracker ===
 Nvk3UT_QuestTracker.xml
 Nvk3UT_QuestTracker.lua
+Tracker/Endeavor/Nvk3UT_Endeavor.lua
 Tracker/Endeavor/Nvk3UT_EndeavorTracker.lua
 Tracker/Endeavor/Nvk3UT_EndeavorTrackerRows.lua
 Tracker/Endeavor/Nvk3UT_EndeavorTrackerLayout.lua
