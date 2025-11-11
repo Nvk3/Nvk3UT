@@ -101,6 +101,20 @@ local DEFAULT_HOST_SETTINGS = {
 local LEFT_MOUSE_BUTTON = _G.MOUSE_BUTTON_INDEX_LEFT or 1
 local unpack = unpack or table.unpack
 
+local function Num0(v)
+    if type(v) == "number" then
+        return v
+    end
+    if type(v) == "function" then
+        local ok, val = pcall(v)
+        if ok and type(val) == "number" then
+            return val
+        end
+        return 0
+    end
+    return 0
+end
+
 local SECTION_ORDER = { "quest", "endeavor", "achievement" }
 
 local state = {
@@ -1525,14 +1539,20 @@ local function measureContentSize()
     local sizes
     if layoutModule and type(layoutModule.UpdateHeaderFooterSizes) == "function" then
         sizes = layoutModule.UpdateHeaderFooterSizes(TrackerHost)
-        headerTargetHeight = math.max(0, tonumber(sizes.headerTargetHeight or sizes.headerHeight) or 0)
-        footerTargetHeight = math.max(0, tonumber(sizes.footerTargetHeight or sizes.footerHeight) or 0)
-        headerHeight = math.max(0, tonumber(sizes.headerHeight) or headerTargetHeight)
-        footerHeight = math.max(0, tonumber(sizes.footerHeight) or footerTargetHeight)
+        headerTargetHeight = math.max(0, Num0(sizes.headerTargetHeight or sizes.headerHeight))
+        footerTargetHeight = math.max(0, Num0(sizes.footerTargetHeight or sizes.footerHeight))
+        headerHeight = math.max(0, Num0(sizes.headerHeight))
+        if headerHeight <= 0 then
+            headerHeight = headerTargetHeight
+        end
+        footerHeight = math.max(0, Num0(sizes.footerHeight))
+        if footerHeight <= 0 then
+            footerHeight = footerTargetHeight
+        end
         headerVisible = sizes.headerVisible ~= false and headerTargetHeight > 0
         footerVisible = sizes.footerVisible ~= false and footerTargetHeight > 0
-        topPadding = math.max(0, tonumber(sizes.contentTopPadding) or 0)
-        bottomPadding = math.max(0, tonumber(sizes.contentBottomPadding) or 0)
+        topPadding = math.max(0, Num0(sizes.contentTopPadding))
+        bottomPadding = math.max(0, Num0(sizes.contentBottomPadding))
     else
         headerHeight, footerHeight = getEffectiveBarHeights()
         headerTargetHeight = headerHeight
@@ -1542,8 +1562,10 @@ local function measureContentSize()
 
         local headerBar = state.headerBar
         if headerBar and headerBar.GetHeight then
-            local measured = tonumber(headerBar:GetHeight())
-            if measured then
+            local measured = Num0(function()
+                return headerBar:GetHeight()
+            end)
+            if measured > 0 then
                 headerHeight = math.max(0, measured)
             end
         end
@@ -1553,8 +1575,10 @@ local function measureContentSize()
 
         local footerBar = state.footerBar
         if footerBar and footerBar.GetHeight then
-            local measured = tonumber(footerBar:GetHeight())
-            if measured then
+            local measured = Num0(function()
+                return footerBar:GetHeight()
+            end)
+            if measured > 0 then
                 footerHeight = math.max(0, measured)
             end
         end
@@ -1569,14 +1593,18 @@ local function measureContentSize()
     local headerBar = state.headerBar
     if headerBar and headerBar.GetWidth then
         if headerVisible then
-            headerWidth = tonumber(headerBar:GetWidth()) or 0
+            headerWidth = Num0(function()
+                return headerBar:GetWidth()
+            end)
         end
     end
 
     local footerBar = state.footerBar
     if footerBar and footerBar.GetWidth then
         if footerVisible then
-            footerWidth = tonumber(footerBar:GetWidth()) or 0
+            footerWidth = Num0(function()
+                return footerBar:GetWidth()
+            end)
         end
     end
 
@@ -1590,10 +1618,17 @@ local function measureContentSize()
         Nvk3UT and Nvk3UT.AchievementTracker
     )
 
+    questWidth = Num0(questWidth)
+    questHeight = math.max(0, Num0(questHeight))
+    endeavorWidth = Num0(endeavorWidth)
+    endeavorHeight = math.max(0, Num0(endeavorHeight))
+    achievementWidth = Num0(achievementWidth)
+    achievementHeight = math.max(0, Num0(achievementHeight))
+
     local questVisible = questHeight > 0
     local endeavorVisible = endeavorHeight > 0
     local achievementVisible = achievementHeight > 0
-    local gap = TrackerHost.GetSectionGap()
+    local gap = math.max(0, Num0(TrackerHost.GetSectionGap()))
 
     if questVisible then
         totalHeight = totalHeight + questHeight
@@ -1613,7 +1648,7 @@ local function measureContentSize()
         totalHeight = totalHeight + achievementHeight
     end
 
-    totalHeight = totalHeight + topPadding + bottomPadding
+    totalHeight = totalHeight + math.max(0, topPadding) + math.max(0, bottomPadding)
     totalHeight = totalHeight + math.max(0, headerHeight) + math.max(0, footerHeight)
 
     maxWidth = math.max(maxWidth, headerWidth, footerWidth, questWidth, endeavorWidth, achievementWidth)
@@ -1937,9 +1972,11 @@ refreshScroll = function(targetOffset)
         Nvk3UT and Nvk3UT.AchievementTracker
     )
 
-    questHeight = math.max(0, tonumber(questHeight) or 0)
-    endeavorHeight = math.max(0, tonumber(endeavorHeight) or 0)
-    achievementHeight = math.max(0, tonumber(achievementHeight) or 0)
+    questHeight = math.max(0, Num0(questHeight))
+    endeavorHeight = math.max(0, Num0(endeavorHeight))
+    achievementHeight = math.max(0, Num0(achievementHeight))
+
+    local gap = math.max(0, Num0(TrackerHost.GetSectionGap()))
 
     local questVisible = questHeight > 0
     local endeavorVisible = endeavorHeight > 0
@@ -1963,11 +2000,15 @@ refreshScroll = function(targetOffset)
         and type(layoutModule.UpdateScrollAreaHeight) == "function"
         and type(layoutModule.ApplyLayout) == "function"
 
+    local totalContentHeight = questHeight + endeavorHeight + achievementHeight
+    local debugHeaderHeight = 0
+    local debugFooterHeight = 0
+
     if canUseLayoutModule then
         local sizes = layoutModule.UpdateHeaderFooterSizes(TrackerHost)
 
-        local topPadding = math.max(0, tonumber(sizes.contentTopPadding) or 0)
-        local bottomPadding = math.max(0, tonumber(sizes.contentBottomPadding) or 0)
+        local topPadding = math.max(0, Num0(sizes and sizes.contentTopPadding))
+        local bottomPadding = math.max(0, Num0(sizes and sizes.contentBottomPadding))
 
         local contentStackHeight = topPadding
         if questVisible then
@@ -1993,28 +2034,38 @@ refreshScroll = function(targetOffset)
             contentStack:SetHeight(contentStackHeight)
         end
 
+        local headerHeight = math.max(0, Num0(sizes and (sizes.headerHeight or sizes.headerTargetHeight)))
+        local footerHeight = math.max(0, Num0(sizes and (sizes.footerHeight or sizes.footerTargetHeight)))
+        totalContentHeight = headerHeight + contentStackHeight + footerHeight
+        debugHeaderHeight = headerHeight
+        debugFooterHeight = footerHeight
+
         layoutModule.ApplyLayout(TrackerHost, sizes)
     else
         local headerBar = state.headerBar
         local footerBar = state.footerBar
         local bars = state.windowBars or ensureWindowBarSettings()
 
-        local headerTargetHeight = math.max(0, tonumber(bars and bars.headerHeightPx) or 0)
-        local footerTargetHeight = math.max(0, tonumber(bars and bars.footerHeightPx) or 0)
+        local headerTargetHeight = math.max(0, Num0(bars and bars.headerHeightPx))
+        local footerTargetHeight = math.max(0, Num0(bars and bars.footerHeightPx))
         local headerVisible = headerTargetHeight > 0
         local footerVisible = footerTargetHeight > 0
         local headerHeight = headerTargetHeight
         local footerHeight = footerTargetHeight
 
         if headerBar and headerBar.GetHeight then
-            local measured = tonumber(headerBar:GetHeight())
-            if measured then
+            local measured = Num0(function()
+                return headerBar:GetHeight()
+            end)
+            if measured > 0 then
                 headerHeight = math.max(0, measured)
             end
         end
         if footerBar and footerBar.GetHeight then
-            local measured = tonumber(footerBar:GetHeight())
-            if measured then
+            local measured = Num0(function()
+                return footerBar:GetHeight()
+            end)
+            if measured > 0 then
                 footerHeight = math.max(0, measured)
             end
         end
@@ -2093,6 +2144,9 @@ refreshScroll = function(targetOffset)
 
         local contentHeight = headerHeight + contentStackHeight + footerHeight
         contentHeight = math.max(0, contentHeight)
+        totalContentHeight = contentHeight
+        debugHeaderHeight = headerHeight
+        debugFooterHeight = footerHeight
 
         if scrollContent.SetResizeToFitDescendents then
             scrollContent:SetResizeToFitDescendents(false)
@@ -2101,7 +2155,7 @@ refreshScroll = function(targetOffset)
             scrollContent:SetHeight(contentHeight)
         end
 
-        local viewportHeight = scrollContainer.GetHeight and scrollContainer:GetHeight() or 0
+        local viewportHeight = Num0(scrollContainer and scrollContainer.GetHeight and scrollContainer:GetHeight())
         local overshootPadding = 0
         if viewportHeight > 0 and contentHeight > viewportHeight then
             overshootPadding = SCROLL_OVERSHOOT_PADDING
@@ -2110,7 +2164,10 @@ refreshScroll = function(targetOffset)
         local maxOffset = math.max(contentHeight - viewportHeight + overshootPadding, 0)
         local showScrollbar = maxOffset > 0.5
 
-        local scrollbarWidth = (scrollbar.GetWidth and scrollbar:GetWidth()) or SCROLLBAR_WIDTH
+        local scrollbarWidth = Num0(scrollbar and scrollbar.GetWidth and scrollbar:GetWidth())
+        if scrollbarWidth <= 0 then
+            scrollbarWidth = SCROLLBAR_WIDTH
+        end
         local desiredRightOffset = showScrollbar and -scrollbarWidth or 0
 
         if scrollbar.SetMinMax then
@@ -2133,6 +2190,17 @@ refreshScroll = function(targetOffset)
             applyViewportPadding()
         end
     end
+
+    debugLog(string.format(
+        "Heights q=%s e=%s a=%s total=%s (header=%s footer=%s gap=%s)",
+        tostring(questHeight),
+        tostring(endeavorHeight),
+        tostring(achievementHeight),
+        tostring(totalContentHeight),
+        tostring(debugHeaderHeight),
+        tostring(debugFooterHeight),
+        tostring(gap)
+    ))
 
     local desiredOffset = math.max(0, previousDesired or 0)
     setScrollOffset(desiredOffset)
@@ -3038,6 +3106,32 @@ function TrackerHost.Init()
 
     createRootControl()
     createContainers()
+
+    if state.questContainer and state.questContainer.SetHeight then
+        local measured = Num0(
+            state.questContainer
+            and state.questContainer.GetHeight
+            and state.questContainer:GetHeight()
+        )
+        state.questContainer:SetHeight(math.max(0, measured))
+    end
+    if state.endeavorContainer and state.endeavorContainer.SetHeight then
+        local measured = Num0(
+            state.endeavorContainer
+            and state.endeavorContainer.GetHeight
+            and state.endeavorContainer:GetHeight()
+        )
+        state.endeavorContainer:SetHeight(math.max(0, measured))
+    end
+    if state.achievementContainer and state.achievementContainer.SetHeight then
+        local measured = Num0(
+            state.achievementContainer
+            and state.achievementContainer.GetHeight
+            and state.achievementContainer:GetHeight()
+        )
+        state.achievementContainer:SetHeight(math.max(0, measured))
+    end
+
     applyWindowSettings()
 
     local debugEnabled = (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug) == true
