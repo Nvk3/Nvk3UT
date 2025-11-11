@@ -38,6 +38,7 @@ Journal/Nvk3UT_TodoSummary.lua
 Journal/Nvk3UT_CompletedCategory.lua
 Journal/Nvk3UT_CompletedSummary.lua
 ## === Runtime ===
+## Runtime order: Runtime -> Host -> HostLayout (Endeavor sits between Quest & Achievement at layout time)
 Runtime/Nvk3UT_TrackerRuntime.lua
 Runtime/Nvk3UT_TrackerHost.lua
 Runtime/Nvk3UT_TrackerHostLayout.lua
