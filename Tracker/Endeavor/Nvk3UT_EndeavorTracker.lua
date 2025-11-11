@@ -13,6 +13,20 @@ local state = {
     isInitialized = false,
 }
 
+local function getRowsModule()
+    local root = rawget(_G, addonName)
+    if type(root) ~= "table" then
+        return nil
+    end
+
+    local rows = rawget(root, "EndeavorTrackerRows")
+    if type(rows) ~= "table" then
+        return nil
+    end
+
+    return rows
+end
+
 local function safeDebug(fmt, ...)
     local root = rawget(_G, addonName)
     if type(root) ~= "table" then
@@ -64,6 +78,11 @@ function EndeavorTracker.Init(sectionContainer)
     state.currentHeight = 0
     state.isInitialized = true
 
+    local rows = getRowsModule()
+    if rows and type(rows.Init) == "function" then
+        pcall(rows.Init)
+    end
+
     local container = state.container
     if container and container.SetHeight then
         container:SetHeight(0)
@@ -85,14 +104,30 @@ function EndeavorTracker.Refresh(viewModel)
         return
     end
 
-    state.currentHeight = 0
+    local rows = getRowsModule()
+    local items = {}
+    if type(viewModel) == "table" and type(viewModel.items) == "table" then
+        items = viewModel.items
+    end
 
+    local builtHeight = 0
     local container = state.container
+    if rows and type(rows.Build) == "function" then
+        local ok, height = pcall(rows.Build, container, items)
+        if ok then
+            builtHeight = coerceHeight(height)
+        end
+    elseif container and type(container.SetHeight) == "function" then
+        container:SetHeight(0)
+    end
+
+    state.currentHeight = coerceHeight(builtHeight)
+
     if container and container.SetHeight then
         container:SetHeight(state.currentHeight)
     end
 
-    safeDebug("EndeavorTracker.Refresh: empty stub, height=0")
+    safeDebug("EndeavorTracker.Refresh: rows=%d height=%d", type(items) == "table" and #items or 0, state.currentHeight)
 end
 
 function EndeavorTracker.GetHeight()
