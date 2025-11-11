@@ -27,6 +27,20 @@ local function getRowsModule()
     return rows
 end
 
+local function getLayoutModule()
+    local root = rawget(_G, addonName)
+    if type(root) ~= "table" then
+        return nil
+    end
+
+    local layout = rawget(root, "EndeavorTrackerLayout")
+    if type(layout) ~= "table" then
+        return nil
+    end
+
+    return layout
+end
+
 local function safeDebug(fmt, ...)
     local root = rawget(_G, addonName)
     if type(root) ~= "table" then
@@ -83,6 +97,11 @@ function EndeavorTracker.Init(sectionContainer)
         pcall(rows.Init)
     end
 
+    local layout = getLayoutModule()
+    if layout and type(layout.Init) == "function" then
+        pcall(layout.Init)
+    end
+
     local container = state.container
     if container and container.SetHeight then
         container:SetHeight(0)
@@ -121,7 +140,16 @@ function EndeavorTracker.Refresh(viewModel)
         container:SetHeight(0)
     end
 
-    state.currentHeight = coerceHeight(builtHeight)
+    local layoutHeight = builtHeight
+    local layout = getLayoutModule()
+    if layout and type(layout.Apply) == "function" then
+        local ok, measured = pcall(layout.Apply, container)
+        if ok then
+            layoutHeight = coerceHeight(measured)
+        end
+    end
+
+    state.currentHeight = coerceHeight(layoutHeight)
 
     if container and container.SetHeight then
         container:SetHeight(state.currentHeight)

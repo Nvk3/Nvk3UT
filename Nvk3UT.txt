@@ -47,6 +47,7 @@ Nvk3UT_QuestTracker.xml
 Nvk3UT_QuestTracker.lua
 Tracker/Endeavor/Nvk3UT_EndeavorTracker.lua
 Tracker/Endeavor/Nvk3UT_EndeavorTrackerRows.lua
+Tracker/Endeavor/Nvk3UT_EndeavorTrackerLayout.lua
 Nvk3UT_AchievementTracker.xml
 Nvk3UT_AchievementTracker.lua
 ## === Events ===
