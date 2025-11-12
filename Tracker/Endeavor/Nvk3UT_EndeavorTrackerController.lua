@@ -222,8 +222,45 @@ function Controller:BuildViewModel()
 
     dailyDisplayLimit = DAILY_LIMIT
     weeklyDisplayLimit = WEEKLY_LIMIT
-    dailyDisplayCompleted = math.min(coerceNumber(dailyCompleted, 0), DAILY_LIMIT)
-    weeklyDisplayCompleted = math.min(coerceNumber(weeklyCompleted, 0), WEEKLY_LIMIT)
+
+    local dailyCompletedValue = clampNonNegative(dailyCompleted, 0)
+    local weeklyCompletedValue = clampNonNegative(weeklyCompleted, 0)
+
+    local dailyDoneCapped = math.min(dailyCompletedValue, DAILY_LIMIT)
+    local weeklyDoneCapped = math.min(weeklyCompletedValue, WEEKLY_LIMIT)
+
+    dailyDisplayCompleted = dailyDoneCapped
+    weeklyDisplayCompleted = weeklyDoneCapped
+
+    local function mapObjective(item)
+        if type(item) ~= "table" then
+            return nil, nil
+        end
+
+        local maxValue = clampMax(item.maxProgress)
+        local progressValue = clampProgress(item.progress, maxValue)
+        local completed = item.completed == true or progressValue >= maxValue
+
+        local objective = {
+            text = tostring(item.name or ""),
+            progress = progressValue,
+            max = maxValue,
+            completed = completed,
+            remainingSeconds = clampNonNegative(item.remainingSeconds, 0),
+        }
+
+        local aggregated = {
+            name = tostring(item.name or ""),
+            description = tostring(item.description or ""),
+            progress = progressValue,
+            maxProgress = maxValue,
+            type = nil,
+            remainingSeconds = objective.remainingSeconds,
+            completed = completed,
+        }
+
+        return objective, aggregated
+    end
 
     local function buildObjectives(bucket, target, kind)
         if type(bucket) ~= "table" or type(target) ~= "table" then
@@ -236,30 +273,16 @@ function Controller:BuildViewModel()
         end
 
         for _, item in ipairs(list) do
-            if type(item) == "table" then
-                local maxValue = clampMax(item.maxProgress)
-                local progressValue = clampProgress(item.progress, maxValue)
-                local completed = item.completed == true or progressValue >= maxValue
+            local objective, aggregated = mapObjective(item)
+            if objective then
+                if aggregated then
+                    aggregated.type = kind
+                    aggregatedItems[#aggregatedItems + 1] = aggregated
+                end
 
-                local objective = {
-                    text = tostring(item.name or ""),
-                    progress = progressValue,
-                    max = maxValue,
-                    completed = completed,
-                    remainingSeconds = clampNonNegative(item.remainingSeconds, 0),
-                }
-
-                target[#target + 1] = objective
-
-                aggregatedItems[#aggregatedItems + 1] = {
-                    name = tostring(item.name or ""),
-                    description = tostring(item.description or ""),
-                    progress = progressValue,
-                    maxProgress = maxValue,
-                    type = kind,
-                    remainingSeconds = objective.remainingSeconds,
-                    completed = completed,
-                }
+                if objective.completed ~= true then
+                    target[#target + 1] = objective
+                end
             end
         end
     end
@@ -267,11 +290,16 @@ function Controller:BuildViewModel()
     buildObjectives(dailyBucket, dailyObjectives, "daily")
     buildObjectives(weeklyBucket, weeklyObjectives, "weekly")
 
+    local remainingDaily = math.max(0, DAILY_LIMIT - dailyDoneCapped)
+    local remainingWeekly = math.max(0, WEEKLY_LIMIT - weeklyDoneCapped)
+    local remainingTotal = remainingDaily + remainingWeekly
+
     local stateModule = getStateModule()
     local vm = {
         category = {
             title = "Bestrebungen",
             expanded = isStateExpanded(stateModule),
+            remaining = remainingTotal,
         },
         daily = {
             title = "Tägliche Bestrebungen",
@@ -296,11 +324,12 @@ function Controller:BuildViewModel()
     }
 
     DBG(
-        "[EndeavorVM] daily=%d/%d weekly=%d/%d objsD=%d objsW=%d",
-        dailyCompleted,
-        dailyTotal,
-        weeklyCompleted,
-        weeklyTotal,
+        "[EndeavorVM] remaining=%d daily=%d/%d weekly=%d/%d objsD=%d objsW=%d",
+        remainingTotal,
+        dailyDisplayCompleted,
+        dailyDisplayLimit,
+        weeklyDisplayCompleted,
+        weeklyDisplayLimit,
         #dailyObjectives,
         #weeklyObjectives
     )

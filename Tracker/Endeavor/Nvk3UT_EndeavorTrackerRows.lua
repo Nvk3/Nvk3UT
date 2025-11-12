@@ -104,7 +104,7 @@ local function applyObjectiveColors(label, progress, completed)
         progress:SetColor(r, g, b, a)
     end
 
-    local alpha = completed and 0.6 or 1
+    local alpha = 1
     if label and label.SetAlpha then
         label:SetAlpha(alpha)
     end

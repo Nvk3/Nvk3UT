@@ -1260,8 +1260,11 @@ function EndeavorTracker.Refresh(viewModel)
         return tostring(value)
     end
 
+    local categoryTitle = resolveTitle(categoryVm.title, "Bestrebungen")
+    local categoryRemaining = tonumber(categoryVm.remaining) or 0
+    categoryRemaining = math.max(0, math.floor(categoryRemaining + 0.5))
     if categoryLabel and categoryLabel.SetText then
-        categoryLabel:SetText(resolveTitle(categoryVm.title, "Bestrebungen"))
+        categoryLabel:SetText(string.format("%s (%d)", categoryTitle, categoryRemaining))
     end
 
     local categoryExpanded = categoryVm.expanded == true
@@ -1440,8 +1443,9 @@ function EndeavorTracker.Refresh(viewModel)
     end
 
     safeDebug(
-        "[Endeavor.UI] cat=%s daily=%d/%d weekly=%d/%d",
+        "[Endeavor.UI] cat=%s remaining=%d daily=%d/%d weekly=%d/%d",
         tostring(categoryExpanded),
+        categoryRemaining,
         tonumber(dailyVm.displayCompleted or dailyVm.completed) or 0,
         tonumber(dailyVm.displayLimit or dailyVm.total) or 0,
         tonumber(weeklyVm.displayCompleted or weeklyVm.completed) or 0,
