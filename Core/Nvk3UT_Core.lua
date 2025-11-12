@@ -1,9 +1,10 @@
 -- Core/Nvk3UT_Core.lua
 -- Central addon root. Owns global table, SafeCall, module registry, SavedVariables bootstrap, lifecycle entry points.
 
-local ADDON_NAME = ADDON_NAME or "Nvk3UT"
+local ADDON_NAME   = "Nvk3UT"                              -- konstante Kennung
 local ADDON_VERSION = GetAddOnMetadata(ADDON_NAME, "Version") or ""
-local unpack = unpack or table.unpack
+
+local fn_unpack = _G.unpack or (table and table.unpack)    -- 5.1/5.2 kompatibel
 
 Nvk3UT = Nvk3UT or {}
 local Addon = Nvk3UT
@@ -84,11 +85,11 @@ local function _SafeCall(fn, ...)
 
     local params = { ... }
     local ok, results = xpcall(function()
-        return { fn(unpack(params)) }
+        return { fn(fn_unpack(params)) }
     end, _errHandler)
 
     if ok and type(results) == "table" then
-        return unpack(results)
+        return fn_unpack(results)
     end
 
     return nil
