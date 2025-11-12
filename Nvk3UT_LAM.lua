@@ -2,7 +2,7 @@ Nvk3UT = Nvk3UT or {}
 
 local ADDON_NAME = "Nvk3UT"
 local DEFAULT_PANEL_TITLE = "Nvk3's Ultimate Tracker"
-local VERSION_FALLBACK = "0.11.1"
+local VERSION_FALLBACK = "0.11.2"
 
 local function getVersionString()
     local getter = Nvk3UT and Nvk3UT.GetVersionString
@@ -20,15 +20,9 @@ Nvk3UT.LAM = L
 
 local STRING_DEFINITIONS = {
     ENDEAVOR_FONTS_HEADER = { id = "SI_NVK3UT_LAM_ENDEAVOR_FONTS_HEADER", text = "Erscheinung – Schriftarten" },
-    ENDEAVOR_FONT_CATEGORY_FAMILY = { id = "SI_NVK3UT_LAM_ENDEAVOR_FONT_CATEGORY_FAMILY", text = "Schriftart – Kategorie" },
-    ENDEAVOR_FONT_CATEGORY_SIZE = { id = "SI_NVK3UT_LAM_ENDEAVOR_FONT_CATEGORY_SIZE", text = "Größe – Kategorie" },
-    ENDEAVOR_FONT_CATEGORY_OUTLINE = { id = "SI_NVK3UT_LAM_ENDEAVOR_FONT_CATEGORY_OUTLINE", text = "Kontur – Kategorie" },
-    ENDEAVOR_FONT_ENTRY_FAMILY = { id = "SI_NVK3UT_LAM_ENDEAVOR_FONT_ENTRY_FAMILY", text = "Schriftart – Eintragstitel" },
-    ENDEAVOR_FONT_ENTRY_SIZE = { id = "SI_NVK3UT_LAM_ENDEAVOR_FONT_ENTRY_SIZE", text = "Größe – Eintragstitel" },
-    ENDEAVOR_FONT_ENTRY_OUTLINE = { id = "SI_NVK3UT_LAM_ENDEAVOR_FONT_ENTRY_OUTLINE", text = "Kontur – Eintragstitel" },
-    ENDEAVOR_FONT_OBJECTIVE_FAMILY = { id = "SI_NVK3UT_LAM_ENDEAVOR_FONT_OBJECTIVE_FAMILY", text = "Schriftart – Objective" },
-    ENDEAVOR_FONT_OBJECTIVE_SIZE = { id = "SI_NVK3UT_LAM_ENDEAVOR_FONT_OBJECTIVE_SIZE", text = "Größe – Objective" },
-    ENDEAVOR_FONT_OBJECTIVE_OUTLINE = { id = "SI_NVK3UT_LAM_ENDEAVOR_FONT_OBJECTIVE_OUTLINE", text = "Kontur – Objective" },
+    ENDEAVOR_FONT_FAMILY = { id = "SI_NVK3UT_LAM_ENDEAVOR_FONT_FAMILY", text = "Schriftart" },
+    ENDEAVOR_FONT_SIZE = { id = "SI_NVK3UT_LAM_ENDEAVOR_FONT_SIZE", text = "Größe" },
+    ENDEAVOR_FONT_OUTLINE = { id = "SI_NVK3UT_LAM_ENDEAVOR_FONT_OUTLINE", text = "Kontur" },
 }
 
 local function registerStringId(entry)
@@ -188,22 +182,10 @@ local DEFAULT_ENDEAVOR_COLORS = {
 local ENDEAVOR_FONT_SLIDER_MIN = 12
 local ENDEAVOR_FONT_SLIDER_MAX = 36
 
-local DEFAULT_ENDEAVOR_FONTS = {
-    Category = {
-        Family = FONT_FACE_CHOICES[1] and FONT_FACE_CHOICES[1].face or "$(BOLD_FONT)",
-        Size = DEFAULT_FONT_SIZE.achievement.category,
-        Outline = "soft-shadow-thick",
-    },
-    Entry = {
-        Family = FONT_FACE_CHOICES[1] and FONT_FACE_CHOICES[1].face or "$(BOLD_FONT)",
-        Size = DEFAULT_FONT_SIZE.achievement.title,
-        Outline = "soft-shadow-thick",
-    },
-    Objective = {
-        Family = FONT_FACE_CHOICES[1] and FONT_FACE_CHOICES[1].face or "$(BOLD_FONT)",
-        Size = DEFAULT_FONT_SIZE.achievement.line,
-        Outline = "soft-shadow-thick",
-    },
+local DEFAULT_ENDEAVOR_FONT = {
+    Family = FONT_FACE_CHOICES[1] and FONT_FACE_CHOICES[1].face or "$(BOLD_FONT)",
+    Size = DEFAULT_FONT_SIZE.achievement.title,
+    Outline = "soft-shadow-thick",
 }
 
 local ENDEAVOR_COMPLETED_CHOICES = {
@@ -429,8 +411,6 @@ local function getEndeavorSettings()
     sv.Endeavor = sv.Endeavor or {}
     local settings = sv.Endeavor
     settings.Colors = settings.Colors or {}
-    settings.Font = settings.Font or {}
-    settings.Fonts = settings.Fonts or {}
     if settings.Enabled == nil then
         settings.Enabled = DEFAULT_ENDEAVOR_OPTIONS.Enabled
     end
@@ -439,18 +419,37 @@ local function getEndeavorSettings()
     end
     settings.CompletedHandling = settings.CompletedHandling or DEFAULT_ENDEAVOR_OPTIONS.CompletedHandling
 
-    local legacy = settings.Font
-    if type(legacy.Family) ~= "string" or legacy.Family == "" then
-        legacy.Family = getEndeavorFontDefaults("Entry").Family
+    local font = settings.Font
+    if type(font) ~= "table" then
+        font = {}
+        settings.Font = font
     end
-    if type(legacy.Outline) ~= "string" or legacy.Outline == "" then
-        legacy.Outline = getEndeavorFontDefaults("Entry").Outline
-    end
-    legacy.Size = sanitizeEndeavorFontSize(legacy.Size, getEndeavorFontDefaults("Entry").Size)
 
-    for key in pairs(DEFAULT_ENDEAVOR_FONTS) do
-        ensureEndeavorFont(settings, key)
+    local defaults = DEFAULT_ENDEAVOR_FONT
+
+    local fontsTable = settings.Fonts
+    if type(fontsTable) == "table" then
+        local entry = fontsTable.Entry or fontsTable.entry
+        if type(entry) == "table" then
+            if (type(font.Family) ~= "string" or font.Family == "") and type(entry.Family) == "string" and entry.Family ~= "" then
+                font.Family = entry.Family
+            end
+            if (type(font.Outline) ~= "string" or font.Outline == "") and type(entry.Outline) == "string" and entry.Outline ~= "" then
+                font.Outline = entry.Outline
+            end
+            if font.Size == nil and entry.Size ~= nil then
+                font.Size = entry.Size
+            end
+        end
     end
+
+    if type(font.Family) ~= "string" or font.Family == "" then
+        font.Family = defaults.Family
+    end
+    if type(font.Outline) ~= "string" or font.Outline == "" then
+        font.Outline = defaults.Outline
+    end
+    font.Size = sanitizeEndeavorFontSize(font.Size, defaults.Size)
 
     return settings
 end
@@ -525,62 +524,30 @@ local function sanitizeEndeavorFontSize(value, fallback)
     return numeric
 end
 
-local function getEndeavorFontDefaults(key)
-    return DEFAULT_ENDEAVOR_FONTS[key] or DEFAULT_ENDEAVOR_FONTS.Entry
+local function getEndeavorFontDefaults()
+    return DEFAULT_ENDEAVOR_FONT
 end
 
-local function ensureEndeavorFont(settings, key)
-    settings.Fonts = settings.Fonts or {}
-    local fonts = settings.Fonts
-    local defaults = getEndeavorFontDefaults(key)
-
-    local font = fonts[key]
+local function getEndeavorFont()
+    local settings = getEndeavorSettings()
+    local font = settings.Font
     if type(font) ~= "table" then
         font = {}
-        fonts[key] = font
+        settings.Font = font
     end
 
-    local legacy = settings.Font
-    if type(legacy) ~= "table" then
-        legacy = {}
-    end
-
-    local legacyFamily = (type(legacy.Family) == "string" and legacy.Family ~= "") and legacy.Family or nil
-    local legacyOutline = (type(legacy.Outline) == "string" and legacy.Outline ~= "") and legacy.Outline or nil
-    local legacySize = nil
-    if legacy.Size ~= nil then
-        local numeric = tonumber(legacy.Size)
-        if numeric and numeric == numeric then
-            legacySize = math.floor(numeric + 0.5)
-        end
-    end
+    local defaults = getEndeavorFontDefaults()
 
     if type(font.Family) ~= "string" or font.Family == "" then
-        font.Family = legacyFamily or defaults.Family
+        font.Family = defaults.Family
     end
 
     if type(font.Outline) ~= "string" or font.Outline == "" then
-        font.Outline = legacyOutline or defaults.Outline
+        font.Outline = defaults.Outline
     end
 
-    local candidateSize = font.Size
-    if candidateSize == nil and legacySize ~= nil then
-        if key == "Category" then
-            candidateSize = legacySize + 4
-        elseif key == "Objective" then
-            candidateSize = legacySize - 2
-        else
-            candidateSize = legacySize
-        end
-    end
-
-    font.Size = sanitizeEndeavorFontSize(candidateSize, defaults.Size)
+    font.Size = sanitizeEndeavorFontSize(font.Size, defaults.Size)
     return font
-end
-
-local function getEndeavorFontEntry(key)
-    local settings = getEndeavorSettings()
-    return ensureEndeavorFont(settings, key)
 end
 
 local function sanitizeCompletedHandling(value)
@@ -1676,99 +1643,81 @@ local function buildEndeavorTrackerControls()
         default = getEndeavorColorDefaultTable("Completed"),
     }
 
-    controls[#controls + 1] = { type = "header", name = "ERSCHEINUNG – SCHRIFTARTEN" }
-
     controls[#controls + 1] = { type = "header", name = localize("ENDEAVOR_FONTS_HEADER") }
 
-    local fontGroups = {
-        {
-            key = "Category",
-            labels = {
-                family = "ENDEAVOR_FONT_CATEGORY_FAMILY",
-                size = "ENDEAVOR_FONT_CATEGORY_SIZE",
-                outline = "ENDEAVOR_FONT_CATEGORY_OUTLINE",
-            },
-        },
-        {
-            key = "Entry",
-            labels = {
-                family = "ENDEAVOR_FONT_ENTRY_FAMILY",
-                size = "ENDEAVOR_FONT_ENTRY_SIZE",
-                outline = "ENDEAVOR_FONT_ENTRY_OUTLINE",
-            },
-        },
-        {
-            key = "Objective",
-            labels = {
-                family = "ENDEAVOR_FONT_OBJECTIVE_FAMILY",
-                size = "ENDEAVOR_FONT_OBJECTIVE_SIZE",
-                outline = "ENDEAVOR_FONT_OBJECTIVE_OUTLINE",
-            },
-        },
+    local function refreshEndeavorFonts()
+        applyEndeavorTheme(snapshotEndeavorSettings())
+        markEndeavorDirty("appearance")
+        queueEndeavorRuntime()
+    end
+
+    local function endeavorFontDefault(key)
+        local defaults = getEndeavorFontDefaults()
+        if type(defaults) == "table" then
+            local value = defaults[key]
+            if value ~= nil then
+                return value
+            end
+        end
+
+        if key == "Size" then
+            return ENDEAVOR_FONT_SLIDER_MIN
+        end
+
+        return ""
+    end
+
+    controls[#controls + 1] = {
+        type = "dropdown",
+        name = localize("ENDEAVOR_FONT_FAMILY"),
+        choices = FONT_FACE_NAMES,
+        choicesValues = FONT_FACE_VALUES,
+        getFunc = function()
+            local font = getEndeavorFont()
+            return font.Family
+        end,
+        setFunc = function(value)
+            local font = getEndeavorFont()
+            font.Family = value
+            refreshEndeavorFonts()
+        end,
+        default = endeavorFontDefault("Family"),
     }
 
-    for index = 1, #fontGroups do
-        local group = fontGroups[index]
-        local defaults = getEndeavorFontDefaults(group.key)
+    controls[#controls + 1] = {
+        type = "slider",
+        name = localize("ENDEAVOR_FONT_SIZE"),
+        min = ENDEAVOR_FONT_SLIDER_MIN,
+        max = ENDEAVOR_FONT_SLIDER_MAX,
+        step = 1,
+        getFunc = function()
+            local font = getEndeavorFont()
+            return font.Size
+        end,
+        setFunc = function(value)
+            local font = getEndeavorFont()
+            font.Size = sanitizeEndeavorFontSize(value, endeavorFontDefault("Size"))
+            refreshEndeavorFonts()
+        end,
+        default = endeavorFontDefault("Size"),
+    }
 
-        controls[#controls + 1] = {
-            type = "dropdown",
-            name = localize(group.labels.family),
-            choices = FONT_FACE_NAMES,
-            choicesValues = FONT_FACE_VALUES,
-            getFunc = function()
-                local font = getEndeavorFontEntry(group.key)
-                return font.Family
-            end,
-            setFunc = function(value)
-                local font = getEndeavorFontEntry(group.key)
-                font.Family = value
-                applyEndeavorTheme(snapshotEndeavorSettings())
-                markEndeavorDirty("appearance")
-                queueEndeavorRuntime()
-            end,
-            default = defaults.Family,
-        }
-
-        controls[#controls + 1] = {
-            type = "slider",
-            name = localize(group.labels.size),
-            min = ENDEAVOR_FONT_SLIDER_MIN,
-            max = ENDEAVOR_FONT_SLIDER_MAX,
-            step = 1,
-            getFunc = function()
-                local font = getEndeavorFontEntry(group.key)
-                return font.Size
-            end,
-            setFunc = function(value)
-                local font = getEndeavorFontEntry(group.key)
-                font.Size = sanitizeEndeavorFontSize(value, defaults.Size)
-                applyEndeavorTheme(snapshotEndeavorSettings())
-                markEndeavorDirty("appearance")
-                queueEndeavorRuntime()
-            end,
-            default = defaults.Size,
-        }
-
-        controls[#controls + 1] = {
-            type = "dropdown",
-            name = localize(group.labels.outline),
-            choices = OUTLINE_NAMES,
-            choicesValues = OUTLINE_VALUES,
-            getFunc = function()
-                local font = getEndeavorFontEntry(group.key)
-                return font.Outline
-            end,
-            setFunc = function(value)
-                local font = getEndeavorFontEntry(group.key)
-                font.Outline = value
-                applyEndeavorTheme(snapshotEndeavorSettings())
-                markEndeavorDirty("appearance")
-                queueEndeavorRuntime()
-            end,
-            default = defaults.Outline,
-        }
-    end
+    controls[#controls + 1] = {
+        type = "dropdown",
+        name = localize("ENDEAVOR_FONT_OUTLINE"),
+        choices = OUTLINE_NAMES,
+        choicesValues = OUTLINE_VALUES,
+        getFunc = function()
+            local font = getEndeavorFont()
+            return font.Outline
+        end,
+        setFunc = function(value)
+            local font = getEndeavorFont()
+            font.Outline = value
+            refreshEndeavorFonts()
+        end,
+        default = endeavorFontDefault("Outline"),
+    }
 
     return controls
 end

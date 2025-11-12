@@ -3,7 +3,7 @@ local ADDON_NAME = "Nvk3UT"
 
 -- Safe access to ESO API (avoid shadowing and nil calls)
 local GET_META = rawget(_G, "GetAddOnMetadata")
-local ADDON_VERSION = (type(GET_META) == "function" and GET_META(ADDON_NAME, "Version")) or "0.11.1"
+local ADDON_VERSION = (type(GET_META) == "function" and GET_META(ADDON_NAME, "Version")) or "0.11.2"
 
 Nvk3UT = Nvk3UT or {}
 Nvk3UT.GetVersionString = function()

@@ -70,23 +70,6 @@ local DEFAULT_ENDEAVOR_OPTIONS = {
         Size = DEFAULT_ACHIEVEMENT_FONTS.title.size,
         Outline = DEFAULT_ACHIEVEMENT_FONTS.title.outline,
     },
-    Fonts = {
-        Category = {
-            Family = DEFAULT_ACHIEVEMENT_FONTS.category.face,
-            Size = DEFAULT_ACHIEVEMENT_FONTS.category.size,
-            Outline = DEFAULT_ACHIEVEMENT_FONTS.category.outline,
-        },
-        Entry = {
-            Family = DEFAULT_ACHIEVEMENT_FONTS.title.face,
-            Size = DEFAULT_ACHIEVEMENT_FONTS.title.size,
-            Outline = DEFAULT_ACHIEVEMENT_FONTS.title.outline,
-        },
-        Objective = {
-            Family = DEFAULT_ACHIEVEMENT_FONTS.line.face,
-            Size = DEFAULT_ACHIEVEMENT_FONTS.line.size,
-            Outline = DEFAULT_ACHIEVEMENT_FONTS.line.outline,
-        },
-    },
 }
 
 local DEFAULT_ENDEAVOR_DATA = {
@@ -364,7 +347,6 @@ local function EnsureFirstLoginStructures(saved)
     MergeDefaults(endeavorSettings, defaults.Endeavor)
     MergeDefaults(EnsureTable(endeavorSettings, "Colors"), defaults.Endeavor.Colors)
     MergeDefaults(EnsureTable(endeavorSettings, "Font"), defaults.Endeavor.Font)
-    MergeDefaults(EnsureTable(endeavorSettings, "Fonts"), defaults.Endeavor.Fonts)
 
     local settings = EnsureTable(saved, "Settings")
     local hostSettings = EnsureTable(settings, "Host")
