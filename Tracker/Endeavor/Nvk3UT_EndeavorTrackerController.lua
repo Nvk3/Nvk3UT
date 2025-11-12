@@ -66,12 +66,14 @@ local function callWithOptionalSelf(target, method, ...)
         return nil
     end
 
+    local args = { ... }
+
     local results = { safeCall(function()
         if target ~= nil then
-            return method(target, ...)
+            return method(target, unpack(args))
         end
 
-        return method(...)
+        return method(unpack(args))
     end) }
 
     if #results == 0 then
