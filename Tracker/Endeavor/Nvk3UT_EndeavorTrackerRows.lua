@@ -11,6 +11,8 @@ local lastHeight = 0
 
 local ROW_MIN_HEIGHT = 28
 
+Rows._cache = Rows._cache or setmetatable({}, { __mode = "k" })
+
 local function safeDebug(fmt, ...)
     local root = rawget(_G, addonName)
     if type(root) ~= "table" then
@@ -57,26 +59,18 @@ local function coerceNumber(value)
     return 0
 end
 
-local function clearChildren(container)
-    if not container or type(container.GetNumChildren) ~= "function" then
-        return
+local function getContainerCache(container)
+    if not container then
+        return nil
     end
 
-    local count = container:GetNumChildren() or 0
-    for index = count, 1, -1 do
-        local child = container:GetChild(index)
-        if child then
-            child:ClearAnchors()
-            if child.SetHidden then
-                child:SetHidden(true)
-            end
-            if child.DestroyWindow then
-                child:DestroyWindow()
-            else
-                child:SetParent(nil)
-            end
-        end
+    local cache = Rows._cache[container]
+    if not cache then
+        cache = { rows = {} }
+        Rows._cache[container] = cache
     end
+
+    return cache
 end
 
 local function getLabelText(item, index)
@@ -92,12 +86,62 @@ local function getLabelText(item, index)
     return tostring(text)
 end
 
+local function applyRowData(row, item, index)
+    if not row or type(row.GetName) ~= "function" then
+        return
+    end
+
+    local wm = WINDOW_MANAGER
+    if not wm then
+        return
+    end
+
+    local rowName = row:GetName()
+    local labelName = rowName .. "Label"
+    local label = GetControl(labelName)
+    if not label then
+        label = wm:CreateControl(labelName, row, CT_LABEL)
+    end
+
+    label:SetParent(row)
+    if label.ClearAnchors then
+        label:ClearAnchors()
+    end
+    label:SetAnchor(TOPLEFT, row, TOPLEFT, 0, 0)
+    label:SetAnchor(BOTTOMRIGHT, row, BOTTOMRIGHT, 0, 0)
+    label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+    label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
+    label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
+    if label.SetFont then
+        label:SetFont("ZoFontGame")
+    end
+
+    if label.SetHidden then
+        label:SetHidden(false)
+    end
+
+    if label.SetText then
+        label:SetText(getLabelText(item, index))
+    end
+end
+
 function Rows.Init()
     lastHeight = 0
 end
 
 function Rows.Clear(container)
-    clearChildren(container)
+    local cache = getContainerCache(container)
+    if cache then
+        local rows = cache.rows
+        if type(rows) == "table" then
+            for index = 1, #rows do
+                local row = rows[index]
+                if row and row.SetHidden then
+                    row:SetHidden(true)
+                end
+            end
+        end
+    end
 
     lastHeight = 0
 
@@ -116,8 +160,6 @@ function Rows.Build(container, items)
         return 0
     end
 
-    clearChildren(container)
-
     local sequence = {}
     if type(items) == "table" then
         for index, entry in ipairs(items) do
@@ -127,11 +169,8 @@ function Rows.Build(container, items)
 
     local count = #sequence
     if count == 0 then
-        if type(container.SetHeight) == "function" then
-            container:SetHeight(0)
-        end
-        lastHeight = 0
-        safeDebug("EndeavorRows.Build: count=0 total=0")
+        Rows.Clear(container)
+        safeDebug("[EndeavorRows.Build] count=0 reused=0 new=0 hidden=0")
         return 0
     end
 
@@ -151,9 +190,36 @@ function Rows.Build(container, items)
         end
     end
 
+    local baseName = string.format("%sRow", containerName or "Nvk3UT_Endeavor")
+    local cache = getContainerCache(container)
+    local rows = cache and cache.rows or {}
+    local reused = 0
+    local created = 0
+
     for index, entry in ipairs(sequence) do
-        local rowName = string.format("%sRow%d", containerName or "Nvk3UT_Endeavor", index)
-        local row = wm:CreateControl(rowName, container, CT_CONTROL)
+        local row = rows[index]
+        if row and (type(row.GetName) ~= "function" or GetControl(row:GetName()) ~= row) then
+            row = nil
+        end
+
+        if not row then
+            local controlName = baseName .. index
+            row = GetControl(controlName)
+            if not row then
+                row = wm:CreateControl(controlName, container, CT_CONTROL)
+                created = created + 1
+            else
+                reused = reused + 1
+            end
+            rows[index] = row
+        else
+            reused = reused + 1
+        end
+
+        row:SetParent(container)
+        if row.SetHidden then
+            row:SetHidden(false)
+        end
 
         row:ClearAnchors()
         if previous then
@@ -164,24 +230,22 @@ function Rows.Build(container, items)
             row:SetAnchor(TOPRIGHT, container, TOPRIGHT, 0, 0)
         end
 
-        local rowHeight = ROW_MIN_HEIGHT
-        row:SetHeight(rowHeight)
+        row:SetHeight(ROW_MIN_HEIGHT)
+        applyRowData(row, entry, index)
 
-        local labelName = rowName .. "Label"
-        local label = wm:CreateControl(labelName, row, CT_LABEL)
-        label:ClearAnchors()
-        label:SetAnchor(TOPLEFT, row, TOPLEFT, 0, 0)
-        label:SetAnchor(BOTTOMRIGHT, row, BOTTOMRIGHT, 0, 0)
-        label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
-        label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
-        label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
-        if label.SetFont then
-            label:SetFont("ZoFontGame")
-        end
-        label:SetText(getLabelText(entry, index))
-
-        totalHeight = totalHeight + coerceNumber(rowHeight)
+        totalHeight = totalHeight + ROW_MIN_HEIGHT
         previous = row
+    end
+
+    cache.rows = rows
+
+    local hidden = 0
+    for index = count + 1, #rows do
+        local extra = rows[index]
+        if extra and extra.SetHidden then
+            extra:SetHidden(true)
+            hidden = hidden + 1
+        end
     end
 
     if type(container.SetHeight) == "function" then
@@ -190,7 +254,7 @@ function Rows.Build(container, items)
 
     lastHeight = totalHeight
 
-    safeDebug("EndeavorRows.Build: count=%d total=%d", count, totalHeight)
+    safeDebug("[EndeavorRows.Build] count=%d reused=%d new=%d hidden=%d", count, reused, created, hidden)
 
     return totalHeight
 end

@@ -12,10 +12,15 @@ Core/Nvk3UT_SelfTest.lua
 Core/Nvk3UT_StateInit.lua
 Core/Nvk3UT_Rebuild.lua
 Core/Nvk3UT_Core.lua
+## Model — Quest
 Model/Quest/Nvk3UT_QuestState.lua
 Model/Quest/Nvk3UT_QuestSelection.lua
 Model/Quest/Nvk3UT_QuestList.lua
 Model/Quest/Nvk3UT_QuestModel.lua
+## Model — Endeavor
+Model/Endeavor/Nvk3UT_EndeavorState.lua
+Model/Endeavor/Nvk3UT_EndeavorModel.lua
+## Model — Achievement
 Model/Achievement/Nvk3UT_AchievementState.lua
 Model/Achievement/Nvk3UT_FavoritesData.lua
 Model/Achievement/Nvk3UT_RecentData.lua
@@ -48,6 +53,7 @@ Nvk3UT_QuestTracker.xml
 Nvk3UT_QuestTracker.lua
 ## Endeavor files: Facade -> Tracker -> Rows -> Layout (no events in this token)
 Tracker/Endeavor/Nvk3UT_Endeavor.lua
+Tracker/Endeavor/Nvk3UT_EndeavorTrackerController.lua
 Tracker/Endeavor/Nvk3UT_EndeavorTracker.lua
 Tracker/Endeavor/Nvk3UT_EndeavorTrackerRows.lua
 Tracker/Endeavor/Nvk3UT_EndeavorTrackerLayout.lua
