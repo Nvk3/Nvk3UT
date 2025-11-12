@@ -59,6 +59,62 @@ local initPoller = {
     active = false,
 }
 
+-- Safe schedule helper (zo_callLater with EVENT_MANAGER fallback)
+local function ScheduleLater(ms, cb)
+    if type(cb) ~= "function" then
+        return nil
+    end
+
+    ms = tonumber(ms) or 0
+    if ms < 0 then
+        ms = 0
+    end
+
+    if type(_G.zo_callLater) == "function" then
+        local ok, handle = pcall(_G.zo_callLater, cb, ms)
+        if ok and handle ~= nil then
+            return handle
+        end
+    end
+
+    local suffix = tostring(getFrameTime() or 0)
+    local name = "Nvk3UT_Endeavor_Once_" .. tostring(cb):gsub("[^%w_]", "_") .. "_" .. suffix
+    local eventManager = rawget(_G, "EVENT_MANAGER")
+    if eventManager and type(eventManager.RegisterForUpdate) == "function" then
+        if type(eventManager.UnregisterForUpdate) == "function" then
+            eventManager:UnregisterForUpdate(name)
+        end
+        eventManager:RegisterForUpdate(name, ms, function()
+            if type(eventManager.UnregisterForUpdate) == "function" then
+                eventManager:UnregisterForUpdate(name)
+            end
+            pcall(cb)
+        end)
+        return name
+    end
+
+    return nil
+end
+
+-- Safe remove helper (supports both handle types)
+local function RemoveScheduled(handle)
+    if handle == nil then
+        return
+    end
+
+    if type(handle) == "number" and type(_G.zo_removeCallLater) == "function" then
+        pcall(_G.zo_removeCallLater, handle)
+        return
+    end
+
+    if type(handle) == "string" then
+        local eventManager = rawget(_G, "EVENT_MANAGER")
+        if eventManager and type(eventManager.UnregisterForUpdate) == "function" then
+            eventManager:UnregisterForUpdate(handle)
+        end
+    end
+end
+
 local EVENT_TIMED_ACTIVITIES_UPDATED_ID = rawget(_G, "EVENT_TIMED_ACTIVITIES_UPDATED")
 local EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED_ID = rawget(_G, "EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED")
 local EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED_ID = rawget(_G, "EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED")
@@ -196,10 +252,7 @@ end
 
 local function clearTempEventsTimer()
     if tempEvents.timerHandle ~= nil then
-        local cancel = rawget(_G, "CancelCallback")
-        if type(cancel) == "function" then
-            cancel(tempEvents.timerHandle)
-        end
+        RemoveScheduled(tempEvents.timerHandle)
         tempEvents.timerHandle = nil
     end
     tempEvents.pending = false
@@ -210,16 +263,7 @@ local function cancelProgressFallbackTimer()
         return
     end
 
-    local remove = rawget(_G, "zo_removeCallLater")
-    if type(remove) == "function" then
-        remove(progressFallback.timerHandle)
-    else
-        local cancel = rawget(_G, "CancelCallback")
-        if type(cancel) == "function" then
-            cancel(progressFallback.timerHandle)
-        end
-    end
-
+    RemoveScheduled(progressFallback.timerHandle)
     progressFallback.timerHandle = nil
 end
 
@@ -243,25 +287,24 @@ local function queueTempEventRefresh()
 
     tempEvents.pending = true
 
-    local callLater = rawget(_G, "zo_callLater")
-    if type(callLater) ~= "function" then
-        tempEvents.pending = false
-        tempEvents.lastQueuedAt = now
-        shimRefreshEndeavors()
-        return
-    end
-
     local delay = tempEvents.debounceMs - elapsed
     if delay < 0 then
         delay = 0
     end
 
-    tempEvents.timerHandle = callLater(function()
+    tempEvents.timerHandle = ScheduleLater(delay, function()
         tempEvents.timerHandle = nil
         tempEvents.pending = false
         tempEvents.lastQueuedAt = getFrameTime()
         shimRefreshEndeavors()
-    end, delay)
+    end)
+
+    if tempEvents.timerHandle == nil then
+        tempEvents.pending = false
+        tempEvents.lastQueuedAt = now
+        shimRefreshEndeavors()
+        return
+    end
 
     safeDebug("[EndeavorTracker.TempEvents] refresh queued (debounced)")
 end
@@ -308,17 +351,8 @@ end
 
 local function cancelInitPoller()
     if initPoller.timerHandle ~= nil then
-        local remover = rawget(_G, "zo_removeCallLater")
-        if type(remover) == "function" then
-            pcall(remover, initPoller.timerHandle)
-        else
-            local cancel = rawget(_G, "CancelCallback")
-            if type(cancel) == "function" then
-                pcall(cancel, initPoller.timerHandle)
-            end
-        end
+        RemoveScheduled(initPoller.timerHandle)
     end
-
     initPoller.timerHandle = nil
     initPoller.active = false
 end
@@ -349,15 +383,11 @@ local function initPollerTick()
         return
     end
 
-    local callLater = rawget(_G, "zo_callLater")
-    if type(callLater) == "function" then
-        initPoller.timerHandle = callLater(function()
-            initPollerTick()
-        end, initPoller.intervalMs)
-        return
-    end
+    initPoller.timerHandle = ScheduleLater(initPoller.intervalMs, initPollerTick)
 
-    cancelInitPoller()
+    if initPoller.timerHandle == nil then
+        cancelInitPoller()
+    end
 end
 
 local function scheduleProgressFallback()
@@ -366,16 +396,8 @@ local function scheduleProgressFallback()
     end
 
     runSafe(function()
-        local callLater = rawget(_G, "zo_callLater")
-        if type(callLater) ~= "function" then
-            queueTempEventRefreshSafe()
-            return
-        end
-
-        safeDebug("[EndeavorTracker.TempEvents] fallback scheduled (no progress yet)")
-
         local delay = progressFallback.delayMs or 0
-        progressFallback.timerHandle = callLater(function()
+        progressFallback.timerHandle = ScheduleLater(delay, function()
             progressFallback.timerHandle = nil
             if state.isDisposed then
                 return
@@ -391,7 +413,13 @@ local function scheduleProgressFallback()
             if elapsed >= (progressFallback.delayMs or 0) then
                 queueTempEventRefreshSafe()
             end
-        end, delay)
+        end)
+
+        if progressFallback.timerHandle ~= nil then
+            safeDebug("[EndeavorTracker.TempEvents] fallback scheduled (no progress yet)")
+        else
+            queueTempEventRefreshSafe()
+        end
     end)
 end
 
@@ -414,16 +442,7 @@ local function cancelInitKickTimer(silent)
         return
     end
 
-    local remove = rawget(_G, "zo_removeCallLater")
-    if type(remove) == "function" then
-        remove(initKick.timerHandle)
-    else
-        local cancel = rawget(_G, "CancelCallback")
-        if type(cancel) == "function" then
-            cancel(initKick.timerHandle)
-        end
-    end
-
+    RemoveScheduled(initKick.timerHandle)
     initKick.timerHandle = nil
 
     if not silent then
@@ -447,16 +466,7 @@ local function scheduleInitKick()
     runSafe(function()
         safeDebug("[EndeavorTracker.SHIM] init-kick scheduled")
 
-        local callLater = rawget(_G, "zo_callLater")
-        if type(callLater) ~= "function" then
-            initKick.done = true
-            if not hasRecentDebouncedRefresh() then
-                queueTempEventRefreshSafe()
-            end
-            return
-        end
-
-        initKick.timerHandle = callLater(function()
+        initKick.timerHandle = ScheduleLater(initKick.delayMs, function()
             initKick.timerHandle = nil
             if state.isDisposed then
                 initKick.done = true
@@ -467,7 +477,14 @@ local function scheduleInitKick()
             if not hasRecentDebouncedRefresh() then
                 queueTempEventRefreshSafe()
             end
-        end, initKick.delayMs)
+        end)
+
+        if initKick.timerHandle == nil then
+            initKick.done = true
+            if not hasRecentDebouncedRefresh() then
+                queueTempEventRefreshSafe()
+            end
+        end
     end)
 end
 
@@ -750,11 +767,8 @@ function EndeavorTracker.Init(sectionContainer)
         initPoller.tries = 0
 
         if initPoller.timerHandle == nil then
-            local callLater = rawget(_G, "zo_callLater")
-            if type(callLater) == "function" then
-                initPoller.timerHandle = callLater(function()
-                    initPollerTick()
-                end, initPoller.intervalMs)
+            initPoller.timerHandle = ScheduleLater(initPoller.intervalMs, initPollerTick)
+            if initPoller.timerHandle ~= nil then
                 safeDebug("[EndeavorTracker.SHIM] init-poller scheduled")
             else
                 initPoller.active = false
