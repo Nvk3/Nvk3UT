@@ -59,7 +59,6 @@ local initPoller = {
     active = false,
 }
 
--- Safe schedule helper (zo_callLater with EVENT_MANAGER fallback)
 local function ScheduleLater(ms, cb)
     if type(cb) ~= "function" then
         return nil
@@ -77,8 +76,20 @@ local function ScheduleLater(ms, cb)
         end
     end
 
-    local suffix = tostring(getFrameTime() or 0)
-    local name = "Nvk3UT_Endeavor_Once_" .. tostring(cb):gsub("[^%w_]", "_") .. "_" .. suffix
+    local suffixSource = rawget(_G, "GetFrameTimeMilliseconds")
+    if type(suffixSource) ~= "function" then
+        suffixSource = rawget(_G, "GetGameTimeMilliseconds")
+    end
+
+    local suffixValue = 0
+    if type(suffixSource) == "function" then
+        local ok, value = pcall(suffixSource)
+        if ok and type(value) == "number" then
+            suffixValue = value
+        end
+    end
+
+    local name = "Nvk3UT_Endeavor_Once_" .. tostring(cb):gsub("[^%w_]", "_") .. "_" .. tostring(suffixValue)
     local eventManager = rawget(_G, "EVENT_MANAGER")
     if eventManager and type(eventManager.RegisterForUpdate) == "function" then
         if type(eventManager.UnregisterForUpdate) == "function" then
@@ -360,6 +371,10 @@ end
 local function initPollerTick()
     initPoller.timerHandle = nil
 
+    if not initPoller.active then
+        return
+    end
+
     if state.isDisposed then
         cancelInitPoller()
         return
@@ -380,6 +395,10 @@ local function initPollerTick()
     if initPoller.tries >= (initPoller.maxTries or 0) then
         cancelInitPoller()
         safeDebug("[EndeavorTracker.SHIM] init-poller gave up (count=0)")
+        return
+    end
+
+    if not initPoller.active then
         return
     end
 
