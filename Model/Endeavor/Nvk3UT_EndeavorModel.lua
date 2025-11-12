@@ -518,13 +518,18 @@ function EndeavorModel:RefreshFromGame()
 
     collectActivities(snapshot)
 
+    snapshot.seals = fetchSeals()
+
+    local dailyItems = snapshot.daily and snapshot.daily.items or {}
+    local weeklyItems = snapshot.weekly and snapshot.weekly.items or {}
+    debugLog("scan: daily=%d weekly=%d seals=%d", #dailyItems, #weeklyItems, snapshot.seals or 0)
+
     snapshot.daily.limit = fetchLimit(TIMED_ACTIVITY_TYPE_DAILY)
     snapshot.weekly.limit = fetchLimit(TIMED_ACTIVITY_TYPE_WEEKLY)
 
     reconcileCounts(snapshot.daily, TIMED_ACTIVITY_TYPE_DAILY)
     reconcileCounts(snapshot.weekly, TIMED_ACTIVITY_TYPE_WEEKLY)
 
-    snapshot.seals = fetchSeals()
     snapshot.systemActive = fetchSystemActive()
 
     local epoch = coerceEpoch()
@@ -546,7 +551,7 @@ function EndeavorModel:RefreshFromGame()
         end)
     end
 
-    debugLog("refresh ok: daily=%d/%d weekly=%d/%d seals=%d", summary.dailyCompleted, summary.dailyTotal, summary.weeklyCompleted, summary.weeklyTotal, summary.seals)
+    debugLog("snapshot ready: daily=%d/%d weekly=%d/%d", summary.dailyCompleted, summary.dailyTotal, summary.weeklyCompleted, summary.weeklyTotal)
 end
 
 local function copySnapshot(snapshot)
@@ -580,6 +585,48 @@ function EndeavorModel:GetSummary()
         seals = summary.seals or 0,
         isActive = summary.isActive == true,
         timestamp = summary.timestamp or 0,
+    }
+end
+
+function EndeavorModel:GetCountsForDebug()
+    if type(self._snapshot) ~= "table" then
+        return {
+            dailyTotal = 0,
+            weeklyTotal = 0,
+            seals = 0,
+        }
+    end
+
+    local snapshot = self._snapshot
+    local daily = snapshot.daily or {}
+    local weekly = snapshot.weekly or {}
+
+    local dailyTotal = tonumber(daily.total)
+    if dailyTotal == nil then
+        local items = daily.items
+        if type(items) == "table" then
+            dailyTotal = #items
+        else
+            dailyTotal = 0
+        end
+    end
+
+    local weeklyTotal = tonumber(weekly.total)
+    if weeklyTotal == nil then
+        local items = weekly.items
+        if type(items) == "table" then
+            weeklyTotal = #items
+        else
+            weeklyTotal = 0
+        end
+    end
+
+    local seals = tonumber(snapshot.seals) or 0
+
+    return {
+        dailyTotal = dailyTotal,
+        weeklyTotal = weeklyTotal,
+        seals = seals,
     }
 end
 

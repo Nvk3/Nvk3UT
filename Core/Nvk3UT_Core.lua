@@ -386,6 +386,68 @@ SLASH_COMMANDS["/nvk3test"] = function()
     end
 end
 
+SLASH_COMMANDS["/nvkendeavor"] = function()
+    _SafeCall(function()
+        if type(Addon) ~= "table" then
+            return
+        end
+
+        local sv = Addon.sv
+        local stateModule = Addon.EndeavorState
+        if type(stateModule) == "table" and type(stateModule._sv) ~= "table" and type(stateModule.Init) == "function" and type(sv) == "table" then
+            stateModule:Init(sv)
+        end
+
+        local modelModule = Addon.EndeavorModel
+        local dailyTotal = 0
+        local weeklyTotal = 0
+        local seals = 0
+        if type(modelModule) == "table" then
+            if type(modelModule.state) ~= "table" and type(modelModule.Init) == "function" and type(stateModule) == "table" then
+                modelModule:Init(stateModule)
+            end
+
+            local refresh = modelModule.RefreshFromGame or modelModule.Refresh
+            if type(refresh) == "function" then
+                refresh(modelModule)
+            end
+
+            local getCounts = modelModule.GetCountsForDebug
+            if type(getCounts) == "function" then
+                local ok, counts = pcall(getCounts, modelModule)
+                if ok and type(counts) == "table" then
+                    dailyTotal = tonumber(counts.dailyTotal) or dailyTotal
+                    weeklyTotal = tonumber(counts.weeklyTotal) or weeklyTotal
+                    seals = tonumber(counts.seals) or seals
+                end
+            end
+        end
+
+        local controller = Addon.EndeavorTrackerController
+        if type(controller) == "table" then
+            local markDirty = controller.MarkDirty or controller.RequestRefresh
+            if type(markDirty) == "function" then
+                markDirty(controller)
+            end
+        end
+
+        local runtime = Addon.TrackerRuntime
+        if type(runtime) == "table" then
+            local queueDirty = runtime.QueueDirty or runtime.MarkDirty or runtime.RequestRefresh
+            if type(queueDirty) == "function" then
+                queueDirty(runtime, "endeavor")
+            end
+        end
+
+        local message = string.format("[Slash] endeavor refresh queued: daily=%d weekly=%d seals=%d", dailyTotal, weeklyTotal, seals)
+        if type(d) == "function" then
+            d(message)
+        elseif type(print) == "function" then
+            print(message)
+        end
+    end)
+end
+
 -- TODO(EVENTS_001_CREATE_EventHandlerBase_lua):
 -- Remove this temporary bootstrap block from Core/Nvk3UT_Core.lua.
 -- After the Events layer exists, EVENT_MANAGER:RegisterForEvent MUST live

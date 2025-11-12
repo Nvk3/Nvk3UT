@@ -143,10 +143,24 @@ local function shimRefreshEndeavors()
         end
 
         local model = rawget(addon, "EndeavorModel")
+        local countsDaily = 0
+        local countsWeekly = 0
+        local countsSeals = 0
         if type(model) == "table" then
             local refresh = model.RefreshFromGame or model.Refresh
             if type(refresh) == "function" then
                 refresh(model)
+                safeDebug("[EndeavorTracker.SHIM] model refreshed")
+
+                local getCounts = model.GetCountsForDebug
+                if type(getCounts) == "function" then
+                    local ok, counts = pcall(getCounts, model)
+                    if ok and type(counts) == "table" then
+                        countsDaily = tonumber(counts.dailyTotal) or countsDaily
+                        countsWeekly = tonumber(counts.weeklyTotal) or countsWeekly
+                        countsSeals = tonumber(counts.seals) or countsSeals
+                    end
+                end
             end
         end
 
@@ -157,6 +171,8 @@ local function shimRefreshEndeavors()
                 markDirty(controller)
             end
         end
+
+        safeDebug("[EndeavorTracker.SHIM] counts: daily=%d weekly=%d seals=%d", countsDaily, countsWeekly, countsSeals)
 
         local runtime = rawget(addon, "TrackerRuntime")
         if type(runtime) == "table" then
@@ -658,6 +674,22 @@ function EndeavorTracker.Refresh(viewModel)
     if not state.isInitialized then
         return
     end
+
+    local dailyCount = 0
+    local weeklyCount = 0
+    if type(viewModel) == "table" then
+        local daily = viewModel.daily
+        if type(daily) == "table" and type(daily.items) == "table" then
+            dailyCount = #daily.items
+        end
+
+        local weekly = viewModel.weekly
+        if type(weekly) == "table" and type(weekly.items) == "table" then
+            weeklyCount = #weekly.items
+        end
+    end
+
+    safeDebug("[EndeavorTracker.UI] Refresh called: dailyItems=%d weeklyItems=%d", dailyCount, weeklyCount)
 
     local rows = getRowsModule()
     local items = {}
