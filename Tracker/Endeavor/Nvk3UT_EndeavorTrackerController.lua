@@ -178,6 +178,10 @@ function Controller:BuildViewModel()
     local dailyTotal = 0
     local weeklyCompleted = 0
     local weeklyTotal = 0
+    local dailyDisplayCompleted = 0
+    local dailyDisplayLimit = 0
+    local weeklyDisplayCompleted = 0
+    local weeklyDisplayLimit = 0
 
     local root = getRoot()
     local model = root and rawget(root, "EndeavorModel")
@@ -212,6 +216,14 @@ function Controller:BuildViewModel()
     dailyTotal = clampNonNegative(summary and summary.dailyTotal or dailyBucket.total, 0)
     weeklyCompleted = clampNonNegative(summary and summary.weeklyCompleted or weeklyBucket.completed, 0)
     weeklyTotal = clampNonNegative(summary and summary.weeklyTotal or weeklyBucket.total, 0)
+
+    local DAILY_LIMIT = 3
+    local WEEKLY_LIMIT = 1
+
+    dailyDisplayLimit = DAILY_LIMIT
+    weeklyDisplayLimit = WEEKLY_LIMIT
+    dailyDisplayCompleted = math.min(coerceNumber(dailyCompleted, 0), DAILY_LIMIT)
+    weeklyDisplayCompleted = math.min(coerceNumber(weeklyCompleted, 0), WEEKLY_LIMIT)
 
     local function buildObjectives(bucket, target, kind)
         if type(bucket) ~= "table" or type(target) ~= "table" then
@@ -265,6 +277,8 @@ function Controller:BuildViewModel()
             title = "Tägliche Bestrebungen",
             completed = dailyCompleted,
             total = dailyTotal,
+            displayCompleted = dailyDisplayCompleted,
+            displayLimit = dailyDisplayLimit,
             expanded = isCategoryExpanded(stateModule, "daily"),
             objectives = dailyObjectives,
         },
@@ -272,6 +286,8 @@ function Controller:BuildViewModel()
             title = "Wöchentliche Bestrebungen",
             completed = weeklyCompleted,
             total = weeklyTotal,
+            displayCompleted = weeklyDisplayCompleted,
+            displayLimit = weeklyDisplayLimit,
             expanded = isCategoryExpanded(stateModule, "weekly"),
             objectives = weeklyObjectives,
         },

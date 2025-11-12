@@ -8,7 +8,7 @@ Layout.__index = Layout
 
 local MODULE_TAG = addonName .. ".EndeavorTrackerLayout"
 
-local CATEGORY_ROW_HEIGHT = 28
+local CATEGORY_ROW_HEIGHT = 26
 local SECTION_ROW_HEIGHT = 24
 
 local lastHeight = 0
@@ -78,6 +78,13 @@ function Layout.Apply(container, context)
     if container == nil then
         lastHeight = 0
         return 0
+    end
+
+    if container.SetResizeToFitDescendents then
+        container:SetResizeToFitDescendents(false)
+    end
+    if container.SetInsets then
+        container:SetInsets(0, 0, 0, 0)
     end
 
     local previous
@@ -180,8 +187,31 @@ function Layout.Apply(container, context)
         end
     end
 
-    if container and container.SetHeight then
-        container:SetHeight(measured)
+    if container then
+        if container.SetHeight then
+            container:SetHeight(measured)
+        end
+        if container.SetDimensions then
+            local width
+            if container.GetWidth then
+                local ok, w = pcall(container.GetWidth, container)
+                if ok and type(w) == "number" then
+                    width = w
+                end
+            end
+            local resolvedWidth = width
+            if type(resolvedWidth) ~= "number" or resolvedWidth <= 0 then
+                if container.GetWidth then
+                    local ok, currentWidth = pcall(container.GetWidth, container)
+                    if ok and type(currentWidth) == "number" then
+                        resolvedWidth = currentWidth
+                    end
+                end
+            end
+            if type(resolvedWidth) == "number" and resolvedWidth > 0 then
+                container:SetDimensions(resolvedWidth, measured)
+            end
+        end
     end
 
     lastHeight = measured
