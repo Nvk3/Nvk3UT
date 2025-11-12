@@ -33,6 +33,12 @@ local initKick = {
     delayMs = 200,
 }
 
+local progressFallback = {
+    lastProgressAtMs = nil,
+    timerHandle = nil,
+    delayMs = 750,
+}
+
 local EVENT_TIMED_ACTIVITIES_UPDATED_ID = rawget(_G, "EVENT_TIMED_ACTIVITIES_UPDATED")
 local EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED_ID = rawget(_G, "EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED")
 local EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED_ID = rawget(_G, "EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED")
@@ -198,6 +204,24 @@ local function clearTempEventsTimer()
     tempEvents.pending = false
 end
 
+local function cancelProgressFallbackTimer()
+    if progressFallback.timerHandle == nil then
+        return
+    end
+
+    local remove = rawget(_G, "zo_removeCallLater")
+    if type(remove) == "function" then
+        remove(progressFallback.timerHandle)
+    else
+        local cancel = rawget(_G, "CancelCallback")
+        if type(cancel) == "function" then
+            cancel(progressFallback.timerHandle)
+        end
+    end
+
+    progressFallback.timerHandle = nil
+end
+
 local function queueTempEventRefresh()
     local now = getFrameTime()
     local lastQueued = tempEvents.lastQueuedAt or 0
@@ -241,7 +265,7 @@ local function queueTempEventRefresh()
     safeDebug("[EndeavorTracker.TempEvents] refresh queued (debounced)")
 end
 
-local function onTimedActivitiesEvent()
+local function queueTempEventRefreshSafe()
     runSafe(queueTempEventRefresh)
 end
 
@@ -258,6 +282,55 @@ local function hasRecentDebouncedRefresh()
     end
 
     return elapsed < tempEvents.debounceMs or tempEvents.pending
+end
+
+local function scheduleProgressFallback()
+    if progressFallback.timerHandle ~= nil then
+        return
+    end
+
+    runSafe(function()
+        local callLater = rawget(_G, "zo_callLater")
+        if type(callLater) ~= "function" then
+            queueTempEventRefreshSafe()
+            return
+        end
+
+        safeDebug("[EndeavorTracker.TempEvents] fallback scheduled (no progress yet)")
+
+        local delay = progressFallback.delayMs or 0
+        progressFallback.timerHandle = callLater(function()
+            progressFallback.timerHandle = nil
+            if state.isDisposed then
+                return
+            end
+
+            local now = getFrameTime()
+            local last = progressFallback.lastProgressAtMs or 0
+            local elapsed = now - last
+            if elapsed < 0 then
+                elapsed = 0
+            end
+
+            if elapsed >= (progressFallback.delayMs or 0) then
+                queueTempEventRefreshSafe()
+            end
+        end, delay)
+    end)
+end
+
+local function onTimedActivitiesUpdated()
+    scheduleProgressFallback()
+end
+
+local function onTimedActivitySystemStatusUpdated()
+    scheduleProgressFallback()
+end
+
+local function onTimedActivityProgressUpdated()
+    progressFallback.lastProgressAtMs = getFrameTime()
+    safeDebug("[EndeavorTracker.TempEvents] progress → queue (debounced)")
+    queueTempEventRefreshSafe()
 end
 
 local function cancelInitKickTimer(silent)
@@ -302,7 +375,7 @@ local function scheduleInitKick()
         if type(callLater) ~= "function" then
             initKick.done = true
             if not hasRecentDebouncedRefresh() then
-                onTimedActivitiesEvent()
+                queueTempEventRefreshSafe()
             end
             return
         end
@@ -316,7 +389,7 @@ local function scheduleInitKick()
 
             initKick.done = true
             if not hasRecentDebouncedRefresh() then
-                onTimedActivitiesEvent()
+                queueTempEventRefreshSafe()
             end
         end, initKick.delayMs)
     end)
@@ -342,17 +415,17 @@ local function tempEventsRegister()
         local registeredCount = 0
 
         if EVENT_TIMED_ACTIVITIES_UPDATED_ID then
-            registerMethod(eventManager, TEMP_EVENT_NAMESPACE, EVENT_TIMED_ACTIVITIES_UPDATED_ID, onTimedActivitiesEvent)
+            registerMethod(eventManager, TEMP_EVENT_NAMESPACE, EVENT_TIMED_ACTIVITIES_UPDATED_ID, onTimedActivitiesUpdated)
             registeredCount = registeredCount + 1
         end
 
         if EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED_ID then
-            registerMethod(eventManager, TEMP_EVENT_NAMESPACE, EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED_ID, onTimedActivitiesEvent)
+            registerMethod(eventManager, TEMP_EVENT_NAMESPACE, EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED_ID, onTimedActivityProgressUpdated)
             registeredCount = registeredCount + 1
         end
 
         if EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED_ID then
-            registerMethod(eventManager, TEMP_EVENT_NAMESPACE, EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED_ID, onTimedActivitiesEvent)
+            registerMethod(eventManager, TEMP_EVENT_NAMESPACE, EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED_ID, onTimedActivitySystemStatusUpdated)
             registeredCount = registeredCount + 1
         end
 
@@ -371,6 +444,7 @@ local function tempEventsUnregister()
 
     runSafe(function()
         clearTempEventsTimer()
+        cancelProgressFallbackTimer()
 
         local eventManager = rawget(_G, "EVENT_MANAGER")
         local eventManagerType = type(eventManager)
@@ -450,6 +524,9 @@ function EndeavorTracker.Init(sectionContainer)
         cancelInitKickTimer(true)
     end
 
+    cancelProgressFallbackTimer()
+    progressFallback.lastProgressAtMs = nil
+
     local rows = getRowsModule()
     if rows and type(rows.Init) == "function" then
         pcall(rows.Init)
@@ -528,6 +605,8 @@ function EndeavorTracker.Dispose()
     state.isDisposed = true
     cancelInitKickTimer(false)
     initKick.done = true
+    cancelProgressFallbackTimer()
+    progressFallback.lastProgressAtMs = nil
     tempEventsUnregister()
     state.isInitialized = false
     state.currentHeight = 0
