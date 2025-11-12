@@ -2,6 +2,7 @@ Nvk3UT = Nvk3UT or {}
 
 local ADDON_NAME = "Nvk3UT"
 local DEFAULT_PANEL_TITLE = "Nvk3's Ultimate Tracker"
+local ADDON_VERSION = GetAddOnMetadata(ADDON_NAME, "Version") or ""
 
 local L = {}
 Nvk3UT.LAM = L
@@ -1242,7 +1243,7 @@ local function registerPanel(displayTitle)
         name = displayTitle or DEFAULT_PANEL_TITLE,
         displayName = "|c66CCFF" .. (displayTitle or DEFAULT_PANEL_TITLE) .. "|r",
         author = "Nvk3",
-        version = "{VERSION}",
+        version = ADDON_VERSION,
         registerForRefresh = true,
         registerForDefaults = false,
     }

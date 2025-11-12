@@ -1,8 +1,8 @@
 -- Core/Nvk3UT_Core.lua
 -- Central addon root. Owns global table, SafeCall, module registry, SavedVariables bootstrap, lifecycle entry points.
 
-local ADDON_NAME    = ADDON_NAME    or "Nvk3UT"
-local ADDON_VERSION = ADDON_VERSION or "0.10.2" -- TODO: keep in sync with manifest when version updates
+local ADDON_NAME = ADDON_NAME or "Nvk3UT"
+local ADDON_VERSION = GetAddOnMetadata(ADDON_NAME, "Version") or ""
 local unpack = unpack or table.unpack
 
 Nvk3UT = Nvk3UT or {}
