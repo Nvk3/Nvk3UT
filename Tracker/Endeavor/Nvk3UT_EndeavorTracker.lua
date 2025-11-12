@@ -51,10 +51,16 @@ local progressFallback = {
     delayMs = 750,
 }
 
-local function ScheduleLater(ms, cb)
-    if type(ms) ~= "number" or ms < 0 then
-        ms = 0
+local function CallIfFunction(fn, ...)
+    if type(fn) == "function" then
+        return pcall(fn, ...)
     end
+
+    return false, "not a function"
+end
+
+local function ScheduleLater(ms, cb)
+    ms = (type(ms) == "number" and ms >= 0) and ms or 0
 
     if type(cb) ~= "function" then
         return nil
@@ -67,34 +73,20 @@ local function ScheduleLater(ms, cb)
         end
     end
 
-    local timestamp = 0
-    local frameGetter = rawget(_G, "GetFrameTimeMilliseconds")
-    if type(frameGetter) ~= "function" then
-        frameGetter = rawget(_G, "GetGameTimeMilliseconds")
-    end
-    if type(frameGetter) == "function" then
-        local ok, value = pcall(frameGetter)
-        if ok and type(value) == "number" then
-            timestamp = value
-        end
-    end
-
-    local identifier = "Nvk3UT_Endeavor_Once_" .. tostring(timestamp)
+    local id = "Nvk3UT_Endeavor_Once_" .. tostring(getFrameTime())
     local eventManager = rawget(_G, "EVENT_MANAGER")
     if eventManager and type(eventManager.RegisterForUpdate) == "function" then
         if type(eventManager.UnregisterForUpdate) == "function" then
-            eventManager:UnregisterForUpdate(identifier)
+            eventManager:UnregisterForUpdate(id)
         end
-        eventManager:RegisterForUpdate(identifier, ms, function()
-            local currentManager = rawget(_G, "EVENT_MANAGER")
-            if currentManager and type(currentManager.UnregisterForUpdate) == "function" then
-                currentManager:UnregisterForUpdate(identifier)
+        eventManager:RegisterForUpdate(id, ms, function()
+            local manager = rawget(_G, "EVENT_MANAGER")
+            if manager and type(manager.UnregisterForUpdate) == "function" then
+                manager:UnregisterForUpdate(id)
             end
-            if type(cb) == "function" then
-                pcall(cb)
-            end
+            CallIfFunction(cb)
         end)
-        return identifier
+        return id
     end
 
     return nil
@@ -354,11 +346,7 @@ function EndeavorTracker:InitPoller_Start()
 
     local function GetActivitiesCount()
         local getter = rawget(_G, "GetNumTimedActivities")
-        if type(getter) ~= "function" then
-            return 0
-        end
-
-        local ok, value = pcall(getter)
+        local ok, value = CallIfFunction(getter)
         if ok and type(value) == "number" then
             return value
         end
@@ -376,20 +364,12 @@ function EndeavorTracker:InitPoller_Start()
             return
         end
 
-        if Nvk3UT and Nvk3UT.EndeavorModel and type(Nvk3UT.EndeavorModel.RefreshFromGame) == "function" then
-            pcall(Nvk3UT.EndeavorModel.RefreshFromGame, Nvk3UT.EndeavorModel)
-        end
-
-        if Nvk3UT and Nvk3UT.EndeavorTrackerController and type(Nvk3UT.EndeavorTrackerController.MarkDirty) == "function" then
-            pcall(Nvk3UT.EndeavorTrackerController.MarkDirty, Nvk3UT.EndeavorTrackerController)
-        end
-
-        if Nvk3UT and Nvk3UT.TrackerRuntime and type(Nvk3UT.TrackerRuntime.QueueDirty) == "function" then
-            pcall(Nvk3UT.TrackerRuntime.QueueDirty, Nvk3UT.TrackerRuntime, "endeavor")
-        end
+        CallIfFunction(Nvk3UT and Nvk3UT.EndeavorModel and Nvk3UT.EndeavorModel.RefreshFromGame, Nvk3UT.EndeavorModel)
+        CallIfFunction(Nvk3UT and Nvk3UT.EndeavorTrackerController and Nvk3UT.EndeavorTrackerController.MarkDirty, Nvk3UT.EndeavorTrackerController)
+        CallIfFunction(Nvk3UT and Nvk3UT.TrackerRuntime and Nvk3UT.TrackerRuntime.QueueDirty, Nvk3UT.TrackerRuntime, "endeavor")
     end
 
-    local function InitPoller_Tick()
+    local function N3UT_Endeavor_InitPoller_Tick()
         self._initPollerTimer = nil
 
         if state.isDisposed or not self._initPollerActive then
@@ -406,7 +386,7 @@ function EndeavorTracker:InitPoller_Start()
             return
         end
 
-        if self._initPollerTries >= (self._initPollerMaxTries or 10) then
+        if self._initPollerTries >= self._initPollerMaxTries then
             self._initPollerActive = false
             safeDebug("[EndeavorTracker.SHIM] init-poller gave up (count=0)")
             return
@@ -416,10 +396,10 @@ function EndeavorTracker:InitPoller_Start()
             return
         end
 
-        self._initPollerTimer = ScheduleLater(self._initPollerInterval, InitPoller_Tick)
+        self._initPollerTimer = ScheduleLater(self._initPollerInterval, N3UT_Endeavor_InitPoller_Tick)
     end
 
-    self._initPollerTimer = ScheduleLater(self._initPollerInterval, InitPoller_Tick)
+    self._initPollerTimer = ScheduleLater(self._initPollerInterval, N3UT_Endeavor_InitPoller_Tick)
     if self._initPollerTimer ~= nil then
         safeDebug("[EndeavorTracker.SHIM] init-poller scheduled")
         return
