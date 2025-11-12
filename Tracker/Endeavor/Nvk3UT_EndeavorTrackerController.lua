@@ -18,51 +18,21 @@ local function getRoot()
     return Nvk3UT
 end
 
-local function resolveDiagnostics()
-    local root = getRoot()
-    local diagnostics = root and root.Diagnostics
-    if type(diagnostics) == "table" then
-        return diagnostics
-    end
-
-    return nil
-end
-
-local function isDebugEnabled()
-    local diagnostics = resolveDiagnostics()
-    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
-        local ok, enabled = pcall(diagnostics.IsDebugEnabled, diagnostics)
-        if ok and enabled ~= nil then
-            return enabled == true
-        end
-    end
-
-    local root = getRoot()
-    if type(root) == "table" and type(root.debug) == "boolean" then
-        return root.debug
-    end
-
-    return false
-end
-
-local function debugLog(fmt, ...)
-    if not isDebugEnabled() then
+-- local debug logger
+local function DBG(fmt, ...)
+    if not (Nvk3UT and Nvk3UT.debug) then
         return
     end
 
-    local diagnostics = resolveDiagnostics()
-    if diagnostics and type(diagnostics.Debug) == "function" then
-        diagnostics.Debug("[EndeavorController] " .. tostring(fmt), ...)
-        return
+    local ok, message = pcall(string.format, fmt or "", ...)
+    if not ok then
+        message = tostring(fmt)
     end
 
     if type(d) == "function" then
-        d(string.format("[Nvk3UT][EndeavorController] " .. tostring(fmt), ...))
-        return
-    end
-
-    if type(print) == "function" then
-        print("[Nvk3UT][EndeavorController]", string.format(tostring(fmt), ...))
+        d("[EndeavorController] " .. message)
+    elseif type(print) == "function" then
+        print("[EndeavorController] " .. message)
     end
 end
 
@@ -203,7 +173,7 @@ function Controller:BuildViewModel()
     appendItems(viewData.daily, "daily")
     appendItems(viewData.weekly, "weekly")
 
-    debugLog("built view model: count=%d (daily=%d weekly=%d)", #items, dailyCount, weeklyCount)
+    DBG("built view model: count=%d (daily=%d weekly=%d)", #items, dailyCount, weeklyCount)
 
     return {
         items = items,
