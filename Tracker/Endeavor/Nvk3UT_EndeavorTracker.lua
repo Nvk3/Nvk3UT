@@ -267,7 +267,14 @@ local function queueTempEventRefresh()
 end
 
 local function queueTempEventRefreshSafe()
-    runSafe(queueTempEventRefresh)
+    runSafe(function()
+        if type(queueTempEventRefresh) == "function" then
+            queueTempEventRefresh()
+            return
+        end
+
+        shimRefreshEndeavors()
+    end)
 end
 
 local function hasRecentDebouncedRefresh()
