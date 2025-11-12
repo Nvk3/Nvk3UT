@@ -9,6 +9,7 @@ Rows.__index = Rows
 local MODULE_TAG = addonName .. ".EndeavorTrackerRows"
 
 local OBJECTIVE_ROW_HEIGHT = 20
+local DEFAULT_OBJECTIVE_FONT_SIZE = 14
 local DEFAULT_OBJECTIVE_FONT = "$(BOLD_FONT)|14|soft-shadow-thick"
 local DEFAULT_OBJECTIVE_COLOR = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 }
 local DEFAULT_COMPLETED_COLOR = { r = 0.7, g = 0.7, b = 0.7, a = 1 }
@@ -113,12 +114,15 @@ local function getTrackerTheme()
         if type(getter) == "function" then
             local ok, theme = pcall(getter, tracker)
             if ok and type(theme) == "table" then
+                if type(theme.fontSizes) ~= "table" then
+                    theme.fontSizes = {}
+                end
                 return theme
             end
         end
     end
 
-    return { colors = {}, fonts = {} }
+    return { colors = {}, fonts = {}, fontSizes = {} }
 end
 
 local function getTrackerOptions()
@@ -286,9 +290,6 @@ function Rows.ApplyObjectiveRow(row, objective)
     title:ClearAnchors()
     title:SetAnchor(TOPLEFT, row, TOPLEFT, 0, 0)
     title:SetAnchor(TOPRIGHT, row, TOPRIGHT, 0, 0)
-    if title.SetHeight then
-        title:SetHeight(OBJECTIVE_ROW_HEIGHT)
-    end
     title:SetText(combinedText)
     row.Label = title
 
@@ -319,6 +320,48 @@ function Rows.ApplyObjectiveRow(row, objective)
     if isGlobalDebugEnabled() then
         safeDebug("[EndeavorRows] objective inline: \"%s\"", combinedText)
     end
+    local fontSizes = theme.fontSizes or {}
+    local baseSize = fontSizes.objective or DEFAULT_OBJECTIVE_FONT_SIZE
+    local targetHeight = math.max(OBJECTIVE_ROW_HEIGHT, math.floor(baseSize + 6 + 0.5))
+
+    local width = 0
+    if row.GetWidth then
+        local ok, measuredWidth = pcall(row.GetWidth, row)
+        if ok and type(measuredWidth) == "number" then
+            width = measuredWidth
+        end
+    end
+    if (not width or width <= 0) and row.GetParent then
+        local parent = row:GetParent()
+        if parent and parent.GetWidth then
+            local ok, parentWidth = pcall(parent.GetWidth, parent)
+            if ok and type(parentWidth) == "number" then
+                width = parentWidth
+            end
+        end
+    end
+    if width and width > 0 and title.SetWidth then
+        title:SetWidth(width)
+    end
+
+    if title.GetTextHeight then
+        local ok, textHeight = pcall(title.GetTextHeight, title)
+        if ok and type(textHeight) == "number" and textHeight > 0 then
+            local measured = math.floor(textHeight + 4 + 0.5)
+            if measured > targetHeight then
+                targetHeight = measured
+            end
+        end
+    end
+
+    if row.SetHeight then
+        row:SetHeight(targetHeight)
+    end
+    if title.SetHeight then
+        title:SetHeight(targetHeight)
+    end
+
+    return targetHeight
 end
 
 function Rows.Init()
@@ -391,9 +434,9 @@ function Rows.BuildObjectives(container, list)
     for index = 1, count do
         local row = ensureObjectiveRow(container, baseName, index, previous)
         if row then
-            Rows.ApplyObjectiveRow(row, sequence[index])
+            local height = Rows.ApplyObjectiveRow(row, sequence[index])
             previous = row
-            totalHeight = totalHeight + OBJECTIVE_ROW_HEIGHT
+            totalHeight = totalHeight + (height or OBJECTIVE_ROW_HEIGHT)
         end
     end
 

@@ -32,44 +32,59 @@ local DEFAULT_SETTINGS = {
     completedHandling = "hide",
 }
 
-local DEFAULT_THEME = {
-    colors = {
-        categoryTitle = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
-        entryName = { r = 1, g = 1, b = 0, a = 1 },
-        objective = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
-        active = { r = 1, g = 1, b = 1, a = 1 },
-        completed = { r = 0.7, g = 0.7, b = 0.7, a = 1 },
-    },
-    font = {
-        family = "$(BOLD_FONT)",
-        size = 16,
-        outline = "soft-shadow-thick",
-    },
+local DEFAULT_THEME_COLORS = {
+    categoryTitle = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
+    entryName = { r = 1, g = 1, b = 0, a = 1 },
+    objective = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
+    active = { r = 1, g = 1, b = 1, a = 1 },
+    completed = { r = 0.7, g = 0.7, b = 0.7, a = 1 },
+}
+
+local DEFAULT_FONT_TEMPLATE = {
+    category = { family = "$(BOLD_FONT)", size = 20, outline = "soft-shadow-thick" },
+    entry = { family = "$(BOLD_FONT)", size = 16, outline = "soft-shadow-thick" },
+    objective = { family = "$(BOLD_FONT)", size = 14, outline = "soft-shadow-thick" },
+}
+
+local FONT_SIZE_MIN = 10
+local FONT_SIZE_MAX = 48
+
+local DEFAULT_FONT_SIZES = {
+    category = DEFAULT_FONT_TEMPLATE.category.size,
+    entry = DEFAULT_FONT_TEMPLATE.entry.size,
+    objective = DEFAULT_FONT_TEMPLATE.objective.size,
 }
 
 local DEFAULT_ENTRY_FONT_STRING = string.format(
     "%s|%d|%s",
-    DEFAULT_THEME.font.family,
-    DEFAULT_THEME.font.size,
-    DEFAULT_THEME.font.outline
+    DEFAULT_FONT_TEMPLATE.entry.family,
+    DEFAULT_FONT_TEMPLATE.entry.size,
+    DEFAULT_FONT_TEMPLATE.entry.outline
 )
 
 local DEFAULT_CATEGORY_FONT_STRING = string.format(
     "%s|%d|%s",
-    DEFAULT_THEME.font.family,
-    DEFAULT_THEME.font.size + 4,
-    DEFAULT_THEME.font.outline
+    DEFAULT_FONT_TEMPLATE.category.family,
+    DEFAULT_FONT_TEMPLATE.category.size,
+    DEFAULT_FONT_TEMPLATE.category.outline
 )
 
 local DEFAULT_OBJECTIVE_FONT_STRING = string.format(
     "%s|%d|%s",
-    DEFAULT_THEME.font.family,
-    math.max(10, DEFAULT_THEME.font.size - 2),
-    DEFAULT_THEME.font.outline
+    DEFAULT_FONT_TEMPLATE.objective.family,
+    DEFAULT_FONT_TEMPLATE.objective.size,
+    DEFAULT_FONT_TEMPLATE.objective.outline
 )
 
-local FONT_SIZE_MIN = 10
-local FONT_SIZE_MAX = 48
+local DEFAULT_THEME = {
+    colors = cloneTable(DEFAULT_THEME_COLORS),
+    fonts = {
+        category = DEFAULT_CATEGORY_FONT_STRING,
+        entry = DEFAULT_ENTRY_FONT_STRING,
+        objective = DEFAULT_OBJECTIVE_FONT_STRING,
+    },
+    fontSizes = cloneTable(DEFAULT_FONT_SIZES),
+}
 
 local state = {
     container = nil,
@@ -85,6 +100,7 @@ local state = {
             entry = DEFAULT_ENTRY_FONT_STRING,
             objective = DEFAULT_OBJECTIVE_FONT_STRING,
         },
+        fontSizes = cloneTable(DEFAULT_THEME.fontSizes),
     },
 }
 
@@ -131,6 +147,7 @@ local INIT_POLLER_UPDATE_NAME = "Nvk3UT_Endeavor_InitPoller"
 
 local CATEGORY_ROW_HEIGHT = 26
 local SECTION_ROW_HEIGHT = 24
+local OBJECTIVE_ROW_HEIGHT = 20
 local CATEGORY_CHEVRON_SIZE = 20
 local CATEGORY_LABEL_OFFSET_X = 4
 local SECTION_LABEL_OFFSET_X = 0
@@ -171,7 +188,7 @@ end
 local function sanitizeFontSize(value, fallback)
     local numeric = tonumber(value)
     if numeric == nil or numeric ~= numeric then
-        numeric = fallback or DEFAULT_THEME.font.size
+        numeric = fallback or DEFAULT_FONT_TEMPLATE.entry.size
     end
 
     numeric = math.floor(numeric + 0.5)
@@ -195,26 +212,67 @@ local function normalizeColor(source, defaults)
     }
 end
 
-local function buildFontString(family, size, outline)
-    local resolvedFamily = family or DEFAULT_THEME.font.family
-    local resolvedOutline = outline or DEFAULT_THEME.font.outline
-    local resolvedSize = sanitizeFontSize(size, DEFAULT_THEME.font.size)
+local function buildFontString(family, size, outline, fallback)
+    local template = fallback or DEFAULT_FONT_TEMPLATE.entry
+    local resolvedFamily = (type(family) == "string" and family ~= "") and family or template.family
+    local resolvedOutline = (type(outline) == "string" and outline ~= "") and outline or template.outline
+    local resolvedSize = sanitizeFontSize(size, template.size)
     return string.format("%s|%d|%s", resolvedFamily, resolvedSize, resolvedOutline)
+end
+
+local function buildFontFromEntry(entry, template)
+    local defaults = template or DEFAULT_FONT_TEMPLATE.entry
+    local source = type(entry) == "table" and entry or {}
+    local family = source.Family or source.family
+    local outline = source.Outline or source.outline
+    local size = source.Size or source.size
+    local resolvedSize = sanitizeFontSize(size, defaults.size)
+    local fontString = buildFontString(family, resolvedSize, outline, defaults)
+    return fontString, resolvedSize
 end
 
 local function computeFonts(fontOptions)
     local options = type(fontOptions) == "table" and fontOptions or {}
-    local family = options.Family or DEFAULT_THEME.font.family
-    local outline = options.Outline or DEFAULT_THEME.font.outline
-    local baseSize = sanitizeFontSize(options.Size, DEFAULT_THEME.font.size)
-    local categorySize = sanitizeFontSize(baseSize + 4, DEFAULT_THEME.font.size + 4)
-    local objectiveSize = sanitizeFontSize(baseSize - 2, DEFAULT_THEME.font.size - 2)
+    local structured = options.Fonts or options.fonts
+    if type(structured) ~= "table" then
+        if type(options.Category) == "table" or type(options.category) == "table" or
+           type(options.Entry) == "table" or type(options.entry) == "table" or
+           type(options.Objective) == "table" or type(options.objective) == "table" then
+            structured = options
+        end
+    end
 
-    return {
-        category = buildFontString(family, categorySize, outline),
-        entry = buildFontString(family, baseSize, outline),
-        objective = buildFontString(family, objectiveSize, outline),
-    }
+    local fonts = {}
+    local sizes = {}
+
+    if type(structured) == "table" then
+        fonts.category, sizes.category = buildFontFromEntry(structured.Category or structured.category, DEFAULT_FONT_TEMPLATE.category)
+        fonts.entry, sizes.entry = buildFontFromEntry(structured.Entry or structured.entry, DEFAULT_FONT_TEMPLATE.entry)
+        fonts.objective, sizes.objective = buildFontFromEntry(structured.Objective or structured.objective, DEFAULT_FONT_TEMPLATE.objective)
+        return fonts, sizes
+    end
+
+    local legacy = options.Font or options.font
+    if type(legacy) ~= "table" then
+        legacy = options
+    end
+
+    local family = legacy.Family or legacy.family
+    local outline = legacy.Outline or legacy.outline
+    local baseSize = sanitizeFontSize(legacy.Size or legacy.size, DEFAULT_FONT_TEMPLATE.entry.size)
+
+    fonts.entry = buildFontString(family, baseSize, outline, DEFAULT_FONT_TEMPLATE.entry)
+    sizes.entry = sanitizeFontSize(baseSize, DEFAULT_FONT_TEMPLATE.entry.size)
+
+    local categorySize = sanitizeFontSize(baseSize + 4, DEFAULT_FONT_TEMPLATE.category.size)
+    fonts.category = buildFontString(family, categorySize, outline, DEFAULT_FONT_TEMPLATE.category)
+    sizes.category = categorySize
+
+    local objectiveSize = sanitizeFontSize(baseSize - 2, DEFAULT_FONT_TEMPLATE.objective.size)
+    fonts.objective = buildFontString(family, objectiveSize, outline, DEFAULT_FONT_TEMPLATE.objective)
+    sizes.objective = objectiveSize
+
+    return fonts, sizes
 end
 
 local function sanitizeCompletedHandling(value)
@@ -394,6 +452,38 @@ local function getFontForRole(role)
     return fonts.entry or DEFAULT_ENTRY_FONT_STRING
 end
 
+local function getFontSizeForRole(role)
+    local fontSizes = state.theme and state.theme.fontSizes or {}
+    if role == "category" then
+        return fontSizes.category or DEFAULT_FONT_SIZES.category
+    elseif role == "objective" then
+        return fontSizes.objective or DEFAULT_FONT_SIZES.objective
+    end
+    return fontSizes.entry or DEFAULT_FONT_SIZES.entry
+end
+
+local function getRowHeightForRole(role)
+    local base
+    local padding
+    if role == "category" then
+        base = CATEGORY_ROW_HEIGHT
+        padding = 8
+    elseif role == "objective" then
+        base = OBJECTIVE_ROW_HEIGHT
+        padding = 6
+    else
+        base = SECTION_ROW_HEIGHT
+        padding = 6
+    end
+
+    local size = getFontSizeForRole(role) or base
+    local computed = math.floor(size + padding + 0.5)
+    if computed < base then
+        computed = base
+    end
+    return computed
+end
+
 local function getSettings()
     if type(state.settings) ~= "table" then
         state.settings = cloneTable(DEFAULT_SETTINGS)
@@ -410,6 +500,7 @@ local function getTheme()
                 entry = DEFAULT_ENTRY_FONT_STRING,
                 objective = DEFAULT_OBJECTIVE_FONT_STRING,
             },
+            fontSizes = cloneTable(DEFAULT_THEME.fontSizes),
         }
     end
     if type(state.theme.colors) ~= "table" then
@@ -421,6 +512,9 @@ local function getTheme()
             entry = DEFAULT_ENTRY_FONT_STRING,
             objective = DEFAULT_OBJECTIVE_FONT_STRING,
         }
+    end
+    if type(state.theme.fontSizes) ~= "table" then
+        state.theme.fontSizes = cloneTable(DEFAULT_THEME.fontSizes)
     end
     return state.theme
 end
@@ -509,8 +603,13 @@ function EndeavorTracker.ApplyTheme(options)
     theme.colors.active = normalizeColor(colorsSource.Active or colorsSource.active, DEFAULT_THEME.colors.active)
     theme.colors.completed = normalizeColor(colorsSource.Completed or colorsSource.completed, DEFAULT_THEME.colors.completed)
 
-    local fontSource = source.Font or source.font
-    theme.fonts = computeFonts(fontSource)
+    local fonts, fontSizes = computeFonts(source)
+    theme.fonts = fonts
+    theme.fontSizes = fontSizes
+
+    if state.container then
+        ensureUi(state.container)
+    end
 end
 
 function EndeavorTracker.GetOptions()
@@ -1235,7 +1334,8 @@ local function ensureUi(container)
             control:SetParent(container)
         end
         control:SetResizeToFitDescendents(false)
-        control:SetHeight(CATEGORY_ROW_HEIGHT)
+        local categoryHeight = getRowHeightForRole("category")
+        control:SetHeight(categoryHeight)
         control:SetMouseEnabled(true)
         control:SetHidden(false)
         control:SetHandler("OnMouseUp", function(_, button, upInside)
@@ -1254,7 +1354,7 @@ local function ensureUi(container)
         chevron:SetHidden(false)
         chevron:SetDimensions(CATEGORY_CHEVRON_SIZE, CATEGORY_CHEVRON_SIZE)
         chevron:ClearAnchors()
-        local offsetY = math.floor((CATEGORY_ROW_HEIGHT - CATEGORY_CHEVRON_SIZE) * 0.5)
+        local offsetY = math.max(0, math.floor((categoryHeight - CATEGORY_CHEVRON_SIZE) * 0.5))
         chevron:SetAnchor(TOPLEFT, control, TOPLEFT, 0, offsetY)
         chevron:SetTexture(CHEVRON_TEXTURES.collapsed)
 
@@ -1281,7 +1381,7 @@ local function ensureUi(container)
         local control = category.control
         if control then
             control:SetParent(container)
-            control:SetHeight(CATEGORY_ROW_HEIGHT)
+            control:SetHeight(getRowHeightForRole("category"))
         end
         local label = category.label
         applyLabelFont(label, getFontForRole("category"))
@@ -1297,7 +1397,8 @@ local function ensureUi(container)
             control:SetParent(container)
         end
         control:SetResizeToFitDescendents(false)
-        control:SetHeight(SECTION_ROW_HEIGHT)
+        local entryHeight = getRowHeightForRole("entry")
+        control:SetHeight(entryHeight)
         control:SetMouseEnabled(true)
         control:SetHidden(false)
         control:SetHandler("OnMouseUp", function(_, button, upInside)
@@ -1328,7 +1429,7 @@ local function ensureUi(container)
         local control = daily.control
         if control then
             control:SetParent(container)
-            control:SetHeight(SECTION_ROW_HEIGHT)
+            control:SetHeight(getRowHeightForRole("entry"))
         end
         local label = daily.label
         applyLabelFont(label, getFontForRole("entry"))
@@ -1344,7 +1445,8 @@ local function ensureUi(container)
             control:SetParent(container)
         end
         control:SetResizeToFitDescendents(false)
-        control:SetHeight(SECTION_ROW_HEIGHT)
+        local entryHeight = getRowHeightForRole("entry")
+        control:SetHeight(entryHeight)
         control:SetMouseEnabled(true)
         control:SetHidden(false)
         control:SetHandler("OnMouseUp", function(_, button, upInside)
@@ -1375,7 +1477,7 @@ local function ensureUi(container)
         local control = weekly.control
         if control then
             control:SetParent(container)
-            control:SetHeight(SECTION_ROW_HEIGHT)
+            control:SetHeight(getRowHeightForRole("entry"))
         end
         local label = weekly.label
         applyLabelFont(label, getFontForRole("entry"))
