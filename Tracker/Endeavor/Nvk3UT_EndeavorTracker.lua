@@ -15,6 +15,8 @@ local state = {
     isInitialized = false,
     isDisposed = false,
     ui = nil,
+    appearance = nil,
+    enabled = true,
 }
 
 -- EBOOT TempEvents (Endeavor)
@@ -64,18 +66,152 @@ local CATEGORY_CHEVRON_SIZE = 20
 local CATEGORY_LABEL_OFFSET_X = 4
 local SECTION_LABEL_OFFSET_X = 0
 
-local QUEST_CATEGORY_FONT = "$(BOLD_FONT)|20|soft-shadow-thick"
-local QUEST_ENTRY_FONT = "$(BOLD_FONT)|16|soft-shadow-thick"
+local DEFAULT_COLORS = {
+    CategoryTitle = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
+    EntryName = { r = 1, g = 1, b = 0, a = 1 },
+    Objective = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
+    Active = { r = 1, g = 1, b = 1, a = 1 },
+    Completed = { r = 0.7, g = 0.7, b = 0.7, a = 1 },
+}
+
+local DEFAULT_FONT = { Family = "$(BOLD_FONT)", Size = 16, Outline = "soft-shadow-thick" }
+local FONT_SIZE_MIN = 12
+local FONT_SIZE_MAX = 36
+local CATEGORY_FONT_DELTA = 4
+local OBJECTIVE_FONT_DELTA = -2
 
 local CHEVRON_TEXTURES = {
     expanded = "EsoUI/Art/Buttons/tree_open_up.dds",
     collapsed = "EsoUI/Art/Buttons/tree_closed_up.dds",
 }
 
-local CATEGORY_COLOR_ROLE_EXPANDED = "activeTitle"
-local CATEGORY_COLOR_ROLE_COLLAPSED = "categoryTitle"
-local ENTRY_COLOR_ROLE_DEFAULT = "entryTitle"
-local ENTRY_COLOR_ROLE_EXPANDED = "activeTitle"
+local CATEGORY_COLOR_ROLE_EXPANDED = "Active"
+local CATEGORY_COLOR_ROLE_COLLAPSED = "CategoryTitle"
+local ENTRY_COLOR_ROLE_DEFAULT = "EntryName"
+local ENTRY_COLOR_ROLE_EXPANDED = "Active"
+
+local function getSavedVars()
+    local addon = getAddon()
+    if type(addon) ~= "table" then
+        return nil
+    end
+
+    return addon.sv or addon.SV
+end
+
+local function ensureEndeavorSettings()
+    local sv = getSavedVars()
+    if type(sv) ~= "table" then
+        return nil
+    end
+
+    local settings = sv.Endeavor
+    if type(settings) ~= "table" then
+        settings = {}
+        sv.Endeavor = settings
+    end
+
+    settings.Colors = settings.Colors or {}
+    settings.Font = settings.Font or {}
+
+    return settings
+end
+
+local function clampColorComponent(value, fallback)
+    local numeric = tonumber(value)
+    if numeric == nil then
+        numeric = fallback ~= nil and fallback or 1
+    end
+
+    if numeric < 0 then
+        numeric = 0
+    elseif numeric > 1 then
+        numeric = 1
+    end
+
+    return numeric
+end
+
+local function resolveColor(source, defaults)
+    local base = defaults or DEFAULT_COLORS.CategoryTitle
+    local color = type(source) == "table" and source or {}
+    return {
+        r = clampColorComponent(color.r, base.r),
+        g = clampColorComponent(color.g, base.g),
+        b = clampColorComponent(color.b, base.b),
+        a = clampColorComponent(color.a, base.a),
+    }
+end
+
+local function clampFontSize(value)
+    local numeric = tonumber(value)
+    if numeric == nil then
+        numeric = DEFAULT_FONT.Size
+    end
+
+    numeric = math.floor(numeric + 0.5)
+    if numeric < FONT_SIZE_MIN then
+        numeric = FONT_SIZE_MIN
+    elseif numeric > FONT_SIZE_MAX then
+        numeric = FONT_SIZE_MAX
+    end
+
+    return numeric
+end
+
+local function buildFontString(face, size, outline)
+    local fontFace = face and face ~= "" and face or DEFAULT_FONT.Family
+    local fontOutline = outline and outline ~= "" and outline or DEFAULT_FONT.Outline
+    local fontSize = clampFontSize(size)
+    return string.format("%s|%d|%s", fontFace, fontSize, fontOutline)
+end
+
+local function buildAppearanceSnapshot()
+    local settings = ensureEndeavorSettings()
+    local colorsSource = settings and settings.Colors or {}
+    local fontSource = settings and settings.Font or {}
+
+    local family = fontSource.Family or fontSource.family or DEFAULT_FONT.Family
+    local outline = fontSource.Outline or fontSource.outline or DEFAULT_FONT.Outline
+    local baseSize = clampFontSize(fontSource.Size or fontSource.size)
+
+    local colors = {}
+    for key, defaults in pairs(DEFAULT_COLORS) do
+        local source = colorsSource[key] or colorsSource[string.lower(key)]
+        colors[key] = resolveColor(source, defaults)
+    end
+
+    local appearance = {
+        colors = colors,
+        fonts = {
+            Category = buildFontString(family, baseSize + CATEGORY_FONT_DELTA, outline),
+            Entry = buildFontString(family, baseSize, outline),
+            Objective = buildFontString(family, baseSize + OBJECTIVE_FONT_DELTA, outline),
+        },
+        baseFont = {
+            Family = family,
+            Size = baseSize,
+            Outline = outline,
+        },
+        showCountsInHeaders = settings == nil or settings.ShowCountsInHeaders ~= false,
+        completedHandling = (settings and settings.CompletedHandling == "recolor") and "recolor" or "hide",
+        enabled = settings == nil or settings.Enabled ~= false,
+    }
+
+    return appearance
+end
+
+local function getAppearanceSnapshot()
+    if type(state.appearance) ~= "table" then
+        state.appearance = buildAppearanceSnapshot()
+    end
+
+    return state.appearance
+end
+
+function EndeavorTracker.GetAppearanceConfig()
+    return getAppearanceSnapshot()
+end
 
 local function FormatParensCount(a, b)
     local aNum = tonumber(a) or 0
@@ -164,48 +300,24 @@ local function getAddon()
     return rawget(_G, addonName)
 end
 
-local function getQuestTrackerColor(role)
-    local addon = getAddon()
-    if type(addon) ~= "table" then
-        return 1, 1, 1, 1
-    end
-
-    local host = rawget(addon, "TrackerHost")
-    if type(host) ~= "table" then
-        return 1, 1, 1, 1
-    end
-
-    local ensureDefaults = host.EnsureAppearanceDefaults
-    if type(ensureDefaults) == "function" then
-        pcall(ensureDefaults, host)
-    end
-
-    local getColor = host.GetTrackerColor
-    if type(getColor) ~= "function" then
-        return 1, 1, 1, 1
-    end
-
-    local ok, r, g, b, a = pcall(getColor, host, "questTracker", role)
-    if ok and type(r) == "number" then
-        return r, g or 1, b or 1, a or 1
-    end
-
-    return 1, 1, 1, 1
-end
-
 local function applyLabelFont(label, font)
     if label and label.SetFont and font and font ~= "" then
         label:SetFont(font)
     end
 end
 
-local function applyLabelColor(label, role)
+local function applyLabelColor(label, colors, role)
     if not label or not label.SetColor then
         return
     end
 
-    local r, g, b, a = getQuestTrackerColor(role)
-    label:SetColor(r, g, b, a)
+    local palette = colors or DEFAULT_COLORS
+    local color = palette and (palette[role] or palette[string.lower(role)])
+    if type(color) ~= "table" then
+        color = DEFAULT_COLORS.CategoryTitle
+    end
+
+    label:SetColor(color.r or 1, color.g or 1, color.b or 1, color.a or 1)
 end
 
 local function runSafe(fn)
@@ -1149,6 +1261,8 @@ function EndeavorTracker.Init(sectionContainer)
     state.isDisposed = false
     EndeavorTracker._disposed = false
     state.ui = nil
+    state.appearance = nil
+    state.enabled = true
 
     ensureEndeavorInitialized()
 
@@ -1249,11 +1363,26 @@ function EndeavorTracker.Refresh(viewModel)
     local categoryVm = type(vm.category) == "table" and vm.category or {}
     local dailyVm = type(vm.daily) == "table" and vm.daily or {}
     local weeklyVm = type(vm.weekly) == "table" and vm.weekly or {}
+    local vmConfig = type(vm.config) == "table" and vm.config or {}
 
     local dailyObjectivesList = type(dailyVm.objectives) == "table" and dailyVm.objectives or {}
     local weeklyObjectivesList = type(weeklyVm.objectives) == "table" and weeklyVm.objectives or {}
 
     safeDebug("[EndeavorTracker.UI] Refresh: daily=%d weekly=%d", #dailyObjectivesList, #weeklyObjectivesList)
+
+    local appearance = buildAppearanceSnapshot()
+    state.appearance = appearance
+    local colors = appearance.colors or DEFAULT_COLORS
+    local fonts = appearance.fonts or {}
+
+    local showCounts = vmConfig.showCountsInHeaders
+    if showCounts == nil then
+        showCounts = appearance.showCountsInHeaders ~= false
+    end
+    showCounts = showCounts ~= false
+
+    local enabled = vm.enabled ~= false
+    state.enabled = enabled
 
     local ui = ensureUi(container)
     if type(ui) ~= "table" then
@@ -1276,12 +1405,20 @@ function EndeavorTracker.Refresh(viewModel)
     local categoryRemaining = tonumber(categoryVm.remaining) or 0
     categoryRemaining = math.max(0, math.floor(categoryRemaining + 0.5))
     if categoryLabel and categoryLabel.SetText then
-        local formatHeader = Utils and Utils.FormatCategoryHeaderText
-        if type(formatHeader) == "function" then
-            categoryLabel:SetText(formatHeader(categoryTitle, categoryRemaining, true))
+        if showCounts then
+            local formatHeader = Utils and Utils.FormatCategoryHeaderText
+            if type(formatHeader) == "function" then
+                categoryLabel:SetText(formatHeader(categoryTitle, categoryRemaining, true))
+            else
+                categoryLabel:SetText(string.format("%s (%d)", categoryTitle, categoryRemaining))
+            end
         else
-            categoryLabel:SetText(string.format("%s (%d)", categoryTitle, categoryRemaining))
+            categoryLabel:SetText(categoryTitle)
         end
+    end
+
+    if categoryLabel then
+        applyLabelFont(categoryLabel, fonts.Category)
     end
 
     local categoryExpanded = categoryVm.expanded == true
@@ -1292,29 +1429,43 @@ function EndeavorTracker.Refresh(viewModel)
 
     if categoryLabel then
         local role = categoryExpanded and CATEGORY_COLOR_ROLE_EXPANDED or CATEGORY_COLOR_ROLE_COLLAPSED
-        applyLabelColor(categoryLabel, role)
+        applyLabelColor(categoryLabel, colors, role)
     end
 
     local dailyControl = ui.daily and ui.daily.control
     local dailyLabel = ui.daily and ui.daily.label
-    if dailyLabel and dailyLabel.SetText then
-        local dailyTitle = resolveTitle(dailyVm.title or "Tägliche Bestrebungen", "Tägliche Bestrebungen")
-        dailyLabel:SetText(string.format(
-            "%s %s",
-            dailyTitle,
-            FormatParensCount(dailyVm.displayCompleted or dailyVm.completed, dailyVm.displayLimit or dailyVm.total)
-        ))
+    if dailyLabel then
+        applyLabelFont(dailyLabel, fonts.Entry)
+        if dailyLabel.SetText then
+            local dailyTitle = resolveTitle(dailyVm.title or "Tägliche Bestrebungen", "Tägliche Bestrebungen")
+            if showCounts then
+                dailyLabel:SetText(string.format(
+                    "%s %s",
+                    dailyTitle,
+                    FormatParensCount(dailyVm.displayCompleted or dailyVm.completed, dailyVm.displayLimit or dailyVm.total)
+                ))
+            else
+                dailyLabel:SetText(dailyTitle)
+            end
+        end
     end
 
     local weeklyControl = ui.weekly and ui.weekly.control
     local weeklyLabel = ui.weekly and ui.weekly.label
-    if weeklyLabel and weeklyLabel.SetText then
-        local weeklyTitle = resolveTitle(weeklyVm.title or "Wöchentliche Bestrebungen", "Wöchentliche Bestrebungen")
-        weeklyLabel:SetText(string.format(
-            "%s %s",
-            weeklyTitle,
-            FormatParensCount(weeklyVm.displayCompleted or weeklyVm.completed, weeklyVm.displayLimit or weeklyVm.total)
-        ))
+    if weeklyLabel then
+        applyLabelFont(weeklyLabel, fonts.Entry)
+        if weeklyLabel.SetText then
+            local weeklyTitle = resolveTitle(weeklyVm.title or "Wöchentliche Bestrebungen", "Wöchentliche Bestrebungen")
+            if showCounts then
+                weeklyLabel:SetText(string.format(
+                    "%s %s",
+                    weeklyTitle,
+                    FormatParensCount(weeklyVm.displayCompleted or weeklyVm.completed, weeklyVm.displayLimit or weeklyVm.total)
+                ))
+            else
+                weeklyLabel:SetText(weeklyTitle)
+            end
+        end
     end
 
     local dailyExpanded = categoryExpanded and dailyVm.expanded == true
@@ -1322,12 +1473,61 @@ function EndeavorTracker.Refresh(viewModel)
 
     if dailyLabel then
         local role = dailyExpanded and ENTRY_COLOR_ROLE_EXPANDED or ENTRY_COLOR_ROLE_DEFAULT
-        applyLabelColor(dailyLabel, role)
+        applyLabelColor(dailyLabel, colors, role)
     end
 
     if weeklyLabel then
         local role = weeklyExpanded and ENTRY_COLOR_ROLE_EXPANDED or ENTRY_COLOR_ROLE_DEFAULT
-        applyLabelColor(weeklyLabel, role)
+        applyLabelColor(weeklyLabel, colors, role)
+    end
+
+    if container and container.SetHidden then
+        container:SetHidden(not enabled)
+    end
+
+    if not enabled then
+        if categoryControl and categoryControl.SetHidden then
+            categoryControl:SetHidden(true)
+        end
+        if dailyControl and dailyControl.SetHidden then
+            dailyControl:SetHidden(true)
+        end
+        if weeklyControl and weeklyControl.SetHidden then
+            weeklyControl:SetHidden(true)
+        end
+
+        local rows = getRowsModule()
+        local dailyObjectivesControl = ui.dailyObjectives and ui.dailyObjectives.control
+        local weeklyObjectivesControl = ui.weeklyObjectives and ui.weeklyObjectives.control
+        if rows then
+            if dailyObjectivesControl and rows.ClearObjectives then
+                rows.ClearObjectives(dailyObjectivesControl)
+            end
+            if weeklyObjectivesControl and rows.ClearObjectives then
+                rows.ClearObjectives(weeklyObjectivesControl)
+            end
+        end
+
+        if dailyObjectivesControl then
+            dailyObjectivesControl:SetHidden(true)
+            if dailyObjectivesControl.SetHeight then
+                dailyObjectivesControl:SetHeight(0)
+            end
+        end
+        if weeklyObjectivesControl then
+            weeklyObjectivesControl:SetHidden(true)
+            if weeklyObjectivesControl.SetHeight then
+                weeklyObjectivesControl:SetHeight(0)
+            end
+        end
+
+        state.currentHeight = 0
+        if container and container.SetHeight then
+            container:SetHeight(0)
+        end
+
+        release()
+        return
     end
 
     if categoryControl and categoryControl.SetHidden then
@@ -1348,13 +1548,13 @@ function EndeavorTracker.Refresh(viewModel)
     if rows then
         if dailyObjectivesControl then
             if dailyExpanded and type(rows.BuildObjectives) == "function" then
-                rows.BuildObjectives(dailyObjectivesControl, dailyObjectivesList)
+                rows.BuildObjectives(dailyObjectivesControl, dailyObjectivesList, appearance)
                 dailyObjectivesControl:SetHidden(false)
             else
                 if type(rows.ClearObjectives) == "function" then
                     rows.ClearObjectives(dailyObjectivesControl)
                 elseif type(rows.BuildObjectives) == "function" then
-                    rows.BuildObjectives(dailyObjectivesControl, {})
+                    rows.BuildObjectives(dailyObjectivesControl, {}, appearance)
                 elseif dailyObjectivesControl.SetHeight then
                     dailyObjectivesControl:SetHeight(0)
                 end
@@ -1364,13 +1564,13 @@ function EndeavorTracker.Refresh(viewModel)
 
         if weeklyObjectivesControl then
             if weeklyExpanded and type(rows.BuildObjectives) == "function" then
-                rows.BuildObjectives(weeklyObjectivesControl, weeklyObjectivesList)
+                rows.BuildObjectives(weeklyObjectivesControl, weeklyObjectivesList, appearance)
                 weeklyObjectivesControl:SetHidden(false)
             else
                 if type(rows.ClearObjectives) == "function" then
                     rows.ClearObjectives(weeklyObjectivesControl)
                 elseif type(rows.BuildObjectives) == "function" then
-                    rows.BuildObjectives(weeklyObjectivesControl, {})
+                    rows.BuildObjectives(weeklyObjectivesControl, {}, appearance)
                 elseif weeklyObjectivesControl.SetHeight then
                     weeklyObjectivesControl:SetHeight(0)
                 end
@@ -1468,6 +1668,10 @@ function EndeavorTracker.Refresh(viewModel)
 end
 
 function EndeavorTracker.GetHeight()
+    if state.enabled == false then
+        return 0
+    end
+
     return coerceHeight(state.currentHeight)
 end
 
@@ -1479,6 +1683,8 @@ function EndeavorTracker.Dispose()
     state.currentHeight = 0
     state.container = nil
     state.ui = nil
+    state.appearance = nil
+    state.enabled = true
 end
 
 Nvk3UT.EndeavorTracker = EndeavorTracker

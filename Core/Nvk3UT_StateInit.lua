@@ -54,6 +54,54 @@ local DEFAULT_TRACKER_APPEARANCE = {
     },
 }
 
+local function CloneColorTable(source, fallback)
+    local defaults = fallback or { r = 1, g = 1, b = 1, a = 1 }
+    local color = type(source) == "table" and source or {}
+    return {
+        r = color.r ~= nil and color.r or defaults.r,
+        g = color.g ~= nil and color.g or defaults.g,
+        b = color.b ~= nil and color.b or defaults.b,
+        a = color.a ~= nil and color.a or defaults.a,
+    }
+end
+
+local function CloneAchievementColor(role)
+    local achievementAppearance = DEFAULT_TRACKER_APPEARANCE.achievementTracker
+    local colors = achievementAppearance and achievementAppearance.colors or {}
+    local source = colors[role]
+    return CloneColorTable(source, colors.categoryTitle)
+end
+
+local DEFAULT_ENDEAVOR_COLORS = {
+    CategoryTitle = CloneAchievementColor("categoryTitle"),
+    EntryName = CloneAchievementColor("entryTitle"),
+    Objective = CloneAchievementColor("objectiveText"),
+    Active = CloneAchievementColor("activeTitle"),
+    Completed = CloneColorTable(nil, { r = 0.7, g = 0.7, b = 0.7, a = 1 }),
+}
+
+local function CloneAchievementFont()
+    local font = DEFAULT_ACHIEVEMENT_FONTS.title or DEFAULT_ACHIEVEMENT_FONTS.line
+    return {
+        Family = font.face or DEFAULT_FONT_FACE_BOLD,
+        Size = font.size or 16,
+        Outline = font.outline or DEFAULT_FONT_OUTLINE,
+    }
+end
+
+local DEFAULT_ENDEAVOR_FONT = CloneAchievementFont()
+
+local DEFAULT_ACHIEVEMENT_TRACKER_ACTIVE = true
+local DEFAULT_SHOW_ACHIEVEMENT_COUNTS = true
+
+local DEFAULT_ENDEAVOR_SETTINGS = {
+    Enabled = DEFAULT_ACHIEVEMENT_TRACKER_ACTIVE,
+    ShowCountsInHeaders = DEFAULT_SHOW_ACHIEVEMENT_COUNTS,
+    CompletedHandling = "hide",
+    Colors = DEFAULT_ENDEAVOR_COLORS,
+    Font = DEFAULT_ENDEAVOR_FONT,
+}
+
 local DEFAULT_ENDEAVOR_DATA = {
     expanded = true,
     position = { x = nil, y = nil },
@@ -87,7 +135,7 @@ local defaults = {
         recentMax = 100,
         showCategoryCounts = true,
         showQuestCategoryCounts = true,
-        showAchievementCategoryCounts = true,
+        showAchievementCategoryCounts = DEFAULT_SHOW_ACHIEVEMENT_COUNTS,
         window = {
             left = 200,
             top = 200,
@@ -121,7 +169,7 @@ local defaults = {
         fonts = DEFAULT_QUEST_FONTS,
     },
     AchievementTracker = {
-        active = true,
+        active = DEFAULT_ACHIEVEMENT_TRACKER_ACTIVE,
         lock = false,
         autoGrowV = true,
         autoGrowH = false,
@@ -146,6 +194,7 @@ local defaults = {
     },
     AchievementCache = DEFAULT_ACHIEVEMENT_CACHE,
     EndeavorData = DEFAULT_ENDEAVOR_DATA,
+    Endeavor = DEFAULT_ENDEAVOR_SETTINGS,
 }
 
 local function EnsureAchievementCache(saved)
@@ -294,6 +343,7 @@ local function AdoptLegacySettings(saved)
     saved.QuestTracker = MergeDefaults(saved.QuestTracker, defaults.QuestTracker)
     saved.AchievementTracker = MergeDefaults(saved.AchievementTracker, defaults.AchievementTracker)
     saved.appearance = MergeDefaults(saved.appearance, defaults.appearance)
+    saved.Endeavor = MergeDefaults(saved.Endeavor, defaults.Endeavor)
 
     saved.ui = saved.General
     saved.features = saved.General.features
@@ -318,6 +368,11 @@ local function EnsureFirstLoginStructures(saved)
     MergeDefaults(EnsureTable(achievementTracker, "background"), defaults.AchievementTracker.background)
     MergeDefaults(EnsureTable(achievementTracker, "fonts"), defaults.AchievementTracker.fonts)
     MergeDefaults(EnsureTable(achievementTracker, "sections"), defaults.AchievementTracker.sections)
+
+    local endeavor = EnsureTable(saved, "Endeavor")
+    MergeDefaults(endeavor, defaults.Endeavor)
+    MergeDefaults(EnsureTable(endeavor, "Colors"), defaults.Endeavor.Colors)
+    MergeDefaults(EnsureTable(endeavor, "Font"), defaults.Endeavor.Font)
 
     local appearance = EnsureTable(saved, "appearance")
     MergeDefaults(appearance, defaults.appearance)

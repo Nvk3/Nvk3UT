@@ -155,6 +155,63 @@ local function coerceBoolean(value)
     return value == true
 end
 
+local DEFAULT_COMPLETED_HANDLING = "hide"
+
+local function getSavedVars()
+    local root = getRoot()
+    if type(root) ~= "table" then
+        return nil
+    end
+
+    return rawget(root, "sv") or rawget(root, "SV")
+end
+
+local function ensureEndeavorSettings()
+    local sv = getSavedVars()
+    if type(sv) ~= "table" then
+        return nil
+    end
+
+    local settings = sv.Endeavor
+    if type(settings) ~= "table" then
+        settings = {}
+        sv.Endeavor = settings
+    end
+
+    settings.Colors = settings.Colors or {}
+    settings.Font = settings.Font or {}
+
+    return settings
+end
+
+local function getCompletedHandling()
+    local settings = ensureEndeavorSettings()
+    local handling = settings and settings.CompletedHandling
+    if handling == "recolor" then
+        return handling
+    end
+
+    return DEFAULT_COMPLETED_HANDLING
+end
+
+local function isShowCountsEnabled()
+    local settings = ensureEndeavorSettings()
+    if settings and settings.ShowCountsInHeaders == false then
+        return false
+    end
+
+    return true
+end
+
+local function isEndeavorEnabled()
+    local settings = ensureEndeavorSettings()
+    if settings and settings.Enabled == false then
+        return false
+    end
+
+    return true
+end
+
 local function getStateModule()
     local root = getRoot()
     if type(root) ~= "table" then
@@ -259,6 +316,48 @@ function Controller:BuildViewModel()
     dailyDisplayCompleted = dailyDoneCapped
     weeklyDisplayCompleted = weeklyDoneCapped
 
+    local stateModule = getStateModule()
+    local showCounts = isShowCountsEnabled()
+    local completedHandling = getCompletedHandling()
+    local endeavorEnabled = isEndeavorEnabled()
+
+    if not endeavorEnabled then
+        local vm = {
+            enabled = false,
+            category = {
+                title = "Bestrebungen",
+                expanded = isStateExpanded(stateModule),
+                remaining = 0,
+            },
+            daily = {
+                title = "Tägliche Bestrebungen",
+                completed = 0,
+                total = 0,
+                displayCompleted = 0,
+                displayLimit = DAILY_LIMIT,
+                expanded = isCategoryExpanded(stateModule, "daily"),
+                objectives = {},
+            },
+            weekly = {
+                title = "Wöchentliche Bestrebungen",
+                completed = 0,
+                total = 0,
+                displayCompleted = 0,
+                displayLimit = WEEKLY_LIMIT,
+                expanded = isCategoryExpanded(stateModule, "weekly"),
+                objectives = {},
+            },
+            items = {},
+            count = 0,
+            config = {
+                showCountsInHeaders = showCounts,
+                completedHandling = completedHandling,
+            },
+        }
+
+        return vm
+    end
+
     local function mapObjective(item)
         if type(item) ~= "table" then
             return nil, nil
@@ -289,6 +388,8 @@ function Controller:BuildViewModel()
         return objective, aggregated
     end
 
+    local includeCompleted = completedHandling == "recolor"
+
     local function buildObjectives(bucket, target, kind)
         if type(bucket) ~= "table" or type(target) ~= "table" then
             return
@@ -307,7 +408,7 @@ function Controller:BuildViewModel()
                     aggregatedItems[#aggregatedItems + 1] = aggregated
                 end
 
-                if objective.completed ~= true then
+                if includeCompleted or objective.completed ~= true then
                     target[#target + 1] = objective
                 end
             end
@@ -321,8 +422,8 @@ function Controller:BuildViewModel()
     local remainingWeekly = math.max(0, WEEKLY_LIMIT - weeklyDoneCapped)
     local remainingTotal = remainingDaily + remainingWeekly
 
-    local stateModule = getStateModule()
     local vm = {
+        enabled = true,
         category = {
             title = "Bestrebungen",
             expanded = isStateExpanded(stateModule),
@@ -348,6 +449,10 @@ function Controller:BuildViewModel()
         },
         items = aggregatedItems,
         count = #aggregatedItems,
+        config = {
+            showCountsInHeaders = showCounts,
+            completedHandling = completedHandling,
+        },
     }
 
     DBG(
@@ -362,6 +467,24 @@ function Controller:BuildViewModel()
     )
 
     return vm
+end
+
+function Controller:MarkDirty(reason)
+    self._lastDirtyReason = reason or "unspecified"
+
+    local root = getRoot()
+    if type(root) ~= "table" then
+        return
+    end
+
+    local runtime = rawget(root, "TrackerRuntime")
+    if type(runtime) ~= "table" or type(runtime.QueueDirty) ~= "function" then
+        return
+    end
+
+    safeCall(function()
+        runtime:QueueDirty("endeavor")
+    end)
 end
 
 return Controller

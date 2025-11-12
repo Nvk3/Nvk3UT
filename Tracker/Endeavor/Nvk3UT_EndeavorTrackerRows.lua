@@ -9,9 +9,12 @@ Rows.__index = Rows
 local MODULE_TAG = addonName .. ".EndeavorTrackerRows"
 
 local OBJECTIVE_ROW_HEIGHT = 20
-local ACHIEVEMENT_OBJECTIVE_FONT = "ZoFontGameSmall"
-local ACHIEVEMENT_OBJECTIVE_COLOR_ROLE = "objectiveText"
-local TRACKER_COLOR_KIND = "achievementTracker"
+local DEFAULT_OBJECTIVE_FONT = "$(BOLD_FONT)|14|soft-shadow-thick"
+local DEFAULT_COLORS = {
+    Objective = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
+    Completed = { r = 0.7, g = 0.7, b = 0.7, a = 1 },
+}
+local DEFAULT_COMPLETED_HANDLING = "hide"
 
 local function FormatParensCount(a, b)
     local aNum = tonumber(a) or 0
@@ -77,44 +80,40 @@ local function getAddon()
     return rawget(_G, addonName)
 end
 
-local function getTrackerColor(role)
-    local addon = getAddon()
-    if type(addon) ~= "table" then
-        return 1, 1, 1, 1
-    end
-
-    local host = rawget(addon, "TrackerHost")
-    if type(host) ~= "table" then
-        return 1, 1, 1, 1
-    end
-
-    if type(host.EnsureAppearanceDefaults) == "function" then
-        pcall(host.EnsureAppearanceDefaults, host)
-    end
-
-    local getColor = host.GetTrackerColor
-    if type(getColor) ~= "function" then
-        return 1, 1, 1, 1
-    end
-
-    local ok, r, g, b, a = pcall(getColor, host, TRACKER_COLOR_KIND, role)
-    if ok and type(r) == "number" then
-        return r, g or 1, b or 1, a or 1
-    end
-
-    return 1, 1, 1, 1
-end
-
 local function applyFont(label, font)
     if label and label.SetFont and font and font ~= "" then
         label:SetFont(font)
     end
 end
 
-local function applyObjectiveColor(label)
-    local r, g, b, a = getTrackerColor(ACHIEVEMENT_OBJECTIVE_COLOR_ROLE)
+local function resolveAppearance(appearance)
+    if type(appearance) == "table" then
+        return appearance
+    end
+
+    local addon = getAddon()
+    local tracker = addon and rawget(addon, "EndeavorTracker")
+    if type(tracker) == "table" and type(tracker.GetAppearanceConfig) == "function" then
+        local ok, config = pcall(tracker.GetAppearanceConfig, tracker)
+        if ok and type(config) == "table" then
+            return config
+        end
+    end
+
+    return {
+        fonts = { Objective = DEFAULT_OBJECTIVE_FONT },
+        colors = DEFAULT_COLORS,
+        completedHandling = DEFAULT_COMPLETED_HANDLING,
+    }
+end
+
+local function applyObjectiveColor(label, appearance, isCompleted)
+    local config = resolveAppearance(appearance)
+    local colors = config.colors or DEFAULT_COLORS
+    local useCompleted = isCompleted == true and config.completedHandling == "recolor"
+    local color = colors[useCompleted and "Completed" or "Objective"] or DEFAULT_COLORS.Objective
     if label and label.SetColor then
-        label:SetColor(r, g, b, a)
+        label:SetColor(color.r or 1, color.g or 1, color.b or 1, color.a or 1)
     end
 
     if label and label.SetAlpha then
@@ -181,7 +180,7 @@ local function ensureObjectiveRow(container, baseName, index, previous)
     return row
 end
 
-function Rows.ApplyObjectiveRow(row, objective)
+function Rows.ApplyObjectiveRow(row, objective, appearance)
     if row == nil then
         return
     end
@@ -192,6 +191,7 @@ function Rows.ApplyObjectiveRow(row, objective)
     end
 
     local data = type(objective) == "table" and objective or {}
+    local config = resolveAppearance(appearance)
     local baseText = tostring(data.text or "")
     if baseText == "" then
         baseText = "Objective"
@@ -228,7 +228,8 @@ function Rows.ApplyObjectiveRow(row, objective)
         title = wm:CreateControl(titleName, row, CT_LABEL)
     end
     title:SetParent(row)
-    applyFont(title, ACHIEVEMENT_OBJECTIVE_FONT)
+    local fonts = config.fonts or {}
+    applyFont(title, fonts.Objective or DEFAULT_OBJECTIVE_FONT)
     title:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
     title:SetVerticalAlignment(TEXT_ALIGN_CENTER)
     if title.SetWrapMode then
@@ -255,7 +256,7 @@ function Rows.ApplyObjectiveRow(row, objective)
         progress:SetText("")
     end
 
-    applyObjectiveColor(title)
+    applyObjectiveColor(title, config, data.completed)
 
     if row.SetAlpha then
         row:SetAlpha(1)
@@ -293,7 +294,7 @@ function Rows.ClearObjectives(container)
     return 0
 end
 
-function Rows.BuildObjectives(container, list)
+function Rows.BuildObjectives(container, list, appearance)
     if container == nil then
         lastHeight = 0
         return 0
@@ -334,7 +335,7 @@ function Rows.BuildObjectives(container, list)
     for index = 1, count do
         local row = ensureObjectiveRow(container, baseName, index, previous)
         if row then
-            Rows.ApplyObjectiveRow(row, sequence[index])
+            Rows.ApplyObjectiveRow(row, sequence[index], appearance)
             previous = row
             totalHeight = totalHeight + OBJECTIVE_ROW_HEIGHT
         end
