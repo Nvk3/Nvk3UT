@@ -14,6 +14,17 @@ local state = {
     isDisposed = false,
 }
 
+-- EBOOT TempEvents (Endeavor)
+-- Purpose: SHIM-only events for Endeavor until EEVENTS_*_SWITCH migrates handlers to Events/*
+-- Removal plan:
+--   1) Set EBOOT_TEMP_EVENTS_ENABLED = false
+--   2) Delete code between EBOOT_TEMP_EVENTS_BEGIN/END markers
+--   3) Ensure Events/* registers Endeavor events; this tracker must not register any events
+-- Search tags: @EBOOT @TEMP @ENDEAVOR @REMOVE_ON_EEVENTS_SWITCH
+--[[ EBOOT_TEMP_EVENTS_BEGIN: Endeavor (remove on Eevents SWITCH) ]]
+
+local EBOOT_TEMP_EVENTS_ENABLED = true -- flip to false in Eevents SWITCH token
+
 local TEMP_EVENT_NAMESPACE = MODULE_TAG .. ".TempEvents"
 
 local tempEvents = {
@@ -26,6 +37,7 @@ local tempEvents = {
 
 local shimStateInitialized = false
 local shimModelInitialized = false
+local centralEventsWarningShown = false
 
 local initKick = {
     done = false,
@@ -42,41 +54,6 @@ local progressFallback = {
 local EVENT_TIMED_ACTIVITIES_UPDATED_ID = rawget(_G, "EVENT_TIMED_ACTIVITIES_UPDATED")
 local EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED_ID = rawget(_G, "EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED")
 local EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED_ID = rawget(_G, "EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED")
-
-local function safeDebug(fmt, ...)
-    local root = rawget(_G, addonName)
-    if type(root) ~= "table" then
-        return
-    end
-
-    local diagnostics = root.Diagnostics
-    if diagnostics and type(diagnostics.DebugIfEnabled) == "function" then
-        diagnostics:DebugIfEnabled("EndeavorTracker", fmt, ...)
-        return
-    end
-
-    local debugMethod = root.Debug
-    if type(debugMethod) == "function" then
-        if fmt == nil then
-            debugMethod(root, ...)
-        else
-            debugMethod(root, fmt, ...)
-        end
-        return
-    end
-
-    if fmt == nil then
-        return
-    end
-
-    local message = string.format(tostring(fmt), ...)
-    local prefix = string.format("[%s]", MODULE_TAG)
-    if d then
-        d(prefix, message)
-    elseif print then
-        print(prefix, message)
-    end
-end
 
 local function getAddon()
     return rawget(_G, addonName)
@@ -436,16 +413,66 @@ local function tempEventsRegister()
     end)
 end
 
-local function tempEventsUnregister()
-    if not tempEvents.registered then
-        clearTempEventsTimer()
+local function warnCentralEventsIfNeeded()
+    if centralEventsWarningShown then
         return
     end
 
     runSafe(function()
-        clearTempEventsTimer()
-        cancelProgressFallbackTimer()
+        if centralEventsWarningShown then
+            return
+        end
 
+        local addon = getAddon()
+        if type(addon) ~= "table" then
+            return
+        end
+
+        if not addon.debug then
+            return
+        end
+
+        local eventsHub = rawget(addon, "Events")
+        if type(eventsHub) ~= "table" then
+            return
+        end
+
+        local hasHandlers = rawget(eventsHub, "HasEndeavorHandlers")
+        local active = false
+
+        if type(hasHandlers) == "function" then
+            local ok, result = pcall(hasHandlers, eventsHub)
+            active = ok and result == true
+        elseif type(hasHandlers) == "boolean" then
+            active = hasHandlers
+        end
+
+        if active then
+            centralEventsWarningShown = true
+            safeDebug("[EndeavorTracker.TempEvents] central events detected → temp events should be disabled after SWITCH")
+        end
+    end)
+end
+
+local function unregisterTempEventsInternal(options)
+    local opts = options or {}
+    local silentKick = opts.silentInitKick == true
+
+    cancelInitKickTimer(silentKick)
+    initKick.done = true
+
+    cancelProgressFallbackTimer()
+    progressFallback.lastProgressAtMs = nil
+
+    clearTempEventsTimer()
+    tempEvents.pending = false
+    tempEvents.lastQueuedAt = 0
+
+    if not tempEvents.registered then
+        return
+    end
+
+    runSafe(function()
         local eventManager = rawget(_G, "EVENT_MANAGER")
         local eventManagerType = type(eventManager)
         if eventManagerType ~= "table" and eventManagerType ~= "userdata" then
@@ -472,6 +499,43 @@ local function tempEventsUnregister()
     end)
 end
 
+function EndeavorTracker:TempEvents_UnregisterAll(options)
+    unregisterTempEventsInternal(options)
+end
+
+--[[ EBOOT_TEMP_EVENTS_END: Endeavor ]]
+
+local function safeDebug(fmt, ...)
+    local root = rawget(_G, addonName)
+    if type(root) ~= "table" then
+        return
+    end
+
+    local diagnostics = root.Diagnostics
+    if diagnostics and type(diagnostics.DebugIfEnabled) == "function" then
+        diagnostics:DebugIfEnabled("EndeavorTracker", fmt, ...)
+        return
+    end
+
+    local debugMethod = root.Debug
+    if type(debugMethod) == "function" then
+        if fmt == nil then
+            debugMethod(root, ...)
+        else
+            debugMethod(root, fmt, ...)
+        end
+        return
+    end
+
+    if fmt == nil then
+        return
+    end
+
+    local message = string.format(tostring(fmt), ...)
+    local prefix = string.format("[%s]", MODULE_TAG)
+    if d then
+        d(prefix, message)
+    elseif print then
 local function getRowsModule()
     local root = rawget(_G, addonName)
     if type(root) ~= "table" then
@@ -542,7 +606,36 @@ function EndeavorTracker.Init(sectionContainer)
         container:SetHeight(0)
     end
 
+    if not EBOOT_TEMP_EVENTS_ENABLED then
+        EndeavorTracker:TempEvents_UnregisterAll({ silentInitKick = true })
+        return
+    end
+
     tempEventsRegister()
+    warnCentralEventsIfNeeded()
+
+    local disableViaSwitch = false
+
+    runSafe(function()
+        local addon = getAddon()
+        if type(addon) ~= "table" then
+            return
+        end
+
+        local flags = rawget(addon, "Flags")
+        if type(flags) ~= "table" then
+            return
+        end
+
+        if flags.EEVENTS_SWITCH_ENDEAVOR == true then
+            disableViaSwitch = true
+        end
+    end)
+
+    if disableViaSwitch then
+        EndeavorTracker:TempEvents_UnregisterAll({ silentInitKick = true })
+        return
+    end
 
     scheduleInitKick()
 
@@ -603,11 +696,7 @@ end
 
 function EndeavorTracker.Dispose()
     state.isDisposed = true
-    cancelInitKickTimer(false)
-    initKick.done = true
-    cancelProgressFallbackTimer()
-    progressFallback.lastProgressAtMs = nil
-    tempEventsUnregister()
+    EndeavorTracker:TempEvents_UnregisterAll({ silentInitKick = false })
     state.isInitialized = false
     state.currentHeight = 0
     state.container = nil
