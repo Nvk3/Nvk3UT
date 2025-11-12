@@ -351,7 +351,9 @@ local function initPollerTick()
 
     local callLater = rawget(_G, "zo_callLater")
     if type(callLater) == "function" then
-        initPoller.timerHandle = callLater(initPollerTick, initPoller.intervalMs)
+        initPoller.timerHandle = callLater(function()
+            initPollerTick()
+        end, initPoller.intervalMs)
         return
     end
 
@@ -750,7 +752,9 @@ function EndeavorTracker.Init(sectionContainer)
         if initPoller.timerHandle == nil then
             local callLater = rawget(_G, "zo_callLater")
             if type(callLater) == "function" then
-                initPoller.timerHandle = callLater(initPollerTick, initPoller.intervalMs)
+                initPoller.timerHandle = callLater(function()
+                    initPollerTick()
+                end, initPoller.intervalMs)
                 safeDebug("[EndeavorTracker.SHIM] init-poller scheduled")
             else
                 initPoller.active = false
