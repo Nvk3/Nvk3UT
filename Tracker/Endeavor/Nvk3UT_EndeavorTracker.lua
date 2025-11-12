@@ -869,7 +869,14 @@ function EndeavorTracker.Refresh(viewModel)
     local builtHeight = 0
     local container = state.container
     if rows and type(rows.Build) == "function" then
+        if EndeavorTracker._buildingRows then
+            safeDebug("EndeavorTracker.Refresh: rows build skipped due to active guard")
+            return
+        end
+
+        EndeavorTracker._buildingRows = true
         local ok, height = pcall(rows.Build, container, items)
+        EndeavorTracker._buildingRows = false
         if ok then
             builtHeight = coerceHeight(height)
         end
