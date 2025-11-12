@@ -104,6 +104,41 @@ local function callWithOptionalSelf(target, method, ...)
 end
 
 
+local function getTrackerOptions()
+    local root = getRoot()
+    if type(root) ~= "table" then
+        return {}
+    end
+
+    local tracker = rawget(root, "EndeavorTracker")
+    if type(tracker) == "table" then
+        local getter = tracker.GetOptions or tracker.GetSettings
+        if type(getter) == "function" then
+            local ok, options = pcall(getter, tracker)
+            if ok and type(options) == "table" then
+                return options
+            end
+        end
+    end
+
+    local sv = rawget(root, "sv")
+    if type(sv) == "table" then
+        local options = sv.Endeavor
+        if type(options) == "table" then
+            return options
+        end
+    end
+
+    return {}
+end
+
+local function normalizeCompletedHandling(value)
+    if value == "recolor" then
+        return "recolor"
+    end
+    return "hide"
+end
+
 local function coerceNumber(value, fallback)
     local numeric = tonumber(value)
     if numeric == nil then
@@ -218,6 +253,12 @@ function Controller:BuildViewModel()
         viewData = {}
     end
 
+    local trackerOptions = getTrackerOptions()
+    local completedHandling = normalizeCompletedHandling(
+        trackerOptions.completedHandling or trackerOptions.CompletedHandling
+    )
+    local hideCompleted = completedHandling ~= "recolor"
+
     local summary
     if type(model) == "table" then
         local getSummary = model.GetSummary
@@ -300,7 +341,7 @@ function Controller:BuildViewModel()
                     aggregatedItems[#aggregatedItems + 1] = aggregated
                 end
 
-                if objective.completed ~= true then
+                if objective.completed ~= true or not hideCompleted then
                     target[#target + 1] = objective
                 end
             end
@@ -341,6 +382,7 @@ function Controller:BuildViewModel()
         },
         items = aggregatedItems,
         count = #aggregatedItems,
+        completedHandling = completedHandling,
     }
 
     DBG(
@@ -355,6 +397,13 @@ function Controller:BuildViewModel()
     )
 
     return vm
+end
+
+Controller._dirtyReasons = Controller._dirtyReasons or {}
+
+function Controller.MarkDirty(_, reason)
+    Controller._dirtyReasons[reason or "general"] = true
+    return true
 end
 
 return Controller

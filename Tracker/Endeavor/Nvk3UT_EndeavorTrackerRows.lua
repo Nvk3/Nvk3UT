@@ -9,9 +9,9 @@ Rows.__index = Rows
 local MODULE_TAG = addonName .. ".EndeavorTrackerRows"
 
 local OBJECTIVE_ROW_HEIGHT = 20
-local ACHIEVEMENT_OBJECTIVE_FONT = "ZoFontGameSmall"
-local ACHIEVEMENT_OBJECTIVE_COLOR_ROLE = "objectiveText"
-local TRACKER_COLOR_KIND = "achievementTracker"
+local DEFAULT_OBJECTIVE_FONT = "$(BOLD_FONT)|14|soft-shadow-thick"
+local DEFAULT_OBJECTIVE_COLOR = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 }
+local DEFAULT_COMPLETED_COLOR = { r = 0.7, g = 0.7, b = 0.7, a = 1 }
 
 local function isGlobalDebugEnabled()
     local diagnostics = Nvk3UT_Diagnostics
@@ -97,32 +97,43 @@ local function getAddon()
     return rawget(_G, addonName)
 end
 
-local function getTrackerColor(role)
+local function getTracker()
     local addon = getAddon()
     if type(addon) ~= "table" then
-        return 1, 1, 1, 1
+        return nil
     end
 
-    local host = rawget(addon, "TrackerHost")
-    if type(host) ~= "table" then
-        return 1, 1, 1, 1
+    return rawget(addon, "EndeavorTracker")
+end
+
+local function getTrackerTheme()
+    local tracker = getTracker()
+    if type(tracker) == "table" then
+        local getter = tracker.GetTheme
+        if type(getter) == "function" then
+            local ok, theme = pcall(getter, tracker)
+            if ok and type(theme) == "table" then
+                return theme
+            end
+        end
     end
 
-    if type(host.EnsureAppearanceDefaults) == "function" then
-        pcall(host.EnsureAppearanceDefaults, host)
+    return { colors = {}, fonts = {} }
+end
+
+local function getTrackerOptions()
+    local tracker = getTracker()
+    if type(tracker) == "table" then
+        local getter = tracker.GetOptions
+        if type(getter) == "function" then
+            local ok, options = pcall(getter, tracker)
+            if ok and type(options) == "table" then
+                return options
+            end
+        end
     end
 
-    local getColor = host.GetTrackerColor
-    if type(getColor) ~= "function" then
-        return 1, 1, 1, 1
-    end
-
-    local ok, r, g, b, a = pcall(getColor, host, TRACKER_COLOR_KIND, role)
-    if ok and type(r) == "number" then
-        return r, g or 1, b or 1, a or 1
-    end
-
-    return 1, 1, 1, 1
+    return {}
 end
 
 local function applyFont(label, font)
@@ -131,8 +142,24 @@ local function applyFont(label, font)
     end
 end
 
-local function applyObjectiveColor(label)
-    local r, g, b, a = getTrackerColor(ACHIEVEMENT_OBJECTIVE_COLOR_ROLE)
+local function applyObjectiveAppearance(label, completed, handling)
+    local theme = getTrackerTheme()
+    local colors = theme.colors or {}
+    local colorKey = (completed and handling == "recolor") and "completed" or "objective"
+    local color = colors[colorKey]
+    if type(color) ~= "table" then
+        if colorKey == "completed" then
+            color = DEFAULT_COMPLETED_COLOR
+        else
+            color = DEFAULT_OBJECTIVE_COLOR
+        end
+    end
+
+    local r = color.r or 1
+    local g = color.g or 1
+    local b = color.b or 1
+    local a = color.a or 1
+
     if label and label.SetColor then
         label:SetColor(r, g, b, a)
     end
@@ -248,7 +275,9 @@ function Rows.ApplyObjectiveRow(row, objective)
         title = wm:CreateControl(titleName, row, CT_LABEL)
     end
     title:SetParent(row)
-    applyFont(title, ACHIEVEMENT_OBJECTIVE_FONT)
+    local theme = getTrackerTheme()
+    local fonts = theme.fonts or {}
+    applyFont(title, fonts.objective or DEFAULT_OBJECTIVE_FONT)
     title:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
     title:SetVerticalAlignment(TEXT_ALIGN_CENTER)
     if title.SetWrapMode then
@@ -275,7 +304,13 @@ function Rows.ApplyObjectiveRow(row, objective)
         progress:SetText("")
     end
 
-    applyObjectiveColor(title)
+    local options = getTrackerOptions()
+    local handling = options.completedHandling or options.CompletedHandling
+    if handling ~= "recolor" then
+        handling = "hide"
+    end
+
+    applyObjectiveAppearance(title, data.completed == true, handling)
 
     if row.SetAlpha then
         row:SetAlpha(1)

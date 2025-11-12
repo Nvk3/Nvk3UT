@@ -54,6 +54,24 @@ local DEFAULT_TRACKER_APPEARANCE = {
     },
 }
 
+local DEFAULT_ENDEAVOR_OPTIONS = {
+    Enabled = true,
+    ShowCountsInHeaders = true,
+    CompletedHandling = "hide",
+    Colors = {
+        CategoryTitle = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
+        EntryName = { r = 1, g = 1, b = 0, a = 1 },
+        Objective = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
+        Active = { r = 1, g = 1, b = 1, a = 1 },
+        Completed = { r = 0.7, g = 0.7, b = 0.7, a = 1 },
+    },
+    Font = {
+        Family = "$(BOLD_FONT)",
+        Size = 16,
+        Outline = "soft-shadow-thick",
+    },
+}
+
 local DEFAULT_ENDEAVOR_DATA = {
     expanded = true,
     position = { x = nil, y = nil },
@@ -146,6 +164,7 @@ local defaults = {
     },
     AchievementCache = DEFAULT_ACHIEVEMENT_CACHE,
     EndeavorData = DEFAULT_ENDEAVOR_DATA,
+    Endeavor = DEFAULT_ENDEAVOR_OPTIONS,
 }
 
 local function EnsureAchievementCache(saved)
@@ -323,6 +342,11 @@ local function EnsureFirstLoginStructures(saved)
     MergeDefaults(appearance, defaults.appearance)
     EnsureTable(appearance, "questTracker")
     EnsureTable(appearance, "achievementTracker")
+
+    local endeavorSettings = EnsureTable(saved, "Endeavor")
+    MergeDefaults(endeavorSettings, defaults.Endeavor)
+    MergeDefaults(EnsureTable(endeavorSettings, "Colors"), defaults.Endeavor.Colors)
+    MergeDefaults(EnsureTable(endeavorSettings, "Font"), defaults.Endeavor.Font)
 
     local settings = EnsureTable(saved, "Settings")
     local hostSettings = EnsureTable(settings, "Host")

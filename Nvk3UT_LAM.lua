@@ -78,6 +78,48 @@ local DEFAULT_WINDOW_BARS = {
 
 local MAX_BAR_HEIGHT = 250
 
+local function cloneTable(value)
+    if type(value) ~= "table" then
+        return value
+    end
+
+    local copy = {}
+    for key, element in pairs(value) do
+        if type(element) == "table" then
+            copy[key] = cloneTable(element)
+        else
+            copy[key] = element
+        end
+    end
+
+    return copy
+end
+
+local DEFAULT_ENDEAVOR_OPTIONS = {
+    Enabled = true,
+    ShowCountsInHeaders = true,
+    CompletedHandling = "hide",
+}
+
+local DEFAULT_ENDEAVOR_COLORS = {
+    CategoryTitle = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
+    EntryName = { r = 1, g = 1, b = 0, a = 1 },
+    Objective = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
+    Active = { r = 1, g = 1, b = 1, a = 1 },
+    Completed = { r = 0.7, g = 0.7, b = 0.7, a = 1 },
+}
+
+local DEFAULT_ENDEAVOR_FONT = {
+    Family = "$(BOLD_FONT)",
+    Size = 16,
+    Outline = "soft-shadow-thick",
+}
+
+local ENDEAVOR_COMPLETED_CHOICES = {
+    { label = "Ausblenden", value = "hide" },
+    { label = "Umfärben", value = "recolor" },
+}
+
 local function clamp(value, minimum, maximum)
     if value == nil then
         return minimum
@@ -289,6 +331,170 @@ local function getAchievementSettings()
     sv.AchievementTracker.fonts = sv.AchievementTracker.fonts or {}
     sv.AchievementTracker.sections = sv.AchievementTracker.sections or {}
     return sv.AchievementTracker
+end
+
+local function getEndeavorSettings()
+    local sv = getSavedVars()
+    sv.Endeavor = sv.Endeavor or {}
+    local settings = sv.Endeavor
+    settings.Colors = settings.Colors or {}
+    settings.Font = settings.Font or {}
+    if settings.Enabled == nil then
+        settings.Enabled = DEFAULT_ENDEAVOR_OPTIONS.Enabled
+    end
+    if settings.ShowCountsInHeaders == nil then
+        settings.ShowCountsInHeaders = DEFAULT_ENDEAVOR_OPTIONS.ShowCountsInHeaders
+    end
+    settings.CompletedHandling = settings.CompletedHandling or DEFAULT_ENDEAVOR_OPTIONS.CompletedHandling
+    return settings
+end
+
+local function sanitizeColorComponent(value, fallback)
+    local numeric = tonumber(value)
+    if numeric == nil or numeric ~= numeric then
+        numeric = fallback
+    end
+    if numeric < 0 then
+        numeric = 0
+    elseif numeric > 1 then
+        numeric = 1
+    end
+    return numeric
+end
+
+local function getEndeavorDefaultColor(key)
+    return DEFAULT_ENDEAVOR_COLORS[key] or { r = 1, g = 1, b = 1, a = 1 }
+end
+
+local function getEndeavorColor(key)
+    local settings = getEndeavorSettings()
+    local colors = settings.Colors
+    local defaults = getEndeavorDefaultColor(key)
+    local color = colors[key]
+    if type(color) ~= "table" then
+        color = cloneTable(defaults)
+        colors[key] = color
+    end
+
+    local r = sanitizeColorComponent(color.r, defaults.r)
+    local g = sanitizeColorComponent(color.g, defaults.g)
+    local b = sanitizeColorComponent(color.b, defaults.b)
+    local a = sanitizeColorComponent(color.a, defaults.a)
+
+    colors[key] = { r = r, g = g, b = b, a = a }
+
+    return r, g, b, a
+end
+
+local function getEndeavorColorDefaultTable(key)
+    local defaults = getEndeavorDefaultColor(key)
+    return { r = defaults.r, g = defaults.g, b = defaults.b, a = defaults.a }
+end
+
+local function setEndeavorColor(key, r, g, b, a)
+    local settings = getEndeavorSettings()
+    local defaults = getEndeavorDefaultColor(key)
+    settings.Colors[key] = {
+        r = sanitizeColorComponent(r, defaults.r),
+        g = sanitizeColorComponent(g, defaults.g),
+        b = sanitizeColorComponent(b, defaults.b),
+        a = sanitizeColorComponent(a, defaults.a),
+    }
+end
+
+local function sanitizeCompletedHandling(value)
+    if value == "recolor" then
+        return "recolor"
+    end
+    return "hide"
+end
+
+local function getEndeavorCompletedHandling()
+    local settings = getEndeavorSettings()
+    settings.CompletedHandling = sanitizeCompletedHandling(settings.CompletedHandling)
+    return settings.CompletedHandling
+end
+
+local function getEndeavorFont()
+    local settings = getEndeavorSettings()
+    local font = settings.Font
+    font.Family = font.Family or DEFAULT_ENDEAVOR_FONT.Family
+    local size = tonumber(font.Size) or DEFAULT_ENDEAVOR_FONT.Size
+    if size < 10 then
+        size = 10
+    elseif size > 48 then
+        size = 48
+    else
+        size = math.floor(size + 0.5)
+    end
+    font.Size = size
+    font.Outline = font.Outline or DEFAULT_ENDEAVOR_FONT.Outline
+    return font
+end
+
+local function snapshotEndeavorSettings()
+    return cloneTable(getEndeavorSettings())
+end
+
+local function applyEndeavorSettings(snapshot)
+    if Nvk3UT and Nvk3UT.EndeavorTracker and type(Nvk3UT.EndeavorTracker.ApplySettings) == "function" then
+        local payload = snapshot
+        if type(payload) ~= "table" then
+            payload = snapshotEndeavorSettings()
+        end
+        pcall(Nvk3UT.EndeavorTracker.ApplySettings, payload)
+    end
+end
+
+local function applyEndeavorTheme(snapshot)
+    if Nvk3UT and Nvk3UT.EndeavorTracker and type(Nvk3UT.EndeavorTracker.ApplyTheme) == "function" then
+        local payload = snapshot
+        if type(payload) ~= "table" then
+            payload = snapshotEndeavorSettings()
+        end
+        pcall(Nvk3UT.EndeavorTracker.ApplyTheme, payload)
+    end
+end
+
+local function refreshEndeavorModel()
+    local model = Nvk3UT and Nvk3UT.EndeavorModel
+    if type(model) ~= "table" then
+        return
+    end
+
+    local refresh = model.RefreshFromGame or model.Refresh
+    if type(refresh) == "function" then
+        pcall(refresh, model)
+    end
+end
+
+local function markEndeavorDirty(reason)
+    local controller = Nvk3UT and Nvk3UT.EndeavorTrackerController
+    if type(controller) ~= "table" then
+        return
+    end
+
+    local markDirty = controller.MarkDirty or controller.RequestRefresh
+    if type(markDirty) == "function" then
+        pcall(markDirty, controller, reason)
+    end
+end
+
+local function queueEndeavorRuntime()
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if type(runtime) ~= "table" then
+        return
+    end
+
+    if type(runtime.QueueDirty) == "function" then
+        pcall(runtime.QueueDirty, runtime, "endeavor")
+        return
+    end
+
+    local alt = runtime.MarkDirty or runtime.RequestRefresh
+    if type(alt) == "function" then
+        pcall(alt, runtime, "endeavor")
+    end
 end
 
 local function ensureTrackerAppearance()
@@ -1147,14 +1353,247 @@ end
 local function buildEndeavorTrackerControls()
     local controls = {}
 
-    controls[#controls + 1] = { type = "header", name = "Bestrebungen" }
+    controls[#controls + 1] = { type = "header", name = "FUNKTIONEN" }
+
     controls[#controls + 1] = {
-        type = "description",
-        text = "Bestrebungen-Tracker-Optionen werden mit einem späteren Update ergänzt.",
+        type = "checkbox",
+        name = "Bestrebungen-Tracker aktivieren",
+        tooltip = "Schaltet den Bestrebungen-Tracker sichtbar/unsichtbar.",
+        getFunc = function()
+            local settings = getEndeavorSettings()
+            return settings.Enabled ~= false
+        end,
+        setFunc = function(value)
+            local settings = getEndeavorSettings()
+            settings.Enabled = value ~= false
+            applyEndeavorSettings(snapshotEndeavorSettings())
+            refreshEndeavorModel()
+            markEndeavorDirty("enable")
+            queueEndeavorRuntime()
+        end,
+        default = true,
     }
+
     controls[#controls + 1] = {
-        type = "description",
-        text = "Der Tracker nutzt derzeit die globalen Debug- und Host-Einstellungen.",
+        type = "checkbox",
+        name = "Anzahl in Kategorie-Überschriften anzeigen",
+        tooltip = "Blendet Zähler wie '(2/3)' in den Überschriften ein oder aus.",
+        getFunc = function()
+            local settings = getEndeavorSettings()
+            return settings.ShowCountsInHeaders ~= false
+        end,
+        setFunc = function(value)
+            local settings = getEndeavorSettings()
+            settings.ShowCountsInHeaders = value ~= false
+            applyEndeavorSettings(snapshotEndeavorSettings())
+            markEndeavorDirty("headers")
+            queueEndeavorRuntime()
+        end,
+        default = true,
+    }
+
+    controls[#controls + 1] = {
+        type = "dropdown",
+        name = "Abgeschlossen-Handling",
+        tooltip = "Steuert, ob erfüllte Bestrebungen ausgeblendet oder lediglich umgefärbt werden.",
+        choices = (function()
+            local labels = {}
+            for index = 1, #ENDEAVOR_COMPLETED_CHOICES do
+                labels[index] = ENDEAVOR_COMPLETED_CHOICES[index].label
+            end
+            return labels
+        end)(),
+        choicesValues = (function()
+            local values = {}
+            for index = 1, #ENDEAVOR_COMPLETED_CHOICES do
+                values[index] = ENDEAVOR_COMPLETED_CHOICES[index].value
+            end
+            return values
+        end)(),
+        getFunc = function()
+            return getEndeavorCompletedHandling()
+        end,
+        setFunc = function(value)
+            local settings = getEndeavorSettings()
+            settings.CompletedHandling = sanitizeCompletedHandling(value)
+            applyEndeavorSettings(snapshotEndeavorSettings())
+
+            if settings.CompletedHandling == "hide" then
+                refreshEndeavorModel()
+                markEndeavorDirty("filter")
+            else
+                markEndeavorDirty("appearance")
+            end
+
+            queueEndeavorRuntime()
+        end,
+        default = DEFAULT_ENDEAVOR_OPTIONS.CompletedHandling,
+    }
+
+    controls[#controls + 1] = { type = "header", name = "ERSCHEINUNG – COLORS" }
+
+    controls[#controls + 1] = {
+        type = "colorpicker",
+        name = "Kategorie-Überschrift",
+        tooltip = "Farbe der Hauptüberschrift des Bestrebungen-Trackers.",
+        getFunc = function()
+            return getEndeavorColor("CategoryTitle")
+        end,
+        setFunc = function(r, g, b, a)
+            setEndeavorColor("CategoryTitle", r, g, b, a or 1)
+            applyEndeavorTheme(snapshotEndeavorSettings())
+            markEndeavorDirty("appearance")
+            queueEndeavorRuntime()
+        end,
+        default = getEndeavorColorDefaultTable("CategoryTitle"),
+    }
+
+    controls[#controls + 1] = {
+        type = "colorpicker",
+        name = "Eintragsname",
+        tooltip = "Standardfarbe für Tages- und Wochenüberschriften.",
+        getFunc = function()
+            return getEndeavorColor("EntryName")
+        end,
+        setFunc = function(r, g, b, a)
+            setEndeavorColor("EntryName", r, g, b, a or 1)
+            applyEndeavorTheme(snapshotEndeavorSettings())
+            markEndeavorDirty("appearance")
+            queueEndeavorRuntime()
+        end,
+        default = getEndeavorColorDefaultTable("EntryName"),
+    }
+
+    controls[#controls + 1] = {
+        type = "colorpicker",
+        name = "Zieltext",
+        tooltip = "Farbe der Aufgabenbeschreibung innerhalb eines Eintrags.",
+        getFunc = function()
+            return getEndeavorColor("Objective")
+        end,
+        setFunc = function(r, g, b, a)
+            setEndeavorColor("Objective", r, g, b, a or 1)
+            applyEndeavorTheme(snapshotEndeavorSettings())
+            markEndeavorDirty("appearance")
+            queueEndeavorRuntime()
+        end,
+        default = getEndeavorColorDefaultTable("Objective"),
+    }
+
+    controls[#controls + 1] = {
+        type = "colorpicker",
+        name = "Aktiver Eintrag",
+        tooltip = "Farbe für fokussierte Zeilen.",
+        getFunc = function()
+            return getEndeavorColor("Active")
+        end,
+        setFunc = function(r, g, b, a)
+            setEndeavorColor("Active", r, g, b, a or 1)
+            applyEndeavorTheme(snapshotEndeavorSettings())
+            markEndeavorDirty("appearance")
+            queueEndeavorRuntime()
+        end,
+        default = getEndeavorColorDefaultTable("Active"),
+    }
+
+    controls[#controls + 1] = {
+        type = "colorpicker",
+        name = "Abgeschlossen (Umfärben)",
+        tooltip = "Farbe für erfüllte Einträge, wenn Umfärben gewählt wurde.",
+        getFunc = function()
+            return getEndeavorColor("Completed")
+        end,
+        setFunc = function(r, g, b, a)
+            setEndeavorColor("Completed", r, g, b, a or 1)
+            applyEndeavorTheme(snapshotEndeavorSettings())
+            markEndeavorDirty("appearance")
+            queueEndeavorRuntime()
+        end,
+        default = getEndeavorColorDefaultTable("Completed"),
+    }
+
+    controls[#controls + 1] = { type = "header", name = "ERSCHEINUNG – SCHRIFTARTEN" }
+
+    controls[#controls + 1] = {
+        type = "dropdown",
+        name = "Schriftart",
+        choices = (function()
+            local names = {}
+            for index = 1, #FONT_FACE_CHOICES do
+                names[index] = FONT_FACE_CHOICES[index].name
+            end
+            return names
+        end)(),
+        choicesValues = (function()
+            local values = {}
+            for index = 1, #FONT_FACE_CHOICES do
+                values[index] = FONT_FACE_CHOICES[index].face
+            end
+            return values
+        end)(),
+        getFunc = function()
+            local font = getEndeavorFont()
+            return font.Family
+        end,
+        setFunc = function(value)
+            local font = getEndeavorFont()
+            font.Family = value
+            applyEndeavorTheme(snapshotEndeavorSettings())
+            markEndeavorDirty("appearance")
+            queueEndeavorRuntime()
+        end,
+        default = DEFAULT_ENDEAVOR_FONT.Family,
+    }
+
+    controls[#controls + 1] = {
+        type = "slider",
+        name = "Schriftgröße",
+        min = 12,
+        max = 36,
+        step = 1,
+        getFunc = function()
+            local font = getEndeavorFont()
+            return font.Size
+        end,
+        setFunc = function(value)
+            local font = getEndeavorFont()
+            font.Size = math.floor((tonumber(value) or font.Size) + 0.5)
+            applyEndeavorTheme(snapshotEndeavorSettings())
+            markEndeavorDirty("appearance")
+            queueEndeavorRuntime()
+        end,
+        default = DEFAULT_ENDEAVOR_FONT.Size,
+    }
+
+    controls[#controls + 1] = {
+        type = "dropdown",
+        name = "Kontur",
+        choices = (function()
+            local names = {}
+            for index = 1, #OUTLINE_CHOICES do
+                names[index] = OUTLINE_CHOICES[index].name
+            end
+            return names
+        end)(),
+        choicesValues = (function()
+            local values = {}
+            for index = 1, #OUTLINE_CHOICES do
+                values[index] = OUTLINE_CHOICES[index].value
+            end
+            return values
+        end)(),
+        getFunc = function()
+            local font = getEndeavorFont()
+            return font.Outline
+        end,
+        setFunc = function(value)
+            local font = getEndeavorFont()
+            font.Outline = value
+            applyEndeavorTheme(snapshotEndeavorSettings())
+            markEndeavorDirty("appearance")
+            queueEndeavorRuntime()
+        end,
+        default = DEFAULT_ENDEAVOR_FONT.Outline,
     }
 
     return controls

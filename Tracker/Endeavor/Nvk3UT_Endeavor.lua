@@ -115,6 +115,51 @@ local function getTracker()
     return tracker
 end
 
+local function cloneTable(value)
+    if type(value) ~= "table" then
+        return value
+    end
+
+    local copy = {}
+    for key, element in pairs(value) do
+        if type(element) == "table" then
+            copy[key] = cloneTable(element)
+        else
+            copy[key] = element
+        end
+    end
+
+    return copy
+end
+
+local function getSavedVars()
+    local addon = getAddon()
+    if type(addon) ~= "table" then
+        return nil
+    end
+
+    local sv = rawget(addon, "sv")
+    if type(sv) ~= "table" then
+        return nil
+    end
+
+    return sv
+end
+
+local function getSavedEndeavorOptions()
+    local sv = getSavedVars()
+    if type(sv) ~= "table" then
+        return nil
+    end
+
+    local options = sv.Endeavor
+    if type(options) ~= "table" then
+        return nil
+    end
+
+    return options
+end
+
 local function resolveContainerName(container)
     if container and type(container.GetName) == "function" then
         local ok, name = pcall(container.GetName, container)
@@ -126,7 +171,7 @@ local function resolveContainerName(container)
     return nil
 end
 
-function Endeavor.Init(hostContainer)
+function Endeavor.Init(hostContainer, options)
     if hostContainer ~= nil then
         state.container = hostContainer
     end
@@ -144,7 +189,7 @@ function Endeavor.Init(hostContainer)
     end
 
     runSafe("Endeavor.Init", function()
-        tracker.Init(container)
+        tracker.Init(container, cloneTable(options) or cloneTable(getSavedEndeavorOptions()) or {})
     end)
 
     state.initialized = true
@@ -158,7 +203,7 @@ local function ensureInitialized()
         return
     end
 
-    Endeavor.Init(state.container)
+    Endeavor.Init(state.container, getSavedEndeavorOptions())
 end
 
 local function measureHeight(tracker)

@@ -94,6 +94,15 @@ local DEFAULT_TRACKER_COLORS = {
             activeTitle = { r = 1, g = 1, b = 1, a = 1 },
         },
     },
+    endeavorTracker = {
+        colors = {
+            categoryTitle = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
+            entryTitle = { r = 1, g = 1, b = 0, a = 1 },
+            objectiveText = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
+            activeTitle = { r = 1, g = 1, b = 1, a = 1 },
+            completed = { r = 0.7, g = 0.7, b = 0.7, a = 1 },
+        },
+    },
 }
 
 local DEFAULT_COLOR_FALLBACK = { r = 1, g = 1, b = 1, a = 1 }
@@ -3073,20 +3082,21 @@ local function initTrackers(debugEnabled)
         pcall(Nvk3UT.QuestTracker.Init, state.questContainer, questOpts)
     end
 
-    local endeavorOpts = cloneTable(sv.EndeavorTracker or {})
+    local endeavorOpts = cloneTable(sv.Endeavor or {})
+    endeavorOpts.Tracker = cloneTable(sv.EndeavorTracker or {})
     endeavorOpts.debug = debugEnabled
     local endeavorModuleLabel = nil
     if state.endeavorContainer then
         endeavorModuleLabel = safeCall(function()
             local facade = rawget(Nvk3UT, "Endeavor")
             if type(facade) == "table" and type(facade.Init) == "function" then
-                facade.Init(state.endeavorContainer)
+                facade.Init(state.endeavorContainer, cloneTable(endeavorOpts))
                 return "facade"
             end
 
             local tracker = rawget(Nvk3UT, "EndeavorTracker") or getEndeavorModule()
             if type(tracker) == "table" and type(tracker.Init) == "function" then
-                tracker.Init(state.endeavorContainer, endeavorOpts)
+                tracker.Init(state.endeavorContainer, cloneTable(endeavorOpts))
                 return "tracker"
             end
 
