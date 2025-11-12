@@ -13,33 +13,19 @@ local state = {
     isInitialized = false,
 }
 
-local function getRowsModule()
-    local root = rawget(_G, addonName)
-    if type(root) ~= "table" then
-        return nil
-    end
+local TEMP_EVENT_NAMESPACE = MODULE_TAG .. ".TempEvents"
 
-    local rows = rawget(root, "EndeavorTrackerRows")
-    if type(rows) ~= "table" then
-        return nil
-    end
+local tempEvents = {
+    registered = false,
+    pending = false,
+    timerHandle = nil,
+    lastQueuedAt = 0,
+    debounceMs = 150,
+}
 
-    return rows
-end
-
-local function getLayoutModule()
-    local root = rawget(_G, addonName)
-    if type(root) ~= "table" then
-        return nil
-    end
-
-    local layout = rawget(root, "EndeavorTrackerLayout")
-    if type(layout) ~= "table" then
-        return nil
-    end
-
-    return layout
-end
+local EVENT_TIMED_ACTIVITIES_UPDATED_ID = rawget(_G, "EVENT_TIMED_ACTIVITIES_UPDATED")
+local EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED_ID = rawget(_G, "EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED")
+local EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED_ID = rawget(_G, "EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED")
 
 local function safeDebug(fmt, ...)
     local root = rawget(_G, addonName)
@@ -76,6 +62,238 @@ local function safeDebug(fmt, ...)
     end
 end
 
+local function getAddon()
+    return rawget(_G, addonName)
+end
+
+local function runSafe(fn)
+    if type(fn) ~= "function" then
+        return
+    end
+
+    local addon = getAddon()
+    if type(addon) == "table" then
+        local safeCall = rawget(addon, "SafeCall")
+        if type(safeCall) == "function" then
+            safeCall(fn)
+            return
+        end
+    end
+
+    pcall(fn)
+end
+
+local function getFrameTime()
+    local getter = rawget(_G, "GetFrameTimeMilliseconds")
+    if type(getter) ~= "function" then
+        getter = rawget(_G, "GetGameTimeMilliseconds")
+    end
+
+    if type(getter) == "function" then
+        local ok, value = pcall(getter)
+        if ok and type(value) == "number" then
+            return value
+        end
+    end
+
+    return 0
+end
+
+local function performTempEventRefresh()
+    runSafe(function()
+        local addon = getAddon()
+        if type(addon) ~= "table" then
+            return
+        end
+
+        local model = rawget(addon, "EndeavorModel")
+        if type(model) == "table" then
+            local refresh = model.RefreshFromGame or model.Refresh
+            if type(refresh) == "function" then
+                refresh(model)
+            end
+        end
+
+        local controller = rawget(addon, "EndeavorTrackerController")
+        if type(controller) == "table" then
+            local markDirty = controller.MarkDirty or controller.RequestRefresh
+            if type(markDirty) == "function" then
+                markDirty(controller)
+            end
+        end
+
+        local runtime = rawget(addon, "TrackerRuntime")
+        if type(runtime) == "table" then
+            local queueDirty = runtime.QueueDirty or runtime.MarkDirty or runtime.RequestRefresh
+            if type(queueDirty) == "function" then
+                queueDirty(runtime, "endeavor")
+            end
+        end
+    end)
+end
+
+local function clearTempEventsTimer()
+    if tempEvents.timerHandle ~= nil then
+        local cancel = rawget(_G, "CancelCallback")
+        if type(cancel) == "function" then
+            cancel(tempEvents.timerHandle)
+        end
+        tempEvents.timerHandle = nil
+    end
+    tempEvents.pending = false
+end
+
+local function queueTempEventRefresh()
+    local now = getFrameTime()
+    local lastQueued = tempEvents.lastQueuedAt or 0
+    local elapsed = now - lastQueued
+    if elapsed < 0 then
+        elapsed = 0
+    end
+
+    if elapsed >= tempEvents.debounceMs then
+        tempEvents.lastQueuedAt = now
+        performTempEventRefresh()
+        return
+    end
+
+    if tempEvents.pending then
+        return
+    end
+
+    tempEvents.pending = true
+
+    local callLater = rawget(_G, "zo_callLater")
+    if type(callLater) ~= "function" then
+        tempEvents.pending = false
+        tempEvents.lastQueuedAt = now
+        performTempEventRefresh()
+        return
+    end
+
+    local delay = tempEvents.debounceMs - elapsed
+    if delay < 0 then
+        delay = 0
+    end
+
+    tempEvents.timerHandle = callLater(function()
+        tempEvents.timerHandle = nil
+        tempEvents.pending = false
+        tempEvents.lastQueuedAt = getFrameTime()
+        performTempEventRefresh()
+    end, delay)
+
+    safeDebug("[EndeavorTracker.TempEvents] refresh queued (debounced)")
+end
+
+local function onTimedActivitiesEvent()
+    runSafe(queueTempEventRefresh)
+end
+
+local function tempEventsRegister()
+    if tempEvents.registered then
+        return
+    end
+
+    runSafe(function()
+        local eventManager = rawget(_G, "EVENT_MANAGER")
+        local eventManagerType = type(eventManager)
+        if eventManagerType ~= "table" and eventManagerType ~= "userdata" then
+            return
+        end
+
+        local registerMethod = eventManager.RegisterForEvent
+        if type(registerMethod) ~= "function" then
+            return
+        end
+
+        local registeredCount = 0
+
+        if EVENT_TIMED_ACTIVITIES_UPDATED_ID then
+            registerMethod(eventManager, TEMP_EVENT_NAMESPACE, EVENT_TIMED_ACTIVITIES_UPDATED_ID, onTimedActivitiesEvent)
+            registeredCount = registeredCount + 1
+        end
+
+        if EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED_ID then
+            registerMethod(eventManager, TEMP_EVENT_NAMESPACE, EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED_ID, onTimedActivitiesEvent)
+            registeredCount = registeredCount + 1
+        end
+
+        if EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED_ID then
+            registerMethod(eventManager, TEMP_EVENT_NAMESPACE, EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED_ID, onTimedActivitiesEvent)
+            registeredCount = registeredCount + 1
+        end
+
+        if registeredCount > 0 then
+            tempEvents.registered = true
+            safeDebug("[EndeavorTracker.TempEvents] register")
+        end
+    end)
+end
+
+local function tempEventsUnregister()
+    if not tempEvents.registered then
+        clearTempEventsTimer()
+        return
+    end
+
+    runSafe(function()
+        clearTempEventsTimer()
+
+        local eventManager = rawget(_G, "EVENT_MANAGER")
+        local eventManagerType = type(eventManager)
+        if eventManagerType ~= "table" and eventManagerType ~= "userdata" then
+            tempEvents.registered = false
+            safeDebug("[EndeavorTracker.TempEvents] unregister")
+            return
+        end
+
+        local unregisterMethod = eventManager.UnregisterForEvent
+        if type(unregisterMethod) == "function" then
+            if EVENT_TIMED_ACTIVITIES_UPDATED_ID then
+                unregisterMethod(eventManager, TEMP_EVENT_NAMESPACE, EVENT_TIMED_ACTIVITIES_UPDATED_ID)
+            end
+            if EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED_ID then
+                unregisterMethod(eventManager, TEMP_EVENT_NAMESPACE, EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED_ID)
+            end
+            if EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED_ID then
+                unregisterMethod(eventManager, TEMP_EVENT_NAMESPACE, EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED_ID)
+            end
+        end
+
+        tempEvents.registered = false
+        safeDebug("[EndeavorTracker.TempEvents] unregister")
+    end)
+end
+
+local function getRowsModule()
+    local root = rawget(_G, addonName)
+    if type(root) ~= "table" then
+        return nil
+    end
+
+    local rows = rawget(root, "EndeavorTrackerRows")
+    if type(rows) ~= "table" then
+        return nil
+    end
+
+    return rows
+end
+
+local function getLayoutModule()
+    local root = rawget(_G, addonName)
+    if type(root) ~= "table" then
+        return nil
+    end
+
+    local layout = rawget(root, "EndeavorTrackerLayout")
+    if type(layout) ~= "table" then
+        return nil
+    end
+
+    return layout
+end
+
 local function coerceHeight(value)
     if type(value) == "number" then
         if value ~= value then -- NaN guard
@@ -106,6 +324,8 @@ function EndeavorTracker.Init(sectionContainer)
     if container and container.SetHeight then
         container:SetHeight(0)
     end
+
+    tempEventsRegister()
 
     local containerName
     if container and container.GetName then
@@ -160,6 +380,10 @@ end
 
 function EndeavorTracker.GetHeight()
     return coerceHeight(state.currentHeight)
+end
+
+function EndeavorTracker.Dispose()
+    tempEventsUnregister()
 end
 
 Nvk3UT.EndeavorTracker = EndeavorTracker
