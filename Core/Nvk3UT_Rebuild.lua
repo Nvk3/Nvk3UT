@@ -79,6 +79,178 @@ local function getRoot()
     return nil
 end
 
+local function getRuntime()
+    local root = getRoot()
+    if type(root) ~= "table" then
+        return nil
+    end
+
+    local runtime = rawget(root, "TrackerRuntime")
+    if type(runtime) == "table" then
+        return runtime
+    end
+
+    return nil
+end
+
+local function isDebugEnabled()
+    if Nvk3UT and Nvk3UT.debug ~= nil then
+        return Nvk3UT.debug == true
+    end
+
+    local root = getRoot()
+    if type(root) ~= "table" then
+        return false
+    end
+
+    if root.debug ~= nil then
+        return root.debug == true
+    end
+
+    if root.debugEnabled ~= nil then
+        return root.debugEnabled == true
+    end
+
+    local sv = rawget(root, "SV") or rawget(root, "sv")
+    if type(sv) == "table" and sv.debug ~= nil then
+        return sv.debug == true
+    end
+
+    return false
+end
+
+local function debugLog(fmt, ...)
+    if not isDebugEnabled() then
+        return
+    end
+
+    local message = formatMessage("[Rebuild] ", fmt, ...)
+    if Nvk3UT and type(Nvk3UT.Debug) == "function" then
+        safeInvoke("Nvk3UT.Debug", Nvk3UT.Debug, message)
+        return
+    end
+
+    local root = getRoot()
+    if type(root) == "table" and type(root.Debug) == "function" then
+        safeInvoke("Addon.Debug", root.Debug, message)
+        return
+    end
+
+    if d then
+        d(message)
+    end
+end
+
+local TRACKER_SECTION_ORDER = { "quest", "endeavor", "achievement" }
+local VALID_SECTION_KEYS = {
+    quest = "quest",
+    endeavor = "endeavor",
+    achievement = "achievement",
+    layout = "layout",
+}
+
+local function queueDirtyChannel(channel)
+    local runtime = getRuntime()
+    if type(runtime) ~= "table" then
+        return false
+    end
+
+    local queueDirty = runtime.QueueDirty or runtime.queueDirty
+    if type(queueDirty) ~= "function" then
+        return false
+    end
+
+    local label = string.format("TrackerRuntime.QueueDirty(%s)", tostring(channel or "all"))
+    local ok = safeInvoke(label, queueDirty, runtime, channel)
+    return ok == true
+end
+
+local function buildSectionList(sections)
+    local requested = {}
+
+    local function addSection(key)
+        if type(key) ~= "string" then
+            return
+        end
+
+        local normalized = string.lower(key)
+        local resolved = VALID_SECTION_KEYS[normalized]
+        if resolved ~= nil then
+            requested[resolved] = true
+            return
+        end
+
+        if isDebugEnabled() then
+            _debug("Sections(): unknown key '%s'", tostring(key))
+        end
+    end
+
+    if sections == nil then
+        for index = 1, #TRACKER_SECTION_ORDER do
+            requested[TRACKER_SECTION_ORDER[index]] = true
+        end
+        return requested
+    end
+
+    if type(sections) == "string" then
+        if sections == "all" or sections == "trackers" then
+            for index = 1, #TRACKER_SECTION_ORDER do
+                requested[TRACKER_SECTION_ORDER[index]] = true
+            end
+            return requested
+        end
+
+        addSection(sections)
+        return requested
+    end
+
+    if type(sections) == "table" then
+        for index = 1, #sections do
+            local value = sections[index]
+            if value == "all" or value == "trackers" then
+                for order = 1, #TRACKER_SECTION_ORDER do
+                    requested[TRACKER_SECTION_ORDER[order]] = true
+                end
+            else
+                addSection(value)
+            end
+        end
+    end
+
+    return requested
+end
+
+local function queueSectionsInternal(sectionFlags, context)
+    local queued = {}
+    local triggered = false
+
+    for order = 1, #TRACKER_SECTION_ORDER do
+        local key = TRACKER_SECTION_ORDER[order]
+        if sectionFlags[key] then
+            if queueDirtyChannel(key) then
+                queued[#queued + 1] = key
+                triggered = true
+            end
+        end
+    end
+
+    if sectionFlags.layout and queueDirtyChannel("layout") then
+        queued[#queued + 1] = "layout"
+        triggered = true
+    end
+
+    if triggered and #queued > 0 then
+        local joined = table.concat(queued, ", ")
+        if context ~= nil and context ~= "" then
+            debugLog("queued %s dirty (%s)", joined, tostring(context))
+        else
+            debugLog("queued %s dirty", joined)
+        end
+    end
+
+    return triggered
+end
+
 local function resolveAchievementsSystem()
     if type(SYSTEMS) == "table" and type(SYSTEMS.GetObject) == "function" then
         local ok, system = pcall(SYSTEMS.GetObject, SYSTEMS, "achievements")
@@ -192,6 +364,24 @@ function Rebuild.ForceAchievementRefresh(context)
     return triggered
 end
 
+---Force the endeavor tracker to refresh via the runtime dirty queue.
+---@param context string|nil
+---@return boolean triggered
+function Rebuild.ForceEndeavorRefresh(context)
+    describeContext("ForceEndeavorRefresh", context)
+
+    local triggered = queueDirtyChannel("endeavor")
+    if triggered then
+        if context ~= nil and context ~= "" then
+            debugLog("queued endeavor dirty (%s)", tostring(context))
+        else
+            debugLog("queued endeavor dirty")
+        end
+    end
+
+    return triggered
+end
+
 ---Force a global refresh touching quests, achievements, and tracker host state.
 ---@param context string|nil
 function Rebuild.ForceGlobalRefresh(context)
@@ -200,9 +390,10 @@ function Rebuild.ForceGlobalRefresh(context)
     rebuildCompletedData()
 
     local questTriggered = Rebuild.ForceQuestRefresh(context)
+    local endeavorTriggered = Rebuild.ForceEndeavorRefresh(context)
     local achievementTriggered = Rebuild.ForceAchievementRefresh(context)
 
-    if questTriggered or achievementTriggered then
+    if questTriggered or endeavorTriggered or achievementTriggered then
         refreshTrackerHost()
     end
 
@@ -216,6 +407,55 @@ function Rebuild.ForceGlobalRefresh(context)
             safeInvoke("UI.UpdateStatus", root.UI.UpdateStatus)
         end
     end
+end
+
+---Queue all trackers to rebuild via the runtime.
+---@param context string|nil
+---@return boolean triggered
+function Rebuild.MarkAllDirty(context)
+    describeContext("MarkAllDirty", context)
+
+    local flags = {}
+    for order = 1, #TRACKER_SECTION_ORDER do
+        flags[TRACKER_SECTION_ORDER[order]] = true
+    end
+
+    return queueSectionsInternal(flags, context)
+end
+
+---Queue specified tracker sections to rebuild.
+---@param sections string|string[]
+---@param context string|nil
+---@return boolean triggered
+function Rebuild.Sections(sections, context)
+    describeContext("Sections", context)
+
+    local flags = buildSectionList(sections)
+    return queueSectionsInternal(flags, context)
+end
+
+---Queue all tracker sections to rebuild.
+---@param context string|nil
+---@return boolean triggered
+function Rebuild.Trackers(context)
+    describeContext("Trackers", context)
+
+    local flags = {}
+    for order = 1, #TRACKER_SECTION_ORDER do
+        flags[TRACKER_SECTION_ORDER[order]] = true
+    end
+
+    return queueSectionsInternal(flags, context)
+end
+
+---Queue the tracker host layout for recompute.
+---@param context string|nil
+---@return boolean triggered
+function Rebuild.ForceLayout(context)
+    describeContext("ForceLayout", context)
+
+    local flags = { layout = true }
+    return queueSectionsInternal(flags, context)
 end
 
 attachToRoot = function(root)
