@@ -54,6 +54,14 @@ local DEFAULT_TRACKER_APPEARANCE = {
     },
 }
 
+local DEFAULT_ENDEAVOR_DATA = {
+    expanded = true,
+    position = { x = nil, y = nil },
+    window = { locked = false },
+    categories = {},
+    lastRefresh = 0,
+}
+
 local DEFAULT_HOST_SETTINGS = {
     HideInCombat = false,
 }
@@ -137,6 +145,7 @@ local defaults = {
         Host = DEFAULT_HOST_SETTINGS,
     },
     AchievementCache = DEFAULT_ACHIEVEMENT_CACHE,
+    EndeavorData = DEFAULT_ENDEAVOR_DATA,
 }
 
 local function EnsureAchievementCache(saved)
@@ -197,6 +206,68 @@ local function MergeDefaults(target, source)
     end
 
     return target
+end
+
+local function EnsureEndeavorData(saved, safeCall)
+    if type(saved) ~= "table" then
+        return false
+    end
+
+    local endeavor = saved.EndeavorData
+    local needsMerge = type(endeavor) ~= "table"
+
+    if not needsMerge then
+        if endeavor.expanded == nil then
+            needsMerge = true
+        end
+        if type(endeavor.position) ~= "table" then
+            needsMerge = true
+        end
+        if type(endeavor.window) ~= "table" then
+            needsMerge = true
+        end
+        if type(endeavor.categories) ~= "table" then
+            needsMerge = true
+        end
+        if endeavor.lastRefresh == nil then
+            needsMerge = true
+        end
+    end
+
+    local function applyDefaults()
+        local target = EnsureTable(saved, "EndeavorData")
+        MergeDefaults(target, DEFAULT_ENDEAVOR_DATA)
+        EnsureTable(target, "position")
+        local window = EnsureTable(target, "window")
+        EnsureTable(target, "categories")
+
+        if target.expanded == nil then
+            target.expanded = DEFAULT_ENDEAVOR_DATA.expanded
+        end
+
+        if window.locked == nil then
+            window.locked = DEFAULT_ENDEAVOR_DATA.window.locked
+        end
+
+        if target.lastRefresh == nil then
+            target.lastRefresh = DEFAULT_ENDEAVOR_DATA.lastRefresh
+        end
+
+        return true
+    end
+
+    local initialized = false
+    if needsMerge then
+        if type(safeCall) == "function" then
+            initialized = safeCall(applyDefaults) and true or false
+        else
+            initialized = applyDefaults()
+        end
+    else
+        applyDefaults()
+    end
+
+    return initialized
 end
 
 local function AdoptLegacySettings(saved)
@@ -294,11 +365,35 @@ function Nvk3UT_StateInit.BootstrapSavedVariables(addonTable)
     AdoptLegacySettings(sv)
     EnsureFirstLoginStructures(sv)
 
+    local safeCall = addonTable and addonTable.SafeCall
+    if not safeCall and Nvk3UT and type(Nvk3UT.SafeCall) == "function" then
+        safeCall = Nvk3UT.SafeCall
+    end
+
+    local endeavorInitialized = EnsureEndeavorData(sv, safeCall)
+
     addonTable.SV = sv
     addonTable.sv = sv
 
     if type(addonTable.SetDebugEnabled) == "function" then
         addonTable:SetDebugEnabled(sv.debug)
+    end
+
+    local debugActive = false
+    if Nvk3UT and Nvk3UT.debug ~= nil then
+        debugActive = Nvk3UT.debug == true
+    end
+    if not debugActive and sv and sv.debug ~= nil then
+        debugActive = sv.debug == true
+    end
+    if not debugActive and addonTable and addonTable.debugEnabled ~= nil then
+        debugActive = addonTable.debugEnabled == true
+    end
+
+    if endeavorInitialized and debugActive and type(addonTable.Debug) == "function" then
+        addonTable.Debug("Initialized EndeavorData defaults")
+    elseif endeavorInitialized and debugActive and d then
+        d("[Nvk3UT DEBUG] Initialized EndeavorData defaults")
     end
 
     if Nvk3UT_Diagnostics and Nvk3UT_Diagnostics.SyncFromSavedVariables then
