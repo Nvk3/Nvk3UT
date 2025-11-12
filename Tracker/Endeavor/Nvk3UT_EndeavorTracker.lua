@@ -12,6 +12,7 @@ local state = {
     currentHeight = 0,
     isInitialized = false,
     isDisposed = false,
+    ui = nil,
 }
 
 -- EBOOT TempEvents (Endeavor)
@@ -54,6 +55,20 @@ local progressFallback = {
 local safeDebug
 
 local INIT_POLLER_UPDATE_NAME = "Nvk3UT_Endeavor_InitPoller"
+
+local CATEGORY_ROW_HEIGHT = 28
+local SECTION_ROW_HEIGHT = 24
+local CATEGORY_CHEVRON_SIZE = 18
+local CATEGORY_LABEL_OFFSET_X = 24
+local SECTION_LABEL_OFFSET_X = 24
+
+local CATEGORY_TITLE_FONT = "$(BOLD_FONT)|20|soft-shadow-thick"
+local SECTION_TITLE_FONT = "$(BOLD_FONT)|16|soft-shadow-thick"
+
+local CHEVRON_TEXTURES = {
+    expanded = "EsoUI/Art/Buttons/tree_open_up.dds",
+    collapsed = "EsoUI/Art/Buttons/tree_closed_up.dds",
+}
 
 local function CallIfFunction(fn, ...)
     if type(fn) == "function" then
@@ -139,6 +154,79 @@ local function runSafe(fn)
     end
 
     pcall(fn)
+end
+
+local function getEndeavorState()
+    local addon = getAddon()
+    if type(addon) ~= "table" then
+        return nil
+    end
+
+    local stateModule = rawget(addon, "EndeavorState")
+    if type(stateModule) ~= "table" then
+        return nil
+    end
+
+    return stateModule
+end
+
+local function queueTrackerDirty()
+    runSafe(function()
+        local addon = getAddon()
+        if type(addon) ~= "table" then
+            return
+        end
+
+        local runtime = rawget(addon, "TrackerRuntime")
+        if type(runtime) ~= "table" then
+            return
+        end
+
+        local queueDirty = runtime.QueueDirty or runtime.MarkDirty or runtime.RequestRefresh
+        if type(queueDirty) == "function" then
+            queueDirty(runtime, "endeavor")
+        end
+    end)
+end
+
+local function toggleRootExpanded()
+    local stateModule = getEndeavorState()
+    if type(stateModule) ~= "table" then
+        return
+    end
+
+    local expanded = false
+    local ok, value = CallIfFunction(stateModule.IsExpanded, stateModule)
+    if ok and value == true then
+        expanded = true
+    end
+
+    local okSet = CallIfFunction(stateModule.SetExpanded, stateModule, not expanded)
+    if okSet then
+        queueTrackerDirty()
+    end
+end
+
+local function toggleCategoryExpanded(key)
+    if key == nil then
+        return
+    end
+
+    local stateModule = getEndeavorState()
+    if type(stateModule) ~= "table" then
+        return
+    end
+
+    local expanded = false
+    local ok, value = CallIfFunction(stateModule.IsCategoryExpanded, stateModule, key)
+    if ok and value == true then
+        expanded = true
+    end
+
+    local okSet = CallIfFunction(stateModule.SetCategoryExpanded, stateModule, key, not expanded)
+    if okSet then
+        queueTrackerDirty()
+    end
 end
 
 local function getFrameTime()
@@ -759,12 +847,241 @@ local function coerceHeight(value)
     return 0
 end
 
+local function ensureUi(container)
+    if container == nil then
+        return state.ui
+    end
+
+    local wm = WINDOW_MANAGER
+    if wm == nil then
+        return state.ui
+    end
+
+    local ui = state.ui
+    if type(ui) ~= "table" then
+        ui = {}
+        state.ui = ui
+    end
+
+    local containerName
+    if type(container.GetName) == "function" then
+        local ok, name = pcall(container.GetName, container)
+        if ok and type(name) == "string" then
+            containerName = name
+        end
+    end
+
+    local baseName = (containerName or "Nvk3UT_Endeavor") .. "_"
+    ui.baseName = baseName
+
+    local category = ui.category
+    if type(category) ~= "table" then
+        local controlName = baseName .. "Category"
+        local control = GetControl(controlName)
+        if not control then
+            control = wm:CreateControl(controlName, container, CT_CONTROL)
+        else
+            control:SetParent(container)
+        end
+        control:SetResizeToFitDescendents(false)
+        control:SetHeight(CATEGORY_ROW_HEIGHT)
+        control:SetMouseEnabled(true)
+        control:SetHidden(false)
+        control:SetHandler("OnMouseUp", function(_, button, upInside)
+            if button == MOUSE_BUTTON_INDEX_LEFT and upInside then
+                toggleRootExpanded()
+            end
+        end)
+
+        local chevronName = controlName .. "Chevron"
+        local chevron = GetControl(chevronName)
+        if not chevron then
+            chevron = wm:CreateControl(chevronName, control, CT_TEXTURE)
+        end
+        chevron:SetParent(control)
+        chevron:SetMouseEnabled(false)
+        chevron:SetHidden(false)
+        chevron:SetDimensions(CATEGORY_CHEVRON_SIZE, CATEGORY_CHEVRON_SIZE)
+        chevron:ClearAnchors()
+        local offsetY = math.floor((CATEGORY_ROW_HEIGHT - CATEGORY_CHEVRON_SIZE) * 0.5)
+        chevron:SetAnchor(TOPLEFT, control, TOPLEFT, 0, offsetY)
+        chevron:SetTexture(CHEVRON_TEXTURES.collapsed)
+
+        local labelName = controlName .. "Label"
+        local label = GetControl(labelName)
+        if not label then
+            label = wm:CreateControl(labelName, control, CT_LABEL)
+        end
+        label:SetParent(control)
+        label:SetFont(CATEGORY_TITLE_FONT)
+        label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
+        label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
+        label:ClearAnchors()
+        label:SetAnchor(TOPLEFT, control, TOPLEFT, CATEGORY_LABEL_OFFSET_X, 0)
+        label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
+
+        ui.category = {
+            control = control,
+            label = label,
+            chevron = chevron,
+        }
+    else
+        local control = category.control
+        if control then
+            control:SetParent(container)
+            control:SetHeight(CATEGORY_ROW_HEIGHT)
+        end
+    end
+
+    local daily = ui.daily
+    if type(daily) ~= "table" then
+        local controlName = baseName .. "Daily"
+        local control = GetControl(controlName)
+        if not control then
+            control = wm:CreateControl(controlName, container, CT_CONTROL)
+        else
+            control:SetParent(container)
+        end
+        control:SetResizeToFitDescendents(false)
+        control:SetHeight(SECTION_ROW_HEIGHT)
+        control:SetMouseEnabled(true)
+        control:SetHidden(false)
+        control:SetHandler("OnMouseUp", function(_, button, upInside)
+            if button == MOUSE_BUTTON_INDEX_LEFT and upInside then
+                toggleCategoryExpanded("daily")
+            end
+        end)
+
+        local labelName = controlName .. "Label"
+        local label = GetControl(labelName)
+        if not label then
+            label = wm:CreateControl(labelName, control, CT_LABEL)
+        end
+        label:SetParent(control)
+        label:SetFont(SECTION_TITLE_FONT)
+        label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
+        label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
+        label:ClearAnchors()
+        label:SetAnchor(TOPLEFT, control, TOPLEFT, SECTION_LABEL_OFFSET_X, 0)
+        label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
+
+        ui.daily = {
+            control = control,
+            label = label,
+        }
+    else
+        local control = daily.control
+        if control then
+            control:SetParent(container)
+            control:SetHeight(SECTION_ROW_HEIGHT)
+        end
+    end
+
+    local weekly = ui.weekly
+    if type(weekly) ~= "table" then
+        local controlName = baseName .. "Weekly"
+        local control = GetControl(controlName)
+        if not control then
+            control = wm:CreateControl(controlName, container, CT_CONTROL)
+        else
+            control:SetParent(container)
+        end
+        control:SetResizeToFitDescendents(false)
+        control:SetHeight(SECTION_ROW_HEIGHT)
+        control:SetMouseEnabled(true)
+        control:SetHidden(false)
+        control:SetHandler("OnMouseUp", function(_, button, upInside)
+            if button == MOUSE_BUTTON_INDEX_LEFT and upInside then
+                toggleCategoryExpanded("weekly")
+            end
+        end)
+
+        local labelName = controlName .. "Label"
+        local label = GetControl(labelName)
+        if not label then
+            label = wm:CreateControl(labelName, control, CT_LABEL)
+        end
+        label:SetParent(control)
+        label:SetFont(SECTION_TITLE_FONT)
+        label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
+        label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
+        label:ClearAnchors()
+        label:SetAnchor(TOPLEFT, control, TOPLEFT, SECTION_LABEL_OFFSET_X, 0)
+        label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
+
+        ui.weekly = {
+            control = control,
+            label = label,
+        }
+    else
+        local control = weekly.control
+        if control then
+            control:SetParent(container)
+            control:SetHeight(SECTION_ROW_HEIGHT)
+        end
+    end
+
+    local dailyObjectives = ui.dailyObjectives
+    if type(dailyObjectives) ~= "table" then
+        local controlName = baseName .. "DailyObjectives"
+        local control = GetControl(controlName)
+        if not control then
+            control = wm:CreateControl(controlName, container, CT_CONTROL)
+        else
+            control:SetParent(container)
+        end
+        control:SetResizeToFitDescendents(false)
+        control:SetMouseEnabled(false)
+        control:SetHidden(true)
+        control:SetHeight(0)
+
+        ui.dailyObjectives = {
+            control = control,
+        }
+    else
+        local control = dailyObjectives.control
+        if control then
+            control:SetParent(container)
+        end
+    end
+
+    local weeklyObjectives = ui.weeklyObjectives
+    if type(weeklyObjectives) ~= "table" then
+        local controlName = baseName .. "WeeklyObjectives"
+        local control = GetControl(controlName)
+        if not control then
+            control = wm:CreateControl(controlName, container, CT_CONTROL)
+        else
+            control:SetParent(container)
+        end
+        control:SetResizeToFitDescendents(false)
+        control:SetMouseEnabled(false)
+        control:SetHidden(true)
+        control:SetHeight(0)
+
+        ui.weeklyObjectives = {
+            control = control,
+        }
+    else
+        local control = weeklyObjectives.control
+        if control then
+            control:SetParent(container)
+        end
+    end
+
+    return ui
+end
+
 function EndeavorTracker.Init(sectionContainer)
     state.container = sectionContainer
     state.currentHeight = 0
     state.isInitialized = true
     state.isDisposed = false
     EndeavorTracker._disposed = false
+    state.ui = nil
 
     ensureEndeavorInitialized()
 
@@ -839,67 +1156,210 @@ function EndeavorTracker.Init(sectionContainer)
     safeDebug("EndeavorTracker.Init: container=%s", containerName or "nil")
 end
 
+
 function EndeavorTracker.Refresh(viewModel)
     if not state.isInitialized then
         return
     end
 
-    local dailyCount = 0
-    local weeklyCount = 0
-    if type(viewModel) == "table" then
-        local daily = viewModel.daily
-        if type(daily) == "table" and type(daily.items) == "table" then
-            dailyCount = #daily.items
-        end
-
-        local weekly = viewModel.weekly
-        if type(weekly) == "table" and type(weekly.items) == "table" then
-            weeklyCount = #weekly.items
-        end
+    if EndeavorTracker._building then
+        safeDebug("[EndeavorTracker.UI] Refresh skipped due to active guard")
+        return
     end
 
-    safeDebug("[EndeavorTracker.UI] Refresh called: dailyItems=%d weeklyItems=%d", dailyCount, weeklyCount)
+    EndeavorTracker._building = true
+    local function release()
+        EndeavorTracker._building = false
+    end
+
+    local container = state.container
+    if container == nil then
+        release()
+        return
+    end
+
+    local vm = type(viewModel) == "table" and viewModel or {}
+    local categoryVm = type(vm.category) == "table" and vm.category or {}
+    local dailyVm = type(vm.daily) == "table" and vm.daily or {}
+    local weeklyVm = type(vm.weekly) == "table" and vm.weekly or {}
+
+    local dailyObjectivesList = type(dailyVm.objectives) == "table" and dailyVm.objectives or {}
+    local weeklyObjectivesList = type(weeklyVm.objectives) == "table" and weeklyVm.objectives or {}
+
+    safeDebug("[EndeavorTracker.UI] Refresh: daily=%d weekly=%d", #dailyObjectivesList, #weeklyObjectivesList)
+
+    local ui = ensureUi(container)
+    if type(ui) ~= "table" then
+        release()
+        return
+    end
+
+    local categoryControl = ui.category and ui.category.control
+    local categoryLabel = ui.category and ui.category.label
+    local categoryChevron = ui.category and ui.category.chevron
+
+    local function resolveTitle(value, fallback)
+        if value == nil or value == "" then
+            return fallback
+        end
+        return tostring(value)
+    end
+
+    if categoryLabel and categoryLabel.SetText then
+        categoryLabel:SetText(resolveTitle(categoryVm.title, "Bestrebungen"))
+    end
+
+    local categoryExpanded = categoryVm.expanded == true
+    if categoryChevron and categoryChevron.SetTexture then
+        local texturePath = categoryExpanded and CHEVRON_TEXTURES.expanded or CHEVRON_TEXTURES.collapsed
+        categoryChevron:SetTexture(texturePath)
+    end
+
+    local function formatCountText(titleValue, completedValue, totalValue)
+        local text = resolveTitle(titleValue, "")
+        local completedNum = tonumber(completedValue) or 0
+        local totalNum = tonumber(totalValue) or 0
+        completedNum = math.floor(completedNum + 0.5)
+        totalNum = math.floor(totalNum + 0.5)
+        return string.format("%s %d/%d", text, completedNum, totalNum)
+    end
+
+    local dailyControl = ui.daily and ui.daily.control
+    local dailyLabel = ui.daily and ui.daily.label
+    if dailyLabel and dailyLabel.SetText then
+        dailyLabel:SetText(formatCountText(dailyVm.title or "Tägliche Bestrebungen", dailyVm.completed, dailyVm.total))
+    end
+
+    local weeklyControl = ui.weekly and ui.weekly.control
+    local weeklyLabel = ui.weekly and ui.weekly.label
+    if weeklyLabel and weeklyLabel.SetText then
+        weeklyLabel:SetText(formatCountText(weeklyVm.title or "Wöchentliche Bestrebungen", weeklyVm.completed, weeklyVm.total))
+    end
+
+    if categoryControl and categoryControl.SetHidden then
+        categoryControl:SetHidden(false)
+    end
+
+    if dailyControl and dailyControl.SetHidden then
+        dailyControl:SetHidden(not categoryExpanded)
+    end
+    if weeklyControl and weeklyControl.SetHidden then
+        weeklyControl:SetHidden(not categoryExpanded)
+    end
 
     local rows = getRowsModule()
-    local items = {}
-    if type(viewModel) == "table" and type(viewModel.items) == "table" then
-        items = viewModel.items
-    end
+    local dailyObjectivesControl = ui.dailyObjectives and ui.dailyObjectives.control
+    local weeklyObjectivesControl = ui.weeklyObjectives and ui.weeklyObjectives.control
 
-    local builtHeight = 0
-    local container = state.container
-    if rows and type(rows.Build) == "function" then
-        if EndeavorTracker._buildingRows then
-            safeDebug("EndeavorTracker.Refresh: rows build skipped due to active guard")
-            return
+    local dailyExpanded = categoryExpanded and dailyVm.expanded == true
+    local weeklyExpanded = categoryExpanded and weeklyVm.expanded == true
+
+    if rows then
+        if dailyObjectivesControl then
+            if dailyExpanded and type(rows.BuildObjectives) == "function" then
+                rows.BuildObjectives(dailyObjectivesControl, dailyObjectivesList)
+                dailyObjectivesControl:SetHidden(false)
+            else
+                if type(rows.ClearObjectives) == "function" then
+                    rows.ClearObjectives(dailyObjectivesControl)
+                elseif type(rows.BuildObjectives) == "function" then
+                    rows.BuildObjectives(dailyObjectivesControl, {})
+                elseif dailyObjectivesControl.SetHeight then
+                    dailyObjectivesControl:SetHeight(0)
+                end
+                dailyObjectivesControl:SetHidden(true)
+            end
         end
 
-        EndeavorTracker._buildingRows = true
-        local ok, height = pcall(rows.Build, container, items)
-        EndeavorTracker._buildingRows = false
-        if ok then
-            builtHeight = coerceHeight(height)
+        if weeklyObjectivesControl then
+            if weeklyExpanded and type(rows.BuildObjectives) == "function" then
+                rows.BuildObjectives(weeklyObjectivesControl, weeklyObjectivesList)
+                weeklyObjectivesControl:SetHidden(false)
+            else
+                if type(rows.ClearObjectives) == "function" then
+                    rows.ClearObjectives(weeklyObjectivesControl)
+                elseif type(rows.BuildObjectives) == "function" then
+                    rows.BuildObjectives(weeklyObjectivesControl, {})
+                elseif weeklyObjectivesControl.SetHeight then
+                    weeklyObjectivesControl:SetHeight(0)
+                end
+                weeklyObjectivesControl:SetHidden(true)
+            end
         end
-    elseif container and type(container.SetHeight) == "function" then
-        container:SetHeight(0)
+    else
+        if dailyObjectivesControl then
+            dailyObjectivesControl:SetHidden(true)
+            if dailyObjectivesControl.SetHeight then
+                dailyObjectivesControl:SetHeight(0)
+            end
+        end
+        if weeklyObjectivesControl then
+            weeklyObjectivesControl:SetHidden(true)
+            if weeklyObjectivesControl.SetHeight then
+                weeklyObjectivesControl:SetHeight(0)
+            end
+        end
     end
 
-    local layoutHeight = builtHeight
     local layout = getLayoutModule()
+    local layoutContext = {
+        category = { control = categoryControl },
+        categoryExpanded = categoryExpanded,
+        daily = { control = dailyControl },
+        dailyExpanded = dailyVm.expanded == true,
+        dailyObjectives = { control = dailyObjectivesControl, expanded = dailyExpanded },
+        weekly = { control = weeklyControl },
+        weeklyExpanded = weeklyVm.expanded == true,
+        weeklyObjectives = { control = weeklyObjectivesControl, expanded = weeklyExpanded },
+    }
+
+    local measuredHeight = 0
     if layout and type(layout.Apply) == "function" then
-        local ok, measured = pcall(layout.Apply, container)
+        local ok, height = pcall(layout.Apply, container, layoutContext)
         if ok then
-            layoutHeight = coerceHeight(measured)
+            measuredHeight = coerceHeight(height)
         end
+    else
+        local fallbackHeight = 0
+        if categoryControl and categoryControl.GetHeight then
+            fallbackHeight = fallbackHeight + coerceHeight(categoryControl:GetHeight())
+        else
+            fallbackHeight = fallbackHeight + CATEGORY_ROW_HEIGHT
+        end
+
+        if categoryExpanded then
+            if dailyControl and dailyControl.GetHeight then
+                fallbackHeight = fallbackHeight + coerceHeight(dailyControl:GetHeight())
+            else
+                fallbackHeight = fallbackHeight + SECTION_ROW_HEIGHT
+            end
+
+            if dailyExpanded and dailyObjectivesControl and dailyObjectivesControl.GetHeight then
+                fallbackHeight = fallbackHeight + coerceHeight(dailyObjectivesControl:GetHeight())
+            end
+
+            if weeklyControl and weeklyControl.GetHeight then
+                fallbackHeight = fallbackHeight + coerceHeight(weeklyControl:GetHeight())
+            else
+                fallbackHeight = fallbackHeight + SECTION_ROW_HEIGHT
+            end
+
+            if weeklyExpanded and weeklyObjectivesControl and weeklyObjectivesControl.GetHeight then
+                fallbackHeight = fallbackHeight + coerceHeight(weeklyObjectivesControl:GetHeight())
+            end
+        end
+
+        measuredHeight = fallbackHeight
     end
 
-    state.currentHeight = coerceHeight(layoutHeight)
-
+    state.currentHeight = coerceHeight(measuredHeight)
     if container and container.SetHeight then
         container:SetHeight(state.currentHeight)
     end
 
-    safeDebug("EndeavorTracker.Refresh: rows=%d height=%d", type(items) == "table" and #items or 0, state.currentHeight)
+    safeDebug("[Endeavor.UI] expanded: cat=%s daily=%s weekly=%s", tostring(categoryExpanded), tostring(dailyExpanded), tostring(weeklyExpanded))
+
+    release()
 end
 
 function EndeavorTracker.GetHeight()
@@ -913,6 +1373,7 @@ function EndeavorTracker.Dispose()
     state.isInitialized = false
     state.currentHeight = 0
     state.container = nil
+    state.ui = nil
 end
 
 Nvk3UT.EndeavorTracker = EndeavorTracker

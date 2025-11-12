@@ -83,6 +83,7 @@ local function callWithOptionalSelf(target, method, ...)
     return unpack(results)
 end
 
+
 local function coerceNumber(value, fallback)
     local numeric = tonumber(value)
     if numeric == nil then
@@ -96,35 +97,87 @@ local function coerceNumber(value, fallback)
     return numeric
 end
 
+local function clampNonNegative(value, fallback)
+    local numeric = coerceNumber(value, fallback or 0)
+    if numeric < 0 then
+        numeric = 0
+    end
+
+    return numeric
+end
+
+local function clampProgress(value, maxValue)
+    local numeric = clampNonNegative(value, 0)
+    if type(maxValue) == "number" and maxValue >= 0 and numeric > maxValue then
+        numeric = maxValue
+    end
+
+    return numeric
+end
+
+local function clampMax(value)
+    local numeric = coerceNumber(value, 1)
+    if numeric < 1 then
+        numeric = 1
+    end
+
+    return numeric
+end
+
 local function coerceBoolean(value)
     return value == true
 end
 
-function Controller:MarkDirty()
+local function getStateModule()
     local root = getRoot()
     if type(root) ~= "table" then
-        return
+        return nil
     end
 
-    local runtime = rawget(root, "TrackerRuntime")
-    if type(runtime) ~= "table" then
-        return
+    local stateModule = rawget(root, "EndeavorState")
+    if type(stateModule) ~= "table" then
+        return nil
     end
 
-    local queueDirty = runtime.QueueDirty or runtime.MarkDirty or runtime.RequestRefresh
-    if type(queueDirty) ~= "function" then
-        return
+    return stateModule
+end
+
+local function isStateExpanded(stateModule)
+    if type(stateModule) ~= "table" then
+        return false
     end
 
-    safeCall(function()
-        queueDirty(runtime, "endeavor")
-    end)
+    local method = stateModule.IsExpanded
+    if type(method) ~= "function" then
+        return false
+    end
+
+    local ok, expanded = pcall(method, stateModule)
+    return ok and expanded == true
+end
+
+local function isCategoryExpanded(stateModule, key)
+    if type(stateModule) ~= "table" then
+        return false
+    end
+
+    local method = stateModule.IsCategoryExpanded
+    if type(method) ~= "function" then
+        return false
+    end
+
+    local ok, expanded = pcall(method, stateModule, key)
+    return ok and expanded == true
 end
 
 function Controller:BuildViewModel()
-    local items = {}
-    local dailyCount = 0
-    local weeklyCount = 0
+    local aggregatedItems = {}
+    local dailyObjectives = {}
+    local weeklyObjectives = {}
+    local dailyCompleted = 0
+    local dailyTotal = 0
+    local weeklyCompleted = 0
+    local weeklyTotal = 0
 
     local root = getRoot()
     local model = root and rawget(root, "EndeavorModel")
@@ -141,8 +194,27 @@ function Controller:BuildViewModel()
         viewData = {}
     end
 
-    local function appendItems(bucket, kind)
-        if type(bucket) ~= "table" then
+    local summary
+    if type(model) == "table" then
+        local getSummary = model.GetSummary
+        if type(getSummary) == "function" then
+            local ok, result = pcall(getSummary, model)
+            if ok and type(result) == "table" then
+                summary = result
+            end
+        end
+    end
+
+    local dailyBucket = type(viewData.daily) == "table" and viewData.daily or {}
+    local weeklyBucket = type(viewData.weekly) == "table" and viewData.weekly or {}
+
+    dailyCompleted = clampNonNegative(summary and summary.dailyCompleted or dailyBucket.completed, 0)
+    dailyTotal = clampNonNegative(summary and summary.dailyTotal or dailyBucket.total, 0)
+    weeklyCompleted = clampNonNegative(summary and summary.weeklyCompleted or weeklyBucket.completed, 0)
+    weeklyTotal = clampNonNegative(summary and summary.weeklyTotal or weeklyBucket.total, 0)
+
+    local function buildObjectives(bucket, target, kind)
+        if type(bucket) ~= "table" or type(target) ~= "table" then
             return
         end
 
@@ -153,34 +225,71 @@ function Controller:BuildViewModel()
 
         for _, item in ipairs(list) do
             if type(item) == "table" then
-                items[#items + 1] = {
-                    name = item.name or "",
-                    description = item.description or "",
-                    progress = coerceNumber(item.progress, 0),
-                    maxProgress = coerceNumber(item.maxProgress, 1),
-                    type = kind,
-                    remainingSeconds = coerceNumber(item.remainingSeconds, 0),
-                    completed = coerceBoolean(item.completed),
+                local maxValue = clampMax(item.maxProgress)
+                local progressValue = clampProgress(item.progress, maxValue)
+                local completed = item.completed == true or progressValue >= maxValue
+
+                local objective = {
+                    text = tostring(item.name or ""),
+                    progress = progressValue,
+                    max = maxValue,
+                    completed = completed,
+                    remainingSeconds = clampNonNegative(item.remainingSeconds, 0),
                 }
 
-                if kind == "daily" then
-                    dailyCount = dailyCount + 1
-                elseif kind == "weekly" then
-                    weeklyCount = weeklyCount + 1
-                end
+                target[#target + 1] = objective
+
+                aggregatedItems[#aggregatedItems + 1] = {
+                    name = tostring(item.name or ""),
+                    description = tostring(item.description or ""),
+                    progress = progressValue,
+                    maxProgress = maxValue,
+                    type = kind,
+                    remainingSeconds = objective.remainingSeconds,
+                    completed = completed,
+                }
             end
         end
     end
 
-    appendItems(viewData.daily, "daily")
-    appendItems(viewData.weekly, "weekly")
+    buildObjectives(dailyBucket, dailyObjectives, "daily")
+    buildObjectives(weeklyBucket, weeklyObjectives, "weekly")
 
-    DBG("built view model: count=%d (daily=%d weekly=%d)", #items, dailyCount, weeklyCount)
-
-    return {
-        items = items,
-        count = #items,
+    local stateModule = getStateModule()
+    local vm = {
+        category = {
+            title = "Bestrebungen",
+            expanded = isStateExpanded(stateModule),
+        },
+        daily = {
+            title = "Tägliche Bestrebungen",
+            completed = dailyCompleted,
+            total = dailyTotal,
+            expanded = isCategoryExpanded(stateModule, "daily"),
+            objectives = dailyObjectives,
+        },
+        weekly = {
+            title = "Wöchentliche Bestrebungen",
+            completed = weeklyCompleted,
+            total = weeklyTotal,
+            expanded = isCategoryExpanded(stateModule, "weekly"),
+            objectives = weeklyObjectives,
+        },
+        items = aggregatedItems,
+        count = #aggregatedItems,
     }
+
+    DBG(
+        "[EndeavorVM] daily=%d/%d weekly=%d/%d objsD=%d objsW=%d",
+        dailyCompleted,
+        dailyTotal,
+        weeklyCompleted,
+        weeklyTotal,
+        #dailyObjectives,
+        #weeklyObjectives
+    )
+
+    return vm
 end
 
 return Controller
