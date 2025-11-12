@@ -381,11 +381,55 @@ function EndeavorModel:Init(state)
 end
 
 local function buildItem(index, activityType)
-    local name = sanitizeString(safeCall(GetTimedActivityName, index) or "")
-    local description = sanitizeString(safeCall(GetTimedActivityDescription, index) or "")
-    local progress = sanitizeProgress(safeCall(GetTimedActivityProgress, index) or 0)
-    local maxProgress = sanitizeMaxProgress(safeCall(GetTimedActivityMaxProgress, index) or 1)
-    local remainingSeconds = sanitizeRemainingSeconds(safeCall(GetTimedActivityTimeRemainingSeconds, index) or 0)
+    local nameValue = ""
+    local nameFn = (type(_G) == "table" and rawget(_G, "GetTimedActivityName")) or GetTimedActivityName
+    if type(nameFn) == "function" then
+        local ok, value = pcall(nameFn, index)
+        if ok and type(value) == "string" then
+            nameValue = value
+        end
+    end
+    local name = sanitizeString(nameValue or "")
+
+    local descriptionValue = ""
+    local descriptionFn = (type(_G) == "table" and rawget(_G, "GetTimedActivityDescription")) or GetTimedActivityDescription
+    if type(descriptionFn) == "function" then
+        local ok, value = pcall(descriptionFn, index)
+        if ok and type(value) == "string" then
+            descriptionValue = value
+        end
+    end
+    local description = sanitizeString(descriptionValue or "")
+
+    local progressValue = 0
+    local progressFn = (type(_G) == "table" and rawget(_G, "GetTimedActivityProgress")) or GetTimedActivityProgress
+    if type(progressFn) == "function" then
+        local ok, value = pcall(progressFn, index)
+        if ok and type(value) == "number" then
+            progressValue = value
+        end
+    end
+    local progress = sanitizeProgress(progressValue or 0)
+
+    local maxProgressValue = 1
+    local maxFn = (type(_G) == "table" and rawget(_G, "GetTimedActivityMaxProgress")) or GetTimedActivityMaxProgress
+    if type(maxFn) == "function" then
+        local ok, value = pcall(maxFn, index)
+        if ok and type(value) == "number" then
+            maxProgressValue = value
+        end
+    end
+    local maxProgress = sanitizeMaxProgress(maxProgressValue or 1)
+
+    local remainingValue = 0
+    local remainingFn = (type(_G) == "table" and rawget(_G, "GetTimedActivityTimeRemainingSeconds")) or GetTimedActivityTimeRemainingSeconds
+    if type(remainingFn) == "function" then
+        local ok, value = pcall(remainingFn, index)
+        if ok and type(value) == "number" then
+            remainingValue = value
+        end
+    end
+    local remainingSeconds = sanitizeRemainingSeconds(remainingValue or 0)
 
     local completed = progress >= maxProgress
 
@@ -405,14 +449,18 @@ local function fetchLimit(activityTypeId)
     if type(activityTypeId) ~= "number" then
         return 0
     end
-    if type(GetTimedActivityTypeLimit) ~= "function" then
+
+    local getter = (type(_G) == "table" and rawget(_G, "GetTimedActivityTypeLimit")) or GetTimedActivityTypeLimit
+    if type(getter) ~= "function" then
         return 0
     end
-    local ok, limit = pcall(GetTimedActivityTypeLimit, activityTypeId)
+
+    local ok, limit = pcall(getter, activityTypeId)
     if not ok then
         warnLog("GetTimedActivityTypeLimit failed for %s", tostring(activityTypeId))
         return 0
     end
+
     return clampNumber(limit, 0, 0)
 end
 
@@ -420,10 +468,13 @@ local function fetchCompletedCount(activityTypeId)
     if type(activityTypeId) ~= "number" then
         return nil
     end
-    if type(GetNumTimedActivitiesCompleted) ~= "function" then
+
+    local getter = (type(_G) == "table" and rawget(_G, "GetNumTimedActivitiesCompleted")) or GetNumTimedActivitiesCompleted
+    if type(getter) ~= "function" then
         return nil
     end
-    local ok, count = pcall(GetNumTimedActivitiesCompleted, activityTypeId)
+
+    local ok, count = pcall(getter, activityTypeId)
     if not ok then
         warnLog("GetNumTimedActivitiesCompleted failed for %s", tostring(activityTypeId))
         return nil
@@ -432,14 +483,15 @@ local function fetchCompletedCount(activityTypeId)
 end
 
 local function fetchSeals()
-    if type(GetCurrencyAmount) ~= "function" then
+    local getter = (type(_G) == "table" and rawget(_G, "GetCurrencyAmount")) or GetCurrencyAmount
+    if type(getter) ~= "function" then
         return 0
     end
     if type(CURT_ENDEAVOR_SEALS) == "nil" or type(CURRENCY_LOCATION_ACCOUNT) == "nil" then
         return 0
     end
 
-    local ok, amount = pcall(GetCurrencyAmount, CURT_ENDEAVOR_SEALS, CURRENCY_LOCATION_ACCOUNT)
+    local ok, amount = pcall(getter, CURT_ENDEAVOR_SEALS, CURRENCY_LOCATION_ACCOUNT)
     if not ok then
         warnLog("GetCurrencyAmount failed for Endeavor seals")
         return 0
@@ -453,11 +505,12 @@ local function fetchSeals()
 end
 
 local function fetchSystemActive()
-    if type(IsTimedActivitySystemActive) ~= "function" then
+    local getter = (type(_G) == "table" and rawget(_G, "IsTimedActivitySystemActive")) or IsTimedActivitySystemActive
+    if type(getter) ~= "function" then
         return false
     end
 
-    local ok, active = pcall(IsTimedActivitySystemActive)
+    local ok, active = pcall(getter)
     if not ok then
         warnLog("IsTimedActivitySystemActive failed")
         return false
@@ -467,12 +520,13 @@ local function fetchSystemActive()
 end
 
 local function collectActivities(snapshot)
-    if type(GetNumTimedActivities) ~= "function" then
+    local countGetter = (type(_G) == "table" and rawget(_G, "GetNumTimedActivities")) or GetNumTimedActivities
+    if type(countGetter) ~= "function" then
         warnLog("Timed activity API missing: GetNumTimedActivities")
         return
     end
 
-    local ok, count = pcall(GetNumTimedActivities)
+    local ok, count = pcall(countGetter)
     if not ok or type(count) ~= "number" or count <= 0 then
         if not ok then
             warnLog("GetNumTimedActivities failed: %s", tostring(count))
@@ -480,8 +534,14 @@ local function collectActivities(snapshot)
         return
     end
 
+    local typeGetter = (type(_G) == "table" and rawget(_G, "GetTimedActivityType")) or GetTimedActivityType
+    if type(typeGetter) ~= "function" then
+        warnLog("Timed activity API missing: GetTimedActivityType")
+        return
+    end
+
     for index = 1, count do
-        local okType, rawType = pcall(GetTimedActivityType, index)
+        local okType, rawType = pcall(typeGetter, index)
         if not okType then
             warnLog("GetTimedActivityType failed for index %d", index)
         else

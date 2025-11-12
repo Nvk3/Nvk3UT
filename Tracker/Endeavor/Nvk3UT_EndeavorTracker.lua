@@ -347,13 +347,23 @@ function EndeavorTracker:InitPoller_Start()
     self._initPollerInterval = tonumber(self._initPollerInterval) or 1000
 
     local function GetActivitiesCount()
-        local getter = rawget(_G, "GetNumTimedActivities")
-        local ok, value = CallIfFunction(getter)
-        if ok and type(value) == "number" then
-            return value
+        local getter = nil
+        if type(_G) == "table" then
+            getter = rawget(_G, "GetNumTimedActivities")
+        end
+        if getter == nil then
+            getter = GetNumTimedActivities
         end
 
-        return 0
+        local hasApi = type(getter) == "function"
+        if hasApi then
+            local ok, value = pcall(getter)
+            if ok and type(value) == "number" then
+                return value, true
+            end
+        end
+
+        return 0, hasApi
     end
 
     local function FireDebouncedRefresh()
@@ -380,7 +390,8 @@ function EndeavorTracker:InitPoller_Start()
 
         self._initPollerTries = (self._initPollerTries or 0) + 1
 
-        local count = GetActivitiesCount()
+        local count, hasApi = GetActivitiesCount()
+        safeDebug("[EndeavorTracker.SHIM] poller check: hasAPI=%s count=%d", tostring(hasApi), count)
         if count > 0 then
             safeDebug("[EndeavorTracker.SHIM] init-poller success: count=%d", count)
             FireDebouncedRefresh()
