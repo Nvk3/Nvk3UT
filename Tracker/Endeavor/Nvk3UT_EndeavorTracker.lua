@@ -73,7 +73,9 @@ local function ScheduleLater(ms, cb)
         end
     end
 
-    local id = "Nvk3UT_Endeavor_Once_" .. tostring(getFrameTime())
+    local cbLabel = tostring(cb or "cb")
+    cbLabel = cbLabel:gsub("[^%w_]", "_")
+    local id = "Nvk3UT_Endeavor_Once_" .. cbLabel .. "_" .. tostring(getFrameTime())
     local eventManager = rawget(_G, "EVENT_MANAGER")
     if eventManager and type(eventManager.RegisterForUpdate) == "function" then
         if type(eventManager.UnregisterForUpdate) == "function" then
