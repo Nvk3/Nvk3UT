@@ -23,6 +23,9 @@ local tempEvents = {
     debounceMs = 150,
 }
 
+local shimStateInitialized = false
+local shimModelInitialized = false
+
 local EVENT_TIMED_ACTIVITIES_UPDATED_ID = rawget(_G, "EVENT_TIMED_ACTIVITIES_UPDATED")
 local EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED_ID = rawget(_G, "EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED")
 local EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED_ID = rawget(_G, "EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED")
@@ -99,8 +102,51 @@ local function getFrameTime()
     return 0
 end
 
-local function performTempEventRefresh()
+local function ensureEndeavorInitialized()
     runSafe(function()
+        local addon = getAddon()
+        if type(addon) ~= "table" then
+            return
+        end
+
+        local sv = rawget(addon, "sv")
+        if type(sv) ~= "table" then
+            return
+        end
+
+        local stateModule = rawget(addon, "EndeavorState")
+        if type(stateModule) == "table" then
+            if type(stateModule._sv) ~= "table" and type(stateModule.Init) == "function" then
+                stateModule:Init(sv)
+            end
+
+            if not shimStateInitialized and type(stateModule._sv) == "table" then
+                shimStateInitialized = true
+                safeDebug("[EndeavorTracker.SHIM] init state")
+            end
+        end
+
+        local modelModule = rawget(addon, "EndeavorModel")
+        if type(modelModule) == "table" then
+            if type(modelModule.state) ~= "table" and type(modelModule.Init) == "function" then
+                local stateInstance = rawget(addon, "EndeavorState")
+                if type(stateInstance) == "table" then
+                    modelModule:Init(stateInstance)
+                end
+            end
+
+            if not shimModelInitialized and type(modelModule.state) == "table" then
+                shimModelInitialized = true
+                safeDebug("[EndeavorTracker.SHIM] init model")
+            end
+        end
+    end)
+end
+
+local function shimRefreshEndeavors()
+    runSafe(function()
+        ensureEndeavorInitialized()
+
         local addon = getAddon()
         if type(addon) ~= "table" then
             return
@@ -129,6 +175,8 @@ local function performTempEventRefresh()
                 queueDirty(runtime, "endeavor")
             end
         end
+
+        safeDebug("[EndeavorTracker.SHIM] refresh → model+dirty+queue")
     end)
 end
 
@@ -153,7 +201,7 @@ local function queueTempEventRefresh()
 
     if elapsed >= tempEvents.debounceMs then
         tempEvents.lastQueuedAt = now
-        performTempEventRefresh()
+        shimRefreshEndeavors()
         return
     end
 
@@ -167,7 +215,7 @@ local function queueTempEventRefresh()
     if type(callLater) ~= "function" then
         tempEvents.pending = false
         tempEvents.lastQueuedAt = now
-        performTempEventRefresh()
+        shimRefreshEndeavors()
         return
     end
 
@@ -180,7 +228,7 @@ local function queueTempEventRefresh()
         tempEvents.timerHandle = nil
         tempEvents.pending = false
         tempEvents.lastQueuedAt = getFrameTime()
-        performTempEventRefresh()
+        shimRefreshEndeavors()
     end, delay)
 
     safeDebug("[EndeavorTracker.TempEvents] refresh queued (debounced)")
@@ -309,6 +357,8 @@ function EndeavorTracker.Init(sectionContainer)
     state.container = sectionContainer
     state.currentHeight = 0
     state.isInitialized = true
+
+    ensureEndeavorInitialized()
 
     local rows = getRowsModule()
     if rows and type(rows.Init) == "function" then
