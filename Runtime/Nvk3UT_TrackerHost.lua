@@ -737,6 +737,25 @@ local function saveWindowSize()
     state.window.height = math.floor(height + 0.5)
 end
 
+local function isDebugEnabled()
+    local diagnostics = Nvk3UT and Nvk3UT.Diagnostics
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(diagnostics.IsDebugEnabled, diagnostics)
+        if ok then
+            return enabled == true
+        end
+    end
+
+    if Nvk3UT and type(Nvk3UT.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(Nvk3UT.IsDebugEnabled, Nvk3UT)
+        if ok then
+            return enabled == true
+        end
+    end
+
+    return false
+end
+
 startWindowDrag = function()
     if not (state.root and state.window) then
         return
@@ -759,8 +778,7 @@ stopWindowDrag = function()
 end
 
 local function debugLog(...)
-    local sv = getSavedVars()
-    if not (sv and sv.debug) then
+    if not isDebugEnabled() then
         return
     end
 
@@ -3149,7 +3167,7 @@ function TrackerHost.Init()
 
     applyWindowSettings()
 
-    local debugEnabled = (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug) == true
+    local debugEnabled = isDebugEnabled()
 
     initModels(debugEnabled)
     initTrackers(debugEnabled)

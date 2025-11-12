@@ -261,9 +261,7 @@ function Rows.ApplyObjectiveRow(row, objective)
         row:SetAlpha(1)
     end
 
-    if Nvk3UT and Nvk3UT.debug then
-        safeDebug("[EndeavorRows] objective inline: \"%s\"", combinedText)
-    end
+    safeDebug("[EndeavorRows] objective inline: \"%s\"", combinedText)
 end
 
 function Rows.Init()

@@ -119,12 +119,38 @@ function Addon:GetVersion()
     return self.addonVersion
 end
 
+local function resolveDiagnostics()
+    local diagnostics = Nvk3UT_Diagnostics
+    if type(diagnostics) ~= "table" then
+        diagnostics = Addon and Addon.Diagnostics
+    end
+    if type(diagnostics) ~= "table" then
+        diagnostics = nil
+    end
+    return diagnostics
+end
+
 function Addon:IsDebugEnabled()
+    local diagnostics = resolveDiagnostics()
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(diagnostics.IsDebugEnabled, diagnostics)
+        if ok then
+            return enabled == true
+        end
+    end
+
     return self.debugEnabled == true
 end
 
 function Addon:SetDebugEnabled(enabled)
-    self.debugEnabled = enabled and true or false
+    local flag = enabled == true
+    self.debugEnabled = flag
+    self.debug = flag
+
+    local diagnostics = resolveDiagnostics()
+    if diagnostics and type(diagnostics.SetDebugEnabled) == "function" then
+        diagnostics.SetDebugEnabled(flag)
+    end
 end
 
 ---Initialises SavedVariables and exposes them on the addon table.

@@ -606,11 +606,154 @@ local function registerPanel(displayTitle)
     }
 
     local options = {}
+
     options[#options + 1] = {
         type = "submenu",
-        name = "Host – Window & Appearance",
+        name = "Journal Erweiterungen",
         controls = (function()
             local controls = {}
+            controls[#controls + 1] = { type = "header", name = "Funktionen" }
+
+            local featureControls = {
+                { key = "completed", label = "Abgeschlossen aktiv" },
+                { key = "favorites", label = "Favoriten aktiv" },
+                { key = "recent", label = "Kürzlich aktiv" },
+                { key = "todo", label = "To-Do-Liste aktiv" },
+            }
+
+            for index = 1, #featureControls do
+                local entry = featureControls[index]
+                controls[#controls + 1] = {
+                    type = "checkbox",
+                    name = entry.label,
+                    getFunc = function()
+                        local features = getFeatures()
+                        return features[entry.key] ~= false
+                    end,
+                    setFunc = function(value)
+                        local features = getFeatures()
+                        features[entry.key] = value
+                        applyFeatureToggles()
+                        local cache = Nvk3UT and Nvk3UT.AchievementCache
+                        if cache and cache.OnOptionsChanged then
+                            cache.OnOptionsChanged({ key = entry.key })
+                        end
+                    end,
+                    default = true,
+                }
+            end
+
+            return controls
+        end)(),
+    }
+
+    options[#options + 1] = {
+        type = "submenu",
+        name = "Status Text",
+        controls = (function()
+            local controls = {}
+
+            controls[#controls + 1] = { type = "header", name = "Anzeige" }
+
+            controls[#controls + 1] = {
+                type = "checkbox",
+                name = "Status über dem Kompass anzeigen",
+                getFunc = function()
+                    local general = getGeneral()
+                    return general.showStatus ~= false
+                end,
+                setFunc = function(value)
+                    local general = getGeneral()
+                    general.showStatus = value
+                    updateStatus()
+                end,
+                default = true,
+            }
+
+            controls[#controls + 1] = { type = "header", name = "Optionen" }
+
+            controls[#controls + 1] = {
+                type = "dropdown",
+                name = "Favoritenspeicherung:",
+                choices = { "Account-Weit", "Charakter-Weit" },
+                choicesValues = { "account", "character" },
+                getFunc = function()
+                    local general = getGeneral()
+                    return general.favScope or "account"
+                end,
+                setFunc = function(value)
+                    local general = getGeneral()
+                    local old = general.favScope or "account"
+                    general.favScope = value or "account"
+                    if Nvk3UT.FavoritesData and Nvk3UT.FavoritesData.MigrateScope then
+                        Nvk3UT.FavoritesData.MigrateScope(old, general.favScope)
+                    end
+                    if Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.OnFavoritesChanged then
+                        Nvk3UT.AchievementModel.OnFavoritesChanged()
+                    end
+                    local cache = Nvk3UT and Nvk3UT.AchievementCache
+                    if cache and cache.OnOptionsChanged then
+                        cache.OnOptionsChanged({ key = "favoritesScope" })
+                    end
+                    refreshAchievementTracker()
+                    updateStatus()
+                end,
+                tooltip = "Speichert und zählt Favoriten account-weit oder charakter-weit.",
+            }
+
+            controls[#controls + 1] = {
+                type = "dropdown",
+                name = "Kürzlich-Zeitraum:",
+                choices = { "Alle", "7 Tage", "30 Tage" },
+                choicesValues = { 0, 7, 30 },
+                getFunc = function()
+                    local general = getGeneral()
+                    return general.recentWindow or 0
+                end,
+                setFunc = function(value)
+                    local general = getGeneral()
+                    general.recentWindow = value or 0
+                    local cache = Nvk3UT and Nvk3UT.AchievementCache
+                    if cache and cache.OnOptionsChanged then
+                        cache.OnOptionsChanged({ key = "recentWindow" })
+                    end
+                    updateStatus()
+                end,
+                tooltip = "Wähle, welche Zeitspanne für Kürzlich gezählt/angezeigt wird.",
+            }
+
+            controls[#controls + 1] = {
+                type = "dropdown",
+                name = "Kürzlich - Maximum:",
+                choices = { "50", "100", "250" },
+                choicesValues = { 50, 100, 250 },
+                getFunc = function()
+                    local general = getGeneral()
+                    return general.recentMax or 100
+                end,
+                setFunc = function(value)
+                    local general = getGeneral()
+                    general.recentMax = value or 100
+                    local cache = Nvk3UT and Nvk3UT.AchievementCache
+                    if cache and cache.OnOptionsChanged then
+                        cache.OnOptionsChanged({ key = "recentMax" })
+                    end
+                    updateStatus()
+                end,
+                tooltip = "Hardcap für die Anzahl der Kürzlich-Einträge.",
+            }
+
+            return controls
+        end)(),
+    }
+
+    options[#options + 1] = {
+        type = "submenu",
+        name = "Tracker Host",
+        controls = (function()
+            local controls = {}
+
+            controls[#controls + 1] = { type = "header", name = "Fenster & Darstellung" }
 
             controls[#controls + 1] = {
                 type = "checkbox",
@@ -927,15 +1070,7 @@ local function registerPanel(displayTitle)
                 default = DEFAULT_APPEARANCE.padding,
             }
 
-            return controls
-        end)(),
-    }
-
-    options[#options + 1] = {
-        type = "submenu",
-        name = "Host – Auto-Resize & Layout",
-        controls = (function()
-            local controls = {}
+            controls[#controls + 1] = { type = "header", name = "Auto-Resize & Layout" }
 
             controls[#controls + 1] = {
                 type = "checkbox",
@@ -1061,17 +1196,7 @@ local function registerPanel(displayTitle)
                 default = DEFAULT_LAYOUT.maxHeight,
             }
 
-            return controls
-        end)(),
-    }
-
-    options[#options + 1] = {
-        type = "submenu",
-        name = "Host",
-        controls = (function()
-            local controls = {}
-
-            controls[#controls + 1] = { type = "header", name = "Host" }
+            controls[#controls + 1] = { type = "header", name = "Verhalten" }
 
             controls[#controls + 1] = {
                 type = "checkbox",
@@ -1259,7 +1384,22 @@ local function registerPanel(displayTitle)
 
     options[#options + 1] = {
         type = "submenu",
-        name = "Achievement Tracker",
+        name = "Bestrebungen Tracker",
+        controls = (function()
+            local controls = {}
+
+            controls[#controls + 1] = {
+                type = "description",
+                text = "Bestrebungen-Tracker-Einstellungen folgen in einer späteren Phase.",
+            }
+
+            return controls
+        end)(),
+    }
+
+    options[#options + 1] = {
+        type = "submenu",
+        name = "Errungenschaften Tracker",
         controls = (function()
             local controls = {}
             controls[#controls + 1] = { type = "header", name = "Erfolgstracker" }
@@ -1416,137 +1556,6 @@ local function registerPanel(displayTitle)
 
     options[#options + 1] = {
         type = "submenu",
-        name = "Status Text",
-        controls = (function()
-            local controls = {}
-
-            controls[#controls + 1] = { type = "header", name = "Anzeige" }
-
-            controls[#controls + 1] = {
-                type = "checkbox",
-                name = "Status über dem Kompass anzeigen",
-                getFunc = function()
-                    local general = getGeneral()
-                    return general.showStatus ~= false
-                end,
-                setFunc = function(value)
-                    local general = getGeneral()
-                    general.showStatus = value
-                    updateStatus()
-                end,
-                default = true,
-            }
-
-            controls[#controls + 1] = { type = "header", name = "Optionen" }
-
-            controls[#controls + 1] = {
-                type = "dropdown",
-                name = "Favoritenspeicherung:",
-                choices = { "Account-Weit", "Charakter-Weit" },
-                choicesValues = { "account", "character" },
-                getFunc = function()
-                    local general = getGeneral()
-                    return general.favScope or "account"
-                end,
-                setFunc = function(value)
-                    local general = getGeneral()
-                    local old = general.favScope or "account"
-                    general.favScope = value or "account"
-                    if Nvk3UT.FavoritesData and Nvk3UT.FavoritesData.MigrateScope then
-                        Nvk3UT.FavoritesData.MigrateScope(old, general.favScope)
-                    end
-                    if Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.OnFavoritesChanged then
-                        Nvk3UT.AchievementModel.OnFavoritesChanged()
-                    end
-                    local cache = Nvk3UT and Nvk3UT.AchievementCache
-                    if cache and cache.OnOptionsChanged then
-                        cache.OnOptionsChanged({ key = "favoritesScope" })
-                    end
-                    refreshAchievementTracker()
-                    updateStatus()
-                end,
-                tooltip = "Speichert und zählt Favoriten account-weit oder charakter-weit.",
-            }
-
-            controls[#controls + 1] = {
-                type = "dropdown",
-                name = "Kürzlich-Zeitraum:",
-                choices = { "Alle", "7 Tage", "30 Tage" },
-                choicesValues = { 0, 7, 30 },
-                getFunc = function()
-                    local general = getGeneral()
-                    return general.recentWindow or 0
-                end,
-                setFunc = function(value)
-                    local general = getGeneral()
-                    general.recentWindow = value or 0
-                    local cache = Nvk3UT and Nvk3UT.AchievementCache
-                    if cache and cache.OnOptionsChanged then
-                        cache.OnOptionsChanged({ key = "recentWindow" })
-                    end
-                    updateStatus()
-                end,
-                tooltip = "Wähle, welche Zeitspanne für Kürzlich gezählt/angezeigt wird.",
-            }
-
-            controls[#controls + 1] = {
-                type = "dropdown",
-                name = "Kürzlich - Maximum:",
-                choices = { "50", "100", "250" },
-                choicesValues = { 50, 100, 250 },
-                getFunc = function()
-                    local general = getGeneral()
-                    return general.recentMax or 100
-                end,
-                setFunc = function(value)
-                    local general = getGeneral()
-                    general.recentMax = value or 100
-                    local cache = Nvk3UT and Nvk3UT.AchievementCache
-                    if cache and cache.OnOptionsChanged then
-                        cache.OnOptionsChanged({ key = "recentMax" })
-                    end
-                    updateStatus()
-                end,
-                tooltip = "Hardcap für die Anzahl der Kürzlich-Einträge.",
-            }
-
-            controls[#controls + 1] = { type = "header", name = "Funktionen" }
-
-            local featureControls = {
-                { key = "completed", label = "Abgeschlossen aktiv" },
-                { key = "favorites", label = "Favoriten aktiv" },
-                { key = "recent", label = "Kürzlich aktiv" },
-                { key = "todo", label = "To-Do-Liste aktiv" },
-            }
-
-            for index = 1, #featureControls do
-                local entry = featureControls[index]
-                controls[#controls + 1] = {
-                    type = "checkbox",
-                    name = entry.label,
-                    getFunc = function()
-                        local features = getFeatures()
-                        return features[entry.key] ~= false
-                    end,
-                    setFunc = function(value)
-                        local features = getFeatures()
-                        features[entry.key] = value
-                        applyFeatureToggles()
-                        local cache = Nvk3UT and Nvk3UT.AchievementCache
-                        if cache and cache.OnOptionsChanged then
-                            cache.OnOptionsChanged({ key = entry.key })
-                        end
-                    end,
-                    default = true,
-                }
-            end
-
-            return controls
-        end)(),
-    }
-
-    options[#options + 1] = {
-        type = "submenu",
         name = "Debug & Support",
         controls = (function()
             local controls = {}
@@ -1554,12 +1563,36 @@ local function registerPanel(displayTitle)
                 type = "checkbox",
                 name = "Debug aktivieren",
                 getFunc = function()
+                    local diagnostics = Nvk3UT and Nvk3UT.Diagnostics
+                    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+                        local ok, enabled = pcall(diagnostics.IsDebugEnabled, diagnostics)
+                        if ok then
+                            return enabled == true
+                        end
+                    end
+
                     local sv = getSavedVars()
-                    return sv.debug == true
+                    return sv and sv.debug == true
                 end,
                 setFunc = function(value)
+                    local flag = value == true
                     local sv = getSavedVars()
-                    sv.debug = value and true or false
+                    if sv then
+                        sv.debug = flag
+                    end
+
+                    if type(Nvk3UT_Diagnostics) == "table" and type(Nvk3UT_Diagnostics.SetDebugEnabled) == "function" then
+                        Nvk3UT_Diagnostics.SetDebugEnabled(flag)
+                    end
+
+                    local diagnostics = Nvk3UT and Nvk3UT.Diagnostics
+                    if diagnostics and diagnostics ~= Nvk3UT_Diagnostics and type(diagnostics.SetDebugEnabled) == "function" then
+                        diagnostics.SetDebugEnabled(flag)
+                    end
+
+                    if Nvk3UT and type(Nvk3UT.SetDebugEnabled) == "function" then
+                        Nvk3UT:SetDebugEnabled(flag)
+                    end
                 end,
                 default = false,
             }

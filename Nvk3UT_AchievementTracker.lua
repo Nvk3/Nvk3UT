@@ -286,8 +286,22 @@ local function RefreshControlMetrics(control)
 end
 
 local function IsDebugLoggingEnabled()
-    local sv = Nvk3UT and Nvk3UT.sv
-    return sv and sv.debug == true
+    local diagnostics = Nvk3UT and Nvk3UT.Diagnostics
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(diagnostics.IsDebugEnabled, diagnostics)
+        if ok then
+            return enabled == true
+        end
+    end
+
+    if Nvk3UT and type(Nvk3UT.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(Nvk3UT.IsDebugEnabled, Nvk3UT)
+        if ok then
+            return enabled == true
+        end
+    end
+
+    return false
 end
 
 local function DebugLog(...)

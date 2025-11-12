@@ -380,14 +380,21 @@ function Nvk3UT_StateInit.BootstrapSavedVariables(addonTable)
     end
 
     local debugActive = false
-    if Nvk3UT and Nvk3UT.debug ~= nil then
-        debugActive = Nvk3UT.debug == true
+    local diagnostics = (addonTable and addonTable.Diagnostics) or Nvk3UT_Diagnostics or (Nvk3UT and Nvk3UT.Diagnostics)
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(diagnostics.IsDebugEnabled, diagnostics)
+        if ok then
+            debugActive = enabled == true
+        end
+    end
+    if not debugActive and addonTable and type(addonTable.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(addonTable.IsDebugEnabled, addonTable)
+        if ok then
+            debugActive = enabled == true
+        end
     end
     if not debugActive and sv and sv.debug ~= nil then
         debugActive = sv.debug == true
-    end
-    if not debugActive and addonTable and addonTable.debugEnabled ~= nil then
-        debugActive = addonTable.debugEnabled == true
     end
 
     if endeavorInitialized and debugActive and type(addonTable.Debug) == "function" then
