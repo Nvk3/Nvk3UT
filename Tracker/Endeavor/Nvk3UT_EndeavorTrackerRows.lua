@@ -9,11 +9,9 @@ Rows.__index = Rows
 local MODULE_TAG = addonName .. ".EndeavorTrackerRows"
 
 local OBJECTIVE_ROW_HEIGHT = 20
-local OBJECTIVE_TEXT_INDENT_X = 18
-local OBJECTIVE_PROGRESS_WIDTH = 60
-local QUEST_OBJECTIVE_FONT = "$(BOLD_FONT)|14|soft-shadow-thick"
-local QUEST_PROGRESS_FONT = "$(BOLD_FONT)|14|soft-shadow-thick"
-local QUEST_OBJECTIVE_COLOR_ROLE = "objectiveText"
+local ACHIEVEMENT_OBJECTIVE_FONT = "ZoFontGameSmall"
+local ACHIEVEMENT_OBJECTIVE_COLOR_ROLE = "objectiveText"
+local TRACKER_COLOR_KIND = "achievementTracker"
 
 Rows._cache = Rows._cache or setmetatable({}, { __mode = "k" })
 
@@ -61,7 +59,7 @@ local function getAddon()
     return rawget(_G, addonName)
 end
 
-local function getQuestTrackerColor(role)
+local function getTrackerColor(role)
     local addon = getAddon()
     if type(addon) ~= "table" then
         return 1, 1, 1, 1
@@ -81,7 +79,7 @@ local function getQuestTrackerColor(role)
         return 1, 1, 1, 1
     end
 
-    local ok, r, g, b, a = pcall(getColor, host, "questTracker", role)
+    local ok, r, g, b, a = pcall(getColor, host, TRACKER_COLOR_KIND, role)
     if ok and type(r) == "number" then
         return r, g or 1, b or 1, a or 1
     end
@@ -95,24 +93,15 @@ local function applyFont(label, font)
     end
 end
 
-local function applyObjectiveColors(label, progress, completed)
-    local r, g, b, a = getQuestTrackerColor(QUEST_OBJECTIVE_COLOR_ROLE)
+local function applyObjectiveColor(label)
+    local r, g, b, a = getTrackerColor(ACHIEVEMENT_OBJECTIVE_COLOR_ROLE)
     if label and label.SetColor then
         label:SetColor(r, g, b, a)
     end
-    if progress and progress.SetColor then
-        progress:SetColor(r, g, b, a)
-    end
 
-    local alpha = 1
     if label and label.SetAlpha then
-        label:SetAlpha(alpha)
+        label:SetAlpha(1)
     end
-    if progress and progress.SetAlpha then
-        progress:SetAlpha(alpha)
-    end
-
-    return alpha
 end
 
 local function getContainerCache(container)
@@ -185,29 +174,31 @@ function Rows.ApplyObjectiveRow(row, objective)
     end
 
     local data = type(objective) == "table" and objective or {}
-    local text = tostring(data.text or "")
-    if text == "" then
-        text = "Objective"
+    local baseText = tostring(data.text or "")
+    if baseText == "" then
+        baseText = "Objective"
     end
 
-    local maxValue = tonumber(data.max) or 0
-    if maxValue < 1 then
-        maxValue = 1
-    end
-    local progressValue = tonumber(data.progress) or 0
-    if progressValue < 0 then
-        progressValue = 0
-    end
-    if progressValue > maxValue then
-        progressValue = maxValue
+    local function fmtCount(progressValue, maxValue)
+        local p = tonumber(progressValue) or 0
+        if p < 0 then
+            p = 0
+        end
+        local m = tonumber(maxValue) or 1
+        if m < 1 then
+            m = 1
+        end
+        if p > m then
+            p = m
+        end
+        p = math.floor(p + 0.5)
+        m = math.floor(m + 0.5)
+        return string.format("%d/%d", p, m)
     end
 
-    local completed = data.completed == true or progressValue >= maxValue
-    local progressText
-    if completed then
-        progressText = "✓"
-    else
-        progressText = string.format("%d/%d", math.floor(progressValue + 0.5), math.floor(maxValue + 0.5))
+    local combinedText = baseText
+    if data.progress ~= nil and data.max ~= nil then
+        combinedText = string.format("%s %s", combinedText, fmtCount(data.progress, data.max))
     end
 
     local rowName = type(row.GetName) == "function" and row:GetName() or ""
@@ -234,38 +225,41 @@ function Rows.ApplyObjectiveRow(row, objective)
         title = wm:CreateControl(titleName, row, CT_LABEL)
     end
     title:SetParent(row)
-    applyFont(title, QUEST_OBJECTIVE_FONT)
+    applyFont(title, ACHIEVEMENT_OBJECTIVE_FONT)
     title:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
     title:SetVerticalAlignment(TEXT_ALIGN_CENTER)
-    title:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
+    if title.SetWrapMode then
+        title:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
+    end
     title:ClearAnchors()
-    title:SetAnchor(TOPLEFT, row, TOPLEFT, OBJECTIVE_TEXT_INDENT_X, 0)
-    title:SetAnchor(BOTTOMRIGHT, row, BOTTOMRIGHT, -(OBJECTIVE_PROGRESS_WIDTH + 8), 0)
-    title:SetText(text)
+    title:SetAnchor(TOPLEFT, row, TOPLEFT, 0, 0)
+    title:SetAnchor(TOPRIGHT, row, TOPRIGHT, 0, 0)
+    if title.SetHeight then
+        title:SetHeight(OBJECTIVE_ROW_HEIGHT)
+    end
+    title:SetText(combinedText)
+    row.Label = title
 
     local progress = GetControl(progressName)
     if not progress then
         progress = wm:CreateControl(progressName, row, CT_LABEL)
     end
     progress:SetParent(row)
-    applyFont(progress, QUEST_PROGRESS_FONT)
-    progress:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
-    progress:SetVerticalAlignment(TEXT_ALIGN_CENTER)
-    progress:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
-    progress:ClearAnchors()
-    progress:SetAnchor(TOPRIGHT, row, TOPRIGHT, -4, 0)
-    progress:SetAnchor(BOTTOMRIGHT, row, BOTTOMRIGHT, -4, 0)
-    if progress.SetWidth then
-        progress:SetWidth(OBJECTIVE_PROGRESS_WIDTH)
-    elseif progress.SetDimensions then
-        progress:SetDimensions(OBJECTIVE_PROGRESS_WIDTH, OBJECTIVE_ROW_HEIGHT)
+    if progress.SetHidden then
+        progress:SetHidden(true)
     end
-    progress:SetText(progressText)
+    if progress.SetText then
+        progress:SetText("")
+    end
 
-    local alpha = applyObjectiveColors(title, progress, completed)
+    applyObjectiveColor(title)
 
     if row.SetAlpha then
-        row:SetAlpha(alpha)
+        row:SetAlpha(1)
+    end
+
+    if Nvk3UT and Nvk3UT.debug then
+        safeDebug("[EndeavorRows] objective inline: \"%s\"", combinedText)
     end
 end
 
