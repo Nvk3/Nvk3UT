@@ -2,6 +2,8 @@ local addonName = "Nvk3UT"
 
 Nvk3UT = Nvk3UT or {}
 
+local Utils = Nvk3UT and Nvk3UT.Utils
+
 local EndeavorTracker = {}
 EndeavorTracker.__index = EndeavorTracker
 
@@ -1264,7 +1266,12 @@ function EndeavorTracker.Refresh(viewModel)
     local categoryRemaining = tonumber(categoryVm.remaining) or 0
     categoryRemaining = math.max(0, math.floor(categoryRemaining + 0.5))
     if categoryLabel and categoryLabel.SetText then
-        categoryLabel:SetText(string.format("%s (%d)", categoryTitle, categoryRemaining))
+        local formatHeader = Utils and Utils.FormatCategoryHeaderText
+        if type(formatHeader) == "function" then
+            categoryLabel:SetText(formatHeader(categoryTitle, categoryRemaining, true))
+        else
+            categoryLabel:SetText(string.format("%s (%d)", categoryTitle, categoryRemaining))
+        end
     end
 
     local categoryExpanded = categoryVm.expanded == true
