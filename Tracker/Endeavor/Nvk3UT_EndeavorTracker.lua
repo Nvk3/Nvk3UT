@@ -51,14 +51,6 @@ local progressFallback = {
     delayMs = 750,
 }
 
-local initPoller = {
-    timerHandle = nil,
-    tries = 0,
-    maxTries = 10,
-    intervalMs = 1000,
-    active = false,
-}
-
 local function ScheduleLater(ms, cb)
     if type(cb) ~= "function" then
         return nil
@@ -76,28 +68,22 @@ local function ScheduleLater(ms, cb)
         end
     end
 
-    local suffixSource = rawget(_G, "GetFrameTimeMilliseconds")
-    if type(suffixSource) ~= "function" then
-        suffixSource = rawget(_G, "GetGameTimeMilliseconds")
-    end
-
-    local suffixValue = 0
-    if type(suffixSource) == "function" then
-        local ok, value = pcall(suffixSource)
+    local timestamp = 0
+    if type(_G.GetFrameTimeMilliseconds) == "function" then
+        local ok, value = pcall(_G.GetFrameTimeMilliseconds)
         if ok and type(value) == "number" then
-            suffixValue = value
+            timestamp = value
         end
     end
 
-    local name = "Nvk3UT_Endeavor_Once_" .. tostring(cb):gsub("[^%w_]", "_") .. "_" .. tostring(suffixValue)
-    local eventManager = rawget(_G, "EVENT_MANAGER")
-    if eventManager and type(eventManager.RegisterForUpdate) == "function" then
-        if type(eventManager.UnregisterForUpdate) == "function" then
-            eventManager:UnregisterForUpdate(name)
+    local name = "Nvk3UT_Endeavor_Once_" .. tostring(timestamp)
+    if _G.EVENT_MANAGER and type(_G.EVENT_MANAGER.RegisterForUpdate) == "function" then
+        if type(_G.EVENT_MANAGER.UnregisterForUpdate) == "function" then
+            _G.EVENT_MANAGER:UnregisterForUpdate(name)
         end
-        eventManager:RegisterForUpdate(name, ms, function()
-            if type(eventManager.UnregisterForUpdate) == "function" then
-                eventManager:UnregisterForUpdate(name)
+        _G.EVENT_MANAGER:RegisterForUpdate(name, ms, function()
+            if type(_G.EVENT_MANAGER.UnregisterForUpdate) == "function" then
+                _G.EVENT_MANAGER:UnregisterForUpdate(name)
             end
             pcall(cb)
         end)
@@ -107,7 +93,6 @@ local function ScheduleLater(ms, cb)
     return nil
 end
 
--- Safe remove helper (supports both handle types)
 local function RemoveScheduled(handle)
     if handle == nil then
         return
@@ -331,6 +316,10 @@ local function queueTempEventRefreshSafe()
     end)
 end
 
+function EndeavorTracker:TempEvents_QueueRefresh()
+    queueTempEventRefreshSafe()
+end
+
 local function hasRecentDebouncedRefresh()
     local lastQueued = tempEvents.lastQueuedAt or 0
     if lastQueued <= 0 then
@@ -346,67 +335,102 @@ local function hasRecentDebouncedRefresh()
     return elapsed < tempEvents.debounceMs or tempEvents.pending
 end
 
-local function getTimedActivitiesCount()
-    local getter = rawget(_G, "GetNumTimedActivities")
-    if type(getter) ~= "function" then
-        return 0
-    end
-
-    local ok, count = pcall(getter)
-    if not ok or type(count) ~= "number" then
-        return 0
-    end
-
-    return count
-end
-
-local function cancelInitPoller()
-    if initPoller.timerHandle ~= nil then
-        RemoveScheduled(initPoller.timerHandle)
-    end
-    initPoller.timerHandle = nil
-    initPoller.active = false
-end
-
-local function initPollerTick()
-    initPoller.timerHandle = nil
-
-    if not initPoller.active then
-        return
-    end
-
+function EndeavorTracker:InitPoller_Start()
     if state.isDisposed then
-        cancelInitPoller()
         return
     end
 
-    initPoller.tries = (initPoller.tries or 0) + 1
+    if self._initPollerActive then
+        return
+    end
 
-    local count = getTimedActivitiesCount()
-    if count > 0 then
-        if not hasRecentDebouncedRefresh() then
-            queueTempEventRefreshSafe()
+    self._initPollerActive = true
+    self._initPollerTries = 0
+    self._initPollerMaxTries = self._initPollerMaxTries or 10
+    self._initPollerInterval = self._initPollerInterval or 1000
+
+    local function getCount()
+        local getter = _G.GetNumTimedActivities
+        if type(getter) ~= "function" then
+            return 0
         end
-        cancelInitPoller()
-        safeDebug("[EndeavorTracker.SHIM] init-poller success: count=%d", count)
+
+        local ok, value = pcall(getter)
+        if ok and type(value) == "number" then
+            return value
+        end
+
+        return 0
+    end
+
+    local function fireDebouncedRefresh()
+        if hasRecentDebouncedRefresh() then
+            return
+        end
+
+        if type(self.TempEvents_QueueRefresh) == "function" then
+            self:TempEvents_QueueRefresh()
+            return
+        end
+
+        if Nvk3UT and Nvk3UT.EndeavorModel and type(Nvk3UT.EndeavorModel.RefreshFromGame) == "function" then
+            pcall(Nvk3UT.EndeavorModel.RefreshFromGame, Nvk3UT.EndeavorModel)
+        end
+
+        if Nvk3UT and Nvk3UT.EndeavorTrackerController and type(Nvk3UT.EndeavorTrackerController.MarkDirty) == "function" then
+            pcall(Nvk3UT.EndeavorTrackerController.MarkDirty, Nvk3UT.EndeavorTrackerController)
+        end
+
+        if Nvk3UT and Nvk3UT.TrackerRuntime and type(Nvk3UT.TrackerRuntime.QueueDirty) == "function" then
+            pcall(Nvk3UT.TrackerRuntime.QueueDirty, Nvk3UT.TrackerRuntime, "endeavor")
+        end
+    end
+
+    local function tick()
+        self._initPollerTimer = nil
+
+        if state.isDisposed or not self._initPollerActive then
+            return
+        end
+
+        self._initPollerTries = (self._initPollerTries or 0) + 1
+
+        local count = getCount()
+        if count > 0 then
+            safeDebug("[EndeavorTracker.SHIM] init-poller success: count=%d", count)
+            fireDebouncedRefresh()
+            self._initPollerActive = false
+            return
+        end
+
+        if self._initPollerTries >= (self._initPollerMaxTries or 10) then
+            self._initPollerActive = false
+            safeDebug("[EndeavorTracker.SHIM] init-poller gave up (count=0)")
+            return
+        end
+
+        if state.isDisposed or not self._initPollerActive then
+            return
+        end
+
+        self._initPollerTimer = ScheduleLater(self._initPollerInterval or 1000, tick)
+    end
+
+    self._initPollerTimer = ScheduleLater(self._initPollerInterval or 1000, tick)
+
+    if self._initPollerTimer ~= nil then
+        safeDebug("[EndeavorTracker.SHIM] init-poller scheduled")
         return
     end
 
-    if initPoller.tries >= (initPoller.maxTries or 0) then
-        cancelInitPoller()
-        safeDebug("[EndeavorTracker.SHIM] init-poller gave up (count=0)")
-        return
-    end
+    self._initPollerActive = false
+end
 
-    if not initPoller.active then
-        return
-    end
-
-    initPoller.timerHandle = ScheduleLater(initPoller.intervalMs, initPollerTick)
-
-    if initPoller.timerHandle == nil then
-        cancelInitPoller()
-    end
+function EndeavorTracker:InitPoller_Stop()
+    RemoveScheduled(self._initPollerTimer)
+    self._initPollerTimer = nil
+    self._initPollerActive = false
+    self._initPollerTries = 0
 end
 
 local function scheduleProgressFallback()
@@ -599,8 +623,7 @@ local function unregisterTempEventsInternal(options)
     cancelProgressFallbackTimer()
     progressFallback.lastProgressAtMs = nil
 
-    cancelInitPoller()
-    initPoller.tries = 0
+    EndeavorTracker:InitPoller_Stop()
 
     clearTempEventsTimer()
     tempEvents.pending = false
@@ -782,17 +805,7 @@ function EndeavorTracker.Init(sectionContainer)
     scheduleInitKick()
 
     if EBOOT_TEMP_EVENTS_ENABLED and not state.isDisposed then
-        initPoller.active = true
-        initPoller.tries = 0
-
-        if initPoller.timerHandle == nil then
-            initPoller.timerHandle = ScheduleLater(initPoller.intervalMs, initPollerTick)
-            if initPoller.timerHandle ~= nil then
-                safeDebug("[EndeavorTracker.SHIM] init-poller scheduled")
-            else
-                initPoller.active = false
-            end
-        end
+        EndeavorTracker:InitPoller_Start()
     end
 
     local containerName
@@ -869,7 +882,7 @@ end
 function EndeavorTracker.Dispose()
     state.isDisposed = true
     EndeavorTracker:TempEvents_UnregisterAll({ silentInitKick = false })
-    cancelInitPoller()
+    EndeavorTracker:InitPoller_Stop()
     state.isInitialized = false
     state.currentHeight = 0
     state.container = nil
