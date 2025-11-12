@@ -51,6 +51,14 @@ local progressFallback = {
     delayMs = 750,
 }
 
+local initPoller = {
+    timerHandle = nil,
+    tries = 0,
+    maxTries = 10,
+    intervalMs = 1000,
+    active = false,
+}
+
 local EVENT_TIMED_ACTIVITIES_UPDATED_ID = rawget(_G, "EVENT_TIMED_ACTIVITIES_UPDATED")
 local EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED_ID = rawget(_G, "EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED")
 local EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED_ID = rawget(_G, "EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED")
@@ -277,6 +285,72 @@ local function hasRecentDebouncedRefresh()
     return elapsed < tempEvents.debounceMs or tempEvents.pending
 end
 
+local function getTimedActivitiesCount()
+    local getter = rawget(_G, "GetNumTimedActivities")
+    if type(getter) ~= "function" then
+        return 0
+    end
+
+    local ok, count = pcall(getter)
+    if not ok or type(count) ~= "number" then
+        return 0
+    end
+
+    return count
+end
+
+local function cancelInitPoller()
+    if initPoller.timerHandle ~= nil then
+        local remover = rawget(_G, "zo_removeCallLater")
+        if type(remover) == "function" then
+            pcall(remover, initPoller.timerHandle)
+        else
+            local cancel = rawget(_G, "CancelCallback")
+            if type(cancel) == "function" then
+                pcall(cancel, initPoller.timerHandle)
+            end
+        end
+    end
+
+    initPoller.timerHandle = nil
+    initPoller.active = false
+end
+
+local function initPollerTick()
+    initPoller.timerHandle = nil
+
+    if state.isDisposed then
+        cancelInitPoller()
+        return
+    end
+
+    initPoller.tries = (initPoller.tries or 0) + 1
+
+    local count = getTimedActivitiesCount()
+    if count > 0 then
+        if not hasRecentDebouncedRefresh() then
+            queueTempEventRefreshSafe()
+        end
+        cancelInitPoller()
+        safeDebug("[EndeavorTracker.SHIM] init-poller success: count=%d", count)
+        return
+    end
+
+    if initPoller.tries >= (initPoller.maxTries or 0) then
+        cancelInitPoller()
+        safeDebug("[EndeavorTracker.SHIM] init-poller gave up (count=0)")
+        return
+    end
+
+    local callLater = rawget(_G, "zo_callLater")
+    if type(callLater) == "function" then
+        initPoller.timerHandle = callLater(initPollerTick, initPoller.intervalMs)
+        return
+    end
+
+    cancelInitPoller()
+end
+
 local function scheduleProgressFallback()
     if progressFallback.timerHandle ~= nil then
         return
@@ -480,6 +554,9 @@ local function unregisterTempEventsInternal(options)
     cancelProgressFallbackTimer()
     progressFallback.lastProgressAtMs = nil
 
+    cancelInitPoller()
+    initPoller.tries = 0
+
     clearTempEventsTimer()
     tempEvents.pending = false
     tempEvents.lastQueuedAt = 0
@@ -659,6 +736,21 @@ function EndeavorTracker.Init(sectionContainer)
 
     scheduleInitKick()
 
+    if EBOOT_TEMP_EVENTS_ENABLED and not state.isDisposed then
+        initPoller.active = true
+        initPoller.tries = 0
+
+        if initPoller.timerHandle == nil then
+            local callLater = rawget(_G, "zo_callLater")
+            if type(callLater) == "function" then
+                initPoller.timerHandle = callLater(initPollerTick, initPoller.intervalMs)
+                safeDebug("[EndeavorTracker.SHIM] init-poller scheduled")
+            else
+                initPoller.active = false
+            end
+        end
+    end
+
     local containerName
     if container and container.GetName then
         local ok, name = pcall(container.GetName, container)
@@ -733,6 +825,7 @@ end
 function EndeavorTracker.Dispose()
     state.isDisposed = true
     EndeavorTracker:TempEvents_UnregisterAll({ silentInitKick = false })
+    cancelInitPoller()
     state.isInitialized = false
     state.currentHeight = 0
     state.container = nil
