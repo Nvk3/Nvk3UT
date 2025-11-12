@@ -164,6 +164,26 @@ local function getAddon()
     return rawget(_G, addonName)
 end
 
+local function isGlobalDebugEnabled()
+    local diagnostics = Nvk3UT_Diagnostics
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(diagnostics.IsDebugEnabled, diagnostics)
+        if ok then
+            return enabled == true
+        end
+    end
+
+    local addon = getAddon()
+    if type(addon) == "table" and type(addon.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(addon.IsDebugEnabled, addon)
+        if ok then
+            return enabled == true
+        end
+    end
+
+    return false
+end
+
 local function getQuestTrackerColor(role)
     local addon = getAddon()
     if type(addon) ~= "table" then
@@ -651,7 +671,7 @@ local function warnCentralEventsIfNeeded()
             return
         end
 
-        if not addon.debug then
+        if not isGlobalDebugEnabled() then
             return
         end
 
@@ -777,7 +797,7 @@ local function N3UT_Endeavor_InitPoller_Tick()
         return
     end
 
-    if Nvk3UT and Nvk3UT.debug then
+    if isGlobalDebugEnabled() then
         safeDebug("[EndeavorTracker.SHIM] poller tick")
     end
 
@@ -792,7 +812,7 @@ local function N3UT_Endeavor_InitPoller_Tick()
     end
 
     if count > 0 then
-        if Nvk3UT and Nvk3UT.debug then
+        if isGlobalDebugEnabled() then
             safeDebug("[EndeavorTracker.SHIM] init-poller success: count=%d", count)
         end
 
@@ -817,7 +837,7 @@ local function N3UT_Endeavor_InitPoller_Tick()
     local maxTries = tonumber(tracker._initPollerMaxTries) or 10
     if tracker._initPollerTries >= maxTries then
         tracker._initPollerActive = false
-        if Nvk3UT and Nvk3UT.debug then
+        if isGlobalDebugEnabled() then
             safeDebug("[EndeavorTracker.SHIM] init-poller gave up (count=0)")
         end
         if EVENT_MANAGER and type(EVENT_MANAGER.UnregisterForUpdate) == "function" then
@@ -849,7 +869,7 @@ local function startInitPoller(tracker)
             EVENT_MANAGER:UnregisterForUpdate(INIT_POLLER_UPDATE_NAME)
         end
         EVENT_MANAGER:RegisterForUpdate(INIT_POLLER_UPDATE_NAME, tracker._initPollerInterval, N3UT_Endeavor_InitPoller_Tick)
-        if Nvk3UT and Nvk3UT.debug then
+        if isGlobalDebugEnabled() then
             safeDebug("[EndeavorTracker.SHIM] init-poller scheduled")
         end
     else

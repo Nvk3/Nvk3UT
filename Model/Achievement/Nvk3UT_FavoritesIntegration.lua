@@ -30,6 +30,26 @@ local NVK3_FAVORITES_KEY = "Nvk3UT_Favorites"
 local ICON_PATH_FAVORITES = "/esoui/art/guild/guild_rankicon_leader_large.dds"
 local FAVORITES_LOOKUP_KEY = "NVK3UT_FAVORITES_ROOT"
 
+local function isDebugEnabled()
+    local diagnostics = Nvk3UT_Diagnostics or (Nvk3UT and Nvk3UT.Diagnostics)
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(diagnostics.IsDebugEnabled, diagnostics)
+        if ok then
+            return enabled == true
+        end
+    end
+
+    local root = Nvk3UT
+    if root and type(root.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(root.IsDebugEnabled, root)
+        if ok then
+            return enabled == true
+        end
+    end
+
+    return false
+end
+
 local function ForceAchievementRefresh(context)
     local Rebuild = Nvk3UT and Nvk3UT.Rebuild
     if Rebuild and Rebuild.ForceAchievementRefresh then
@@ -515,7 +535,7 @@ local function Override_ZO_GetAchievementIds()
                 end
             end
             table.sort(result, sortByName)
-            local U = Nvk3UT and Nvk3UT.Utils; local __now = (U and U.now and U.now() or 0); if U and U.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug and ((__now - favProvide_lastTs) > 0.5 or #result ~= favProvide_lastCount) then favProvide_lastTs = __now; favProvide_lastCount = #result; U.d("[Nvk3UT][Favorites][Provide] list", "data={count:", #result, ", searchFiltered:", tostring(considerSearchResults and true or false), "}") end
+            local U = Nvk3UT and Nvk3UT.Utils; local __now = (U and U.now and U.now() or 0); if U and U.d and isDebugEnabled() and ((__now - favProvide_lastTs) > 0.5 or #result ~= favProvide_lastCount) then favProvide_lastTs = __now; favProvide_lastCount = #result; U.d("[Nvk3UT][Favorites][Provide] list", "data={count:", #result, ", searchFiltered:", tostring(considerSearchResults and true or false), "}") end
             return result
         else
             return org(...)
@@ -560,7 +580,7 @@ local function HookAchievementContext()
                                 end
                             end
                         end
-                        local U = Nvk3UT and Nvk3UT.Utils; if U and U.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then U.d("[Nvk3UT][Favorites][Menu] open", "data={id:", id, ", isFav:", tostring(isFav), "}") end
+                        local U = Nvk3UT and Nvk3UT.Utils; if U and U.d and isDebugEnabled() then U.d("[Nvk3UT][Favorites][Menu] open", "data={id:", id, ", isFav:", tostring(isFav), "}") end
                         if isFav then
                             AddCustomMenuItem("Von Favoriten entfernen", function()
                                 -- remove entire line of series
@@ -583,7 +603,7 @@ local function HookAchievementContext()
                                     end
                                     chainId = GetNextAchievementInLine(chainId)
                                 end
-                                local U = Nvk3UT and Nvk3UT.Utils; if U and U.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then U.d("[Nvk3UT][Favorites][Toggle] remove", "data={rootId:", ACHIEVEMENTS:GetBaseAchievementId(self:GetId()), "}") end
+                                local U = Nvk3UT and Nvk3UT.Utils; if U and U.d and isDebugEnabled() then U.d("[Nvk3UT][Favorites][Toggle] remove", "data={rootId:", ACHIEVEMENTS:GetBaseAchievementId(self:GetId()), "}") end
                                 if ACHIEVEMENTS and ACHIEVEMENTS.refreshGroups then ACHIEVEMENTS.refreshGroups:RefreshAll("FullUpdate") end
                                 ForceAchievementRefresh("FavoritesIntegration:RemoveFromMenu")
                                 _liveRefreshFavoritesIfActive()
@@ -607,7 +627,7 @@ local function HookAchievementContext()
                                         Fav.SetFavorited(id, true, "FavoritesIntegration:ContextAdd", __scope)
                                     end
                                 end
-                                local U = Nvk3UT and Nvk3UT.Utils; if U and U.d and Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug then U.d("[Nvk3UT][Favorites][Toggle] add", "data={id:", id, ", scope:"..tostring(__scope).."}") end
+                                local U = Nvk3UT and Nvk3UT.Utils; if U and U.d and isDebugEnabled() then U.d("[Nvk3UT][Favorites][Toggle] add", "data={id:", id, ", scope:"..tostring(__scope).."}") end
                                 ForceAchievementRefresh("FavoritesIntegration:AddFromMenu")
                                 _liveRefreshFavoritesIfActive()
                                 _updateFavoritesTooltip(ACHIEVEMENTS)

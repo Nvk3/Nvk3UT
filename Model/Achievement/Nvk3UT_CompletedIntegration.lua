@@ -25,8 +25,23 @@ end
 local compProvide_lastTs, compProvide_lastCount = 0, -1
 
 local function _isDebug()
-    local sv = Nvk3UT and Nvk3UT.sv
-    return sv and sv.debug
+    local diagnostics = Nvk3UT_Diagnostics or (Nvk3UT and Nvk3UT.Diagnostics)
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(diagnostics.IsDebugEnabled, diagnostics)
+        if ok then
+            return enabled == true
+        end
+    end
+
+    local root = Nvk3UT
+    if root and type(root.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(root.IsDebugEnabled, root)
+        if ok then
+            return enabled == true
+        end
+    end
+
+    return false
 end
 
 local function _debugLog(...)

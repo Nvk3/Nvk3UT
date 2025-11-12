@@ -56,7 +56,23 @@ local function now()
 end
 
 local function isDebugEnabled()
-    return Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug and Utils and Utils.d
+    local diagnostics = Nvk3UT_Diagnostics or (Nvk3UT and Nvk3UT.Diagnostics)
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(diagnostics.IsDebugEnabled, diagnostics)
+        if ok then
+            return enabled == true
+        end
+    end
+
+    local root = Nvk3UT
+    if root and type(root.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(root.IsDebugEnabled, root)
+        if ok then
+            return enabled == true
+        end
+    end
+
+    return false
 end
 
 local function emitDebugMessage(...)

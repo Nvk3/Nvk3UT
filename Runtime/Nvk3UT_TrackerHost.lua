@@ -758,9 +758,28 @@ stopWindowDrag = function()
     saveWindowPosition()
 end
 
+local function isGlobalDebugEnabled()
+    local diagnostics = Nvk3UT_Diagnostics or (Nvk3UT and Nvk3UT.Diagnostics)
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(diagnostics.IsDebugEnabled, diagnostics)
+        if ok then
+            return enabled == true
+        end
+    end
+
+    local addon = Nvk3UT
+    if type(addon) == "table" and type(addon.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(addon.IsDebugEnabled, addon)
+        if ok then
+            return enabled == true
+        end
+    end
+
+    return false
+end
+
 local function debugLog(...)
-    local sv = getSavedVars()
-    if not (sv and sv.debug) then
+    if not isGlobalDebugEnabled() then
         return
     end
 
@@ -3149,7 +3168,7 @@ function TrackerHost.Init()
 
     applyWindowSettings()
 
-    local debugEnabled = (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug) == true
+    local debugEnabled = isGlobalDebugEnabled()
 
     initModels(debugEnabled)
     initTrackers(debugEnabled)

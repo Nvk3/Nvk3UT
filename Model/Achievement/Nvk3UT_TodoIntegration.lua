@@ -15,6 +15,26 @@ local TODO_LOOKUP_KEY = "NVK3UT_TODO_ROOT"
 local todoProvide_lastTs = 0
 local todoProvide_lastCount = 0
 
+local function isDebugEnabled()
+  local diagnostics = Nvk3UT_Diagnostics or (Nvk3UT and Nvk3UT.Diagnostics)
+  if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+    local ok, enabled = pcall(diagnostics.IsDebugEnabled, diagnostics)
+    if ok then
+      return enabled == true
+    end
+  end
+
+  local root = Nvk3UT
+  if root and type(root.IsDebugEnabled) == "function" then
+    local ok, enabled = pcall(root.IsDebugEnabled, root)
+    if ok then
+      return enabled == true
+    end
+  end
+
+  return false
+end
+
 local function sanitizePlainName(name)
   if U and U.StripLeadingIconTag then
     name = U.StripLeadingIconTag(name)
@@ -273,9 +293,7 @@ local function Override_ZO_GetAchievementIds()
         if
           U
           and U.d
-          and Nvk3UT
-          and Nvk3UT.sv
-          and Nvk3UT.sv.debug
+          and isDebugEnabled()
           and ((__now - todoProvide_lastTs) > 0.5 or #__res ~= todoProvide_lastCount)
         then
           todoProvide_lastTs = __now
@@ -297,9 +315,7 @@ local function Override_ZO_GetAchievementIds()
         if
           U
           and U.d
-          and Nvk3UT
-          and Nvk3UT.sv
-          and Nvk3UT.sv.debug
+          and isDebugEnabled()
           and ((__now - todoProvide_lastTs) > 0.5 or #__res ~= todoProvide_lastCount)
         then
           todoProvide_lastTs = __now

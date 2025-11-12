@@ -94,26 +94,31 @@ local function getRuntime()
 end
 
 local function isDebugEnabled()
-    if Nvk3UT and Nvk3UT.debug ~= nil then
-        return Nvk3UT.debug == true
+    local diagnostics = Nvk3UT_Diagnostics or (Nvk3UT and Nvk3UT.Diagnostics)
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(diagnostics.IsDebugEnabled, diagnostics)
+        if ok then
+            return enabled == true
+        end
     end
 
     local root = getRoot()
-    if type(root) ~= "table" then
-        return false
-    end
+    if type(root) == "table" then
+        if type(root.IsDebugEnabled) == "function" then
+            local ok, enabled = pcall(root.IsDebugEnabled, root)
+            if ok then
+                return enabled == true
+            end
+        end
 
-    if root.debug ~= nil then
-        return root.debug == true
-    end
+        if root.debugEnabled ~= nil then
+            return root.debugEnabled == true
+        end
 
-    if root.debugEnabled ~= nil then
-        return root.debugEnabled == true
-    end
-
-    local sv = rawget(root, "SV") or rawget(root, "sv")
-    if type(sv) == "table" and sv.debug ~= nil then
-        return sv.debug == true
+        local sv = rawget(root, "SV") or rawget(root, "sv")
+        if type(sv) == "table" and sv.debug ~= nil then
+            return sv.debug == true
+        end
     end
 
     return false

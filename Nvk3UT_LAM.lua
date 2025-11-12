@@ -506,6 +506,648 @@ local function buildFontControls(label, settings, key, defaults, onChanged)
     }
 end
 
+local function buildJournalExtensionsControls()
+    local controls = {}
+
+    controls[#controls + 1] = { type = "header", name = "Funktionen" }
+
+    local featureControls = {
+        { key = "completed", label = "Abgeschlossen aktiv" },
+        { key = "favorites", label = "Favoriten aktiv" },
+        { key = "recent", label = "Kürzlich aktiv" },
+        { key = "todo", label = "To-Do-Liste aktiv" },
+    }
+
+    for index = 1, #featureControls do
+        local entry = featureControls[index]
+        controls[#controls + 1] = {
+            type = "checkbox",
+            name = entry.label,
+            getFunc = function()
+                local features = getFeatures()
+                return features[entry.key] ~= false
+            end,
+            setFunc = function(value)
+                local features = getFeatures()
+                features[entry.key] = value
+                applyFeatureToggles()
+                local cache = Nvk3UT and Nvk3UT.AchievementCache
+                if cache and cache.OnOptionsChanged then
+                    cache.OnOptionsChanged({ key = entry.key })
+                end
+            end,
+            default = true,
+        }
+    end
+
+    return controls
+end
+
+local function buildStatusTextControls()
+    local controls = {}
+
+    controls[#controls + 1] = { type = "header", name = "Anzeige" }
+
+    controls[#controls + 1] = {
+        type = "checkbox",
+        name = "Status über dem Kompass anzeigen",
+        getFunc = function()
+            local general = getGeneral()
+            return general.showStatus ~= false
+        end,
+        setFunc = function(value)
+            local general = getGeneral()
+            general.showStatus = value
+            updateStatus()
+        end,
+        default = true,
+    }
+
+    controls[#controls + 1] = { type = "header", name = "Optionen" }
+
+    controls[#controls + 1] = {
+        type = "dropdown",
+        name = "Favoritenspeicherung:",
+        choices = { "Account-Weit", "Charakter-Weit" },
+        choicesValues = { "account", "character" },
+        getFunc = function()
+            local general = getGeneral()
+            return general.favScope or "account"
+        end,
+        setFunc = function(value)
+            local general = getGeneral()
+            local old = general.favScope or "account"
+            general.favScope = value or "account"
+            if Nvk3UT.FavoritesData and Nvk3UT.FavoritesData.MigrateScope then
+                Nvk3UT.FavoritesData.MigrateScope(old, general.favScope)
+            end
+            if Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.OnFavoritesChanged then
+                Nvk3UT.AchievementModel.OnFavoritesChanged()
+            end
+            local cache = Nvk3UT and Nvk3UT.AchievementCache
+            if cache and cache.OnOptionsChanged then
+                cache.OnOptionsChanged({ key = "favoritesScope" })
+            end
+            refreshAchievementTracker()
+            updateStatus()
+        end,
+        tooltip = "Speichert und zählt Favoriten account-weit oder charakter-weit.",
+    }
+
+    controls[#controls + 1] = {
+        type = "dropdown",
+        name = "Kürzlich-Zeitraum:",
+        choices = { "Alle", "7 Tage", "30 Tage" },
+        choicesValues = { 0, 7, 30 },
+        getFunc = function()
+            local general = getGeneral()
+            return general.recentWindow or 0
+        end,
+        setFunc = function(value)
+            local general = getGeneral()
+            general.recentWindow = value or 0
+            local cache = Nvk3UT and Nvk3UT.AchievementCache
+            if cache and cache.OnOptionsChanged then
+                cache.OnOptionsChanged({ key = "recentWindow" })
+            end
+            updateStatus()
+        end,
+        tooltip = "Wähle, welche Zeitspanne für Kürzlich gezählt/angezeigt wird.",
+    }
+
+    controls[#controls + 1] = {
+        type = "dropdown",
+        name = "Kürzlich - Maximum:",
+        choices = { "50", "100", "250" },
+        choicesValues = { 50, 100, 250 },
+        getFunc = function()
+            local general = getGeneral()
+            return general.recentMax or 100
+        end,
+        setFunc = function(value)
+            local general = getGeneral()
+            general.recentMax = value or 100
+            local cache = Nvk3UT and Nvk3UT.AchievementCache
+            if cache and cache.OnOptionsChanged then
+                cache.OnOptionsChanged({ key = "recentMax" })
+            end
+            updateStatus()
+        end,
+        tooltip = "Hardcap für die Anzahl der Kürzlich-Einträge.",
+    }
+
+    return controls
+end
+
+local function buildTrackerHostControls()
+    local controls = {}
+
+    controls[#controls + 1] = { type = "header", name = "Fenster & Darstellung" }
+
+    controls[#controls + 1] = {
+        type = "checkbox",
+        name = "Fenster anzeigen",
+        getFunc = function()
+            local general = getGeneral()
+            return general.window.visible ~= false
+        end,
+        setFunc = function(value)
+            local general = getGeneral()
+            general.window.visible = value ~= false
+            if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
+                Nvk3UT.TrackerHost.ApplySettings()
+            end
+        end,
+        default = true,
+    }
+
+    controls[#controls + 1] = {
+        type = "checkbox",
+        name = "Fenster sperren",
+        getFunc = function()
+            local general = getGeneral()
+            return general.window.locked == true
+        end,
+        setFunc = function(value)
+            local general = getGeneral()
+            general.window.locked = value and true or false
+            if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
+                Nvk3UT.TrackerHost.ApplySettings()
+            end
+        end,
+        default = DEFAULT_WINDOW.locked,
+    }
+
+    controls[#controls + 1] = {
+        type = "checkbox",
+        name = "Immer im Vordergrund",
+        getFunc = function()
+            local general = getGeneral()
+            return general.window.onTop == true
+        end,
+        setFunc = function(value)
+            local general = getGeneral()
+            general.window.onTop = value == true
+            if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
+                Nvk3UT.TrackerHost.ApplySettings()
+            end
+        end,
+        default = DEFAULT_WINDOW.onTop,
+    }
+
+    controls[#controls + 1] = {
+        type = "slider",
+        name = "Fensterbreite",
+        min = 260,
+        max = 1200,
+        step = 10,
+        getFunc = function()
+            local general = getGeneral()
+            return math.floor((general.window.width or DEFAULT_WINDOW.width) + 0.5)
+        end,
+        setFunc = function(value)
+            local general = getGeneral()
+            local layout = getLayoutSettings()
+            local numeric = math.floor((tonumber(value) or general.window.width or DEFAULT_WINDOW.width) + 0.5)
+            numeric = clamp(numeric, layout.minWidth or 260, layout.maxWidth or 1200)
+            general.window.width = numeric
+            if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
+                Nvk3UT.TrackerHost.ApplySettings()
+            end
+        end,
+        disabled = function()
+            return getLayoutSettings().autoGrowH == true
+        end,
+        default = DEFAULT_WINDOW.width,
+    }
+
+    controls[#controls + 1] = {
+        type = "slider",
+        name = "Fensterhöhe",
+        min = 240,
+        max = 1200,
+        step = 10,
+        getFunc = function()
+            local general = getGeneral()
+            return math.floor((general.window.height or DEFAULT_WINDOW.height) + 0.5)
+        end,
+        setFunc = function(value)
+            local general = getGeneral()
+            local layout = getLayoutSettings()
+            local numeric = math.floor((tonumber(value) or general.window.height or DEFAULT_WINDOW.height) + 0.5)
+            numeric = clamp(numeric, layout.minHeight or 240, layout.maxHeight or 1200)
+            general.window.height = numeric
+            if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
+                Nvk3UT.TrackerHost.ApplySettings()
+            end
+        end,
+        disabled = function()
+            return getLayoutSettings().autoGrowV ~= false
+        end,
+        default = DEFAULT_WINDOW.height,
+    }
+
+    controls[#controls + 1] = {
+        type = "slider",
+        name = "Header-Höhe",
+        min = 0,
+        max = MAX_BAR_HEIGHT,
+        step = 1,
+        getFunc = function()
+            local bars = getWindowBarSettings()
+            return bars.headerHeightPx or DEFAULT_WINDOW_BARS.headerHeightPx
+        end,
+        setFunc = function(value)
+            local bars = getWindowBarSettings()
+            local numeric = math.floor((tonumber(value) or bars.headerHeightPx or DEFAULT_WINDOW_BARS.headerHeightPx) + 0.5)
+            bars.headerHeightPx = math.max(0, math.min(MAX_BAR_HEIGHT, numeric))
+            if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplyWindowBars then
+                Nvk3UT.TrackerHost.ApplyWindowBars()
+            end
+        end,
+        default = DEFAULT_WINDOW_BARS.headerHeightPx,
+    }
+
+    controls[#controls + 1] = {
+        type = "slider",
+        name = "Footer-Höhe",
+        min = 0,
+        max = MAX_BAR_HEIGHT,
+        step = 1,
+        getFunc = function()
+            local bars = getWindowBarSettings()
+            return bars.footerHeightPx or DEFAULT_WINDOW_BARS.footerHeightPx
+        end,
+        setFunc = function(value)
+            local bars = getWindowBarSettings()
+            local numeric = math.floor((tonumber(value) or bars.footerHeightPx or DEFAULT_WINDOW_BARS.footerHeightPx) + 0.5)
+            bars.footerHeightPx = math.max(0, math.min(MAX_BAR_HEIGHT, numeric))
+            if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplyWindowBars then
+                Nvk3UT.TrackerHost.ApplyWindowBars()
+            end
+        end,
+        default = DEFAULT_WINDOW_BARS.footerHeightPx,
+    }
+
+    controls[#controls + 1] = {
+        type = "button",
+        name = "Fenster zurücksetzen",
+        func = function()
+            local general = getGeneral()
+            general.window.left = DEFAULT_WINDOW.left
+            general.window.top = DEFAULT_WINDOW.top
+            general.window.width = DEFAULT_WINDOW.width
+            general.window.height = DEFAULT_WINDOW.height
+            general.window.visible = DEFAULT_WINDOW.visible
+            general.window.clamp = DEFAULT_WINDOW.clamp
+            general.window.onTop = DEFAULT_WINDOW.onTop
+            general.window.locked = DEFAULT_WINDOW.locked
+            general.WindowBars = general.WindowBars or {}
+            general.WindowBars.headerHeightPx = DEFAULT_WINDOW_BARS.headerHeightPx
+            general.WindowBars.footerHeightPx = DEFAULT_WINDOW_BARS.footerHeightPx
+            if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
+                Nvk3UT.TrackerHost.ApplySettings()
+            elseif Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplyWindowBars then
+                Nvk3UT.TrackerHost.ApplyWindowBars()
+            end
+        end,
+        tooltip = "Setzt Größe, Position und Verhalten des Tracker-Fensters zurück.",
+    }
+
+    controls[#controls + 1] = {
+        type = "checkbox",
+        name = "Standard-Quest-Tracker verstecken",
+        getFunc = function()
+            local features = getFeatures()
+            return features.hideDefaultQuestTracker == true
+        end,
+        setFunc = function(value)
+            local features = getFeatures()
+            features.hideDefaultQuestTracker = value == true
+            if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
+                Nvk3UT.TrackerHost.ApplySettings()
+            end
+        end,
+        default = false,
+    }
+
+    controls[#controls + 1] = { type = "header", name = "Hintergrund & Darstellung" }
+
+    controls[#controls + 1] = {
+        type = "checkbox",
+        name = "Hintergrund anzeigen",
+        getFunc = function()
+            local appearance = getAppearanceSettings()
+            return appearance.enabled ~= false
+        end,
+        setFunc = function(value)
+            local appearance = getAppearanceSettings()
+            appearance.enabled = value ~= false
+            applyHostAppearance()
+        end,
+        default = true,
+    }
+
+    controls[#controls + 1] = {
+        type = "slider",
+        name = "Hintergrund-Transparenz (%)",
+        min = 0,
+        max = 100,
+        step = 5,
+        getFunc = function()
+            local appearance = getAppearanceSettings()
+            return math.floor((appearance.alpha or 0) * 100 + 0.5)
+        end,
+        setFunc = function(value)
+            local appearance = getAppearanceSettings()
+            appearance.alpha = clamp((tonumber(value) or 0) / 100, 0, 1)
+            applyHostAppearance()
+        end,
+        disabled = function()
+            return getAppearanceSettings().enabled == false
+        end,
+        default = math.floor(DEFAULT_APPEARANCE.alpha * 100 + 0.5),
+    }
+
+    controls[#controls + 1] = {
+        type = "checkbox",
+        name = "Rahmen anzeigen",
+        getFunc = function()
+            local appearance = getAppearanceSettings()
+            return appearance.edgeEnabled ~= false
+        end,
+        setFunc = function(value)
+            local appearance = getAppearanceSettings()
+            appearance.edgeEnabled = value ~= false
+            applyHostAppearance()
+        end,
+        default = true,
+    }
+
+    controls[#controls + 1] = {
+        type = "slider",
+        name = "Rahmen-Transparenz (%)",
+        min = 0,
+        max = 100,
+        step = 5,
+        getFunc = function()
+            local appearance = getAppearanceSettings()
+            return math.floor((appearance.edgeAlpha or 0) * 100 + 0.5)
+        end,
+        setFunc = function(value)
+            local appearance = getAppearanceSettings()
+            appearance.edgeAlpha = clamp((tonumber(value) or 0) / 100, 0, 1)
+            applyHostAppearance()
+        end,
+        disabled = function()
+            local appearance = getAppearanceSettings()
+            return appearance.edgeEnabled == false
+        end,
+        default = math.floor(DEFAULT_APPEARANCE.edgeAlpha * 100 + 0.5),
+    }
+
+    controls[#controls + 1] = {
+        type = "slider",
+        name = "Rahmenbreite",
+        min = 1,
+        max = 12,
+        step = 1,
+        getFunc = function()
+            local appearance = getAppearanceSettings()
+            return appearance.edgeThickness or DEFAULT_APPEARANCE.edgeThickness
+        end,
+        setFunc = function(value)
+            local appearance = getAppearanceSettings()
+            local numeric = math.max(1, math.floor((tonumber(value) or appearance.edgeThickness or 1) + 0.5))
+            appearance.edgeThickness = numeric
+            applyHostAppearance()
+        end,
+        disabled = function()
+            local appearance = getAppearanceSettings()
+            return appearance.edgeEnabled == false
+        end,
+        default = DEFAULT_APPEARANCE.edgeThickness,
+    }
+
+    controls[#controls + 1] = {
+        type = "slider",
+        name = "Kantenradius",
+        min = 0,
+        max = 32,
+        step = 1,
+        getFunc = function()
+            local appearance = getAppearanceSettings()
+            return appearance.cornerRadius or DEFAULT_APPEARANCE.cornerRadius
+        end,
+        setFunc = function(value)
+            local appearance = getAppearanceSettings()
+            local numeric = math.max(0, math.floor((tonumber(value) or appearance.cornerRadius or 0) + 0.5))
+            appearance.cornerRadius = numeric
+            applyHostAppearance()
+        end,
+        default = DEFAULT_APPEARANCE.cornerRadius,
+    }
+
+    controls[#controls + 1] = {
+        type = "dropdown",
+        name = "Theme",
+        choices = { "dark", "light" },
+        getFunc = function()
+            local appearance = getAppearanceSettings()
+            return appearance.theme or DEFAULT_APPEARANCE.theme
+        end,
+        setFunc = function(value)
+            local appearance = getAppearanceSettings()
+            appearance.theme = value or DEFAULT_APPEARANCE.theme
+            applyHostAppearance()
+        end,
+        default = DEFAULT_APPEARANCE.theme,
+    }
+
+    controls[#controls + 1] = {
+        type = "slider",
+        name = "Innenabstand",
+        min = 0,
+        max = 48,
+        step = 1,
+        getFunc = function()
+            local appearance = getAppearanceSettings()
+            return appearance.padding or 0
+        end,
+        setFunc = function(value)
+            local appearance = getAppearanceSettings()
+            appearance.padding = math.max(0, math.floor((tonumber(value) or 0) + 0.5))
+            applyHostAppearance()
+        end,
+        default = DEFAULT_APPEARANCE.padding,
+    }
+
+    controls[#controls + 1] = { type = "header", name = "Verhalten" }
+
+    controls[#controls + 1] = {
+        type = "checkbox",
+        name = "Tracker im Kampf ausblenden",
+        tooltip = "Blendet den gesamten Tracker während des Kampfes aus. Bei geöffneten AddOn-Einstellungen bleibt der Tracker sichtbar.",
+        getFunc = function()
+            local settings = getHostSettings()
+            return settings.HideInCombat == true
+        end,
+        setFunc = function(value)
+            local settings = getHostSettings()
+            settings.HideInCombat = value == true
+            local host = Nvk3UT and Nvk3UT.TrackerHost
+            if host and host.ApplyVisibilityRules then
+                host:ApplyVisibilityRules()
+            end
+        end,
+        default = false,
+    }
+
+    controls[#controls + 1] = { type = "header", name = "Layout & Größe" }
+
+    controls[#controls + 1] = {
+        type = "checkbox",
+        name = "Automatisch vertikal anpassen",
+        getFunc = function()
+            local layout = getLayoutSettings()
+            return layout.autoGrowV ~= false
+        end,
+        setFunc = function(value)
+            local layout = getLayoutSettings()
+            layout.autoGrowV = value ~= false
+            if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
+                Nvk3UT.TrackerHost.ApplySettings()
+            end
+        end,
+        default = DEFAULT_LAYOUT.autoGrowV,
+    }
+
+    controls[#controls + 1] = {
+        type = "checkbox",
+        name = "Automatisch horizontal anpassen",
+        getFunc = function()
+            local layout = getLayoutSettings()
+            return layout.autoGrowH == true
+        end,
+        setFunc = function(value)
+            local layout = getLayoutSettings()
+            layout.autoGrowH = value == true
+            if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
+                Nvk3UT.TrackerHost.ApplySettings()
+            end
+        end,
+        default = DEFAULT_LAYOUT.autoGrowH,
+    }
+
+    controls[#controls + 1] = {
+        type = "slider",
+        name = "Mindestbreite",
+        min = 260,
+        max = 800,
+        step = 10,
+        getFunc = function()
+            return getLayoutSettings().minWidth
+        end,
+        setFunc = function(value)
+            local layout = getLayoutSettings()
+            local numeric = math.floor((tonumber(value) or layout.minWidth) + 0.5)
+            numeric = math.max(260, math.min(numeric, layout.maxWidth))
+            layout.minWidth = numeric
+            if layout.maxWidth < layout.minWidth then
+                layout.maxWidth = layout.minWidth
+            end
+            if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
+                Nvk3UT.TrackerHost.ApplySettings()
+            end
+        end,
+        default = DEFAULT_LAYOUT.minWidth,
+    }
+
+    controls[#controls + 1] = {
+        type = "slider",
+        name = "Maximalbreite",
+        min = 260,
+        max = 1200,
+        step = 10,
+        getFunc = function()
+            return getLayoutSettings().maxWidth
+        end,
+        setFunc = function(value)
+            local layout = getLayoutSettings()
+            local numeric = math.floor((tonumber(value) or layout.maxWidth) + 0.5)
+            numeric = math.max(layout.minWidth, math.min(numeric, 1200))
+            layout.maxWidth = numeric
+            if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
+                Nvk3UT.TrackerHost.ApplySettings()
+            end
+        end,
+        default = DEFAULT_LAYOUT.maxWidth,
+    }
+
+    controls[#controls + 1] = {
+        type = "slider",
+        name = "Mindesthöhe",
+        min = 240,
+        max = 900,
+        step = 10,
+        getFunc = function()
+            return getLayoutSettings().minHeight
+        end,
+        setFunc = function(value)
+            local layout = getLayoutSettings()
+            local numeric = math.floor((tonumber(value) or layout.minHeight) + 0.5)
+            numeric = math.max(240, math.min(numeric, layout.maxHeight))
+            layout.minHeight = numeric
+            if layout.maxHeight < layout.minHeight then
+                layout.maxHeight = layout.minHeight
+            end
+            if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
+                Nvk3UT.TrackerHost.ApplySettings()
+            end
+        end,
+        default = DEFAULT_LAYOUT.minHeight,
+    }
+
+    controls[#controls + 1] = {
+        type = "slider",
+        name = "Maximalhöhe",
+        min = 240,
+        max = 1200,
+        step = 10,
+        getFunc = function()
+            return getLayoutSettings().maxHeight
+        end,
+        setFunc = function(value)
+            local layout = getLayoutSettings()
+            local numeric = math.floor((tonumber(value) or layout.maxHeight) + 0.5)
+            numeric = math.max(layout.minHeight, math.min(numeric, 1200))
+            layout.maxHeight = numeric
+            if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
+                Nvk3UT.TrackerHost.ApplySettings()
+            end
+        end,
+        default = DEFAULT_LAYOUT.maxHeight,
+    }
+
+    return controls
+end
+
+local function buildEndeavorTrackerControls()
+    local controls = {}
+
+    controls[#controls + 1] = { type = "header", name = "Bestrebungen" }
+    controls[#controls + 1] = {
+        type = "description",
+        text = "Bestrebungen-Tracker-Optionen werden mit einem späteren Update ergänzt.",
+    }
+    controls[#controls + 1] = {
+        type = "description",
+        text = "Der Tracker nutzt derzeit die globalen Debug- und Host-Einstellungen.",
+    }
+
+    return controls
+end
+
 local function acquireLam()
     if LibAddonMenu2 then
         return LibAddonMenu2
@@ -608,492 +1250,20 @@ local function registerPanel(displayTitle)
     local options = {}
     options[#options + 1] = {
         type = "submenu",
-        name = "Host – Window & Appearance",
-        controls = (function()
-            local controls = {}
-
-            controls[#controls + 1] = {
-                type = "checkbox",
-                name = "Fenster anzeigen",
-                getFunc = function()
-                    local general = getGeneral()
-                    return general.window.visible ~= false
-                end,
-                setFunc = function(value)
-                    local general = getGeneral()
-                    general.window.visible = value ~= false
-                    if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
-                        Nvk3UT.TrackerHost.ApplySettings()
-                    end
-                end,
-                default = true,
-            }
-
-            controls[#controls + 1] = {
-                type = "checkbox",
-                name = "Fenster sperren",
-                getFunc = function()
-                    local general = getGeneral()
-                    return general.window.locked == true
-                end,
-                setFunc = function(value)
-                    local general = getGeneral()
-                    general.window.locked = value and true or false
-                    if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
-                        Nvk3UT.TrackerHost.ApplySettings()
-                    end
-                end,
-                default = DEFAULT_WINDOW.locked,
-            }
-
-            controls[#controls + 1] = {
-                type = "checkbox",
-                name = "Immer im Vordergrund",
-                getFunc = function()
-                    local general = getGeneral()
-                    return general.window.onTop == true
-                end,
-                setFunc = function(value)
-                    local general = getGeneral()
-                    general.window.onTop = value == true
-                    if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
-                        Nvk3UT.TrackerHost.ApplySettings()
-                    end
-                end,
-                default = DEFAULT_WINDOW.onTop,
-            }
-
-            controls[#controls + 1] = {
-                type = "slider",
-                name = "Fensterbreite",
-                min = 260,
-                max = 1200,
-                step = 10,
-                getFunc = function()
-                    local general = getGeneral()
-                    return math.floor((general.window.width or DEFAULT_WINDOW.width) + 0.5)
-                end,
-                setFunc = function(value)
-                    local general = getGeneral()
-                    local layout = getLayoutSettings()
-                    local numeric = math.floor((tonumber(value) or general.window.width or DEFAULT_WINDOW.width) + 0.5)
-                    numeric = clamp(numeric, layout.minWidth or 260, layout.maxWidth or 1200)
-                    general.window.width = numeric
-                    if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
-                        Nvk3UT.TrackerHost.ApplySettings()
-                    end
-                end,
-                disabled = function()
-                    return getLayoutSettings().autoGrowH == true
-                end,
-                default = DEFAULT_WINDOW.width,
-            }
-
-            controls[#controls + 1] = {
-                type = "slider",
-                name = "Fensterhöhe",
-                min = 240,
-                max = 1200,
-                step = 10,
-                getFunc = function()
-                    local general = getGeneral()
-                    return math.floor((general.window.height or DEFAULT_WINDOW.height) + 0.5)
-                end,
-                setFunc = function(value)
-                    local general = getGeneral()
-                    local layout = getLayoutSettings()
-                    local numeric = math.floor((tonumber(value) or general.window.height or DEFAULT_WINDOW.height) + 0.5)
-                    numeric = clamp(numeric, layout.minHeight or 240, layout.maxHeight or 1200)
-                    general.window.height = numeric
-                    if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
-                        Nvk3UT.TrackerHost.ApplySettings()
-                    end
-                end,
-                disabled = function()
-                    return getLayoutSettings().autoGrowV ~= false
-                end,
-                default = DEFAULT_WINDOW.height,
-            }
-
-            controls[#controls + 1] = {
-                type = "slider",
-                name = "Header-Höhe",
-                min = 0,
-                max = MAX_BAR_HEIGHT,
-                step = 1,
-                getFunc = function()
-                    local bars = getWindowBarSettings()
-                    return bars.headerHeightPx or DEFAULT_WINDOW_BARS.headerHeightPx
-                end,
-                setFunc = function(value)
-                    local bars = getWindowBarSettings()
-                    local numeric = math.floor((tonumber(value) or bars.headerHeightPx or DEFAULT_WINDOW_BARS.headerHeightPx) + 0.5)
-                    bars.headerHeightPx = clamp(numeric, 0, MAX_BAR_HEIGHT)
-                    if Nvk3UT and Nvk3UT.TrackerHost then
-                        if Nvk3UT.TrackerHost.ApplyWindowBars then
-                            Nvk3UT.TrackerHost.ApplyWindowBars()
-                        elseif Nvk3UT.TrackerHost.ApplySettings then
-                            Nvk3UT.TrackerHost.ApplySettings()
-                        end
-                    end
-                end,
-                tooltip = "0 px blendet den Bereich aus.",
-                default = DEFAULT_WINDOW_BARS.headerHeightPx,
-            }
-
-            controls[#controls + 1] = {
-                type = "slider",
-                name = "Footer-Höhe",
-                min = 0,
-                max = MAX_BAR_HEIGHT,
-                step = 1,
-                getFunc = function()
-                    local bars = getWindowBarSettings()
-                    return bars.footerHeightPx or DEFAULT_WINDOW_BARS.footerHeightPx
-                end,
-                setFunc = function(value)
-                    local bars = getWindowBarSettings()
-                    local numeric = math.floor((tonumber(value) or bars.footerHeightPx or DEFAULT_WINDOW_BARS.footerHeightPx) + 0.5)
-                    bars.footerHeightPx = clamp(numeric, 0, MAX_BAR_HEIGHT)
-                    if Nvk3UT and Nvk3UT.TrackerHost then
-                        if Nvk3UT.TrackerHost.ApplyWindowBars then
-                            Nvk3UT.TrackerHost.ApplyWindowBars()
-                        elseif Nvk3UT.TrackerHost.ApplySettings then
-                            Nvk3UT.TrackerHost.ApplySettings()
-                        end
-                    end
-                end,
-                tooltip = "0 px blendet den Bereich aus.",
-                default = DEFAULT_WINDOW_BARS.footerHeightPx,
-            }
-
-            controls[#controls + 1] = {
-                type = "button",
-                name = "Position zurücksetzen",
-                func = function()
-                    local general = getGeneral()
-                    general.window.left = DEFAULT_WINDOW.left
-                    general.window.top = DEFAULT_WINDOW.top
-                    general.window.width = DEFAULT_WINDOW.width
-                    general.window.height = DEFAULT_WINDOW.height
-                    general.window.visible = DEFAULT_WINDOW.visible
-                    general.window.clamp = DEFAULT_WINDOW.clamp
-                    general.window.onTop = DEFAULT_WINDOW.onTop
-                    general.window.locked = DEFAULT_WINDOW.locked
-                    general.WindowBars = general.WindowBars or {}
-                    general.WindowBars.headerHeightPx = DEFAULT_WINDOW_BARS.headerHeightPx
-                    general.WindowBars.footerHeightPx = DEFAULT_WINDOW_BARS.footerHeightPx
-                    if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
-                        Nvk3UT.TrackerHost.ApplySettings()
-                    elseif Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplyWindowBars then
-                        Nvk3UT.TrackerHost.ApplyWindowBars()
-                    end
-                end,
-                tooltip = "Setzt Größe, Position und Verhalten des Tracker-Fensters zurück.",
-            }
-
-            controls[#controls + 1] = {
-                type = "checkbox",
-                name = "Standard-Quest-Tracker verstecken",
-                getFunc = function()
-                    local features = getFeatures()
-                    return features.hideDefaultQuestTracker == true
-                end,
-                setFunc = function(value)
-                    local features = getFeatures()
-                    features.hideDefaultQuestTracker = value == true
-                    if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
-                        Nvk3UT.TrackerHost.ApplySettings()
-                    end
-                end,
-                default = false,
-            }
-
-            controls[#controls + 1] = { type = "header", name = "Hintergrund & Darstellung" }
-
-            controls[#controls + 1] = {
-                type = "checkbox",
-                name = "Hintergrund anzeigen",
-                getFunc = function()
-                    local appearance = getAppearanceSettings()
-                    return appearance.enabled ~= false
-                end,
-                setFunc = function(value)
-                    local appearance = getAppearanceSettings()
-                    appearance.enabled = value ~= false
-                    applyHostAppearance()
-                end,
-                default = true,
-            }
-
-            controls[#controls + 1] = {
-                type = "slider",
-                name = "Hintergrund-Transparenz (%)",
-                min = 0,
-                max = 100,
-                step = 5,
-                getFunc = function()
-                    local appearance = getAppearanceSettings()
-                    return math.floor((appearance.alpha or 0) * 100 + 0.5)
-                end,
-                setFunc = function(value)
-                    local appearance = getAppearanceSettings()
-                    appearance.alpha = clamp((tonumber(value) or 0) / 100, 0, 1)
-                    applyHostAppearance()
-                end,
-                disabled = function()
-                    return getAppearanceSettings().enabled == false
-                end,
-                default = math.floor(DEFAULT_APPEARANCE.alpha * 100 + 0.5),
-            }
-
-            controls[#controls + 1] = {
-                type = "checkbox",
-                name = "Rahmen anzeigen",
-                getFunc = function()
-                    local appearance = getAppearanceSettings()
-                    return appearance.edgeEnabled ~= false
-                end,
-                setFunc = function(value)
-                    local appearance = getAppearanceSettings()
-                    appearance.edgeEnabled = value ~= false
-                    applyHostAppearance()
-                end,
-                default = true,
-                disabled = function()
-                    return false
-                end,
-            }
-
-            controls[#controls + 1] = {
-                type = "slider",
-                name = "Rahmen-Transparenz (%)",
-                min = 0,
-                max = 100,
-                step = 5,
-                getFunc = function()
-                    local appearance = getAppearanceSettings()
-                    return math.floor((appearance.edgeAlpha or 0) * 100 + 0.5)
-                end,
-                setFunc = function(value)
-                    local appearance = getAppearanceSettings()
-                    appearance.edgeAlpha = clamp((tonumber(value) or 0) / 100, 0, 1)
-                    applyHostAppearance()
-                end,
-                disabled = function()
-                    local appearance = getAppearanceSettings()
-                    return appearance.edgeEnabled == false
-                end,
-                default = math.floor(DEFAULT_APPEARANCE.edgeAlpha * 100 + 0.5),
-            }
-
-            controls[#controls + 1] = {
-                type = "slider",
-                name = "Rahmenbreite",
-                min = 1,
-                max = 12,
-                step = 1,
-                getFunc = function()
-                    local appearance = getAppearanceSettings()
-                    return appearance.edgeThickness or DEFAULT_APPEARANCE.edgeThickness
-                end,
-                setFunc = function(value)
-                    local appearance = getAppearanceSettings()
-                    local numeric = math.max(1, math.floor((tonumber(value) or appearance.edgeThickness or 1) + 0.5))
-                    appearance.edgeThickness = numeric
-                    applyHostAppearance()
-                end,
-                disabled = function()
-                    return getAppearanceSettings().edgeEnabled == false
-                end,
-                default = DEFAULT_APPEARANCE.edgeThickness,
-            }
-
-            controls[#controls + 1] = {
-                type = "slider",
-                name = "Innenabstand",
-                min = 0,
-                max = 48,
-                step = 1,
-                getFunc = function()
-                    local appearance = getAppearanceSettings()
-                    return appearance.padding or 0
-                end,
-                setFunc = function(value)
-                    local appearance = getAppearanceSettings()
-                    appearance.padding = math.max(0, math.floor((tonumber(value) or 0) + 0.5))
-                    applyHostAppearance()
-                end,
-                default = DEFAULT_APPEARANCE.padding,
-            }
-
-            return controls
-        end)(),
+        name = "Journal Erweiterungen",
+        controls = buildJournalExtensionsControls(),
     }
 
     options[#options + 1] = {
         type = "submenu",
-        name = "Host – Auto-Resize & Layout",
-        controls = (function()
-            local controls = {}
-
-            controls[#controls + 1] = {
-                type = "checkbox",
-                name = "Automatisch vertikal anpassen",
-                getFunc = function()
-                    local layout = getLayoutSettings()
-                    return layout.autoGrowV ~= false
-                end,
-                setFunc = function(value)
-                    local layout = getLayoutSettings()
-                    layout.autoGrowV = value ~= false
-                    if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
-                        Nvk3UT.TrackerHost.ApplySettings()
-                    end
-                end,
-                default = DEFAULT_LAYOUT.autoGrowV,
-            }
-
-            controls[#controls + 1] = {
-                type = "checkbox",
-                name = "Automatisch horizontal anpassen",
-                getFunc = function()
-                    local layout = getLayoutSettings()
-                    return layout.autoGrowH == true
-                end,
-                setFunc = function(value)
-                    local layout = getLayoutSettings()
-                    layout.autoGrowH = value == true
-                    if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
-                        Nvk3UT.TrackerHost.ApplySettings()
-                    end
-                end,
-                default = DEFAULT_LAYOUT.autoGrowH,
-            }
-
-            controls[#controls + 1] = {
-                type = "slider",
-                name = "Mindestbreite",
-                min = 260,
-                max = 800,
-                step = 10,
-                getFunc = function()
-                    return getLayoutSettings().minWidth
-                end,
-                setFunc = function(value)
-                    local layout = getLayoutSettings()
-                    local numeric = math.floor((tonumber(value) or layout.minWidth) + 0.5)
-                    numeric = math.max(260, math.min(numeric, layout.maxWidth))
-                    layout.minWidth = numeric
-                    if layout.maxWidth < layout.minWidth then
-                        layout.maxWidth = layout.minWidth
-                    end
-                    if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
-                        Nvk3UT.TrackerHost.ApplySettings()
-                    end
-                end,
-                default = DEFAULT_LAYOUT.minWidth,
-            }
-
-            controls[#controls + 1] = {
-                type = "slider",
-                name = "Maximalbreite",
-                min = 260,
-                max = 1200,
-                step = 10,
-                getFunc = function()
-                    return getLayoutSettings().maxWidth
-                end,
-                setFunc = function(value)
-                    local layout = getLayoutSettings()
-                    local numeric = math.floor((tonumber(value) or layout.maxWidth) + 0.5)
-                    numeric = math.max(layout.minWidth, math.min(numeric, 1200))
-                    layout.maxWidth = numeric
-                    if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
-                        Nvk3UT.TrackerHost.ApplySettings()
-                    end
-                end,
-                default = DEFAULT_LAYOUT.maxWidth,
-            }
-
-            controls[#controls + 1] = {
-                type = "slider",
-                name = "Mindesthöhe",
-                min = 240,
-                max = 900,
-                step = 10,
-                getFunc = function()
-                    return getLayoutSettings().minHeight
-                end,
-                setFunc = function(value)
-                    local layout = getLayoutSettings()
-                    local numeric = math.floor((tonumber(value) or layout.minHeight) + 0.5)
-                    numeric = math.max(240, math.min(numeric, layout.maxHeight))
-                    layout.minHeight = numeric
-                    if layout.maxHeight < layout.minHeight then
-                        layout.maxHeight = layout.minHeight
-                    end
-                    if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
-                        Nvk3UT.TrackerHost.ApplySettings()
-                    end
-                end,
-                default = DEFAULT_LAYOUT.minHeight,
-            }
-
-            controls[#controls + 1] = {
-                type = "slider",
-                name = "Maximalhöhe",
-                min = 240,
-                max = 1200,
-                step = 10,
-                getFunc = function()
-                    return getLayoutSettings().maxHeight
-                end,
-                setFunc = function(value)
-                    local layout = getLayoutSettings()
-                    local numeric = math.floor((tonumber(value) or layout.maxHeight) + 0.5)
-                    numeric = math.max(layout.minHeight, math.min(numeric, 1200))
-                    layout.maxHeight = numeric
-                    if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
-                        Nvk3UT.TrackerHost.ApplySettings()
-                    end
-                end,
-                default = DEFAULT_LAYOUT.maxHeight,
-            }
-
-            return controls
-        end)(),
+        name = "Status Text",
+        controls = buildStatusTextControls(),
     }
 
     options[#options + 1] = {
         type = "submenu",
-        name = "Host",
-        controls = (function()
-            local controls = {}
-
-            controls[#controls + 1] = { type = "header", name = "Host" }
-
-            controls[#controls + 1] = {
-                type = "checkbox",
-                name = "Hide tracker during combat",
-                tooltip = "When enabled, the entire tracker host hides while you are in combat. The tracker remains visible while the AddOn Settings (LAM) are open.",
-                getFunc = function()
-                    local settings = getHostSettings()
-                    return settings.HideInCombat == true
-                end,
-                setFunc = function(value)
-                    local settings = getHostSettings()
-                    settings.HideInCombat = value == true
-                    local host = Nvk3UT and Nvk3UT.TrackerHost
-                    if host and host.ApplyVisibilityRules then
-                        host:ApplyVisibilityRules()
-                    end
-                end,
-                default = false,
-            }
-
-            return controls
-        end)(),
+        name = "Tracker Host",
+        controls = buildTrackerHostControls(),
     }
 
     options[#options + 1] = {
@@ -1259,7 +1429,13 @@ local function registerPanel(displayTitle)
 
     options[#options + 1] = {
         type = "submenu",
-        name = "Achievement Tracker",
+        name = "Bestrebungen Tracker",
+        controls = buildEndeavorTrackerControls(),
+    }
+
+    options[#options + 1] = {
+        type = "submenu",
+        name = "Errungenschaften Tracker",
         controls = (function()
             local controls = {}
             controls[#controls + 1] = { type = "header", name = "Erfolgstracker" }
@@ -1416,137 +1592,6 @@ local function registerPanel(displayTitle)
 
     options[#options + 1] = {
         type = "submenu",
-        name = "Status Text",
-        controls = (function()
-            local controls = {}
-
-            controls[#controls + 1] = { type = "header", name = "Anzeige" }
-
-            controls[#controls + 1] = {
-                type = "checkbox",
-                name = "Status über dem Kompass anzeigen",
-                getFunc = function()
-                    local general = getGeneral()
-                    return general.showStatus ~= false
-                end,
-                setFunc = function(value)
-                    local general = getGeneral()
-                    general.showStatus = value
-                    updateStatus()
-                end,
-                default = true,
-            }
-
-            controls[#controls + 1] = { type = "header", name = "Optionen" }
-
-            controls[#controls + 1] = {
-                type = "dropdown",
-                name = "Favoritenspeicherung:",
-                choices = { "Account-Weit", "Charakter-Weit" },
-                choicesValues = { "account", "character" },
-                getFunc = function()
-                    local general = getGeneral()
-                    return general.favScope or "account"
-                end,
-                setFunc = function(value)
-                    local general = getGeneral()
-                    local old = general.favScope or "account"
-                    general.favScope = value or "account"
-                    if Nvk3UT.FavoritesData and Nvk3UT.FavoritesData.MigrateScope then
-                        Nvk3UT.FavoritesData.MigrateScope(old, general.favScope)
-                    end
-                    if Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.OnFavoritesChanged then
-                        Nvk3UT.AchievementModel.OnFavoritesChanged()
-                    end
-                    local cache = Nvk3UT and Nvk3UT.AchievementCache
-                    if cache and cache.OnOptionsChanged then
-                        cache.OnOptionsChanged({ key = "favoritesScope" })
-                    end
-                    refreshAchievementTracker()
-                    updateStatus()
-                end,
-                tooltip = "Speichert und zählt Favoriten account-weit oder charakter-weit.",
-            }
-
-            controls[#controls + 1] = {
-                type = "dropdown",
-                name = "Kürzlich-Zeitraum:",
-                choices = { "Alle", "7 Tage", "30 Tage" },
-                choicesValues = { 0, 7, 30 },
-                getFunc = function()
-                    local general = getGeneral()
-                    return general.recentWindow or 0
-                end,
-                setFunc = function(value)
-                    local general = getGeneral()
-                    general.recentWindow = value or 0
-                    local cache = Nvk3UT and Nvk3UT.AchievementCache
-                    if cache and cache.OnOptionsChanged then
-                        cache.OnOptionsChanged({ key = "recentWindow" })
-                    end
-                    updateStatus()
-                end,
-                tooltip = "Wähle, welche Zeitspanne für Kürzlich gezählt/angezeigt wird.",
-            }
-
-            controls[#controls + 1] = {
-                type = "dropdown",
-                name = "Kürzlich - Maximum:",
-                choices = { "50", "100", "250" },
-                choicesValues = { 50, 100, 250 },
-                getFunc = function()
-                    local general = getGeneral()
-                    return general.recentMax or 100
-                end,
-                setFunc = function(value)
-                    local general = getGeneral()
-                    general.recentMax = value or 100
-                    local cache = Nvk3UT and Nvk3UT.AchievementCache
-                    if cache and cache.OnOptionsChanged then
-                        cache.OnOptionsChanged({ key = "recentMax" })
-                    end
-                    updateStatus()
-                end,
-                tooltip = "Hardcap für die Anzahl der Kürzlich-Einträge.",
-            }
-
-            controls[#controls + 1] = { type = "header", name = "Funktionen" }
-
-            local featureControls = {
-                { key = "completed", label = "Abgeschlossen aktiv" },
-                { key = "favorites", label = "Favoriten aktiv" },
-                { key = "recent", label = "Kürzlich aktiv" },
-                { key = "todo", label = "To-Do-Liste aktiv" },
-            }
-
-            for index = 1, #featureControls do
-                local entry = featureControls[index]
-                controls[#controls + 1] = {
-                    type = "checkbox",
-                    name = entry.label,
-                    getFunc = function()
-                        local features = getFeatures()
-                        return features[entry.key] ~= false
-                    end,
-                    setFunc = function(value)
-                        local features = getFeatures()
-                        features[entry.key] = value
-                        applyFeatureToggles()
-                        local cache = Nvk3UT and Nvk3UT.AchievementCache
-                        if cache and cache.OnOptionsChanged then
-                            cache.OnOptionsChanged({ key = entry.key })
-                        end
-                    end,
-                    default = true,
-                }
-            end
-
-            return controls
-        end)(),
-    }
-
-    options[#options + 1] = {
-        type = "submenu",
         name = "Debug & Support",
         controls = (function()
             local controls = {}
@@ -1559,7 +1604,17 @@ local function registerPanel(displayTitle)
                 end,
                 setFunc = function(value)
                     local sv = getSavedVars()
-                    sv.debug = value and true or false
+                    local enabled = value and true or false
+                    sv.debug = enabled
+
+                    if Nvk3UT_Diagnostics and type(Nvk3UT_Diagnostics.SetDebugEnabled) == "function" then
+                        pcall(Nvk3UT_Diagnostics.SetDebugEnabled, enabled)
+                    end
+
+                    local addon = Nvk3UT
+                    if addon and type(addon.SetDebugEnabled) == "function" then
+                        pcall(addon.SetDebugEnabled, addon, enabled)
+                    end
                 end,
                 default = false,
             }

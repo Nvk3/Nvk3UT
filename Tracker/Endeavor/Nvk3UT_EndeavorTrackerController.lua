@@ -18,9 +18,29 @@ local function getRoot()
     return Nvk3UT
 end
 
+local function isGlobalDebugEnabled()
+    local diagnostics = Nvk3UT_Diagnostics
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(diagnostics.IsDebugEnabled, diagnostics)
+        if ok then
+            return enabled == true
+        end
+    end
+
+    local root = getRoot()
+    if type(root) == "table" and type(root.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(root.IsDebugEnabled, root)
+        if ok then
+            return enabled == true
+        end
+    end
+
+    return false
+end
+
 -- local debug logger
 local function DBG(fmt, ...)
-    if not (Nvk3UT and Nvk3UT.debug) then
+    if not isGlobalDebugEnabled() then
         return
     end
 

@@ -66,8 +66,14 @@ local function isDebugEnabled()
 
     local root = resolveRoot()
     if type(root) == "table" then
-        if type(root.debug) == "boolean" then
-            return root.debug
+        if type(root.IsDebugEnabled) == "function" then
+            local ok, enabled = pcall(root.IsDebugEnabled, root)
+            if ok then
+                return enabled == true
+            end
+        end
+        if type(root.debugEnabled) == "boolean" then
+            return root.debugEnabled
         end
         local sv = root.sv
         if type(sv) == "table" and type(sv.debug) == "boolean" then

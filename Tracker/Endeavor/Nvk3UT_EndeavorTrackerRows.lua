@@ -13,6 +13,26 @@ local ACHIEVEMENT_OBJECTIVE_FONT = "ZoFontGameSmall"
 local ACHIEVEMENT_OBJECTIVE_COLOR_ROLE = "objectiveText"
 local TRACKER_COLOR_KIND = "achievementTracker"
 
+local function isGlobalDebugEnabled()
+    local diagnostics = Nvk3UT_Diagnostics
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(diagnostics.IsDebugEnabled, diagnostics)
+        if ok then
+            return enabled == true
+        end
+    end
+
+    local addon = rawget(_G, addonName)
+    if type(addon) == "table" and type(addon.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(addon.IsDebugEnabled, addon)
+        if ok then
+            return enabled == true
+        end
+    end
+
+    return false
+end
+
 local function FormatParensCount(a, b)
     local aNum = tonumber(a) or 0
     if aNum < 0 then
@@ -261,7 +281,7 @@ function Rows.ApplyObjectiveRow(row, objective)
         row:SetAlpha(1)
     end
 
-    if Nvk3UT and Nvk3UT.debug then
+    if isGlobalDebugEnabled() then
         safeDebug("[EndeavorRows] objective inline: \"%s\"", combinedText)
     end
 end
