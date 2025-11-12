@@ -53,6 +53,7 @@ Nvk3UT_QuestTracker.xml
 Nvk3UT_QuestTracker.lua
 ## Endeavor files: Facade -> Tracker -> Rows -> Layout (no events in this token)
 Tracker/Endeavor/Nvk3UT_Endeavor.lua
+Tracker/Endeavor/Nvk3UT_EndeavorTrackerController.lua
 Tracker/Endeavor/Nvk3UT_EndeavorTracker.lua
 Tracker/Endeavor/Nvk3UT_EndeavorTrackerRows.lua
 Tracker/Endeavor/Nvk3UT_EndeavorTrackerLayout.lua
