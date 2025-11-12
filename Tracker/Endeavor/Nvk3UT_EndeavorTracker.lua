@@ -536,6 +536,10 @@ local function safeDebug(fmt, ...)
     if d then
         d(prefix, message)
     elseif print then
+        print(prefix, message)
+    end
+end
+
 local function getRowsModule()
     local root = rawget(_G, addonName)
     if type(root) ~= "table" then
