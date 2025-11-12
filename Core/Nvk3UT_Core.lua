@@ -1,12 +1,17 @@
--- Core/Nvk3UT_Core.lua
--- Central addon root. Owns global table, SafeCall, module registry, SavedVariables bootstrap, lifecycle entry points.
+-- Constants
+local ADDON_NAME = "Nvk3UT"
 
-local ADDON_NAME   = "Nvk3UT"                              -- konstante Kennung
-local ADDON_VERSION = GetAddOnMetadata(ADDON_NAME, "Version") or ""
+-- Safe access to ESO API (avoid shadowing and nil calls)
+local GET_META = rawget(_G, "GetAddOnMetadata")
+local ADDON_VERSION = (type(GET_META) == "function" and GET_META(ADDON_NAME, "Version")) or "0.11.1"
+
+Nvk3UT = Nvk3UT or {}
+Nvk3UT.GetVersionString = function()
+    return ADDON_VERSION
+end
 
 local fn_unpack = _G.unpack or (table and table.unpack)    -- 5.1/5.2 kompatibel
 
-Nvk3UT = Nvk3UT or {}
 local Addon = Nvk3UT
 
 Addon.addonName    = ADDON_NAME
