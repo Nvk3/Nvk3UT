@@ -1,3 +1,4 @@
+
 local addonName = "Nvk3UT"
 
 Nvk3UT = Nvk3UT or {}
@@ -7,11 +8,32 @@ Rows.__index = Rows
 
 local MODULE_TAG = addonName .. ".EndeavorTrackerRows"
 
-local lastHeight = 0
+local OBJECTIVE_ROW_HEIGHT = 20
+local ACHIEVEMENT_OBJECTIVE_FONT = "ZoFontGameSmall"
+local ACHIEVEMENT_OBJECTIVE_COLOR_ROLE = "objectiveText"
+local TRACKER_COLOR_KIND = "achievementTracker"
 
-local ROW_MIN_HEIGHT = 28
+local function FormatParensCount(a, b)
+    local aNum = tonumber(a) or 0
+    if aNum < 0 then
+        aNum = 0
+    end
+
+    local bNum = tonumber(b) or 1
+    if bNum < 1 then
+        bNum = 1
+    end
+
+    if aNum > bNum then
+        aNum = bNum
+    end
+
+    return string.format("(%d/%d)", math.floor(aNum + 0.5), math.floor(bNum + 0.5))
+end
 
 Rows._cache = Rows._cache or setmetatable({}, { __mode = "k" })
+
+local lastHeight = 0
 
 local function safeDebug(fmt, ...)
     local root = rawget(_G, addonName)
@@ -25,32 +47,24 @@ local function safeDebug(fmt, ...)
         return
     end
 
-    local debugMethod = root.Debug
-    if type(debugMethod) == "function" then
-        if fmt == nil then
-            debugMethod(root, ...)
-        else
-            debugMethod(root, fmt, ...)
-        end
-        return
-    end
-
     if fmt == nil then
         return
     end
 
     local message = string.format(tostring(fmt), ...)
     local prefix = string.format("[%s]", MODULE_TAG)
-    if d then
+    if type(root.Debug) == "function" then
+        root:Debug("%s %s", prefix, message)
+    elseif type(d) == "function" then
         d(prefix, message)
-    elseif print then
+    elseif type(print) == "function" then
         print(prefix, message)
     end
 end
 
 local function coerceNumber(value)
     if type(value) == "number" then
-        if value ~= value then -- NaN guard
+        if value ~= value then
             return 0
         end
         return value
@@ -59,204 +73,301 @@ local function coerceNumber(value)
     return 0
 end
 
+local function getAddon()
+    return rawget(_G, addonName)
+end
+
+local function getTrackerColor(role)
+    local addon = getAddon()
+    if type(addon) ~= "table" then
+        return 1, 1, 1, 1
+    end
+
+    local host = rawget(addon, "TrackerHost")
+    if type(host) ~= "table" then
+        return 1, 1, 1, 1
+    end
+
+    if type(host.EnsureAppearanceDefaults) == "function" then
+        pcall(host.EnsureAppearanceDefaults, host)
+    end
+
+    local getColor = host.GetTrackerColor
+    if type(getColor) ~= "function" then
+        return 1, 1, 1, 1
+    end
+
+    local ok, r, g, b, a = pcall(getColor, host, TRACKER_COLOR_KIND, role)
+    if ok and type(r) == "number" then
+        return r, g or 1, b or 1, a or 1
+    end
+
+    return 1, 1, 1, 1
+end
+
+local function applyFont(label, font)
+    if label and label.SetFont and font and font ~= "" then
+        label:SetFont(font)
+    end
+end
+
+local function applyObjectiveColor(label)
+    local r, g, b, a = getTrackerColor(ACHIEVEMENT_OBJECTIVE_COLOR_ROLE)
+    if label and label.SetColor then
+        label:SetColor(r, g, b, a)
+    end
+
+    if label and label.SetAlpha then
+        label:SetAlpha(1)
+    end
+end
+
 local function getContainerCache(container)
-    if not container then
+    if container == nil then
         return nil
     end
 
     local cache = Rows._cache[container]
-    if not cache then
-        cache = { rows = {} }
+    if type(cache) ~= "table" then
+        cache = { rows = {}, lastHeight = 0 }
         Rows._cache[container] = cache
+    elseif type(cache.rows) ~= "table" then
+        cache.rows = {}
     end
 
     return cache
 end
 
-local function getLabelText(item, index)
-    if type(item) ~= "table" then
-        return string.format("Activity %d", index)
+local function ensureObjectiveRow(container, baseName, index, previous)
+    local wm = WINDOW_MANAGER
+    if wm == nil then
+        return nil
     end
 
-    local text = item.name or item.label or item.title or item.text
-    if text == nil or text == "" then
-        text = string.format("Activity %d", index)
+    local cache = getContainerCache(container)
+    if cache == nil then
+        return nil
     end
 
-    return tostring(text)
+    local rows = cache.rows
+    local row = rows[index]
+    if row and (type(row.GetName) ~= "function" or GetControl(row:GetName()) ~= row) then
+        row = nil
+    end
+
+    local controlName = baseName .. index
+    if not row then
+        row = GetControl(controlName)
+        if not row then
+            row = wm:CreateControl(controlName, container, CT_CONTROL)
+        end
+        rows[index] = row
+    end
+
+    row:SetParent(container)
+    row:SetResizeToFitDescendents(false)
+    row:SetMouseEnabled(false)
+    row:SetHidden(false)
+    row:SetHeight(OBJECTIVE_ROW_HEIGHT)
+    row:ClearAnchors()
+    if previous then
+        row:SetAnchor(TOPLEFT, previous, BOTTOMLEFT, 0, 0)
+        row:SetAnchor(TOPRIGHT, previous, BOTTOMRIGHT, 0, 0)
+    else
+        row:SetAnchor(TOPLEFT, container, TOPLEFT, 0, 0)
+        row:SetAnchor(TOPRIGHT, container, TOPRIGHT, 0, 0)
+    end
+
+    return row
 end
 
-local function applyRowData(row, item, index)
-    if not row or type(row.GetName) ~= "function" then
+function Rows.ApplyObjectiveRow(row, objective)
+    if row == nil then
         return
     end
 
     local wm = WINDOW_MANAGER
-    if not wm then
+    if wm == nil then
         return
     end
 
-    local rowName = row:GetName()
-    local labelName = rowName .. "Label"
-    local label = GetControl(labelName)
-    if not label then
-        label = wm:CreateControl(labelName, row, CT_LABEL)
+    local data = type(objective) == "table" and objective or {}
+    local baseText = tostring(data.text or "")
+    if baseText == "" then
+        baseText = "Objective"
     end
 
-    label:SetParent(row)
-    if label.ClearAnchors then
-        label:ClearAnchors()
-    end
-    label:SetAnchor(TOPLEFT, row, TOPLEFT, 0, 0)
-    label:SetAnchor(BOTTOMRIGHT, row, BOTTOMRIGHT, 0, 0)
-    label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
-    label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
-    label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
-    if label.SetFont then
-        label:SetFont("ZoFontGame")
+    local combinedText = baseText
+    if data.progress ~= nil and data.max ~= nil then
+        combinedText = string.format("%s %s", combinedText, FormatParensCount(data.progress, data.max))
     end
 
-    if label.SetHidden then
-        label:SetHidden(false)
+    combinedText = combinedText:gsub("%s+", " "):gsub("%s+%)", ")")
+
+    local rowName = type(row.GetName) == "function" and row:GetName() or ""
+    local titleName = rowName .. "Title"
+    local progressName = rowName .. "Progress"
+
+    if row.GetNamedChild then
+        local bullet = row:GetNamedChild("Bullet")
+        if bullet and bullet.SetHidden then
+            bullet:SetHidden(true)
+        end
+        local icon = row:GetNamedChild("Icon")
+        if icon and icon.SetHidden then
+            icon:SetHidden(true)
+        end
+        local dot = row:GetNamedChild("Dot")
+        if dot and dot.SetHidden then
+            dot:SetHidden(true)
+        end
     end
 
-    if label.SetText then
-        label:SetText(getLabelText(item, index))
+    local title = GetControl(titleName)
+    if not title then
+        title = wm:CreateControl(titleName, row, CT_LABEL)
+    end
+    title:SetParent(row)
+    applyFont(title, ACHIEVEMENT_OBJECTIVE_FONT)
+    title:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+    title:SetVerticalAlignment(TEXT_ALIGN_CENTER)
+    if title.SetWrapMode then
+        title:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
+    end
+    title:ClearAnchors()
+    title:SetAnchor(TOPLEFT, row, TOPLEFT, 0, 0)
+    title:SetAnchor(TOPRIGHT, row, TOPRIGHT, 0, 0)
+    if title.SetHeight then
+        title:SetHeight(OBJECTIVE_ROW_HEIGHT)
+    end
+    title:SetText(combinedText)
+    row.Label = title
+
+    local progress = GetControl(progressName)
+    if not progress then
+        progress = wm:CreateControl(progressName, row, CT_LABEL)
+    end
+    progress:SetParent(row)
+    if progress.SetHidden then
+        progress:SetHidden(true)
+    end
+    if progress.SetText then
+        progress:SetText("")
+    end
+
+    applyObjectiveColor(title)
+
+    if row.SetAlpha then
+        row:SetAlpha(1)
+    end
+
+    if Nvk3UT and Nvk3UT.debug then
+        safeDebug("[EndeavorRows] objective inline: \"%s\"", combinedText)
     end
 end
 
 function Rows.Init()
+    Rows._cache = setmetatable({}, { __mode = "k" })
     lastHeight = 0
 end
 
-function Rows.Clear(container)
+function Rows.ClearObjectives(container)
     local cache = getContainerCache(container)
     if cache then
-        local rows = cache.rows
-        if type(rows) == "table" then
-            for index = 1, #rows do
-                local row = rows[index]
-                if row and row.SetHidden then
-                    row:SetHidden(true)
-                end
+        local rows = cache.rows or {}
+        for index = 1, #rows do
+            local row = rows[index]
+            if row and row.SetHidden then
+                row:SetHidden(true)
             end
         end
+        cache.lastHeight = 0
+    end
+
+    if container and container.SetHeight then
+        container:SetHeight(0)
     end
 
     lastHeight = 0
 
-    if container and type(container.SetHeight) == "function" then
-        container:SetHeight(0)
-    end
-
-    safeDebug("EndeavorRows.Clear: height reset to 0")
+    safeDebug("[EndeavorRows.ClearObjectives] container=%s", container and (container.GetName and select(2, pcall(container.GetName, container))) or "<nil>")
 
     return 0
 end
 
-function Rows.Build(container, items)
-    if not container then
+function Rows.BuildObjectives(container, list)
+    if container == nil then
+        lastHeight = 0
+        return 0
+    end
+
+    local cache = getContainerCache(container)
+    if cache == nil then
         lastHeight = 0
         return 0
     end
 
     local sequence = {}
-    if type(items) == "table" then
-        for index, entry in ipairs(items) do
-            sequence[#sequence + 1] = entry
+    if type(list) == "table" then
+        for index = 1, #list do
+            sequence[#sequence + 1] = list[index]
         end
     end
 
     local count = #sequence
     if count == 0 then
-        Rows.Clear(container)
-        safeDebug("[EndeavorRows.Build] count=0 reused=0 new=0 hidden=0")
+        Rows.ClearObjectives(container)
+        safeDebug("[EndeavorRows.BuildObjectives] count=0")
         return 0
     end
 
-    local wm = WINDOW_MANAGER
-    if wm == nil then
-        lastHeight = 0
-        return 0
-    end
-
-    local totalHeight = 0
-    local previous
-    local containerName
+    local containerName = nil
     if type(container.GetName) == "function" then
         local ok, name = pcall(container.GetName, container)
-        if ok then
+        if ok and type(name) == "string" then
             containerName = name
         end
     end
+    local baseName = (containerName or "Nvk3UT_Endeavor") .. "Obj"
 
-    local baseName = string.format("%sRow", containerName or "Nvk3UT_Endeavor")
-    local cache = getContainerCache(container)
-    local rows = cache and cache.rows or {}
-    local reused = 0
-    local created = 0
+    local totalHeight = 0
+    local previous
 
-    for index, entry in ipairs(sequence) do
-        local row = rows[index]
-        if row and (type(row.GetName) ~= "function" or GetControl(row:GetName()) ~= row) then
-            row = nil
+    for index = 1, count do
+        local row = ensureObjectiveRow(container, baseName, index, previous)
+        if row then
+            Rows.ApplyObjectiveRow(row, sequence[index])
+            previous = row
+            totalHeight = totalHeight + OBJECTIVE_ROW_HEIGHT
         end
-
-        if not row then
-            local controlName = baseName .. index
-            row = GetControl(controlName)
-            if not row then
-                row = wm:CreateControl(controlName, container, CT_CONTROL)
-                created = created + 1
-            else
-                reused = reused + 1
-            end
-            rows[index] = row
-        else
-            reused = reused + 1
-        end
-
-        row:SetParent(container)
-        if row.SetHidden then
-            row:SetHidden(false)
-        end
-
-        row:ClearAnchors()
-        if previous then
-            row:SetAnchor(TOPLEFT, previous, BOTTOMLEFT, 0, 0)
-            row:SetAnchor(TOPRIGHT, previous, BOTTOMRIGHT, 0, 0)
-        else
-            row:SetAnchor(TOPLEFT, container, TOPLEFT, 0, 0)
-            row:SetAnchor(TOPRIGHT, container, TOPRIGHT, 0, 0)
-        end
-
-        row:SetHeight(ROW_MIN_HEIGHT)
-        applyRowData(row, entry, index)
-
-        totalHeight = totalHeight + ROW_MIN_HEIGHT
-        previous = row
     end
 
-    cache.rows = rows
-
-    local hidden = 0
+    local rows = cache.rows
     for index = count + 1, #rows do
         local extra = rows[index]
         if extra and extra.SetHidden then
             extra:SetHidden(true)
-            hidden = hidden + 1
         end
     end
 
-    if type(container.SetHeight) == "function" then
+    if container.SetHeight then
         container:SetHeight(totalHeight)
     end
 
+    cache.lastHeight = totalHeight
     lastHeight = totalHeight
 
-    safeDebug("[EndeavorRows.Build] count=%d reused=%d new=%d hidden=%d", count, reused, created, hidden)
+    safeDebug("[EndeavorRows.BuildObjectives] count=%d height=%d", count, totalHeight)
 
     return totalHeight
+end
+
+function Rows.GetMeasuredHeight(container)
+    local cache = getContainerCache(container)
+    if cache then
+        return coerceNumber(cache.lastHeight)
+    end
+    return 0
 end
 
 function Rows.GetLastHeight()
