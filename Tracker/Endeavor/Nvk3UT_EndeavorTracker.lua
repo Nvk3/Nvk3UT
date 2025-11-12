@@ -11,6 +11,7 @@ local state = {
     container = nil,
     currentHeight = 0,
     isInitialized = false,
+    isDisposed = false,
 }
 
 local TEMP_EVENT_NAMESPACE = MODULE_TAG .. ".TempEvents"
@@ -25,6 +26,12 @@ local tempEvents = {
 
 local shimStateInitialized = false
 local shimModelInitialized = false
+
+local initKick = {
+    done = false,
+    timerHandle = nil,
+    delayMs = 200,
+}
 
 local EVENT_TIMED_ACTIVITIES_UPDATED_ID = rawget(_G, "EVENT_TIMED_ACTIVITIES_UPDATED")
 local EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED_ID = rawget(_G, "EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED")
@@ -238,6 +245,83 @@ local function onTimedActivitiesEvent()
     runSafe(queueTempEventRefresh)
 end
 
+local function hasRecentDebouncedRefresh()
+    local lastQueued = tempEvents.lastQueuedAt or 0
+    if lastQueued <= 0 then
+        return false
+    end
+
+    local now = getFrameTime()
+    local elapsed = now - lastQueued
+    if elapsed < 0 then
+        elapsed = 0
+    end
+
+    return elapsed < tempEvents.debounceMs or tempEvents.pending
+end
+
+local function cancelInitKickTimer(silent)
+    if initKick.timerHandle == nil then
+        return
+    end
+
+    local remove = rawget(_G, "zo_removeCallLater")
+    if type(remove) == "function" then
+        remove(initKick.timerHandle)
+    else
+        local cancel = rawget(_G, "CancelCallback")
+        if type(cancel) == "function" then
+            cancel(initKick.timerHandle)
+        end
+    end
+
+    initKick.timerHandle = nil
+
+    if not silent then
+        safeDebug("[EndeavorTracker.SHIM] init-kick canceled")
+    end
+end
+
+local function scheduleInitKick()
+    if initKick.done then
+        return
+    end
+
+    if state.isDisposed then
+        return
+    end
+
+    if initKick.timerHandle ~= nil then
+        return
+    end
+
+    runSafe(function()
+        safeDebug("[EndeavorTracker.SHIM] init-kick scheduled")
+
+        local callLater = rawget(_G, "zo_callLater")
+        if type(callLater) ~= "function" then
+            initKick.done = true
+            if not hasRecentDebouncedRefresh() then
+                onTimedActivitiesEvent()
+            end
+            return
+        end
+
+        initKick.timerHandle = callLater(function()
+            initKick.timerHandle = nil
+            if state.isDisposed then
+                initKick.done = true
+                return
+            end
+
+            initKick.done = true
+            if not hasRecentDebouncedRefresh() then
+                onTimedActivitiesEvent()
+            end
+        end, initKick.delayMs)
+    end)
+end
+
 local function tempEventsRegister()
     if tempEvents.registered then
         return
@@ -357,8 +441,14 @@ function EndeavorTracker.Init(sectionContainer)
     state.container = sectionContainer
     state.currentHeight = 0
     state.isInitialized = true
+    state.isDisposed = false
 
     ensureEndeavorInitialized()
+
+    initKick.done = false
+    if initKick.timerHandle ~= nil then
+        cancelInitKickTimer(true)
+    end
 
     local rows = getRowsModule()
     if rows and type(rows.Init) == "function" then
@@ -376,6 +466,8 @@ function EndeavorTracker.Init(sectionContainer)
     end
 
     tempEventsRegister()
+
+    scheduleInitKick()
 
     local containerName
     if container and container.GetName then
@@ -433,7 +525,13 @@ function EndeavorTracker.GetHeight()
 end
 
 function EndeavorTracker.Dispose()
+    state.isDisposed = true
+    cancelInitKickTimer(false)
+    initKick.done = true
     tempEventsUnregister()
+    state.isInitialized = false
+    state.currentHeight = 0
+    state.container = nil
 end
 
 Nvk3UT.EndeavorTracker = EndeavorTracker
