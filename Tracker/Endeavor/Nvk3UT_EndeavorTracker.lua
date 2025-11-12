@@ -77,6 +77,24 @@ local CATEGORY_COLOR_ROLE_COLLAPSED = "categoryTitle"
 local ENTRY_COLOR_ROLE_DEFAULT = "entryTitle"
 local ENTRY_COLOR_ROLE_EXPANDED = "activeTitle"
 
+local function FormatParensCount(a, b)
+    local aNum = tonumber(a) or 0
+    if aNum < 0 then
+        aNum = 0
+    end
+
+    local bNum = tonumber(b) or 1
+    if bNum < 1 then
+        bNum = 1
+    end
+
+    if aNum > bNum then
+        aNum = bNum
+    end
+
+    return string.format("(%d/%d)", math.floor(aNum + 0.5), math.floor(bNum + 0.5))
+end
+
 local function CallIfFunction(fn, ...)
     if type(fn) == "function" then
         return pcall(fn, ...)
@@ -1285,37 +1303,26 @@ function EndeavorTracker.Refresh(viewModel)
         applyLabelColor(categoryLabel, role)
     end
 
-    local function formatCountText(titleValue, completedValue, totalValue)
-        local text = resolveTitle(titleValue, "")
-        local completedNum = tonumber(completedValue) or 0
-        local totalNum = tonumber(totalValue) or 0
-        completedNum = math.floor(completedNum + 0.5)
-        totalNum = math.floor(totalNum + 0.5)
-        return string.format("%s %d/%d", text, completedNum, totalNum)
-    end
-
     local dailyControl = ui.daily and ui.daily.control
     local dailyLabel = ui.daily and ui.daily.label
     if dailyLabel and dailyLabel.SetText then
-        dailyLabel:SetText(
-            formatCountText(
-                dailyVm.title or "Tägliche Bestrebungen",
-                dailyVm.displayCompleted or dailyVm.completed,
-                dailyVm.displayLimit or dailyVm.total
-            )
-        )
+        local dailyTitle = resolveTitle(dailyVm.title or "Tägliche Bestrebungen", "Tägliche Bestrebungen")
+        dailyLabel:SetText(string.format(
+            "%s %s",
+            dailyTitle,
+            FormatParensCount(dailyVm.displayCompleted or dailyVm.completed, dailyVm.displayLimit or dailyVm.total)
+        ))
     end
 
     local weeklyControl = ui.weekly and ui.weekly.control
     local weeklyLabel = ui.weekly and ui.weekly.label
     if weeklyLabel and weeklyLabel.SetText then
-        weeklyLabel:SetText(
-            formatCountText(
-                weeklyVm.title or "Wöchentliche Bestrebungen",
-                weeklyVm.displayCompleted or weeklyVm.completed,
-                weeklyVm.displayLimit or weeklyVm.total
-            )
-        )
+        local weeklyTitle = resolveTitle(weeklyVm.title or "Wöchentliche Bestrebungen", "Wöchentliche Bestrebungen")
+        weeklyLabel:SetText(string.format(
+            "%s %s",
+            weeklyTitle,
+            FormatParensCount(weeklyVm.displayCompleted or weeklyVm.completed, weeklyVm.displayLimit or weeklyVm.total)
+        ))
     end
 
     local dailyExpanded = categoryExpanded and dailyVm.expanded == true
@@ -1457,6 +1464,12 @@ function EndeavorTracker.Refresh(viewModel)
         tonumber(dailyVm.displayLimit or dailyVm.total) or 0,
         tonumber(weeklyVm.displayCompleted or weeklyVm.completed) or 0,
         tonumber(weeklyVm.displayLimit or weeklyVm.total) or 0
+    )
+
+    safeDebug(
+        "[Endeavor.UI] formatted: daily=%s weekly=%s",
+        FormatParensCount(dailyVm.displayCompleted or dailyVm.completed, dailyVm.displayLimit or dailyVm.total),
+        FormatParensCount(weeklyVm.displayCompleted or weeklyVm.completed, weeklyVm.displayLimit or weeklyVm.total)
     )
 
     release()

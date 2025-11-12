@@ -13,6 +13,24 @@ local ACHIEVEMENT_OBJECTIVE_FONT = "ZoFontGameSmall"
 local ACHIEVEMENT_OBJECTIVE_COLOR_ROLE = "objectiveText"
 local TRACKER_COLOR_KIND = "achievementTracker"
 
+local function FormatParensCount(a, b)
+    local aNum = tonumber(a) or 0
+    if aNum < 0 then
+        aNum = 0
+    end
+
+    local bNum = tonumber(b) or 1
+    if bNum < 1 then
+        bNum = 1
+    end
+
+    if aNum > bNum then
+        aNum = bNum
+    end
+
+    return string.format("(%d/%d)", math.floor(aNum + 0.5), math.floor(bNum + 0.5))
+end
+
 Rows._cache = Rows._cache or setmetatable({}, { __mode = "k" })
 
 local lastHeight = 0
@@ -179,27 +197,12 @@ function Rows.ApplyObjectiveRow(row, objective)
         baseText = "Objective"
     end
 
-    local function fmtCount(progressValue, maxValue)
-        local p = tonumber(progressValue) or 0
-        if p < 0 then
-            p = 0
-        end
-        local m = tonumber(maxValue) or 1
-        if m < 1 then
-            m = 1
-        end
-        if p > m then
-            p = m
-        end
-        p = math.floor(p + 0.5)
-        m = math.floor(m + 0.5)
-        return string.format("%d/%d", p, m)
-    end
-
     local combinedText = baseText
     if data.progress ~= nil and data.max ~= nil then
-        combinedText = string.format("%s %s", combinedText, fmtCount(data.progress, data.max))
+        combinedText = string.format("%s %s", combinedText, FormatParensCount(data.progress, data.max))
     end
+
+    combinedText = combinedText:gsub("%s+", " "):gsub("%s+%)", ")")
 
     local rowName = type(row.GetName) == "function" and row:GetName() or ""
     local titleName = rowName .. "Title"
