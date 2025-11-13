@@ -1036,67 +1036,6 @@ local function ensureUi(container)
     local baseName = (containerName or "Nvk3UT_Endeavor") .. "_"
     ui.baseName = baseName
 
-    local category = ui.category
-    if type(category) ~= "table" then
-        local controlName = baseName .. "Category"
-        local control = GetControl(controlName)
-        if not control then
-            control = wm:CreateControl(controlName, container, CT_CONTROL)
-        else
-            control:SetParent(container)
-        end
-        control:SetResizeToFitDescendents(false)
-        control:SetHeight(CATEGORY_HEADER_HEIGHT)
-        control:SetMouseEnabled(true)
-        control:SetHidden(false)
-        control:SetHandler("OnMouseUp", function(_, button, upInside)
-            if button == MOUSE_BUTTON_INDEX_LEFT and upInside then
-                toggleRootExpanded()
-            end
-        end)
-
-        local chevronName = controlName .. "Chevron"
-        local chevron = GetControl(chevronName)
-        if not chevron then
-            chevron = wm:CreateControl(chevronName, control, CT_TEXTURE)
-        end
-        chevron:SetParent(control)
-        chevron:SetMouseEnabled(false)
-        chevron:SetHidden(false)
-        chevron:SetDimensions(CATEGORY_CHEVRON_SIZE, CATEGORY_CHEVRON_SIZE)
-        chevron:ClearAnchors()
-        chevron:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
-        chevron:SetTexture(CHEVRON_TEXTURES.collapsed)
-
-        local labelName = controlName .. "Label"
-        local label = GetControl(labelName)
-        if not label then
-            label = wm:CreateControl(labelName, control, CT_LABEL)
-        end
-        label:SetParent(control)
-        label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
-        label:SetVerticalAlignment(TEXT_ALIGN_TOP)
-        label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
-        label:ClearAnchors()
-        label:SetAnchor(TOPLEFT, chevron, TOPRIGHT, CATEGORY_LABEL_OFFSET_X, 0)
-        label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
-        applyLabelFont(label, DEFAULT_CATEGORY_FONT, DEFAULT_CATEGORY_FONT)
-
-        ui.category = {
-            control = control,
-            label = label,
-            chevron = chevron,
-        }
-    else
-        local control = category.control
-        if control then
-            control:SetParent(container)
-            control:SetHeight(CATEGORY_HEADER_HEIGHT)
-        end
-        local label = category.label
-        applyLabelFont(label, DEFAULT_CATEGORY_FONT, DEFAULT_CATEGORY_FONT)
-    end
-
     local daily = ui.daily
     if type(daily) ~= "table" then
         local controlName = baseName .. "Daily"
@@ -1388,16 +1327,32 @@ function EndeavorTracker.Refresh(viewModel)
         return
     end
 
-    local categoryControl = ui.category and ui.category.control
-    local categoryLabel = ui.category and ui.category.label
-    local categoryChevron = ui.category and ui.category.chevron
+    local rows = getRowsModule()
+    if rows and type(rows.ResetCategoryPool) == "function" then
+        rows.ResetCategoryPool()
+    end
+
+    local previousCategoryRow = type(ui.category) == "table" and ui.category or nil
+    local categoryRow = nil
+    if rows and type(rows.AcquireCategoryRow) == "function" then
+        categoryRow = rows.AcquireCategoryRow(container)
+    end
+
+    if not categoryRow then
+        categoryRow = previousCategoryRow
+    end
+
+    ui.category = categoryRow
+
+    local categoryControl = categoryRow and categoryRow.control
+    local categoryLabel = categoryRow and categoryRow.label
+    local categoryChevron = categoryRow and categoryRow.chevron
     local dailyControl = ui.daily and ui.daily.control
     local dailyLabel = ui.daily and ui.daily.label
     local weeklyControl = ui.weekly and ui.weekly.control
     local weeklyLabel = ui.weekly and ui.weekly.label
     local dailyObjectivesControl = ui.dailyObjectives and ui.dailyObjectives.control
     local weeklyObjectivesControl = ui.weeklyObjectives and ui.weeklyObjectives.control
-    local rows = getRowsModule()
 
     local function resolveTitle(value, fallback)
         if value == nil or value == "" then
@@ -1422,10 +1377,55 @@ function EndeavorTracker.Refresh(viewModel)
     applyLabelFont(dailyLabel, sectionFont, DEFAULT_SECTION_FONT)
     applyLabelFont(weeklyLabel, sectionFont, DEFAULT_SECTION_FONT)
 
-    if not enabled then
+    local formatCategoryHeader = Utils and Utils.FormatCategoryHeaderText
+    local categoryTitle = resolveTitle(categoryVm.title, "Bestrebungen")
+    local categoryRemaining = tonumber(categoryVm.remaining) or 0
+    categoryRemaining = math.max(0, math.floor(categoryRemaining + 0.5))
+    local categoryExpanded = categoryVm.expanded == true
+    local categoryShowCounts = enabled and shouldShowCountsFor(categoryVm)
+
+    local appliedCategoryRow = false
+    if categoryRow and rows and type(rows.ApplyCategoryRow) == "function" then
+        rows.ApplyCategoryRow(categoryRow, {
+            title = categoryTitle,
+            remaining = categoryRemaining,
+            showCounts = categoryShowCounts,
+            expanded = categoryExpanded,
+            formatHeader = formatCategoryHeader,
+            overrideColors = overrideColors,
+            textures = CHEVRON_TEXTURES,
+            colorRoles = {
+                expanded = CATEGORY_COLOR_ROLE_EXPANDED,
+                collapsed = CATEGORY_COLOR_ROLE_COLLAPSED,
+            },
+            onToggle = toggleRootExpanded,
+        })
+        appliedCategoryRow = true
+    end
+
+    if not appliedCategoryRow then
         if categoryLabel and categoryLabel.SetText then
-            categoryLabel:SetText(resolveTitle(categoryVm.title, "Bestrebungen"))
+            if type(formatCategoryHeader) == "function" then
+                categoryLabel:SetText(formatCategoryHeader(categoryTitle, categoryRemaining, categoryShowCounts))
+            elseif categoryShowCounts then
+                categoryLabel:SetText(string.format("%s (%d)", categoryTitle, categoryRemaining))
+            else
+                categoryLabel:SetText(categoryTitle)
+            end
         end
+
+        if categoryChevron and categoryChevron.SetTexture then
+            local texturePath = categoryExpanded and CHEVRON_TEXTURES.expanded or CHEVRON_TEXTURES.collapsed
+            categoryChevron:SetTexture(texturePath)
+        end
+
+        if categoryLabel then
+            local role = categoryExpanded and CATEGORY_COLOR_ROLE_EXPANDED or CATEGORY_COLOR_ROLE_COLLAPSED
+            applyLabelColor(categoryLabel, role, overrideColors)
+        end
+    end
+
+    if not enabled then
         if dailyLabel and dailyLabel.SetText then
             local dailyTitle = resolveTitle(dailyVm.title or "Tägliche Bestrebungen", "Tägliche Bestrebungen")
             dailyLabel:SetText(dailyTitle)
@@ -1482,32 +1482,6 @@ function EndeavorTracker.Refresh(viewModel)
 
     if container.SetHidden then
         container:SetHidden(false)
-    end
-
-    local categoryTitle = resolveTitle(categoryVm.title, "Bestrebungen")
-    local categoryRemaining = tonumber(categoryVm.remaining) or 0
-    categoryRemaining = math.max(0, math.floor(categoryRemaining + 0.5))
-    if categoryLabel and categoryLabel.SetText then
-        local formatHeader = Utils and Utils.FormatCategoryHeaderText
-        local categoryShowCounts = shouldShowCountsFor(categoryVm)
-        if type(formatHeader) == "function" then
-            categoryLabel:SetText(formatHeader(categoryTitle, categoryRemaining, categoryShowCounts))
-        elseif categoryShowCounts then
-            categoryLabel:SetText(string.format("%s (%d)", categoryTitle, categoryRemaining))
-        else
-            categoryLabel:SetText(categoryTitle)
-        end
-    end
-
-    local categoryExpanded = categoryVm.expanded == true
-    if categoryChevron and categoryChevron.SetTexture then
-        local texturePath = categoryExpanded and CHEVRON_TEXTURES.expanded or CHEVRON_TEXTURES.collapsed
-        categoryChevron:SetTexture(texturePath)
-    end
-
-    if categoryLabel then
-        local role = categoryExpanded and CATEGORY_COLOR_ROLE_EXPANDED or CATEGORY_COLOR_ROLE_COLLAPSED
-        applyLabelColor(categoryLabel, role, overrideColors)
     end
 
     if dailyLabel and dailyLabel.SetText then
