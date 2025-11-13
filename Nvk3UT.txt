@@ -65,6 +65,8 @@ Nvk3UT_AchievementTracker.lua
 Tracker/Golden/Nvk3UT_GoldenTracker.lua
 Tracker/Golden/Nvk3UT_GoldenTrackerRows.lua
 Tracker/Golden/Nvk3UT_GoldenTrackerLayout.lua
+# Golden Controller
+Tracker/Golden/Nvk3UT_GoldenTrackerController.lua
 # Note: further Golden modules (Controller/Events) will be added in later tokens.
 ## === Events ===
 ## === UI ===
