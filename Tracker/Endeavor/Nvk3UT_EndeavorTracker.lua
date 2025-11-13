@@ -107,7 +107,6 @@ local CHEVRON_TEXTURES = {
 local CATEGORY_COLOR_ROLE_EXPANDED = "activeTitle"
 local CATEGORY_COLOR_ROLE_COLLAPSED = "categoryTitle"
 local ENTRY_COLOR_ROLE_DEFAULT = "entryTitle"
-local ENTRY_COLOR_ROLE_EXPANDED = "activeTitle"
 
 local ENDEAVOR_TRACKER_COLOR_KIND = "endeavorTracker"
 
@@ -1403,6 +1402,18 @@ function EndeavorTracker.Refresh(viewModel)
         return tostring(value)
     end
 
+    local function shouldShowCountsFor(entryVm)
+        local entry = type(entryVm) == "table" and entryVm or nil
+        local kind = entry and entry.kind or nil
+        if kind == "dailyHeader" or kind == "weeklyHeader" then
+            return true
+        end
+        if entry == dailyVm or entry == weeklyVm then
+            return true
+        end
+        return showCounts
+    end
+
     applyLabelFont(categoryLabel, categoryFont, DEFAULT_CATEGORY_FONT)
     applyLabelFont(dailyLabel, sectionFont, DEFAULT_SECTION_FONT)
     applyLabelFont(weeklyLabel, sectionFont, DEFAULT_SECTION_FONT)
@@ -1474,9 +1485,10 @@ function EndeavorTracker.Refresh(viewModel)
     categoryRemaining = math.max(0, math.floor(categoryRemaining + 0.5))
     if categoryLabel and categoryLabel.SetText then
         local formatHeader = Utils and Utils.FormatCategoryHeaderText
+        local categoryShowCounts = shouldShowCountsFor(categoryVm)
         if type(formatHeader) == "function" then
-            categoryLabel:SetText(formatHeader(categoryTitle, categoryRemaining, showCounts))
-        elseif showCounts then
+            categoryLabel:SetText(formatHeader(categoryTitle, categoryRemaining, categoryShowCounts))
+        elseif categoryShowCounts then
             categoryLabel:SetText(string.format("%s (%d)", categoryTitle, categoryRemaining))
         else
             categoryLabel:SetText(categoryTitle)
@@ -1496,12 +1508,11 @@ function EndeavorTracker.Refresh(viewModel)
 
     if dailyLabel and dailyLabel.SetText then
         local dailyTitle = resolveTitle(dailyVm.title or "Tägliche Bestrebungen", "Tägliche Bestrebungen")
-        if showCounts then
-            dailyLabel:SetText(string.format(
-                "%s %s",
-                dailyTitle,
-                FormatParensCount(dailyVm.displayCompleted or dailyVm.completed, dailyVm.displayLimit or dailyVm.total)
-            ))
+        local dailyShowCounts = shouldShowCountsFor(dailyVm)
+        if dailyShowCounts then
+            local completed = dailyVm.displayCompleted or dailyVm.completed
+            local total = dailyVm.displayLimit or dailyVm.total
+            dailyLabel:SetText(string.format("%s %s", dailyTitle, FormatParensCount(completed, total)))
         else
             dailyLabel:SetText(dailyTitle)
         end
@@ -1509,12 +1520,11 @@ function EndeavorTracker.Refresh(viewModel)
 
     if weeklyLabel and weeklyLabel.SetText then
         local weeklyTitle = resolveTitle(weeklyVm.title or "Wöchentliche Bestrebungen", "Wöchentliche Bestrebungen")
-        if showCounts then
-            weeklyLabel:SetText(string.format(
-                "%s %s",
-                weeklyTitle,
-                FormatParensCount(weeklyVm.displayCompleted or weeklyVm.completed, weeklyVm.displayLimit or weeklyVm.total)
-            ))
+        local weeklyShowCounts = shouldShowCountsFor(weeklyVm)
+        if weeklyShowCounts then
+            local completed = weeklyVm.displayCompleted or weeklyVm.completed
+            local total = weeklyVm.displayLimit or weeklyVm.total
+            weeklyLabel:SetText(string.format("%s %s", weeklyTitle, FormatParensCount(completed, total)))
         else
             weeklyLabel:SetText(weeklyTitle)
         end
@@ -1524,13 +1534,11 @@ function EndeavorTracker.Refresh(viewModel)
     local weeklyExpanded = categoryExpanded and weeklyVm.expanded == true
 
     if dailyLabel then
-        local role = dailyExpanded and ENTRY_COLOR_ROLE_EXPANDED or ENTRY_COLOR_ROLE_DEFAULT
-        applyLabelColor(dailyLabel, role, overrideColors)
+        applyLabelColor(dailyLabel, ENTRY_COLOR_ROLE_DEFAULT, overrideColors)
     end
 
     if weeklyLabel then
-        local role = weeklyExpanded and ENTRY_COLOR_ROLE_EXPANDED or ENTRY_COLOR_ROLE_DEFAULT
-        applyLabelColor(weeklyLabel, role, overrideColors)
+        applyLabelColor(weeklyLabel, ENTRY_COLOR_ROLE_DEFAULT, overrideColors)
     end
 
     if categoryControl and categoryControl.SetHidden then

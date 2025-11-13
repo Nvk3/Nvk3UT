@@ -553,11 +553,13 @@ function Controller:BuildViewModel()
     local stateModule = getStateModule()
     local vm = {
         category = {
+            kind = "endeavorCategoryHeader",
             title = "Bestrebungen",
             expanded = isStateExpanded(stateModule),
             remaining = remainingTotal,
         },
         daily = {
+            kind = "dailyHeader",
             title = "Tägliche Bestrebungen",
             completed = dailyCompleted,
             total = dailyTotal,
@@ -567,6 +569,7 @@ function Controller:BuildViewModel()
             objectives = dailyObjectives,
         },
         weekly = {
+            kind = "weeklyHeader",
             title = "Wöchentliche Bestrebungen",
             completed = weeklyCompleted,
             total = weeklyTotal,
