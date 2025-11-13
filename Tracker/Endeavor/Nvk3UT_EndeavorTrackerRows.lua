@@ -46,6 +46,8 @@ local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
 local DEFAULT_OBJECTIVE_COLOR_ROLE = "objectiveText"
 local DEFAULT_TRACKER_COLOR_KIND = "endeavorTracker"
 local COMPLETED_COLOR_ROLE = "completed"
+local ROW_GAP = 3
+local OBJECTIVE_INDENT_X = 60
 
 local function FormatParensCount(a, b)
     local aNum = tonumber(a) or 0
@@ -401,8 +403,8 @@ local function ensureObjectiveRow(container, baseName, index, previous, options)
     row:SetHeight(rowHeight)
     row:ClearAnchors()
     if previous then
-        row:SetAnchor(TOPLEFT, previous, BOTTOMLEFT, 0, 0)
-        row:SetAnchor(TOPRIGHT, previous, BOTTOMRIGHT, 0, 0)
+        row:SetAnchor(TOPLEFT, previous, BOTTOMLEFT, 0, ROW_GAP)
+        row:SetAnchor(TOPRIGHT, previous, BOTTOMRIGHT, 0, ROW_GAP)
     else
         row:SetAnchor(TOPLEFT, container, TOPLEFT, 0, 0)
         row:SetAnchor(TOPRIGHT, container, TOPRIGHT, 0, 0)
@@ -469,7 +471,7 @@ function Rows.ApplyObjectiveRow(row, objective, options)
         title:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
     end
     title:ClearAnchors()
-    title:SetAnchor(TOPLEFT, row, TOPLEFT, 0, 0)
+    title:SetAnchor(TOPLEFT, row, TOPLEFT, OBJECTIVE_INDENT_X, 0)
     title:SetAnchor(TOPRIGHT, row, TOPRIGHT, 0, 0)
     if title.SetHeight then
         local titleHeight = OBJECTIVE_ROW_DEFAULT_HEIGHT
@@ -585,6 +587,9 @@ function Rows.BuildObjectives(container, list, options)
         if row then
             Rows.ApplyObjectiveRow(row, sequence[index], options)
             previous = row
+            if index > 1 then
+                totalHeight = totalHeight + ROW_GAP
+            end
             totalHeight = totalHeight + (appliedHeight or rowHeight)
         end
     end

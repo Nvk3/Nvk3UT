@@ -93,9 +93,12 @@ local INIT_POLLER_UPDATE_NAME = "Nvk3UT_Endeavor_InitPoller"
 local CATEGORY_HEADER_HEIGHT = 26
 local SECTION_ROW_HEIGHT = 24
 local HEADER_TO_ROWS_GAP = 3
+local ROW_GAP = 3
+local SECTION_BOTTOM_GAP = 3
+local SECTION_BOTTOM_GAP_COLLAPSED = 3
 local CATEGORY_CHEVRON_SIZE = 20
 local CATEGORY_LABEL_OFFSET_X = 4
-local SECTION_LABEL_OFFSET_X = 0
+local SUBHEADER_INDENT_X = 18
 
 local DEFAULT_CATEGORY_FONT = "$(BOLD_FONT)|20|soft-shadow-thick"
 local DEFAULT_SECTION_FONT = "$(BOLD_FONT)|16|soft-shadow-thick"
@@ -1122,7 +1125,7 @@ local function ensureUi(container)
         label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
         label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
         label:ClearAnchors()
-        label:SetAnchor(TOPLEFT, control, TOPLEFT, SECTION_LABEL_OFFSET_X, 0)
+        label:SetAnchor(TOPLEFT, control, TOPLEFT, SUBHEADER_INDENT_X, 0)
         label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
         applyLabelFont(label, DEFAULT_SECTION_FONT, DEFAULT_SECTION_FONT)
 
@@ -1169,7 +1172,7 @@ local function ensureUi(container)
         label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
         label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
         label:ClearAnchors()
-        label:SetAnchor(TOPLEFT, control, TOPLEFT, SECTION_LABEL_OFFSET_X, 0)
+        label:SetAnchor(TOPLEFT, control, TOPLEFT, SUBHEADER_INDENT_X, 0)
         label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
         applyLabelFont(label, DEFAULT_SECTION_FONT, DEFAULT_SECTION_FONT)
 
@@ -1619,7 +1622,6 @@ function EndeavorTracker.Refresh(viewModel)
         end
     else
         local fallbackHeight = CATEGORY_HEADER_HEIGHT
-
         if categoryControl and categoryControl.GetHeight then
             local ok, height = pcall(categoryControl.GetHeight, categoryControl)
             if ok then
@@ -1630,6 +1632,9 @@ function EndeavorTracker.Refresh(viewModel)
             end
         end
 
+        local rowsHeight = 0
+        local rowCount = 0
+
         local function addRowHeight(measuredHeight, defaultHeight)
             local resolved = coerceHeight(measuredHeight)
             if resolved <= 0 then
@@ -1637,7 +1642,8 @@ function EndeavorTracker.Refresh(viewModel)
             end
 
             if resolved > 0 then
-                fallbackHeight = fallbackHeight + HEADER_TO_ROWS_GAP + resolved
+                rowsHeight = rowsHeight + resolved
+                rowCount = rowCount + 1
             end
         end
 
@@ -1685,6 +1691,16 @@ function EndeavorTracker.Refresh(viewModel)
                 end
                 addRowHeight(measured, 0)
             end
+        end
+
+        if rowCount > 0 then
+            fallbackHeight = fallbackHeight + HEADER_TO_ROWS_GAP + rowsHeight
+            if rowCount > 1 then
+                fallbackHeight = fallbackHeight + ROW_GAP * (rowCount - 1)
+            end
+            fallbackHeight = fallbackHeight + SECTION_BOTTOM_GAP
+        else
+            fallbackHeight = fallbackHeight + SECTION_BOTTOM_GAP_COLLAPSED
         end
 
         measuredHeight = fallbackHeight
