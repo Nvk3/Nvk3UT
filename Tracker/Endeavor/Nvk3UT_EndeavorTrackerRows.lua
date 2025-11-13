@@ -11,6 +11,13 @@ local MODULE_TAG = addonName .. ".EndeavorTrackerRows"
 local ROWS_HEIGHTS = {
     category = 26,
     entry = 20,
+    sub_info = 18,
+    sub_counter = 18,
+    sub_progress = 20,
+    sub_warning = 18,
+    spacing_entry_to_first_sub = 2,
+    spacing_between_subrows = 1,
+    spacing_after_last_sub = 2,
 }
 
 local CATEGORY_TOP_PAD = 0
@@ -60,6 +67,26 @@ local DEFAULT_OBJECTIVE_COLOR_ROLE = "objectiveText"
 local DEFAULT_TRACKER_COLOR_KIND = "endeavorTracker"
 local COMPLETED_COLOR_ROLE = "completed"
 local OBJECTIVE_INDENT_X = 60
+
+local SUBROW_ICON_SIZE = 16
+local SUBROW_ICON_GAP = 4
+local SUBROW_RIGHT_COLUMN_GAP = 8
+
+local SUBROW_KIND_ALIASES = {
+    info = "sub_info",
+    description = "sub_info",
+    detail = "sub_info",
+    text = "sub_info",
+    counter = "sub_counter",
+    value = "sub_counter",
+    count = "sub_counter",
+    progress = "sub_progress",
+    bar = "sub_progress",
+    warning = "sub_warning",
+    hint = "sub_warning",
+    error = "sub_warning",
+    alert = "sub_warning",
+}
 
 local CATEGORY_CHEVRON_SIZE = 20
 local CATEGORY_LABEL_OFFSET_X = 4
@@ -129,6 +156,7 @@ local entryPool = {
 }
 
 local lastHeight = 0
+local loggedSubrowsOnce = false
 
 local function safeDebug(fmt, ...)
     if not isDebugEnabled() then
@@ -170,6 +198,399 @@ local function coerceNumber(value)
     end
 
     return 0
+end
+
+local function normalizeSubrowKind(kind)
+    local key = kind
+    if type(key) ~= "string" then
+        key = tostring(key or "")
+    end
+    key = key or ""
+    if key ~= "" then
+        local lowered = string.lower(key)
+        if SUBROW_KIND_ALIASES[lowered] then
+            return SUBROW_KIND_ALIASES[lowered]
+        end
+        if ROWS_HEIGHTS[lowered] then
+            return lowered
+        end
+        if ROWS_HEIGHTS[key] then
+            return key
+        end
+    end
+
+    return "sub_info"
+end
+
+local function resolveSubrowSpacing(key)
+    local value = ROWS_HEIGHTS[key]
+    if type(value) ~= "number" then
+        return 0
+    end
+    if value ~= value then
+        return 0
+    end
+    if value < 0 then
+        return 0
+    end
+    return value
+end
+
+local function sanitizeSubrows(source)
+    local sanitized = {}
+    local visibleCount = 0
+
+    if type(source) == "table" then
+        for _, entry in ipairs(source) do
+            if type(entry) == "table" then
+                local normalizedKind = normalizeSubrowKind(entry.kind or entry.type or entry[1])
+                local visible
+                if entry.visible ~= nil then
+                    visible = entry.visible ~= false
+                elseif entry.hidden ~= nil then
+                    visible = entry.hidden ~= true
+                else
+                    visible = true
+                end
+
+                local sanitizedEntry = {
+                    kind = normalizedKind,
+                    source = entry,
+                    visible = visible,
+                    hidden = not visible,
+                }
+
+                if visible then
+                    visibleCount = visibleCount + 1
+                end
+
+                sanitized[#sanitized + 1] = sanitizedEntry
+            end
+        end
+    end
+
+    return sanitized, visibleCount
+end
+
+local function acquireSubrowControl(row, container, index)
+    if row == nil or container == nil then
+        return nil
+    end
+
+    local wm = WINDOW_MANAGER
+    if wm == nil then
+        return nil
+    end
+
+    local prefix = row._subrowPrefix
+    if type(prefix) ~= "string" or prefix == "" then
+        local rowName = type(row.GetName) == "function" and row:GetName() or "Nvk3UT_Endeavor_Row"
+        prefix = string.format("%s_Subrow", tostring(rowName))
+        row._subrowPrefix = prefix
+    end
+
+    row._subrowControls = row._subrowControls or {}
+
+    local existing = row._subrowControls[index]
+    if existing then
+        if existing.SetParent then
+            existing:SetParent(container)
+        end
+        return existing
+    end
+
+    local controlName = string.format("%s%d", prefix, index)
+    local control = GetControl(controlName)
+    if not control then
+        control = wm:CreateControl(controlName, container, CT_CONTROL)
+    else
+        control:SetParent(container)
+    end
+
+    control:SetResizeToFitDescendents(false)
+    control:SetMouseEnabled(false)
+    control:SetHidden(true)
+    control._subrowOwner = row
+
+    row._subrowControls[index] = control
+
+    return control
+end
+
+local function hideUnusedSubrows(row, startIndex)
+    if row == nil then
+        return
+    end
+
+    local controls = row._subrowControls
+    if type(controls) ~= "table" then
+        return
+    end
+
+    for index = startIndex, #controls do
+        local control = controls[index]
+        if control then
+            if control.SetHidden then
+                control:SetHidden(true)
+            end
+            if control.ClearAnchors then
+                control:ClearAnchors()
+            end
+        end
+    end
+end
+
+local function ensureSubrowLeftLabel(control)
+    if control == nil then
+        return nil
+    end
+
+    local wm = WINDOW_MANAGER
+    if wm == nil then
+        return nil
+    end
+
+    local label = control.Label
+    if label then
+        label:SetParent(control)
+    else
+        local controlName = type(control.GetName) == "function" and control:GetName() or ""
+        local labelName = controlName ~= "" and (controlName .. "Label") or nil
+        if labelName then
+            label = GetControl(labelName)
+        end
+        if not label then
+            local fallbackBase = controlName ~= "" and controlName or string.gsub(tostring(control or "subrow"), "[^%w_]", "_")
+            label = wm:CreateControl((labelName or (fallbackBase .. "Label")), control, CT_LABEL)
+        else
+            label:SetParent(control)
+        end
+    end
+
+    label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+    label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
+    if label.SetWrapMode then
+        label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
+    end
+
+    control.Label = label
+
+    return label
+end
+
+local function ensureSubrowRightLabel(control)
+    if control == nil then
+        return nil
+    end
+
+    local wm = WINDOW_MANAGER
+    if wm == nil then
+        return nil
+    end
+
+    local label = control.RightLabel
+    if label then
+        label:SetParent(control)
+    else
+        local controlName = type(control.GetName) == "function" and control:GetName() or ""
+        local labelName = controlName ~= "" and (controlName .. "Right") or nil
+        if labelName then
+            label = GetControl(labelName)
+        end
+        if not label then
+            local fallbackBase = controlName ~= "" and controlName or string.gsub(tostring(control or "subrow"), "[^%w_]", "_")
+            label = wm:CreateControl((labelName or (fallbackBase .. "Right")), control, CT_LABEL)
+        else
+            label:SetParent(control)
+        end
+    end
+
+    label:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+    label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
+    if label.SetWrapMode then
+        label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
+    end
+
+    control.RightLabel = label
+
+    return label
+end
+
+local function ensureSubrowIcon(control)
+    if control == nil then
+        return nil
+    end
+
+    local wm = WINDOW_MANAGER
+    if wm == nil then
+        return nil
+    end
+
+    local icon = control.Icon
+    if icon then
+        icon:SetParent(control)
+    else
+        local controlName = type(control.GetName) == "function" and control:GetName() or ""
+        local iconName = controlName ~= "" and (controlName .. "Icon") or nil
+        if iconName then
+            icon = GetControl(iconName)
+        end
+        if not icon then
+            local fallbackBase = controlName ~= "" and controlName or string.gsub(tostring(control or "subrow"), "[^%w_]", "_")
+            icon = wm:CreateControl((iconName or (fallbackBase .. "Icon")), control, CT_TEXTURE)
+        else
+            icon:SetParent(control)
+        end
+    end
+
+    if icon.SetMouseEnabled then
+        icon:SetMouseEnabled(false)
+    end
+    if icon.SetHidden then
+        icon:SetHidden(true)
+    end
+    if icon.SetDimensions then
+        icon:SetDimensions(SUBROW_ICON_SIZE, SUBROW_ICON_SIZE)
+    end
+
+    control.Icon = icon
+
+    return icon
+end
+
+function Rows.ApplySubrow(control, kind, data, options)
+    if control == nil then
+        return
+    end
+
+    local resolvedKind = normalizeSubrowKind(kind)
+    local source = type(data) == "table" and data or {}
+
+    local height = Rows.GetSubrowHeight(resolvedKind)
+    if control.SetHeight then
+        control:SetHeight(height)
+    end
+
+    local icon = ensureSubrowIcon(control)
+    local iconTexture = type(source.icon) == "string" and source.icon or nil
+    if icon then
+        if iconTexture and iconTexture ~= "" then
+            icon:SetHidden(false)
+            if icon.SetTexture then
+                icon:SetTexture(iconTexture)
+            end
+            if icon.ClearAnchors then
+                icon:ClearAnchors()
+            end
+            icon:SetAnchor(LEFT, control, LEFT, OBJECTIVE_INDENT_X - SUBROW_ICON_SIZE - SUBROW_ICON_GAP, 0)
+        else
+            if icon.SetTexture then
+                icon:SetTexture(nil)
+            end
+            icon:SetHidden(true)
+        end
+    end
+
+    local leftLabel = ensureSubrowLeftLabel(control)
+    local rightLabel = ensureSubrowRightLabel(control)
+
+    if leftLabel then
+        leftLabel:ClearAnchors()
+        if icon and icon.IsHidden and not icon:IsHidden() then
+            leftLabel:SetAnchor(TOPLEFT, icon, TOPRIGHT, SUBROW_ICON_GAP, 0)
+        else
+            leftLabel:SetAnchor(TOPLEFT, control, TOPLEFT, OBJECTIVE_INDENT_X, 0)
+        end
+    end
+
+    local rightText = ""
+    if type(source) == "table" then
+        rightText = source.rightText or source.value or source.counterText or ""
+    end
+    rightText = tostring(rightText or "")
+
+    if rightLabel then
+        rightLabel:ClearAnchors()
+        if rightText ~= "" then
+            if rightLabel.SetHidden then
+                rightLabel:SetHidden(false)
+            end
+            if rightLabel.SetText then
+                rightLabel:SetText(rightText)
+            end
+            rightLabel:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+            rightLabel:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
+            if leftLabel then
+                leftLabel:SetAnchor(BOTTOMRIGHT, rightLabel, BOTTOMLEFT, -SUBROW_RIGHT_COLUMN_GAP, 0)
+            end
+        else
+            if rightLabel.SetHidden then
+                rightLabel:SetHidden(true)
+            end
+            if rightLabel.SetText then
+                rightLabel:SetText("")
+            end
+            if leftLabel then
+                leftLabel:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
+            end
+        end
+    elseif leftLabel then
+        leftLabel:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
+    end
+
+    local text = ""
+    if type(source) == "table" then
+        text = source.text or source.label or source.description or ""
+    end
+    text = tostring(text or "")
+    if leftLabel and leftLabel.SetText then
+        leftLabel:SetText(text)
+    end
+
+    local font = type(source) == "table" and source.font or nil
+    local fallbackFont = options and options.font or DEFAULT_OBJECTIVE_FONT
+    if leftLabel then
+        applyFontString(leftLabel, font, fallbackFont)
+    end
+
+    if rightLabel then
+        local rightFont = type(source) == "table" and (source.rightFont or source.font) or nil
+        applyFontString(rightLabel, rightFont, fallbackFont)
+    end
+
+    local r, g, b, a
+    if type(source) == "table" then
+        r, g, b, a = extractColorComponents(source.color)
+    end
+    if r == nil then
+        local colorRole
+        if type(source) == "table" and type(source.colorRole) == "string" then
+            colorRole = source.colorRole
+        else
+            colorRole = DEFAULT_OBJECTIVE_COLOR_ROLE
+        end
+        r, g, b, a = getTrackerColor(colorRole, options and options.colorKind)
+    end
+    r, g, b, a = r or 1, g or 1, b or 1, a or 1
+
+    if leftLabel and leftLabel.SetColor then
+        leftLabel:SetColor(r, g, b, a)
+    end
+    if rightLabel and rightLabel.SetColor then
+        rightLabel:SetColor(r, g, b, a)
+    end
+
+    if control.SetAlpha then
+        control:SetAlpha(1)
+    end
+    if control.SetHidden then
+        control:SetHidden(false)
+    end
+
+    control._subrowKind = resolvedKind
+    control._subrowSource = source
+
+    return control
 end
 
 local function getAddon()
@@ -395,6 +816,7 @@ local function createEntryRow(parent)
     control:SetHidden(false)
     control._poolState = "fresh"
     control._poolParent = parent
+    control._subrowPrefix = controlName .. "Subrow"
 
     safeDebug("[EntryPool] create %s", controlName)
 
@@ -539,6 +961,24 @@ local function resetEntryRowContent(row)
             check:SetHidden(true)
         end
     end
+
+    if type(row._subrowControls) == "table" then
+        for index = 1, #row._subrowControls do
+            local control = row._subrowControls[index]
+            if control then
+                if control.SetHidden then
+                    control:SetHidden(true)
+                end
+                if control.ClearAnchors then
+                    control:ClearAnchors()
+                end
+            end
+        end
+    end
+
+    row._subrows = nil
+    row._subrowCount = 0
+    row._subrowsVisibleCount = 0
 end
 
 local function releaseEntryRow(row)
@@ -1278,6 +1718,41 @@ local function applyEntryRow(row, objective, options)
 
     applyObjectiveColor(title, options, data)
 
+    local subrowsSource = type(data) == "table" and data.subrows or nil
+    local sanitizedSubrows, visibleSubrows = sanitizeSubrows(subrowsSource)
+    row._subrows = sanitizedSubrows
+    row._subrowCount = #sanitizedSubrows
+    row._subrowsVisibleCount = visibleSubrows
+
+    if not loggedSubrowsOnce and visibleSubrows > 0 then
+        local blockHeight = Rows.GetSubrowsBlockHeight(sanitizedSubrows)
+        safeDebug("[Endeavor] subrows: n=%d blockHeight=%s", visibleSubrows, tostring(blockHeight))
+        loggedSubrowsOnce = true
+    end
+
+    local container = row._poolParent or (row.GetParent and row:GetParent()) or nil
+    if container then
+        for index, entry in ipairs(sanitizedSubrows) do
+            local control = acquireSubrowControl(row, container, index)
+            entry.control = control
+            if control then
+                if entry.visible then
+                    Rows.ApplySubrow(control, entry.kind, entry.source, options)
+                else
+                    if control.SetHidden then
+                        control:SetHidden(true)
+                    end
+                    if control.ClearAnchors then
+                        control:ClearAnchors()
+                    end
+                end
+            end
+        end
+        hideUnusedSubrows(row, #sanitizedSubrows + 1)
+    else
+        hideUnusedSubrows(row, 1)
+    end
+
     if row.SetAlpha then
         row:SetAlpha(1)
     end
@@ -1308,6 +1783,7 @@ function Rows.Init()
     Rows.ResetCategoryPool()
     Rows.ResetEntryPool()
     lastHeight = 0
+    loggedSubrowsOnce = false
 end
 
 function Rows.ClearObjectives(container)
@@ -1361,16 +1837,26 @@ function Rows.BuildObjectives(container, list, options)
     local rowHeight = resolveEntryHeight(options)
 
     local totalHeight = 0
-    local previous
+    local previousControl
+    local pendingSpacing = 0
 
     cache.rows = {}
+
+    local firstSubSpacing = resolveSubrowSpacing("spacing_entry_to_first_sub")
+    local betweenSubSpacing = resolveSubrowSpacing("spacing_between_subrows")
+    local trailingSubSpacing = resolveSubrowSpacing("spacing_after_last_sub")
 
     for index = 1, count do
         local row = acquireEntryRow(container)
         if row then
-            if previous then
-                row:SetAnchor(TOPLEFT, previous, BOTTOMLEFT, 0, ENTRY_ROW_SPACING)
-                row:SetAnchor(TOPRIGHT, previous, BOTTOMRIGHT, 0, ENTRY_ROW_SPACING)
+            row:ClearAnchors()
+
+            local gap = 0
+            if previousControl then
+                gap = ENTRY_ROW_SPACING + pendingSpacing
+                row:SetAnchor(TOPLEFT, previousControl, BOTTOMLEFT, 0, gap)
+                row:SetAnchor(TOPRIGHT, previousControl, BOTTOMRIGHT, 0, gap)
+                totalHeight = totalHeight + gap
             else
                 row:SetAnchor(TOPLEFT, container, TOPLEFT, 0, 0)
                 row:SetAnchor(TOPRIGHT, container, TOPRIGHT, 0, 0)
@@ -1378,12 +1864,49 @@ function Rows.BuildObjectives(container, list, options)
 
             Rows.ApplyEntryRow(row, sequence[index], options)
             cache.rows[index] = row
-            previous = row
-            if index > 1 then
-                totalHeight = totalHeight + ENTRY_ROW_SPACING
-            end
+
             totalHeight = totalHeight + rowHeight
+            previousControl = row
+            pendingSpacing = 0
+
+            local subrows = row._subrows or {}
+            local visibleIndex = 0
+            for _, entry in ipairs(subrows) do
+                local control = entry and entry.control
+                local isVisible = control ~= nil and entry.visible ~= false and entry.hidden ~= true
+                if isVisible then
+                    control:ClearAnchors()
+                    local spacing = (visibleIndex == 0) and firstSubSpacing or betweenSubSpacing
+                    control:SetAnchor(TOPLEFT, previousControl, BOTTOMLEFT, 0, spacing)
+                    control:SetAnchor(TOPRIGHT, previousControl, BOTTOMRIGHT, 0, spacing)
+                    if control.SetHidden then
+                        control:SetHidden(false)
+                    end
+                    local subHeight = Rows.GetSubrowHeight(entry.kind)
+                    if control.SetHeight then
+                        control:SetHeight(subHeight)
+                    end
+                    totalHeight = totalHeight + spacing + subHeight
+                    previousControl = control
+                    visibleIndex = visibleIndex + 1
+                elseif control then
+                    if control.SetHidden then
+                        control:SetHidden(true)
+                    end
+                    if control.ClearAnchors then
+                        control:ClearAnchors()
+                    end
+                end
+            end
+
+            if visibleIndex > 0 then
+                pendingSpacing = trailingSubSpacing
+            end
         end
+    end
+
+    if previousControl and pendingSpacing > 0 then
+        totalHeight = totalHeight + pendingSpacing
     end
 
     if container.SetHeight then
@@ -1408,6 +1931,73 @@ end
 
 function Rows.GetLastHeight()
     return coerceNumber(lastHeight)
+end
+
+function Rows.GetSubrowHeight(kind)
+    local resolvedKind = normalizeSubrowKind(kind)
+    local height = ROWS_HEIGHTS[resolvedKind] or ROWS_HEIGHTS[kind]
+    if type(height) ~= "number" then
+        return 0
+    end
+    if height ~= height then
+        return 0
+    end
+    if height < 0 then
+        return 0
+    end
+    return height
+end
+
+function Rows.GetSubrowsBlockHeight(subrows)
+    if type(subrows) ~= "table" then
+        return 0
+    end
+
+    local total = 0
+    local visibleCount = 0
+
+    local firstSpacing = resolveSubrowSpacing("spacing_entry_to_first_sub")
+    local betweenSpacing = resolveSubrowSpacing("spacing_between_subrows")
+    local trailingSpacing = resolveSubrowSpacing("spacing_after_last_sub")
+
+    for index = 1, #subrows do
+        local entry = subrows[index]
+        if type(entry) == "table" then
+            local visible
+            if entry.visible ~= nil then
+                visible = entry.visible ~= false
+            elseif entry.hidden ~= nil then
+                visible = entry.hidden ~= true
+            elseif type(entry.source) == "table" then
+                local source = entry.source
+                if source.visible ~= nil then
+                    visible = source.visible ~= false
+                elseif source.hidden ~= nil then
+                    visible = source.hidden ~= true
+                end
+            end
+
+            if visible == nil then
+                visible = true
+            end
+
+            if visible then
+                visibleCount = visibleCount + 1
+                if visibleCount == 1 then
+                    total = total + firstSpacing
+                else
+                    total = total + betweenSpacing
+                end
+                total = total + Rows.GetSubrowHeight(entry.kind or (entry.source and entry.source.kind))
+            end
+        end
+    end
+
+    if visibleCount > 0 then
+        total = total + trailingSpacing
+    end
+
+    return total
 end
 
 function Rows.GetCategoryRowHeight(expanded)
