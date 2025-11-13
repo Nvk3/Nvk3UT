@@ -840,12 +840,44 @@ function Nvk3UT_StateInit:InitDefaults()
     self.defaultSV = MergeDefaults(self.defaultSV, defaultSV)
 
     local trackerDefaults = EnsureTable(self.defaultSV, "TrackerDefaults")
+    local questDefaults = trackerDefaults.QuestDefaults
+    local achievementDefaults = trackerDefaults.AchievementDefaults
+
+    if questDefaults ~= nil then
+        trackerDefaults.QuestDefaults = questDefaults
+    end
+
     trackerDefaults.EndeavorDefaults = MergeDefaults(trackerDefaults.EndeavorDefaults, defaultSV.TrackerDefaults.EndeavorDefaults)
+
+    if achievementDefaults ~= nil then
+        trackerDefaults.AchievementDefaults = achievementDefaults
+    end
+
     trackerDefaults.GoldenDefaults = MergeDefaults(trackerDefaults.GoldenDefaults, defaultSV.TrackerDefaults.GoldenDefaults)
 
     local trackerData = EnsureTable(self.defaultSV, "TrackerData")
+    if trackerData.Quest ~= nil then
+        EnsureTable(trackerData, "Quest")
+    end
+
     EnsureTable(trackerData, "Endeavor")
+
+    if trackerData.Achievement ~= nil then
+        EnsureTable(trackerData, "Achievement")
+    end
+
     EnsureTable(trackerData, "Golden")
+
+    if isDebugEnabled(Nvk3UT) then
+        local orderParts = { "Quest", "Endeavor", "Achievement", "Golden" }
+        local orderMessage = table.concat(orderParts, " → ")
+
+        if Nvk3UT and type(Nvk3UT.Debug) == "function" then
+            Nvk3UT.Debug("InitDefaults tracker order: %s", orderMessage)
+        elseif d then
+            d(string.format("[Nvk3UT DEBUG] InitDefaults tracker order: %s", orderMessage))
+        end
+    end
 
     return self.defaultSV
 end

@@ -152,7 +152,7 @@ local function debugLog(fmt, ...)
     end
 end
 
-local TRACKER_SECTION_ORDER = { "quest", "endeavor", "golden", "achievement" }
+local TRACKER_SECTION_ORDER = { "quest", "endeavor", "achievement", "golden" }
 local VALID_SECTION_KEYS = {
     quest = "quest",
     endeavor = "endeavor",
@@ -494,7 +494,7 @@ function Rebuild.MarkAllDirty(context)
     return queueSectionsInternal(flags, context)
 end
 
----Queue quests, endeavors, golden, achievements, and layout in a single call.
+---Queue quests, endeavors, achievements, and golden plus layout in a single call.
 ---@param context string|nil
 ---@return boolean triggered
 function Rebuild.All(context)
@@ -504,6 +504,8 @@ function Rebuild.All(context)
     for order = 1, #TRACKER_SECTION_ORDER do
         flags[TRACKER_SECTION_ORDER[order]] = true
     end
+
+    debugLog("Rebuild.All queue order: %s", table.concat(TRACKER_SECTION_ORDER, " → "))
 
     return queueSectionsInternal(flags, context)
 end
@@ -519,7 +521,7 @@ function Rebuild.Sections(sections, context)
     return queueSectionsInternal(flags, context)
 end
 
----Queue all tracker sections to rebuild.
+---Queue all tracker sections to rebuild (quest → endeavor → achievement → golden).
 ---@param context string|nil
 ---@return boolean triggered
 function Rebuild.Trackers(context)
