@@ -1,3 +1,9 @@
+local GEVENTS_SWITCH_REMOVE = true -- Marker: delete all TempEvent bootstrap in GEVENTS_*_SWITCH
+
+-- [GEVENTS_SWITCH_REMOVE]
+-- This file registers TEMP ESO event hooks for Golden during SHIM.
+-- All registrations and InitKick are removed when events move to Events/* at GEVENTS_*_SWITCH.
+
 local addonName = "Nvk3UT"
 
 Nvk3UT = Nvk3UT or {}
@@ -70,6 +76,45 @@ end
 
 local TEMP_EVENT_NAMESPACE = MODULE_TAG .. ".TempEvents"
 local tempEventsRegistered = false
+
+local function resolveDiagnostics()
+    local root = Nvk3UT
+    if type(root) == "table" then
+        local diagnostics = root.Diagnostics
+        if type(diagnostics) == "table" then
+            return diagnostics
+        end
+    end
+
+    if type(Nvk3UT_Diagnostics) == "table" then
+        return Nvk3UT_Diagnostics
+    end
+
+    return nil
+end
+
+local function isDiagnosticsDebugEnabled()
+    local diagnostics = resolveDiagnostics()
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(diagnostics.IsDebugEnabled, diagnostics)
+        if ok and enabled then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function emitTempEventsActiveDebug()
+    if not isDiagnosticsDebugEnabled() then
+        return
+    end
+
+    local diagnostics = resolveDiagnostics()
+    if diagnostics and type(diagnostics.Debug) == "function" then
+        pcall(diagnostics.Debug, diagnostics, "Golden TempEvents active [GEVENTS_SWITCH_REMOVE]. This bootstrap will be removed on GEVENTS_*_SWITCH.")
+    end
+end
 
 local function deferInitKick()
     if not state.initialized then
@@ -166,11 +211,39 @@ local function InitializeTempEvents()
         return
     end
 
+    -- [GEVENTS_SWITCH_REMOVE] TempEvent registration (to be deleted on SWITCH)
     registerTempEvent(eventManager, "EVENT_TIMED_ACTIVITIES_UPDATED", EVENT_TIMED_ACTIVITIES_UPDATED, "OnTimedActivitiesUpdated")
+    -- [GEVENTS_SWITCH_REMOVE] TempEvent registration (to be deleted on SWITCH)
     registerTempEvent(eventManager, "EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED", EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED, "OnTimedActivityProgressUpdated")
+    -- [GEVENTS_SWITCH_REMOVE] TempEvent registration (to be deleted on SWITCH)
     registerTempEvent(eventManager, "EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED", EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED, "OnTimedActivitySystemStatusUpdated")
 
     tempEventsRegistered = true
+
+    -- [GEVENTS_SWITCH_REMOVE] END of TempEvent registrations
+end
+
+local function UnregisterTempEvents_Golden()
+    -- [GEVENTS_SWITCH_REMOVE] Call this during GEVENTS_*_SWITCH to cleanly detach TempEvents
+
+    local eventManager = rawget(_G, "EVENT_MANAGER")
+    if eventManager == nil then
+        return
+    end
+
+    local unregisterFn = eventManager.UnregisterForEvent
+    if type(unregisterFn) ~= "function" then
+        return
+    end
+
+    local function unregister(eventName)
+        local namespace = string.format("%s.%s", TEMP_EVENT_NAMESPACE, tostring(eventName))
+        pcall(unregisterFn, eventManager, namespace)
+    end
+
+    unregister("EVENT_TIMED_ACTIVITIES_UPDATED")
+    unregister("EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED")
+    unregister("EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED")
 end
 
 local function ClearChildren(control)
@@ -321,7 +394,10 @@ function GoldenTracker.Init(parentControl)
 
     InitializeTempEvents()
 
+    -- [GEVENTS_SWITCH_REMOVE] Deferred InitKick (SHIM)
     deferInitKick()
+
+    emitTempEventsActiveDebug()
 
     safeDebug("Init")
 end

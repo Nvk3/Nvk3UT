@@ -237,6 +237,7 @@ function Controller:GetViewModel()
     return ensureViewModel()
 end
 
+-- [GEVENTS_SWITCH_REMOVE] InitKick is SHIM-only; remove when lifecycle moves to Events/*
 function Controller:InitKickOnce()
     if type(self) ~= "table" then
         return
@@ -275,6 +276,7 @@ function Controller:InitKickOnce()
     emitInitKickDebug()
 end
 
+-- [GEVENTS_SWITCH_REMOVE] Handler is SHIM target for TempEvents; Events/* will call equivalent APIs after SWITCH
 function Controller:OnTimedActivitiesUpdated(eventCode, ...)
     if type(self) == "table" and type(self.InitKickOnce) == "function" then
         self:InitKickOnce()
@@ -282,6 +284,7 @@ function Controller:OnTimedActivitiesUpdated(eventCode, ...)
     requestFullSync(self, "activities_updated")
 end
 
+-- [GEVENTS_SWITCH_REMOVE] Handler is SHIM target for TempEvents; Events/* will call equivalent APIs after SWITCH
 function Controller:OnTimedActivityProgressUpdated(eventCode, ...)
     if type(self) == "table" and type(self.InitKickOnce) == "function" then
         self:InitKickOnce()
@@ -289,6 +292,7 @@ function Controller:OnTimedActivityProgressUpdated(eventCode, ...)
     doProgressRefresh(self)
 end
 
+-- [GEVENTS_SWITCH_REMOVE] Handler is SHIM target for TempEvents; Events/* will call equivalent APIs after SWITCH
 function Controller:OnTimedActivitySystemStatusUpdated(eventCode, ...)
     if type(self) == "table" and type(self.InitKickOnce) == "function" then
         self:InitKickOnce()
