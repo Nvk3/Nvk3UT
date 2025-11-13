@@ -44,10 +44,11 @@ Journal/Nvk3UT_TodoSummary.lua
 Journal/Nvk3UT_CompletedCategory.lua
 Journal/Nvk3UT_CompletedSummary.lua
 ## === Runtime ===
-## Runtime order: Runtime -> Host -> HostLayout (Endeavor sits between Quest & Achievement at layout time)
+## Runtime order: Runtime -> Host -> HostLayout (Quest -> Endeavor -> Achievement -> Golden enforced via layout)
 Runtime/Nvk3UT_TrackerRuntime.lua
 Runtime/Nvk3UT_TrackerHost.lua
 Runtime/Nvk3UT_TrackerHostLayout.lua
+## Golden kommt nach Achievement (HostLayout enforced). Falls später Runtime-Dateien für Golden hinzukommen, diese unter Achievement-relevanten Runtime-Einträgen einfügen.
 ## === Tracker ===
 ## Tracker order: Quest -> Endeavor -> Achievement
 Nvk3UT_QuestTracker.xml
