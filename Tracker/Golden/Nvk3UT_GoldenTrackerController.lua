@@ -13,6 +13,8 @@ local state = {
     viewModel = nil,
 }
 
+local INIT_KICK_FLAG_FIELD = "_didInitKick"
+
 local MODULE_TAG = addonName .. ".GoldenTrackerController"
 
 local function safeDebug(message, ...)
@@ -68,6 +70,17 @@ local function emitShimDebug(eventName)
     local diagnostics = resolveDiagnostics()
     if diagnostics and type(diagnostics.Debug) == "function" then
         pcall(diagnostics.Debug, diagnostics, string.format("Golden SHIM: %s → refresh queued", tostring(eventName)))
+    end
+end
+
+local function emitInitKickDebug()
+    if not isDiagnosticsDebugEnabled() then
+        return
+    end
+
+    local diagnostics = resolveDiagnostics()
+    if diagnostics and type(diagnostics.Debug) == "function" then
+        pcall(diagnostics.Debug, diagnostics, "Golden InitKick → initial refresh queued")
     end
 end
 
@@ -175,15 +188,61 @@ function Controller:GetViewModel()
     return ensureViewModel()
 end
 
+function Controller:InitKickOnce()
+    if type(self) ~= "table" then
+        return
+    end
+
+    if self[INIT_KICK_FLAG_FIELD] then
+        return
+    end
+
+    local root = Nvk3UT
+    if type(root) ~= "table" then
+        return
+    end
+
+    local model = root.GoldenModel
+    if type(model) ~= "table" or type(model.RefreshFromGame) ~= "function" then
+        return
+    end
+
+    local runtime = root.TrackerRuntime
+    if type(runtime) ~= "table" or type(runtime.QueueDirty) ~= "function" then
+        return
+    end
+
+    if type(self.MarkDirty) ~= "function" then
+        return
+    end
+
+    self[INIT_KICK_FLAG_FIELD] = true
+
+    model:RefreshFromGame()
+    self:MarkDirty()
+    runtime:QueueDirty("golden")
+
+    emitInitKickDebug()
+end
+
 function Controller:OnTimedActivitiesUpdated(eventCode, ...)
+    if type(self) == "table" and type(self.InitKickOnce) == "function" then
+        self:InitKickOnce()
+    end
     processTimedActivityEvent(self, "EVENT_TIMED_ACTIVITIES_UPDATED")
 end
 
 function Controller:OnTimedActivityProgressUpdated(eventCode, ...)
+    if type(self) == "table" and type(self.InitKickOnce) == "function" then
+        self:InitKickOnce()
+    end
     processTimedActivityEvent(self, "EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED")
 end
 
 function Controller:OnTimedActivitySystemStatusUpdated(eventCode, ...)
+    if type(self) == "table" and type(self.InitKickOnce) == "function" then
+        self:InitKickOnce()
+    end
     processTimedActivityEvent(self, "EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED")
 end
 

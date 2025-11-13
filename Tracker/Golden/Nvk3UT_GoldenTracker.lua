@@ -21,6 +21,8 @@ local state = {
 -- TEMP EVENT BOOTSTRAP (INTRO) now SHIM-routed to Controller handlers.
 -- Registrations bleiben hier bis GEVENTS_*_SWITCH, danach werden nur die Registrierungen verlagert.
 -- Handler-Signaturen bleiben stabil und werden weiterverwendet.
+-- SHIM InitKick: temporary startup refresh to seed Golden data.
+-- Will remain until GEVENTS_* migration centralizes lifecycle kicks.
 
 local function safeDebug(message, ...)
     local debugFn = Nvk3UT and Nvk3UT.Debug
@@ -67,6 +69,33 @@ end
 
 local TEMP_EVENT_NAMESPACE = MODULE_TAG .. ".TempEvents"
 local tempEventsRegistered = false
+
+local function deferInitKick()
+    if not state.initialized then
+        return
+    end
+
+    local root = Nvk3UT
+    if type(root) ~= "table" then
+        return
+    end
+
+    local controller = root.GoldenTrackerController
+    if type(controller) ~= "table" or type(controller.InitKickOnce) ~= "function" then
+        return
+    end
+
+    local function trigger()
+        pcall(controller.InitKickOnce, controller)
+    end
+
+    local callLater = rawget(_G, "zo_callLater")
+    if type(callLater) == "function" then
+        pcall(callLater, trigger, 0)
+    else
+        trigger()
+    end
+end
 
 local function callMethod(target, methodName, ...)
     if type(target) ~= "table" then
@@ -290,6 +319,8 @@ function GoldenTracker.Init(parentControl)
     state.initialized = true
 
     InitializeTempEvents()
+
+    deferInitKick()
 
     safeDebug("Init")
 end
