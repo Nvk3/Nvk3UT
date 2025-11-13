@@ -1036,67 +1036,6 @@ local function ensureUi(container)
     local baseName = (containerName or "Nvk3UT_Endeavor") .. "_"
     ui.baseName = baseName
 
-    local category = ui.category
-    if type(category) ~= "table" then
-        local controlName = baseName .. "Category"
-        local control = GetControl(controlName)
-        if not control then
-            control = wm:CreateControl(controlName, container, CT_CONTROL)
-        else
-            control:SetParent(container)
-        end
-        control:SetResizeToFitDescendents(false)
-        control:SetHeight(CATEGORY_HEADER_HEIGHT)
-        control:SetMouseEnabled(true)
-        control:SetHidden(false)
-        control:SetHandler("OnMouseUp", function(_, button, upInside)
-            if button == MOUSE_BUTTON_INDEX_LEFT and upInside then
-                toggleRootExpanded()
-            end
-        end)
-
-        local chevronName = controlName .. "Chevron"
-        local chevron = GetControl(chevronName)
-        if not chevron then
-            chevron = wm:CreateControl(chevronName, control, CT_TEXTURE)
-        end
-        chevron:SetParent(control)
-        chevron:SetMouseEnabled(false)
-        chevron:SetHidden(false)
-        chevron:SetDimensions(CATEGORY_CHEVRON_SIZE, CATEGORY_CHEVRON_SIZE)
-        chevron:ClearAnchors()
-        chevron:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
-        chevron:SetTexture(CHEVRON_TEXTURES.collapsed)
-
-        local labelName = controlName .. "Label"
-        local label = GetControl(labelName)
-        if not label then
-            label = wm:CreateControl(labelName, control, CT_LABEL)
-        end
-        label:SetParent(control)
-        label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
-        label:SetVerticalAlignment(TEXT_ALIGN_TOP)
-        label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
-        label:ClearAnchors()
-        label:SetAnchor(TOPLEFT, chevron, TOPRIGHT, CATEGORY_LABEL_OFFSET_X, 0)
-        label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
-        applyLabelFont(label, DEFAULT_CATEGORY_FONT, DEFAULT_CATEGORY_FONT)
-
-        ui.category = {
-            control = control,
-            label = label,
-            chevron = chevron,
-        }
-    else
-        local control = category.control
-        if control then
-            control:SetParent(container)
-            control:SetHeight(CATEGORY_HEADER_HEIGHT)
-        end
-        local label = category.label
-        applyLabelFont(label, DEFAULT_CATEGORY_FONT, DEFAULT_CATEGORY_FONT)
-    end
-
     local daily = ui.daily
     if type(daily) ~= "table" then
         local controlName = baseName .. "Daily"
@@ -1339,398 +1278,453 @@ function EndeavorTracker.Refresh(viewModel)
         EndeavorTracker._building = false
     end
 
-    local container = state.container
-    if container == nil then
-        release()
-        return
-    end
-
-    local vm = type(viewModel) == "table" and viewModel or {}
-    local categoryVm = type(vm.category) == "table" and vm.category or {}
-    local dailyVm = type(vm.daily) == "table" and vm.daily or {}
-    local weeklyVm = type(vm.weekly) == "table" and vm.weekly or {}
-    local settings = type(vm.settings) == "table" and vm.settings or {}
-
-    local enabled = settings.enabled ~= false
-    local showCounts = settings.showCounts ~= false
-    local completedHandling = settings.completedHandling == "recolor" and "recolor" or "hide"
-    local overrideColors = type(settings.colors) == "table" and settings.colors or nil
-    local fontsTable = type(settings.fonts) == "table" and settings.fonts or {}
-
-    local categoryFont = fontsTable.category or DEFAULT_CATEGORY_FONT
-    local sectionFont = fontsTable.section or DEFAULT_SECTION_FONT
-    local objectiveFont = fontsTable.objective or sectionFont
-    local rowHeight = math.max(fontsTable.rowHeight or 20, 20)
-
-    local rowsOptionsTemplate = type(settings.rowsOptions) == "table" and settings.rowsOptions or nil
-    local rowsOptions = {}
-    if rowsOptionsTemplate then
-        for key, value in pairs(rowsOptionsTemplate) do
-            rowsOptions[key] = value
-        end
-    end
-    rowsOptions.colorKind = rowsOptions.colorKind or ENDEAVOR_TRACKER_COLOR_KIND
-    rowsOptions.defaultRole = rowsOptions.defaultRole or "objectiveText"
-    rowsOptions.completedRole = rowsOptions.completedRole or "completed"
-    rowsOptions.font = objectiveFont
-    rowsOptions.rowHeight = rowHeight
-    rowsOptions.colors = overrideColors
-    rowsOptions.completedHandling = completedHandling
-
-    local dailyObjectivesList = type(dailyVm.objectives) == "table" and dailyVm.objectives or {}
-    local weeklyObjectivesList = type(weeklyVm.objectives) == "table" and weeklyVm.objectives or {}
-
-    safeDebug("[EndeavorTracker.UI] Refresh: daily=%d weekly=%d", #dailyObjectivesList, #weeklyObjectivesList)
-
-    local ui = ensureUi(container)
-    if type(ui) ~= "table" then
-        release()
-        return
-    end
-
-    local categoryControl = ui.category and ui.category.control
-    local categoryLabel = ui.category and ui.category.label
-    local categoryChevron = ui.category and ui.category.chevron
-    local dailyControl = ui.daily and ui.daily.control
-    local dailyLabel = ui.daily and ui.daily.label
-    local weeklyControl = ui.weekly and ui.weekly.control
-    local weeklyLabel = ui.weekly and ui.weekly.label
-    local dailyObjectivesControl = ui.dailyObjectives and ui.dailyObjectives.control
-    local weeklyObjectivesControl = ui.weeklyObjectives and ui.weeklyObjectives.control
-    local rows = getRowsModule()
-
-    local function resolveTitle(value, fallback)
-        if value == nil or value == "" then
-            return fallback
-        end
-        return tostring(value)
-    end
-
-    local function shouldShowCountsFor(entryVm)
-        local entry = type(entryVm) == "table" and entryVm or nil
-        local kind = entry and entry.kind or nil
-        if kind == "dailyHeader" or kind == "weeklyHeader" then
-            return true
-        end
-        if entry == dailyVm or entry == weeklyVm then
-            return true
-        end
-        return showCounts
-    end
-
-    applyLabelFont(categoryLabel, categoryFont, DEFAULT_CATEGORY_FONT)
-    applyLabelFont(dailyLabel, sectionFont, DEFAULT_SECTION_FONT)
-    applyLabelFont(weeklyLabel, sectionFont, DEFAULT_SECTION_FONT)
-
-    if not enabled then
-        if categoryLabel and categoryLabel.SetText then
-            categoryLabel:SetText(resolveTitle(categoryVm.title, "Bestrebungen"))
-        end
-        if dailyLabel and dailyLabel.SetText then
-            local dailyTitle = resolveTitle(dailyVm.title or "Tägliche Bestrebungen", "Tägliche Bestrebungen")
-            dailyLabel:SetText(dailyTitle)
-        end
-        if weeklyLabel and weeklyLabel.SetText then
-            local weeklyTitle = resolveTitle(weeklyVm.title or "Wöchentliche Bestrebungen", "Wöchentliche Bestrebungen")
-            weeklyLabel:SetText(weeklyTitle)
-        end
-
-        if rows and type(rows.ClearObjectives) == "function" then
-            if dailyObjectivesControl then
-                rows.ClearObjectives(dailyObjectivesControl)
-            end
-            if weeklyObjectivesControl then
-                rows.ClearObjectives(weeklyObjectivesControl)
-            end
-        else
-            if dailyObjectivesControl and dailyObjectivesControl.SetHeight then
-                dailyObjectivesControl:SetHeight(0)
-            end
-            if weeklyObjectivesControl and weeklyObjectivesControl.SetHeight then
-                weeklyObjectivesControl:SetHeight(0)
+    local function handleError(err)
+        local message = tostring(err)
+        safeDebug("[EndeavorTracker.UI] Refresh error: %s", message)
+        local traceback
+        if type(debug) == "table" and type(debug.traceback) == "function" then
+            traceback = debug.traceback(message, 2)
+            if traceback ~= nil then
+                safeDebug("[EndeavorTracker.UI] Refresh traceback: %s", traceback)
             end
         end
-
-        if dailyObjectivesControl and dailyObjectivesControl.SetHidden then
-            dailyObjectivesControl:SetHidden(true)
-        end
-        if weeklyObjectivesControl and weeklyObjectivesControl.SetHidden then
-            weeklyObjectivesControl:SetHidden(true)
-        end
-        if dailyControl and dailyControl.SetHidden then
-            dailyControl:SetHidden(true)
-        end
-        if weeklyControl and weeklyControl.SetHidden then
-            weeklyControl:SetHidden(true)
-        end
-        if categoryControl and categoryControl.SetHidden then
-            categoryControl:SetHidden(true)
-        end
-
-        if container.SetHidden then
-            container:SetHidden(true)
-        end
-
-        state.currentHeight = 0
-        if container.SetHeight then
-            container:SetHeight(0)
-        end
-
-        release()
-        return
+        return traceback or message
     end
 
-    if container.SetHidden then
-        container:SetHidden(false)
-    end
+    local ok, err = xpcall(function()
+            local container = state.container
+            if container == nil then
+                return
+            end
 
-    local categoryTitle = resolveTitle(categoryVm.title, "Bestrebungen")
-    local categoryRemaining = tonumber(categoryVm.remaining) or 0
-    categoryRemaining = math.max(0, math.floor(categoryRemaining + 0.5))
-    if categoryLabel and categoryLabel.SetText then
-        local formatHeader = Utils and Utils.FormatCategoryHeaderText
-        local categoryShowCounts = shouldShowCountsFor(categoryVm)
-        if type(formatHeader) == "function" then
-            categoryLabel:SetText(formatHeader(categoryTitle, categoryRemaining, categoryShowCounts))
-        elseif categoryShowCounts then
-            categoryLabel:SetText(string.format("%s (%d)", categoryTitle, categoryRemaining))
-        else
-            categoryLabel:SetText(categoryTitle)
-        end
-    end
+            local vm = type(viewModel) == "table" and viewModel or {}
+            local categoryVm = type(vm.category) == "table" and vm.category or {}
+            local dailyVm = type(vm.daily) == "table" and vm.daily or {}
+            local weeklyVm = type(vm.weekly) == "table" and vm.weekly or {}
+            local settings = type(vm.settings) == "table" and vm.settings or {}
 
-    local categoryExpanded = categoryVm.expanded == true
-    if categoryChevron and categoryChevron.SetTexture then
-        local texturePath = categoryExpanded and CHEVRON_TEXTURES.expanded or CHEVRON_TEXTURES.collapsed
-        categoryChevron:SetTexture(texturePath)
-    end
+            local enabled = settings.enabled ~= false
+            local showCounts = settings.showCounts ~= false
+            local completedHandling = settings.completedHandling == "recolor" and "recolor" or "hide"
+            local overrideColors = type(settings.colors) == "table" and settings.colors or nil
+            local fontsTable = type(settings.fonts) == "table" and settings.fonts or {}
 
-    if categoryLabel then
-        local role = categoryExpanded and CATEGORY_COLOR_ROLE_EXPANDED or CATEGORY_COLOR_ROLE_COLLAPSED
-        applyLabelColor(categoryLabel, role, overrideColors)
-    end
+            local categoryFont = fontsTable.category or DEFAULT_CATEGORY_FONT
+            local sectionFont = fontsTable.section or DEFAULT_SECTION_FONT
+            local objectiveFont = fontsTable.objective or sectionFont
+            local rowHeight = math.max(fontsTable.rowHeight or 20, 20)
 
-    if dailyLabel and dailyLabel.SetText then
-        local dailyTitle = resolveTitle(dailyVm.title or "Tägliche Bestrebungen", "Tägliche Bestrebungen")
-        local dailyShowCounts = shouldShowCountsFor(dailyVm)
-        if dailyShowCounts then
-            local completed = dailyVm.displayCompleted or dailyVm.completed
-            local total = dailyVm.displayLimit or dailyVm.total
-            dailyLabel:SetText(string.format("%s %s", dailyTitle, FormatParensCount(completed, total)))
-        else
-            dailyLabel:SetText(dailyTitle)
-        end
-    end
+            local rowsOptionsTemplate = type(settings.rowsOptions) == "table" and settings.rowsOptions or nil
+            local rowsOptions = {}
+            if rowsOptionsTemplate then
+                for key, value in pairs(rowsOptionsTemplate) do
+                    rowsOptions[key] = value
+                end
+            end
+            rowsOptions.colorKind = rowsOptions.colorKind or ENDEAVOR_TRACKER_COLOR_KIND
+            rowsOptions.defaultRole = rowsOptions.defaultRole or "objectiveText"
+            rowsOptions.completedRole = rowsOptions.completedRole or "completed"
+            rowsOptions.font = objectiveFont
+            rowsOptions.rowHeight = rowHeight
+            rowsOptions.colors = overrideColors
+            rowsOptions.completedHandling = completedHandling
 
-    if weeklyLabel and weeklyLabel.SetText then
-        local weeklyTitle = resolveTitle(weeklyVm.title or "Wöchentliche Bestrebungen", "Wöchentliche Bestrebungen")
-        local weeklyShowCounts = shouldShowCountsFor(weeklyVm)
-        if weeklyShowCounts then
-            local completed = weeklyVm.displayCompleted or weeklyVm.completed
-            local total = weeklyVm.displayLimit or weeklyVm.total
-            weeklyLabel:SetText(string.format("%s %s", weeklyTitle, FormatParensCount(completed, total)))
-        else
-            weeklyLabel:SetText(weeklyTitle)
-        end
-    end
+            local dailyObjectivesList = type(dailyVm.objectives) == "table" and dailyVm.objectives or {}
+            local weeklyObjectivesList = type(weeklyVm.objectives) == "table" and weeklyVm.objectives or {}
 
-    local dailyExpanded = categoryExpanded and dailyVm.expanded == true
-    local weeklyExpanded = categoryExpanded and weeklyVm.expanded == true
+            safeDebug("[EndeavorTracker.UI] Refresh: daily=%d weekly=%d", #dailyObjectivesList, #weeklyObjectivesList)
 
-    if dailyLabel then
-        applyLabelColor(dailyLabel, ENTRY_COLOR_ROLE_DEFAULT, overrideColors)
-    end
+            local ui = ensureUi(container)
+            if type(ui) ~= "table" then
+                return
+            end
 
-    if weeklyLabel then
-        applyLabelColor(weeklyLabel, ENTRY_COLOR_ROLE_DEFAULT, overrideColors)
-    end
+            local rows = getRowsModule()
+            if rows and type(rows.ResetCategoryPool) == "function" then
+                rows.ResetCategoryPool()
+            end
 
-    if categoryControl and categoryControl.SetHidden then
-        categoryControl:SetHidden(false)
-    end
+            local previousCategoryRow = type(ui.category) == "table" and ui.category or nil
+            local categoryRow = nil
+            if rows and type(rows.AcquireCategoryRow) == "function" then
+                categoryRow = rows.AcquireCategoryRow(container)
+            end
 
-    if dailyControl and dailyControl.SetHidden then
-        dailyControl:SetHidden(not categoryExpanded)
-    end
-    if weeklyControl and weeklyControl.SetHidden then
-        weeklyControl:SetHidden(not categoryExpanded)
-    end
+            if not categoryRow then
+                categoryRow = previousCategoryRow
+            end
 
-    if rows then
-        if dailyObjectivesControl then
-            if dailyExpanded and type(rows.BuildObjectives) == "function" then
-                rows.BuildObjectives(dailyObjectivesControl, dailyObjectivesList, rowsOptions)
-                dailyObjectivesControl:SetHidden(false)
+            ui.category = categoryRow
+
+            local categoryControl = categoryRow and categoryRow.control
+            local categoryLabel = categoryRow and categoryRow.label
+            local categoryChevron = categoryRow and categoryRow.chevron
+            local dailyControl = ui.daily and ui.daily.control
+            local dailyLabel = ui.daily and ui.daily.label
+            local weeklyControl = ui.weekly and ui.weekly.control
+            local weeklyLabel = ui.weekly and ui.weekly.label
+            local dailyObjectivesControl = ui.dailyObjectives and ui.dailyObjectives.control
+            local weeklyObjectivesControl = ui.weeklyObjectives and ui.weeklyObjectives.control
+
+            local function resolveTitle(value, fallback)
+                if value == nil or value == "" then
+                    return fallback
+                end
+                return tostring(value)
+            end
+
+            local function shouldShowCountsFor(entryVm)
+                local entry = type(entryVm) == "table" and entryVm or nil
+                local kind = entry and entry.kind or nil
+                if kind == "dailyHeader" or kind == "weeklyHeader" then
+                    return true
+                end
+                if entry == dailyVm or entry == weeklyVm then
+                    return true
+                end
+                return showCounts
+            end
+
+            applyLabelFont(categoryLabel, categoryFont, DEFAULT_CATEGORY_FONT)
+            applyLabelFont(dailyLabel, sectionFont, DEFAULT_SECTION_FONT)
+            applyLabelFont(weeklyLabel, sectionFont, DEFAULT_SECTION_FONT)
+
+            local formatCategoryHeader = Utils and Utils.FormatCategoryHeaderText
+            local categoryTitle = resolveTitle(categoryVm.title, "Bestrebungen")
+            local categoryRemaining = tonumber(categoryVm.remaining) or 0
+            categoryRemaining = math.max(0, math.floor(categoryRemaining + 0.5))
+            local categoryExpanded = categoryVm.expanded == true
+            local categoryShowCounts = enabled and shouldShowCountsFor(categoryVm)
+
+            local appliedCategoryRow = false
+            if categoryRow and rows and type(rows.ApplyCategoryRow) == "function" then
+                rows.ApplyCategoryRow(categoryRow, {
+                    title = categoryTitle,
+                    remaining = categoryRemaining,
+                    showCounts = categoryShowCounts,
+                    expanded = categoryExpanded,
+                    formatHeader = formatCategoryHeader,
+                    overrideColors = overrideColors,
+                    textures = CHEVRON_TEXTURES,
+                    colorRoles = {
+                        expanded = CATEGORY_COLOR_ROLE_EXPANDED,
+                        collapsed = CATEGORY_COLOR_ROLE_COLLAPSED,
+                    },
+                    rowsOptions = rowsOptions,
+                    onToggle = toggleRootExpanded,
+                })
+                appliedCategoryRow = true
+            end
+
+            if not appliedCategoryRow then
+                if categoryLabel and categoryLabel.SetText then
+                    if type(formatCategoryHeader) == "function" then
+                        categoryLabel:SetText(formatCategoryHeader(categoryTitle, categoryRemaining, categoryShowCounts))
+                    elseif categoryShowCounts then
+                        categoryLabel:SetText(string.format("%s (%d)", categoryTitle, categoryRemaining))
+                    else
+                        categoryLabel:SetText(categoryTitle)
+                    end
+                end
+
+                if categoryChevron and categoryChevron.SetTexture then
+                    local texturePath = categoryExpanded and CHEVRON_TEXTURES.expanded or CHEVRON_TEXTURES.collapsed
+                    categoryChevron:SetTexture(texturePath)
+                end
+
+                if categoryLabel then
+                    local role = categoryExpanded and CATEGORY_COLOR_ROLE_EXPANDED or CATEGORY_COLOR_ROLE_COLLAPSED
+                    applyLabelColor(categoryLabel, role, overrideColors)
+                end
+            end
+
+            if not enabled then
+                if dailyLabel and dailyLabel.SetText then
+                    local dailyTitle = resolveTitle(dailyVm.title or "Tägliche Bestrebungen", "Tägliche Bestrebungen")
+                    dailyLabel:SetText(dailyTitle)
+                end
+                if weeklyLabel and weeklyLabel.SetText then
+                    local weeklyTitle = resolveTitle(weeklyVm.title or "Wöchentliche Bestrebungen", "Wöchentliche Bestrebungen")
+                    weeklyLabel:SetText(weeklyTitle)
+                end
+
+                if rows and type(rows.ClearObjectives) == "function" then
+                    if dailyObjectivesControl then
+                        rows.ClearObjectives(dailyObjectivesControl)
+                    end
+                    if weeklyObjectivesControl then
+                        rows.ClearObjectives(weeklyObjectivesControl)
+                    end
+                else
+                    if dailyObjectivesControl and dailyObjectivesControl.SetHeight then
+                        dailyObjectivesControl:SetHeight(0)
+                    end
+                    if weeklyObjectivesControl and weeklyObjectivesControl.SetHeight then
+                        weeklyObjectivesControl:SetHeight(0)
+                    end
+                end
+
+                if dailyObjectivesControl and dailyObjectivesControl.SetHidden then
+                    dailyObjectivesControl:SetHidden(true)
+                end
+                if weeklyObjectivesControl and weeklyObjectivesControl.SetHidden then
+                    weeklyObjectivesControl:SetHidden(true)
+                end
+                if dailyControl and dailyControl.SetHidden then
+                    dailyControl:SetHidden(true)
+                end
+                if weeklyControl and weeklyControl.SetHidden then
+                    weeklyControl:SetHidden(true)
+                end
+                if categoryControl and categoryControl.SetHidden then
+                    categoryControl:SetHidden(true)
+                end
+
+                if container.SetHidden then
+                    container:SetHidden(true)
+                end
+
+                state.currentHeight = 0
+                if container.SetHeight then
+                    container:SetHeight(0)
+                end
+
+                return
+            end
+
+            if container.SetHidden then
+                container:SetHidden(false)
+            end
+
+            if dailyLabel and dailyLabel.SetText then
+                local dailyTitle = resolveTitle(dailyVm.title or "Tägliche Bestrebungen", "Tägliche Bestrebungen")
+                local dailyShowCounts = shouldShowCountsFor(dailyVm)
+                if dailyShowCounts then
+                    local completed = dailyVm.displayCompleted or dailyVm.completed
+                    local total = dailyVm.displayLimit or dailyVm.total
+                    dailyLabel:SetText(string.format("%s %s", dailyTitle, FormatParensCount(completed, total)))
+                else
+                    dailyLabel:SetText(dailyTitle)
+                end
+            end
+
+            if weeklyLabel and weeklyLabel.SetText then
+                local weeklyTitle = resolveTitle(weeklyVm.title or "Wöchentliche Bestrebungen", "Wöchentliche Bestrebungen")
+                local weeklyShowCounts = shouldShowCountsFor(weeklyVm)
+                if weeklyShowCounts then
+                    local completed = weeklyVm.displayCompleted or weeklyVm.completed
+                    local total = weeklyVm.displayLimit or weeklyVm.total
+                    weeklyLabel:SetText(string.format("%s %s", weeklyTitle, FormatParensCount(completed, total)))
+                else
+                    weeklyLabel:SetText(weeklyTitle)
+                end
+            end
+
+            local dailyExpanded = categoryExpanded and dailyVm.expanded == true
+            local weeklyExpanded = categoryExpanded and weeklyVm.expanded == true
+
+            if dailyLabel then
+                applyLabelColor(dailyLabel, ENTRY_COLOR_ROLE_DEFAULT, overrideColors)
+            end
+
+            if weeklyLabel then
+                applyLabelColor(weeklyLabel, ENTRY_COLOR_ROLE_DEFAULT, overrideColors)
+            end
+
+            if categoryControl and categoryControl.SetHidden then
+                categoryControl:SetHidden(false)
+            end
+
+            if dailyControl and dailyControl.SetHidden then
+                dailyControl:SetHidden(not categoryExpanded)
+            end
+            if weeklyControl and weeklyControl.SetHidden then
+                weeklyControl:SetHidden(not categoryExpanded)
+            end
+
+            if rows then
+                if dailyObjectivesControl then
+                    if dailyExpanded and type(rows.BuildObjectives) == "function" then
+                        rows.BuildObjectives(dailyObjectivesControl, dailyObjectivesList, rowsOptions)
+                        dailyObjectivesControl:SetHidden(false)
+                    else
+                        if type(rows.ClearObjectives) == "function" then
+                            rows.ClearObjectives(dailyObjectivesControl)
+                        elseif type(rows.BuildObjectives) == "function" then
+                            rows.BuildObjectives(dailyObjectivesControl, {}, rowsOptions)
+                        elseif dailyObjectivesControl.SetHeight then
+                            dailyObjectivesControl:SetHeight(0)
+                        end
+                        dailyObjectivesControl:SetHidden(true)
+                    end
+                end
+
+                if weeklyObjectivesControl then
+                    if weeklyExpanded and type(rows.BuildObjectives) == "function" then
+                        rows.BuildObjectives(weeklyObjectivesControl, weeklyObjectivesList, rowsOptions)
+                        weeklyObjectivesControl:SetHidden(false)
+                    else
+                        if type(rows.ClearObjectives) == "function" then
+                            rows.ClearObjectives(weeklyObjectivesControl)
+                        elseif type(rows.BuildObjectives) == "function" then
+                            rows.BuildObjectives(weeklyObjectivesControl, {}, rowsOptions)
+                        elseif weeklyObjectivesControl.SetHeight then
+                            weeklyObjectivesControl:SetHeight(0)
+                        end
+                        weeklyObjectivesControl:SetHidden(true)
+                    end
+                end
             else
-                if type(rows.ClearObjectives) == "function" then
-                    rows.ClearObjectives(dailyObjectivesControl)
-                elseif type(rows.BuildObjectives) == "function" then
-                    rows.BuildObjectives(dailyObjectivesControl, {}, rowsOptions)
-                elseif dailyObjectivesControl.SetHeight then
-                    dailyObjectivesControl:SetHeight(0)
+                if dailyObjectivesControl then
+                    dailyObjectivesControl:SetHidden(true)
+                    if dailyObjectivesControl.SetHeight then
+                        dailyObjectivesControl:SetHeight(0)
+                    end
                 end
-                dailyObjectivesControl:SetHidden(true)
+                if weeklyObjectivesControl then
+                    weeklyObjectivesControl:SetHidden(true)
+                    if weeklyObjectivesControl.SetHeight then
+                        weeklyObjectivesControl:SetHeight(0)
+                    end
+                end
             end
-        end
 
-        if weeklyObjectivesControl then
-            if weeklyExpanded and type(rows.BuildObjectives) == "function" then
-                rows.BuildObjectives(weeklyObjectivesControl, weeklyObjectivesList, rowsOptions)
-                weeklyObjectivesControl:SetHidden(false)
+            local layout = getLayoutModule()
+            local layoutContext = {
+                category = { control = categoryControl },
+                categoryExpanded = categoryExpanded,
+                daily = { control = dailyControl },
+                dailyExpanded = dailyVm.expanded == true,
+                dailyObjectives = { control = dailyObjectivesControl, expanded = dailyExpanded },
+                weekly = { control = weeklyControl },
+                weeklyExpanded = weeklyVm.expanded == true,
+                weeklyObjectives = { control = weeklyObjectivesControl, expanded = weeklyExpanded },
+            }
+
+            local measuredHeight = 0
+            if layout and type(layout.Apply) == "function" then
+                local ok, height = pcall(layout.Apply, container, layoutContext)
+                if ok then
+                    measuredHeight = coerceHeight(height)
+                end
             else
-                if type(rows.ClearObjectives) == "function" then
-                    rows.ClearObjectives(weeklyObjectivesControl)
-                elseif type(rows.BuildObjectives) == "function" then
-                    rows.BuildObjectives(weeklyObjectivesControl, {}, rowsOptions)
-                elseif weeklyObjectivesControl.SetHeight then
-                    weeklyObjectivesControl:SetHeight(0)
-                end
-                weeklyObjectivesControl:SetHidden(true)
-            end
-        end
-    else
-        if dailyObjectivesControl then
-            dailyObjectivesControl:SetHidden(true)
-            if dailyObjectivesControl.SetHeight then
-                dailyObjectivesControl:SetHeight(0)
-            end
-        end
-        if weeklyObjectivesControl then
-            weeklyObjectivesControl:SetHidden(true)
-            if weeklyObjectivesControl.SetHeight then
-                weeklyObjectivesControl:SetHeight(0)
-            end
-        end
-    end
-
-    local layout = getLayoutModule()
-    local layoutContext = {
-        category = { control = categoryControl },
-        categoryExpanded = categoryExpanded,
-        daily = { control = dailyControl },
-        dailyExpanded = dailyVm.expanded == true,
-        dailyObjectives = { control = dailyObjectivesControl, expanded = dailyExpanded },
-        weekly = { control = weeklyControl },
-        weeklyExpanded = weeklyVm.expanded == true,
-        weeklyObjectives = { control = weeklyObjectivesControl, expanded = weeklyExpanded },
-    }
-
-    local measuredHeight = 0
-    if layout and type(layout.Apply) == "function" then
-        local ok, height = pcall(layout.Apply, container, layoutContext)
-        if ok then
-            measuredHeight = coerceHeight(height)
-        end
-    else
-        local fallbackHeight = CATEGORY_HEADER_HEIGHT
-        if categoryControl and categoryControl.GetHeight then
-            local ok, height = pcall(categoryControl.GetHeight, categoryControl)
-            if ok then
-                local measuredCategoryHeight = coerceHeight(height)
-                if measuredCategoryHeight > 0 then
-                    fallbackHeight = measuredCategoryHeight
-                end
-            end
-        end
-
-        local rowsHeight = 0
-        local rowCount = 0
-
-        local function addRowHeight(measuredHeight, defaultHeight)
-            local resolved = coerceHeight(measuredHeight)
-            if resolved <= 0 then
-                resolved = coerceHeight(defaultHeight)
-            end
-
-            if resolved > 0 then
-                rowsHeight = rowsHeight + resolved
-                rowCount = rowCount + 1
-            end
-        end
-
-        if categoryExpanded then
-            if dailyControl then
-                local measured = 0
-                if dailyControl.GetHeight then
-                    local ok, height = pcall(dailyControl.GetHeight, dailyControl)
+                local fallbackHeight = CATEGORY_HEADER_HEIGHT
+                if categoryControl and categoryControl.GetHeight then
+                    local ok, height = pcall(categoryControl.GetHeight, categoryControl)
                     if ok then
-                        measured = height
+                        local measuredCategoryHeight = coerceHeight(height)
+                        if measuredCategoryHeight > 0 then
+                            fallbackHeight = measuredCategoryHeight
+                        end
                     end
                 end
-                addRowHeight(measured, SECTION_ROW_HEIGHT)
-            end
 
-            if dailyExpanded and dailyObjectivesControl then
-                local measured = 0
-                if dailyObjectivesControl.GetHeight then
-                    local ok, height = pcall(dailyObjectivesControl.GetHeight, dailyObjectivesControl)
-                    if ok then
-                        measured = height
+                local rowsHeight = 0
+                local rowCount = 0
+
+                local function addRowHeight(measuredHeight, defaultHeight)
+                    local resolved = coerceHeight(measuredHeight)
+                    if resolved <= 0 then
+                        resolved = coerceHeight(defaultHeight)
+                    end
+
+                    if resolved > 0 then
+                        rowsHeight = rowsHeight + resolved
+                        rowCount = rowCount + 1
                     end
                 end
-                addRowHeight(measured, 0)
-            end
 
-            if weeklyControl then
-                local measured = 0
-                if weeklyControl.GetHeight then
-                    local ok, height = pcall(weeklyControl.GetHeight, weeklyControl)
-                    if ok then
-                        measured = height
+                if categoryExpanded then
+                    if dailyControl then
+                        local measured = 0
+                        if dailyControl.GetHeight then
+                            local ok, height = pcall(dailyControl.GetHeight, dailyControl)
+                            if ok then
+                                measured = height
+                            end
+                        end
+                        addRowHeight(measured, SECTION_ROW_HEIGHT)
+                    end
+
+                    if dailyExpanded and dailyObjectivesControl then
+                        local measured = 0
+                        if dailyObjectivesControl.GetHeight then
+                            local ok, height = pcall(dailyObjectivesControl.GetHeight, dailyObjectivesControl)
+                            if ok then
+                                measured = height
+                            end
+                        end
+                        addRowHeight(measured, 0)
+                    end
+
+                    if weeklyControl then
+                        local measured = 0
+                        if weeklyControl.GetHeight then
+                            local ok, height = pcall(weeklyControl.GetHeight, weeklyControl)
+                            if ok then
+                                measured = height
+                            end
+                        end
+                        addRowHeight(measured, SECTION_ROW_HEIGHT)
+                    end
+
+                    if weeklyExpanded and weeklyObjectivesControl then
+                        local measured = 0
+                        if weeklyObjectivesControl.GetHeight then
+                            local ok, height = pcall(weeklyObjectivesControl.GetHeight, weeklyObjectivesControl)
+                            if ok then
+                                measured = height
+                            end
+                        end
+                        addRowHeight(measured, 0)
                     end
                 end
-                addRowHeight(measured, SECTION_ROW_HEIGHT)
-            end
 
-            if weeklyExpanded and weeklyObjectivesControl then
-                local measured = 0
-                if weeklyObjectivesControl.GetHeight then
-                    local ok, height = pcall(weeklyObjectivesControl.GetHeight, weeklyObjectivesControl)
-                    if ok then
-                        measured = height
+                if rowCount > 0 then
+                    fallbackHeight = fallbackHeight + HEADER_TO_ROWS_GAP + rowsHeight
+                    if rowCount > 1 then
+                        fallbackHeight = fallbackHeight + ROW_GAP * (rowCount - 1)
                     end
+                    fallbackHeight = fallbackHeight + SECTION_BOTTOM_GAP
+                else
+                    fallbackHeight = fallbackHeight + SECTION_BOTTOM_GAP_COLLAPSED
                 end
-                addRowHeight(measured, 0)
+
+                measuredHeight = fallbackHeight
             end
-        end
 
-        if rowCount > 0 then
-            fallbackHeight = fallbackHeight + HEADER_TO_ROWS_GAP + rowsHeight
-            if rowCount > 1 then
-                fallbackHeight = fallbackHeight + ROW_GAP * (rowCount - 1)
+            state.currentHeight = coerceHeight(measuredHeight)
+            if container and container.SetHeight then
+                container:SetHeight(state.currentHeight)
             end
-            fallbackHeight = fallbackHeight + SECTION_BOTTOM_GAP
-        else
-            fallbackHeight = fallbackHeight + SECTION_BOTTOM_GAP_COLLAPSED
-        end
 
-        measuredHeight = fallbackHeight
-    end
+            safeDebug(
+                "[Endeavor.UI] cat=%s remaining=%d daily=%d/%d weekly=%d/%d",
+                tostring(categoryExpanded),
+                categoryRemaining,
+                tonumber(dailyVm.displayCompleted or dailyVm.completed) or 0,
+                tonumber(dailyVm.displayLimit or dailyVm.total) or 0,
+                tonumber(weeklyVm.displayCompleted or weeklyVm.completed) or 0,
+                tonumber(weeklyVm.displayLimit or weeklyVm.total) or 0
+            )
 
-    state.currentHeight = coerceHeight(measuredHeight)
-    if container and container.SetHeight then
-        container:SetHeight(state.currentHeight)
-    end
-
-    safeDebug(
-        "[Endeavor.UI] cat=%s remaining=%d daily=%d/%d weekly=%d/%d",
-        tostring(categoryExpanded),
-        categoryRemaining,
-        tonumber(dailyVm.displayCompleted or dailyVm.completed) or 0,
-        tonumber(dailyVm.displayLimit or dailyVm.total) or 0,
-        tonumber(weeklyVm.displayCompleted or weeklyVm.completed) or 0,
-        tonumber(weeklyVm.displayLimit or weeklyVm.total) or 0
-    )
-
-    safeDebug(
-        "[Endeavor.UI] formatted: daily=%s weekly=%s",
-        FormatParensCount(dailyVm.displayCompleted or dailyVm.completed, dailyVm.displayLimit or dailyVm.total),
-        FormatParensCount(weeklyVm.displayCompleted or weeklyVm.completed, weeklyVm.displayLimit or weeklyVm.total)
-    )
+            safeDebug(
+                "[Endeavor.UI] formatted: daily=%s weekly=%s",
+                FormatParensCount(dailyVm.displayCompleted or dailyVm.completed, dailyVm.displayLimit or dailyVm.total),
+                FormatParensCount(weeklyVm.displayCompleted or weeklyVm.completed, weeklyVm.displayLimit or weeklyVm.total)
+            )
+    end, handleError)
 
     release()
-end
 
+    if not ok then
+        if type(CallErrorHandler) == "function" then
+            CallErrorHandler(err)
+        else
+            error(err)
+        end
+    end
+end
 function EndeavorTracker.GetHeight()
     return coerceHeight(state.currentHeight)
 end
