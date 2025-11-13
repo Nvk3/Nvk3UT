@@ -46,17 +46,24 @@ local function resolveStateModule()
     return Nvk3UT and Nvk3UT.AchievementState
 end
 
-local function isDebugEnabled(self)
-    if self and self.debugEnabled then
-        return true
+local function isDebugEnabled()
+    local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
+    if utils and type(utils.IsDebugEnabled) == "function" then
+        return utils.IsDebugEnabled()
     end
-
-    local root = Nvk3UT and Nvk3UT.sv
-    return root and root.debug == true
+    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        return diagnostics:IsDebugEnabled()
+    end
+    local root = Nvk3UT
+    if root and type(root.IsDebugEnabled) == "function" then
+        return root:IsDebugEnabled()
+    end
+    return false
 end
 
 local function logDebug(self, fmt, ...)
-    if not isDebugEnabled(self) then
+    if not isDebugEnabled() then
         return
     end
 
@@ -346,8 +353,6 @@ function AchievementModel.Init(opts)
     end
 
     opts = opts or {}
-
-    AchievementModel.debugEnabled = opts.debug and true or false
 
     local requestedDebounce = tonumber(opts.debounceMs)
     if requestedDebounce then

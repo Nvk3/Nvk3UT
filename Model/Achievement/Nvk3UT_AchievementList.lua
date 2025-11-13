@@ -21,8 +21,19 @@ local function DeepCopy(value)
 end
 
 local function isDebugEnabled()
+    local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
+    if utils and type(utils.IsDebugEnabled) == "function" then
+        return utils.IsDebugEnabled()
+    end
+    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        return diagnostics:IsDebugEnabled()
+    end
     local root = Nvk3UT
-    return root and root.sv and root.sv.debug == true
+    if root and type(root.IsDebugEnabled) == "function" then
+        return root:IsDebugEnabled()
+    end
+    return false
 end
 
 local function emitDebugMessage(fmt, ...)

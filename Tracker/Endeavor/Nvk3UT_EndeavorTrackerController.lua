@@ -18,9 +18,216 @@ local function getRoot()
     return Nvk3UT
 end
 
+local function getSavedVars()
+    local root = getRoot()
+    if type(root) ~= "table" then
+        return nil
+    end
+
+    return rawget(root, "sv")
+end
+
+local function getConfig()
+    local saved = getSavedVars()
+    if type(saved) ~= "table" then
+        return {}
+    end
+
+    local config = saved.Endeavor
+    if type(config) ~= "table" then
+        return {}
+    end
+
+    return config
+end
+
+local function resolveEnabled(config)
+    if type(config) == "table" and config.Enabled ~= nil then
+        return config.Enabled ~= false
+    end
+
+    local saved = getSavedVars()
+    local achievement = saved and saved.AchievementTracker
+    if type(achievement) == "table" and achievement.active ~= nil then
+        return achievement.active ~= false
+    end
+
+    return true
+end
+
+local function resolveShowCounts(config)
+    if type(config) == "table" and config.ShowCountsInHeaders ~= nil then
+        return config.ShowCountsInHeaders ~= false
+    end
+
+    local saved = getSavedVars()
+    local general = saved and saved.General
+    if type(general) == "table" and general.showAchievementCategoryCounts ~= nil then
+        return general.showAchievementCategoryCounts ~= false
+    end
+
+    return true
+end
+
+local function resolveCompletedHandling(config)
+    if type(config) == "table" and config.CompletedHandling == "recolor" then
+        return "recolor"
+    end
+    return "hide"
+end
+
+local DEFAULT_COLOR_CATEGORY = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 }
+local DEFAULT_COLOR_ENTRY = { r = 1, g = 1, b = 0, a = 1 }
+local DEFAULT_COLOR_ACTIVE = { r = 1, g = 1, b = 1, a = 1 }
+local DEFAULT_COLOR_COMPLETED = { r = 0.6, g = 0.6, b = 0.6, a = 1 }
+local DEFAULT_COLOR_OBJECTIVE = DEFAULT_COLOR_CATEGORY
+
+local DEFAULT_FONT_FACE = "$(BOLD_FONT)"
+local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
+local DEFAULT_FONT_SIZE = 16
+
+local function normalizeColorComponent(value, fallback)
+    local numeric = tonumber(value)
+    if numeric == nil then
+        numeric = fallback or 1
+    end
+
+    if numeric ~= numeric then
+        numeric = fallback or 1
+    end
+
+    if numeric < 0 then
+        numeric = 0
+    elseif numeric > 1 then
+        numeric = 1
+    end
+
+    return numeric
+end
+
+local function copyColor(source, fallback)
+    local default = fallback or DEFAULT_COLOR_ACTIVE
+    local r = normalizeColorComponent(source and (source.r or source[1]), default.r or default[1] or 1)
+    local g = normalizeColorComponent(source and (source.g or source[2]), default.g or default[2] or 1)
+    local b = normalizeColorComponent(source and (source.b or source[3]), default.b or default[3] or 1)
+    local a = normalizeColorComponent(source and (source.a or source[4]), default.a or default[4] or 1)
+
+    return { r = r, g = g, b = b, a = a }
+end
+
+local function buildColors(config)
+    local colorsConfig = type(config) == "table" and config.Colors or nil
+    return {
+        categoryTitle = copyColor(colorsConfig and colorsConfig.CategoryTitle, DEFAULT_COLOR_CATEGORY),
+        entryTitle = copyColor(colorsConfig and colorsConfig.EntryName, DEFAULT_COLOR_ENTRY),
+        objectiveText = copyColor(colorsConfig and colorsConfig.Objective, DEFAULT_COLOR_OBJECTIVE),
+        activeTitle = copyColor(colorsConfig and colorsConfig.Active, DEFAULT_COLOR_ACTIVE),
+        completed = copyColor(colorsConfig and colorsConfig.Completed, DEFAULT_COLOR_COMPLETED),
+    }
+end
+
+local function clampFontSize(value)
+    local numeric = tonumber(value)
+    if numeric == nil then
+        numeric = DEFAULT_FONT_SIZE
+    end
+    numeric = math.floor(numeric + 0.5)
+    if numeric < 12 then
+        numeric = 12
+    elseif numeric > 36 then
+        numeric = 36
+    end
+    return numeric
+end
+
+local function buildFontStrings(fontConfig)
+    local config = type(fontConfig) == "table" and fontConfig or {}
+    local face = config.Family
+    if type(face) ~= "string" or face == "" then
+        face = DEFAULT_FONT_FACE
+    end
+
+    local baseSize = clampFontSize(config.Size)
+    local outline = config.Outline
+    if type(outline) ~= "string" or outline == "" then
+        outline = DEFAULT_FONT_OUTLINE
+    end
+
+    local objectiveSize = math.max(baseSize - 2, 12)
+    local categorySize = math.min(baseSize + 4, 48)
+
+    local function fontString(size)
+        return string.format("%s|%d|%s", face, size, outline)
+    end
+
+    local fonts = {
+        category = fontString(categorySize),
+        section = fontString(baseSize),
+        objective = fontString(objectiveSize),
+        family = face,
+        outline = outline,
+        baseSize = baseSize,
+        categorySize = categorySize,
+        objectiveSize = objectiveSize,
+    }
+
+    fonts.rowHeight = math.max(objectiveSize + 6, 20)
+
+    return fonts
+end
+
+local function buildRowsOptions(colors, fonts, completedHandling)
+    return {
+        font = fonts.objective,
+        rowHeight = fonts.rowHeight,
+        colors = colors,
+        colorKind = "endeavorTracker",
+        defaultRole = "objectiveText",
+        completedRole = "completed",
+        completedHandling = completedHandling,
+    }
+end
+
+local function isDebugEnabled()
+    local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
+    if utils and type(utils.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(utils.IsDebugEnabled)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return diagnostics:IsDebugEnabled()
+        end)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    local root = getRoot()
+    if type(root) == "table" and type(root.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return root:IsDebugEnabled()
+        end)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    local sv = root and (root.sv or root.SV)
+    if type(sv) == "table" and sv.debug ~= nil then
+        return sv.debug == true
+    end
+
+    return false
+end
+
 -- local debug logger
 local function DBG(fmt, ...)
-    if not (Nvk3UT and Nvk3UT.debug) then
+    if not isDebugEnabled() then
         return
     end
 
@@ -217,8 +424,55 @@ function Controller:BuildViewModel()
     weeklyCompleted = clampNonNegative(summary and summary.weeklyCompleted or weeklyBucket.completed, 0)
     weeklyTotal = clampNonNegative(summary and summary.weeklyTotal or weeklyBucket.total, 0)
 
+    local config = getConfig()
+    local enabled = resolveEnabled(config)
+    local showCounts = resolveShowCounts(config)
+    local completedHandling = resolveCompletedHandling(config)
     local DAILY_LIMIT = 3
     local WEEKLY_LIMIT = 1
+
+    local colors = buildColors(config)
+    local fonts = buildFontStrings(config and config.Font)
+    local rowsOptions = buildRowsOptions(colors, fonts, completedHandling)
+
+    if not enabled then
+        local stateModule = getStateModule()
+        return {
+            category = {
+                title = "Bestrebungen",
+                expanded = isStateExpanded(stateModule),
+                remaining = 0,
+            },
+            daily = {
+                title = "Tägliche Bestrebungen",
+                completed = 0,
+                total = 0,
+                displayCompleted = 0,
+                displayLimit = DAILY_LIMIT,
+                expanded = isCategoryExpanded(stateModule, "daily"),
+                objectives = {},
+            },
+            weekly = {
+                title = "Wöchentliche Bestrebungen",
+                completed = 0,
+                total = 0,
+                displayCompleted = 0,
+                displayLimit = WEEKLY_LIMIT,
+                expanded = isCategoryExpanded(stateModule, "weekly"),
+                objectives = {},
+            },
+            items = {},
+            count = 0,
+            settings = {
+                enabled = false,
+                showCounts = showCounts,
+                completedHandling = completedHandling,
+                colors = colors,
+                fonts = fonts,
+                rowsOptions = rowsOptions,
+            },
+        }
+    end
 
     dailyDisplayLimit = DAILY_LIMIT
     weeklyDisplayLimit = WEEKLY_LIMIT
@@ -262,6 +516,8 @@ function Controller:BuildViewModel()
         return objective, aggregated
     end
 
+    local includeCompleted = completedHandling == "recolor"
+
     local function buildObjectives(bucket, target, kind)
         if type(bucket) ~= "table" or type(target) ~= "table" then
             return
@@ -280,7 +536,7 @@ function Controller:BuildViewModel()
                     aggregatedItems[#aggregatedItems + 1] = aggregated
                 end
 
-                if objective.completed ~= true then
+                if includeCompleted or objective.completed ~= true then
                     target[#target + 1] = objective
                 end
             end
@@ -333,6 +589,15 @@ function Controller:BuildViewModel()
         #dailyObjectives,
         #weeklyObjectives
     )
+
+    vm.settings = {
+        enabled = true,
+        showCounts = showCounts,
+        completedHandling = completedHandling,
+        colors = colors,
+        fonts = fonts,
+        rowsOptions = rowsOptions,
+    }
 
     return vm
 end

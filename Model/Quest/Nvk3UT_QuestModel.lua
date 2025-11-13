@@ -43,8 +43,35 @@ local function IsDebugLoggingEnabled()
         return true
     end
 
-    local root = Nvk3UT and Nvk3UT.sv
-    return root and root.debug == true
+    local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
+    if utils and type(utils.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(utils.IsDebugEnabled)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return diagnostics:IsDebugEnabled()
+        end)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    local root = Nvk3UT
+    if root and type(root.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return root:IsDebugEnabled()
+        end)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    return false
 end
 
 local function DebugInitLog(message, ...)
@@ -279,7 +306,7 @@ local function ClampDebounce(value)
 end
 
 local function LogDebug(self, ...)
-    if not self.debugEnabled then
+    if not IsDebugLoggingEnabled() then
         return
     end
 
@@ -453,8 +480,6 @@ function QuestModel.Init(opts)
 
     EnsureSavedVars()
     RegisterForPlayerActivated()
-
-    QuestModel.debugEnabled = opts.debug or false
 
     local requestedDebounce = tonumber(opts.debounceMs)
     if requestedDebounce then

@@ -6,6 +6,88 @@ local DEFAULT_PANEL_TITLE = "Nvk3's Ultimate Tracker"
 local L = {}
 Nvk3UT.LAM = L
 
+local function registerString(id, text)
+    if type(id) ~= "string" or id == "" then
+        return
+    end
+
+    if type(text) ~= "string" then
+        text = tostring(text or "")
+    end
+
+    local stringId = _G[id]
+    if type(stringId) == "number" then
+        if type(SafeAddString) == "function" then
+            SafeAddString(stringId, text, 1)
+        end
+        return
+    end
+
+    if type(ZO_CreateStringId) == "function" then
+        ZO_CreateStringId(id, text)
+    else
+        _G[id] = text
+    end
+end
+
+registerString("SI_NVK3UT_LAM_ENDEAVOR_SECTION_FUNCTIONS", "FUNKTIONEN")
+registerString("SI_NVK3UT_LAM_ENDEAVOR_ENABLE", "Aktivieren")
+registerString("SI_NVK3UT_LAM_ENDEAVOR_ENABLE_TOOLTIP", "Schaltet den Bestrebungen-Tracker ein oder aus.")
+registerString("SI_NVK3UT_LAM_ENDEAVOR_SHOW_COUNTS", "Zähler in Abschnittsüberschriften anzeigen")
+registerString(
+    "SI_NVK3UT_LAM_ENDEAVOR_SHOW_COUNTS_TOOLTIP",
+    "Zeigt die verbleibende Anzahl direkt hinter den Überschriften an."
+)
+registerString("SI_NVK3UT_LAM_ENDEAVOR_COMPLETED_HEADER", "Abgeschlossen-Handling")
+registerString(
+    "SI_NVK3UT_LAM_ENDEAVOR_COMPLETED_TOOLTIP",
+    "Legt fest, wie abgeschlossene Ziele dargestellt werden."
+)
+registerString("SI_NVK3UT_LAM_ENDEAVOR_COMPLETED_HIDE", "Ausblenden")
+registerString("SI_NVK3UT_LAM_ENDEAVOR_COMPLETED_RECOLOR", "Umfärben")
+registerString("SI_NVK3UT_LAM_ENDEAVOR_SECTION_COLORS", "ERSCHEINUNG – FARBEN")
+registerString("SI_NVK3UT_LAM_ENDEAVOR_COLOR_CATEGORY", "Kategorie- / Abschnittstitel")
+registerString(
+    "SI_NVK3UT_LAM_ENDEAVOR_COLOR_CATEGORY_TOOLTIP",
+    "Farbe für den oberen Bestrebungen-Block."
+)
+registerString("SI_NVK3UT_LAM_ENDEAVOR_COLOR_ENTRY", "Eintragsname")
+registerString(
+    "SI_NVK3UT_LAM_ENDEAVOR_COLOR_ENTRY_TOOLTIP",
+    "Farbe für tägliche und wöchentliche Bestrebungen."
+)
+registerString("SI_NVK3UT_LAM_ENDEAVOR_COLOR_OBJECTIVE", "Zieltext")
+registerString(
+    "SI_NVK3UT_LAM_ENDEAVOR_COLOR_OBJECTIVE_TOOLTIP",
+    "Farbe für die Fortschrittszeilen der einzelnen Ziele."
+)
+registerString("SI_NVK3UT_LAM_ENDEAVOR_COLOR_ACTIVE", "Aktiver / fokussierter Eintrag")
+registerString(
+    "SI_NVK3UT_LAM_ENDEAVOR_COLOR_ACTIVE_TOOLTIP",
+    "Farbe, wenn ein Abschnitt geöffnet oder fokussiert ist."
+)
+registerString("SI_NVK3UT_LAM_ENDEAVOR_COLOR_COMPLETED", "Abgeschlossener Eintrag")
+registerString(
+    "SI_NVK3UT_LAM_ENDEAVOR_COLOR_COMPLETED_TOOLTIP",
+    "Farbe für abgeschlossene Ziele, wenn \"Umfärben\" aktiv ist."
+)
+registerString("SI_NVK3UT_LAM_ENDEAVOR_SECTION_FONTS", "ERSCHEINUNG – SCHRIFTARTEN")
+registerString("SI_NVK3UT_LAM_ENDEAVOR_FONT_FAMILY", "Schriftart")
+registerString(
+    "SI_NVK3UT_LAM_ENDEAVOR_FONT_FAMILY_TOOLTIP",
+    "Wählt die Schriftart für Kategorien, Abschnitte und Ziele."
+)
+registerString("SI_NVK3UT_LAM_ENDEAVOR_FONT_SIZE", "Größe")
+registerString(
+    "SI_NVK3UT_LAM_ENDEAVOR_FONT_SIZE_TOOLTIP",
+    "Legt die Basisschriftgröße des Trackers fest."
+)
+registerString("SI_NVK3UT_LAM_ENDEAVOR_FONT_OUTLINE", "Kontur")
+registerString(
+    "SI_NVK3UT_LAM_ENDEAVOR_FONT_OUTLINE_TOOLTIP",
+    "Bestimmt die Kontur bzw. den Schatten der Schrift."
+)
+
 local FONT_FACE_CHOICES = {
     { name = "Bold (Game Default)", face = "$(BOLD_FONT)" },
     { name = "Univers 67 (Game)", face = "EsoUI/Common/Fonts/univers67.otf" },
@@ -15,6 +97,15 @@ local FONT_FACE_CHOICES = {
     { name = "Trajan", face = "EsoUI/Common/Fonts/TrajanPro-Regular.otf" },
 }
 
+local FONT_FACE_NAMES, FONT_FACE_VALUES = (function()
+    local names, values = {}, {}
+    for index = 1, #FONT_FACE_CHOICES do
+        names[index] = FONT_FACE_CHOICES[index].name
+        values[index] = FONT_FACE_CHOICES[index].face
+    end
+    return names, values
+end)()
+
 local OUTLINE_CHOICES = {
     { name = "Keiner", value = "none" },
     { name = "Weich (dünn)", value = "soft-shadow-thin" },
@@ -22,6 +113,15 @@ local OUTLINE_CHOICES = {
     { name = "Schatten", value = "shadow" },
     { name = "Kontur", value = "outline" },
 }
+
+local OUTLINE_NAMES, OUTLINE_VALUES = (function()
+    local names, values = {}, {}
+    for index = 1, #OUTLINE_CHOICES do
+        names[index] = OUTLINE_CHOICES[index].name
+        values[index] = OUTLINE_CHOICES[index].value
+    end
+    return names, values
+end)()
 
 local DEFAULT_FONT_SIZE = {
     quest = { category = 20, title = 16, line = 14 },
@@ -277,6 +377,109 @@ local function getAchievementSettings()
     sv.AchievementTracker.fonts = sv.AchievementTracker.fonts or {}
     sv.AchievementTracker.sections = sv.AchievementTracker.sections or {}
     return sv.AchievementTracker
+end
+
+local ENDEAVOR_COLOR_ROLES = {
+    CategoryTitle = "categoryTitle",
+    EntryName = "entryTitle",
+    Objective = "objectiveText",
+    Active = "activeTitle",
+    Completed = "completed",
+}
+
+local function getEndeavorConfig()
+    local sv = getSavedVars()
+    sv.Endeavor = sv.Endeavor or {}
+    local config = sv.Endeavor
+    config.Colors = config.Colors or {}
+    config.Font = config.Font or {}
+    return config
+end
+
+local function clampEndeavorFontSize(value)
+    local numeric = tonumber(value)
+    if numeric == nil then
+        numeric = DEFAULT_FONT_SIZE.achievement.title
+    end
+    numeric = math.floor(numeric + 0.5)
+    if numeric < 12 then
+        numeric = 12
+    elseif numeric > 36 then
+        numeric = 36
+    end
+    return numeric
+end
+
+local function ensureEndeavorFont()
+    local font = getEndeavorConfig().Font
+    if type(font.Family) ~= "string" or font.Family == "" then
+        font.Family = FONT_FACE_CHOICES[1].face
+    end
+    font.Size = clampEndeavorFontSize(font.Size)
+    if type(font.Outline) ~= "string" or font.Outline == "" then
+        font.Outline = OUTLINE_CHOICES[3].value
+    end
+    return font
+end
+
+local function getEndeavorColor(colorKey, role)
+    ensureTrackerAppearance()
+    local config = getEndeavorConfig()
+    local color = config.Colors[colorKey]
+    if type(color) == "table" then
+        local r = color.r or color[1] or 1
+        local g = color.g or color[2] or 1
+        local b = color.b or color[3] or 1
+        local a = color.a or color[4] or 1
+        return r, g, b, a
+    end
+    return getTrackerColor("endeavorTracker", role)
+end
+
+local function setEndeavorColor(colorKey, role, r, g, b, a)
+    local config = getEndeavorConfig()
+    local resolvedR = r or 1
+    local resolvedG = g or 1
+    local resolvedB = b or 1
+    local resolvedA = a or 1
+    local color = config.Colors[colorKey]
+    if type(color) ~= "table" then
+        color = {}
+        config.Colors[colorKey] = color
+    end
+    color[1], color[2], color[3], color[4] = resolvedR, resolvedG, resolvedB, resolvedA
+    color.r, color.g, color.b, color.a = resolvedR, resolvedG, resolvedB, resolvedA
+    setTrackerColor("endeavorTracker", role, resolvedR, resolvedG, resolvedB, resolvedA)
+end
+
+local function refreshEndeavorModel()
+    local model = Nvk3UT and Nvk3UT.EndeavorModel
+    if type(model) == "table" then
+        local refresh = model.RefreshFromGame or model.Refresh
+        if type(refresh) == "function" then
+            pcall(refresh, model)
+        end
+    end
+end
+
+local function markEndeavorDirty(reason)
+    local controller = Nvk3UT and Nvk3UT.EndeavorTrackerController
+    if type(controller) == "table" then
+        local markDirty = controller.MarkDirty or controller.RequestRefresh
+        if type(markDirty) == "function" then
+            pcall(markDirty, controller, reason)
+        end
+    end
+end
+
+local function queueEndeavorDirty()
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if type(runtime) == "table" then
+        local queueDirty = runtime.QueueDirty or runtime.MarkDirty or runtime.RequestRefresh
+        if type(queueDirty) == "function" then
+            pcall(queueDirty, runtime, "endeavor")
+        end
+    end
 end
 
 local function ensureTrackerAppearance()
@@ -608,11 +811,138 @@ local function registerPanel(displayTitle)
     local options = {}
     options[#options + 1] = {
         type = "submenu",
-        name = "Host – Window & Appearance",
+        name = "Journal Erweiterungen",
         controls = (function()
             local controls = {}
 
+            controls[#controls + 1] = { type = "header", name = "Favoriten & Daten" }
+
             controls[#controls + 1] = {
+                type = "dropdown",
+                name = "Favoritenspeicherung:",
+                choices = { "Account-Weit", "Charakter-Weit" },
+                choicesValues = { "account", "character" },
+                getFunc = function()
+                    local general = getGeneral()
+                    return general.favScope or "account"
+                end,
+                setFunc = function(value)
+                    local general = getGeneral()
+                    local old = general.favScope or "account"
+                    general.favScope = value or "account"
+                    if Nvk3UT.FavoritesData and Nvk3UT.FavoritesData.MigrateScope then
+                        Nvk3UT.FavoritesData.MigrateScope(old, general.favScope)
+                    end
+                    if Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.OnFavoritesChanged then
+                        Nvk3UT.AchievementModel.OnFavoritesChanged()
+                    end
+                    local cache = Nvk3UT and Nvk3UT.AchievementCache
+                    if cache and cache.OnOptionsChanged then
+                        cache.OnOptionsChanged({ key = "favorites" })
+                    end
+                    updateStatus()
+                end,
+                tooltip = "Bestimmt, ob Favoriten global (Account) oder je Charakter gespeichert werden.",
+                default = "account",
+            }
+
+            controls[#controls + 1] = {
+                type = "slider",
+                name = "Kürzlich-History (max. Einträge)",
+                min = 25,
+                max = 200,
+                step = 5,
+                getFunc = function()
+                    local general = getGeneral()
+                    return general.recentMax or 100
+                end,
+                setFunc = function(value)
+                    local general = getGeneral()
+                    general.recentMax = value or 100
+                    local cache = Nvk3UT and Nvk3UT.AchievementCache
+                    if cache and cache.OnOptionsChanged then
+                        cache.OnOptionsChanged({ key = "recentMax" })
+                    end
+                    updateStatus()
+                end,
+                tooltip = "Hardcap für die Anzahl der Kürzlich-Einträge.",
+            }
+
+            controls[#controls + 1] = { type = "header", name = "Funktionen" }
+
+            local featureControls = {
+                { key = "completed", label = "Abgeschlossen aktiv" },
+                { key = "favorites", label = "Favoriten aktiv" },
+                { key = "recent", label = "Kürzlich aktiv" },
+                { key = "todo", label = "To-Do-Liste aktiv" },
+            }
+
+            for index = 1, #featureControls do
+                local entry = featureControls[index]
+                controls[#controls + 1] = {
+                    type = "checkbox",
+                    name = entry.label,
+                    getFunc = function()
+                        local features = getFeatures()
+                        return features[entry.key] ~= false
+                    end,
+                    setFunc = function(value)
+                        local features = getFeatures()
+                        features[entry.key] = value
+                        applyFeatureToggles()
+                        local cache = Nvk3UT and Nvk3UT.AchievementCache
+                        if cache and cache.OnOptionsChanged then
+                            cache.OnOptionsChanged({ key = entry.key })
+                        end
+                    end,
+                    default = true,
+                }
+            end
+
+            return controls
+        end)(),
+    }
+
+    options[#options + 1] = {
+        type = "submenu",
+        name = "Status Text",
+        controls = (function()
+            local controls = {}
+
+            controls[#controls + 1] = { type = "header", name = "Anzeige" }
+
+            controls[#controls + 1] = {
+                type = "checkbox",
+                name = "Status über dem Kompass anzeigen",
+                getFunc = function()
+                    local general = getGeneral()
+                    return general.showStatus ~= false
+                end,
+                setFunc = function(value)
+                    local general = getGeneral()
+                    general.showStatus = value
+                    updateStatus()
+                end,
+                default = true,
+            }
+
+            return controls
+        end)(),
+    }
+
+    options[#options + 1] = {
+        type = "submenu",
+        name = "Tracker Host",
+        controls = (function()
+            local controls = {}
+
+            controls[#controls + 1] = { type = "header", name = "Fenster & Darstellung" }
+
+            local function addControl(control)
+                controls[#controls + 1] = control
+            end
+
+            addControl({
                 type = "checkbox",
                 name = "Fenster anzeigen",
                 getFunc = function()
@@ -627,9 +957,9 @@ local function registerPanel(displayTitle)
                     end
                 end,
                 default = true,
-            }
+            })
 
-            controls[#controls + 1] = {
+            addControl({
                 type = "checkbox",
                 name = "Fenster sperren",
                 getFunc = function()
@@ -644,9 +974,9 @@ local function registerPanel(displayTitle)
                     end
                 end,
                 default = DEFAULT_WINDOW.locked,
-            }
+            })
 
-            controls[#controls + 1] = {
+            addControl({
                 type = "checkbox",
                 name = "Immer im Vordergrund",
                 getFunc = function()
@@ -661,9 +991,9 @@ local function registerPanel(displayTitle)
                     end
                 end,
                 default = DEFAULT_WINDOW.onTop,
-            }
+            })
 
-            controls[#controls + 1] = {
+            addControl({
                 type = "slider",
                 name = "Fensterbreite",
                 min = 260,
@@ -687,9 +1017,9 @@ local function registerPanel(displayTitle)
                     return getLayoutSettings().autoGrowH == true
                 end,
                 default = DEFAULT_WINDOW.width,
-            }
+            })
 
-            controls[#controls + 1] = {
+            addControl({
                 type = "slider",
                 name = "Fensterhöhe",
                 min = 240,
@@ -713,9 +1043,9 @@ local function registerPanel(displayTitle)
                     return getLayoutSettings().autoGrowV ~= false
                 end,
                 default = DEFAULT_WINDOW.height,
-            }
+            })
 
-            controls[#controls + 1] = {
+            addControl({
                 type = "slider",
                 name = "Header-Höhe",
                 min = 0,
@@ -727,21 +1057,17 @@ local function registerPanel(displayTitle)
                 end,
                 setFunc = function(value)
                     local bars = getWindowBarSettings()
-                    local numeric = math.floor((tonumber(value) or bars.headerHeightPx or DEFAULT_WINDOW_BARS.headerHeightPx) + 0.5)
-                    bars.headerHeightPx = clamp(numeric, 0, MAX_BAR_HEIGHT)
-                    if Nvk3UT and Nvk3UT.TrackerHost then
-                        if Nvk3UT.TrackerHost.ApplyWindowBars then
-                            Nvk3UT.TrackerHost.ApplyWindowBars()
-                        elseif Nvk3UT.TrackerHost.ApplySettings then
-                            Nvk3UT.TrackerHost.ApplySettings()
-                        end
+                    local numeric = math.max(0, math.min(MAX_BAR_HEIGHT, math.floor((tonumber(value) or 0) + 0.5)))
+                    bars.headerHeightPx = numeric
+                    if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplyWindowBars then
+                        Nvk3UT.TrackerHost.ApplyWindowBars()
                     end
                 end,
                 tooltip = "0 px blendet den Bereich aus.",
                 default = DEFAULT_WINDOW_BARS.headerHeightPx,
-            }
+            })
 
-            controls[#controls + 1] = {
+            addControl({
                 type = "slider",
                 name = "Footer-Höhe",
                 min = 0,
@@ -753,21 +1079,17 @@ local function registerPanel(displayTitle)
                 end,
                 setFunc = function(value)
                     local bars = getWindowBarSettings()
-                    local numeric = math.floor((tonumber(value) or bars.footerHeightPx or DEFAULT_WINDOW_BARS.footerHeightPx) + 0.5)
-                    bars.footerHeightPx = clamp(numeric, 0, MAX_BAR_HEIGHT)
-                    if Nvk3UT and Nvk3UT.TrackerHost then
-                        if Nvk3UT.TrackerHost.ApplyWindowBars then
-                            Nvk3UT.TrackerHost.ApplyWindowBars()
-                        elseif Nvk3UT.TrackerHost.ApplySettings then
-                            Nvk3UT.TrackerHost.ApplySettings()
-                        end
+                    local numeric = math.max(0, math.min(MAX_BAR_HEIGHT, math.floor((tonumber(value) or 0) + 0.5)))
+                    bars.footerHeightPx = numeric
+                    if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplyWindowBars then
+                        Nvk3UT.TrackerHost.ApplyWindowBars()
                     end
                 end,
                 tooltip = "0 px blendet den Bereich aus.",
                 default = DEFAULT_WINDOW_BARS.footerHeightPx,
-            }
+            })
 
-            controls[#controls + 1] = {
+            addControl({
                 type = "button",
                 name = "Position zurücksetzen",
                 func = function()
@@ -790,9 +1112,9 @@ local function registerPanel(displayTitle)
                     end
                 end,
                 tooltip = "Setzt Größe, Position und Verhalten des Tracker-Fensters zurück.",
-            }
+            })
 
-            controls[#controls + 1] = {
+            addControl({
                 type = "checkbox",
                 name = "Standard-Quest-Tracker verstecken",
                 getFunc = function()
@@ -807,11 +1129,9 @@ local function registerPanel(displayTitle)
                     end
                 end,
                 default = false,
-            }
+            })
 
-            controls[#controls + 1] = { type = "header", name = "Hintergrund & Darstellung" }
-
-            controls[#controls + 1] = {
+            addControl({
                 type = "checkbox",
                 name = "Hintergrund anzeigen",
                 getFunc = function()
@@ -824,9 +1144,9 @@ local function registerPanel(displayTitle)
                     applyHostAppearance()
                 end,
                 default = true,
-            }
+            })
 
-            controls[#controls + 1] = {
+            addControl({
                 type = "slider",
                 name = "Hintergrund-Transparenz (%)",
                 min = 0,
@@ -845,9 +1165,9 @@ local function registerPanel(displayTitle)
                     return getAppearanceSettings().enabled == false
                 end,
                 default = math.floor(DEFAULT_APPEARANCE.alpha * 100 + 0.5),
-            }
+            })
 
-            controls[#controls + 1] = {
+            addControl({
                 type = "checkbox",
                 name = "Rahmen anzeigen",
                 getFunc = function()
@@ -860,12 +1180,9 @@ local function registerPanel(displayTitle)
                     applyHostAppearance()
                 end,
                 default = true,
-                disabled = function()
-                    return false
-                end,
-            }
+            })
 
-            controls[#controls + 1] = {
+            addControl({
                 type = "slider",
                 name = "Rahmen-Transparenz (%)",
                 min = 0,
@@ -885,9 +1202,9 @@ local function registerPanel(displayTitle)
                     return appearance.edgeEnabled == false
                 end,
                 default = math.floor(DEFAULT_APPEARANCE.edgeAlpha * 100 + 0.5),
-            }
+            })
 
-            controls[#controls + 1] = {
+            addControl({
                 type = "slider",
                 name = "Rahmenbreite",
                 min = 1,
@@ -907,9 +1224,9 @@ local function registerPanel(displayTitle)
                     return getAppearanceSettings().edgeEnabled == false
                 end,
                 default = DEFAULT_APPEARANCE.edgeThickness,
-            }
+            })
 
-            controls[#controls + 1] = {
+            addControl({
                 type = "slider",
                 name = "Innenabstand",
                 min = 0,
@@ -925,19 +1242,11 @@ local function registerPanel(displayTitle)
                     applyHostAppearance()
                 end,
                 default = DEFAULT_APPEARANCE.padding,
-            }
+            })
 
-            return controls
-        end)(),
-    }
+            controls[#controls + 1] = { type = "header", name = "Auto-Resize & Layout" }
 
-    options[#options + 1] = {
-        type = "submenu",
-        name = "Host – Auto-Resize & Layout",
-        controls = (function()
-            local controls = {}
-
-            controls[#controls + 1] = {
+            addControl({
                 type = "checkbox",
                 name = "Automatisch vertikal anpassen",
                 getFunc = function()
@@ -952,9 +1261,9 @@ local function registerPanel(displayTitle)
                     end
                 end,
                 default = DEFAULT_LAYOUT.autoGrowV,
-            }
+            })
 
-            controls[#controls + 1] = {
+            addControl({
                 type = "checkbox",
                 name = "Automatisch horizontal anpassen",
                 getFunc = function()
@@ -969,9 +1278,9 @@ local function registerPanel(displayTitle)
                     end
                 end,
                 default = DEFAULT_LAYOUT.autoGrowH,
-            }
+            })
 
-            controls[#controls + 1] = {
+            addControl({
                 type = "slider",
                 name = "Mindestbreite",
                 min = 260,
@@ -993,9 +1302,9 @@ local function registerPanel(displayTitle)
                     end
                 end,
                 default = DEFAULT_LAYOUT.minWidth,
-            }
+            })
 
-            controls[#controls + 1] = {
+            addControl({
                 type = "slider",
                 name = "Maximalbreite",
                 min = 260,
@@ -1014,13 +1323,13 @@ local function registerPanel(displayTitle)
                     end
                 end,
                 default = DEFAULT_LAYOUT.maxWidth,
-            }
+            })
 
-            controls[#controls + 1] = {
+            addControl({
                 type = "slider",
                 name = "Mindesthöhe",
                 min = 240,
-                max = 900,
+                max = 800,
                 step = 10,
                 getFunc = function()
                     return getLayoutSettings().minHeight
@@ -1038,9 +1347,9 @@ local function registerPanel(displayTitle)
                     end
                 end,
                 default = DEFAULT_LAYOUT.minHeight,
-            }
+            })
 
-            controls[#controls + 1] = {
+            addControl({
                 type = "slider",
                 name = "Maximalhöhe",
                 min = 240,
@@ -1059,21 +1368,11 @@ local function registerPanel(displayTitle)
                     end
                 end,
                 default = DEFAULT_LAYOUT.maxHeight,
-            }
+            })
 
-            return controls
-        end)(),
-    }
+            controls[#controls + 1] = { type = "header", name = "Verhalten" }
 
-    options[#options + 1] = {
-        type = "submenu",
-        name = "Host",
-        controls = (function()
-            local controls = {}
-
-            controls[#controls + 1] = { type = "header", name = "Host" }
-
-            controls[#controls + 1] = {
+            addControl({
                 type = "checkbox",
                 name = "Hide tracker during combat",
                 tooltip = "When enabled, the entire tracker host hides while you are in combat. The tracker remains visible while the AddOn Settings (LAM) are open.",
@@ -1090,11 +1389,13 @@ local function registerPanel(displayTitle)
                     end
                 end,
                 default = false,
-            }
+            })
 
             return controls
         end)(),
     }
+
+
 
     options[#options + 1] = {
         type = "submenu",
@@ -1256,6 +1557,276 @@ local function registerPanel(displayTitle)
             return controls
         end)(),
     }
+    options[#options + 1] = {
+        type = "submenu",
+        name = "Bestrebungen Tracker",
+        controls = (function()
+            local controls = {}
+            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_ENDEAVOR_SECTION_FUNCTIONS) }
+
+            controls[#controls + 1] = {
+                type = "checkbox",
+                name = GetString(SI_NVK3UT_LAM_ENDEAVOR_ENABLE),
+                tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_ENABLE_TOOLTIP),
+                getFunc = function()
+                    local config = getEndeavorConfig()
+                    if config.Enabled == nil then
+                        local achievement = getAchievementSettings()
+                        return achievement.active ~= false
+                    end
+                    return config.Enabled ~= false
+                end,
+                setFunc = function(value)
+                    local config = getEndeavorConfig()
+                    config.Enabled = value ~= false
+                    refreshEndeavorModel()
+                    markEndeavorDirty("enable")
+                    queueEndeavorDirty()
+                end,
+                default = (function()
+                    local achievement = getAchievementSettings()
+                    return achievement.active ~= false
+                end)(),
+            }
+
+            controls[#controls + 1] = {
+                type = "checkbox",
+                name = GetString(SI_NVK3UT_LAM_ENDEAVOR_SHOW_COUNTS),
+                tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_SHOW_COUNTS_TOOLTIP),
+                getFunc = function()
+                    local config = getEndeavorConfig()
+                    if config.ShowCountsInHeaders == nil then
+                        local general = getGeneral()
+                        return general.showAchievementCategoryCounts ~= false
+                    end
+                    return config.ShowCountsInHeaders ~= false
+                end,
+                setFunc = function(value)
+                    local config = getEndeavorConfig()
+                    config.ShowCountsInHeaders = value ~= false
+                    markEndeavorDirty("headers")
+                    queueEndeavorDirty()
+                end,
+                default = (function()
+                    local general = getGeneral()
+                    return general.showAchievementCategoryCounts ~= false
+                end)(),
+            }
+
+            controls[#controls + 1] = {
+                type = "dropdown",
+                name = GetString(SI_NVK3UT_LAM_ENDEAVOR_COMPLETED_HEADER),
+                tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_COMPLETED_TOOLTIP),
+                choices = {
+                    GetString(SI_NVK3UT_LAM_ENDEAVOR_COMPLETED_HIDE),
+                    GetString(SI_NVK3UT_LAM_ENDEAVOR_COMPLETED_RECOLOR),
+                },
+                choicesValues = { "hide", "recolor" },
+                getFunc = function()
+                    local config = getEndeavorConfig()
+                    if config.CompletedHandling == "recolor" then
+                        return "recolor"
+                    end
+                    return "hide"
+                end,
+                setFunc = function(value)
+                    local config = getEndeavorConfig()
+                    local resolved = value == "recolor" and "recolor" or "hide"
+                    config.CompletedHandling = resolved
+                    if resolved == "hide" then
+                        refreshEndeavorModel()
+                        markEndeavorDirty("filter")
+                    else
+                        markEndeavorDirty("appearance")
+                    end
+                    queueEndeavorDirty()
+                end,
+                default = "hide",
+            }
+
+            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_ENDEAVOR_SECTION_COLORS) }
+
+            local colorEntries = {
+                {
+                    key = "CategoryTitle",
+                    role = ENDEAVOR_COLOR_ROLES.CategoryTitle,
+                    name = SI_NVK3UT_LAM_ENDEAVOR_COLOR_CATEGORY,
+                    tooltip = SI_NVK3UT_LAM_ENDEAVOR_COLOR_CATEGORY_TOOLTIP,
+                },
+                {
+                    key = "EntryName",
+                    role = ENDEAVOR_COLOR_ROLES.EntryName,
+                    name = SI_NVK3UT_LAM_ENDEAVOR_COLOR_ENTRY,
+                    tooltip = SI_NVK3UT_LAM_ENDEAVOR_COLOR_ENTRY_TOOLTIP,
+                },
+                {
+                    key = "Objective",
+                    role = ENDEAVOR_COLOR_ROLES.Objective,
+                    name = SI_NVK3UT_LAM_ENDEAVOR_COLOR_OBJECTIVE,
+                    tooltip = SI_NVK3UT_LAM_ENDEAVOR_COLOR_OBJECTIVE_TOOLTIP,
+                },
+                {
+                    key = "Active",
+                    role = ENDEAVOR_COLOR_ROLES.Active,
+                    name = SI_NVK3UT_LAM_ENDEAVOR_COLOR_ACTIVE,
+                    tooltip = SI_NVK3UT_LAM_ENDEAVOR_COLOR_ACTIVE_TOOLTIP,
+                },
+                {
+                    key = "Completed",
+                    role = ENDEAVOR_COLOR_ROLES.Completed,
+                    name = SI_NVK3UT_LAM_ENDEAVOR_COLOR_COMPLETED,
+                    tooltip = SI_NVK3UT_LAM_ENDEAVOR_COLOR_COMPLETED_TOOLTIP,
+                },
+            }
+
+            local function getAchievementColorDefault(colorKey)
+                local sv = getSavedVars()
+                if type(sv) ~= "table" then
+                    return nil
+                end
+
+                local achievement = sv.Achievement
+                if type(achievement) ~= "table" then
+                    return nil
+                end
+
+                local colors = achievement.Colors
+                if type(colors) ~= "table" then
+                    return nil
+                end
+
+                local candidate = colors[colorKey]
+                if candidate == nil and colorKey == "Completed" then
+                    candidate = colors.Completed or colors.Objective
+                end
+
+                if type(candidate) ~= "table" then
+                    return nil
+                end
+
+                local r = candidate[1] or candidate.r or 1
+                local g = candidate[2] or candidate.g or 1
+                local b = candidate[3] or candidate.b or 1
+                local a = candidate[4] or candidate.a or 1
+                return r, g, b, a
+            end
+
+            local function getEndeavorDefaultColor(colorKey, role)
+                local r, g, b, a = getAchievementColorDefault(colorKey)
+                if r ~= nil then
+                    return r, g, b, a
+                end
+
+                local fallback = getTrackerColorDefaultTable("endeavorTracker", role)
+                if type(fallback) == "table" then
+                    local fallbackR = fallback[1] or fallback.r or 1
+                    local fallbackG = fallback[2] or fallback.g or 1
+                    local fallbackB = fallback[3] or fallback.b or 1
+                    local fallbackA = fallback[4] or fallback.a or 1
+                    return fallbackR, fallbackG, fallbackB, fallbackA
+                end
+
+                if colorKey == "Completed" then
+                    return 0.8, 0.8, 0.8, 1
+                end
+
+                return 1, 1, 1, 1
+            end
+
+            for index = 1, #colorEntries do
+                local entry = colorEntries[index]
+                controls[#controls + 1] = {
+                    type = "colorpicker",
+                    name = GetString(entry.name),
+                    tooltip = GetString(entry.tooltip),
+                    width = "full",
+                    getFunc = function()
+                        local config = getEndeavorConfig()
+                        local colors = config.Colors or {}
+                        local color = colors[entry.key]
+                        local r = (color and (color[1] or color.r)) or 1
+                        local g = (color and (color[2] or color.g)) or 1
+                        local b = (color and (color[3] or color.b)) or 1
+                        local a = (color and (color[4] or color.a)) or 1
+                        return r, g, b, a
+                    end,
+                    setFunc = function(r, g, b, a)
+                        local config = getEndeavorConfig()
+                        config.Colors = config.Colors or {}
+                        config.Colors[entry.key] = config.Colors[entry.key] or { 1, 1, 1, 1 }
+                        local color = config.Colors[entry.key]
+                        local alpha = a or 1
+                        color[1], color[2], color[3], color[4] = r, g, b, alpha
+                        color.r, color.g, color.b, color.a = r, g, b, alpha
+                        setTrackerColor("endeavorTracker", entry.role, r, g, b, alpha)
+                        markEndeavorDirty("appearance")
+                        queueEndeavorDirty()
+                    end,
+                    default = function()
+                        return getEndeavorDefaultColor(entry.key, entry.role)
+                    end,
+                }
+            end
+
+            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_ENDEAVOR_SECTION_FONTS) }
+
+            controls[#controls + 1] = {
+                type = "dropdown",
+                name = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_FAMILY),
+                tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_FAMILY_TOOLTIP),
+                choices = FONT_FACE_NAMES,
+                choicesValues = FONT_FACE_VALUES,
+                getFunc = function()
+                    return ensureEndeavorFont().Family
+                end,
+                setFunc = function(value)
+                    local font = ensureEndeavorFont()
+                    font.Family = value
+                    markEndeavorDirty("appearance")
+                    queueEndeavorDirty()
+                end,
+                default = FONT_FACE_CHOICES[1].face,
+            }
+
+            controls[#controls + 1] = {
+                type = "slider",
+                name = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_SIZE),
+                tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_SIZE_TOOLTIP),
+                min = 12,
+                max = 36,
+                step = 1,
+                getFunc = function()
+                    return ensureEndeavorFont().Size
+                end,
+                setFunc = function(value)
+                    local font = ensureEndeavorFont()
+                    font.Size = clampEndeavorFontSize(value)
+                    markEndeavorDirty("appearance")
+                    queueEndeavorDirty()
+                end,
+                default = DEFAULT_FONT_SIZE.achievement.title,
+            }
+
+            controls[#controls + 1] = {
+                type = "dropdown",
+                name = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_OUTLINE),
+                tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_OUTLINE_TOOLTIP),
+                choices = OUTLINE_NAMES,
+                choicesValues = OUTLINE_VALUES,
+                getFunc = function()
+                    return ensureEndeavorFont().Outline
+                end,
+                setFunc = function(value)
+                    local font = ensureEndeavorFont()
+                    font.Outline = value
+                    markEndeavorDirty("appearance")
+                    queueEndeavorDirty()
+                end,
+                default = OUTLINE_CHOICES[3].value,
+            }
+            return controls
+        end)(),
+    }
 
     options[#options + 1] = {
         type = "submenu",
@@ -1414,136 +1985,6 @@ local function registerPanel(displayTitle)
         end)(),
     }
 
-    options[#options + 1] = {
-        type = "submenu",
-        name = "Status Text",
-        controls = (function()
-            local controls = {}
-
-            controls[#controls + 1] = { type = "header", name = "Anzeige" }
-
-            controls[#controls + 1] = {
-                type = "checkbox",
-                name = "Status über dem Kompass anzeigen",
-                getFunc = function()
-                    local general = getGeneral()
-                    return general.showStatus ~= false
-                end,
-                setFunc = function(value)
-                    local general = getGeneral()
-                    general.showStatus = value
-                    updateStatus()
-                end,
-                default = true,
-            }
-
-            controls[#controls + 1] = { type = "header", name = "Optionen" }
-
-            controls[#controls + 1] = {
-                type = "dropdown",
-                name = "Favoritenspeicherung:",
-                choices = { "Account-Weit", "Charakter-Weit" },
-                choicesValues = { "account", "character" },
-                getFunc = function()
-                    local general = getGeneral()
-                    return general.favScope or "account"
-                end,
-                setFunc = function(value)
-                    local general = getGeneral()
-                    local old = general.favScope or "account"
-                    general.favScope = value or "account"
-                    if Nvk3UT.FavoritesData and Nvk3UT.FavoritesData.MigrateScope then
-                        Nvk3UT.FavoritesData.MigrateScope(old, general.favScope)
-                    end
-                    if Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.OnFavoritesChanged then
-                        Nvk3UT.AchievementModel.OnFavoritesChanged()
-                    end
-                    local cache = Nvk3UT and Nvk3UT.AchievementCache
-                    if cache and cache.OnOptionsChanged then
-                        cache.OnOptionsChanged({ key = "favoritesScope" })
-                    end
-                    refreshAchievementTracker()
-                    updateStatus()
-                end,
-                tooltip = "Speichert und zählt Favoriten account-weit oder charakter-weit.",
-            }
-
-            controls[#controls + 1] = {
-                type = "dropdown",
-                name = "Kürzlich-Zeitraum:",
-                choices = { "Alle", "7 Tage", "30 Tage" },
-                choicesValues = { 0, 7, 30 },
-                getFunc = function()
-                    local general = getGeneral()
-                    return general.recentWindow or 0
-                end,
-                setFunc = function(value)
-                    local general = getGeneral()
-                    general.recentWindow = value or 0
-                    local cache = Nvk3UT and Nvk3UT.AchievementCache
-                    if cache and cache.OnOptionsChanged then
-                        cache.OnOptionsChanged({ key = "recentWindow" })
-                    end
-                    updateStatus()
-                end,
-                tooltip = "Wähle, welche Zeitspanne für Kürzlich gezählt/angezeigt wird.",
-            }
-
-            controls[#controls + 1] = {
-                type = "dropdown",
-                name = "Kürzlich - Maximum:",
-                choices = { "50", "100", "250" },
-                choicesValues = { 50, 100, 250 },
-                getFunc = function()
-                    local general = getGeneral()
-                    return general.recentMax or 100
-                end,
-                setFunc = function(value)
-                    local general = getGeneral()
-                    general.recentMax = value or 100
-                    local cache = Nvk3UT and Nvk3UT.AchievementCache
-                    if cache and cache.OnOptionsChanged then
-                        cache.OnOptionsChanged({ key = "recentMax" })
-                    end
-                    updateStatus()
-                end,
-                tooltip = "Hardcap für die Anzahl der Kürzlich-Einträge.",
-            }
-
-            controls[#controls + 1] = { type = "header", name = "Funktionen" }
-
-            local featureControls = {
-                { key = "completed", label = "Abgeschlossen aktiv" },
-                { key = "favorites", label = "Favoriten aktiv" },
-                { key = "recent", label = "Kürzlich aktiv" },
-                { key = "todo", label = "To-Do-Liste aktiv" },
-            }
-
-            for index = 1, #featureControls do
-                local entry = featureControls[index]
-                controls[#controls + 1] = {
-                    type = "checkbox",
-                    name = entry.label,
-                    getFunc = function()
-                        local features = getFeatures()
-                        return features[entry.key] ~= false
-                    end,
-                    setFunc = function(value)
-                        local features = getFeatures()
-                        features[entry.key] = value
-                        applyFeatureToggles()
-                        local cache = Nvk3UT and Nvk3UT.AchievementCache
-                        if cache and cache.OnOptionsChanged then
-                            cache.OnOptionsChanged({ key = entry.key })
-                        end
-                    end,
-                    default = true,
-                }
-            end
-
-            return controls
-        end)(),
-    }
 
     options[#options + 1] = {
         type = "submenu",
@@ -1559,7 +2000,16 @@ local function registerPanel(displayTitle)
                 end,
                 setFunc = function(value)
                     local sv = getSavedVars()
-                    sv.debug = value and true or false
+                    local enabled = value and true or false
+                    sv.debug = enabled
+                    local addon = Nvk3UT
+                    if addon and type(addon.SetDebugEnabled) == "function" then
+                        addon:SetDebugEnabled(enabled)
+                    end
+                    local diagnostics = (addon and addon.Diagnostics) or Nvk3UT_Diagnostics
+                    if diagnostics and type(diagnostics.SetDebugEnabled) == "function" then
+                        diagnostics.SetDebugEnabled(enabled)
+                    end
                 end,
                 default = false,
             }

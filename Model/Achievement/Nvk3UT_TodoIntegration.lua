@@ -15,6 +15,61 @@ local TODO_LOOKUP_KEY = "NVK3UT_TODO_ROOT"
 local todoProvide_lastTs = 0
 local todoProvide_lastCount = 0
 
+local function isDebugEnabled()
+    local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
+    if utils and type(utils.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(utils.IsDebugEnabled)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return diagnostics:IsDebugEnabled()
+        end)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    local root = Nvk3UT
+    if root and type(root.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return root:IsDebugEnabled()
+        end)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    return false
+end
+
+local function debugLog(fmt, ...)
+    if not isDebugEnabled() then
+        return
+    end
+
+    local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
+    local ok, message = pcall(string.format, tostring(fmt or ""), ...)
+    if not ok then
+        message = tostring(fmt)
+    end
+
+    if utils and type(utils.d) == "function" then
+        utils.d(message)
+        return
+    end
+
+    if type(d) == "function" then
+        d(message)
+    elseif type(print) == "function" then
+        print(message)
+    end
+end
+
 local function sanitizePlainName(name)
   if U and U.StripLeadingIconTag then
     name = U.StripLeadingIconTag(name)
@@ -268,49 +323,35 @@ local function Override_ZO_GetAchievementIds()
       end
       if subcategoryIndex then
         local __res = Todo.ListOpenForTop(subcategoryIndex, considerSearchResults)
-        local U = Nvk3UT and Nvk3UT.Utils
-        local __now = (U and U.now and U.now() or 0)
+        local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
+        local __now = (utils and utils.now and utils.now() or 0)
         if
-          U
-          and U.d
-          and Nvk3UT
-          and Nvk3UT.sv
-          and Nvk3UT.sv.debug
+          isDebugEnabled()
           and ((__now - todoProvide_lastTs) > 0.5 or #__res ~= todoProvide_lastCount)
         then
           todoProvide_lastTs = __now
           todoProvide_lastCount = #__res
-          U.d(
-            "[Nvk3UT][ToDo][Provide] list",
-            "data={count:",
+          debugLog(
+            "[Nvk3UT][ToDo][Provide] list data={count:%d, searchFiltered:%s}",
             #__res,
-            ", searchFiltered:",
-            tostring(considerSearchResults and true or false),
-            "}"
+            tostring(considerSearchResults and true or false)
           )
         end
         return __res
       else
         local __res = Todo.ListAllOpen(0, considerSearchResults)
-        local U = Nvk3UT and Nvk3UT.Utils
-        local __now = (U and U.now and U.now() or 0)
+        local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
+        local __now = (utils and utils.now and utils.now() or 0)
         if
-          U
-          and U.d
-          and Nvk3UT
-          and Nvk3UT.sv
-          and Nvk3UT.sv.debug
+          isDebugEnabled()
           and ((__now - todoProvide_lastTs) > 0.5 or #__res ~= todoProvide_lastCount)
         then
           todoProvide_lastTs = __now
           todoProvide_lastCount = #__res
-          U.d(
-            "[Nvk3UT][ToDo][Provide] list",
-            "data={count:",
+          debugLog(
+            "[Nvk3UT][ToDo][Provide] list data={count:%d, searchFiltered:%s}",
             #__res,
-            ", searchFiltered:",
-            tostring(considerSearchResults and true or false),
-            "}"
+            tostring(considerSearchResults and true or false)
           )
         end
         return __res

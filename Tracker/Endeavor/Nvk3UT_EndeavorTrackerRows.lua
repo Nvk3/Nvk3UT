@@ -8,10 +8,43 @@ Rows.__index = Rows
 
 local MODULE_TAG = addonName .. ".EndeavorTrackerRows"
 
-local OBJECTIVE_ROW_HEIGHT = 20
-local ACHIEVEMENT_OBJECTIVE_FONT = "ZoFontGameSmall"
-local ACHIEVEMENT_OBJECTIVE_COLOR_ROLE = "objectiveText"
-local TRACKER_COLOR_KIND = "achievementTracker"
+local function isDebugEnabled()
+    local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
+    if utils and type(utils.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(utils.IsDebugEnabled)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return diagnostics:IsDebugEnabled()
+        end)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    local addon = rawget(_G, addonName)
+    if type(addon) == "table" and type(addon.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return addon:IsDebugEnabled()
+        end)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    return false
+end
+
+local OBJECTIVE_ROW_DEFAULT_HEIGHT = 20
+local DEFAULT_OBJECTIVE_FONT = "ZoFontGameSmall"
+local DEFAULT_OBJECTIVE_COLOR_ROLE = "objectiveText"
+local DEFAULT_TRACKER_COLOR_KIND = "endeavorTracker"
+local COMPLETED_COLOR_ROLE = "completed"
 
 local function FormatParensCount(a, b)
     local aNum = tonumber(a) or 0
@@ -36,6 +69,10 @@ Rows._cache = Rows._cache or setmetatable({}, { __mode = "k" })
 local lastHeight = 0
 
 local function safeDebug(fmt, ...)
+    if not isDebugEnabled() then
+        return
+    end
+
     local root = rawget(_G, addonName)
     if type(root) ~= "table" then
         return
@@ -77,7 +114,7 @@ local function getAddon()
     return rawget(_G, addonName)
 end
 
-local function getTrackerColor(role)
+local function getTrackerColor(role, colorKind)
     local addon = getAddon()
     if type(addon) ~= "table" then
         return 1, 1, 1, 1
@@ -97,7 +134,7 @@ local function getTrackerColor(role)
         return 1, 1, 1, 1
     end
 
-    local ok, r, g, b, a = pcall(getColor, host, TRACKER_COLOR_KIND, role)
+    local ok, r, g, b, a = pcall(getColor, host, colorKind or DEFAULT_TRACKER_COLOR_KIND, role)
     if ok and type(r) == "number" then
         return r, g or 1, b or 1, a or 1
     end
@@ -105,17 +142,85 @@ local function getTrackerColor(role)
     return 1, 1, 1, 1
 end
 
-local function applyFont(label, font)
-    if label and label.SetFont and font and font ~= "" then
-        label:SetFont(font)
+local function applyFont(label, font, fallback)
+    if not (label and label.SetFont) then
+        return
+    end
+
+    local resolved = font
+    if resolved == nil or resolved == "" then
+        resolved = fallback
+    end
+
+    if resolved and resolved ~= "" then
+        label:SetFont(resolved)
     end
 end
 
-local function applyObjectiveColor(label)
-    local r, g, b, a = getTrackerColor(ACHIEVEMENT_OBJECTIVE_COLOR_ROLE)
-    if label and label.SetColor then
-        label:SetColor(r, g, b, a)
+local function extractColorComponents(color)
+    if type(color) ~= "table" then
+        return nil
     end
+
+    local r = tonumber(color.r or color[1])
+    local g = tonumber(color.g or color[2])
+    local b = tonumber(color.b or color[3])
+    local a = tonumber(color.a or color[4] or 1)
+
+    if r == nil or g == nil or b == nil then
+        return nil
+    end
+
+    if r < 0 then
+        r = 0
+    elseif r > 1 then
+        r = 1
+    end
+
+    if g < 0 then
+        g = 0
+    elseif g > 1 then
+        g = 1
+    end
+
+    if b < 0 then
+        b = 0
+    elseif b > 1 then
+        b = 1
+    end
+
+    if a < 0 then
+        a = 0
+    elseif a > 1 then
+        a = 1
+    end
+
+    return r, g, b, a
+end
+
+local function applyObjectiveColor(label, options, objective)
+    if not label or not label.SetColor then
+        return
+    end
+
+    local opts = type(options) == "table" and options or {}
+    local colors = type(opts.colors) == "table" and opts.colors or nil
+    local role = opts.defaultRole or DEFAULT_OBJECTIVE_COLOR_ROLE
+
+    if opts.completedHandling == "recolor" and objective and objective.completed then
+        role = opts.completedRole or COMPLETED_COLOR_ROLE
+    end
+
+    local r, g, b, a
+    if colors then
+        r, g, b, a = extractColorComponents(colors[role])
+    end
+
+    if r == nil then
+        r, g, b, a = getTrackerColor(role, opts.colorKind or DEFAULT_TRACKER_COLOR_KIND)
+    end
+
+    label:SetColor(r or 1, g or 1, b or 1, a or 1)
 
     if label and label.SetAlpha then
         label:SetAlpha(1)
@@ -138,7 +243,7 @@ local function getContainerCache(container)
     return cache
 end
 
-local function ensureObjectiveRow(container, baseName, index, previous)
+local function ensureObjectiveRow(container, baseName, index, previous, options)
     local wm = WINDOW_MANAGER
     if wm == nil then
         return nil
@@ -168,7 +273,16 @@ local function ensureObjectiveRow(container, baseName, index, previous)
     row:SetResizeToFitDescendents(false)
     row:SetMouseEnabled(false)
     row:SetHidden(false)
-    row:SetHeight(OBJECTIVE_ROW_HEIGHT)
+
+    local rowHeight = OBJECTIVE_ROW_DEFAULT_HEIGHT
+    if type(options) == "table" then
+        local override = tonumber(options.rowHeight)
+        if override and override > 0 then
+            rowHeight = override
+        end
+    end
+
+    row:SetHeight(rowHeight)
     row:ClearAnchors()
     if previous then
         row:SetAnchor(TOPLEFT, previous, BOTTOMLEFT, 0, 0)
@@ -178,10 +292,10 @@ local function ensureObjectiveRow(container, baseName, index, previous)
         row:SetAnchor(TOPRIGHT, container, TOPRIGHT, 0, 0)
     end
 
-    return row
+    return row, rowHeight
 end
 
-function Rows.ApplyObjectiveRow(row, objective)
+function Rows.ApplyObjectiveRow(row, objective, options)
     if row == nil then
         return
     end
@@ -228,7 +342,7 @@ function Rows.ApplyObjectiveRow(row, objective)
         title = wm:CreateControl(titleName, row, CT_LABEL)
     end
     title:SetParent(row)
-    applyFont(title, ACHIEVEMENT_OBJECTIVE_FONT)
+    applyFont(title, options and options.font, DEFAULT_OBJECTIVE_FONT)
     title:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
     title:SetVerticalAlignment(TEXT_ALIGN_CENTER)
     if title.SetWrapMode then
@@ -238,7 +352,14 @@ function Rows.ApplyObjectiveRow(row, objective)
     title:SetAnchor(TOPLEFT, row, TOPLEFT, 0, 0)
     title:SetAnchor(TOPRIGHT, row, TOPRIGHT, 0, 0)
     if title.SetHeight then
-        title:SetHeight(OBJECTIVE_ROW_HEIGHT)
+        local titleHeight = OBJECTIVE_ROW_DEFAULT_HEIGHT
+        if type(options) == "table" then
+            local override = tonumber(options.rowHeight)
+            if override and override > 0 then
+                titleHeight = override
+            end
+        end
+        title:SetHeight(titleHeight)
     end
     title:SetText(combinedText)
     row.Label = title
@@ -255,15 +376,13 @@ function Rows.ApplyObjectiveRow(row, objective)
         progress:SetText("")
     end
 
-    applyObjectiveColor(title)
+    applyObjectiveColor(title, options, data)
 
     if row.SetAlpha then
         row:SetAlpha(1)
     end
 
-    if Nvk3UT and Nvk3UT.debug then
-        safeDebug("[EndeavorRows] objective inline: \"%s\"", combinedText)
-    end
+    safeDebug("[EndeavorRows] objective inline: \"%s\"", combinedText)
 end
 
 function Rows.Init()
@@ -295,7 +414,7 @@ function Rows.ClearObjectives(container)
     return 0
 end
 
-function Rows.BuildObjectives(container, list)
+function Rows.BuildObjectives(container, list, options)
     if container == nil then
         lastHeight = 0
         return 0
@@ -330,15 +449,23 @@ function Rows.BuildObjectives(container, list)
     end
     local baseName = (containerName or "Nvk3UT_Endeavor") .. "Obj"
 
+    local rowHeight = OBJECTIVE_ROW_DEFAULT_HEIGHT
+    if type(options) == "table" then
+        local override = tonumber(options.rowHeight)
+        if override and override > 0 then
+            rowHeight = override
+        end
+    end
+
     local totalHeight = 0
     local previous
 
     for index = 1, count do
-        local row = ensureObjectiveRow(container, baseName, index, previous)
+        local row, appliedHeight = ensureObjectiveRow(container, baseName, index, previous, options)
         if row then
-            Rows.ApplyObjectiveRow(row, sequence[index])
+            Rows.ApplyObjectiveRow(row, sequence[index], options)
             previous = row
-            totalHeight = totalHeight + OBJECTIVE_ROW_HEIGHT
+            totalHeight = totalHeight + (appliedHeight or rowHeight)
         end
     end
 
