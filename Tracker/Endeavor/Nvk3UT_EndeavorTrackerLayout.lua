@@ -14,7 +14,7 @@ local HEADER_TO_ROWS_GAP = 3
 local ROW_GAP = 3
 local SECTION_BOTTOM_GAP = 3
 local SECTION_BOTTOM_GAP_COLLAPSED = 3
-local BOTTOM_PIXEL_NUDGE = 1 -- Endeavor-only visual match to Quest/Achievement
+local BOTTOM_PIXEL_NUDGE = 3 -- Endeavor-only visual match to Quest/Achievement
 
 local lastHeight = 0
 
