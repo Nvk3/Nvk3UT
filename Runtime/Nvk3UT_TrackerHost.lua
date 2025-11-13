@@ -9,11 +9,14 @@ TrackerHost.__index = TrackerHost
 TrackerHost.questSectionContainer = nil
 TrackerHost.endeavorSectionContainer = nil
 TrackerHost.achievementSectionContainer = nil
+TrackerHost.goldenSectionContainer = nil
+TrackerHost.sectionContainers = TrackerHost.sectionContainers or {}
 
 local ROOT_CONTROL_NAME = addonName .. "_UI_Root"
 local QUEST_CONTAINER_NAME = addonName .. "_QuestContainer"
 local ENDEAVOR_CONTAINER_NAME = addonName .. "_EndeavorContainer"
 local ACHIEVEMENT_CONTAINER_NAME = addonName .. "_AchievementContainer"
+local GOLDEN_CONTAINER_NAME = addonName .. "_GoldenContainer"
 local SCROLL_CONTAINER_NAME = addonName .. "_ScrollContainer"
 local SCROLL_CONTENT_NAME = SCROLL_CONTAINER_NAME .. "_Content"
 local SCROLLBAR_NAME = SCROLL_CONTAINER_NAME .. "_ScrollBar"
@@ -151,7 +154,7 @@ local function getEndeavorModule()
     return nil
 end
 
-local SECTION_ORDER = { "quest", "endeavor", "achievement" }
+local SECTION_ORDER = { "quest", "endeavor", "achievement", "golden" }
 
 local state = {
     initialized = false,
@@ -172,6 +175,7 @@ local state = {
     questContainer = nil,
     endeavorContainer = nil,
     achievementContainer = nil,
+    goldenContainer = nil,
     contentStack = nil,
     headerBar = nil,
     footerBar = nil,
@@ -186,6 +190,7 @@ local state = {
         questMissing = false,
         endeavorMissing = false,
         achievementMissing = false,
+        goldenMissing = false,
     },
     previousDefaultQuestTrackerHidden = nil,
     initializing = false,
@@ -1389,6 +1394,8 @@ function TrackerHost.GetSectionContainer(sectionId)
         return state.endeavorContainer
     elseif sectionId == "achievement" then
         return state.achievementContainer
+    elseif sectionId == "golden" then
+        return state.goldenContainer
     end
 
     return nil
@@ -1401,6 +1408,8 @@ function TrackerHost.GetSectionTracker(sectionId)
         return getEndeavorModule()
     elseif sectionId == "achievement" then
         return Nvk3UT and Nvk3UT.AchievementTracker
+    elseif sectionId == "golden" then
+        return Nvk3UT and Nvk3UT.GoldenTracker
     end
 
     return nil
@@ -1552,6 +1561,11 @@ function TrackerHost.ReportSectionMissing(sectionId)
             debugLog("Achievement container not ready for anchoring")
             state.anchorWarnings.achievementMissing = true
         end
+    elseif sectionId == "golden" then
+        if not state.anchorWarnings.goldenMissing then
+            debugLog("Golden container not ready for anchoring")
+            state.anchorWarnings.goldenMissing = true
+        end
     end
 end
 
@@ -1562,6 +1576,8 @@ function TrackerHost.ReportSectionAnchored(sectionId)
         state.anchorWarnings.endeavorMissing = false
     elseif sectionId == "achievement" then
         state.anchorWarnings.achievementMissing = false
+    elseif sectionId == "golden" then
+        state.anchorWarnings.goldenMissing = false
     end
 end
 
@@ -1660,6 +1676,10 @@ local function measureContentSize()
         state.achievementContainer,
         Nvk3UT and Nvk3UT.AchievementTracker
     )
+    local goldenWidth, goldenHeight = measureTrackerContent(
+        state.goldenContainer,
+        Nvk3UT and Nvk3UT.GoldenTracker
+    )
 
     questWidth = Num0(questWidth)
     questHeight = math.max(0, Num0(questHeight))
@@ -1667,10 +1687,13 @@ local function measureContentSize()
     endeavorHeight = math.max(0, Num0(endeavorHeight))
     achievementWidth = Num0(achievementWidth)
     achievementHeight = math.max(0, Num0(achievementHeight))
+    goldenWidth = Num0(goldenWidth)
+    goldenHeight = math.max(0, Num0(goldenHeight))
 
     local questVisible = questHeight > 0
     local endeavorVisible = endeavorHeight > 0
     local achievementVisible = achievementHeight > 0
+    local goldenVisible = goldenHeight > 0
     local gap = 0
 
     if questVisible then
@@ -1691,10 +1714,25 @@ local function measureContentSize()
         totalHeight = totalHeight + achievementHeight
     end
 
+    if goldenVisible then
+        if questVisible or endeavorVisible or achievementVisible then
+            totalHeight = totalHeight + gap
+        end
+        totalHeight = totalHeight + goldenHeight
+    end
+
     totalHeight = totalHeight + math.max(0, topPadding) + math.max(0, bottomPadding)
     totalHeight = totalHeight + math.max(0, headerHeight) + math.max(0, footerHeight)
 
-    maxWidth = math.max(maxWidth, headerWidth, footerWidth, questWidth, endeavorWidth, achievementWidth)
+    maxWidth = math.max(
+        maxWidth,
+        headerWidth,
+        footerWidth,
+        questWidth,
+        endeavorWidth,
+        achievementWidth,
+        goldenWidth
+    )
 
     return maxWidth, totalHeight
 end
@@ -1974,16 +2012,22 @@ refreshScroll = function(targetOffset)
         state.achievementContainer,
         Nvk3UT and Nvk3UT.AchievementTracker
     )
+    local _, goldenHeight = measureTrackerContent(
+        state.goldenContainer,
+        Nvk3UT and Nvk3UT.GoldenTracker
+    )
 
     questHeight = math.max(0, Num0(questHeight))
     endeavorHeight = math.max(0, Num0(endeavorHeight))
     achievementHeight = math.max(0, Num0(achievementHeight))
+    goldenHeight = math.max(0, Num0(goldenHeight))
 
     local gap = 0
 
     local questVisible = questHeight > 0
     local endeavorVisible = endeavorHeight > 0
     local achievementVisible = achievementHeight > 0
+    local goldenVisible = goldenHeight > 0
 
     if state.questContainer and state.questContainer.SetHeight then
         state.questContainer:SetHeight(questHeight)
@@ -1997,13 +2041,17 @@ refreshScroll = function(targetOffset)
         state.achievementContainer:SetHeight(achievementHeight)
     end
 
+    if state.goldenContainer and state.goldenContainer.SetHeight then
+        state.goldenContainer:SetHeight(goldenHeight)
+    end
+
     local layoutModule = Nvk3UT and Nvk3UT.TrackerHostLayout
     local canUseLayoutModule = layoutModule
         and type(layoutModule.UpdateHeaderFooterSizes) == "function"
         and type(layoutModule.UpdateScrollAreaHeight) == "function"
         and type(layoutModule.ApplyLayout) == "function"
 
-    local totalContentHeight = questHeight + endeavorHeight + achievementHeight
+    local totalContentHeight = questHeight + endeavorHeight + achievementHeight + goldenHeight
     local debugHeaderHeight = 0
     local debugFooterHeight = 0
 
@@ -2028,6 +2076,12 @@ refreshScroll = function(targetOffset)
                 contentStackHeight = contentStackHeight + gap
             end
             contentStackHeight = contentStackHeight + achievementHeight
+        end
+        if goldenVisible then
+            if questVisible or endeavorVisible or achievementVisible then
+                contentStackHeight = contentStackHeight + gap
+            end
+            contentStackHeight = contentStackHeight + goldenHeight
         end
         contentStackHeight = contentStackHeight + bottomPadding
         contentStackHeight = math.max(0, contentStackHeight)
@@ -2138,6 +2192,12 @@ refreshScroll = function(targetOffset)
             end
             contentStackHeight = contentStackHeight + achievementHeight
         end
+        if goldenVisible then
+            if questVisible or endeavorVisible or achievementVisible then
+                contentStackHeight = contentStackHeight + gap
+            end
+            contentStackHeight = contentStackHeight + goldenHeight
+        end
         contentStackHeight = contentStackHeight + bottomPadding
         contentStackHeight = math.max(0, contentStackHeight)
 
@@ -2195,10 +2255,11 @@ refreshScroll = function(targetOffset)
     end
 
     debugLog(string.format(
-        "Heights q=%s e=%s a=%s total=%s (header=%s footer=%s gap=%s)",
+        "Heights q=%s e=%s a=%s g=%s total=%s (header=%s footer=%s gap=%s)",
         tostring(questHeight),
         tostring(endeavorHeight),
         tostring(achievementHeight),
+        tostring(goldenHeight),
         tostring(totalContentHeight),
         tostring(debugHeaderHeight),
         tostring(debugFooterHeight),
@@ -2414,6 +2475,11 @@ local function createContainers()
             end)
             state.questContainer = questContainer
             TrackerHost.questSectionContainer = questContainer
+            TrackerHost.sectionContainers.quest = questContainer
+            if Nvk3UT and type(Nvk3UT.TrackerHost) == "table" then
+                Nvk3UT.TrackerHost.sectionContainers = Nvk3UT.TrackerHost.sectionContainers or TrackerHost.sectionContainers
+                Nvk3UT.TrackerHost.sectionContainers.quest = questContainer
+            end
             Nvk3UT.UI.QuestContainer = questContainer
         end
     end
@@ -2441,6 +2507,11 @@ local function createContainers()
             end)
             state.endeavorContainer = endeavorContainer
             TrackerHost.endeavorSectionContainer = endeavorContainer
+            TrackerHost.sectionContainers.endeavor = endeavorContainer
+            if Nvk3UT and type(Nvk3UT.TrackerHost) == "table" then
+                Nvk3UT.TrackerHost.sectionContainers = Nvk3UT.TrackerHost.sectionContainers or TrackerHost.sectionContainers
+                Nvk3UT.TrackerHost.sectionContainers.endeavor = endeavorContainer
+            end
             Nvk3UT.UI.EndeavorContainer = endeavorContainer
         end
     end
@@ -2462,7 +2533,59 @@ local function createContainers()
             end)
             state.achievementContainer = achievementContainer
             TrackerHost.achievementSectionContainer = achievementContainer
+            TrackerHost.sectionContainers.achievement = achievementContainer
+            if Nvk3UT and type(Nvk3UT.TrackerHost) == "table" then
+                Nvk3UT.TrackerHost.sectionContainers = Nvk3UT.TrackerHost.sectionContainers or TrackerHost.sectionContainers
+                Nvk3UT.TrackerHost.sectionContainers.achievement = achievementContainer
+            end
             Nvk3UT.UI.AchievementContainer = achievementContainer
+        end
+    end
+
+    if contentParent then
+        local goldenContainer = state.goldenContainer or _G[GOLDEN_CONTAINER_NAME]
+        if not goldenContainer then
+            if WINDOW_MANAGER and WINDOW_MANAGER.CreateControlFromVirtual then
+                local ok, control = pcall(
+                    WINDOW_MANAGER.CreateControlFromVirtual,
+                    WINDOW_MANAGER,
+                    GOLDEN_CONTAINER_NAME,
+                    contentParent,
+                    "Nvk3UT_SectionContainerTemplate"
+                )
+                if ok then
+                    goldenContainer = control
+                end
+            end
+            if not goldenContainer then
+                goldenContainer = WINDOW_MANAGER:CreateControl(GOLDEN_CONTAINER_NAME, contentParent, CT_CONTROL)
+            end
+            if goldenContainer then
+                if Nvk3UT and type(Nvk3UT.Debug) == "function" then
+                    Nvk3UT.Debug("TrackerHost: Golden section container created")
+                else
+                    debugLog("TrackerHost: Golden section container created")
+                end
+            end
+        else
+            goldenContainer:SetParent(contentParent)
+        end
+        if goldenContainer then
+            goldenContainer:SetMouseEnabled(false)
+            if goldenContainer.SetResizeToFitDescendents then
+                goldenContainer:SetResizeToFitDescendents(false)
+            end
+            goldenContainer:SetHandler("OnMouseWheel", function(_, delta)
+                adjustScroll(delta)
+            end)
+            state.goldenContainer = goldenContainer
+            TrackerHost.goldenSectionContainer = goldenContainer
+            TrackerHost.sectionContainers.golden = goldenContainer
+            if Nvk3UT and type(Nvk3UT.TrackerHost) == "table" then
+                Nvk3UT.TrackerHost.sectionContainers = Nvk3UT.TrackerHost.sectionContainers or TrackerHost.sectionContainers
+                Nvk3UT.TrackerHost.sectionContainers.golden = goldenContainer
+            end
+            Nvk3UT.UI.GoldenContainer = goldenContainer
         end
     end
 
@@ -3106,6 +3229,9 @@ local function initTrackers()
         pcall(Nvk3UT.AchievementTracker.Init, state.achievementContainer, achievementOpts)
     end
 
+    -- Golden Tracker (to be wired in later tokens)
+    -- Nvk3UT.GoldenTracker:Init(goldenContainer)
+
     local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
     if runtime and type(runtime.QueueDirty) == "function" then
         safeCall(function()
@@ -3493,12 +3619,28 @@ function TrackerHost.Shutdown()
         pcall(Nvk3UT.AchievementModel.Shutdown)
     end
 
+    if state.goldenContainer then
+        state.goldenContainer:SetHidden(true)
+        state.goldenContainer:SetParent(nil)
+    end
+    state.goldenContainer = nil
+    TrackerHost.goldenSectionContainer = nil
+    if TrackerHost.sectionContainers then
+        TrackerHost.sectionContainers.golden = nil
+    end
+    if Nvk3UT.UI then
+        Nvk3UT.UI.GoldenContainer = nil
+    end
+
     if state.achievementContainer then
         state.achievementContainer:SetHidden(true)
         state.achievementContainer:SetParent(nil)
     end
     state.achievementContainer = nil
     TrackerHost.achievementSectionContainer = nil
+    if TrackerHost.sectionContainers then
+        TrackerHost.sectionContainers.achievement = nil
+    end
     Nvk3UT.UI.AchievementContainer = nil
 
     if state.endeavorContainer then
@@ -3507,6 +3649,9 @@ function TrackerHost.Shutdown()
     end
     state.endeavorContainer = nil
     TrackerHost.endeavorSectionContainer = nil
+    if TrackerHost.sectionContainers then
+        TrackerHost.sectionContainers.endeavor = nil
+    end
     Nvk3UT.UI.EndeavorContainer = nil
 
     if state.questContainer then
@@ -3515,6 +3660,9 @@ function TrackerHost.Shutdown()
     end
     state.questContainer = nil
     TrackerHost.questSectionContainer = nil
+    if TrackerHost.sectionContainers then
+        TrackerHost.sectionContainers.quest = nil
+    end
     Nvk3UT.UI.QuestContainer = nil
 
     if state.footerBar then
@@ -3633,6 +3781,7 @@ function TrackerHost.Shutdown()
         state.anchorWarnings.questMissing = false
         state.anchorWarnings.endeavorMissing = false
         state.anchorWarnings.achievementMissing = false
+        state.anchorWarnings.goldenMissing = false
     end
 
     state.appearance = nil
