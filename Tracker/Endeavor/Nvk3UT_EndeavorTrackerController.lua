@@ -85,6 +85,13 @@ local DEFAULT_COLOR_OBJECTIVE = DEFAULT_COLOR_CATEGORY
 local DEFAULT_FONT_FACE = "$(BOLD_FONT)"
 local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
 local DEFAULT_FONT_SIZE = 16
+local DEFAULT_CATEGORY_FONT_SIZE = 20
+local DEFAULT_TITLE_FONT_SIZE = 16
+local DEFAULT_OBJECTIVE_FONT_SIZE = 14
+
+local function buildFontString(face, size, outline)
+    return string.format("%s|%d|%s", face, size, outline)
+end
 
 local function normalizeColorComponent(value, fallback)
     local numeric = tonumber(value)
@@ -140,43 +147,104 @@ local function clampFontSize(value)
     return numeric
 end
 
-local function buildFontStrings(fontConfig)
-    local config = type(fontConfig) == "table" and fontConfig or {}
-    local face = config.Family
-    if type(face) ~= "string" or face == "" then
-        face = DEFAULT_FONT_FACE
+local function buildFontStrings(config)
+    local rootConfig = type(config) == "table" and config or {}
+    local tracker = type(rootConfig.Tracker) == "table" and rootConfig.Tracker or nil
+    local fontsConfig = tracker and tracker.Fonts
+    local legacyFont = type(rootConfig.Font) == "table" and rootConfig.Font or nil
+
+    local fallbackFace = DEFAULT_FONT_FACE
+    if legacyFont and type(legacyFont.Family) == "string" and legacyFont.Family ~= "" then
+        fallbackFace = legacyFont.Family
     end
 
-    local baseSize = clampFontSize(config.Size)
-    local outline = config.Outline
-    if type(outline) ~= "string" or outline == "" then
-        outline = DEFAULT_FONT_OUTLINE
+    local fallbackOutline = DEFAULT_FONT_OUTLINE
+    if legacyFont and type(legacyFont.Outline) == "string" and legacyFont.Outline ~= "" then
+        fallbackOutline = legacyFont.Outline
     end
 
-    local objectiveSize = math.max(baseSize - 2, 12)
-    local categorySize = math.min(baseSize + 4, 48)
-
-    local function fontString(size)
-        return string.format("%s|%d|%s", face, size, outline)
+    local baseSize = DEFAULT_FONT_SIZE
+    if legacyFont and legacyFont.Size ~= nil then
+        baseSize = clampFontSize(legacyFont.Size)
     end
+
+    local fallbackCategorySize = clampFontSize(baseSize + 4)
+    local fallbackTitleSize = clampFontSize(baseSize)
+    local fallbackObjectiveSize = clampFontSize(baseSize - 2)
+
+    local function selectGroup(key)
+        if type(fontsConfig) ~= "table" then
+            return nil
+        end
+        local group = fontsConfig[key]
+        if type(group) ~= "table" then
+            local altKey = type(key) == "string" and string.lower(key) or nil
+            if altKey and type(fontsConfig[altKey]) == "table" then
+                group = fontsConfig[altKey]
+            end
+        end
+        return group
+    end
+
+    local function resolveGroup(groupConfig, defaultSize, fallbackSize)
+        local face = fallbackFace
+        local outline = fallbackOutline
+        local size = fallbackSize or defaultSize
+
+        if type(groupConfig) == "table" then
+            local faceCandidate = groupConfig.Face or groupConfig.face
+            if type(faceCandidate) == "string" and faceCandidate ~= "" then
+                face = faceCandidate
+            end
+
+            local outlineCandidate = groupConfig.Outline or groupConfig.outline
+            if type(outlineCandidate) == "string" and outlineCandidate ~= "" then
+                outline = outlineCandidate
+            end
+
+            local sizeCandidate = groupConfig.Size or groupConfig.size
+            if sizeCandidate ~= nil then
+                size = clampFontSize(sizeCandidate)
+            end
+        end
+
+        if size == nil then
+            size = defaultSize
+        end
+        if size == nil then
+            size = DEFAULT_TITLE_FONT_SIZE
+        end
+        size = clampFontSize(size)
+
+        return buildFontString(face, size, outline), face, size, outline
+    end
+
+    local categoryFont, categoryFace, categorySize, categoryOutline =
+        resolveGroup(selectGroup("Category"), DEFAULT_CATEGORY_FONT_SIZE, fallbackCategorySize)
+    local titleFont, titleFace, titleSize, titleOutline =
+        resolveGroup(selectGroup("Title"), DEFAULT_TITLE_FONT_SIZE, fallbackTitleSize)
+    local objectiveFont, objectiveFace, objectiveSize, objectiveOutline =
+        resolveGroup(selectGroup("Objective"), DEFAULT_OBJECTIVE_FONT_SIZE, fallbackObjectiveSize)
 
     local fonts = {
-        category = fontString(categorySize),
-        section = fontString(baseSize),
-        objective = fontString(objectiveSize),
-        family = face,
-        outline = outline,
-        baseSize = baseSize,
+        category = categoryFont,
+        section = titleFont,
+        objective = objectiveFont,
+        family = titleFace or fallbackFace,
+        outline = titleOutline or fallbackOutline,
+        baseSize = titleSize,
         categorySize = categorySize,
         objectiveSize = objectiveSize,
+        categoryOutline = categoryOutline,
+        objectiveOutline = objectiveOutline,
     }
 
-    fonts.rowHeight = math.max(objectiveSize + 6, 20)
+    fonts.rowHeight = math.max((objectiveSize or DEFAULT_OBJECTIVE_FONT_SIZE) + 6, 20)
 
     return fonts
 end
 
-local function buildRowsOptions(colors, fonts, completedHandling)
+local function buildRowsOptions(colors, fonts, completedHandling, fontConfig)
     return {
         font = fonts.objective,
         rowHeight = fonts.rowHeight,
@@ -185,6 +253,7 @@ local function buildRowsOptions(colors, fonts, completedHandling)
         defaultRole = "objectiveText",
         completedRole = "completed",
         completedHandling = completedHandling,
+        fontConfig = fontConfig,
     }
 end
 
@@ -432,8 +501,10 @@ function Controller:BuildViewModel()
     local WEEKLY_LIMIT = 1
 
     local colors = buildColors(config)
-    local fonts = buildFontStrings(config and config.Font)
-    local rowsOptions = buildRowsOptions(colors, fonts, completedHandling)
+    local fonts = buildFontStrings(config)
+    local trackerConfig = type(config) == "table" and config.Tracker or nil
+    local fontConfig = trackerConfig and trackerConfig.Fonts or nil
+    local rowsOptions = buildRowsOptions(colors, fonts, completedHandling, fontConfig)
 
     if not enabled then
         local stateModule = getStateModule()

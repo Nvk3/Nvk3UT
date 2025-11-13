@@ -393,6 +393,8 @@ local function getEndeavorConfig()
     local config = sv.Endeavor
     config.Colors = config.Colors or {}
     config.Font = config.Font or {}
+    config.Tracker = config.Tracker or {}
+    config.Tracker.Fonts = config.Tracker.Fonts or {}
     return config
 end
 
@@ -408,18 +410,6 @@ local function clampEndeavorFontSize(value)
         numeric = 36
     end
     return numeric
-end
-
-local function ensureEndeavorFont()
-    local font = getEndeavorConfig().Font
-    if type(font.Family) ~= "string" or font.Family == "" then
-        font.Family = FONT_FACE_CHOICES[1].face
-    end
-    font.Size = clampEndeavorFontSize(font.Size)
-    if type(font.Outline) ~= "string" or font.Outline == "" then
-        font.Outline = OUTLINE_CHOICES[3].value
-    end
-    return font
 end
 
 local function getEndeavorColor(colorKey, role)
@@ -633,8 +623,124 @@ local function achievementFontDefaults(key)
     return { face = face, size = size, outline = outline }
 end
 
-local function buildFontControls(label, settings, key, defaults, onChanged)
-    local font = ensureFont(settings, key, defaults)
+local function endeavorFontDefaults(key)
+    local defaults = DEFAULT_FONT_SIZE.achievement
+    local normalized = type(key) == "string" and string.lower(key) or ""
+    local size = defaults.title
+    if normalized == "category" then
+        size = defaults.category
+    elseif normalized == "objective" then
+        size = defaults.line
+    end
+    return {
+        Face = FONT_FACE_CHOICES[1].face,
+        Size = size,
+        Outline = "soft-shadow-thick",
+    }
+end
+
+local function ensureEndeavorFontGroup(config, key, defaults)
+    local defaultsValue = defaults
+    if type(defaultsValue) == "function" then
+        defaultsValue = defaults()
+    end
+    if defaultsValue == nil then
+        defaultsValue = endeavorFontDefaults(key)
+    end
+
+    if type(config) ~= "table" then
+        return defaultsValue
+    end
+
+    config.Tracker = config.Tracker or {}
+    local tracker = config.Tracker
+    tracker.Fonts = tracker.Fonts or {}
+    local fonts = tracker.Fonts
+
+    local group = fonts[key]
+    if type(group) ~= "table" then
+        local altKey = type(key) == "string" and string.lower(key) or nil
+        if altKey and type(fonts[altKey]) == "table" then
+            group = fonts[altKey]
+        else
+            group = {}
+        end
+        fonts[key] = group
+    else
+        fonts[key] = group
+    end
+
+    if type(group.face) == "string" and (group.Face == nil or group.Face == "") then
+        group.Face = group.face
+    end
+    if group.size ~= nil and (group.Size == nil or group.Size == 0) then
+        group.Size = group.size
+    end
+    if type(group.outline) == "string" and (group.Outline == nil or group.Outline == "") then
+        group.Outline = group.outline
+    end
+
+    if type(group.Face) ~= "string" or group.Face == "" then
+        group.Face = defaultsValue.Face or FONT_FACE_CHOICES[1].face
+    end
+
+    group.Size = clampEndeavorFontSize(group.Size or defaultsValue.Size)
+
+    if type(group.Outline) ~= "string" or group.Outline == "" then
+        group.Outline = defaultsValue.Outline or OUTLINE_CHOICES[3].value
+    end
+
+    return group
+end
+
+local function buildFontControls(label, settings, key, defaults, onChanged, adapter)
+    adapter = adapter or {}
+    local ensureTarget = adapter.ensureFont or ensureFont
+    local clampSize = adapter.clampSize or function(value)
+        local numeric = tonumber(value)
+        if numeric == nil then
+            return 16
+        end
+        return math.floor(numeric + 0.5)
+    end
+    local getFace = adapter.getFace or function(font)
+        return font.face
+    end
+    local setFace = adapter.setFace or function(font, value)
+        font.face = value
+    end
+    local getSize = adapter.getSize or function(font)
+        return font.size
+    end
+    local setSize = adapter.setSize or function(font, value)
+        font.size = value
+    end
+    local getOutline = adapter.getOutline or function(font)
+        return font.outline
+    end
+    local setOutline = adapter.setOutline or function(font, value)
+        font.outline = value
+    end
+
+    local defaultsFactory
+    if type(defaults) == "function" then
+        defaultsFactory = defaults
+    else
+        defaultsFactory = function()
+            return defaults
+        end
+    end
+
+    local function ensureFontInstance()
+        return ensureTarget(settings, key, defaultsFactory())
+    end
+
+    local function triggerChanged()
+        if type(onChanged) == "function" then
+            onChanged()
+        end
+    end
+
     return {
         {
             type = "dropdown",
@@ -654,13 +760,13 @@ local function buildFontControls(label, settings, key, defaults, onChanged)
                 return values
             end)(),
             getFunc = function()
-                font = ensureFont(settings, key, defaults)
-                return font.face
+                local font = ensureFontInstance()
+                return getFace(font)
             end,
             setFunc = function(value)
-                font = ensureFont(settings, key, defaults)
-                font.face = value
-                onChanged()
+                local font = ensureFontInstance()
+                setFace(font, value)
+                triggerChanged()
             end,
         },
         {
@@ -670,13 +776,13 @@ local function buildFontControls(label, settings, key, defaults, onChanged)
             max = 36,
             step = 1,
             getFunc = function()
-                font = ensureFont(settings, key, defaults)
-                return font.size
+                local font = ensureFontInstance()
+                return getSize(font)
             end,
             setFunc = function(value)
-                font = ensureFont(settings, key, defaults)
-                font.size = math.floor(value + 0.5)
-                onChanged()
+                local font = ensureFontInstance()
+                setSize(font, clampSize(value))
+                triggerChanged()
             end,
         },
         {
@@ -697,13 +803,13 @@ local function buildFontControls(label, settings, key, defaults, onChanged)
                 return values
             end)(),
             getFunc = function()
-                font = ensureFont(settings, key, defaults)
-                return font.outline
+                local font = ensureFontInstance()
+                return getOutline(font)
             end,
             setFunc = function(value)
-                font = ensureFont(settings, key, defaults)
-                font.outline = value
-                onChanged()
+                local font = ensureFontInstance()
+                setOutline(font, value)
+                triggerChanged()
             end,
         },
     }
@@ -1770,60 +1876,67 @@ local function registerPanel(displayTitle)
 
             controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_ENDEAVOR_SECTION_FONTS) }
 
-            controls[#controls + 1] = {
-                type = "dropdown",
-                name = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_FAMILY),
-                tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_FAMILY_TOOLTIP),
-                choices = FONT_FACE_NAMES,
-                choicesValues = FONT_FACE_VALUES,
-                getFunc = function()
-                    return ensureEndeavorFont().Family
-                end,
-                setFunc = function(value)
-                    local font = ensureEndeavorFont()
-                    font.Family = value
-                    markEndeavorDirty("appearance")
-                    queueEndeavorDirty()
-                end,
-                default = FONT_FACE_CHOICES[1].face,
+            local fontGroups = {
+                { key = "Category", label = "Kategorie-Header" },
+                { key = "Title", label = "Titel" },
+                { key = "Objective", label = "Zeilen" },
             }
 
-            controls[#controls + 1] = {
-                type = "slider",
-                name = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_SIZE),
-                tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_SIZE_TOOLTIP),
-                min = 12,
-                max = 36,
-                step = 1,
-                getFunc = function()
-                    return ensureEndeavorFont().Size
-                end,
-                setFunc = function(value)
-                    local font = ensureEndeavorFont()
-                    font.Size = clampEndeavorFontSize(value)
-                    markEndeavorDirty("appearance")
-                    queueEndeavorDirty()
-                end,
-                default = DEFAULT_FONT_SIZE.achievement.title,
-            }
+            local config = getEndeavorConfig()
+            for index = 1, #fontGroups do
+                local group = fontGroups[index]
+                local defaultsFactory = function()
+                    return endeavorFontDefaults(group.key)
+                end
+                local defaultsValue = defaultsFactory()
+                local fontControls = buildFontControls(
+                    group.label,
+                    config,
+                    group.key,
+                    defaultsFactory,
+                    function()
+                        markEndeavorDirty("appearance")
+                        queueEndeavorDirty()
+                    end,
+                    {
+                        ensureFont = ensureEndeavorFontGroup,
+                        getFace = function(font)
+                            return font.Face
+                        end,
+                        setFace = function(font, value)
+                            font.Face = value
+                        end,
+                        getSize = function(font)
+                            return font.Size
+                        end,
+                        setSize = function(font, value)
+                            font.Size = clampEndeavorFontSize(value)
+                        end,
+                        getOutline = function(font)
+                            return font.Outline
+                        end,
+                        setOutline = function(font, value)
+                            font.Outline = value
+                        end,
+                        clampSize = clampEndeavorFontSize,
+                    }
+                )
 
-            controls[#controls + 1] = {
-                type = "dropdown",
-                name = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_OUTLINE),
-                tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_OUTLINE_TOOLTIP),
-                choices = OUTLINE_NAMES,
-                choicesValues = OUTLINE_VALUES,
-                getFunc = function()
-                    return ensureEndeavorFont().Outline
-                end,
-                setFunc = function(value)
-                    local font = ensureEndeavorFont()
-                    font.Outline = value
-                    markEndeavorDirty("appearance")
-                    queueEndeavorDirty()
-                end,
-                default = OUTLINE_CHOICES[3].value,
-            }
+                for i = 1, #fontControls do
+                    local control = fontControls[i]
+                    if i == 1 then
+                        control.tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_FAMILY_TOOLTIP)
+                        control.default = defaultsValue.Face
+                    elseif i == 2 then
+                        control.tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_SIZE_TOOLTIP)
+                        control.default = defaultsValue.Size
+                    else
+                        control.tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_OUTLINE_TOOLTIP)
+                        control.default = defaultsValue.Outline
+                    end
+                    controls[#controls + 1] = control
+                end
+            end
             return controls
         end)(),
     }
