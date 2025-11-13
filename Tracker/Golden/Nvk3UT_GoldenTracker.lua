@@ -3,6 +3,7 @@ local addonName = "Nvk3UT"
 Nvk3UT = Nvk3UT or {}
 
 local Rows = Nvk3UT and Nvk3UT.GoldenTrackerRows
+local Layout = Nvk3UT and Nvk3UT.GoldenTrackerLayout
 
 local GoldenTracker = {}
 GoldenTracker.__index = GoldenTracker
@@ -15,10 +16,6 @@ local state = {
     content = nil,
     height = 0,
     initialized = false,
-}
-
-local debugFlags = {
-    refreshLogged = false,
 }
 
 local function safeDebug(message, ...)
@@ -51,7 +48,20 @@ local function getRowsModule()
     return nil
 end
 
-local function clearChildren(control)
+local function getLayoutModule()
+    if Layout and type(Layout) == "table" then
+        return Layout
+    end
+
+    Layout = Nvk3UT and Nvk3UT.GoldenTrackerLayout
+    if type(Layout) == "table" then
+        return Layout
+    end
+
+    return nil
+end
+
+local function ClearChildren(control)
     if not control then
         return
     end
@@ -166,28 +176,6 @@ local function safeCreateRow(rowFn, parent, data)
     return nil
 end
 
-local function accumulateHeight(total, control)
-    if not control then
-        return total
-    end
-
-    local height = 0
-    if type(control.__height) == "number" then
-        height = control.__height
-    elseif control.GetHeight then
-        local ok, value = pcall(control.GetHeight, control)
-        if ok and type(value) == "number" then
-            height = value
-        end
-    end
-
-    if height < 0 then
-        height = 0
-    end
-
-    return total + height
-end
-
 function GoldenTracker.Init(parentControl)
     state.parent = parentControl
     state.height = 0
@@ -209,7 +197,7 @@ function GoldenTracker.Init(parentControl)
         return
     end
 
-    clearChildren(content)
+    ClearChildren(content)
 
     state.height = 0
     setContainerHeight(parentControl, 0)
@@ -220,32 +208,6 @@ function GoldenTracker.Init(parentControl)
     state.initialized = true
 
     safeDebug("Init")
-end
-
-local function renderCategories(content, categories)
-    local rowsModule = getRowsModule()
-    if rowsModule == nil then
-        safeDebug("Refresh skipping rendering; Rows module unavailable")
-        return 0
-    end
-
-    local totalHeight = 0
-
-    local firstCategory = categories[1]
-    if type(firstCategory) ~= "table" then
-        return 0
-    end
-
-    local categoryControl = safeCreateRow(rowsModule.CreateCategoryHeader, content, firstCategory)
-    totalHeight = accumulateHeight(totalHeight, categoryControl)
-
-    local entries = type(firstCategory.entries) == "table" and firstCategory.entries or {}
-    for index = 1, #entries do
-        local entryControl = safeCreateRow(rowsModule.CreateEntryRow, content, entries[index])
-        totalHeight = accumulateHeight(totalHeight, entryControl)
-    end
-
-    return totalHeight
 end
 
 function GoldenTracker.Refresh(viewModel)
@@ -259,34 +221,69 @@ function GoldenTracker.Refresh(viewModel)
 
     if not container or not root or not content then
         state.height = 0
+        setContainerHeight(container, 0)
         return
     end
 
-    clearChildren(content)
+    ClearChildren(content)
+
+    local rowsModule = getRowsModule()
+    local layoutModule = getLayoutModule()
+    local rows = {}
 
     local vm = type(viewModel) == "table" and viewModel or {}
     local categories = type(vm.categories) == "table" and vm.categories or {}
 
-    if #categories == 0 then
-        state.height = 0
-        setContainerHeight(container, 0)
-        applyVisibility(root, true)
-        applyVisibility(content, true)
-        return
+    if rowsModule and #categories > 0 then
+        for categoryIndex = 1, #categories do
+            local categoryData = categories[categoryIndex]
+            if type(categoryData) == "table" then
+                local categoryRow = safeCreateRow(rowsModule.CreateCategoryHeader, content, categoryData)
+                if categoryRow then
+                    table.insert(rows, categoryRow)
+                end
+
+                local entries = type(categoryData.entries) == "table" and categoryData.entries or {}
+                for entryIndex = 1, #entries do
+                    local entryData = entries[entryIndex]
+                    if type(entryData) == "table" then
+                        local entryRow = safeCreateRow(rowsModule.CreateEntryRow, content, entryData)
+                        if entryRow then
+                            table.insert(rows, entryRow)
+                        end
+
+                        local objectives = type(entryData.objectives) == "table" and entryData.objectives or {}
+                        for objectiveIndex = 1, #objectives do
+                            local objectiveData = objectives[objectiveIndex]
+                            if type(objectiveData) == "table" then
+                                local objectiveRow = safeCreateRow(rowsModule.CreateObjectiveRow, content, objectiveData)
+                                if objectiveRow then
+                                    table.insert(rows, objectiveRow)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
     end
 
-    applyVisibility(root, false)
-    applyVisibility(content, false)
+    local totalHeight = 0
 
-    local totalHeight = renderCategories(content, categories)
+    if layoutModule then
+        totalHeight = layoutModule.ApplyLayout(content, rows) or 0
+    else
+        safeDebug("Refresh passthrough skipped; layout module unavailable")
+    end
+
+    local hasRows = #rows > 0 and layoutModule ~= nil
+    applyVisibility(root, not hasRows)
+    applyVisibility(content, not hasRows)
 
     state.height = totalHeight
     setContainerHeight(container, totalHeight)
 
-    if not debugFlags.refreshLogged then
-        debugFlags.refreshLogged = true
-        safeDebug("Refresh (stub)")
-    end
+    safeDebug("Refresh passthrough layout, rows=%d height=%d", #rows, totalHeight)
 end
 
 function GoldenTracker.GetHeight()
