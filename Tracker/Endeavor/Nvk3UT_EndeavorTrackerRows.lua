@@ -8,6 +8,20 @@ Rows.__index = Rows
 
 local MODULE_TAG = addonName .. ".EndeavorTrackerRows"
 
+local ROWS_HEIGHTS = {
+    category = 26,
+    entry = 20,
+}
+
+local CATEGORY_TOP_PAD = 0
+local CATEGORY_BOTTOM_PAD_EXPANDED = 6
+local CATEGORY_BOTTOM_PAD_COLLAPSED = 6
+local CATEGORY_ENTRY_SPACING = 3
+
+local ENTRY_TOP_PAD = 0
+local ENTRY_BOTTOM_PAD = 0
+local ENTRY_ROW_SPACING = 3
+
 local function isDebugEnabled()
     local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
     if utils and type(utils.IsDebugEnabled) == "function" then
@@ -40,16 +54,13 @@ local function isDebugEnabled()
     return false
 end
 
-local OBJECTIVE_ROW_DEFAULT_HEIGHT = 20
 local DEFAULT_OBJECTIVE_FONT = "ZoFontGameSmall"
 local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
 local DEFAULT_OBJECTIVE_COLOR_ROLE = "objectiveText"
 local DEFAULT_TRACKER_COLOR_KIND = "endeavorTracker"
 local COMPLETED_COLOR_ROLE = "completed"
-local ROW_GAP = 3
 local OBJECTIVE_INDENT_X = 60
 
-local CATEGORY_ROW_HEIGHT = 26
 local CATEGORY_CHEVRON_SIZE = 20
 local CATEGORY_LABEL_OFFSET_X = 4
 local DEFAULT_CATEGORY_COLOR_ROLE_EXPANDED = "activeTitle"
@@ -61,6 +72,29 @@ local DEFAULT_CATEGORY_CHEVRON_TEXTURES = {
 }
 
 local MOUSE_BUTTON_LEFT = rawget(_G, "MOUSE_BUTTON_INDEX_LEFT") or 1
+
+local resolvedEntryHeight = ROWS_HEIGHTS.entry
+
+local function getCategoryHeight(expanded)
+    if expanded and type(ROWS_HEIGHTS.categoryExpanded) == "number" then
+        return ROWS_HEIGHTS.categoryExpanded
+    end
+
+    return ROWS_HEIGHTS.category
+end
+
+local function resolveEntryHeight(options)
+    local height = ROWS_HEIGHTS.entry
+    if type(options) == "table" then
+        local override = tonumber(options.rowHeight)
+        if override and override > 0 then
+            height = override
+        end
+    end
+
+    resolvedEntryHeight = height
+    return height
+end
 
 local function FormatParensCount(a, b)
     local aNum = tonumber(a) or 0
@@ -567,7 +601,7 @@ local function createCategoryRow(parent)
     end
 
     control:SetResizeToFitDescendents(false)
-    control:SetHeight(CATEGORY_ROW_HEIGHT)
+    control:SetHeight(getCategoryHeight(false))
     control:SetMouseEnabled(true)
     control:SetHidden(false)
 
@@ -808,7 +842,7 @@ local function acquireCategoryRow(parent)
             control:SetResizeToFitDescendents(false)
         end
         if control.SetHeight then
-            control:SetHeight(CATEGORY_ROW_HEIGHT)
+            control:SetHeight(getCategoryHeight(false))
         end
         if control.SetMouseEnabled then
             control:SetMouseEnabled(true)
@@ -1001,6 +1035,14 @@ local function applyCategoryRow(row, data)
         remaining,
         tostring(showCounts)
     )
+
+    if control and control.SetHeight then
+        local categoryHeight = getCategoryHeight(expanded)
+        control:SetHeight(categoryHeight)
+        if Rows.DebugHeights then
+            Rows.DebugHeights("category", categoryHeight)
+        end
+    end
 end
 
 function Rows.AcquireCategoryRow(parent)
@@ -1191,6 +1233,14 @@ local function applyEntryRow(row, objective, options)
         end
     end
 
+    local entryHeight = resolveEntryHeight(options)
+    if row.SetHeight then
+        row:SetHeight(entryHeight)
+        if Rows.DebugHeights then
+            Rows.DebugHeights("entry", entryHeight)
+        end
+    end
+
     local title = ensureEntryChild(row, titleName, CT_LABEL)
     title:SetParent(row)
     local rowKind = type(objective) == "table" and objective.kind or nil
@@ -1204,15 +1254,12 @@ local function applyEntryRow(row, objective, options)
         title:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
     end
     title:ClearAnchors()
-    title:SetAnchor(TOPLEFT, row, TOPLEFT, OBJECTIVE_INDENT_X, 0)
-    title:SetAnchor(TOPRIGHT, row, TOPRIGHT, 0, 0)
+    title:SetAnchor(TOPLEFT, row, TOPLEFT, OBJECTIVE_INDENT_X, ENTRY_TOP_PAD)
+    title:SetAnchor(BOTTOMRIGHT, row, BOTTOMRIGHT, 0, -ENTRY_BOTTOM_PAD)
     if title.SetHeight then
-        local titleHeight = OBJECTIVE_ROW_DEFAULT_HEIGHT
-        if type(options) == "table" then
-            local override = tonumber(options.rowHeight)
-            if override and override > 0 then
-                titleHeight = override
-            end
+        local titleHeight = entryHeight - (ENTRY_TOP_PAD + ENTRY_BOTTOM_PAD)
+        if titleHeight < 0 then
+            titleHeight = 0
         end
         title:SetHeight(titleHeight)
     end
@@ -1311,13 +1358,7 @@ function Rows.BuildObjectives(container, list, options)
 
     Rows.ResetEntryPool(container)
 
-    local rowHeight = OBJECTIVE_ROW_DEFAULT_HEIGHT
-    if type(options) == "table" then
-        local override = tonumber(options.rowHeight)
-        if override and override > 0 then
-            rowHeight = override
-        end
-    end
+    local rowHeight = resolveEntryHeight(options)
 
     local totalHeight = 0
     local previous
@@ -1327,12 +1368,9 @@ function Rows.BuildObjectives(container, list, options)
     for index = 1, count do
         local row = acquireEntryRow(container)
         if row then
-            if row.SetHeight then
-                row:SetHeight(rowHeight)
-            end
             if previous then
-                row:SetAnchor(TOPLEFT, previous, BOTTOMLEFT, 0, ROW_GAP)
-                row:SetAnchor(TOPRIGHT, previous, BOTTOMRIGHT, 0, ROW_GAP)
+                row:SetAnchor(TOPLEFT, previous, BOTTOMLEFT, 0, ENTRY_ROW_SPACING)
+                row:SetAnchor(TOPRIGHT, previous, BOTTOMRIGHT, 0, ENTRY_ROW_SPACING)
             else
                 row:SetAnchor(TOPLEFT, container, TOPLEFT, 0, 0)
                 row:SetAnchor(TOPRIGHT, container, TOPRIGHT, 0, 0)
@@ -1342,7 +1380,7 @@ function Rows.BuildObjectives(container, list, options)
             cache.rows[index] = row
             previous = row
             if index > 1 then
-                totalHeight = totalHeight + ROW_GAP
+                totalHeight = totalHeight + ENTRY_ROW_SPACING
             end
             totalHeight = totalHeight + rowHeight
         end
@@ -1370,6 +1408,57 @@ end
 
 function Rows.GetLastHeight()
     return coerceNumber(lastHeight)
+end
+
+function Rows.GetCategoryRowHeight(expanded)
+    return getCategoryHeight(expanded)
+end
+
+function Rows.GetEntryRowHeight()
+    return resolvedEntryHeight
+end
+
+function Rows.GetCategoryTopPadding()
+    return CATEGORY_TOP_PAD
+end
+
+function Rows.GetCategoryBottomPadding(hasRows)
+    if hasRows then
+        return CATEGORY_BOTTOM_PAD_EXPANDED
+    end
+    return CATEGORY_BOTTOM_PAD_COLLAPSED
+end
+
+function Rows.GetCategoryEntrySpacing()
+    return CATEGORY_ENTRY_SPACING
+end
+
+function Rows.GetEntryTopPadding()
+    return ENTRY_TOP_PAD
+end
+
+function Rows.GetEntryBottomPadding()
+    return ENTRY_BOTTOM_PAD
+end
+
+function Rows.GetEntrySpacing()
+    return ENTRY_ROW_SPACING
+end
+
+local loggedHeights = {}
+
+function Rows.DebugHeights(rowType, height)
+    if not isDebugEnabled() then
+        return
+    end
+
+    local key = tostring(rowType or "row")
+    if loggedHeights[key] then
+        return
+    end
+
+    loggedHeights[key] = true
+    safeDebug("[Rows.Heights] %s=%s", key, tostring(height))
 end
 
 Nvk3UT.EndeavorTrackerRows = Rows
