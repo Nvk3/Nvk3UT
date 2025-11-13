@@ -116,6 +116,26 @@ local function emitTempEventsActiveDebug()
     end
 end
 
+local function isControl(candidate)
+    if type(candidate) ~= "userdata" then
+        return false
+    end
+
+    if type(candidate.GetName) == "function" then
+        return true
+    end
+
+    if type(candidate.GetType) == "function" then
+        return true
+    end
+
+    if type(candidate.SetParent) == "function" then
+        return true
+    end
+
+    return false
+end
+
 local function deferInitKick()
     if not state.initialized then
         return
@@ -285,6 +305,11 @@ local function createRootAndContent(parentControl)
         return nil, nil
     end
 
+    if not isControl(parentControl) then
+        safeDebug("Init aborted; parent control invalid for root creation (%s)", type(parentControl))
+        return nil, nil
+    end
+
     local parentName = "Nvk3UT_Golden"
     if parentControl and type(parentControl.GetName) == "function" then
         local okName, name = pcall(parentControl.GetName, parentControl)
@@ -294,6 +319,7 @@ local function createRootAndContent(parentControl)
     end
 
     local rootName = parentName .. "Root"
+    -- FIX: parent must be a UI control (userdata); host now passes the section container
     local rootControl = wm:CreateControl(rootName, parentControl, CT_CONTROL)
     if rootControl then
         if rootControl.SetResizeToFitDescendents then
@@ -361,19 +387,36 @@ local function safeCreateRow(rowFn, parent, data)
     return nil
 end
 
-function GoldenTracker.Init(parentControl)
-    state.parent = parentControl
+function GoldenTracker.Init(parentControl, opts)
+    state.parent = nil
     state.height = 0
     state.initialized = false
     state.root = nil
     state.content = nil
 
-    if not parentControl then
-        safeDebug("Init skipped; parent control missing")
+    local originalParent = parentControl
+    local resolvedParent = parentControl
+
+    if type(resolvedParent) == "table" then
+        if isControl(resolvedParent.control) then
+            resolvedParent = resolvedParent.control
+        elseif isControl(resolvedParent.container) then
+            resolvedParent = resolvedParent.container
+        end
+    end
+
+    if not isControl(resolvedParent) then
+        safeDebug("Init aborted: invalid parent (value=%s type=%s)", tostring(originalParent), type(originalParent))
         return
     end
 
-    local root, content = createRootAndContent(parentControl)
+    state.parent = resolvedParent
+
+    if isDiagnosticsDebugEnabled() then
+        safeDebug("Init: parent=%s (%s)", tostring(resolvedParent), type(resolvedParent))
+    end
+
+    local root, content = createRootAndContent(resolvedParent)
     state.root = root
     state.content = content
 
@@ -385,8 +428,8 @@ function GoldenTracker.Init(parentControl)
     ClearChildren(content)
 
     state.height = 0
-    setContainerHeight(parentControl, 0)
-    applyVisibility(parentControl, false)
+    setContainerHeight(resolvedParent, 0)
+    applyVisibility(resolvedParent, false)
     applyVisibility(root, true)
     applyVisibility(content, true)
 
