@@ -96,6 +96,7 @@ local HEADER_TO_ROWS_GAP = 3
 local ROW_GAP = 3
 local SECTION_BOTTOM_GAP = 3
 local SECTION_BOTTOM_GAP_COLLAPSED = 3
+local DEFAULT_BOTTOM_PIXEL_NUDGE = 3
 local CATEGORY_CHEVRON_SIZE = 20
 local CATEGORY_LABEL_OFFSET_X = 4
 local SUBHEADER_INDENT_X = 18
@@ -1009,6 +1010,89 @@ local function coerceHeight(value)
     return 0
 end
 
+local function getCategoryRowHeightValue(rows, expanded)
+    if rows and type(rows.GetCategoryRowHeight) == "function" then
+        local ok, height = pcall(rows.GetCategoryRowHeight, expanded)
+        if ok then
+            local resolved = coerceHeight(height)
+            if resolved > 0 then
+                return resolved
+            end
+        end
+    end
+
+    return CATEGORY_HEADER_HEIGHT
+end
+
+local function getCategoryTopPaddingValue(rows)
+    if rows and type(rows.GetCategoryTopPadding) == "function" then
+        local ok, padding = pcall(rows.GetCategoryTopPadding)
+        if ok and type(padding) == "number" then
+            return padding
+        end
+    end
+
+    return 0
+end
+
+local function getCategoryEntrySpacingValue(rows)
+    if rows and type(rows.GetCategoryEntrySpacing) == "function" then
+        local ok, spacing = pcall(rows.GetCategoryEntrySpacing)
+        if ok and type(spacing) == "number" then
+            return spacing
+        end
+    end
+
+    return HEADER_TO_ROWS_GAP
+end
+
+local function getEntrySpacingValue(rows)
+    if rows and type(rows.GetEntrySpacing) == "function" then
+        local ok, spacing = pcall(rows.GetEntrySpacing)
+        if ok and type(spacing) == "number" then
+            return spacing
+        end
+    end
+
+    return ROW_GAP
+end
+
+local function getCategoryBottomPaddingValue(rows, hasRows)
+    if rows and type(rows.GetCategoryBottomPadding) == "function" then
+        local ok, padding = pcall(rows.GetCategoryBottomPadding, hasRows)
+        if ok and type(padding) == "number" then
+            return padding
+        end
+    end
+
+    if hasRows then
+        return SECTION_BOTTOM_GAP + DEFAULT_BOTTOM_PIXEL_NUDGE
+    end
+
+    return SECTION_BOTTOM_GAP_COLLAPSED + DEFAULT_BOTTOM_PIXEL_NUDGE
+end
+
+local function getObjectiveContainerHeight(rows, control)
+    if rows and type(rows.GetMeasuredHeight) == "function" then
+        local ok, measured = pcall(rows.GetMeasuredHeight, control)
+        if ok then
+            local resolved = coerceHeight(measured)
+            if resolved >= 0 then
+                return resolved
+            end
+        end
+    end
+
+    if control and type(control.GetHeight) == "function" then
+        local ok, current = pcall(control.GetHeight, control)
+        if ok then
+            return coerceHeight(current)
+        end
+    end
+
+    return 0
+end
+
 local function ensureUi(container)
     if container == nil then
         return state.ui
@@ -1179,6 +1263,134 @@ local function ensureUi(container)
     end
 
     return ui
+end
+
+local function applyDeterministicLayout(container, layoutData)
+    if container == nil then
+        return 0
+    end
+
+    local rows = layoutData.rows
+    local categoryEntry = layoutData.category or {}
+    local categoryControl = categoryEntry.control
+    local categoryExpanded = layoutData.categoryExpanded == true
+
+    local topPadding = getCategoryTopPaddingValue(rows)
+    local headerToRowsSpacing = getCategoryEntrySpacingValue(rows)
+    local rowSpacing = getEntrySpacingValue(rows)
+
+    local previousControl
+    local previousKind
+    local visibleCount = 0
+    local rowCount = 0
+    local totalHeight = 0
+
+    local function appendControl(control, height, kind)
+        if not control then
+            return
+        end
+
+        if control.SetHidden then
+            control:SetHidden(false)
+        end
+
+        local gap
+        if visibleCount == 0 then
+            gap = topPadding
+        elseif previousKind == "header" then
+            gap = headerToRowsSpacing
+        else
+            gap = rowSpacing
+        end
+
+        if control.ClearAnchors then
+            control:ClearAnchors()
+        end
+
+        if previousControl then
+            control:SetAnchor(TOPLEFT, previousControl, BOTTOMLEFT, 0, gap)
+            control:SetAnchor(TOPRIGHT, previousControl, BOTTOMRIGHT, 0, gap)
+        else
+            control:SetAnchor(TOPLEFT, container, TOPLEFT, 0, topPadding)
+            control:SetAnchor(TOPRIGHT, container, TOPRIGHT, 0, topPadding)
+        end
+
+        local resolvedHeight = coerceHeight(height)
+        if control.SetHeight then
+            control:SetHeight(resolvedHeight)
+        end
+
+        totalHeight = totalHeight + gap + resolvedHeight
+        previousControl = control
+        previousKind = kind
+        visibleCount = visibleCount + 1
+        if kind ~= "header" then
+            rowCount = rowCount + 1
+        end
+    end
+
+    local categoryHeight = getCategoryRowHeightValue(rows, categoryExpanded)
+    if categoryControl then
+        appendControl(categoryControl, categoryHeight, "header")
+    end
+
+    if categoryExpanded then
+        local dailyEntry = layoutData.daily or {}
+        if dailyEntry.include and dailyEntry.control then
+            appendControl(dailyEntry.control, coerceHeight(dailyEntry.height), "row")
+        elseif dailyEntry.control and dailyEntry.control.SetHidden then
+            dailyEntry.control:SetHidden(true)
+        end
+
+        local dailyObjectives = layoutData.dailyObjectives or {}
+        if dailyObjectives.include and dailyObjectives.control then
+            appendControl(dailyObjectives.control, coerceHeight(dailyObjectives.height), "row")
+        elseif dailyObjectives.control and dailyObjectives.control.SetHidden then
+            dailyObjectives.control:SetHidden(true)
+        end
+
+        local weeklyEntry = layoutData.weekly or {}
+        if weeklyEntry.include and weeklyEntry.control then
+            appendControl(weeklyEntry.control, coerceHeight(weeklyEntry.height), "row")
+        elseif weeklyEntry.control and weeklyEntry.control.SetHidden then
+            weeklyEntry.control:SetHidden(true)
+        end
+
+        local weeklyObjectives = layoutData.weeklyObjectives or {}
+        if weeklyObjectives.include and weeklyObjectives.control then
+            appendControl(weeklyObjectives.control, coerceHeight(weeklyObjectives.height), "row")
+        elseif weeklyObjectives.control and weeklyObjectives.control.SetHidden then
+            weeklyObjectives.control:SetHidden(true)
+        end
+    else
+        local dailyEntry = layoutData.daily or {}
+        if dailyEntry.control and dailyEntry.control.SetHidden then
+            dailyEntry.control:SetHidden(true)
+        end
+        local dailyObjectives = layoutData.dailyObjectives or {}
+        if dailyObjectives.control and dailyObjectives.control.SetHidden then
+            dailyObjectives.control:SetHidden(true)
+        end
+        local weeklyEntry = layoutData.weekly or {}
+        if weeklyEntry.control and weeklyEntry.control.SetHidden then
+            weeklyEntry.control:SetHidden(true)
+        end
+        local weeklyObjectives = layoutData.weeklyObjectives or {}
+        if weeklyObjectives.control and weeklyObjectives.control.SetHidden then
+            weeklyObjectives.control:SetHidden(true)
+        end
+    end
+
+    if visibleCount > 0 then
+        local bottomPadding = getCategoryBottomPaddingValue(rows, rowCount > 0)
+        totalHeight = totalHeight + bottomPadding
+    end
+
+    if container.SetHeight then
+        container:SetHeight(totalHeight)
+    end
+
+    return totalHeight
 end
 
 function EndeavorTracker.Init(sectionContainer)
@@ -1599,109 +1811,41 @@ function EndeavorTracker.Refresh(viewModel)
                 end
             end
 
-            local layout = getLayoutModule()
-            local layoutContext = {
+            local dailyObjectivesHeight = 0
+            if dailyExpanded and dailyObjectivesControl then
+                dailyObjectivesHeight = getObjectiveContainerHeight(rows, dailyObjectivesControl)
+            end
+
+            local weeklyObjectivesHeight = 0
+            if weeklyExpanded and weeklyObjectivesControl then
+                weeklyObjectivesHeight = getObjectiveContainerHeight(rows, weeklyObjectivesControl)
+            end
+
+            local measuredHeight = applyDeterministicLayout(container, {
+                rows = rows,
                 category = { control = categoryControl },
                 categoryExpanded = categoryExpanded,
-                daily = { control = dailyControl },
-                dailyExpanded = dailyVm.expanded == true,
-                dailyObjectives = { control = dailyObjectivesControl, expanded = dailyExpanded },
-                weekly = { control = weeklyControl },
-                weeklyExpanded = weeklyVm.expanded == true,
-                weeklyObjectives = { control = weeklyObjectivesControl, expanded = weeklyExpanded },
-            }
-
-            local measuredHeight = 0
-            if layout and type(layout.Apply) == "function" then
-                local ok, height = pcall(layout.Apply, container, layoutContext)
-                if ok then
-                    measuredHeight = coerceHeight(height)
-                end
-            else
-                local fallbackHeight = CATEGORY_HEADER_HEIGHT
-                if categoryControl and categoryControl.GetHeight then
-                    local ok, height = pcall(categoryControl.GetHeight, categoryControl)
-                    if ok then
-                        local measuredCategoryHeight = coerceHeight(height)
-                        if measuredCategoryHeight > 0 then
-                            fallbackHeight = measuredCategoryHeight
-                        end
-                    end
-                end
-
-                local rowsHeight = 0
-                local rowCount = 0
-
-                local function addRowHeight(measuredHeight, defaultHeight)
-                    local resolved = coerceHeight(measuredHeight)
-                    if resolved <= 0 then
-                        resolved = coerceHeight(defaultHeight)
-                    end
-
-                    if resolved > 0 then
-                        rowsHeight = rowsHeight + resolved
-                        rowCount = rowCount + 1
-                    end
-                end
-
-                if categoryExpanded then
-                    if dailyControl then
-                        local measured = 0
-                        if dailyControl.GetHeight then
-                            local ok, height = pcall(dailyControl.GetHeight, dailyControl)
-                            if ok then
-                                measured = height
-                            end
-                        end
-                        addRowHeight(measured, SECTION_ROW_HEIGHT)
-                    end
-
-                    if dailyExpanded and dailyObjectivesControl then
-                        local measured = 0
-                        if dailyObjectivesControl.GetHeight then
-                            local ok, height = pcall(dailyObjectivesControl.GetHeight, dailyObjectivesControl)
-                            if ok then
-                                measured = height
-                            end
-                        end
-                        addRowHeight(measured, 0)
-                    end
-
-                    if weeklyControl then
-                        local measured = 0
-                        if weeklyControl.GetHeight then
-                            local ok, height = pcall(weeklyControl.GetHeight, weeklyControl)
-                            if ok then
-                                measured = height
-                            end
-                        end
-                        addRowHeight(measured, SECTION_ROW_HEIGHT)
-                    end
-
-                    if weeklyExpanded and weeklyObjectivesControl then
-                        local measured = 0
-                        if weeklyObjectivesControl.GetHeight then
-                            local ok, height = pcall(weeklyObjectivesControl.GetHeight, weeklyObjectivesControl)
-                            if ok then
-                                measured = height
-                            end
-                        end
-                        addRowHeight(measured, 0)
-                    end
-                end
-
-                if rowCount > 0 then
-                    fallbackHeight = fallbackHeight + HEADER_TO_ROWS_GAP + rowsHeight
-                    if rowCount > 1 then
-                        fallbackHeight = fallbackHeight + ROW_GAP * (rowCount - 1)
-                    end
-                    fallbackHeight = fallbackHeight + SECTION_BOTTOM_GAP
-                else
-                    fallbackHeight = fallbackHeight + SECTION_BOTTOM_GAP_COLLAPSED
-                end
-
-                measuredHeight = fallbackHeight
-            end
+                daily = {
+                    control = dailyControl,
+                    include = categoryExpanded and dailyControl ~= nil,
+                    height = SECTION_ROW_HEIGHT,
+                },
+                dailyObjectives = {
+                    control = dailyObjectivesControl,
+                    include = categoryExpanded and dailyExpanded and dailyObjectivesControl ~= nil,
+                    height = dailyObjectivesHeight,
+                },
+                weekly = {
+                    control = weeklyControl,
+                    include = categoryExpanded and weeklyControl ~= nil,
+                    height = SECTION_ROW_HEIGHT,
+                },
+                weeklyObjectives = {
+                    control = weeklyObjectivesControl,
+                    include = categoryExpanded and weeklyExpanded and weeklyObjectivesControl ~= nil,
+                    height = weeklyObjectivesHeight,
+                },
+            })
 
             state.currentHeight = coerceHeight(measuredHeight)
             if container and container.SetHeight then
