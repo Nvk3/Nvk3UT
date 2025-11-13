@@ -17,6 +17,7 @@ local QUEST_CONTAINER_NAME = addonName .. "_QuestContainer"
 local ENDEAVOR_CONTAINER_NAME = addonName .. "_EndeavorContainer"
 local ACHIEVEMENT_CONTAINER_NAME = addonName .. "_AchievementContainer"
 local GOLDEN_CONTAINER_NAME = addonName .. "_GoldenContainer"
+local SECTION_TEMPLATE_NAME = "Nvk3UT_SectionContainerTemplate"
 local SCROLL_CONTAINER_NAME = addonName .. "_ScrollContainer"
 local SCROLL_CONTENT_NAME = SCROLL_CONTAINER_NAME .. "_Content"
 local SCROLLBAR_NAME = SCROLL_CONTAINER_NAME .. "_ScrollBar"
@@ -2369,9 +2370,59 @@ local function createScrollContainer()
     applyViewportPadding()
 end
 
+local function SafeCreateSectionContainer(name, parent)
+    if not (WINDOW_MANAGER and parent and name) then
+        return nil
+    end
+
+    if _G[SECTION_TEMPLATE_NAME] and WINDOW_MANAGER.CreateControlFromVirtual then
+        local ok, control = pcall(
+            WINDOW_MANAGER.CreateControlFromVirtual,
+            WINDOW_MANAGER,
+            name,
+            parent,
+            SECTION_TEMPLATE_NAME
+        )
+        if ok and control then
+            return control
+        end
+    end
+
+    local fallback = nil
+    if WINDOW_MANAGER.CreateControl then
+        fallback = WINDOW_MANAGER:CreateControl(name, parent, CT_CONTROL)
+    end
+    if fallback then
+        if fallback.SetResizeToFitDescendents then
+            fallback:SetResizeToFitDescendents(true)
+        end
+        if fallback.SetHidden then
+            fallback:SetHidden(true)
+        end
+    end
+
+    local warnMessage = string.format(
+        "TrackerHost: Section template missing; created plain container for %s",
+        tostring(name)
+    )
+    if Nvk3UT and type(Nvk3UT.Warn) == "function" then
+        Nvk3UT.Warn(warnMessage)
+    else
+        debugLog(warnMessage)
+    end
+
+    return fallback
+end
+
 local function createContainers()
     if not (state.root and WINDOW_MANAGER) then
         return
+    end
+
+    TrackerHost.sectionContainers = TrackerHost.sectionContainers or {}
+    local globalHost = Nvk3UT and type(Nvk3UT.TrackerHost) == "table" and Nvk3UT.TrackerHost
+    if globalHost then
+        globalHost.sectionContainers = globalHost.sectionContainers or TrackerHost.sectionContainers
     end
 
     createScrollContainer()
@@ -2543,34 +2594,32 @@ local function createContainers()
     end
 
     if contentParent then
-        local goldenContainer = state.goldenContainer or _G[GOLDEN_CONTAINER_NAME]
+        local parentName = contentParent.GetName and contentParent:GetName()
+        local goldenName
+        if type(parentName) == "string" and parentName ~= "" then
+            goldenName = string.format("%sGoldenContainer", parentName)
+        else
+            goldenName = GOLDEN_CONTAINER_NAME
+        end
+
+        local goldenContainer = state.goldenContainer or _G[goldenName] or _G[GOLDEN_CONTAINER_NAME]
+        local createdNew = false
         if not goldenContainer then
-            if WINDOW_MANAGER and WINDOW_MANAGER.CreateControlFromVirtual then
-                local ok, control = pcall(
-                    WINDOW_MANAGER.CreateControlFromVirtual,
-                    WINDOW_MANAGER,
-                    GOLDEN_CONTAINER_NAME,
-                    contentParent,
-                    "Nvk3UT_SectionContainerTemplate"
-                )
-                if ok then
-                    goldenContainer = control
-                end
-            end
-            if not goldenContainer then
-                goldenContainer = WINDOW_MANAGER:CreateControl(GOLDEN_CONTAINER_NAME, contentParent, CT_CONTROL)
-            end
-            if goldenContainer then
-                if Nvk3UT and type(Nvk3UT.Debug) == "function" then
-                    Nvk3UT.Debug("TrackerHost: Golden section container created")
-                else
-                    debugLog("TrackerHost: Golden section container created")
-                end
-            end
+            goldenContainer = SafeCreateSectionContainer(goldenName, contentParent)
+            createdNew = goldenContainer ~= nil
         else
             goldenContainer:SetParent(contentParent)
         end
+
         if goldenContainer then
+            if createdNew then
+                if Nvk3UT and type(Nvk3UT.Debug) == "function" then
+                    Nvk3UT.Debug("TrackerHost: Golden section container created (safe)")
+                else
+                    debugLog("TrackerHost: Golden section container created (safe)")
+                end
+            end
+
             goldenContainer:SetMouseEnabled(false)
             if goldenContainer.SetResizeToFitDescendents then
                 goldenContainer:SetResizeToFitDescendents(false)
@@ -2581,9 +2630,8 @@ local function createContainers()
             state.goldenContainer = goldenContainer
             TrackerHost.goldenSectionContainer = goldenContainer
             TrackerHost.sectionContainers.golden = goldenContainer
-            if Nvk3UT and type(Nvk3UT.TrackerHost) == "table" then
-                Nvk3UT.TrackerHost.sectionContainers = Nvk3UT.TrackerHost.sectionContainers or TrackerHost.sectionContainers
-                Nvk3UT.TrackerHost.sectionContainers.golden = goldenContainer
+            if globalHost then
+                globalHost.sectionContainers.golden = goldenContainer
             end
             Nvk3UT.UI.GoldenContainer = goldenContainer
         end
