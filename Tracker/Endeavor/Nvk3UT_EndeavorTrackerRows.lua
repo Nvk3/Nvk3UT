@@ -141,8 +141,6 @@ local function FormatParensCount(a, b)
     return string.format("(%d/%d)", math.floor(aNum + 0.5), math.floor(bNum + 0.5))
 end
 
-Rows._cache = Rows._cache or setmetatable({}, { __mode = "k" })
-
 local categoryPool = {
     free = {},
     used = {},
@@ -155,7 +153,6 @@ local entryPool = {
     nextId = 1,
 }
 
-local lastHeight = 0
 local loggedSubrowsOnce = false
 
 local function safeDebug(fmt, ...)
@@ -187,17 +184,6 @@ local function safeDebug(fmt, ...)
     elseif type(print) == "function" then
         print(prefix, message)
     end
-end
-
-local function coerceNumber(value)
-    if type(value) == "number" then
-        if value ~= value then
-            return 0
-        end
-        return value
-    end
-
-    return 0
 end
 
 local function normalizeSubrowKind(kind)
@@ -1479,9 +1465,6 @@ local function applyCategoryRow(row, data)
     if control and control.SetHeight then
         local categoryHeight = getCategoryHeight(expanded)
         control:SetHeight(categoryHeight)
-        if Rows.DebugHeights then
-            Rows.DebugHeights("category", categoryHeight)
-        end
     end
 end
 
@@ -1615,22 +1598,6 @@ local function applyObjectiveColor(label, options, objective)
     end
 end
 
-local function getContainerCache(container)
-    if container == nil then
-        return nil
-    end
-
-    local cache = Rows._cache[container]
-    if type(cache) ~= "table" then
-        cache = { rows = {}, lastHeight = 0 }
-        Rows._cache[container] = cache
-    elseif type(cache.rows) ~= "table" then
-        cache.rows = {}
-    end
-
-    return cache
-end
-
 local function applyEntryRow(row, objective, options)
     if row == nil then
         return
@@ -1676,9 +1643,6 @@ local function applyEntryRow(row, objective, options)
     local entryHeight = resolveEntryHeight(options)
     if row.SetHeight then
         row:SetHeight(entryHeight)
-        if Rows.DebugHeights then
-            Rows.DebugHeights("entry", entryHeight)
-        end
     end
 
     local title = ensureEntryChild(row, titleName, CT_LABEL)
@@ -1764,12 +1728,7 @@ function Rows.ApplyEntryRow(row, objective, options)
     applyEntryRow(row, objective, options)
 end
 
-function Rows.ApplyObjectiveRow(row, objective, options)
-    applyEntryRow(row, objective, options)
-end
-
 function Rows.Init()
-    Rows._cache = setmetatable({}, { __mode = "k" })
     categoryPool.free = categoryPool.free or {}
     categoryPool.used = categoryPool.used or {}
     if type(categoryPool.nextId) ~= "number" or categoryPool.nextId < 1 then
@@ -1782,155 +1741,7 @@ function Rows.Init()
     end
     Rows.ResetCategoryPool()
     Rows.ResetEntryPool()
-    lastHeight = 0
     loggedSubrowsOnce = false
-end
-
-function Rows.ClearObjectives(container)
-    Rows.ResetEntryPool(container)
-
-    local cache = getContainerCache(container)
-    if cache then
-        cache.rows = {}
-        cache.lastHeight = 0
-    end
-
-    if container and container.SetHeight then
-        container:SetHeight(0)
-    end
-
-    lastHeight = 0
-
-    safeDebug("[EndeavorRows.ClearObjectives] container=%s", container and (container.GetName and select(2, pcall(container.GetName, container))) or "<nil>")
-
-    return 0
-end
-
-function Rows.BuildObjectives(container, list, options)
-    if container == nil then
-        lastHeight = 0
-        return 0
-    end
-
-    local cache = getContainerCache(container)
-    if cache == nil then
-        lastHeight = 0
-        return 0
-    end
-
-    local sequence = {}
-    if type(list) == "table" then
-        for index = 1, #list do
-            sequence[#sequence + 1] = list[index]
-        end
-    end
-
-    local count = #sequence
-    if count == 0 then
-        Rows.ClearObjectives(container)
-        safeDebug("[EndeavorRows.BuildObjectives] count=0")
-        return 0
-    end
-
-    Rows.ResetEntryPool(container)
-
-    local rowHeight = resolveEntryHeight(options)
-
-    local totalHeight = 0
-    local previousControl
-    local pendingSpacing = 0
-
-    cache.rows = {}
-
-    local firstSubSpacing = resolveSubrowSpacing("spacing_entry_to_first_sub")
-    local betweenSubSpacing = resolveSubrowSpacing("spacing_between_subrows")
-    local trailingSubSpacing = resolveSubrowSpacing("spacing_after_last_sub")
-
-    for index = 1, count do
-        local row = acquireEntryRow(container)
-        if row then
-            row:ClearAnchors()
-
-            local gap = 0
-            if previousControl then
-                gap = ENTRY_ROW_SPACING + pendingSpacing
-                row:SetAnchor(TOPLEFT, previousControl, BOTTOMLEFT, 0, gap)
-                row:SetAnchor(TOPRIGHT, previousControl, BOTTOMRIGHT, 0, gap)
-                totalHeight = totalHeight + gap
-            else
-                row:SetAnchor(TOPLEFT, container, TOPLEFT, 0, 0)
-                row:SetAnchor(TOPRIGHT, container, TOPRIGHT, 0, 0)
-            end
-
-            Rows.ApplyEntryRow(row, sequence[index], options)
-            cache.rows[index] = row
-
-            totalHeight = totalHeight + rowHeight
-            previousControl = row
-            pendingSpacing = 0
-
-            local subrows = row._subrows or {}
-            local visibleIndex = 0
-            for _, entry in ipairs(subrows) do
-                local control = entry and entry.control
-                local isVisible = control ~= nil and entry.visible ~= false and entry.hidden ~= true
-                if isVisible then
-                    control:ClearAnchors()
-                    local spacing = (visibleIndex == 0) and firstSubSpacing or betweenSubSpacing
-                    control:SetAnchor(TOPLEFT, previousControl, BOTTOMLEFT, 0, spacing)
-                    control:SetAnchor(TOPRIGHT, previousControl, BOTTOMRIGHT, 0, spacing)
-                    if control.SetHidden then
-                        control:SetHidden(false)
-                    end
-                    local subHeight = Rows.GetSubrowHeight(entry.kind)
-                    if control.SetHeight then
-                        control:SetHeight(subHeight)
-                    end
-                    totalHeight = totalHeight + spacing + subHeight
-                    previousControl = control
-                    visibleIndex = visibleIndex + 1
-                elseif control then
-                    if control.SetHidden then
-                        control:SetHidden(true)
-                    end
-                    if control.ClearAnchors then
-                        control:ClearAnchors()
-                    end
-                end
-            end
-
-            if visibleIndex > 0 then
-                pendingSpacing = trailingSubSpacing
-            end
-        end
-    end
-
-    if previousControl and pendingSpacing > 0 then
-        totalHeight = totalHeight + pendingSpacing
-    end
-
-    if container.SetHeight then
-        container:SetHeight(totalHeight)
-    end
-
-    cache.lastHeight = totalHeight
-    lastHeight = totalHeight
-
-    safeDebug("[EndeavorRows.BuildObjectives] count=%d height=%d", count, totalHeight)
-
-    return totalHeight
-end
-
-function Rows.GetMeasuredHeight(container)
-    local cache = getContainerCache(container)
-    if cache then
-        return coerceNumber(cache.lastHeight)
-    end
-    return 0
-end
-
-function Rows.GetLastHeight()
-    return coerceNumber(lastHeight)
 end
 
 function Rows.GetSubrowHeight(kind)
@@ -2006,49 +1817,6 @@ end
 
 function Rows.GetEntryRowHeight()
     return resolvedEntryHeight
-end
-
-function Rows.GetCategoryTopPadding()
-    return CATEGORY_TOP_PAD
-end
-
-function Rows.GetCategoryBottomPadding(hasRows)
-    if hasRows then
-        return CATEGORY_BOTTOM_PAD_EXPANDED
-    end
-    return CATEGORY_BOTTOM_PAD_COLLAPSED
-end
-
-function Rows.GetCategoryEntrySpacing()
-    return CATEGORY_ENTRY_SPACING
-end
-
-function Rows.GetEntryTopPadding()
-    return ENTRY_TOP_PAD
-end
-
-function Rows.GetEntryBottomPadding()
-    return ENTRY_BOTTOM_PAD
-end
-
-function Rows.GetEntrySpacing()
-    return ENTRY_ROW_SPACING
-end
-
-local loggedHeights = {}
-
-function Rows.DebugHeights(rowType, height)
-    if not isDebugEnabled() then
-        return
-    end
-
-    local key = tostring(rowType or "row")
-    if loggedHeights[key] then
-        return
-    end
-
-    loggedHeights[key] = true
-    safeDebug("[Rows.Heights] %s=%s", key, tostring(height))
 end
 
 Nvk3UT.EndeavorTrackerRows = Rows
