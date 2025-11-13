@@ -536,8 +536,22 @@ local function buildCampaignActivities(key, trackedCampaignKey, trackedActivityI
     end
 
     local progressFn = rawget(_G, "GetPromotionalEventCampaignActivityProgress")
+    local countFn = rawget(_G, "GetNumPromotionalEventCampaignActivities")
 
-    for index = 1, MAX_CAMPAIGN_ACTIVITIES do
+    local activityCountOverride = nil
+    if type(countFn) == "function" then
+        local okCount, countValue = pcall(countFn, key)
+        if okCount then
+            activityCountOverride = toNonNegativeInteger(countValue)
+        end
+    end
+
+    local loopUpperBound = activityCountOverride
+    if loopUpperBound == nil then
+        loopUpperBound = MAX_CAMPAIGN_ACTIVITIES
+    end
+
+    for index = 1, loopUpperBound do
         local okInfo, name, description = pcall(infoFn, key, index)
         if not okInfo then
             break
@@ -583,16 +597,18 @@ local function buildCampaignActivities(key, trackedCampaignKey, trackedActivityI
             end
         end
 
-        activities[#activities + 1] = {
-            name = activityName,
-            desc = activityDescription,
-            current = current,
-            max = maximum,
-            tracked = isTracked,
-            completed = completed,
-        }
+        if activityName ~= "" or activityDescription ~= nil or maximum > 0 then
+            activities[#activities + 1] = {
+                name = activityName,
+                desc = activityDescription,
+                current = current,
+                max = maximum,
+                tracked = isTracked,
+                completed = completed,
+            }
 
-        totalActivities = totalActivities + 1
+            totalActivities = totalActivities + 1
+        end
     end
 
     return activities, totalActivities, completedActivities
@@ -720,7 +736,7 @@ function GoldenModel:RefreshFromGame(providerFn)
     self._isEmpty = computeIsEmpty(self._counters)
 
     debugLog(
-        "refresh: campaigns=%d activities=%d completed=%d",
+        "scan: campaigns=%d activities=%d completed=%d",
         self._counters.campaigns or 0,
         self._counters.activitiesTotal or 0,
         self._counters.activitiesCompleted or 0

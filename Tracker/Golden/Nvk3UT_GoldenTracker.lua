@@ -141,7 +141,8 @@ local function isControl(candidate)
     return false
 end
 
-local function deferInitKick()
+-- [GEVENTS_SWITCH_REMOVE] Combined InitKick + Poller trigger (SHIM-only)
+local function triggerInitKickAndPoller()
     if not state.initialized then
         return
     end
@@ -152,12 +153,26 @@ local function deferInitKick()
     end
 
     local controller = root.GoldenTrackerController
-    if type(controller) ~= "table" or type(controller.InitKickOnce) ~= "function" then
+    if type(controller) ~= "table" then
+        return
+    end
+
+    if type(controller.InitKickOnce) == "function" then
+        pcall(controller.InitKickOnce, controller)
+    end
+
+    if type(controller.StartInitPoller) == "function" then
+        pcall(controller.StartInitPoller, controller)
+    end
+end
+
+local function deferInitKick()
+    if not state.initialized then
         return
     end
 
     local function trigger()
-        pcall(controller.InitKickOnce, controller)
+        triggerInitKickAndPoller()
     end
 
     local callLater = rawget(_G, "zo_callLater")
@@ -569,7 +584,7 @@ function GoldenTracker.Init(parentControl, opts)
 
     InitializeTempEvents()
 
-    -- [GEVENTS_SWITCH_REMOVE] Deferred InitKick (SHIM)
+    -- [GEVENTS_SWITCH_REMOVE] Deferred InitKick/Poller (SHIM)
     deferInitKick()
 
     emitTempEventsActiveDebug()
@@ -656,6 +671,57 @@ function GoldenTracker.Refresh(viewModel)
         end
     end
 
+    local function pushRow(row)
+        if type(row) ~= "table" or row.control == nil then
+            return
+        end
+
+        rowCount = rowCount + 1
+        activeRows[rowCount] = row
+    end
+
+    local function acquireHeaderRowForData(headerData, debugKey)
+        local recycledRow = table.remove(state.rowCache)
+        local row = nil
+
+        if hasAcquire and rowsModule and acquireMethod then
+            local ok, acquiredRow = pcall(rowsModule[acquireMethod], content, recycledRow, headerData)
+            if ok and type(acquiredRow) == "table" and acquiredRow.control then
+                row = acquiredRow
+            else
+                if recycledRow then
+                    table.insert(state.rowCache, recycledRow)
+                end
+                rowsFailed = rowsFailed + 1
+                if debugEnabled then
+                    safeDebug("[Golden.UI] WARN header-acquire failed for %s", tostring(debugKey))
+                    if not ok then
+                        safeDebug("%s failed: %s", tostring(acquireMethod), tostring(acquiredRow))
+                    end
+                end
+            end
+        else
+            if recycledRow then
+                table.insert(state.rowCache, recycledRow)
+            end
+        end
+
+        if not row then
+            row = createFallbackHeaderRow(content, headerData)
+            if not row and debugEnabled then
+                safeDebug("[Golden.UI] WARN fallback header failed for %s", tostring(debugKey))
+            end
+        end
+
+        return row
+    end
+
+    local overviewHeader = { name = string.format("Goldene Vorhaben (%d)", campaignCount) }
+    if debugEnabled then
+        safeDebug("[Golden.UI] build overview header campaigns=%d", campaignCount)
+    end
+    pushRow(acquireHeaderRowForData(overviewHeader, "overview"))
+
     for campaignIndex = 1, campaignCount do
         local campaignData = campaigns[campaignIndex]
         if type(campaignData) == "table" then
@@ -663,39 +729,7 @@ function GoldenTracker.Refresh(viewModel)
                 safeDebug("[Golden.UI] build header for campaign[%d] '%s'", campaignIndex, tostring(campaignData.name))
             end
 
-            local recycledRow = table.remove(state.rowCache)
-            local row = nil
-
-            if hasAcquire and rowsModule and acquireMethod then
-                local ok, acquiredRow = pcall(rowsModule[acquireMethod], content, recycledRow, campaignData)
-                if ok and type(acquiredRow) == "table" and acquiredRow.control then
-                    row = acquiredRow
-                else
-                    if recycledRow then
-                        table.insert(state.rowCache, recycledRow)
-                    end
-                    rowsFailed = rowsFailed + 1
-                    if debugEnabled then
-                        safeDebug("[Golden.UI] WARN header-acquire failed for campaign[%d] '%s'", campaignIndex, tostring(campaignData.name))
-                    end
-                    if not ok and debugEnabled then
-                        safeDebug("%s failed: %s", tostring(acquireMethod), tostring(acquiredRow))
-                    end
-                end
-            else
-                if recycledRow then
-                    table.insert(state.rowCache, recycledRow)
-                end
-            end
-
-            if not row then
-                row = createFallbackHeaderRow(content, campaignData)
-            end
-
-            if row and row.control then
-                rowCount = rowCount + 1
-                activeRows[rowCount] = row
-            end
+            pushRow(acquireHeaderRowForData(campaignData, string.format("campaign[%d]", campaignIndex)))
         end
     end
 
@@ -726,8 +760,10 @@ function GoldenTracker.Refresh(viewModel)
     setContainerHeight(container, totalHeight)
 
     if debugEnabled then
-        local usedFallbackHeight = (rowCount == 0 and totalHeight == 86)
-        safeDebug("[Golden.UI] Refresh: campaigns=%d rows=%d rowsFailed=%d height=%d fallback=%s", campaignCount, rowCount, rowsFailed, totalHeight, tostring(usedFallbackHeight))
+        safeDebug("[Golden.UI] Refresh: campaigns=%d rows=%d height=%d", campaignCount, rowCount, totalHeight)
+        if rowsFailed > 0 then
+            safeDebug("[Golden.UI] rowsFailed=%d", rowsFailed)
+        end
     end
 end
 

@@ -16,6 +16,12 @@ local state = {
 local INIT_KICK_FLAG_FIELD = "_didInitKick"
 local NEEDS_FULL_SYNC_FIELD = "_needsFullSync"
 local LAST_PROGRESS_FRAME_FIELD = "_lastProgressFrameId"
+local INIT_POLLER_ACTIVE_FIELD = "_initPollerActive"
+local INIT_POLLER_REMAINING_FIELD = "_initPollerRemaining"
+local INIT_POLLER_TIMER_FIELD = "_initPollerTimer"
+
+local INIT_POLLER_MAX_ATTEMPTS = 2
+local INIT_POLLER_DELAY_MS = 1200
 
 local MODULE_TAG = addonName .. ".GoldenTrackerController"
 
@@ -88,11 +94,15 @@ local function emitRequestFullSyncDebug(reason)
 end
 
 local function emitInitKickDebug()
-    diagnosticsDebug("Golden InitKick → initial refresh queued")
+    diagnosticsDebug("[Golden SHIM] init-kick → refresh queued")
 end
 
 local function emitProgressRefreshDebug()
     diagnosticsDebug("Golden SHIM: progress refresh completed")
+end
+
+local function emitInitPollerTickDebug(attemptIndex, campaignCount)
+    diagnosticsDebug("[Golden SHIM] init-poller tick %d → campaigns=%d", attemptIndex or 0, campaignCount or 0)
 end
 
 local function shouldSkipProgressThisFrame(controller)
@@ -147,10 +157,134 @@ local function doProgressRefresh(controller)
     model:RefreshFromGame()
     controller:MarkDirty()
     runtime:QueueDirty("golden")
-
     controller[NEEDS_FULL_SYNC_FIELD] = false
 
     emitProgressRefreshDebug()
+end
+
+local function resolveGoldenModel()
+    local root = Nvk3UT
+    if type(root) ~= "table" then
+        return nil
+    end
+
+    local model = root.GoldenModel
+    if type(model) ~= "table" or type(model.RefreshFromGame) ~= "function" then
+        return nil
+    end
+
+    return model
+end
+
+local function resolveRuntime()
+    local root = Nvk3UT
+    if type(root) ~= "table" then
+        return nil
+    end
+
+    local runtime = root.TrackerRuntime
+    if type(runtime) ~= "table" or type(runtime.QueueDirty) ~= "function" then
+        return nil
+    end
+
+    return runtime
+end
+
+local function fetchCampaignCountFromModel(model)
+    if type(model) ~= "table" then
+        return 0
+    end
+
+    local accessors = {}
+    if type(model.GetViewData) == "function" then
+        table.insert(accessors, model.GetViewData)
+    end
+    if type(model.GetViewModel) == "function" then
+        table.insert(accessors, model.GetViewModel)
+    end
+
+    for _, accessor in ipairs(accessors) do
+        local ok, view = pcall(accessor, model)
+        if ok and type(view) == "table" then
+            local campaigns = view.campaigns
+            if type(campaigns) == "table" then
+                return #campaigns
+            end
+        end
+    end
+
+    return 0
+end
+
+local function performModelRefresh(controller)
+    local model = resolveGoldenModel()
+    local runtime = resolveRuntime()
+
+    if not model or not runtime then
+        return nil, 0
+    end
+
+    if type(controller) ~= "table" or type(controller.MarkDirty) ~= "function" then
+        return nil, 0
+    end
+
+    model:RefreshFromGame()
+    controller:MarkDirty()
+    runtime:QueueDirty("golden")
+    controller[NEEDS_FULL_SYNC_FIELD] = false
+
+    local campaignCount = fetchCampaignCountFromModel(model)
+    return model, campaignCount
+end
+
+local function scheduleInitPollerTick(controller)
+    if type(controller) ~= "table" then
+        return
+    end
+
+    local function runTick()
+        controller[INIT_POLLER_TIMER_FIELD] = nil
+
+        local remaining = tonumber(controller[INIT_POLLER_REMAINING_FIELD]) or 0
+        if remaining <= 0 then
+            controller[INIT_POLLER_ACTIVE_FIELD] = false
+            controller[INIT_POLLER_REMAINING_FIELD] = 0
+            return
+        end
+
+        local attemptIndex = (INIT_POLLER_MAX_ATTEMPTS - remaining) + 1
+        controller[INIT_POLLER_REMAINING_FIELD] = remaining - 1
+
+        local model, campaignCount = performModelRefresh(controller)
+        if not model then
+            controller[INIT_POLLER_ACTIVE_FIELD] = false
+            controller[INIT_POLLER_REMAINING_FIELD] = 0
+            return
+        end
+
+        emitInitPollerTickDebug(attemptIndex, campaignCount)
+
+        if campaignCount == 0 and (tonumber(controller[INIT_POLLER_REMAINING_FIELD]) or 0) > 0 then
+            scheduleInitPollerTick(controller)
+        else
+            controller[INIT_POLLER_ACTIVE_FIELD] = false
+            controller[INIT_POLLER_REMAINING_FIELD] = 0
+        end
+    end
+
+    local callLater = rawget(_G, "zo_callLater")
+    if type(callLater) ~= "function" then
+        runTick()
+        return
+    end
+
+    local ok, callId = pcall(callLater, runTick, INIT_POLLER_DELAY_MS)
+    if ok then
+        controller[INIT_POLLER_TIMER_FIELD] = callId
+    else
+        controller[INIT_POLLER_TIMER_FIELD] = nil
+        runTick()
+    end
 end
 
 local function ensureViewModel()
@@ -172,6 +306,16 @@ function Controller:Init()
     if type(self) == "table" then
         self[NEEDS_FULL_SYNC_FIELD] = false
         self[LAST_PROGRESS_FRAME_FIELD] = nil
+        local timerHandle = self[INIT_POLLER_TIMER_FIELD]
+        if timerHandle ~= nil then
+            local removeCallLater = rawget(_G, "zo_removeCallLater")
+            if type(removeCallLater) == "function" then
+                pcall(removeCallLater, timerHandle)
+            end
+        end
+        self[INIT_POLLER_ACTIVE_FIELD] = false
+        self[INIT_POLLER_REMAINING_FIELD] = 0
+        self[INIT_POLLER_TIMER_FIELD] = nil
     end
     safeDebug("Init")
 end
@@ -284,6 +428,32 @@ function Controller:InitKickOnce()
     runtime:QueueDirty("golden")
 
     emitInitKickDebug()
+end
+
+-- [GEVENTS_SWITCH_REMOVE] InitPoller is SHIM-only; remove when lifecycle moves to Events/*
+function Controller:StartInitPoller()
+    if type(self) ~= "table" then
+        return
+    end
+
+    if self[INIT_POLLER_ACTIVE_FIELD] then
+        return
+    end
+
+    local model = resolveGoldenModel()
+    local runtime = resolveRuntime()
+    if not model or not runtime then
+        return
+    end
+
+    if type(self.MarkDirty) ~= "function" then
+        return
+    end
+
+    self[INIT_POLLER_ACTIVE_FIELD] = true
+    self[INIT_POLLER_REMAINING_FIELD] = INIT_POLLER_MAX_ATTEMPTS
+
+    scheduleInitPollerTick(self)
 end
 
 -- [GEVENTS_SWITCH_REMOVE] Handler is SHIM target for TempEvents; Events/* will call equivalent APIs after SWITCH
