@@ -167,6 +167,10 @@ local function debugLog(fmt, ...)
     end
 end
 
+local function Dbg(fmt, ...)
+    debugLog(fmt, ...)
+end
+
 local function ensureBoolean(value, fallback)
     if value == nil then
         return fallback == true
@@ -469,6 +473,8 @@ function GoldenModel:Init(svRoot, goldenState, goldenList)
         refreshListInit(self._list, self._svRoot)
     end
 
+    resetGoldenPromoApi()
+
     self._rawData = nil
     self._vm = newEmptyCampaignViewModel()
     self._viewData = newEmptyCampaignViewModel()
@@ -480,13 +486,268 @@ function GoldenModel:Init(svRoot, goldenState, goldenList)
     return self
 end
 
-local function fetchPromoApi(name)
-    local fn = rawget(_G, name)
+local function callWithArgs(fn, args)
     if type(fn) ~= "function" then
-        debugLog("MISSING API: %s", tostring(name))
+        return false, "missing function"
+    end
+
+    if type(args) ~= "table" or #args == 0 then
+        local ok, err = pcall(fn)
+        if not ok then
+            return false, err
+        end
+        return true
+    end
+
+    if unpack then
+        local ok, err = pcall(function()
+            return fn(unpack(args))
+        end)
+        if not ok then
+            return false, err
+        end
+        return true
+    end
+
+    local count = #args
+    if count == 1 then
+        local ok, err = pcall(fn, args[1])
+        if not ok then
+            return false, err
+        end
+        return true
+    elseif count == 2 then
+        local ok, err = pcall(fn, args[1], args[2])
+        if not ok then
+            return false, err
+        end
+        return true
+    elseif count == 3 then
+        local ok, err = pcall(fn, args[1], args[2], args[3])
+        if not ok then
+            return false, err
+        end
+        return true
+    end
+
+    local ok, err = pcall(function()
+        return fn()
+    end)
+    if not ok then
+        return false, err
+    end
+    return true
+end
+
+local function BindFuncAny(role, names, probeArgs)
+    if type(names) ~= "table" then
+        return nil, nil
+    end
+
+    for index = 1, #names do
+        local candidate = names[index]
+        local fn = rawget(_G, candidate)
+        if type(fn) == "function" then
+            local ok = true
+            local err
+            if probeArgs ~= false then
+                local args = nil
+                if type(probeArgs) == "function" then
+                    local success, produced = pcall(probeArgs, candidate)
+                    if success then
+                        args = produced
+                    else
+                        args = {}
+                    end
+                elseif type(probeArgs) == "table" then
+                    args = probeArgs
+                else
+                    args = {}
+                end
+
+                ok, err = callWithArgs(fn, args)
+            end
+
+            if ok then
+                Dbg("bind %s=%s", tostring(role), tostring(candidate))
+                return fn, candidate
+            end
+
+            if err ~= nil then
+                Dbg("bind %s probe failed (%s): %s", tostring(role), tostring(candidate), tostring(err))
+            end
+        end
+    end
+
+    Dbg("bind %s failed (no candidates)", tostring(role))
+    return nil, nil
+end
+
+local GoldenPromoApi = nil
+
+local PROMO_API_CANDIDATES = {
+    GetCampaignCount = {
+        names = {
+            "GetNumActivePromotionalEventCampaigns",
+            "GetNumActivePromotionalEventCampaign",
+            "GetNumActivePromoEventCampaigns",
+        },
+        probe = {},
+    },
+    GetCampaignKey = {
+        names = {
+            "GetActivePromotionalEventCampaignKey",
+            "GetActivePromoEventCampaignKey",
+        },
+        probe = { 1 },
+    },
+    GetCampaignName = {
+        names = {
+            "GetPromotionalEventCampaignDisplayName",
+            "GetPromoEventCampaignDisplayName",
+        },
+        probe = false,
+    },
+    GetCampaignInfo = {
+        names = {
+            "GetPromotionalEventCampaignInfo",
+            "GetPromoEventCampaignInfo",
+        },
+        probe = false,
+    },
+    GetCampaignProgress = {
+        names = {
+            "GetPromotionalEventCampaignProgress",
+            "GetPromoEventCampaignProgress",
+        },
+        probe = false,
+    },
+    GetActivityInfo = {
+        names = {
+            "GetPromotionalEventCampaignActivityInfo",
+            "GetPromoEventCampaignActivityInfo",
+        },
+        probe = false,
+    },
+    GetActivityProgress = {
+        names = {
+            "GetPromotionalEventCampaignActivityProgress",
+            "GetPromoEventCampaignActivityProgress",
+        },
+        probe = false,
+    },
+    GetActivityCount = {
+        names = {
+            "GetNumPromotionalEventCampaignActivities",
+            "GetNumPromoEventCampaignActivities",
+        },
+        probe = false,
+    },
+    GetTracked = {
+        names = {
+            "GetTrackedPromotionalEventActivityInfo",
+            "GetTrackedPromoEventActivityInfo",
+        },
+        probe = {},
+    },
+}
+
+local PROMO_API_ORDER = {
+    "GetCampaignCount",
+    "GetCampaignKey",
+    "GetCampaignName",
+    "GetCampaignInfo",
+    "GetCampaignProgress",
+    "GetActivityInfo",
+    "GetActivityProgress",
+    "GetActivityCount",
+    "GetTracked",
+}
+
+local function ensureGoldenPromoApi()
+    if GoldenPromoApi ~= nil then
+        return GoldenPromoApi
+    end
+
+    local api = {
+        names = {},
+    }
+
+    for index = 1, #PROMO_API_ORDER do
+        local role = PROMO_API_ORDER[index]
+        local descriptor = PROMO_API_CANDIDATES[role]
+        local fn, actual = BindFuncAny(role, descriptor and descriptor.names or nil, descriptor and descriptor.probe)
+        if fn ~= nil then
+            api[role] = fn
+            api.names[role] = actual
+        else
+            api[role] = nil
+            api.names[role] = nil
+        end
+    end
+
+    GoldenPromoApi = api
+    return GoldenPromoApi
+end
+
+local function resetGoldenPromoApi()
+    GoldenPromoApi = nil
+end
+
+local function resolveBoundName(api, role)
+    if type(api) == "table" and type(api.names) == "table" then
+        local name = api.names[role]
+        if name ~= nil then
+            return tostring(name)
+        end
+    end
+    return "?"
+end
+
+local function callPromoApi(api, role, fn, ...)
+    if type(fn) ~= "function" then
+        resetGoldenPromoApi()
+        Dbg("missing binder: %s", tostring(role))
+        return false
+    end
+
+    local ok, a, b, c, d, e, f = pcall(fn, ...)
+    if not ok then
+        resetGoldenPromoApi()
+        Dbg(
+            "call failed: %s/%s → %s",
+            tostring(role),
+            resolveBoundName(api, role),
+            tostring(a)
+        )
+        return false
+    end
+
+    return true, a, b, c, d, e, f
+end
+
+local function normalizeCampaignKey(value)
+    if value == nil then
         return nil
     end
-    return fn
+
+    local valueType = type(value)
+    if valueType == "string" then
+        return value
+    end
+
+    if valueType == "number" or valueType == "boolean" then
+        return tostring(value)
+    end
+
+    if valueType == "userdata" then
+        local ok, text = pcall(tostring, value)
+        if ok then
+            return text
+        end
+    end
+
+    return tostring(value)
 end
 
 local function toNonNegativeInteger(value)
@@ -503,17 +764,26 @@ end
 local MAX_CAMPAIGN_ACTIVITIES = 50
 
 local function fetchTrackedActivity()
-    local fn = fetchPromoApi("GetTrackedPromotionalEventActivityInfo")
-    if fn == nil then
+    local api = ensureGoldenPromoApi()
+    local fn = api.GetTracked
+    if type(fn) ~= "function" then
+        resetGoldenPromoApi()
+        Dbg("missing binder: GetTracked")
         return nil, nil, true
     end
 
-    local ok, campaignKey, activityIndex = pcall(fn)
-    if not ok or campaignKey == nil or activityIndex == nil then
+    local ok, campaignKey, activityIndex = callPromoApi(api, "GetTracked", fn)
+    if not ok then
+        return nil, nil, true
+    end
+
+    if campaignKey == nil or activityIndex == nil then
         return nil, nil, false
     end
 
-    return campaignKey, toNonNegativeInteger(activityIndex), false
+    local normalizedKey = normalizeCampaignKey(campaignKey)
+
+    return normalizedKey, toNonNegativeInteger(activityIndex), false
 end
 
 local function sanitizeDescription(value)
@@ -539,24 +809,31 @@ local function buildCampaignActivities(key, trackedCampaignKey, trackedActivityI
     local totalActivities = 0
     local completedActivities = 0
 
-    local infoFn = fetchPromoApi("GetPromotionalEventCampaignActivityInfo")
-    if infoFn == nil then
+    local api = ensureGoldenPromoApi()
+    local infoFn = api.GetActivityInfo
+    if type(infoFn) ~= "function" then
+        resetGoldenPromoApi()
+        Dbg("missing binder: GetActivityInfo")
         return activities, totalActivities, completedActivities, true
     end
 
-    local progressFn = fetchPromoApi("GetPromotionalEventCampaignActivityProgress")
-    if progressFn == nil then
+    local progressFn = api.GetActivityProgress
+    if type(progressFn) ~= "function" then
+        resetGoldenPromoApi()
+        Dbg("missing binder: GetActivityProgress")
         return activities, totalActivities, completedActivities, true
     end
 
-    local countFn = fetchPromoApi("GetNumPromotionalEventCampaignActivities")
+    local countFn = api.GetActivityCount
 
     local activityCountOverride = nil
     if type(countFn) == "function" then
-        local okCount, countValue = pcall(countFn, key)
-        if okCount then
-            activityCountOverride = toNonNegativeInteger(countValue)
+        local okCount, countValue = callPromoApi(api, "GetActivityCount", countFn, key)
+        if not okCount then
+            return activities, totalActivities, completedActivities, true
         end
+
+        activityCountOverride = toNonNegativeInteger(countValue)
     end
 
     local loopUpperBound = activityCountOverride
@@ -565,9 +842,9 @@ local function buildCampaignActivities(key, trackedCampaignKey, trackedActivityI
     end
 
     for index = 1, loopUpperBound do
-        local okInfo, name, description = pcall(infoFn, key, index)
+        local okInfo, name, description = callPromoApi(api, "GetActivityInfo", infoFn, key, index)
         if not okInfo then
-            break
+            return activities, totalActivities, completedActivities, true
         end
 
         local hasName = type(name) == "string" and name ~= ""
@@ -583,11 +860,13 @@ local function buildCampaignActivities(key, trackedCampaignKey, trackedActivityI
         local activityDescription = sanitizeDescription(description)
 
         local current, maximum = 0, 0
-        local okProgress, progressCurrent, progressMax = pcall(progressFn, key, index)
-        if okProgress then
-            current = ensureNumber(progressCurrent, 0)
-            maximum = ensureNumber(progressMax, 0)
+        local okProgress, progressCurrent, progressMax = callPromoApi(api, "GetActivityProgress", progressFn, key, index)
+        if not okProgress then
+            return activities, totalActivities, completedActivities, true
         end
+
+        current = ensureNumber(progressCurrent, 0)
+        maximum = ensureNumber(progressMax, 0)
 
         if current < 0 then
             current = 0
@@ -626,12 +905,14 @@ local function buildCampaignActivities(key, trackedCampaignKey, trackedActivityI
 end
 
 local function extractHasRewards(campaignKey)
-    local infoFn = fetchPromoApi("GetPromotionalEventCampaignInfo")
-    if infoFn == nil then
+    local api = ensureGoldenPromoApi()
+    local infoFn = api.GetCampaignInfo
+    if type(infoFn) ~= "function" then
+        resetGoldenPromoApi()
         return nil
     end
 
-    local okInfo, a, b, c, d, e, f = pcall(infoFn, campaignKey)
+    local okInfo, a, b, c, d, e, f = callPromoApi(api, "GetCampaignInfo", infoFn, campaignKey)
     if not okInfo then
         return nil
     end
@@ -651,30 +932,47 @@ local function buildCampaign(key, trackedCampaignKey, trackedActivityIndex)
         return nil, 0, 0, false
     end
 
-    local nameFn = fetchPromoApi("GetPromotionalEventCampaignDisplayName")
-    if nameFn == nil then
+    local normalizedKey = normalizeCampaignKey(key)
+    if normalizedKey == nil then
+        return nil, 0, 0, false
+    end
+
+    local api = ensureGoldenPromoApi()
+    local nameFn = api.GetCampaignName
+    if type(nameFn) ~= "function" then
+        resetGoldenPromoApi()
+        Dbg("missing binder: GetCampaignName")
         return nil, 0, 0, true
     end
 
-    local okName, displayName = pcall(nameFn, key)
-    local campaignName = ensureString(okName and displayName or "")
+    local okName, displayName = callPromoApi(api, "GetCampaignName", nameFn, normalizedKey)
+    if not okName then
+        resetGoldenPromoApi()
+        return nil, 0, 0, true
+    end
+    local campaignName = ensureString(displayName)
 
-    local activities, activityCount, completedActivities, missingActivities = buildCampaignActivities(key, trackedCampaignKey, trackedActivityIndex)
+    local activities, activityCount, completedActivities, missingActivities = buildCampaignActivities(normalizedKey, trackedCampaignKey, trackedActivityIndex)
     if missingActivities then
         return nil, 0, 0, true
     end
 
     local progressCurrent, progressMax = 0, 0
-    local progressFn = fetchPromoApi("GetPromotionalEventCampaignProgress")
-    if progressFn == nil then
+    local progressFn = api.GetCampaignProgress
+    if type(progressFn) ~= "function" then
+        resetGoldenPromoApi()
+        Dbg("missing binder: GetCampaignProgress")
         return nil, 0, 0, true
     end
 
-    local okProgress, currentValue, maxValue = pcall(progressFn, key)
-    if okProgress then
-        progressCurrent = ensureNumber(currentValue, 0)
-        progressMax = ensureNumber(maxValue, 0)
+    local okProgress, currentValue, maxValue = callPromoApi(api, "GetCampaignProgress", progressFn, normalizedKey)
+    if not okProgress then
+        resetGoldenPromoApi()
+        return nil, 0, 0, true
     end
+
+    progressCurrent = ensureNumber(currentValue, 0)
+    progressMax = ensureNumber(maxValue, 0)
 
     if progressCurrent < 0 then
         progressCurrent = 0
@@ -683,7 +981,7 @@ local function buildCampaign(key, trackedCampaignKey, trackedActivityIndex)
         progressMax = 0
     end
 
-    local hasRewards = extractHasRewards(key)
+    local hasRewards = extractHasRewards(normalizedKey)
 
     local isCompleted = false
     if activityCount > 0 then
@@ -693,7 +991,7 @@ local function buildCampaign(key, trackedCampaignKey, trackedActivityIndex)
     end
 
     local campaign = {
-        key = key,
+        key = normalizedKey,
         name = campaignName,
         progress = {
             current = progressCurrent,
@@ -709,20 +1007,27 @@ end
 
 local function buildCampaignViewModel()
     local campaigns = {}
-    local countFn = fetchPromoApi("GetNumActivePromotionalEventCampaigns")
-    local keyFn = fetchPromoApi("GetActivePromotionalEventCampaignKey")
-    if countFn == nil or keyFn == nil then
+    local api = ensureGoldenPromoApi()
+    local countFn = api.GetCampaignCount
+    local keyFn = api.GetCampaignKey
+    local hasNameBinder = type(api.GetCampaignName) == "function"
+    if type(countFn) ~= "function" or type(keyFn) ~= "function" or not hasNameBinder then
+        resetGoldenPromoApi()
+        Dbg("promo API missing; delivering empty VM")
         return newEmptyCampaignViewModel(), newEmptyCampaignStats(), true
     end
 
-    local okCount, countValue = pcall(countFn)
-    local campaignCount = 0
-    if okCount then
-        campaignCount = toNonNegativeInteger(countValue)
+    local okCount, countValue = callPromoApi(api, "GetCampaignCount", countFn)
+    if not okCount then
+        return newEmptyCampaignViewModel(), newEmptyCampaignStats(), true
     end
+
+    local campaignCount = toNonNegativeInteger(countValue)
 
     local trackedCampaignKey, trackedActivityIndex, missingTracked = fetchTrackedActivity()
     if missingTracked then
+        resetGoldenPromoApi()
+        Dbg("promo API missing; delivering empty VM (tracked)")
         return newEmptyCampaignViewModel(), newEmptyCampaignStats(), true
     end
 
@@ -730,9 +1035,9 @@ local function buildCampaignViewModel()
     local completedActivities = 0
 
     for index = 1, campaignCount do
-        local okKey, campaignKey = pcall(keyFn, index)
+        local okKey, campaignKey = callPromoApi(api, "GetCampaignKey", keyFn, index)
         if not okKey then
-            break
+            return newEmptyCampaignViewModel(), newEmptyCampaignStats(), true
         end
 
         if campaignKey ~= nil then
@@ -787,6 +1092,10 @@ function GoldenModel:RefreshFromGame(providerFn)
         self._counters.activitiesTotal or 0,
         self._counters.activitiesCompleted or 0
     )
+
+    if (self._counters.campaigns or 0) <= 0 then
+        debugLog("no active golden campaigns (empty VM)")
+    end
 
     return true
 end
