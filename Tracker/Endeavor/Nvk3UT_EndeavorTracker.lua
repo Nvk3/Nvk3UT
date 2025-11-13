@@ -1060,8 +1060,7 @@ local function ensureUi(container)
         chevron:SetHidden(false)
         chevron:SetDimensions(CATEGORY_CHEVRON_SIZE, CATEGORY_CHEVRON_SIZE)
         chevron:ClearAnchors()
-        local offsetY = math.floor((CATEGORY_ROW_HEIGHT - CATEGORY_CHEVRON_SIZE) * 0.5)
-        chevron:SetAnchor(TOPLEFT, control, TOPLEFT, 0, offsetY)
+        chevron:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
         chevron:SetTexture(CHEVRON_TEXTURES.collapsed)
 
         local labelName = controlName .. "Label"
@@ -1071,11 +1070,11 @@ local function ensureUi(container)
         end
         label:SetParent(control)
         label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
-        label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
+        label:SetVerticalAlignment(TEXT_ALIGN_TOP)
         label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
         label:ClearAnchors()
         label:SetAnchor(TOPLEFT, chevron, TOPRIGHT, CATEGORY_LABEL_OFFSET_X, 0)
-        label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
+        label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
         applyLabelFont(label, DEFAULT_CATEGORY_FONT, DEFAULT_CATEGORY_FONT)
 
         ui.category = {
