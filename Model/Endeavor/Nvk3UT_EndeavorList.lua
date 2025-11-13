@@ -25,6 +25,18 @@ local function resolveDiagnostics()
     return nil
 end
 
+local function resolveUtils()
+    local root = resolveRoot()
+    local utils = root and root.Utils
+    if type(utils) == "table" then
+        return utils
+    end
+    if type(Nvk3UT_Utils) == "table" then
+        return Nvk3UT_Utils
+    end
+    return nil
+end
+
 local function resolveSafeCall()
     local root = resolveRoot()
     if root and type(root.SafeCall) == "function" then
@@ -56,23 +68,37 @@ local function safeCall(fn, ...)
 end
 
 local function isDebugEnabled()
+    local utils = resolveUtils()
+    if utils and type(utils.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(utils.IsDebugEnabled)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
     local diagnostics = resolveDiagnostics()
     if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
-        local ok, enabled = pcall(diagnostics.IsDebugEnabled, diagnostics)
+        local ok, enabled = pcall(function()
+            return diagnostics:IsDebugEnabled()
+        end)
         if ok and enabled ~= nil then
             return enabled == true
         end
     end
 
     local root = resolveRoot()
-    if type(root) == "table" then
-        if type(root.debug) == "boolean" then
-            return root.debug
+    if type(root) == "table" and type(root.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return root:IsDebugEnabled()
+        end)
+        if ok and enabled ~= nil then
+            return enabled == true
         end
-        local sv = root.sv
-        if type(sv) == "table" and type(sv.debug) == "boolean" then
-            return sv.debug
-        end
+    end
+
+    local sv = root and (root.sv or root.SV)
+    if type(sv) == "table" and sv.debug ~= nil then
+        return sv.debug == true
     end
 
     return false

@@ -8,6 +8,38 @@ Rows.__index = Rows
 
 local MODULE_TAG = addonName .. ".EndeavorTrackerRows"
 
+local function isDebugEnabled()
+    local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
+    if utils and type(utils.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(utils.IsDebugEnabled)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return diagnostics:IsDebugEnabled()
+        end)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    local addon = rawget(_G, addonName)
+    if type(addon) == "table" and type(addon.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return addon:IsDebugEnabled()
+        end)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    return false
+end
+
 local OBJECTIVE_ROW_HEIGHT = 20
 local ACHIEVEMENT_OBJECTIVE_FONT = "ZoFontGameSmall"
 local ACHIEVEMENT_OBJECTIVE_COLOR_ROLE = "objectiveText"
@@ -36,6 +68,10 @@ Rows._cache = Rows._cache or setmetatable({}, { __mode = "k" })
 local lastHeight = 0
 
 local function safeDebug(fmt, ...)
+    if not isDebugEnabled() then
+        return
+    end
+
     local root = rawget(_G, addonName)
     if type(root) ~= "table" then
         return
@@ -261,9 +297,7 @@ function Rows.ApplyObjectiveRow(row, objective)
         row:SetAlpha(1)
     end
 
-    if Nvk3UT and Nvk3UT.debug then
-        safeDebug("[EndeavorRows] objective inline: \"%s\"", combinedText)
-    end
+    safeDebug("[EndeavorRows] objective inline: \"%s\"", combinedText)
 end
 
 function Rows.Init()

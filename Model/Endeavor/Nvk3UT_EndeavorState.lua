@@ -156,13 +156,37 @@ local function applyDefaults(container)
 end
 
 local function isDebugEnabled()
-    local root = rawget(_G, "Nvk3UT")
-    if type(root) ~= "table" then
-        return false
+    local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
+    if utils and type(utils.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(utils.IsDebugEnabled)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
     end
 
-    if root.debug ~= nil then
-        return root.debug == true
+    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return diagnostics:IsDebugEnabled()
+        end)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    local root = rawget(_G, "Nvk3UT")
+    if type(root) == "table" and type(root.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return root:IsDebugEnabled()
+        end)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    local sv = root and (root.sv or root.SV)
+    if type(sv) == "table" and sv.debug ~= nil then
+        return sv.debug == true
     end
 
     return false

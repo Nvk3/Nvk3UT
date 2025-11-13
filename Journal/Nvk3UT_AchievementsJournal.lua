@@ -49,7 +49,11 @@ local function safeCall(func, ...)
 end
 
 local function isDebugEnabled()
-    return Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug and Utils and Utils.d
+    local utils = Utils or Nvk3UT_Utils
+    if utils and type(utils.IsDebugEnabled) == "function" then
+        return utils.IsDebugEnabled()
+    end
+    return false
 end
 
 local function buildCriteriaSnapshot(achievementId)

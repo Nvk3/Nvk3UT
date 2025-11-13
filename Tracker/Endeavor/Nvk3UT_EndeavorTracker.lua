@@ -56,6 +56,38 @@ local progressFallback = {
 
 local safeDebug
 
+local function isDebugEnabled()
+    local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
+    if utils and type(utils.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(utils.IsDebugEnabled)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return diagnostics:IsDebugEnabled()
+        end)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    local addon = rawget(_G, addonName)
+    if type(addon) == "table" and type(addon.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return addon:IsDebugEnabled()
+        end)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    return false
+end
+
 local INIT_POLLER_UPDATE_NAME = "Nvk3UT_Endeavor_InitPoller"
 
 local CATEGORY_ROW_HEIGHT = 26
@@ -731,6 +763,10 @@ end
 --[[ EBOOT_TEMP_EVENTS_END: Endeavor ]]
 
 safeDebug = function(fmt, ...)
+    if not isDebugEnabled() then
+        return
+    end
+
     local root = rawget(_G, addonName)
     if type(root) ~= "table" then
         return
@@ -777,9 +813,7 @@ local function N3UT_Endeavor_InitPoller_Tick()
         return
     end
 
-    if Nvk3UT and Nvk3UT.debug then
-        safeDebug("[EndeavorTracker.SHIM] poller tick")
-    end
+    safeDebug("[EndeavorTracker.SHIM] poller tick")
 
     tracker._initPollerTries = (tonumber(tracker._initPollerTries) or 0) + 1
 
@@ -792,9 +826,7 @@ local function N3UT_Endeavor_InitPoller_Tick()
     end
 
     if count > 0 then
-        if Nvk3UT and Nvk3UT.debug then
-            safeDebug("[EndeavorTracker.SHIM] init-poller success: count=%d", count)
-        end
+        safeDebug("[EndeavorTracker.SHIM] init-poller success: count=%d", count)
 
         if type(tracker.TempEvents_QueueRefresh) == "function" then
             tracker:TempEvents_QueueRefresh()
@@ -817,9 +849,7 @@ local function N3UT_Endeavor_InitPoller_Tick()
     local maxTries = tonumber(tracker._initPollerMaxTries) or 10
     if tracker._initPollerTries >= maxTries then
         tracker._initPollerActive = false
-        if Nvk3UT and Nvk3UT.debug then
-            safeDebug("[EndeavorTracker.SHIM] init-poller gave up (count=0)")
-        end
+        safeDebug("[EndeavorTracker.SHIM] init-poller gave up (count=0)")
         if EVENT_MANAGER and type(EVENT_MANAGER.UnregisterForUpdate) == "function" then
             EVENT_MANAGER:UnregisterForUpdate(INIT_POLLER_UPDATE_NAME)
         end
@@ -849,9 +879,7 @@ local function startInitPoller(tracker)
             EVENT_MANAGER:UnregisterForUpdate(INIT_POLLER_UPDATE_NAME)
         end
         EVENT_MANAGER:RegisterForUpdate(INIT_POLLER_UPDATE_NAME, tracker._initPollerInterval, N3UT_Endeavor_InitPoller_Tick)
-        if Nvk3UT and Nvk3UT.debug then
-            safeDebug("[EndeavorTracker.SHIM] init-poller scheduled")
-        end
+        safeDebug("[EndeavorTracker.SHIM] init-poller scheduled")
     else
         tracker._initPollerActive = false
         if Nvk3UT and Nvk3UT.EndeavorTrackerInstance == tracker then

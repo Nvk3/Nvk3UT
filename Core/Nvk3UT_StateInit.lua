@@ -18,6 +18,43 @@ local function EnsureTable(parent, key)
     return value
 end
 
+local function isDebugEnabled(addonTable)
+    local utils = (addonTable and addonTable.Utils) or (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
+    if utils and type(utils.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(utils.IsDebugEnabled)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    local diagnostics = (addonTable and addonTable.Diagnostics) or (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return diagnostics:IsDebugEnabled()
+        end)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    local root = addonTable or Nvk3UT
+    if type(root) == "table" and type(root.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return root:IsDebugEnabled()
+        end)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    local sv = root and (root.sv or root.SV)
+    if type(sv) == "table" and sv.debug ~= nil then
+        return sv.debug == true
+    end
+
+    return false
+end
+
 -- SavedVariables defaults mirrored from the legacy core file.
 -- TODO Model: split tracker/font defaults into dedicated settings modules.
 local DEFAULT_FONT_FACE_BOLD = "$(BOLD_FONT)"
@@ -379,16 +416,7 @@ function Nvk3UT_StateInit.BootstrapSavedVariables(addonTable)
         addonTable:SetDebugEnabled(sv.debug)
     end
 
-    local debugActive = false
-    if Nvk3UT and Nvk3UT.debug ~= nil then
-        debugActive = Nvk3UT.debug == true
-    end
-    if not debugActive and sv and sv.debug ~= nil then
-        debugActive = sv.debug == true
-    end
-    if not debugActive and addonTable and addonTable.debugEnabled ~= nil then
-        debugActive = addonTable.debugEnabled == true
-    end
+    local debugActive = isDebugEnabled(addonTable)
 
     if endeavorInitialized and debugActive and type(addonTable.Debug) == "function" then
         addonTable.Debug("Initialized EndeavorData defaults")

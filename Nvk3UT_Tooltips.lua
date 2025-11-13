@@ -5,8 +5,11 @@ Nvk3UT.Tooltips = T
 local U = Nvk3UT and Nvk3UT.Utils
 
 local function _nvkIsDebug()
-  local sv = Nvk3UT and Nvk3UT.sv
-  return sv and sv.debug
+  local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
+  if utils and type(utils.IsDebugEnabled) == "function" then
+    return utils.IsDebugEnabled()
+  end
+  return false
 end
 
 local function _nvkTooltipLabel(data)

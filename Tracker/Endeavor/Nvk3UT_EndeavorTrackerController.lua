@@ -18,9 +18,46 @@ local function getRoot()
     return Nvk3UT
 end
 
+local function isDebugEnabled()
+    local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
+    if utils and type(utils.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(utils.IsDebugEnabled)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return diagnostics:IsDebugEnabled()
+        end)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    local root = getRoot()
+    if type(root) == "table" and type(root.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return root:IsDebugEnabled()
+        end)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    local sv = root and (root.sv or root.SV)
+    if type(sv) == "table" and sv.debug ~= nil then
+        return sv.debug == true
+    end
+
+    return false
+end
+
 -- local debug logger
 local function DBG(fmt, ...)
-    if not (Nvk3UT and Nvk3UT.debug) then
+    if not isDebugEnabled() then
         return
     end
 

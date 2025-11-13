@@ -78,6 +78,24 @@ function Utils.d(...)
     return Utils.Debug(...)
 end
 
+function Utils.IsDebugEnabled()
+    local root = rawget(_G, "Nvk3UT")
+    local diagnostics = (root and root.Diagnostics) or rawget(_G, "Nvk3UT_Diagnostics")
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        return diagnostics:IsDebugEnabled()
+    end
+    if root and type(root.IsDebugEnabled) == "function" then
+        return root:IsDebugEnabled()
+    end
+    local sv = root and (root.sv or root.SV)
+    if type(sv) == "table" and sv.debug ~= nil then
+        return sv.debug == true
+    end
+    return false
+end
+
+Utils.isDebugEnabled = Utils.IsDebugEnabled
+
 local function timestampFallback()
     if type(GetFrameTimeMilliseconds) == "function" then
         local ok, value = pcall(GetFrameTimeMilliseconds)

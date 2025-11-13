@@ -758,9 +758,24 @@ stopWindowDrag = function()
     saveWindowPosition()
 end
 
+local function isDebugEnabled()
+    local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
+    if utils and type(utils.IsDebugEnabled) == "function" then
+        return utils.IsDebugEnabled()
+    end
+    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        return diagnostics:IsDebugEnabled()
+    end
+    local addon = Nvk3UT
+    if addon and type(addon.IsDebugEnabled) == "function" then
+        return addon:IsDebugEnabled()
+    end
+    return false
+end
+
 local function debugLog(...)
-    local sv = getSavedVars()
-    if not (sv and sv.debug) then
+    if not isDebugEnabled() then
         return
     end
 
@@ -3030,32 +3045,30 @@ local function applyAppearance()
     applyViewportPadding()
 end
 
-local function initModels(debugEnabled)
+local function initModels()
     local sv = getSavedVars()
 
     if Nvk3UT.QuestModel and Nvk3UT.QuestModel.Init then
-        pcall(Nvk3UT.QuestModel.Init, { debug = debugEnabled, saved = sv })
+        pcall(Nvk3UT.QuestModel.Init, { saved = sv })
     end
 
     if Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.Init then
-        pcall(Nvk3UT.AchievementModel.Init, { debug = debugEnabled, saved = sv })
+        pcall(Nvk3UT.AchievementModel.Init, { saved = sv })
     end
 end
 
-local function initTrackers(debugEnabled)
+local function initTrackers()
     local sv = getSavedVars()
     if not sv then
         return
     end
 
     local questOpts = cloneTable(sv.QuestTracker or {})
-    questOpts.debug = debugEnabled
     if Nvk3UT.QuestTracker and Nvk3UT.QuestTracker.Init and state.questContainer then
         pcall(Nvk3UT.QuestTracker.Init, state.questContainer, questOpts)
     end
 
     local endeavorOpts = cloneTable(sv.EndeavorTracker or {})
-    endeavorOpts.debug = debugEnabled
     local endeavorModuleLabel = nil
     if state.endeavorContainer then
         endeavorModuleLabel = safeCall(function()
@@ -3080,7 +3093,6 @@ local function initTrackers(debugEnabled)
     end
 
     local achievementOpts = cloneTable(sv.AchievementTracker or {})
-    achievementOpts.debug = debugEnabled
     if Nvk3UT.AchievementTracker and Nvk3UT.AchievementTracker.Init and state.achievementContainer then
         pcall(Nvk3UT.AchievementTracker.Init, state.achievementContainer, achievementOpts)
     end
@@ -3149,10 +3161,8 @@ function TrackerHost.Init()
 
     applyWindowSettings()
 
-    local debugEnabled = (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug) == true
-
-    initModels(debugEnabled)
-    initTrackers(debugEnabled)
+    initModels()
+    initTrackers()
 
     TrackerHost.ApplySettings()
     TrackerHost.ApplyTheme()

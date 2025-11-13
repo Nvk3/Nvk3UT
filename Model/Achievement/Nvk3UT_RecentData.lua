@@ -56,7 +56,19 @@ local function now()
 end
 
 local function isDebugEnabled()
-    return Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.debug and Utils and Utils.d
+    local utils = Utils or Nvk3UT_Utils
+    if utils and type(utils.IsDebugEnabled) == "function" then
+        return utils:IsDebugEnabled()
+    end
+    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        return diagnostics:IsDebugEnabled()
+    end
+    local root = Nvk3UT
+    if root and type(root.IsDebugEnabled) == "function" then
+        return root:IsDebugEnabled()
+    end
+    return false
 end
 
 local function emitDebugMessage(...)
