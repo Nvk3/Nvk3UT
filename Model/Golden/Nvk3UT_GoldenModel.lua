@@ -14,9 +14,9 @@ GoldenModel._rawData = type(GoldenModel._rawData) == "table" and GoldenModel._ra
 GoldenModel._viewData = type(GoldenModel._viewData) == "table" and GoldenModel._viewData or nil
 GoldenModel._vm = type(GoldenModel._vm) == "table" and GoldenModel._vm or nil
 GoldenModel._counters = type(GoldenModel._counters) == "table" and GoldenModel._counters or nil
-GoldenModel._promoApi = type(GoldenModel._promoApi) == "table" and GoldenModel._promoApi or nil
-GoldenModel._promoApiReady = GoldenModel._promoApiReady == true
-GoldenModel._promoApiGuardedEmpty = GoldenModel._promoApiGuardedEmpty == true
+GoldenModel.api = type(GoldenModel.api) == "table" and GoldenModel.api or nil
+GoldenModel.apiReady = GoldenModel.apiReady == true
+GoldenModel.apiGuardedEmpty = GoldenModel.apiGuardedEmpty == true
 
 local unpack = _G.unpack or (table and table.unpack)
 
@@ -602,6 +602,13 @@ local PROMO_API_CANDIDATES = {
         },
         probe = { 1 },
     },
+    GetCampaignId = {
+        names = {
+            "GetActivePromotionalEventCampaignId",
+            "GetActivePromoEventCampaignId",
+        },
+        probe = { 1 },
+    },
     GetCampaignName = {
         names = {
             "GetPromotionalEventCampaignDisplayName",
@@ -655,6 +662,7 @@ local PROMO_API_CANDIDATES = {
 
 local PROMO_API_ORDER = {
     "GetCampaignCount",
+    "GetCampaignId",
     "GetCampaignKey",
     "GetCampaignName",
     "GetCampaignInfo",
@@ -676,8 +684,8 @@ local function resetPromoApiBindings(model)
         return
     end
 
-    model._promoApiReady = false
-    model._promoApi = nil
+    model.apiReady = false
+    model.api = nil
 end
 
 function GoldenModel:ResetPromoApiBindings()
@@ -685,14 +693,14 @@ function GoldenModel:ResetPromoApiBindings()
 end
 
 function GoldenModel:BindAPIsIfNeeded()
-    if self._promoApiReady then
+    if self.apiReady then
         return true
     end
 
-    local api = type(self._promoApi) == "table" and self._promoApi or {}
+    local api = type(self.api) == "table" and self.api or {}
     api.names = type(api.names) == "table" and api.names or {}
 
-    self._promoApi = api
+    self.api = api
 
     for index = 1, #PROMO_API_ORDER do
         local role = PROMO_API_ORDER[index]
@@ -705,13 +713,13 @@ function GoldenModel:BindAPIsIfNeeded()
     for index = 1, #REQUIRED_PROMO_API_ROLES do
         local role = REQUIRED_PROMO_API_ROLES[index]
         if type(api[role]) ~= "function" then
-            self._promoApiReady = false
+            self.apiReady = false
             Dbg("promo API missing; delivering empty VM (binder missing %s)", tostring(role))
             return false
         end
     end
 
-    self._promoApiReady = true
+    self.apiReady = true
 
     local summary = {}
     for index = 1, #PROMO_API_ORDER do
@@ -729,11 +737,11 @@ function GoldenModel:BindAPIsIfNeeded()
 end
 
 function GoldenModel:IsPromoApiReady()
-    return self._promoApiReady == true
+    return self.apiReady == true
 end
 
 function GoldenModel:WasPromoApiGuardedEmpty()
-    return self._promoApiGuardedEmpty == true
+    return self.apiGuardedEmpty == true
 end
 
 local function resolveBoundName(api, role)
@@ -849,13 +857,24 @@ local function sanitizeDescription(value)
     return nil
 end
 
-local function buildCampaignActivities(model, api, key, trackedCampaignKey, trackedActivityIndex)
+local function buildCampaignActivities(model, api, progressKey, infoId, trackedCampaignKey, trackedActivityIndex)
     local activities = {}
     local totalActivities = 0
     local completedActivities = 0
 
     if type(api) ~= "table" then
         return activities, totalActivities, completedActivities, true
+    end
+
+    local progressHandle = progressKey
+    local infoHandle = infoId or progressHandle
+    if infoHandle == nil and progressHandle == nil then
+        return activities, totalActivities, completedActivities, true
+    end
+
+    local normalizedProgressKey = nil
+    if progressHandle ~= nil then
+        normalizedProgressKey = normalizeCampaignKey(progressHandle)
     end
 
     local infoFn = api.GetActivityInfo
@@ -875,8 +894,8 @@ local function buildCampaignActivities(model, api, key, trackedCampaignKey, trac
     local countFn = api.GetActivityCount
 
     local activityCountOverride = nil
-    if type(countFn) == "function" then
-        local okCount, countValue = callPromoApi(model, api, "GetActivityCount", countFn, key)
+    if type(countFn) == "function" and progressHandle ~= nil then
+        local okCount, countValue = callPromoApi(model, api, "GetActivityCount", countFn, progressHandle)
         if not okCount then
             return activities, totalActivities, completedActivities, true
         end
@@ -890,7 +909,7 @@ local function buildCampaignActivities(model, api, key, trackedCampaignKey, trac
     end
 
     for index = 1, loopUpperBound do
-        local okInfo, name, description = callPromoApi(model, api, "GetActivityInfo", infoFn, key, index)
+        local okInfo, name, description = callPromoApi(model, api, "GetActivityInfo", infoFn, infoHandle, index)
         if not okInfo then
             return activities, totalActivities, completedActivities, true
         end
@@ -908,13 +927,18 @@ local function buildCampaignActivities(model, api, key, trackedCampaignKey, trac
         local activityDescription = sanitizeDescription(description)
 
         local current, maximum = 0, 0
-        local okProgress, progressCurrent, progressMax = callPromoApi(model, api, "GetActivityProgress", progressFn, key, index)
-        if not okProgress then
-            return activities, totalActivities, completedActivities, true
-        end
+        if progressHandle ~= nil then
+            local okProgress, progressCurrent, progressMax = callPromoApi(model, api, "GetActivityProgress", progressFn, progressHandle, index)
+            if not okProgress then
+                return activities, totalActivities, completedActivities, true
+            end
 
-        current = ensureNumber(progressCurrent, 0)
-        maximum = ensureNumber(progressMax, 0)
+            current = ensureNumber(progressCurrent, 0)
+            maximum = ensureNumber(progressMax, 0)
+        else
+            current = 0
+            maximum = 0
+        end
 
         if current < 0 then
             current = 0
@@ -929,7 +953,7 @@ local function buildCampaignActivities(model, api, key, trackedCampaignKey, trac
         end
 
         local isTracked = false
-        if trackedCampaignKey ~= nil and trackedCampaignKey == key then
+        if trackedCampaignKey ~= nil and trackedCampaignKey == normalizedProgressKey then
             if toNonNegativeInteger(trackedActivityIndex) == index then
                 isTracked = true
             end
@@ -952,8 +976,12 @@ local function buildCampaignActivities(model, api, key, trackedCampaignKey, trac
     return activities, totalActivities, completedActivities, false
 end
 
-local function extractHasRewards(model, api, campaignKey)
+local function extractHasRewards(model, api, infoHandle)
     if type(api) ~= "table" then
+        return nil
+    end
+
+    if infoHandle == nil then
         return nil
     end
 
@@ -962,7 +990,7 @@ local function extractHasRewards(model, api, campaignKey)
         return nil
     end
 
-    local okInfo, a, b, c, d, e, f = callPromoApi(model, api, "GetCampaignInfo", infoFn, campaignKey)
+    local okInfo, a, b, c, d, e, f = callPromoApi(model, api, "GetCampaignInfo", infoFn, infoHandle)
     if not okInfo then
         return nil
     end
@@ -977,14 +1005,14 @@ local function extractHasRewards(model, api, campaignKey)
     return nil
 end
 
-local function buildCampaign(model, api, key, trackedCampaignKey, trackedActivityIndex)
-    if key == nil then
+local function buildCampaign(model, api, campaignId, key, trackedCampaignKey, trackedActivityIndex)
+    if key == nil and campaignId == nil then
         return nil, 0, 0, false
     end
 
-    local normalizedKey = normalizeCampaignKey(key)
-    if normalizedKey == nil then
-        return nil, 0, 0, false
+    local normalizedKey = nil
+    if key ~= nil then
+        normalizedKey = normalizeCampaignKey(key)
     end
 
     if type(api) ~= "table" then
@@ -998,7 +1026,11 @@ local function buildCampaign(model, api, key, trackedCampaignKey, trackedActivit
         return nil, 0, 0, true
     end
 
-    local okName, displayName = callPromoApi(model, api, "GetCampaignName", nameFn, normalizedKey)
+    local infoHandle = campaignId or normalizedKey
+    if infoHandle == nil then
+        return nil, 0, 0, true
+    end
+    local okName, displayName = callPromoApi(model, api, "GetCampaignName", nameFn, infoHandle)
     if not okName then
         return nil, 0, 0, true
     end
@@ -1008,6 +1040,7 @@ local function buildCampaign(model, api, key, trackedCampaignKey, trackedActivit
         model,
         api,
         normalizedKey,
+        infoHandle,
         trackedCampaignKey,
         trackedActivityIndex
     )
@@ -1017,7 +1050,7 @@ local function buildCampaign(model, api, key, trackedCampaignKey, trackedActivit
 
     local progressCurrent, progressMax = 0, 0
     local progressFn = api.GetCampaignProgress
-    if type(progressFn) == "function" then
+    if type(progressFn) == "function" and normalizedKey ~= nil then
         local okProgress, currentValue, maxValue = callPromoApi(model, api, "GetCampaignProgress", progressFn, normalizedKey)
         if okProgress then
             progressCurrent = ensureNumber(currentValue, 0)
@@ -1032,7 +1065,7 @@ local function buildCampaign(model, api, key, trackedCampaignKey, trackedActivit
         progressMax = 0
     end
 
-    local hasRewards = extractHasRewards(model, api, normalizedKey)
+    local hasRewards = extractHasRewards(model, api, infoHandle)
 
     local isCompleted = false
     if activityCount > 0 then
@@ -1041,8 +1074,10 @@ local function buildCampaign(model, api, key, trackedCampaignKey, trackedActivit
         isCompleted = progressCurrent >= progressMax
     end
 
+    local storedKey = normalizedKey or normalizeCampaignKey(infoHandle)
+
     local campaign = {
-        key = normalizedKey,
+        key = storedKey,
         name = campaignName,
         progress = {
             current = progressCurrent,
@@ -1056,15 +1091,15 @@ local function buildCampaign(model, api, key, trackedCampaignKey, trackedActivit
     return campaign, activityCount, completedActivities, false
 end
 
-local function buildCampaignViewModel(model)
+local function buildCampaignViewModel(model, api)
     local campaigns = {}
-    local api = type(model) == "table" and model._promoApi or nil
     if type(api) ~= "table" then
         return newEmptyCampaignViewModel(), newEmptyCampaignStats(), true
     end
 
     local countFn = api.GetCampaignCount
     local keyFn = api.GetCampaignKey
+    local idFn = api.GetCampaignId
     local nameFn = api.GetCampaignName
     if type(countFn) ~= "function" or type(keyFn) ~= "function" or type(nameFn) ~= "function" then
         resetPromoApiBindings(model)
@@ -1089,15 +1124,26 @@ local function buildCampaignViewModel(model)
     local completedActivities = 0
 
     for index = 1, campaignCount do
+        local campaignId = nil
+        if type(idFn) == "function" then
+            local okId, rawId = callPromoApi(model, api, "GetCampaignId", idFn, index)
+            if not okId then
+                return newEmptyCampaignViewModel(), newEmptyCampaignStats(), true
+            end
+
+            campaignId = rawId
+        end
+
         local okKey, campaignKey = callPromoApi(model, api, "GetCampaignKey", keyFn, index)
         if not okKey then
             return newEmptyCampaignViewModel(), newEmptyCampaignStats(), true
         end
 
-        if campaignKey ~= nil then
+        if campaignKey ~= nil or campaignId ~= nil then
             local campaign, activityCount, completedCount, missingApi = buildCampaign(
                 model,
                 api,
+                campaignId,
                 campaignKey,
                 trackedCampaignKey,
                 trackedActivityIndex
@@ -1135,7 +1181,7 @@ function GoldenModel:RefreshFromGame(providerFn)
         viewModel = newEmptyCampaignViewModel()
         stats = newEmptyCampaignStats()
     else
-        viewModel, stats, guardedEmpty = buildCampaignViewModel(self)
+        viewModel, stats, guardedEmpty = buildCampaignViewModel(self, self.api)
         if type(viewModel) ~= "table" then
             viewModel = newEmptyCampaignViewModel()
         end
@@ -1146,7 +1192,7 @@ function GoldenModel:RefreshFromGame(providerFn)
         end
     end
 
-    self._promoApiGuardedEmpty = guardedEmpty == true
+    self.apiGuardedEmpty = guardedEmpty == true
 
     self._vm = viewModel
     self._viewData = deepCopyTable(viewModel) or newEmptyCampaignViewModel()
