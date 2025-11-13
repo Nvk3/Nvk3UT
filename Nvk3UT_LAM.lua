@@ -36,7 +36,7 @@ registerString("SI_NVK3UT_LAM_ENDEAVOR_ENABLE_TOOLTIP", "Schaltet den Bestrebung
 registerString("SI_NVK3UT_LAM_ENDEAVOR_SHOW_COUNTS", "Zähler in Abschnittsüberschriften anzeigen")
 registerString(
     "SI_NVK3UT_LAM_ENDEAVOR_SHOW_COUNTS_TOOLTIP",
-    "Zeigt die verbleibende Anzahl direkt hinter den Überschriften an."
+    "Zeigt die verbleibende Anzahl direkt hinter den Überschriften an.\nWirkt nur auf die Hauptkategorie. Täglich und Wöchentlich zeigen Zähler immer."
 )
 registerString("SI_NVK3UT_LAM_ENDEAVOR_COMPLETED_HEADER", "Abgeschlossen-Handling")
 registerString(
