@@ -150,6 +150,36 @@ function Layout.Apply(container, context)
 
     local data = type(context) == "table" and context or {}
 
+    local sectionEntry = type(data.section) == "table" and data.section or {}
+    local hideEntireSection = sectionEntry.hideEntireSection == true
+
+    if hideEntireSection then
+        if container then
+            if container.SetHidden then
+                container:SetHidden(true)
+            end
+            if container.SetHeight then
+                container:SetHeight(0)
+            end
+            if container.SetDimensions then
+                local width
+                if container.GetWidth then
+                    local ok, currentWidth = pcall(container.GetWidth, container)
+                    if ok and type(currentWidth) == "number" then
+                        width = currentWidth
+                    end
+                end
+                if type(width) == "number" and width > 0 then
+                    container:SetDimensions(width, 0)
+                end
+            end
+        end
+
+        lastHeight = 0
+        safeDebug("EndeavorTrackerLayout.Apply: hidden section (height=0)")
+        return 0
+    end
+
     local categoryEntry = type(data.category) == "table" and data.category or {}
     local categoryControl = categoryEntry.control
     if categoryControl then
@@ -160,37 +190,45 @@ function Layout.Apply(container, context)
 
     local dailyEntry = type(data.daily) == "table" and data.daily or {}
     local dailyControl = dailyEntry.control
+    local dailyHidden = dailyEntry.hideRow == true
+    local dailyObjectivesHidden = dailyEntry.hideObjectives == true
     local dailyObjectivesEntry = type(data.dailyObjectives) == "table" and data.dailyObjectives or {}
     local dailyObjectivesControl = dailyObjectivesEntry.control
 
     local weeklyEntry = type(data.weekly) == "table" and data.weekly or {}
     local weeklyControl = weeklyEntry.control
+    local weeklyHidden = weeklyEntry.hideRow == true
+    local weeklyObjectivesHidden = weeklyEntry.hideObjectives == true
     local weeklyObjectivesEntry = type(data.weeklyObjectives) == "table" and data.weeklyObjectives or {}
     local weeklyObjectivesControl = weeklyObjectivesEntry.control
 
     if categoryExpanded then
-        if dailyControl then
+        if dailyControl and not dailyHidden then
             addControl(dailyControl, SECTION_ROW_HEIGHT, "row")
         end
 
-        if dailyObjectivesControl then
+        if dailyObjectivesControl and not dailyHidden and not dailyObjectivesHidden then
             if shouldExpand(dailyObjectivesEntry) then
                 addControl(dailyObjectivesControl, 0, "row")
             elseif dailyObjectivesControl.SetHidden then
                 dailyObjectivesControl:SetHidden(true)
             end
+        elseif dailyObjectivesControl and dailyObjectivesControl.SetHidden then
+            dailyObjectivesControl:SetHidden(true)
         end
 
-        if weeklyControl then
+        if weeklyControl and not weeklyHidden then
             addControl(weeklyControl, SECTION_ROW_HEIGHT, "row")
         end
 
-        if weeklyObjectivesControl then
+        if weeklyObjectivesControl and not weeklyHidden and not weeklyObjectivesHidden then
             if shouldExpand(weeklyObjectivesEntry) then
                 addControl(weeklyObjectivesControl, 0, "row")
             elseif weeklyObjectivesControl.SetHidden then
                 weeklyObjectivesControl:SetHidden(true)
             end
+        elseif weeklyObjectivesControl and weeklyObjectivesControl.SetHidden then
+            weeklyObjectivesControl:SetHidden(true)
         end
     else
         if dailyControl and dailyControl.SetHidden then

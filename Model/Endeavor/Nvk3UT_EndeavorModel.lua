@@ -665,6 +665,82 @@ function EndeavorModel:GetSummary()
     }
 end
 
+local function isCapReached(completed, limit)
+    local completedValue = tonumber(completed) or 0
+    if completedValue < 0 then
+        completedValue = 0
+    end
+
+    local limitValue = tonumber(limit) or 0
+    if limitValue <= 0 then
+        return false
+    end
+
+    if limitValue < 0 then
+        limitValue = 0
+    end
+
+    return completedValue >= limitValue
+end
+
+function EndeavorModel:IsDailyCapped()
+    local summary = self._summary
+    if type(summary) ~= "table" then
+        summary = self:GetSummary()
+    end
+
+    local completed = summary and summary.dailyCompleted
+    local limit = summary and summary.dailyLimit
+
+    if summary == self._summary then
+        completed = summary.dailyCompleted or 0
+        limit = summary.dailyLimit or 0
+    end
+
+    if isCapReached(completed, limit) then
+        return true
+    end
+
+    local snapshot = self._snapshot
+    if type(snapshot) == "table" then
+        local daily = snapshot.daily
+        if type(daily) == "table" then
+            return isCapReached(daily.completed, daily.limit)
+        end
+    end
+
+    return false
+end
+
+function EndeavorModel:IsWeeklyCapped()
+    local summary = self._summary
+    if type(summary) ~= "table" then
+        summary = self:GetSummary()
+    end
+
+    local completed = summary and summary.weeklyCompleted
+    local limit = summary and summary.weeklyLimit
+
+    if summary == self._summary then
+        completed = summary.weeklyCompleted or 0
+        limit = summary.weeklyLimit or 0
+    end
+
+    if isCapReached(completed, limit) then
+        return true
+    end
+
+    local snapshot = self._snapshot
+    if type(snapshot) == "table" then
+        local weekly = snapshot.weekly
+        if type(weekly) == "table" then
+            return isCapReached(weekly.completed, weekly.limit)
+        end
+    end
+
+    return false
+end
+
 function EndeavorModel:GetCountsForDebug()
     if type(self._snapshot) ~= "table" then
         return {

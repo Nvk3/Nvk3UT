@@ -252,6 +252,7 @@ local function buildRowsOptions(colors, fonts, completedHandling, fontConfig)
         colorKind = "endeavorTracker",
         defaultRole = "objectiveText",
         completedRole = "completed",
+        entryRole = "entryTitle",
         completedHandling = completedHandling,
         fontConfig = fontConfig,
     }
@@ -500,6 +501,38 @@ function Controller:BuildViewModel()
     local DAILY_LIMIT = 3
     local WEEKLY_LIMIT = 1
 
+    local dailyLimitValue = clampNonNegative(summary and summary.dailyLimit or dailyBucket.limit, DAILY_LIMIT)
+    local weeklyLimitValue = clampNonNegative(summary and summary.weeklyLimit or weeklyBucket.limit, WEEKLY_LIMIT)
+
+    local isDailyCapped = false
+    local isWeeklyCapped = false
+
+    if type(model) == "table" then
+        local getDailyCap = model.IsDailyCapped
+        if type(getDailyCap) == "function" then
+            local ok, capped = pcall(getDailyCap, model)
+            if ok and capped ~= nil then
+                isDailyCapped = capped == true
+            end
+        end
+
+        local getWeeklyCap = model.IsWeeklyCapped
+        if type(getWeeklyCap) == "function" then
+            local ok, capped = pcall(getWeeklyCap, model)
+            if ok and capped ~= nil then
+                isWeeklyCapped = capped == true
+            end
+        end
+    end
+
+    if not isDailyCapped then
+        isDailyCapped = dailyLimitValue > 0 and dailyCompleted >= dailyLimitValue
+    end
+
+    if not isWeeklyCapped then
+        isWeeklyCapped = weeklyLimitValue > 0 and weeklyCompleted >= weeklyLimitValue
+    end
+
     local colors = buildColors(config)
     local fonts = buildFontStrings(config)
     local trackerConfig = type(config) == "table" and config.Tracker or nil
@@ -545,14 +578,14 @@ function Controller:BuildViewModel()
         }
     end
 
-    dailyDisplayLimit = DAILY_LIMIT
-    weeklyDisplayLimit = WEEKLY_LIMIT
+    dailyDisplayLimit = dailyLimitValue > 0 and dailyLimitValue or DAILY_LIMIT
+    weeklyDisplayLimit = weeklyLimitValue > 0 and weeklyLimitValue or WEEKLY_LIMIT
 
     local dailyCompletedValue = clampNonNegative(dailyCompleted, 0)
     local weeklyCompletedValue = clampNonNegative(weeklyCompleted, 0)
 
-    local dailyDoneCapped = math.min(dailyCompletedValue, DAILY_LIMIT)
-    local weeklyDoneCapped = math.min(weeklyCompletedValue, WEEKLY_LIMIT)
+    local dailyDoneCapped = math.min(dailyCompletedValue, dailyDisplayLimit)
+    local weeklyDoneCapped = math.min(weeklyCompletedValue, weeklyDisplayLimit)
 
     dailyDisplayCompleted = dailyDoneCapped
     weeklyDisplayCompleted = weeklyDoneCapped
@@ -617,11 +650,19 @@ function Controller:BuildViewModel()
     buildObjectives(dailyBucket, dailyObjectives, "daily")
     buildObjectives(weeklyBucket, weeklyObjectives, "weekly")
 
-    local remainingDaily = math.max(0, DAILY_LIMIT - dailyDoneCapped)
-    local remainingWeekly = math.max(0, WEEKLY_LIMIT - weeklyDoneCapped)
+    local remainingDaily = math.max(0, dailyDisplayLimit - dailyDoneCapped)
+    local remainingWeekly = math.max(0, weeklyDisplayLimit - weeklyDoneCapped)
     local remainingTotal = remainingDaily + remainingWeekly
 
     local stateModule = getStateModule()
+    local dailyHideRow = completedHandling == "hide" and isDailyCapped
+    local weeklyHideRow = completedHandling == "hide" and isWeeklyCapped
+    local dailyHideObjectives = isDailyCapped
+    local weeklyHideObjectives = isWeeklyCapped
+    local dailyUseCompletedStyle = completedHandling == "recolor" and isDailyCapped
+    local weeklyUseCompletedStyle = completedHandling == "recolor" and isWeeklyCapped
+    local hideEntireSection = completedHandling == "hide" and dailyHideRow and weeklyHideRow
+
     local vm = {
         category = {
             kind = "endeavorCategoryHeader",
@@ -638,6 +679,10 @@ function Controller:BuildViewModel()
             displayLimit = dailyDisplayLimit,
             expanded = isCategoryExpanded(stateModule, "daily"),
             objectives = dailyObjectives,
+            isCapped = isDailyCapped,
+            hideRow = dailyHideRow,
+            hideObjectives = dailyHideObjectives,
+            useCompletedStyle = dailyUseCompletedStyle,
         },
         weekly = {
             kind = "weeklyHeader",
@@ -648,9 +693,16 @@ function Controller:BuildViewModel()
             displayLimit = weeklyDisplayLimit,
             expanded = isCategoryExpanded(stateModule, "weekly"),
             objectives = weeklyObjectives,
+            isCapped = isWeeklyCapped,
+            hideRow = weeklyHideRow,
+            hideObjectives = weeklyHideObjectives,
+            useCompletedStyle = weeklyUseCompletedStyle,
         },
         items = aggregatedItems,
         count = #aggregatedItems,
+        section = {
+            hideEntireSection = hideEntireSection,
+        },
     }
 
     DBG(
@@ -672,6 +724,19 @@ function Controller:BuildViewModel()
         fonts = fonts,
         rowsOptions = rowsOptions,
     }
+
+    DBG(
+        "caps: daily capped=%s hideRow=%s hideObjectives=%s completedStyle=%s | weekly capped=%s hideRow=%s hideObjectives=%s completedStyle=%s | section.hideEntire=%s",
+        tostring(isDailyCapped),
+        tostring(dailyHideRow),
+        tostring(dailyHideObjectives),
+        tostring(dailyUseCompletedStyle),
+        tostring(isWeeklyCapped),
+        tostring(weeklyHideRow),
+        tostring(weeklyHideObjectives),
+        tostring(weeklyUseCompletedStyle),
+        tostring(hideEntireSection)
+    )
 
     return vm
 end
