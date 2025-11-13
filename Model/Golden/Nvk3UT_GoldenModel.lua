@@ -590,71 +590,66 @@ local PROMO_API_CANDIDATES = {
     GetCampaignCount = {
         names = {
             "GetNumActivePromotionalEventCampaigns",
-            "GetNumActivePromotionalEventCampaign",
-            "GetNumActivePromoEventCampaigns",
         },
         probe = {},
     },
     GetCampaignKey = {
         names = {
             "GetActivePromotionalEventCampaignKey",
-            "GetActivePromoEventCampaignKey",
         },
         probe = { 1 },
-    },
-    GetCampaignId = {
-        names = {
-            "GetActivePromotionalEventCampaignId",
-            "GetActivePromoEventCampaignId",
-        },
-        probe = { 1 },
-    },
-    GetCampaignName = {
-        names = {
-            "GetPromotionalEventCampaignDisplayName",
-            "GetPromoEventCampaignDisplayName",
-        },
-        probe = false,
     },
     GetCampaignInfo = {
         names = {
             "GetPromotionalEventCampaignInfo",
-            "GetPromoEventCampaignInfo",
         },
         probe = false,
     },
-    GetCampaignProgress = {
+    GetCampaignName = {
+        names = {
+            "GetPromotionalEventCampaignDisplayName",
+        },
+        probe = false,
+    },
+    GetCampaignDesc = {
+        names = {
+            "GetPromotionalEventCampaignDescription",
+        },
+        probe = false,
+    },
+    GetSecondsLeft = {
+        names = {
+            "GetSecondsRemainingInPromotionalEventCampaign",
+        },
+        probe = false,
+    },
+    GetCampaignProg = {
         names = {
             "GetPromotionalEventCampaignProgress",
-            "GetPromoEventCampaignProgress",
         },
         probe = false,
     },
     GetActivityInfo = {
         names = {
             "GetPromotionalEventCampaignActivityInfo",
-            "GetPromoEventCampaignActivityInfo",
         },
         probe = false,
     },
-    GetActivityProgress = {
+    GetActivityProg = {
         names = {
             "GetPromotionalEventCampaignActivityProgress",
-            "GetPromoEventCampaignActivityProgress",
         },
         probe = false,
     },
     GetActivityCount = {
         names = {
             "GetNumPromotionalEventCampaignActivities",
-            "GetNumPromoEventCampaignActivities",
         },
         probe = false,
     },
     GetTracked = {
         names = {
             "GetTrackedPromotionalEventActivityInfo",
-            "GetTrackedPromoEventActivityInfo",
         },
         probe = {},
     },
@@ -662,13 +657,14 @@ local PROMO_API_CANDIDATES = {
 
 local PROMO_API_ORDER = {
     "GetCampaignCount",
-    "GetCampaignId",
     "GetCampaignKey",
-    "GetCampaignName",
     "GetCampaignInfo",
-    "GetCampaignProgress",
+    "GetCampaignName",
+    "GetCampaignDesc",
+    "GetSecondsLeft",
+    "GetCampaignProg",
     "GetActivityInfo",
-    "GetActivityProgress",
+    "GetActivityProg",
     "GetActivityCount",
     "GetTracked",
 }
@@ -676,7 +672,10 @@ local PROMO_API_ORDER = {
 local REQUIRED_PROMO_API_ROLES = {
     "GetCampaignCount",
     "GetCampaignKey",
+    "GetCampaignInfo",
     "GetCampaignName",
+    "GetActivityInfo",
+    "GetActivityProg",
 }
 
 local function resetPromoApiBindings(model)
@@ -884,10 +883,10 @@ local function buildCampaignActivities(model, api, progressKey, infoId, trackedC
         return activities, totalActivities, completedActivities, true
     end
 
-    local progressFn = api.GetActivityProgress
+    local progressFn = api.GetActivityProg
     if type(progressFn) ~= "function" then
         resetPromoApiBindings(model)
-        Dbg("missing binder: GetActivityProgress")
+        Dbg("missing binder: GetActivityProg")
         return activities, totalActivities, completedActivities, true
     end
 
@@ -928,7 +927,7 @@ local function buildCampaignActivities(model, api, progressKey, infoId, trackedC
 
         local current, maximum = 0, 0
         if progressHandle ~= nil then
-            local okProgress, progressCurrent, progressMax = callPromoApi(model, api, "GetActivityProgress", progressFn, progressHandle, index)
+            local okProgress, progressCurrent, progressMax = callPromoApi(model, api, "GetActivityProg", progressFn, progressHandle, index)
             if not okProgress then
                 return activities, totalActivities, completedActivities, true
             end
@@ -1005,14 +1004,14 @@ local function extractHasRewards(model, api, infoHandle)
     return nil
 end
 
-local function buildCampaign(model, api, campaignId, key, trackedCampaignKey, trackedActivityIndex)
-    if key == nil and campaignId == nil then
+local function buildCampaign(model, api, campaignKey, campaignId, trackedCampaignKey, trackedActivityIndex)
+    if campaignKey == nil and campaignId == nil then
         return nil, 0, 0, false
     end
 
     local normalizedKey = nil
-    if key ~= nil then
-        normalizedKey = normalizeCampaignKey(key)
+    if campaignKey ~= nil then
+        normalizedKey = normalizeCampaignKey(campaignKey)
     end
 
     if type(api) ~= "table" then
@@ -1036,11 +1035,20 @@ local function buildCampaign(model, api, campaignId, key, trackedCampaignKey, tr
     end
     local campaignName = ensureString(displayName)
 
+    local description = nil
+    local descFn = api.GetCampaignDesc
+    if type(descFn) == "function" then
+        local okDesc, descValue = callPromoApi(model, api, "GetCampaignDesc", descFn, infoHandle)
+        if okDesc then
+            description = sanitizeDescription(descValue)
+        end
+    end
+
     local activities, activityCount, completedActivities, missingActivities = buildCampaignActivities(
         model,
         api,
-        normalizedKey,
-        infoHandle,
+        campaignKey,
+        campaignKey,
         trackedCampaignKey,
         trackedActivityIndex
     )
@@ -1049,9 +1057,9 @@ local function buildCampaign(model, api, campaignId, key, trackedCampaignKey, tr
     end
 
     local progressCurrent, progressMax = 0, 0
-    local progressFn = api.GetCampaignProgress
-    if type(progressFn) == "function" and normalizedKey ~= nil then
-        local okProgress, currentValue, maxValue = callPromoApi(model, api, "GetCampaignProgress", progressFn, normalizedKey)
+    local progressFn = api.GetCampaignProg
+    if type(progressFn) == "function" and campaignKey ~= nil then
+        local okProgress, currentValue, maxValue = callPromoApi(model, api, "GetCampaignProg", progressFn, campaignKey)
         if okProgress then
             progressCurrent = ensureNumber(currentValue, 0)
             progressMax = ensureNumber(maxValue, 0)
@@ -1065,7 +1073,7 @@ local function buildCampaign(model, api, campaignId, key, trackedCampaignKey, tr
         progressMax = 0
     end
 
-    local hasRewards = extractHasRewards(model, api, infoHandle)
+    local hasRewards = extractHasRewards(model, api, campaignKey)
 
     local isCompleted = false
     if activityCount > 0 then
@@ -1078,7 +1086,9 @@ local function buildCampaign(model, api, campaignId, key, trackedCampaignKey, tr
 
     local campaign = {
         key = storedKey,
+        id = campaignId,
         name = campaignName,
+        desc = description,
         progress = {
             current = progressCurrent,
             max = progressMax,
@@ -1099,9 +1109,9 @@ local function buildCampaignViewModel(model, api)
 
     local countFn = api.GetCampaignCount
     local keyFn = api.GetCampaignKey
-    local idFn = api.GetCampaignId
+    local infoFn = api.GetCampaignInfo
     local nameFn = api.GetCampaignName
-    if type(countFn) ~= "function" or type(keyFn) ~= "function" or type(nameFn) ~= "function" then
+    if type(countFn) ~= "function" or type(keyFn) ~= "function" or type(infoFn) ~= "function" or type(nameFn) ~= "function" then
         resetPromoApiBindings(model)
         Dbg("promo API missing; delivering empty VM")
         return newEmptyCampaignViewModel(), newEmptyCampaignStats(), true
@@ -1124,27 +1134,25 @@ local function buildCampaignViewModel(model, api)
     local completedActivities = 0
 
     for index = 1, campaignCount do
-        local campaignId = nil
-        if type(idFn) == "function" then
-            local okId, rawId = callPromoApi(model, api, "GetCampaignId", idFn, index)
-            if not okId then
-                return newEmptyCampaignViewModel(), newEmptyCampaignStats(), true
-            end
-
-            campaignId = rawId
-        end
-
         local okKey, campaignKey = callPromoApi(model, api, "GetCampaignKey", keyFn, index)
         if not okKey then
             return newEmptyCampaignViewModel(), newEmptyCampaignStats(), true
         end
 
+        local campaignId = nil
+        local okInfo, infoId = callPromoApi(model, api, "GetCampaignInfo", infoFn, campaignKey)
+        if not okInfo then
+            return newEmptyCampaignViewModel(), newEmptyCampaignStats(), true
+        end
+
+        campaignId = infoId
+
         if campaignKey ~= nil or campaignId ~= nil then
             local campaign, activityCount, completedCount, missingApi = buildCampaign(
                 model,
                 api,
-                campaignId,
                 campaignKey,
+                campaignId,
                 trackedCampaignKey,
                 trackedActivityIndex
             )
