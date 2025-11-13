@@ -1,8 +1,8 @@
 ## Title: Nvk3's Ultimate Tracker
 ## Description: Favorites category + context menu; 'Kürzlich' as its own category with same icon; Status + LAM.
 ## Author: Nvk3
-## Version: 0.11.8
-## AddOnVersion: 1108
+## Version: 0.11.14
+## AddOnVersion: 1114
 ## APIVersion: 101041 101042 101043
 ## DependsOn: LibAddonMenu-2.0
 ## OptionalDependsOn: LibCustomMenu-2.0
@@ -34,6 +34,10 @@ Model/Achievement/Nvk3UT_CompletedIntegration.lua
 Model/Achievement/Nvk3UT_AchievementList.lua
 Model/Achievement/Nvk3UT_AchievementModel.lua
 Model/Achievement/Nvk3UT_AchievementCache.lua
+## Model — Golden
+Model/Golden/Nvk3UT_GoldenState.lua
+Model/Golden/Nvk3UT_GoldenList.lua
+Model/Golden/Nvk3UT_GoldenModel.lua
 ## === Journal ===
 Journal/Nvk3UT_AchievementsJournal.lua
 Journal/Nvk3UT_FavoritesCategory.lua
