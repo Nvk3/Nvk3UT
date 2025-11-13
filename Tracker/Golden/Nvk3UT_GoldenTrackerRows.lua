@@ -201,11 +201,13 @@ end
 
 function Rows.CreateCategoryHeader(parent, categoryData)
     if parent == nil then
+        safeDebug("CreateCategoryHeader skipped: parent missing")
         return nil
     end
 
     local control = createCategoryControl(parent)
     if not control then
+        safeDebug("CreateCategoryHeader failed: control missing")
         return nil
     end
 
@@ -246,6 +248,8 @@ function Rows.UpdateCategoryHeader(row, categoryData)
         if label.SetText then
             label:SetText(formatCategoryName(categoryData))
         end
+    else
+        safeDebug("UpdateCategoryHeader warning: label unavailable; fallback header should cover display")
     end
 
     row.height = DEFAULTS.CATEGORY_HEIGHT

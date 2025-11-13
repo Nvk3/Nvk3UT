@@ -26,6 +26,7 @@ local state = {
     rowCache = {},
     viewModel = nil,
     viewModelRaw = nil,
+    fallbackHeaderCounter = 0,
 }
 
 -- TEMP EVENT BOOTSTRAP (INTRO) now SHIM-routed to Controller handlers.
@@ -369,6 +370,119 @@ local function releaseRow(row)
     end
 end
 
+local function formatFallbackCategoryName(categoryData)
+    local name = ""
+    if type(categoryData) == "table" then
+        name = categoryData.name or categoryData.title or ""
+    end
+
+    if type(name) ~= "string" then
+        name = tostring(name or "")
+    end
+
+    if name ~= "" then
+        local ok, upper = pcall(string.upper, name)
+        if ok and type(upper) == "string" then
+            name = upper
+        end
+    end
+
+    return name
+end
+
+local function createFallbackHeaderRow(parent, categoryData)
+    if not isControl(parent) then
+        return nil
+    end
+
+    local wm = rawget(_G, "WINDOW_MANAGER")
+    if wm == nil then
+        safeDebug("Fallback header unavailable: WINDOW_MANAGER missing")
+        return nil
+    end
+
+    state.fallbackHeaderCounter = (state.fallbackHeaderCounter or 0) + 1
+
+    local parentName = "Nvk3UT_Golden"
+    if type(parent.GetName) == "function" then
+        local ok, name = pcall(parent.GetName, parent)
+        if ok and type(name) == "string" and name ~= "" then
+            parentName = name
+        end
+    end
+
+    local controlName = string.format("%s_FallbackHeader%u", parentName, state.fallbackHeaderCounter)
+    local control = wm:CreateControl(controlName, parent, CT_CONTROL)
+    if not isControl(control) then
+        safeDebug("Fallback header control creation failed (%s)", tostring(controlName))
+        return nil
+    end
+
+    if control.ClearAnchors then
+        control:ClearAnchors()
+    end
+    if control.SetParent then
+        control:SetParent(parent)
+    end
+    if control.SetResizeToFitDescendents then
+        control:SetResizeToFitDescendents(false)
+    end
+    if control.SetMouseEnabled then
+        control:SetMouseEnabled(false)
+    end
+    if control.SetHidden then
+        control:SetHidden(false)
+    end
+
+    local headerHeight = 44
+    if control.SetHeight then
+        control:SetHeight(headerHeight)
+    end
+    control.__height = headerHeight
+
+    local labelName = string.format("%s_Label", controlName)
+    local label = wm:CreateControl(labelName, control, CT_LABEL)
+    if label then
+        if label.ClearAnchors then
+            label:ClearAnchors()
+        end
+        if label.SetAnchor then
+            label:SetAnchor(LEFT, control, LEFT, 16, 0)
+            label:SetAnchor(RIGHT, control, RIGHT, -16, 0)
+        end
+        if label.SetHidden then
+            label:SetHidden(false)
+        end
+        if label.SetFont then
+            label:SetFont("ZoFontHeader2")
+        end
+        if label.SetColor then
+            label:SetColor(1, 1, 1, 1)
+        end
+        if label.SetWrapMode and rawget(_G, "TEXT_WRAP_MODE_ELLIPSIS") then
+            label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
+        end
+        if label.SetHorizontalAlignment and rawget(_G, "TEXT_ALIGN_LEFT") then
+            label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        end
+        if label.SetVerticalAlignment and rawget(_G, "TEXT_ALIGN_CENTER") then
+            label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
+        end
+
+        if label.SetText then
+            label:SetText(formatFallbackCategoryName(categoryData))
+        end
+    else
+        safeDebug("Fallback header label creation failed (%s)", tostring(labelName))
+    end
+
+    return {
+        control = control,
+        label = label,
+        height = headerHeight,
+    }
+end
+
 local function resetRows()
     if type(state.rows) == "table" then
         for index = #state.rows, 1, -1 do
@@ -495,27 +609,51 @@ function GoldenTracker.Refresh(viewModel)
     local activeRows = state.rows
     local rowCount = 0
 
-    if rowsModule and type(rowsModule.AcquireCategoryHeader) == "function" then
-        for categoryIndex = 1, categoryCount do
-            local categoryData = categories[categoryIndex]
-            if type(categoryData) == "table" then
-                local recycledRow = table.remove(state.rowCache)
-                local ok, row = pcall(rowsModule.AcquireCategoryHeader, content, recycledRow, categoryData)
-                if ok and type(row) == "table" and row.control then
-                    rowCount = rowCount + 1
-                    activeRows[rowCount] = row
+    local hasAcquire = rowsModule and type(rowsModule.AcquireCategoryHeader) == "function"
+    if rowsModule and not hasAcquire then
+        safeDebug("Rows module missing AcquireCategoryHeader; using inline fallback headers")
+    elseif not rowsModule then
+        safeDebug("Rows module unavailable; using inline fallback headers")
+    end
+
+    local fallbackRowBuilt = false
+
+    for categoryIndex = 1, categoryCount do
+        local categoryData = categories[categoryIndex]
+        if type(categoryData) == "table" then
+            local recycledRow = table.remove(state.rowCache)
+            local row = nil
+
+            if hasAcquire then
+                local ok, acquiredRow = pcall(rowsModule.AcquireCategoryHeader, content, recycledRow, categoryData)
+                if ok and type(acquiredRow) == "table" and acquiredRow.control then
+                    row = acquiredRow
                 else
                     if recycledRow then
                         table.insert(state.rowCache, recycledRow)
                     end
                     if not ok then
-                        safeDebug("AcquireCategoryHeader failed: %s", tostring(row))
+                        safeDebug("AcquireCategoryHeader failed: %s", tostring(acquiredRow))
                     end
                 end
+            else
+                if recycledRow then
+                    table.insert(state.rowCache, recycledRow)
+                end
+            end
+
+            if not row then
+                row = createFallbackHeaderRow(content, categoryData)
+                if row then
+                    fallbackRowBuilt = true
+                end
+            end
+
+            if row and row.control then
+                rowCount = rowCount + 1
+                activeRows[rowCount] = row
             end
         end
-    elseif rowsModule then
-        safeDebug("Rows module missing AcquireCategoryHeader; no UI rows built")
     end
 
     local totalHeight = 0
@@ -545,7 +683,7 @@ function GoldenTracker.Refresh(viewModel)
     setContainerHeight(container, totalHeight)
 
     if debugEnabled then
-        safeDebug("[Golden.UI] Refresh: cats=%d rows=%d height=%d", categoryCount, rowCount, totalHeight)
+        safeDebug("[Golden.UI] Refresh: cats=%d rows=%d height=%d fallback=%s", categoryCount, rowCount, totalHeight, tostring(fallbackRowBuilt))
     end
 end
 
