@@ -155,11 +155,11 @@ end
 
 local function ensureViewModel()
     if type(state.viewModel) ~= "table" then
-        state.viewModel = { categories = {} }
+        state.viewModel = { campaigns = {} }
     else
-        local categories = state.viewModel.categories
-        if type(categories) ~= "table" then
-            state.viewModel.categories = {}
+        local campaigns = state.viewModel.campaigns
+        if type(campaigns) ~= "table" then
+            state.viewModel.campaigns = {}
         end
     end
 
@@ -189,60 +189,56 @@ function Controller:ClearDirty()
 end
 
 function Controller:BuildViewModel()
-    local categories = {
-        {
-            id = "GOLDEN_DAILY",
-            name = "GOLDEN — DAILY",
-            entries = {
-                {
-                    id = "GOLDEN_SAMPLE_ENTRY_1",
-                    title = "Example Golden Daily",
-                    count = 0,
-                    max = 1,
-                    objectives = {
-                        {
-                            id = "obj1",
-                            title = "Do a golden thing",
-                            progress = 0,
-                            max = 1,
-                        },
-                    },
-                },
-            },
-        },
-        {
-            id = "GOLDEN_WEEKLY",
-            name = "GOLDEN — WEEKLY",
-            entries = {},
-        },
-    }
+    local root = Nvk3UT
+    local model = root and root.GoldenModel
+    local resolvedViewModel = nil
 
-    state.viewModel = {
-        categories = categories,
-    }
-
-    diagnosticsDebug("[GoldenVM] cats=%d", #(categories or {}))
-    local inspectCount = math.min(#categories, 5)
-    for index = 1, inspectCount do
-        local category = categories[index]
-        local entriesCount = nil
-        local hideFlag = nil
-        if type(category) == "table" then
-            local entries = category.entries
-            if type(entries) == "table" then
-                entriesCount = #entries
+    if type(model) == "table" then
+        if type(model.GetViewData) == "function" then
+            local ok, vm = pcall(model.GetViewData, model)
+            if ok and type(vm) == "table" then
+                resolvedViewModel = vm
             end
-            hideFlag = category.hide or category.hidden or category.hideEntire
+        elseif type(model.GetViewModel) == "function" then
+            local ok, vm = pcall(model.GetViewModel, model)
+            if ok and type(vm) == "table" then
+                resolvedViewModel = vm
+            end
         end
+    end
 
-        diagnosticsDebug("[GoldenVM] cat[%d] name='%s' entries=%s hide=%s", index, tostring(category and category.name), tostring(entriesCount), tostring(hideFlag))
+    if type(resolvedViewModel) == "table" then
+        state.viewModel = resolvedViewModel
     end
 
     local viewModel = ensureViewModel()
+    local campaigns = viewModel.campaigns or {}
+
+    diagnosticsDebug("[GoldenVM] campaigns=%d", #campaigns)
+    local inspectCount = math.min(#campaigns, 5)
+    for index = 1, inspectCount do
+        local campaign = campaigns[index]
+        local activityCount = nil
+        local completedFlag = nil
+        if type(campaign) == "table" then
+            if type(campaign.activities) == "table" then
+                activityCount = #campaign.activities
+            end
+            completedFlag = campaign.isCompleted
+        end
+
+        diagnosticsDebug(
+            "[GoldenVM] campaign[%d] name='%s' activities=%s completed=%s",
+            index,
+            tostring(campaign and campaign.name),
+            tostring(activityCount),
+            tostring(completedFlag)
+        )
+    end
+
     state.dirty = false
 
-    local count = #(viewModel.categories or {})
-    safeDebug("BuildViewModel done, cats=%d", count)
+    safeDebug("BuildViewModel done, campaigns=%d", #campaigns)
 
     return viewModel
 end

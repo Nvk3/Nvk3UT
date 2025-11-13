@@ -31,7 +31,7 @@ Runtime._endeavorVM = Runtime._endeavorVM
 Runtime.goldenDirty = true
 Runtime.cache = type(Runtime.cache) == "table" and Runtime.cache or {}
 if type(Runtime.cache.goldenVM) ~= "table" then
-    Runtime.cache.goldenVM = { categories = {} }
+    Runtime.cache.goldenVM = { campaigns = {} }
 end
 
 local function debug(fmt, ...)
@@ -821,7 +821,7 @@ function Runtime:ProcessFrame(nowMs)
             end
 
             if type(cache.goldenVM) ~= "table" then
-                cache.goldenVM = { categories = {} }
+                cache.goldenVM = { campaigns = {} }
             end
 
             local controller = rawget(Addon, "GoldenTrackerController")
@@ -837,24 +837,24 @@ function Runtime:ProcessFrame(nowMs)
                     end
 
                     if type(controller.GetViewModel) == "function" then
-                        cache.goldenVM = controller:GetViewModel() or { categories = {} }
+                        cache.goldenVM = controller:GetViewModel() or { campaigns = {} }
                     end
 
                     if type(cache.goldenVM) ~= "table" then
-                        cache.goldenVM = { categories = {} }
+                        cache.goldenVM = { campaigns = {} }
                     end
 
                     local vm = cache.goldenVM
-                    local categories = 0
-                    if type(vm) == "table" and type(vm.categories) == "table" then
-                        categories = #vm.categories
+                    local campaigns = 0
+                    if type(vm) == "table" and type(vm.campaigns) == "table" then
+                        campaigns = #vm.campaigns
                     end
 
-                    debug(("Runtime: Golden VM built, cats=%d"):format(categories))
+                    debug(("Runtime: Golden VM built, campaigns=%d"):format(campaigns))
                 end)
             else
                 if type(cache.goldenVM) ~= "table" then
-                    cache.goldenVM = { categories = {} }
+                    cache.goldenVM = { campaigns = {} }
                 end
 
                 warn("Runtime: GoldenTrackerController missing; cached empty VM")
@@ -913,22 +913,22 @@ function Runtime:ProcessFrame(nowMs)
 
             local viewModel = cache.goldenVM
             if type(viewModel) ~= "table" then
-                viewModel = { categories = {} }
+                viewModel = { campaigns = {} }
                 cache.goldenVM = viewModel
             end
 
-            diagnosticsDebug("[GoldenRT] handoff VM → cats=%d", type(viewModel.categories) == "table" and #viewModel.categories or 0)
+            diagnosticsDebug("[GoldenRT] handoff VM → campaigns=%d", type(viewModel.campaigns) == "table" and #viewModel.campaigns or 0)
             safeCall(function()
                 goldenTracker:Refresh(viewModel)
                 goldenRefreshed = true
 
                 if goldenDirty then
-                    local categoryCount = 0
-                    if type(viewModel.categories) == "table" then
-                        categoryCount = #viewModel.categories
+                    local campaignCount = 0
+                    if type(viewModel.campaigns) == "table" then
+                        campaignCount = #viewModel.campaigns
                     end
 
-                    debug(("Runtime: Golden refresh wired, cats=%d"):format(categoryCount))
+                    debug(("Runtime: Golden refresh wired, campaigns=%d"):format(campaignCount))
                 end
             end)
         end

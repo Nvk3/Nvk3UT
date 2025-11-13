@@ -12,6 +12,7 @@ GoldenModel._state = type(GoldenModel._state) == "table" and GoldenModel._state 
 GoldenModel._list = type(GoldenModel._list) == "table" and GoldenModel._list or nil
 GoldenModel._rawData = type(GoldenModel._rawData) == "table" and GoldenModel._rawData or nil
 GoldenModel._viewData = type(GoldenModel._viewData) == "table" and GoldenModel._viewData or nil
+GoldenModel._vm = type(GoldenModel._vm) == "table" and GoldenModel._vm or nil
 GoldenModel._counters = type(GoldenModel._counters) == "table" and GoldenModel._counters or nil
 
 local unpack = _G.unpack or (table and table.unpack)
@@ -247,12 +248,17 @@ local function newEmptyRawData()
     }
 end
 
+local function newEmptyCampaignViewModel()
+    return {
+        campaigns = {},
+    }
+end
+
 local function newEmptyCounters()
     return {
-        dailyCompleted = 0,
-        dailyTotal = 0,
-        weeklyCompleted = 0,
-        weeklyTotal = 0,
+        campaigns = 0,
+        activitiesCompleted = 0,
+        activitiesTotal = 0,
     }
 end
 
@@ -387,10 +393,10 @@ local function computeIsEmpty(counters)
         return true
     end
 
-    local dailyTotal = tonumber(counters.dailyTotal) or 0
-    local weeklyTotal = tonumber(counters.weeklyTotal) or 0
+    local campaignCount = tonumber(counters.campaigns) or 0
+    local activityTotal = tonumber(counters.activitiesTotal) or 0
 
-    return dailyTotal <= 0 and weeklyTotal <= 0
+    return campaignCount <= 0 and activityTotal <= 0
 end
 
 local function buildCategoryView(descriptor, rawCategory, state)
@@ -455,69 +461,290 @@ function GoldenModel:Init(svRoot, goldenState, goldenList)
         refreshListInit(self._list, self._svRoot)
     end
 
-    self._rawData = newEmptyRawData()
-    self._viewData = buildViewDataSnapshot(self._rawData, self._state)
-    self._counters = buildCounters(self._rawData)
-    self._isEmpty = computeIsEmpty(self._counters)
+    self._rawData = nil
+    self._vm = newEmptyCampaignViewModel()
+    self._viewData = newEmptyCampaignViewModel()
+    self._counters = newEmptyCounters()
+    self._isEmpty = true
 
     debugLog("init")
 
     return self
 end
 
-local function runListRefresh(list, providerFn)
-    if type(list) ~= "table" or type(list.RefreshFromGame) ~= "function" then
-        return
-    end
-    list:RefreshFromGame(providerFn)
-end
-
-function GoldenModel:RefreshFromGame(providerFn)
-    if type(self._list) ~= "table" then
-        self._rawData = newEmptyRawData()
-        self._viewData = buildViewDataSnapshot(self._rawData, self._state)
-        self._counters = buildCounters(self._rawData)
-        self._isEmpty = computeIsEmpty(self._counters)
+local function callGlobal(name, ...)
+    local fn = rawget(_G, name)
+    if type(fn) ~= "function" then
         return false
     end
 
-    safeCall(runListRefresh, self._list, providerFn)
+    return pcall(fn, ...)
+end
 
-    local rawData = copyOrEmpty(self._list.GetRawData and self._list:GetRawData(), newEmptyRawData)
-    if type(rawData.categories) ~= "table" then
-        rawData = newEmptyRawData()
+local function toNonNegativeInteger(value)
+    local numeric = tonumber(value) or 0
+    if numeric < 0 then
+        numeric = 0
+    end
+    if type(numeric) == "number" and math and type(math.floor) == "function" then
+        numeric = math.floor(numeric)
+    end
+    return numeric
+end
+
+local MAX_CAMPAIGN_ACTIVITIES = 50
+
+local function fetchTrackedActivity()
+    local ok, campaignKey, activityIndex = callGlobal("GetTrackedPromotionalEventActivityInfo")
+    if not ok then
+        return nil, nil
     end
 
-    self._rawData = rawData
-    self._viewData = buildViewDataSnapshot(self._rawData, self._state)
-    self._counters = buildCounters(self._rawData)
+    if campaignKey == nil or activityIndex == nil then
+        return nil, nil
+    end
+
+    return campaignKey, toNonNegativeInteger(activityIndex)
+end
+
+local function sanitizeDescription(value)
+    if type(value) == "string" then
+        if value == "" then
+            return nil
+        end
+        return value
+    end
+
+    if value ~= nil then
+        local text = tostring(value)
+        if text ~= "" then
+            return text
+        end
+    end
+
+    return nil
+end
+
+local function buildCampaignActivities(key, trackedCampaignKey, trackedActivityIndex)
+    local activities = {}
+    local totalActivities = 0
+    local completedActivities = 0
+
+    local infoFn = rawget(_G, "GetPromotionalEventCampaignActivityInfo")
+    if type(infoFn) ~= "function" then
+        return activities, totalActivities, completedActivities
+    end
+
+    local progressFn = rawget(_G, "GetPromotionalEventCampaignActivityProgress")
+
+    for index = 1, MAX_CAMPAIGN_ACTIVITIES do
+        local okInfo, name, description = pcall(infoFn, key, index)
+        if not okInfo then
+            break
+        end
+
+        local hasName = type(name) == "string" and name ~= ""
+        local hasDescription = type(description) == "string" and description ~= ""
+        if name == nil and description == nil then
+            break
+        end
+        if not hasName and not hasDescription and name == "" and description == "" then
+            break
+        end
+
+        local activityName = ensureString(name)
+        local activityDescription = sanitizeDescription(description)
+
+        local current, maximum = 0, 0
+        if type(progressFn) == "function" then
+            local okProgress, progressCurrent, progressMax = pcall(progressFn, key, index)
+            if okProgress then
+                current = ensureNumber(progressCurrent, 0)
+                maximum = ensureNumber(progressMax, 0)
+            end
+        end
+
+        if current < 0 then
+            current = 0
+        end
+        if maximum < 0 then
+            maximum = 0
+        end
+
+        local completed = maximum > 0 and current >= maximum
+        if completed then
+            completedActivities = completedActivities + 1
+        end
+
+        local isTracked = false
+        if trackedCampaignKey ~= nil and trackedCampaignKey == key then
+            if toNonNegativeInteger(trackedActivityIndex) == index then
+                isTracked = true
+            end
+        end
+
+        activities[#activities + 1] = {
+            name = activityName,
+            desc = activityDescription,
+            current = current,
+            max = maximum,
+            tracked = isTracked,
+            completed = completed,
+        }
+
+        totalActivities = totalActivities + 1
+    end
+
+    return activities, totalActivities, completedActivities
+end
+
+local function extractHasRewards(campaignKey)
+    local infoFn = rawget(_G, "GetPromotionalEventCampaignInfo")
+    if type(infoFn) ~= "function" then
+        return nil
+    end
+
+    local okInfo, a, b, c, d, e, f = pcall(infoFn, campaignKey)
+    if not okInfo then
+        return nil
+    end
+
+    local values = { a, b, c, d, e, f }
+    for index = 1, #values do
+        if type(values[index]) == "boolean" then
+            return values[index]
+        end
+    end
+
+    return nil
+end
+
+local function buildCampaign(key, trackedCampaignKey, trackedActivityIndex)
+    if key == nil then
+        return nil, 0, 0
+    end
+
+    local okName, displayName = callGlobal("GetPromotionalEventCampaignDisplayName", key)
+    local campaignName = ensureString(okName and displayName or "")
+
+    local activities, activityCount, completedActivities = buildCampaignActivities(key, trackedCampaignKey, trackedActivityIndex)
+
+    local progressCurrent, progressMax = 0, 0
+    local okProgress, currentValue, maxValue = callGlobal("GetPromotionalEventCampaignProgress", key)
+    if okProgress then
+        progressCurrent = ensureNumber(currentValue, 0)
+        progressMax = ensureNumber(maxValue, 0)
+    end
+
+    if progressCurrent < 0 then
+        progressCurrent = 0
+    end
+    if progressMax < 0 then
+        progressMax = 0
+    end
+
+    local hasRewards = extractHasRewards(key)
+
+    local isCompleted = false
+    if activityCount > 0 then
+        isCompleted = completedActivities >= activityCount
+    elseif progressMax > 0 then
+        isCompleted = progressCurrent >= progressMax
+    end
+
+    local campaign = {
+        key = key,
+        name = campaignName,
+        progress = {
+            current = progressCurrent,
+            max = progressMax,
+        },
+        activities = activities,
+        hasRewards = hasRewards,
+        isCompleted = isCompleted == true,
+    }
+
+    return campaign, activityCount, completedActivities
+end
+
+local function buildCampaignViewModel()
+    local campaigns = {}
+    local okCount, countValue = callGlobal("GetNumActivePromotionalEventCampaigns")
+    local campaignCount = 0
+    if okCount then
+        campaignCount = toNonNegativeInteger(countValue)
+    end
+
+    local trackedCampaignKey, trackedActivityIndex = fetchTrackedActivity()
+
+    local totalActivities = 0
+    local completedActivities = 0
+
+    for index = 1, campaignCount do
+        local okKey, campaignKey = callGlobal("GetActivePromotionalEventCampaignKey", index)
+        if okKey and campaignKey ~= nil then
+            local campaign, activityCount, completedCount = buildCampaign(campaignKey, trackedCampaignKey, trackedActivityIndex)
+            if type(campaign) == "table" then
+                campaigns[#campaigns + 1] = campaign
+                totalActivities = totalActivities + (activityCount or 0)
+                completedActivities = completedActivities + (completedCount or 0)
+            end
+        end
+    end
+
+    return {
+        campaigns = campaigns,
+    }, {
+        totalCampaigns = #campaigns,
+        totalActivities = totalActivities,
+        completedActivities = completedActivities,
+    }
+end
+
+function GoldenModel:RefreshFromGame(providerFn)
+    local viewModel, stats = buildCampaignViewModel()
+    if type(viewModel) ~= "table" then
+        viewModel = newEmptyCampaignViewModel()
+    end
+
+    self._vm = viewModel
+    self._viewData = deepCopyTable(viewModel) or newEmptyCampaignViewModel()
+    self._rawData = nil
+
+    stats = type(stats) == "table" and stats or {}
+    self._counters = {
+        campaigns = toNonNegativeInteger(stats.totalCampaigns),
+        activitiesCompleted = toNonNegativeInteger(stats.completedActivities),
+        activitiesTotal = toNonNegativeInteger(stats.totalActivities),
+    }
     self._isEmpty = computeIsEmpty(self._counters)
 
     debugLog(
-        "refresh: daily=%d/%d weekly=%d/%d",
-        self._counters.dailyCompleted or 0,
-        self._counters.dailyTotal or 0,
-        self._counters.weeklyCompleted or 0,
-        self._counters.weeklyTotal or 0
+        "refresh: campaigns=%d activities=%d completed=%d",
+        self._counters.campaigns or 0,
+        self._counters.activitiesTotal or 0,
+        self._counters.activitiesCompleted or 0
     )
 
     return true
 end
 
 function GoldenModel:GetRawData()
-    local copy = deepCopyTable(self._rawData)
-    if type(copy) == "table" then
-        return copy
-    end
-    return newEmptyRawData()
+    return self:GetViewData()
 end
 
 function GoldenModel:GetViewData()
-    local copy = deepCopyTable(self._viewData)
-    if type(copy) == "table" then
-        return copy
+    local source = self._viewData or self._vm
+    local copy = deepCopyTable(source)
+    if type(copy) ~= "table" then
+        copy = newEmptyCampaignViewModel()
     end
-    return buildViewDataSnapshot(self._rawData, self._state)
+
+    if type(copy.campaigns) ~= "table" then
+        copy.campaigns = {}
+    end
+
+    return copy
 end
 
 function GoldenModel:GetCounters()
@@ -527,10 +754,9 @@ function GoldenModel:GetCounters()
     end
 
     return {
-        dailyCompleted = counters.dailyCompleted or 0,
-        dailyTotal = counters.dailyTotal or 0,
-        weeklyCompleted = counters.weeklyCompleted or 0,
-        weeklyTotal = counters.weeklyTotal or 0,
+        campaigns = counters.campaigns or 0,
+        activitiesCompleted = counters.activitiesCompleted or 0,
+        activitiesTotal = counters.activitiesTotal or 0,
     }
 end
 

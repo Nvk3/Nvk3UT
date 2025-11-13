@@ -370,10 +370,21 @@ local function releaseRow(row)
     end
 end
 
-local function formatFallbackCategoryName(categoryData)
+local function formatFallbackCampaignName(campaignData)
     local name = ""
-    if type(categoryData) == "table" then
-        name = categoryData.name or categoryData.title or ""
+    local progressText = nil
+
+    if type(campaignData) == "table" then
+        name = campaignData.name or campaignData.title or ""
+
+        local progress = campaignData.progress
+        if type(progress) == "table" then
+            local current = tonumber(progress.current)
+            local maximum = tonumber(progress.max)
+            if maximum and maximum > 0 and current and current >= 0 then
+                progressText = string.format("%d/%d", current, maximum)
+            end
+        end
     end
 
     if type(name) ~= "string" then
@@ -387,10 +398,14 @@ local function formatFallbackCategoryName(categoryData)
         end
     end
 
+    if progressText and progressText ~= "" then
+        name = string.format("%s (%s)", name, progressText)
+    end
+
     return name
 end
 
-local function createFallbackHeaderRow(parent, categoryData)
+local function createFallbackHeaderRow(parent, campaignData)
     if not isControl(parent) then
         return nil
     end
@@ -470,7 +485,7 @@ local function createFallbackHeaderRow(parent, categoryData)
         end
 
         if label.SetText then
-            label:SetText(formatFallbackCategoryName(categoryData))
+            label:SetText(formatFallbackCampaignName(campaignData))
         end
     else
         safeDebug("Fallback header label creation failed (%s)", tostring(labelName))
@@ -564,12 +579,12 @@ end
 
 function GoldenTracker.Refresh(viewModel)
     local debugEnabled = isDiagnosticsDebugEnabled()
-    local catsParam = {}
+    local campaignsParam = {}
     if debugEnabled then
-        if type(viewModel) == "table" and type(viewModel.categories) == "table" then
-            catsParam = viewModel.categories
+        if type(viewModel) == "table" and type(viewModel.campaigns) == "table" then
+            campaignsParam = viewModel.campaigns
         end
-        safeDebug("[Golden.UI] Refresh(param) type(viewModel)=%s cats=%d", type(viewModel), #catsParam)
+        safeDebug("[Golden.UI] Refresh(param) type(viewModel)=%s campaigns=%d", type(viewModel), #campaignsParam)
     end
 
     if not state.initialized then
@@ -614,37 +629,45 @@ function GoldenTracker.Refresh(viewModel)
     local vm = type(viewModel) == "table" and viewModel or nil
     state.viewModelRaw = viewModel
     state.viewModel = vm
-    local categories = (vm and type(vm.categories) == "table" and vm.categories) or {}
-    local categoryCount = #categories
+    local campaigns = (vm and type(vm.campaigns) == "table" and vm.campaigns) or {}
+    local campaignCount = #campaigns
     if debugEnabled then
-        safeDebug("[Golden.UI] After assign: catsParam=%d catsSelf=%d", #catsParam, categoryCount)
+        safeDebug("[Golden.UI] After assign: campaignsParam=%d campaignsSelf=%d", #campaignsParam, campaignCount)
     end
 
     local activeRows = state.rows
     local rowCount = 0
     local rowsFailed = 0
 
-    local hasAcquire = rowsModule and type(rowsModule.AcquireCategoryHeader) == "function"
+    local acquireMethod = nil
+    if rowsModule then
+        if type(rowsModule.AcquireCampaignHeader) == "function" then
+            acquireMethod = "AcquireCampaignHeader"
+        elseif type(rowsModule.AcquireCategoryHeader) == "function" then
+            acquireMethod = "AcquireCategoryHeader"
+        end
+    end
+    local hasAcquire = acquireMethod ~= nil
     if debugEnabled then
         if rowsModule and not hasAcquire then
-            safeDebug("Rows module missing AcquireCategoryHeader; using inline fallback headers")
+            safeDebug("Rows module missing campaign header factory; using inline fallback headers")
         elseif not rowsModule then
             safeDebug("Rows module unavailable; using inline fallback headers")
         end
     end
 
-    for categoryIndex = 1, categoryCount do
-        local categoryData = categories[categoryIndex]
-        if type(categoryData) == "table" then
+    for campaignIndex = 1, campaignCount do
+        local campaignData = campaigns[campaignIndex]
+        if type(campaignData) == "table" then
             if debugEnabled then
-                safeDebug("[Golden.UI] build header for cat[%d] '%s'", categoryIndex, tostring(categoryData.name))
+                safeDebug("[Golden.UI] build header for campaign[%d] '%s'", campaignIndex, tostring(campaignData.name))
             end
 
             local recycledRow = table.remove(state.rowCache)
             local row = nil
 
-            if hasAcquire then
-                local ok, acquiredRow = pcall(rowsModule.AcquireCategoryHeader, content, recycledRow, categoryData)
+            if hasAcquire and rowsModule and acquireMethod then
+                local ok, acquiredRow = pcall(rowsModule[acquireMethod], content, recycledRow, campaignData)
                 if ok and type(acquiredRow) == "table" and acquiredRow.control then
                     row = acquiredRow
                 else
@@ -653,10 +676,10 @@ function GoldenTracker.Refresh(viewModel)
                     end
                     rowsFailed = rowsFailed + 1
                     if debugEnabled then
-                        safeDebug("[Golden.UI] WARN header-acquire failed for cat[%d] '%s'", categoryIndex, tostring(categoryData.name))
+                        safeDebug("[Golden.UI] WARN header-acquire failed for campaign[%d] '%s'", campaignIndex, tostring(campaignData.name))
                     end
                     if not ok and debugEnabled then
-                        safeDebug("AcquireCategoryHeader failed: %s", tostring(acquiredRow))
+                        safeDebug("%s failed: %s", tostring(acquireMethod), tostring(acquiredRow))
                     end
                 end
             else
@@ -666,7 +689,7 @@ function GoldenTracker.Refresh(viewModel)
             end
 
             if not row then
-                row = createFallbackHeaderRow(content, categoryData)
+                row = createFallbackHeaderRow(content, campaignData)
             end
 
             if row and row.control then
@@ -704,7 +727,7 @@ function GoldenTracker.Refresh(viewModel)
 
     if debugEnabled then
         local usedFallbackHeight = (rowCount == 0 and totalHeight == 86)
-        safeDebug("[Golden.UI] Refresh: cats=%d rows=%d rowsFailed=%d height=%d fallback=%s", categoryCount, rowCount, rowsFailed, totalHeight, tostring(usedFallbackHeight))
+        safeDebug("[Golden.UI] Refresh: campaigns=%d rows=%d rowsFailed=%d height=%d fallback=%s", campaignCount, rowCount, rowsFailed, totalHeight, tostring(usedFallbackHeight))
     end
 end
 

@@ -470,38 +470,53 @@ SLASH_COMMANDS["/nvkgoldenvm"] = function()
             return
         end
 
-        local categories = viewModel.categories
-        if type(categories) ~= "table" then
-            categories = {}
+        local campaigns = viewModel.campaigns
+        if type(campaigns) ~= "table" then
+            campaigns = {}
         end
 
-        EmitGoldenDumpLine(string.format("cats=%d", #categories))
+        EmitGoldenDumpLine(string.format("campaigns=%d", #campaigns))
 
-        local maxCategories = math.min(#categories, 10)
-        for index = 1, maxCategories do
-            local category = categories[index]
-            local entriesCount = nil
-            local hideFlag = nil
-            if type(category) == "table" then
-                if type(category.entries) == "table" then
-                    entriesCount = #category.entries
+        local maxCampaigns = math.min(#campaigns, 10)
+        for index = 1, maxCampaigns do
+            local campaign = campaigns[index]
+            local activitiesCount = nil
+            local progressSummary = nil
+            local completedFlag = nil
+            local hasRewards = nil
+
+            if type(campaign) == "table" then
+                if type(campaign.activities) == "table" then
+                    activitiesCount = #campaign.activities
                 end
-                hideFlag = category.hide or category.hidden or category.hideEntire
+                completedFlag = campaign.isCompleted
+                hasRewards = campaign.hasRewards
+
+                local progress = campaign.progress
+                if type(progress) == "table" then
+                    local current = tonumber(progress.current)
+                    local maximum = tonumber(progress.max)
+                    if maximum and maximum > 0 then
+                        progressSummary = string.format("%d/%d", current or 0, maximum)
+                    end
+                end
             end
 
             local payload = {
                 index = index,
-                name = category and category.name,
-                entriesCount = entriesCount,
-                hide = hideFlag,
-                raw = category,
+                name = campaign and campaign.name,
+                activities = activitiesCount,
+                completed = completedFlag,
+                rewards = hasRewards,
+                progress = progressSummary,
+                raw = campaign,
             }
 
-            EmitGoldenDumpLine(string.format("cat[%d] %s", index, DumpTableLimited(payload, 0, {})))
+            EmitGoldenDumpLine(string.format("campaign[%d] %s", index, DumpTableLimited(payload, 0, {})))
         end
 
-        if #categories > maxCategories then
-            EmitGoldenDumpLine(string.format("…(+%d categories)", #categories - maxCategories))
+        if #campaigns > maxCampaigns then
+            EmitGoldenDumpLine(string.format("…(+%d campaigns)", #campaigns - maxCampaigns))
         end
     end)
 end

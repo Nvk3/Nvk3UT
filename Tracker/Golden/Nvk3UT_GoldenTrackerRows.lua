@@ -226,10 +226,21 @@ local function ensureCategoryLabel(control)
     return label
 end
 
-local function formatCategoryName(categoryData)
+local function formatCampaignHeaderText(campaignData)
     local name = ""
-    if type(categoryData) == "table" then
-        name = categoryData.name or categoryData.title or ""
+    local progressText = nil
+
+    if type(campaignData) == "table" then
+        name = campaignData.name or campaignData.title or ""
+
+        local progress = campaignData.progress
+        if type(progress) == "table" then
+            local current = tonumber(progress.current)
+            local maximum = tonumber(progress.max)
+            if maximum and maximum > 0 and current and current >= 0 then
+                progressText = string.format("%d/%d", current, maximum)
+            end
+        end
     end
 
     if type(name) ~= "string" then
@@ -243,10 +254,14 @@ local function formatCategoryName(categoryData)
         end
     end
 
+    if progressText and progressText ~= "" then
+        name = string.format("%s (%s)", name, progressText)
+    end
+
     return name
 end
 
-function Rows.CreateCategoryHeader(parent, categoryData)
+function Rows.CreateCategoryHeader(parent, campaignData)
     if parent == nil then
         safeDebug("CreateCategoryHeader skipped: parent missing")
         return nil
@@ -263,12 +278,12 @@ function Rows.CreateCategoryHeader(parent, categoryData)
         height = DEFAULTS.CATEGORY_HEIGHT,
     }
 
-    Rows.UpdateCategoryHeader(row, categoryData)
+    Rows.UpdateCategoryHeader(row, campaignData)
 
     return row
 end
 
-function Rows.UpdateCategoryHeader(row, categoryData)
+function Rows.UpdateCategoryHeader(row, campaignData)
     if type(row) ~= "table" then
         return
     end
@@ -293,7 +308,7 @@ function Rows.UpdateCategoryHeader(row, categoryData)
             label:SetHidden(false)
         end
         if label.SetText then
-            label:SetText(formatCategoryName(categoryData))
+            label:SetText(formatCampaignHeaderText(campaignData))
         end
     else
         safeDebug("UpdateCategoryHeader warning: label unavailable; fallback header should cover display")
@@ -302,7 +317,7 @@ function Rows.UpdateCategoryHeader(row, categoryData)
     row.height = DEFAULTS.CATEGORY_HEIGHT
 end
 
-function Rows.AcquireCategoryHeader(parent, recycledRow, categoryData)
+function Rows.AcquireCategoryHeader(parent, recycledRow, campaignData)
     local debugEnabled = isDiagnosticsDebugEnabled()
     local wm = rawget(_G, "WINDOW_MANAGER")
     if debugEnabled and (not isControl(parent) or wm == nil) then
@@ -311,7 +326,7 @@ function Rows.AcquireCategoryHeader(parent, recycledRow, categoryData)
 
     local row = recycledRow
     if type(row) ~= "table" or not isControl(row.control) then
-        row = Rows.CreateCategoryHeader(parent, categoryData)
+        row = Rows.CreateCategoryHeader(parent, campaignData)
         if debugEnabled and row == nil then
             diagnosticsDebug("[Golden.Rows] WARN header creation returned nil (factory path)")
         end
@@ -319,7 +334,7 @@ function Rows.AcquireCategoryHeader(parent, recycledRow, categoryData)
         if row.control.SetParent then
             row.control:SetParent(parent)
         end
-        Rows.UpdateCategoryHeader(row, categoryData)
+        Rows.UpdateCategoryHeader(row, campaignData)
     end
 
     if debugEnabled and type(row) == "table" and isControl(row.control) then
@@ -347,6 +362,10 @@ function Rows.AcquireCategoryHeader(parent, recycledRow, categoryData)
     end
 
     return row
+end
+
+function Rows.AcquireCampaignHeader(parent, recycledRow, campaignData)
+    return Rows.AcquireCategoryHeader(parent, recycledRow, campaignData)
 end
 
 function Rows.ReleaseRow(row)
