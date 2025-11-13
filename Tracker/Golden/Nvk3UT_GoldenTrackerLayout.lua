@@ -6,6 +6,7 @@ local Layout = {}
 Layout.__index = Layout
 
 local MODULE_TAG = addonName .. ".GoldenTrackerLayout"
+local MIN_HEIGHT = 86
 
 local function safeDebug(message, ...)
     local debugFn = Nvk3UT and Nvk3UT.Debug
@@ -24,8 +25,28 @@ local function safeDebug(message, ...)
     pcall(debugFn, string.format("%s: %s", MODULE_TAG, tostring(payload)))
 end
 
+local function isControl(candidate)
+    if type(candidate) ~= "userdata" then
+        return false
+    end
+
+    if type(candidate.GetName) == "function" then
+        return true
+    end
+
+    if type(candidate.GetType) == "function" then
+        return true
+    end
+
+    if type(candidate.SetParent) == "function" then
+        return true
+    end
+
+    return false
+end
+
 local function clearChildren(control)
-    if not control then
+    if not isControl(control) then
         return
     end
 
@@ -42,7 +63,7 @@ local function clearChildren(control)
 
     for index = childCount - 1, 0, -1 do
         local okChild, child = pcall(getChild, control, index)
-        if okChild and child then
+        if okChild and isControl(child) then
             if child.ClearAnchors then
                 child:ClearAnchors()
             end
@@ -56,85 +77,80 @@ local function clearChildren(control)
     end
 end
 
-local function getParentWidth(control)
-    if not control or type(control.GetWidth) ~= "function" then
-        return 0
-    end
-
-    local ok, width = pcall(control.GetWidth, control)
-    if ok and type(width) == "number" then
-        return width
-    end
-
-    return 0
-end
-
-local function applyDimensions(row, parentWidth)
-    if not row then
+local function applyRowDimensions(control, height)
+    if not isControl(control) then
         return
     end
 
-    local height = tonumber(row and row.__height) or 0
-    if height < 0 then
-        height = 0
+    local numericHeight = tonumber(height) or 0
+    if numericHeight < 0 then
+        numericHeight = 0
     end
 
-    if row.SetDimensions then
-        row:SetDimensions(parentWidth, height)
-        return
+    if control.SetHeight then
+        control:SetHeight(numericHeight)
     end
 
-    if row.SetHeight then
-        row:SetHeight(height)
-    end
+    control.__height = numericHeight
 end
 
 function Layout.ApplyLayout(parentControl, rows)
-    if not parentControl or type(rows) ~= "table" then
+    if not isControl(parentControl) or type(rows) ~= "table" then
         return 0
     end
 
     clearChildren(parentControl)
 
     local totalHeight = 0
-    local previousRow = nil
-    local parentWidth = getParentWidth(parentControl)
+    local previousControl = nil
+    local rowCount = #rows
 
-    for index = 1, #rows do
+    for index = 1, rowCount do
         local row = rows[index]
-        if row and (type(row) == "userdata" or type(row) == "table") then
-            if type(row.ClearAnchors) == "function" then
-                row:ClearAnchors()
+        local control = row and row.control
+        local height = row and row.height
+
+        if isControl(control) then
+            if control.ClearAnchors then
+                control:ClearAnchors()
+            end
+            if control.SetParent then
+                control:SetParent(parentControl)
+            end
+            if control.SetHidden then
+                control:SetHidden(false)
             end
 
-            if type(row.SetParent) == "function" then
-                row:SetParent(parentControl)
-            end
-
-            if type(row.SetHidden) == "function" then
-                row:SetHidden(false)
-            end
-
-            if type(row.SetAnchor) == "function" then
-                if previousRow and type(previousRow.SetAnchor) == "function" then
-                    row:SetAnchor(TOPLEFT, previousRow, BOTTOMLEFT, 0, 0)
+            if control.SetAnchor then
+                if isControl(previousControl) then
+                    control:SetAnchor(TOPLEFT, previousControl, BOTTOMLEFT, 0, 0)
+                    control:SetAnchor(TOPRIGHT, previousControl, BOTTOMRIGHT, 0, 0)
                 else
-                    row:SetAnchor(TOPLEFT, parentControl, TOPLEFT, 0, 0)
+                    control:SetAnchor(TOPLEFT, parentControl, TOPLEFT, 0, 0)
+                    control:SetAnchor(TOPRIGHT, parentControl, TOPRIGHT, 0, 0)
                 end
             end
 
-            applyDimensions(row, parentWidth)
+            applyRowDimensions(control, height)
 
-            local height = tonumber(row.__height) or 0
-            if height < 0 then
-                height = 0
-            end
-            totalHeight = totalHeight + height
-            previousRow = row
+            totalHeight = totalHeight + (tonumber(height) or 0)
+            previousControl = control
         end
     end
 
-    safeDebug("ApplyLayout rows=%d height=%d", #rows, totalHeight)
+    if rowCount == 0 then
+        totalHeight = MIN_HEIGHT
+    end
+
+    if parentControl.SetHeight then
+        parentControl:SetHeight(totalHeight)
+    end
+
+    if parentControl.SetHidden then
+        parentControl:SetHidden(false)
+    end
+
+    safeDebug("ApplyLayout rows=%d height=%d", rowCount, totalHeight)
 
     return totalHeight
 end

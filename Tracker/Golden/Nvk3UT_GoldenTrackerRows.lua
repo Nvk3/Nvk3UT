@@ -8,22 +8,14 @@ Rows.__index = Rows
 local MODULE_TAG = addonName .. ".GoldenTrackerRows"
 
 local DEFAULTS = {
-    CATEGORY_HEIGHT = 24,
-    ENTRY_HEIGHT = 22,
-    OBJECTIVE_HEIGHT = 20,
-    CATEGORY_FONT = "ZoFontGameBold",
-    ENTRY_FONT = "ZoFontGameMedium",
-    OBJECTIVE_FONT = "ZoFontGameSmall",
+    CATEGORY_HEIGHT = 44,
+    CATEGORY_FONT = "ZoFontHeader2",
     CATEGORY_COLOR = {1, 1, 1, 1},
-    ENTRY_COLOR = {1, 1, 1, 1},
-    OBJECTIVE_COLOR = {1, 1, 1, 1},
-    OBJECTIVE_INDENT_X = 14,
+    CATEGORY_LABEL_OFFSET_X = 16,
 }
 
 local controlCounters = {
     category = 0,
-    entry = 0,
-    objective = 0,
 }
 
 local function safeDebug(message, ...)
@@ -41,6 +33,26 @@ local function safeDebug(message, ...)
     end
 
     pcall(debugFn, string.format("%s: %s", MODULE_TAG, tostring(payload)))
+end
+
+local function isControl(candidate)
+    if type(candidate) ~= "userdata" then
+        return false
+    end
+
+    if type(candidate.GetName) == "function" then
+        return true
+    end
+
+    if type(candidate.GetType) == "function" then
+        return true
+    end
+
+    if type(candidate.SetParent) == "function" then
+        return true
+    end
+
+    return false
 end
 
 local function getWindowManager()
@@ -68,61 +80,123 @@ local function nextControlName(parent, kind)
     return string.format("%s_%sRow%u", parentName, kind, controlCounters[kind])
 end
 
-local function applyLabelDefaults(label, font, color)
+local function applyLabelDefaults(label)
     if not label then
         return
     end
 
-    if label.SetFont and font then
-        label:SetFont(font)
+    if label.SetFont and DEFAULTS.CATEGORY_FONT then
+        label:SetFont(DEFAULTS.CATEGORY_FONT)
     end
 
-    if label.SetColor and type(color) == "table" then
+    if label.SetColor and type(DEFAULTS.CATEGORY_COLOR) == "table" then
+        local color = DEFAULTS.CATEGORY_COLOR
         label:SetColor(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
     end
 
     if label.SetWrapMode and rawget(_G, "TEXT_WRAP_MODE_ELLIPSIS") then
         label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
     end
+
+    if label.SetHorizontalAlignment and rawget(_G, "TEXT_ALIGN_LEFT") then
+        label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+    end
+
+    if label.SetVerticalAlignment and rawget(_G, "TEXT_ALIGN_CENTER") then
+        label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
+    end
 end
 
-local function createControl(parent, kind)
+local function createCategoryControl(parent)
     local wm = getWindowManager()
     if wm == nil then
         return nil
     end
 
-    if parent == nil then
-        safeDebug("createControl skipped; parent missing for kind '%s'", tostring(kind))
+    local controlName = nextControlName(parent, "category")
+    local control = wm:CreateControl(controlName, parent, CT_CONTROL)
+    if not control then
         return nil
     end
 
-    local controlName = nextControlName(parent, kind)
-    local control = wm:CreateControl(controlName, parent, CT_CONTROL)
-    if control and control.SetResizeToFitDescendents then
-        control:SetResizeToFitDescendents(true)
+    if control.SetResizeToFitDescendents then
+        control:SetResizeToFitDescendents(false)
     end
-    if control and control.SetHidden then
+    if control.SetMouseEnabled then
+        control:SetMouseEnabled(false)
+    end
+    if control.SetHidden then
         control:SetHidden(false)
     end
+    if control.SetHeight then
+        control:SetHeight(DEFAULTS.CATEGORY_HEIGHT)
+    end
+
+    control.__height = DEFAULTS.CATEGORY_HEIGHT
 
     return control
 end
 
-local function createLabel(parent, suffix)
-    local wm = getWindowManager()
-    if wm == nil or parent == nil then
+local function ensureCategoryLabel(control)
+    if not isControl(control) then
         return nil
     end
 
-    local baseName = resolveParentName(parent)
-    local labelName = string.format("%s_%sLabel", baseName, suffix)
-    local label = wm:CreateControl(labelName, parent, CT_LABEL)
-    if label and label.SetHidden then
+    if type(control.__categoryLabel) == "userdata" then
+        return control.__categoryLabel
+    end
+
+    local wm = getWindowManager()
+    if wm == nil then
+        return nil
+    end
+
+    local parentName = resolveParentName(control)
+    local labelName = string.format("%s_CategoryLabel", parentName)
+    local label = wm:CreateControl(labelName, control, CT_LABEL)
+    if not label then
+        return nil
+    end
+
+    if label.SetHidden then
         label:SetHidden(false)
     end
 
+    if label.ClearAnchors then
+        label:ClearAnchors()
+    end
+
+    local offsetX = DEFAULTS.CATEGORY_LABEL_OFFSET_X or 0
+    if label.SetAnchor then
+        label:SetAnchor(LEFT, control, LEFT, offsetX, 0)
+        label:SetAnchor(RIGHT, control, RIGHT, -offsetX, 0)
+    end
+
+    applyLabelDefaults(label)
+
+    control.__categoryLabel = label
+
     return label
+end
+
+local function formatCategoryName(categoryData)
+    local name = ""
+    if type(categoryData) == "table" then
+        name = categoryData.name or categoryData.title or ""
+    end
+
+    if type(name) ~= "string" then
+        name = tostring(name or "")
+    end
+
+    if name ~= "" then
+        local ok, upper = pcall(string.upper, name)
+        if ok and type(upper) == "string" then
+            name = upper
+        end
+    end
+
+    return name
 end
 
 function Rows.CreateCategoryHeader(parent, categoryData)
@@ -130,127 +204,86 @@ function Rows.CreateCategoryHeader(parent, categoryData)
         return nil
     end
 
-    local control = createControl(parent, "category")
+    local control = createCategoryControl(parent)
     if not control then
         return nil
+    end
+
+    local row = {
+        control = control,
+        height = DEFAULTS.CATEGORY_HEIGHT,
+    }
+
+    Rows.UpdateCategoryHeader(row, categoryData)
+
+    return row
+end
+
+function Rows.UpdateCategoryHeader(row, categoryData)
+    if type(row) ~= "table" then
+        return
+    end
+
+    local control = row.control
+    if not isControl(control) then
+        return
     end
 
     control.__height = DEFAULTS.CATEGORY_HEIGHT
     if control.SetHeight then
         control:SetHeight(DEFAULTS.CATEGORY_HEIGHT)
     end
+    if control.SetHidden then
+        control:SetHidden(false)
+    end
 
-    local label = createLabel(control, "Category")
+    local label = row.label or ensureCategoryLabel(control)
+    row.label = label
     if label then
-        if label.SetAnchor then
-            label:SetAnchor(LEFT, control, LEFT, 0, 0)
-        end
-        applyLabelDefaults(label, DEFAULTS.CATEGORY_FONT, DEFAULTS.CATEGORY_COLOR)
-
-        local text = ""
-        if type(categoryData) == "table" then
-            text = tostring(categoryData.name or categoryData.title or "")
+        if label.SetHidden then
+            label:SetHidden(false)
         end
         if label.SetText then
-            label:SetText(text)
+            label:SetText(formatCategoryName(categoryData))
         end
     end
 
-    return control
+    row.height = DEFAULTS.CATEGORY_HEIGHT
 end
 
-function Rows.CreateEntryRow(parent, entryData)
-    if parent == nil then
-        return nil
-    end
-
-    local control = createControl(parent, "entry")
-    if not control then
-        return nil
-    end
-
-    control.__height = DEFAULTS.ENTRY_HEIGHT
-    if control.SetHeight then
-        control:SetHeight(DEFAULTS.ENTRY_HEIGHT)
-    end
-
-    local label = createLabel(control, "EntryTitle")
-    if label then
-        if label.SetAnchor then
-            label:SetAnchor(LEFT, control, LEFT, 0, 0)
+function Rows.AcquireCategoryHeader(parent, recycledRow, categoryData)
+    local row = recycledRow
+    if type(row) ~= "table" or not isControl(row.control) then
+        row = Rows.CreateCategoryHeader(parent, categoryData)
+    else
+        if row.control.SetParent then
+            row.control:SetParent(parent)
         end
-        applyLabelDefaults(label, DEFAULTS.ENTRY_FONT, DEFAULTS.ENTRY_COLOR)
-
-        local text = ""
-        if type(entryData) == "table" then
-            text = tostring(entryData.name or entryData.title or "")
-        end
-        if label.SetText then
-            label:SetText(text)
-        end
+        Rows.UpdateCategoryHeader(row, categoryData)
     end
 
-    if type(entryData) == "table" then
-        local count = tonumber(entryData.count)
-        local maxValue = tonumber(entryData.max)
-        if count and maxValue then
-            local counterLabel = createLabel(control, "EntryCounter")
-            if counterLabel then
-                if counterLabel.SetAnchor then
-                    counterLabel:SetAnchor(RIGHT, control, RIGHT, 0, 0)
-                end
-                applyLabelDefaults(counterLabel, DEFAULTS.ENTRY_FONT, DEFAULTS.ENTRY_COLOR)
-                if counterLabel.SetHorizontalAlignment and rawget(_G, "TEXT_ALIGN_RIGHT") then
-                    counterLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
-                end
-                if counterLabel.SetText then
-                    counterLabel:SetText(string.format("%d/%d", count, maxValue))
-                end
-            end
-        end
-    end
-
-    return control
+    return row
 end
 
-function Rows.CreateObjectiveRow(parent, objectiveData)
-    if parent == nil then
-        return nil
+function Rows.ReleaseRow(row)
+    if type(row) ~= "table" then
+        return
     end
 
-    local control = createControl(parent, "objective")
-    if not control then
-        return nil
+    local control = row.control
+    if not isControl(control) then
+        return
     end
 
-    control.__height = DEFAULTS.OBJECTIVE_HEIGHT
-    if control.SetHeight then
-        control:SetHeight(DEFAULTS.OBJECTIVE_HEIGHT)
+    if control.ClearAnchors then
+        control:ClearAnchors()
     end
-
-    local label = createLabel(control, "Objective")
-    if label then
-        if label.SetAnchor then
-            label:SetAnchor(LEFT, control, LEFT, DEFAULTS.OBJECTIVE_INDENT_X, 0)
-        end
-        applyLabelDefaults(label, DEFAULTS.OBJECTIVE_FONT, DEFAULTS.OBJECTIVE_COLOR)
-
-        local text = ""
-        if type(objectiveData) == "table" then
-            text = tostring(objectiveData.name or objectiveData.title or objectiveData.text or "")
-            local progress = tonumber(objectiveData.progress or objectiveData.current)
-            local maxValue = tonumber(objectiveData.max)
-            if progress and maxValue then
-                text = string.format("%s (%d/%d)", text, progress, maxValue)
-            end
-        end
-
-        if label.SetText then
-            label:SetText(text)
-        end
+    if control.SetHidden then
+        control:SetHidden(true)
     end
-
-    return control
+    if control.SetParent then
+        control:SetParent(nil)
+    end
 end
 
 Nvk3UT.GoldenTrackerRows = Rows

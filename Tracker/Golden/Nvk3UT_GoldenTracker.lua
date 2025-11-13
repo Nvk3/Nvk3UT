@@ -22,6 +22,8 @@ local state = {
     content = nil,
     height = 0,
     initialized = false,
+    rows = {},
+    rowCache = {},
 }
 
 -- TEMP EVENT BOOTSTRAP (INTRO) now SHIM-routed to Controller handlers.
@@ -266,38 +268,6 @@ local function UnregisterTempEvents_Golden()
     unregister("EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED")
 end
 
-local function ClearChildren(control)
-    if not control then
-        return
-    end
-
-    local getNumChildren = control.GetNumChildren
-    local getChild = control.GetChild
-    if type(getNumChildren) ~= "function" or type(getChild) ~= "function" then
-        return
-    end
-
-    local okCount, childCount = pcall(getNumChildren, control)
-    if not okCount or type(childCount) ~= "number" or childCount <= 0 then
-        return
-    end
-
-    for index = childCount - 1, 0, -1 do
-        local okChild, child = pcall(getChild, control, index)
-        if okChild and child then
-            if child.SetHidden then
-                child:SetHidden(true)
-            end
-            if child.ClearAnchors then
-                child:ClearAnchors()
-            end
-            if child.SetParent then
-                child:SetParent(nil)
-            end
-        end
-    end
-end
-
 local function createRootAndContent(parentControl)
     local wm = rawget(_G, "WINDOW_MANAGER")
     if wm == nil then
@@ -370,21 +340,52 @@ local function applyVisibility(control, hidden)
     end
 end
 
-local function safeCreateRow(rowFn, parent, data)
-    if type(rowFn) ~= "function" or parent == nil then
-        return nil
+local function releaseRow(row)
+    if type(row) ~= "table" then
+        return
     end
 
-    local ok, row = pcall(rowFn, parent, data)
-    if ok and row then
-        return row
+    local rowsModule = getRowsModule()
+    if rowsModule and type(rowsModule.ReleaseRow) == "function" then
+        local ok = pcall(rowsModule.ReleaseRow, row)
+        if ok then
+            return
+        end
     end
 
-    if not ok then
-        safeDebug("Row creation failed: %s", tostring(row))
+    local control = row.control
+    if control then
+        if type(control.ClearAnchors) == "function" then
+            control:ClearAnchors()
+        end
+        if type(control.SetHidden) == "function" then
+            control:SetHidden(true)
+        end
+        if type(control.SetParent) == "function" then
+            control:SetParent(nil)
+        end
+    end
+end
+
+local function resetRows()
+    if type(state.rows) == "table" then
+        for index = #state.rows, 1, -1 do
+            local row = state.rows[index]
+            releaseRow(row)
+            state.rows[index] = nil
+        end
     end
 
-    return nil
+    if type(state.rowCache) == "table" then
+        for index = #state.rowCache, 1, -1 do
+            local row = state.rowCache[index]
+            releaseRow(row)
+            state.rowCache[index] = nil
+        end
+    end
+
+    state.rows = {}
+    state.rowCache = {}
 end
 
 function GoldenTracker.Init(parentControl, opts)
@@ -393,6 +394,8 @@ function GoldenTracker.Init(parentControl, opts)
     state.initialized = false
     state.root = nil
     state.content = nil
+
+    resetRows()
 
     local originalParent = parentControl
     local resolvedParent = parentControl
@@ -424,8 +427,6 @@ function GoldenTracker.Init(parentControl, opts)
         safeDebug("Init incomplete; root or content missing")
         return
     end
-
-    ClearChildren(content)
 
     state.height = 0
     setContainerHeight(resolvedParent, 0)
@@ -460,65 +461,73 @@ function GoldenTracker.Refresh(viewModel)
         return
     end
 
-    ClearChildren(content)
-
     local rowsModule = getRowsModule()
     local layoutModule = getLayoutModule()
-    local rows = {}
+    state.rows = state.rows or {}
+    state.rowCache = state.rowCache or {}
+
+    -- recycle previously active rows into the cache
+    for index = #state.rows, 1, -1 do
+        local row = state.rows[index]
+        if row then
+            releaseRow(row)
+            table.insert(state.rowCache, row)
+        end
+        state.rows[index] = nil
+    end
 
     local vm = type(viewModel) == "table" and viewModel or {}
     local categories = type(vm.categories) == "table" and vm.categories or {}
+    local categoryCount = #categories
+    local activeRows = state.rows
+    local rowCount = 0
 
-    if rowsModule and #categories > 0 then
-        for categoryIndex = 1, #categories do
+    if rowsModule and type(rowsModule.AcquireCategoryHeader) == "function" then
+        for categoryIndex = 1, categoryCount do
             local categoryData = categories[categoryIndex]
             if type(categoryData) == "table" then
-                local categoryRow = safeCreateRow(rowsModule.CreateCategoryHeader, content, categoryData)
-                if categoryRow then
-                    table.insert(rows, categoryRow)
-                end
-
-                local entries = type(categoryData.entries) == "table" and categoryData.entries or {}
-                for entryIndex = 1, #entries do
-                    local entryData = entries[entryIndex]
-                    if type(entryData) == "table" then
-                        local entryRow = safeCreateRow(rowsModule.CreateEntryRow, content, entryData)
-                        if entryRow then
-                            table.insert(rows, entryRow)
-                        end
-
-                        local objectives = type(entryData.objectives) == "table" and entryData.objectives or {}
-                        for objectiveIndex = 1, #objectives do
-                            local objectiveData = objectives[objectiveIndex]
-                            if type(objectiveData) == "table" then
-                                local objectiveRow = safeCreateRow(rowsModule.CreateObjectiveRow, content, objectiveData)
-                                if objectiveRow then
-                                    table.insert(rows, objectiveRow)
-                                end
-                            end
-                        end
+                local recycledRow = table.remove(state.rowCache)
+                local ok, row = pcall(rowsModule.AcquireCategoryHeader, content, recycledRow, categoryData)
+                if ok and type(row) == "table" and row.control then
+                    rowCount = rowCount + 1
+                    activeRows[rowCount] = row
+                else
+                    if recycledRow then
+                        table.insert(state.rowCache, recycledRow)
+                    end
+                    if not ok then
+                        safeDebug("AcquireCategoryHeader failed: %s", tostring(row))
                     end
                 end
             end
         end
+    elseif rowsModule then
+        safeDebug("Rows module missing AcquireCategoryHeader; no UI rows built")
     end
 
     local totalHeight = 0
 
-    if layoutModule then
-        totalHeight = layoutModule.ApplyLayout(content, rows) or 0
+    if layoutModule and type(layoutModule.ApplyLayout) == "function" then
+        totalHeight = layoutModule.ApplyLayout(content, activeRows) or 0
     else
-        safeDebug("Refresh passthrough skipped; layout module unavailable")
+        safeDebug("Layout module unavailable; skipping ApplyLayout")
     end
 
-    local hasRows = #rows > 0 and layoutModule ~= nil
-    applyVisibility(root, not hasRows)
-    applyVisibility(content, not hasRows)
+    if totalHeight <= 0 and rowCount > 0 then
+        for index = 1, rowCount do
+            local row = activeRows[index]
+            totalHeight = totalHeight + (tonumber(row and row.height) or 0)
+        end
+    end
+
+    local shouldShow = totalHeight > 0
+    applyVisibility(root, not shouldShow)
+    applyVisibility(content, not shouldShow)
 
     state.height = totalHeight
     setContainerHeight(container, totalHeight)
 
-    safeDebug("Refresh passthrough layout, rows=%d height=%d", #rows, totalHeight)
+    safeDebug("[Golden.UI] Refresh: cats=%d rows=%d height=%d", categoryCount, rowCount, totalHeight)
 end
 
 function GoldenTracker.GetHeight()
