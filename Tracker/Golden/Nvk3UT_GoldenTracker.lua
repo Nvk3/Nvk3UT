@@ -2,17 +2,19 @@ local addonName = "Nvk3UT"
 
 Nvk3UT = Nvk3UT or {}
 
+local Rows = Nvk3UT and Nvk3UT.GoldenTrackerRows
+
 local GoldenTracker = {}
 GoldenTracker.__index = GoldenTracker
 
 local MODULE_TAG = addonName .. ".GoldenTracker"
 
 local state = {
-    container = nil,
-    currentHeight = 0,
-    isInitialized = false,
-    isDisposed = false,
-    ui = nil,
+    parent = nil,
+    root = nil,
+    content = nil,
+    height = 0,
+    initialized = false,
 }
 
 local debugFlags = {
@@ -36,182 +38,263 @@ local function safeDebug(message, ...)
     pcall(debugFn, string.format("%s: %s", MODULE_TAG, tostring(payload)))
 end
 
-local function coerceHeight(value)
-    if type(value) == "number" then
-        if value ~= value then
-            return 0
-        end
-        return value
+local function getRowsModule()
+    if Rows and type(Rows) == "table" then
+        return Rows
     end
 
-    return 0
+    Rows = Nvk3UT and Nvk3UT.GoldenTrackerRows
+    if type(Rows) == "table" then
+        return Rows
+    end
+
+    return nil
 end
 
-local function ensureUi(container)
-    if container == nil then
-        return state.ui
-    end
-
-    local wm = rawget(_G, "WINDOW_MANAGER")
-    if wm == nil then
-        return state.ui
-    end
-
-    local ui = state.ui
-    if type(ui) ~= "table" then
-        ui = {}
-        state.ui = ui
-    end
-
-    local containerName
-    if type(container.GetName) == "function" then
-        local ok, name = pcall(container.GetName, container)
-        if ok and type(name) == "string" then
-            containerName = name
-        end
-    end
-
-    local baseName = (containerName or "Nvk3UT_Golden") .. "_"
-    ui.baseName = baseName
-
-    local root = ui.root
-    if root == nil then
-        local rootControlName = baseName .. "Root"
-        local ok, control = pcall(function()
-            return wm:CreateControl(rootControlName, container, CT_CONTROL)
-        end)
-        if ok and control then
-            root = control
-            if root.SetResizeToFitDescendents then
-                root:SetResizeToFitDescendents(true)
-            end
-            if root.SetHidden then
-                root:SetHidden(true)
-            end
-            if root.SetMouseEnabled then
-                root:SetMouseEnabled(false)
-            end
-            ui.root = root
-        end
-    else
-        if root.SetParent then
-            root:SetParent(container)
-        end
-    end
-
-    local content = ui.content
-    local parentForContent = root or container
-    if content == nil and parentForContent ~= nil then
-        local contentControlName = baseName .. "Content"
-        local ok, control = pcall(function()
-            return wm:CreateControl(contentControlName, parentForContent, CT_CONTROL)
-        end)
-        if ok and control then
-            content = control
-            if content.SetResizeToFitDescendents then
-                content:SetResizeToFitDescendents(true)
-            end
-            if content.SetHidden then
-                content:SetHidden(true)
-            end
-            if content.SetMouseEnabled then
-                content:SetMouseEnabled(false)
-            end
-            ui.content = content
-        end
-    elseif content and parentForContent and content.SetParent then
-        content:SetParent(parentForContent)
-    end
-
-    return ui
-end
-
-function GoldenTracker.Init(sectionContainer)
-    state.container = sectionContainer
-    state.currentHeight = 0
-    state.isDisposed = false
-    GoldenTracker._disposed = false
-    state.ui = nil
-
-    if sectionContainer == nil then
-        state.isInitialized = false
-        safeDebug("Init skipped (no container)")
+local function clearChildren(control)
+    if not control then
         return
     end
 
-    state.isInitialized = true
-
-    ensureUi(sectionContainer)
-
-    if sectionContainer.SetHeight then
-        sectionContainer:SetHeight(0)
+    local getNumChildren = control.GetNumChildren
+    local getChild = control.GetChild
+    if type(getNumChildren) ~= "function" or type(getChild) ~= "function" then
+        return
     end
 
-    if sectionContainer.SetHidden then
-        sectionContainer:SetHidden(false)
+    local okCount, childCount = pcall(getNumChildren, control)
+    if not okCount or type(childCount) ~= "number" or childCount <= 0 then
+        return
     end
 
-    local debugFn = Nvk3UT and Nvk3UT.Debug
-    if type(debugFn) == "function" then
-        pcall(debugFn, "GoldenTracker: Init")
+    for index = childCount - 1, 0, -1 do
+        local okChild, child = pcall(getChild, control, index)
+        if okChild and child then
+            if child.SetHidden then
+                child:SetHidden(true)
+            end
+            if child.ClearAnchors then
+                child:ClearAnchors()
+            end
+            if child.SetParent then
+                child:SetParent(nil)
+            end
+        end
     end
+end
+
+local function createRootAndContent(parentControl)
+    local wm = rawget(_G, "WINDOW_MANAGER")
+    if wm == nil then
+        safeDebug("Init aborted; WINDOW_MANAGER unavailable")
+        return nil, nil
+    end
+
+    local parentName = "Nvk3UT_Golden"
+    if parentControl and type(parentControl.GetName) == "function" then
+        local okName, name = pcall(parentControl.GetName, parentControl)
+        if okName and type(name) == "string" and name ~= "" then
+            parentName = name
+        end
+    end
+
+    local rootName = parentName .. "Root"
+    local rootControl = wm:CreateControl(rootName, parentControl, CT_CONTROL)
+    if rootControl then
+        if rootControl.SetResizeToFitDescendents then
+            rootControl:SetResizeToFitDescendents(true)
+        end
+        if rootControl.SetHidden then
+            rootControl:SetHidden(true)
+        end
+        if rootControl.SetMouseEnabled then
+            rootControl:SetMouseEnabled(false)
+        end
+    end
+
+    local contentControl
+    if rootControl then
+        local contentName = parentName .. "Content"
+        contentControl = wm:CreateControl(contentName, rootControl, CT_CONTROL)
+        if contentControl then
+            if contentControl.SetResizeToFitDescendents then
+                contentControl:SetResizeToFitDescendents(true)
+            end
+            if contentControl.SetHidden then
+                contentControl:SetHidden(true)
+            end
+            if contentControl.SetMouseEnabled then
+                contentControl:SetMouseEnabled(false)
+            end
+        end
+    end
+
+    return rootControl, contentControl
+end
+
+local function setContainerHeight(container, height)
+    local numericHeight = tonumber(height) or 0
+    if numericHeight < 0 then
+        numericHeight = 0
+    end
+
+    if container and container.SetHeight then
+        container:SetHeight(numericHeight)
+    end
+end
+
+local function applyVisibility(control, hidden)
+    if control and control.SetHidden then
+        control:SetHidden(hidden)
+    end
+end
+
+local function safeCreateRow(rowFn, parent, data)
+    if type(rowFn) ~= "function" or parent == nil then
+        return nil
+    end
+
+    local ok, row = pcall(rowFn, parent, data)
+    if ok and row then
+        return row
+    end
+
+    if not ok then
+        safeDebug("Row creation failed: %s", tostring(row))
+    end
+
+    return nil
+end
+
+local function accumulateHeight(total, control)
+    if not control then
+        return total
+    end
+
+    local height = 0
+    if type(control.__height) == "number" then
+        height = control.__height
+    elseif control.GetHeight then
+        local ok, value = pcall(control.GetHeight, control)
+        if ok and type(value) == "number" then
+            height = value
+        end
+    end
+
+    if height < 0 then
+        height = 0
+    end
+
+    return total + height
+end
+
+function GoldenTracker.Init(parentControl)
+    state.parent = parentControl
+    state.height = 0
+    state.initialized = false
+    state.root = nil
+    state.content = nil
+
+    if not parentControl then
+        safeDebug("Init skipped; parent control missing")
+        return
+    end
+
+    local root, content = createRootAndContent(parentControl)
+    state.root = root
+    state.content = content
+
+    if not root or not content then
+        safeDebug("Init incomplete; root or content missing")
+        return
+    end
+
+    clearChildren(content)
+
+    state.height = 0
+    setContainerHeight(parentControl, 0)
+    applyVisibility(parentControl, false)
+    applyVisibility(root, true)
+    applyVisibility(content, true)
+
+    state.initialized = true
+
+    safeDebug("Init")
+end
+
+local function renderCategories(content, categories)
+    local rowsModule = getRowsModule()
+    if rowsModule == nil then
+        safeDebug("Refresh skipping rendering; Rows module unavailable")
+        return 0
+    end
+
+    local totalHeight = 0
+
+    local firstCategory = categories[1]
+    if type(firstCategory) ~= "table" then
+        return 0
+    end
+
+    local categoryControl = safeCreateRow(rowsModule.CreateCategoryHeader, content, firstCategory)
+    totalHeight = accumulateHeight(totalHeight, categoryControl)
+
+    local entries = type(firstCategory.entries) == "table" and firstCategory.entries or {}
+    for index = 1, #entries do
+        local entryControl = safeCreateRow(rowsModule.CreateEntryRow, content, entries[index])
+        totalHeight = accumulateHeight(totalHeight, entryControl)
+    end
+
+    return totalHeight
 end
 
 function GoldenTracker.Refresh(viewModel)
-    if not state.isInitialized or state.isDisposed then
+    if not state.initialized then
         return
     end
 
-    local container = state.container
-    if container == nil then
-        state.currentHeight = 0
+    local container = state.parent
+    local root = state.root
+    local content = state.content
+
+    if not container or not root or not content then
+        state.height = 0
         return
     end
 
-    local ui = ensureUi(container)
+    clearChildren(content)
 
     local vm = type(viewModel) == "table" and viewModel or {}
-    local settings = type(vm.settings) == "table" and vm.settings or {}
-    local sectionVm = type(vm.section) == "table" and vm.section or {}
+    local categories = type(vm.categories) == "table" and vm.categories or {}
 
-    local enabled = settings.enabled ~= false
-    local hideEntireSection = sectionVm.hideEntireSection == true
-    local shouldHide = not enabled or hideEntireSection
-
-    if container.SetHidden then
-        container:SetHidden(shouldHide)
+    if #categories == 0 then
+        state.height = 0
+        setContainerHeight(container, 0)
+        applyVisibility(root, true)
+        applyVisibility(content, true)
+        return
     end
 
-    local root = type(ui) == "table" and ui.root or nil
-    if root and root.SetHidden then
-        root:SetHidden(shouldHide)
-    end
+    applyVisibility(root, false)
+    applyVisibility(content, false)
 
-    local content = type(ui) == "table" and ui.content or nil
-    if content and content.SetHidden then
-        content:SetHidden(true)
-    end
+    local totalHeight = renderCategories(content, categories)
 
-    if content and content.SetHeight then
-        content:SetHeight(0)
-    end
-
-    state.currentHeight = 0
-    if container.SetHeight then
-        container:SetHeight(0)
-    end
+    state.height = totalHeight
+    setContainerHeight(container, totalHeight)
 
     if not debugFlags.refreshLogged then
         debugFlags.refreshLogged = true
-        local debugFn = Nvk3UT and Nvk3UT.Debug
-        if type(debugFn) == "function" then
-            pcall(debugFn, "GoldenTracker: Refresh (stub)")
-        end
+        safeDebug("Refresh (stub)")
     end
 end
 
 function GoldenTracker.GetHeight()
-    return coerceHeight(state.currentHeight)
+    local height = tonumber(state.height) or 0
+    if height < 0 then
+        height = 0
+    end
+    return height
 end
 
 Nvk3UT.GoldenTracker = GoldenTracker
