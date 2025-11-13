@@ -853,6 +853,8 @@ function Layout.ApplyLayout(host, sizes)
         end
     end
 
+    local goldenAccounted = false
+
     for _, section in ipairs(sections) do
         local container = section.container
         local sectionId = section.id
@@ -915,9 +917,29 @@ function Layout.ApplyLayout(host, sizes)
             currentTop = currentTop + height + gap
             previousVisible = container
             placedCount = placedCount + 1
+
+            if sectionId == "golden" then
+                goldenAccounted = true
+            end
+        elseif sectionId == "golden" then
+            goldenAccounted = goldenAccounted or height > 0
         end
 
         reportAnchored(host, sectionId)
+    end
+
+    if not goldenAccounted then
+        local goldenTracker = Addon and Addon.GoldenTracker
+        local getHeight = goldenTracker and goldenTracker.GetHeight
+        if type(getHeight) == "function" then
+            local ok, measured = pcall(getHeight, goldenTracker)
+            if ok then
+                local extraHeight = sanitizeLength(measured)
+                if extraHeight > 0 then
+                    totalHeight = totalHeight + extraHeight
+                end
+            end
+        end
     end
 
     totalHeight = totalHeight + bottomPadding

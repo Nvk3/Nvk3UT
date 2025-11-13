@@ -28,6 +28,7 @@ Runtime._scheduledCallId = Runtime._scheduledCallId or nil
 Runtime._initialized = Runtime._initialized == true
 Runtime._interactivityDirty = Runtime._interactivityDirty == true
 Runtime._endeavorVM = Runtime._endeavorVM
+Runtime._goldenShimLogged = Runtime._goldenShimLogged == true
 
 local function debug(fmt, ...)
     if Addon and type(Addon.Debug) == "function" then
@@ -763,7 +764,35 @@ function Runtime:ProcessFrame(nowMs)
             end
         end
 
-        if layoutDirty or questGeometryChanged or endeavorGeometryChanged or achievementGeometryChanged then
+        local goldenGeometryChanged = false
+        local goldenRefreshed = false
+        local goldenTracker = rawget(Addon, "GoldenTracker")
+        if type(goldenTracker) == "table" and type(goldenTracker.Refresh) == "function" then
+            local safeInvoke = Addon and Addon.SafeCall
+            local function refreshGolden()
+                goldenTracker:Refresh()
+                goldenRefreshed = true
+                if not self._goldenShimLogged then
+                    debug("Runtime: golden tracker shim refresh executed")
+                    self._goldenShimLogged = true
+                end
+            end
+
+            if type(safeInvoke) == "function" then
+                safeInvoke(refreshGolden)
+            else
+                safeCall(refreshGolden)
+            end
+        end
+
+        if goldenRefreshed then
+            goldenGeometryChanged = updateTrackerGeometry("golden", "GoldenTracker", goldenTracker)
+            if goldenGeometryChanged then
+                debug("Runtime: golden tracker refreshed (geometry changed)")
+            end
+        end
+
+        if layoutDirty or questGeometryChanged or endeavorGeometryChanged or achievementGeometryChanged or goldenGeometryChanged then
             if applyTrackerHostLayout() then
                 debugVisibility("Runtime: applied tracker host layout")
             end

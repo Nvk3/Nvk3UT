@@ -3277,8 +3277,34 @@ local function initTrackers()
         pcall(Nvk3UT.AchievementTracker.Init, state.achievementContainer, achievementOpts)
     end
 
-    -- Golden Tracker (to be wired in later tokens)
-    -- Nvk3UT.GoldenTracker:Init(goldenContainer)
+    local goldenTracker = Nvk3UT and Nvk3UT.GoldenTracker
+    local sectionRegistry = Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.sectionContainers
+    local goldenContainer = sectionRegistry and sectionRegistry.golden or state.goldenContainer
+
+    if type(goldenTracker) == "table" and type(goldenTracker.Init) == "function" and goldenContainer then
+        local safeInvoke = Nvk3UT and Nvk3UT.SafeCall
+        local function initGolden()
+            goldenTracker:Init(goldenContainer)
+            if Nvk3UT and type(Nvk3UT.Debug) == "function" then
+                Nvk3UT.Debug("TrackerHost: GoldenTracker Init shim complete")
+            else
+                debugLog("TrackerHost: GoldenTracker Init shim complete")
+            end
+        end
+
+        if type(safeInvoke) == "function" then
+            safeInvoke(initGolden)
+        else
+            safeCall(initGolden)
+        end
+    else
+        local warnMessage = "TrackerHost: GoldenTracker or container missing during init"
+        if Nvk3UT and type(Nvk3UT.Warn) == "function" then
+            Nvk3UT.Warn(warnMessage)
+        else
+            debugLog(warnMessage)
+        end
+    end
 
     local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
     if runtime and type(runtime.QueueDirty) == "function" then
