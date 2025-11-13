@@ -32,6 +32,72 @@ local function safeDebug(message, ...)
     pcall(debugFn, string.format("%s: %s", MODULE_TAG, tostring(payload)))
 end
 
+local function resolveDiagnostics()
+    local root = Nvk3UT
+    if type(root) == "table" then
+        local diagnostics = root.Diagnostics
+        if type(diagnostics) == "table" then
+            return diagnostics
+        end
+    end
+
+    if type(Nvk3UT_Diagnostics) == "table" then
+        return Nvk3UT_Diagnostics
+    end
+
+    return nil
+end
+
+local function isDiagnosticsDebugEnabled()
+    local diagnostics = resolveDiagnostics()
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(diagnostics.IsDebugEnabled, diagnostics)
+        if ok and enabled then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function emitShimDebug(eventName)
+    if not isDiagnosticsDebugEnabled() then
+        return
+    end
+
+    local diagnostics = resolveDiagnostics()
+    if diagnostics and type(diagnostics.Debug) == "function" then
+        pcall(diagnostics.Debug, diagnostics, string.format("Golden SHIM: %s → refresh queued", tostring(eventName)))
+    end
+end
+
+local function processTimedActivityEvent(controller, eventName)
+    local root = Nvk3UT
+    if type(root) ~= "table" then
+        return
+    end
+
+    local model = root.GoldenModel
+    if type(model) ~= "table" or type(model.RefreshFromGame) ~= "function" then
+        return
+    end
+
+    local runtime = root.TrackerRuntime
+    if type(runtime) ~= "table" or type(runtime.QueueDirty) ~= "function" then
+        return
+    end
+
+    if type(controller) ~= "table" or type(controller.MarkDirty) ~= "function" then
+        return
+    end
+
+    model:RefreshFromGame()
+    controller:MarkDirty()
+    runtime:QueueDirty("golden")
+
+    emitShimDebug(eventName)
+end
+
 local function ensureViewModel()
     if type(state.viewModel) ~= "table" then
         state.viewModel = { categories = {} }
@@ -107,6 +173,18 @@ end
 
 function Controller:GetViewModel()
     return ensureViewModel()
+end
+
+function Controller:OnTimedActivitiesUpdated(eventCode, ...)
+    processTimedActivityEvent(self, "EVENT_TIMED_ACTIVITIES_UPDATED")
+end
+
+function Controller:OnTimedActivityProgressUpdated(eventCode, ...)
+    processTimedActivityEvent(self, "EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED")
+end
+
+function Controller:OnTimedActivitySystemStatusUpdated(eventCode, ...)
+    processTimedActivityEvent(self, "EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED")
 end
 
 return Controller

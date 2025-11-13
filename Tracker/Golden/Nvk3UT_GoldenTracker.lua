@@ -18,7 +18,9 @@ local state = {
     initialized = false,
 }
 
--- TEMP EVENT BOOTSTRAP (to be removed at GEVENTS_002_SWITCH)
+-- TEMP EVENT BOOTSTRAP (INTRO) now SHIM-routed to Controller handlers.
+-- Registrations bleiben hier bis GEVENTS_*_SWITCH, danach werden nur die Registrierungen verlagert.
+-- Handler-Signaturen bleiben stabil und werden weiterverwendet.
 
 local function safeDebug(message, ...)
     local debugFn = Nvk3UT and Nvk3UT.Debug
@@ -66,49 +68,6 @@ end
 local TEMP_EVENT_NAMESPACE = MODULE_TAG .. ".TempEvents"
 local tempEventsRegistered = false
 
-local function resolveDiagnostics()
-    local root = Nvk3UT
-    if type(root) == "table" then
-        local diagnostics = root.Diagnostics
-        if type(diagnostics) == "table" then
-            return diagnostics
-        end
-    end
-
-    if type(Nvk3UT_Diagnostics) == "table" then
-        return Nvk3UT_Diagnostics
-    end
-
-    return nil
-end
-
-local function isDiagnosticsDebugEnabled()
-    local diagnostics = resolveDiagnostics()
-    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
-        local ok, enabled = pcall(function()
-            return diagnostics:IsDebugEnabled()
-        end)
-        if ok then
-            return enabled == true
-        end
-    end
-
-    return false
-end
-
-local function emitTempEventDebug(eventName)
-    if not isDiagnosticsDebugEnabled() then
-        return
-    end
-
-    local diagnostics = resolveDiagnostics()
-    if diagnostics and type(diagnostics.Debug) == "function" then
-        pcall(function()
-            diagnostics.Debug("Golden TempEvent: %s triggered → Model refresh queued", tostring(eventName))
-        end)
-    end
-end
-
 local function callMethod(target, methodName, ...)
     if type(target) ~= "table" then
         return false
@@ -123,7 +82,7 @@ local function callMethod(target, methodName, ...)
     return ok
 end
 
-local function handleTempEvent(eventName)
+local function routeTempEvent(handlerName, ...)
     if not state.initialized then
         return
     end
@@ -133,26 +92,19 @@ local function handleTempEvent(eventName)
         return
     end
 
-    local queued = false
-
-    if callMethod(root.GoldenModel, "RefreshFromGame") then
-        queued = true
+    local controller = root.GoldenTrackerController
+    if type(controller) ~= "table" then
+        return
     end
 
-    if callMethod(root.GoldenTrackerController, "MarkDirty") then
-        queued = true
+    if type(handlerName) ~= "string" or handlerName == "" then
+        return
     end
 
-    if callMethod(root.TrackerRuntime, "QueueDirty", "golden") then
-        queued = true
-    end
-
-    if queued then
-        emitTempEventDebug(eventName)
-    end
+    callMethod(controller, handlerName, ...)
 end
 
-local function registerTempEvent(eventManager, eventName, eventCode)
+local function registerTempEvent(eventManager, eventName, eventCode, handlerName)
     if eventManager == nil then
         return
     end
@@ -167,8 +119,8 @@ local function registerTempEvent(eventManager, eventName, eventCode)
     end
 
     local namespace = string.format("%s.%s", TEMP_EVENT_NAMESPACE, tostring(eventName))
-    local callback = function()
-        handleTempEvent(eventName)
+    local callback = function(eventCode, ...)
+        routeTempEvent(handlerName, eventCode, ...)
     end
 
     pcall(registerFn, eventManager, namespace, eventCode, callback)
@@ -184,9 +136,9 @@ local function InitializeTempEvents()
         return
     end
 
-    registerTempEvent(eventManager, "EVENT_TIMED_ACTIVITIES_UPDATED", EVENT_TIMED_ACTIVITIES_UPDATED)
-    registerTempEvent(eventManager, "EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED", EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED)
-    registerTempEvent(eventManager, "EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED", EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED)
+    registerTempEvent(eventManager, "EVENT_TIMED_ACTIVITIES_UPDATED", EVENT_TIMED_ACTIVITIES_UPDATED, "OnTimedActivitiesUpdated")
+    registerTempEvent(eventManager, "EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED", EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED, "OnTimedActivityProgressUpdated")
+    registerTempEvent(eventManager, "EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED", EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED, "OnTimedActivitySystemStatusUpdated")
 
     tempEventsRegistered = true
 end
