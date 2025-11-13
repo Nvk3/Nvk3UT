@@ -231,6 +231,68 @@ local DEFAULT_ENDEAVOR_DATA = {
     lastRefresh = 0,
 }
 
+local DEFAULT_GOLDEN_TRACKER_FONTS_TEMPLATE = {
+    Category = { Face = DEFAULT_FONT_FACE_BOLD, Size = 20, Outline = DEFAULT_FONT_OUTLINE },
+    Title = { Face = DEFAULT_FONT_FACE_BOLD, Size = 16, Outline = DEFAULT_FONT_OUTLINE },
+    Objective = { Face = DEFAULT_FONT_FACE_BOLD, Size = 14, Outline = DEFAULT_FONT_OUTLINE },
+}
+
+local function CopyGoldenFontDefaults()
+    local template = DEFAULT_GOLDEN_TRACKER_FONTS_TEMPLATE
+    return {
+        Category = {
+            Face = template.Category.Face,
+            Size = template.Category.Size,
+            Outline = template.Category.Outline,
+        },
+        Title = {
+            Face = template.Title.Face,
+            Size = template.Title.Size,
+            Outline = template.Title.Outline,
+        },
+        Objective = {
+            Face = template.Objective.Face,
+            Size = template.Objective.Size,
+            Outline = template.Objective.Outline,
+        },
+    }
+end
+
+local function CreateTrackerDefaults(fontDefaultsCopier)
+    local copyFonts = fontDefaultsCopier or CopyEndeavorFontDefaults
+    return {
+        Enabled = true,
+        ShowCountsInHeaders = true,
+        CompletedHandling = "hide",
+        Colors = {
+            CategoryTitle = CopyColor(COLOR_CATEGORY),
+            EntryName = CopyColor(COLOR_ENTRY),
+            Objective = CopyColor(COLOR_CATEGORY),
+            Active = CopyColor(COLOR_ACTIVE),
+            Completed = CopyColor(COLOR_COMPLETED),
+        },
+        Font = {
+            Family = DEFAULT_FONT_FACE_BOLD,
+            Size = DEFAULT_ACHIEVEMENT_FONTS.title.size,
+            Outline = DEFAULT_FONT_OUTLINE,
+        },
+        Tracker = {
+            Fonts = copyFonts(),
+        },
+    }
+end
+
+local defaultSV = {
+    TrackerDefaults = {
+        EndeavorDefaults = CreateTrackerDefaults(CopyEndeavorFontDefaults), -- Endeavor tracker defaults
+        GoldenDefaults = CreateTrackerDefaults(CopyGoldenFontDefaults), -- Golden tracker defaults
+    },
+    TrackerData = {
+        Endeavor = {},
+        Golden = {},
+    },
+}
+
 local DEFAULT_HOST_SETTINGS = {
     HideInCombat = false,
 }
@@ -774,6 +836,20 @@ local function EnsureFirstLoginStructures(saved)
     EnsureAchievementCache(saved)
 end
 
+function Nvk3UT_StateInit:InitDefaults()
+    self.defaultSV = MergeDefaults(self.defaultSV, defaultSV)
+
+    local trackerDefaults = EnsureTable(self.defaultSV, "TrackerDefaults")
+    trackerDefaults.EndeavorDefaults = MergeDefaults(trackerDefaults.EndeavorDefaults, defaultSV.TrackerDefaults.EndeavorDefaults)
+    trackerDefaults.GoldenDefaults = MergeDefaults(trackerDefaults.GoldenDefaults, defaultSV.TrackerDefaults.GoldenDefaults)
+
+    local trackerData = EnsureTable(self.defaultSV, "TrackerData")
+    EnsureTable(trackerData, "Endeavor")
+    EnsureTable(trackerData, "Golden")
+
+    return self.defaultSV
+end
+
 -- Create or load SavedVariables and ensure all required subtables/fields exist.
 -- addonTable is expected to be the global addon table Nvk3UT.
 -- Returns the SavedVariables table.
@@ -819,5 +895,7 @@ function Nvk3UT_StateInit.BootstrapSavedVariables(addonTable)
 
     return sv
 end
+
+Nvk3UT_StateInit.defaultSV = defaultSV
 
 return Nvk3UT_StateInit
