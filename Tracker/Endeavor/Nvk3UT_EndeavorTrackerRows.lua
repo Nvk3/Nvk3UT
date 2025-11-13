@@ -199,6 +199,47 @@ local function BuildFontString(face, size, outline)
     return string.format("%s|%d|%s", face, size, outline)
 end
 
+local function extractColorComponents(color)
+    if type(color) ~= "table" then
+        return nil
+    end
+
+    local r = tonumber(color.r or color[1])
+    local g = tonumber(color.g or color[2])
+    local b = tonumber(color.b or color[3])
+    local a = tonumber(color.a or color[4] or 1)
+
+    if r == nil or g == nil or b == nil then
+        return nil
+    end
+
+    if r < 0 then
+        r = 0
+    elseif r > 1 then
+        r = 1
+    end
+
+    if g < 0 then
+        g = 0
+    elseif g > 1 then
+        g = 1
+    end
+
+    if b < 0 then
+        b = 0
+    elseif b > 1 then
+        b = 1
+    end
+
+    if a < 0 then
+        a = 0
+    elseif a > 1 then
+        a = 1
+    end
+
+    return r, g, b, a
+end
+
 local function ApplyFont(control, cfg)
     if not (control and control.SetFont) then
         return false
@@ -368,22 +409,39 @@ local function detachFromUsed(row)
     end
 end
 
-local function coerceFunctionColor(entry, palette)
-    if type(entry) ~= "function" then
+local function clampColorComponent(value, defaultValue)
+    local numeric = tonumber(value)
+    if numeric == nil then
+        return defaultValue
+    end
+
+    if numeric < 0 then
+        numeric = 0
+    elseif numeric > 1 then
+        numeric = 1
+    end
+
+    return numeric
+end
+
+local function sanitizeNumericColor(r, g, b, a)
+    if r == nil or g == nil or b == nil then
         return nil
     end
 
-    local ok, value1, value2, value3, value4 = pcall(entry, palette)
-    if not ok then
-        return nil
-    end
+    return clampColorComponent(r, 1), clampColorComponent(g, 1), clampColorComponent(b, 1), clampColorComponent(a, 1)
+end
 
+local function sanitizeColorResult(value1, value2, value3, value4)
     if type(value1) == "table" and value2 == nil and value3 == nil and value4 == nil then
         local colorTable = value1
         if type(colorTable.UnpackRGBA) == "function" then
-            local unpackOk, r, g, b, a = pcall(colorTable.UnpackRGBA, colorTable)
-            if unpackOk then
-                return r, g, b, a
+            local ok, r, g, b, a = pcall(colorTable.UnpackRGBA, colorTable)
+            if ok then
+                local sr, sg, sb, sa = sanitizeNumericColor(r, g, b, a)
+                if sr ~= nil then
+                    return sr, sg, sb, sa
+                end
             end
         end
 
@@ -393,51 +451,77 @@ local function coerceFunctionColor(entry, palette)
         end
     end
 
-    local r = tonumber(value1)
-    local g = tonumber(value2)
-    local b = tonumber(value3)
-    local a = tonumber(value4)
-
-    if r ~= nil and g ~= nil and b ~= nil then
-        if a == nil then
-            a = 1
-        end
-        return r, g, b, a
-    end
-
-    return nil
+    return sanitizeNumericColor(value1, value2, value3, value4)
 end
 
-local function resolvePaletteColor(role, colorKind)
-    local addon = getAddon()
-    if type(addon) ~= "table" then
+local function coerceFunctionColor(entry, context, role, colorKind)
+    if type(entry) ~= "function" then
         return nil
     end
 
-    local colors = addon.Colors
-    if type(colors) ~= "table" then
+    local ok, value1, value2, value3, value4 = pcall(entry, context, role, colorKind)
+    if not ok then
+        safeDebug("[CategoryRow] color function failed for role=%s: %s", tostring(role), tostring(value1))
         return nil
     end
 
-    local resolvedKind = DEFAULT_TRACKER_COLOR_KIND
-    if type(colorKind) == "string" and colorKind ~= "" then
-        resolvedKind = colorKind
+    return sanitizeColorResult(value1, value2, value3, value4)
+end
+
+local function resolvePaletteEntry(palette, role, colorKind)
+    if type(palette) ~= "table" then
+        return nil
     end
 
-    local palette = colors[resolvedKind]
-    if type(palette) == "table" then
-        local r, g, b, a = coerceFunctionColor(palette[role], palette)
+    local entry = palette[role]
+    if type(entry) == "function" then
+        return coerceFunctionColor(entry, palette, role, colorKind)
+    elseif type(entry) == "table" then
+        local r, g, b, a = extractColorComponents(entry)
         if r ~= nil then
             return r, g, b, a
         end
     end
 
-    local defaultPalette = colors.default
-    if type(defaultPalette) == "table" then
-        return coerceFunctionColor(defaultPalette[role], defaultPalette)
+    return nil
+end
+
+local function resolveColor(role, overrideColors, colorKind)
+    local resolvedKind = colorKind
+    if type(resolvedKind) ~= "string" or resolvedKind == "" then
+        resolvedKind = DEFAULT_TRACKER_COLOR_KIND
     end
 
-    return nil
+    if type(overrideColors) == "table" then
+        local overrideEntry = overrideColors[role]
+        if type(overrideEntry) == "function" then
+            local r, g, b, a = coerceFunctionColor(overrideEntry, overrideColors, role, resolvedKind)
+            if r ~= nil then
+                return r, g, b, a
+            end
+        elseif type(overrideEntry) == "table" then
+            local r, g, b, a = extractColorComponents(overrideEntry)
+            if r ~= nil then
+                return r, g, b, a
+            end
+        end
+    end
+
+    local addon = getAddon()
+    local colors = addon and addon.Colors
+    if type(colors) == "table" then
+        local r, g, b, a = resolvePaletteEntry(colors[resolvedKind], role, resolvedKind)
+        if r ~= nil then
+            return r, g, b, a
+        end
+
+        r, g, b, a = resolvePaletteEntry(colors.default, role, resolvedKind)
+        if r ~= nil then
+            return r, g, b, a
+        end
+    end
+
+    return 1, 1, 1, 1
 end
 
 local function applyCategoryColor(label, role, overrideColors, colorKind)
@@ -445,20 +529,9 @@ local function applyCategoryColor(label, role, overrideColors, colorKind)
         return
     end
 
-    local r, g, b, a
-    if type(overrideColors) == "table" then
-        r, g, b, a = extractColorComponents(overrideColors[role])
-    end
-
-    if r == nil then
-        r, g, b, a = resolvePaletteColor(role, colorKind)
-    end
-
-    if r == nil then
-        r, g, b, a = 1, 1, 1, 1
-    end
-
+    local r, g, b, a = resolveColor(role, overrideColors, colorKind)
     label:SetColor(r, g, b, a)
+
     if label.SetAlpha then
         label:SetAlpha(1)
     end
@@ -637,14 +710,29 @@ local function applyCategoryRow(row, data)
     end
 
     local rowsOptions = type(info.rowsOptions) == "table" and info.rowsOptions or nil
-    local colorKind = DEFAULT_TRACKER_COLOR_KIND
-    if rowsOptions and type(rowsOptions.colorKind) == "string" and rowsOptions.colorKind ~= "" then
-        colorKind = rowsOptions.colorKind
-    elseif type(info.colorKind) == "string" and info.colorKind ~= "" then
-        colorKind = info.colorKind
+    if rowsOptions == nil then
+        rowsOptions = {}
+        info.rowsOptions = rowsOptions
     end
 
-    applyCategoryColor(label, role, info.overrideColors, colorKind)
+    local colorKind = rowsOptions.colorKind
+    if type(colorKind) ~= "string" or colorKind == "" then
+        if type(info.colorKind) == "string" and info.colorKind ~= "" then
+            colorKind = info.colorKind
+        else
+            colorKind = DEFAULT_TRACKER_COLOR_KIND
+        end
+        rowsOptions.colorKind = colorKind
+    end
+
+    local ok, err = pcall(applyCategoryColor, label, role, info.overrideColors, colorKind)
+    if not ok then
+        safeDebug("[CategoryRow] applyCategoryColor failed for role=%s: %s", tostring(role), tostring(err))
+        label:SetColor(1, 1, 1, 1)
+        if label.SetAlpha then
+            label:SetAlpha(1)
+        end
+    end
 
     local textures = type(info.textures) == "table" and info.textures or DEFAULT_CATEGORY_CHEVRON_TEXTURES
     local texturePath = expanded and textures.expanded or textures.collapsed
@@ -754,47 +842,6 @@ local function applyConfiguredFontForKind(control, kind, options)
     end
 
     return ApplyFont(control, group)
-end
-
-local function extractColorComponents(color)
-    if type(color) ~= "table" then
-        return nil
-    end
-
-    local r = tonumber(color.r or color[1])
-    local g = tonumber(color.g or color[2])
-    local b = tonumber(color.b or color[3])
-    local a = tonumber(color.a or color[4] or 1)
-
-    if r == nil or g == nil or b == nil then
-        return nil
-    end
-
-    if r < 0 then
-        r = 0
-    elseif r > 1 then
-        r = 1
-    end
-
-    if g < 0 then
-        g = 0
-    elseif g > 1 then
-        g = 1
-    end
-
-    if b < 0 then
-        b = 0
-    elseif b > 1 then
-        b = 1
-    end
-
-    if a < 0 then
-        a = 0
-    elseif a > 1 then
-        a = 1
-    end
-
-    return r, g, b, a
 end
 
 local function applyObjectiveColor(label, options, objective)
