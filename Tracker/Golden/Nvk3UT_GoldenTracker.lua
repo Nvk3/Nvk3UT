@@ -484,9 +484,14 @@ function GoldenTracker.Refresh(viewModel)
 
     local vm = type(viewModel) == "table" and viewModel or nil
     state.viewModelRaw = viewModel
-    state.viewModel = vm or {}
+    state.viewModel = vm
     local categories = (vm and type(vm.categories) == "table" and vm.categories) or {}
     local categoryCount = #categories
+    local debugEnabled = isDiagnosticsDebugEnabled()
+    if debugEnabled then
+        safeDebug("[Golden.UI] VM in → cats=%d", categoryCount)
+    end
+
     local activeRows = state.rows
     local rowCount = 0
 
@@ -521,10 +526,14 @@ function GoldenTracker.Refresh(viewModel)
         safeDebug("Layout module unavailable; skipping ApplyLayout")
     end
 
-    if totalHeight <= 0 and rowCount > 0 then
-        for index = 1, rowCount do
-            local row = activeRows[index]
-            totalHeight = totalHeight + (tonumber(row and row.height) or 0)
+    if totalHeight <= 0 then
+        if rowCount > 0 then
+            for index = 1, rowCount do
+                local row = activeRows[index]
+                totalHeight = totalHeight + (tonumber(row and row.height) or 0)
+            end
+        elseif rowCount == 0 then
+            totalHeight = 86
         end
     end
 
@@ -535,7 +544,9 @@ function GoldenTracker.Refresh(viewModel)
     state.height = totalHeight
     setContainerHeight(container, totalHeight)
 
-    safeDebug("[Golden.UI] Refresh: cats=%d rows=%d height=%d", categoryCount, rowCount, totalHeight)
+    if debugEnabled then
+        safeDebug("[Golden.UI] Refresh: cats=%d rows=%d height=%d", categoryCount, rowCount, totalHeight)
+    end
 end
 
 function GoldenTracker.GetHeight()
