@@ -18,6 +18,8 @@ local state = {
     initialized = false,
 }
 
+-- TEMP EVENT BOOTSTRAP (to be removed at GEVENTS_002_SWITCH)
+
 local function safeDebug(message, ...)
     local debugFn = Nvk3UT and Nvk3UT.Debug
     if type(debugFn) ~= "function" then
@@ -59,6 +61,134 @@ local function getLayoutModule()
     end
 
     return nil
+end
+
+local TEMP_EVENT_NAMESPACE = MODULE_TAG .. ".TempEvents"
+local tempEventsRegistered = false
+
+local function resolveDiagnostics()
+    local root = Nvk3UT
+    if type(root) == "table" then
+        local diagnostics = root.Diagnostics
+        if type(diagnostics) == "table" then
+            return diagnostics
+        end
+    end
+
+    if type(Nvk3UT_Diagnostics) == "table" then
+        return Nvk3UT_Diagnostics
+    end
+
+    return nil
+end
+
+local function isDiagnosticsDebugEnabled()
+    local diagnostics = resolveDiagnostics()
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return diagnostics:IsDebugEnabled()
+        end)
+        if ok then
+            return enabled == true
+        end
+    end
+
+    return false
+end
+
+local function emitTempEventDebug(eventName)
+    if not isDiagnosticsDebugEnabled() then
+        return
+    end
+
+    local diagnostics = resolveDiagnostics()
+    if diagnostics and type(diagnostics.Debug) == "function" then
+        pcall(function()
+            diagnostics.Debug("Golden TempEvent: %s triggered → Model refresh queued", tostring(eventName))
+        end)
+    end
+end
+
+local function callMethod(target, methodName, ...)
+    if type(target) ~= "table" then
+        return false
+    end
+
+    local method = target[methodName]
+    if type(method) ~= "function" then
+        return false
+    end
+
+    local ok = pcall(method, target, ...)
+    return ok
+end
+
+local function handleTempEvent(eventName)
+    if not state.initialized then
+        return
+    end
+
+    local root = Nvk3UT
+    if type(root) ~= "table" then
+        return
+    end
+
+    local queued = false
+
+    if callMethod(root.GoldenModel, "RefreshFromGame") then
+        queued = true
+    end
+
+    if callMethod(root.GoldenTrackerController, "MarkDirty") then
+        queued = true
+    end
+
+    if callMethod(root.TrackerRuntime, "QueueDirty", "golden") then
+        queued = true
+    end
+
+    if queued then
+        emitTempEventDebug(eventName)
+    end
+end
+
+local function registerTempEvent(eventManager, eventName, eventCode)
+    if eventManager == nil then
+        return
+    end
+
+    local registerFn = eventManager.RegisterForEvent
+    if type(registerFn) ~= "function" then
+        return
+    end
+
+    if type(eventCode) ~= "number" then
+        return
+    end
+
+    local namespace = string.format("%s.%s", TEMP_EVENT_NAMESPACE, tostring(eventName))
+    local callback = function()
+        handleTempEvent(eventName)
+    end
+
+    pcall(registerFn, eventManager, namespace, eventCode, callback)
+end
+
+local function InitializeTempEvents()
+    if tempEventsRegistered then
+        return
+    end
+
+    local eventManager = rawget(_G, "EVENT_MANAGER")
+    if eventManager == nil then
+        return
+    end
+
+    registerTempEvent(eventManager, "EVENT_TIMED_ACTIVITIES_UPDATED", EVENT_TIMED_ACTIVITIES_UPDATED)
+    registerTempEvent(eventManager, "EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED", EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED)
+    registerTempEvent(eventManager, "EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED", EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED)
+
+    tempEventsRegistered = true
 end
 
 local function ClearChildren(control)
@@ -206,6 +336,8 @@ function GoldenTracker.Init(parentControl)
     applyVisibility(content, true)
 
     state.initialized = true
+
+    InitializeTempEvents()
 
     safeDebug("Init")
 end
