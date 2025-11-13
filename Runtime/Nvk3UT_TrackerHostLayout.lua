@@ -25,7 +25,7 @@ local ORDERED_SECTIONS = {
     { key = "goldenSectionContainer", id = "golden" },
 }
 
-local SECTION_STACK_GAP = 0
+local SECTION_SPACING_Y = 0
 
 local function copyOrder(order)
     local copy = {}
@@ -532,6 +532,7 @@ end
 
 Layout._lastSizes = Layout._lastSizes or nil
 Layout._lastScrollMetrics = Layout._lastScrollMetrics or setmetatable({}, { __mode = "k" })
+Layout._loggedSectionSpacing = Layout._loggedSectionSpacing or false
 
 function Layout.UpdateHeaderFooterSizes(host)
     host = getHost(host)
@@ -810,6 +811,11 @@ function Layout.ApplyLayout(host, sizes)
         return 0
     end
 
+    if not Layout._loggedSectionSpacing then
+        debugLog("HostLayout: Section spacing set to %dpx", SECTION_SPACING_Y)
+        Layout._loggedSectionSpacing = true
+    end
+
     if type(sizes) ~= "table" then
         sizes = Layout.UpdateHeaderFooterSizes(host)
     end
@@ -821,7 +827,7 @@ function Layout.ApplyLayout(host, sizes)
 
     local sections = GetOrderedSections(host)
 
-    local gap = SECTION_STACK_GAP
+    local gap = SECTION_SPACING_Y
 
     local startOffset = sanitizeLength(sizes and sizes.contentTopY)
     local topPadding = sanitizeLength(sizes and sizes.contentTopPadding)
@@ -897,7 +903,9 @@ function Layout.ApplyLayout(host, sizes)
                 }
             end
 
-            applyAnchors(container, anchors)
+            if container and type(container.SetAnchor) == "function" and type(container.ClearAnchors) == "function" then
+                applyAnchors(container, anchors)
+            end
 
             if placedCount > 0 then
                 totalHeight = totalHeight + gap
@@ -945,8 +953,8 @@ function Layout.ApplyLayout(host, sizes)
     end
 
     debugLog(
-        "HostLayout: section stack gap = %dpx (%s); placed=%d%s",
-        SECTION_STACK_GAP,
+        "HostLayout: section spacing = %dpx (%s); placed=%d%s",
+        SECTION_SPACING_Y,
         table.concat(orderLabels, " → "),
         placedCount,
         suffix
