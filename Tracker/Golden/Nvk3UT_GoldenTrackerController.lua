@@ -246,6 +246,25 @@ local function performModelRefresh(controller)
     controller[NEEDS_FULL_SYNC_FIELD] = false
 
     local campaignCount = fetchCampaignCountFromModel(model)
+
+    if campaignCount == 0 then
+        local promoApiReady = true
+        if type(model) == "table" and type(model.IsPromoApiReady) == "function" then
+            local okReady, ready = pcall(model.IsPromoApiReady, model)
+            promoApiReady = okReady and ready == true
+        end
+
+        local guardedEmpty = false
+        if type(model) == "table" and type(model.WasPromoApiGuardedEmpty) == "function" then
+            local okGuard, guardFlag = pcall(model.WasPromoApiGuardedEmpty, model)
+            guardedEmpty = okGuard and guardFlag == true
+        end
+
+        if not promoApiReady and guardedEmpty and type(controller.StartInitPoller) == "function" then
+            controller:StartInitPoller()
+        end
+    end
+
     return model, campaignCount
 end
 
