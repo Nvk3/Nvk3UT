@@ -42,6 +42,7 @@ end
 
 local OBJECTIVE_ROW_DEFAULT_HEIGHT = 20
 local DEFAULT_OBJECTIVE_FONT = "ZoFontGameSmall"
+local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
 local DEFAULT_OBJECTIVE_COLOR_ROLE = "objectiveText"
 local DEFAULT_TRACKER_COLOR_KIND = "endeavorTracker"
 local COMPLETED_COLOR_ROLE = "completed"
@@ -142,7 +143,7 @@ local function getTrackerColor(role, colorKind)
     return 1, 1, 1, 1
 end
 
-local function applyFont(label, font, fallback)
+local function applyFontString(label, font, fallback)
     if not (label and label.SetFont) then
         return
     end
@@ -155,6 +156,121 @@ local function applyFont(label, font, fallback)
     if resolved and resolved ~= "" then
         label:SetFont(resolved)
     end
+end
+
+local function clampFontSize(value)
+    local numeric = tonumber(value)
+    if numeric == nil then
+        return nil
+    end
+
+    numeric = math.floor(numeric + 0.5)
+    if numeric < 12 then
+        numeric = 12
+    elseif numeric > 36 then
+        numeric = 36
+    end
+
+    return numeric
+end
+
+local function BuildFontString(face, size, outline)
+    return string.format("%s|%d|%s", face, size, outline)
+end
+
+local function ApplyFont(control, cfg)
+    if not (control and control.SetFont) then
+        return false
+    end
+
+    if type(cfg) ~= "table" then
+        return false
+    end
+
+    local face = cfg.Face or cfg.face
+    if type(face) ~= "string" or face == "" then
+        return false
+    end
+
+    local size = clampFontSize(cfg.Size or cfg.size)
+    if size == nil then
+        return false
+    end
+
+    local outline = cfg.Outline or cfg.outline or DEFAULT_FONT_OUTLINE
+    if type(outline) ~= "string" or outline == "" then
+        outline = DEFAULT_FONT_OUTLINE
+    end
+
+    control:SetFont(BuildFontString(face, size, outline))
+    return true
+end
+
+local function getConfiguredFonts(options)
+    if type(options) == "table" and type(options.fontConfig) == "table" then
+        return options.fontConfig
+    end
+
+    local addon = getAddon()
+    if type(addon) ~= "table" then
+        return nil
+    end
+
+    local sv = addon.SV or addon.sv
+    if type(sv) ~= "table" then
+        return nil
+    end
+
+    local endeavor = sv.Endeavor
+    if type(endeavor) ~= "table" then
+        return nil
+    end
+
+    local tracker = endeavor.Tracker
+    if type(tracker) ~= "table" then
+        return nil
+    end
+
+    return tracker.Fonts
+end
+
+local function selectFontGroup(fonts, key)
+    if type(fonts) ~= "table" then
+        return nil
+    end
+
+    local group = fonts[key]
+    if type(group) ~= "table" then
+        local altKey = type(key) == "string" and string.lower(key) or nil
+        if altKey and type(fonts[altKey]) == "table" then
+            group = fonts[altKey]
+        end
+    end
+
+    return group
+end
+
+local function applyConfiguredFontForKind(control, kind, options)
+    local fonts = getConfiguredFonts(options)
+    if type(fonts) ~= "table" then
+        return false
+    end
+
+    local targetKey
+    if kind == "endeavorCategoryHeader" then
+        targetKey = "Category"
+    elseif kind == "dailyHeader" or kind == "weeklyHeader" then
+        targetKey = "Title"
+    else
+        targetKey = "Objective"
+    end
+
+    local group = selectFontGroup(fonts, targetKey)
+    if type(group) ~= "table" then
+        return false
+    end
+
+    return ApplyFont(control, group)
 end
 
 local function extractColorComponents(color)
@@ -342,7 +458,11 @@ function Rows.ApplyObjectiveRow(row, objective, options)
         title = wm:CreateControl(titleName, row, CT_LABEL)
     end
     title:SetParent(row)
-    applyFont(title, options and options.font, DEFAULT_OBJECTIVE_FONT)
+    local rowKind = type(objective) == "table" and objective.kind or nil
+    local appliedConfiguredFont = applyConfiguredFontForKind and applyConfiguredFontForKind(title, rowKind, options)
+    if not appliedConfiguredFont then
+        applyFontString(title, options and options.font, DEFAULT_OBJECTIVE_FONT)
+    end
     title:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
     title:SetVerticalAlignment(TEXT_ALIGN_CENTER)
     if title.SetWrapMode then

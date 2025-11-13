@@ -59,6 +59,22 @@ local function EnsureTable(parent, key)
     return value
 end
 
+local function ClampFontSize(value)
+    local numeric = tonumber(value)
+    if numeric == nil then
+        return nil
+    end
+
+    numeric = math.floor(numeric + 0.5)
+    if numeric < 12 then
+        numeric = 12
+    elseif numeric > 36 then
+        numeric = 36
+    end
+
+    return numeric
+end
+
 local function isDebugEnabled(addonTable)
     local utils = (addonTable and addonTable.Utils) or (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
     if utils and type(utils.IsDebugEnabled) == "function" then
@@ -112,6 +128,33 @@ local DEFAULT_ACHIEVEMENT_FONTS = {
     title = { face = DEFAULT_FONT_FACE_BOLD, size = 16, outline = DEFAULT_FONT_OUTLINE },
     line = { face = DEFAULT_FONT_FACE_BOLD, size = 14, outline = DEFAULT_FONT_OUTLINE },
 }
+
+local DEFAULT_ENDEAVOR_TRACKER_FONTS_TEMPLATE = {
+    Category = { Face = DEFAULT_FONT_FACE_BOLD, Size = 20, Outline = DEFAULT_FONT_OUTLINE },
+    Title = { Face = DEFAULT_FONT_FACE_BOLD, Size = 16, Outline = DEFAULT_FONT_OUTLINE },
+    Objective = { Face = DEFAULT_FONT_FACE_BOLD, Size = 14, Outline = DEFAULT_FONT_OUTLINE },
+}
+
+local function CopyEndeavorFontDefaults()
+    local template = DEFAULT_ENDEAVOR_TRACKER_FONTS_TEMPLATE
+    return {
+        Category = {
+            Face = template.Category.Face,
+            Size = template.Category.Size,
+            Outline = template.Category.Outline,
+        },
+        Title = {
+            Face = template.Title.Face,
+            Size = template.Title.Size,
+            Outline = template.Title.Outline,
+        },
+        Objective = {
+            Face = template.Objective.Face,
+            Size = template.Objective.Size,
+            Outline = template.Objective.Outline,
+        },
+    }
+end
 
 local function CopyColor(color)
     if type(color) ~= "table" then
@@ -174,6 +217,9 @@ local DEFAULT_ENDEAVOR_SETTINGS = {
         Family = DEFAULT_FONT_FACE_BOLD,
         Size = DEFAULT_ACHIEVEMENT_FONTS.title.size,
         Outline = DEFAULT_FONT_OUTLINE,
+    },
+    Tracker = {
+        Fonts = CopyEndeavorFontDefaults(),
     },
 }
 
@@ -429,6 +475,98 @@ local function EnsureEndeavorSettings(saved)
     if type(font.Outline) ~= "string" or font.Outline == "" then
         font.Outline = fontFallback.Outline or defaults.Endeavor.Font.Outline
     end
+
+    local tracker = endeavor.Tracker
+    if type(tracker) ~= "table" then
+        tracker = {}
+        endeavor.Tracker = tracker
+    end
+
+    local fontsConfig = tracker.Fonts
+    if type(fontsConfig) ~= "table" then
+        fontsConfig = CopyEndeavorFontDefaults()
+        tracker.Fonts = fontsConfig
+    end
+
+    local defaultsFonts =
+        (defaults.Endeavor.Tracker and defaults.Endeavor.Tracker.Fonts)
+        or CopyEndeavorFontDefaults()
+
+    local fallbackFace = font.Family or defaults.Endeavor.Font.Family or DEFAULT_FONT_FACE_BOLD
+    local fallbackOutline = font.Outline or defaults.Endeavor.Font.Outline or DEFAULT_FONT_OUTLINE
+    local baseSize = ClampFontSize(font.Size) or defaults.Endeavor.Font.Size or DEFAULT_ACHIEVEMENT_FONTS.title.size
+
+    local function fallbackSize(delta, defaultValue)
+        local size = ClampFontSize(baseSize and (baseSize + delta))
+        if size == nil then
+            size = ClampFontSize(defaultValue)
+        end
+        if size == nil then
+            size = DEFAULT_ACHIEVEMENT_FONTS.title.size
+        end
+        return size
+    end
+
+    local fallbackSizes = {
+        Category = fallbackSize(4, defaultsFonts.Category and defaultsFonts.Category.Size),
+        Title = fallbackSize(0, defaultsFonts.Title and defaultsFonts.Title.Size),
+        Objective = fallbackSize(-2, defaultsFonts.Objective and defaultsFonts.Objective.Size),
+    }
+
+    local function ensureFontGroup(key)
+        local group = fontsConfig[key]
+        if type(group) ~= "table" then
+            local altKey = type(key) == "string" and string.lower(key) or nil
+            if altKey and type(fontsConfig[altKey]) == "table" then
+                group = fontsConfig[altKey]
+            end
+        end
+        if type(group) ~= "table" then
+            group = {}
+            fontsConfig[key] = group
+        else
+            fontsConfig[key] = group
+        end
+
+        local defaultGroup = defaultsFonts[key]
+
+        local face = group.Face or group.face
+        if type(face) ~= "string" or face == "" then
+            face = fallbackFace
+            if defaultGroup and type(defaultGroup.Face) == "string" and defaultGroup.Face ~= "" then
+                face = defaultGroup.Face
+            end
+        end
+
+        local outline = group.Outline or group.outline
+        if type(outline) ~= "string" or outline == "" then
+            outline = fallbackOutline
+            if defaultGroup and type(defaultGroup.Outline) == "string" and defaultGroup.Outline ~= "" then
+                outline = defaultGroup.Outline
+            end
+        end
+
+        local size = ClampFontSize(group.Size or group.size)
+        if size == nil then
+            size = fallbackSizes[key]
+        end
+        if size == nil and defaultGroup then
+            size = ClampFontSize(defaultGroup.Size)
+        end
+        if size == nil then
+            size = DEFAULT_ACHIEVEMENT_FONTS.title.size
+        end
+
+        group.Face = face
+        group.Size = size
+        group.Outline = outline
+
+        return group
+    end
+
+    ensureFontGroup("Category")
+    ensureFontGroup("Title")
+    ensureFontGroup("Objective")
 
     return endeavor
 end
