@@ -368,7 +368,79 @@ local function detachFromUsed(row)
     end
 end
 
-local function applyCategoryColor(label, role, overrideColors)
+local function coerceFunctionColor(entry, palette)
+    if type(entry) ~= "function" then
+        return nil
+    end
+
+    local ok, value1, value2, value3, value4 = pcall(entry, palette)
+    if not ok then
+        return nil
+    end
+
+    if type(value1) == "table" and value2 == nil and value3 == nil and value4 == nil then
+        local colorTable = value1
+        if type(colorTable.UnpackRGBA) == "function" then
+            local unpackOk, r, g, b, a = pcall(colorTable.UnpackRGBA, colorTable)
+            if unpackOk then
+                return r, g, b, a
+            end
+        end
+
+        local r, g, b, a = extractColorComponents(colorTable)
+        if r ~= nil then
+            return r, g, b, a
+        end
+    end
+
+    local r = tonumber(value1)
+    local g = tonumber(value2)
+    local b = tonumber(value3)
+    local a = tonumber(value4)
+
+    if r ~= nil and g ~= nil and b ~= nil then
+        if a == nil then
+            a = 1
+        end
+        return r, g, b, a
+    end
+
+    return nil
+end
+
+local function resolvePaletteColor(role, colorKind)
+    local addon = getAddon()
+    if type(addon) ~= "table" then
+        return nil
+    end
+
+    local colors = addon.Colors
+    if type(colors) ~= "table" then
+        return nil
+    end
+
+    local resolvedKind = DEFAULT_TRACKER_COLOR_KIND
+    if type(colorKind) == "string" and colorKind ~= "" then
+        resolvedKind = colorKind
+    end
+
+    local palette = colors[resolvedKind]
+    if type(palette) == "table" then
+        local r, g, b, a = coerceFunctionColor(palette[role], palette)
+        if r ~= nil then
+            return r, g, b, a
+        end
+    end
+
+    local defaultPalette = colors.default
+    if type(defaultPalette) == "table" then
+        return coerceFunctionColor(defaultPalette[role], defaultPalette)
+    end
+
+    return nil
+end
+
+local function applyCategoryColor(label, role, overrideColors, colorKind)
     if not (label and label.SetColor) then
         return
     end
@@ -379,10 +451,14 @@ local function applyCategoryColor(label, role, overrideColors)
     end
 
     if r == nil then
-        r, g, b, a = getTrackerColor(role, DEFAULT_TRACKER_COLOR_KIND)
+        r, g, b, a = resolvePaletteColor(role, colorKind)
     end
 
-    label:SetColor(r or 1, g or 1, b or 1, a or 1)
+    if r == nil then
+        r, g, b, a = 1, 1, 1, 1
+    end
+
+    label:SetColor(r, g, b, a)
     if label.SetAlpha then
         label:SetAlpha(1)
     end
@@ -559,7 +635,16 @@ local function applyCategoryRow(row, data)
     else
         role = colorRoles.collapsed or DEFAULT_CATEGORY_COLOR_ROLE_COLLAPSED
     end
-    applyCategoryColor(label, role, info.overrideColors)
+
+    local rowsOptions = type(info.rowsOptions) == "table" and info.rowsOptions or nil
+    local colorKind = DEFAULT_TRACKER_COLOR_KIND
+    if rowsOptions and type(rowsOptions.colorKind) == "string" and rowsOptions.colorKind ~= "" then
+        colorKind = rowsOptions.colorKind
+    elseif type(info.colorKind) == "string" and info.colorKind ~= "" then
+        colorKind = info.colorKind
+    end
+
+    applyCategoryColor(label, role, info.overrideColors, colorKind)
 
     local textures = type(info.textures) == "table" and info.textures or DEFAULT_CATEGORY_CHEVRON_TEXTURES
     local texturePath = expanded and textures.expanded or textures.collapsed
