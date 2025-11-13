@@ -28,7 +28,6 @@ Runtime._scheduledCallId = Runtime._scheduledCallId or nil
 Runtime._initialized = Runtime._initialized == true
 Runtime._interactivityDirty = Runtime._interactivityDirty == true
 Runtime._endeavorVM = Runtime._endeavorVM
-Runtime._goldenShimLogged = Runtime._goldenShimLogged == true
 Runtime.goldenDirty = true
 Runtime.cache = type(Runtime.cache) == "table" and Runtime.cache or {}
 if type(Runtime.cache.goldenVM) ~= "table" then
@@ -860,22 +859,33 @@ function Runtime:ProcessFrame(nowMs)
         local goldenGeometryChanged = false
         local goldenRefreshed = false
         local goldenTracker = rawget(Addon, "GoldenTracker")
-        if type(goldenTracker) == "table" and type(goldenTracker.Refresh) == "function" then
-            local safeInvoke = Addon and Addon.SafeCall
-            local function refreshGolden()
-                goldenTracker:Refresh()
-                goldenRefreshed = true
-                if not self._goldenShimLogged then
-                    debug("Runtime: golden tracker shim refresh executed")
-                    self._goldenShimLogged = true
-                end
+        local shouldRefreshGolden = goldenDirty or layoutDirty or questGeometryChanged or endeavorGeometryChanged or achievementGeometryChanged
+        if shouldRefreshGolden and type(goldenTracker) == "table" and type(goldenTracker.Refresh) == "function" then
+            local cache = self.cache
+            if type(cache) ~= "table" then
+                cache = {}
+                self.cache = cache
             end
 
-            if type(safeInvoke) == "function" then
-                safeInvoke(refreshGolden)
-            else
-                safeCall(refreshGolden)
+            local viewModel = cache.goldenVM
+            if type(viewModel) ~= "table" then
+                viewModel = { categories = {} }
+                cache.goldenVM = viewModel
             end
+
+            safeCall(function()
+                goldenTracker:Refresh(viewModel)
+                goldenRefreshed = true
+
+                if goldenDirty then
+                    local categoryCount = 0
+                    if type(viewModel.categories) == "table" then
+                        categoryCount = #viewModel.categories
+                    end
+
+                    debug(("Runtime: Golden refresh wired, cats=%d"):format(categoryCount))
+                end
+            end)
         end
 
         if goldenRefreshed then
