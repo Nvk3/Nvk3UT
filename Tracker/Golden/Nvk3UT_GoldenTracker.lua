@@ -24,6 +24,8 @@ local state = {
     initialized = false,
     rows = {},
     rowCache = {},
+    viewModel = nil,
+    viewModelRaw = nil,
 }
 
 -- TEMP EVENT BOOTSTRAP (INTRO) now SHIM-routed to Controller handlers.
@@ -463,21 +465,27 @@ function GoldenTracker.Refresh(viewModel)
 
     local rowsModule = getRowsModule()
     local layoutModule = getLayoutModule()
-    state.rows = state.rows or {}
+
     state.rowCache = state.rowCache or {}
 
+    local previousRows = type(state.rows) == "table" and state.rows or {}
+
     -- recycle previously active rows into the cache
-    for index = #state.rows, 1, -1 do
-        local row = state.rows[index]
+    for index = #previousRows, 1, -1 do
+        local row = previousRows[index]
         if row then
             releaseRow(row)
             table.insert(state.rowCache, row)
         end
-        state.rows[index] = nil
+        previousRows[index] = nil
     end
 
-    local vm = type(viewModel) == "table" and viewModel or {}
-    local categories = type(vm.categories) == "table" and vm.categories or {}
+    state.rows = {}
+
+    local vm = type(viewModel) == "table" and viewModel or nil
+    state.viewModelRaw = viewModel
+    state.viewModel = vm or {}
+    local categories = (vm and type(vm.categories) == "table" and vm.categories) or {}
     local categoryCount = #categories
     local activeRows = state.rows
     local rowCount = 0
