@@ -14,6 +14,7 @@ local HEADER_TO_ROWS_GAP = 3
 local ROW_GAP = 3
 local SECTION_BOTTOM_GAP = 3
 local SECTION_BOTTOM_GAP_COLLAPSED = 3
+local BOTTOM_PIXEL_NUDGE = 1 -- Endeavor-only visual match to Quest/Achievement
 
 local lastHeight = 0
 
@@ -210,6 +211,10 @@ function Layout.Apply(container, context)
         measured = measured + SECTION_BOTTOM_GAP
     elseif visibleCount > 0 then
         measured = measured + SECTION_BOTTOM_GAP_COLLAPSED
+    end
+
+    if visibleCount > 0 then
+        measured = measured + BOTTOM_PIXEL_NUDGE
     end
 
     if container then
