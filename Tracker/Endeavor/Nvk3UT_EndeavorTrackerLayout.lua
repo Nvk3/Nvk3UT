@@ -8,9 +8,9 @@ Layout.__index = Layout
 
 local MODULE_TAG = addonName .. ".EndeavorTrackerLayout"
 
-local CATEGORY_ROW_HEIGHT = 26
+local CATEGORY_HEADER_HEIGHT = 26
 local SECTION_ROW_HEIGHT = 24
-local VERTICAL_PADDING = 3
+local HEADER_TO_ROWS_GAP = 3
 
 local lastHeight = 0
 
@@ -101,8 +101,8 @@ function Layout.Apply(container, context)
         end
 
         if previous then
-            control:SetAnchor(TOPLEFT, previous, BOTTOMLEFT, 0, VERTICAL_PADDING)
-            control:SetAnchor(TOPRIGHT, previous, BOTTOMRIGHT, 0, VERTICAL_PADDING)
+            control:SetAnchor(TOPLEFT, previous, BOTTOMLEFT, 0, HEADER_TO_ROWS_GAP)
+            control:SetAnchor(TOPRIGHT, previous, BOTTOMRIGHT, 0, HEADER_TO_ROWS_GAP)
         else
             control:SetAnchor(TOPLEFT, container, TOPLEFT, 0, 0)
             control:SetAnchor(TOPRIGHT, container, TOPRIGHT, 0, 0)
@@ -121,7 +121,7 @@ function Layout.Apply(container, context)
         end
 
         if visibleCount > 0 then
-            measured = measured + VERTICAL_PADDING
+            measured = measured + HEADER_TO_ROWS_GAP
         end
 
         anchor(control)
@@ -135,7 +135,7 @@ function Layout.Apply(container, context)
     local categoryEntry = type(data.category) == "table" and data.category or {}
     local categoryControl = categoryEntry.control
     if categoryControl then
-        addControl(categoryControl, CATEGORY_ROW_HEIGHT)
+        addControl(categoryControl, CATEGORY_HEADER_HEIGHT)
     end
 
     local categoryExpanded = data.categoryExpanded == true

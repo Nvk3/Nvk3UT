@@ -90,8 +90,9 @@ end
 
 local INIT_POLLER_UPDATE_NAME = "Nvk3UT_Endeavor_InitPoller"
 
-local CATEGORY_ROW_HEIGHT = 26
+local CATEGORY_HEADER_HEIGHT = 26
 local SECTION_ROW_HEIGHT = 24
+local HEADER_TO_ROWS_GAP = 3
 local CATEGORY_CHEVRON_SIZE = 20
 local CATEGORY_LABEL_OFFSET_X = 4
 local SECTION_LABEL_OFFSET_X = 0
@@ -1041,7 +1042,7 @@ local function ensureUi(container)
             control:SetParent(container)
         end
         control:SetResizeToFitDescendents(false)
-        control:SetHeight(CATEGORY_ROW_HEIGHT)
+        control:SetHeight(CATEGORY_HEADER_HEIGHT)
         control:SetMouseEnabled(true)
         control:SetHidden(false)
         control:SetHandler("OnMouseUp", function(_, button, upInside)
@@ -1086,7 +1087,7 @@ local function ensureUi(container)
         local control = category.control
         if control then
             control:SetParent(container)
-            control:SetHeight(CATEGORY_ROW_HEIGHT)
+            control:SetHeight(CATEGORY_HEADER_HEIGHT)
         end
         local label = category.label
         applyLabelFont(label, DEFAULT_CATEGORY_FONT, DEFAULT_CATEGORY_FONT)
@@ -1617,32 +1618,72 @@ function EndeavorTracker.Refresh(viewModel)
             measuredHeight = coerceHeight(height)
         end
     else
-        local fallbackHeight = 0
+        local fallbackHeight = CATEGORY_HEADER_HEIGHT
+
         if categoryControl and categoryControl.GetHeight then
-            fallbackHeight = fallbackHeight + coerceHeight(categoryControl:GetHeight())
-        else
-            fallbackHeight = fallbackHeight + CATEGORY_ROW_HEIGHT
+            local ok, height = pcall(categoryControl.GetHeight, categoryControl)
+            if ok then
+                local measuredCategoryHeight = coerceHeight(height)
+                if measuredCategoryHeight > 0 then
+                    fallbackHeight = measuredCategoryHeight
+                end
+            end
+        end
+
+        local function addRowHeight(measuredHeight, defaultHeight)
+            local resolved = coerceHeight(measuredHeight)
+            if resolved <= 0 then
+                resolved = coerceHeight(defaultHeight)
+            end
+
+            if resolved > 0 then
+                fallbackHeight = fallbackHeight + HEADER_TO_ROWS_GAP + resolved
+            end
         end
 
         if categoryExpanded then
-            if dailyControl and dailyControl.GetHeight then
-                fallbackHeight = fallbackHeight + coerceHeight(dailyControl:GetHeight())
-            else
-                fallbackHeight = fallbackHeight + SECTION_ROW_HEIGHT
+            if dailyControl then
+                local measured = 0
+                if dailyControl.GetHeight then
+                    local ok, height = pcall(dailyControl.GetHeight, dailyControl)
+                    if ok then
+                        measured = height
+                    end
+                end
+                addRowHeight(measured, SECTION_ROW_HEIGHT)
             end
 
-            if dailyExpanded and dailyObjectivesControl and dailyObjectivesControl.GetHeight then
-                fallbackHeight = fallbackHeight + coerceHeight(dailyObjectivesControl:GetHeight())
+            if dailyExpanded and dailyObjectivesControl then
+                local measured = 0
+                if dailyObjectivesControl.GetHeight then
+                    local ok, height = pcall(dailyObjectivesControl.GetHeight, dailyObjectivesControl)
+                    if ok then
+                        measured = height
+                    end
+                end
+                addRowHeight(measured, 0)
             end
 
-            if weeklyControl and weeklyControl.GetHeight then
-                fallbackHeight = fallbackHeight + coerceHeight(weeklyControl:GetHeight())
-            else
-                fallbackHeight = fallbackHeight + SECTION_ROW_HEIGHT
+            if weeklyControl then
+                local measured = 0
+                if weeklyControl.GetHeight then
+                    local ok, height = pcall(weeklyControl.GetHeight, weeklyControl)
+                    if ok then
+                        measured = height
+                    end
+                end
+                addRowHeight(measured, SECTION_ROW_HEIGHT)
             end
 
-            if weeklyExpanded and weeklyObjectivesControl and weeklyObjectivesControl.GetHeight then
-                fallbackHeight = fallbackHeight + coerceHeight(weeklyObjectivesControl:GetHeight())
+            if weeklyExpanded and weeklyObjectivesControl then
+                local measured = 0
+                if weeklyObjectivesControl.GetHeight then
+                    local ok, height = pcall(weeklyObjectivesControl.GetHeight, weeklyObjectivesControl)
+                    if ok then
+                        measured = height
+                    end
+                end
+                addRowHeight(measured, 0)
             end
         end
 
