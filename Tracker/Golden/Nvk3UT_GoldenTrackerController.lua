@@ -154,7 +154,13 @@ local function doProgressRefresh(controller)
         return
     end
 
-    model:RefreshFromGame()
+    local okRefresh, refreshErr = pcall(model.RefreshFromGame, model)
+    if not okRefresh then
+        safeDebug("performModelRefresh failed: %s", tostring(refreshErr))
+        diagnosticsDebug("[Golden] performModelRefresh failed: %s", tostring(refreshErr))
+        return
+    end
+
     controller:MarkDirty()
     runtime:QueueDirty("golden")
     controller[NEEDS_FULL_SYNC_FIELD] = false
@@ -228,7 +234,13 @@ local function performModelRefresh(controller)
         return nil, 0
     end
 
-    model:RefreshFromGame()
+    local okRefresh, refreshErr = pcall(model.RefreshFromGame, model)
+    if not okRefresh then
+        safeDebug("performModelRefresh failed: %s", tostring(refreshErr))
+        diagnosticsDebug("[Golden] performModelRefresh failed: %s", tostring(refreshErr))
+        return nil, 0
+    end
+
     controller:MarkDirty()
     runtime:QueueDirty("golden")
     controller[NEEDS_FULL_SYNC_FIELD] = false

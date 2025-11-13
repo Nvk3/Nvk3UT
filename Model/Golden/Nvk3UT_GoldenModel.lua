@@ -262,6 +262,14 @@ local function newEmptyCounters()
     }
 end
 
+local function newEmptyCampaignStats()
+    return {
+        totalCampaigns = 0,
+        totalActivities = 0,
+        completedActivities = 0,
+    }
+end
+
 local function copyOrEmpty(value, fallbackFactory)
     if type(value) == "table" then
         local copy = deepCopyTable(value)
@@ -472,13 +480,13 @@ function GoldenModel:Init(svRoot, goldenState, goldenList)
     return self
 end
 
-local function callGlobal(name, ...)
+local function fetchPromoApi(name)
     local fn = rawget(_G, name)
     if type(fn) ~= "function" then
-        return false
+        debugLog("MISSING API: %s", tostring(name))
+        return nil
     end
-
-    return pcall(fn, ...)
+    return fn
 end
 
 local function toNonNegativeInteger(value)
@@ -495,16 +503,17 @@ end
 local MAX_CAMPAIGN_ACTIVITIES = 50
 
 local function fetchTrackedActivity()
-    local ok, campaignKey, activityIndex = callGlobal("GetTrackedPromotionalEventActivityInfo")
-    if not ok then
-        return nil, nil
+    local fn = fetchPromoApi("GetTrackedPromotionalEventActivityInfo")
+    if fn == nil then
+        return nil, nil, true
     end
 
-    if campaignKey == nil or activityIndex == nil then
-        return nil, nil
+    local ok, campaignKey, activityIndex = pcall(fn)
+    if not ok or campaignKey == nil or activityIndex == nil then
+        return nil, nil, false
     end
 
-    return campaignKey, toNonNegativeInteger(activityIndex)
+    return campaignKey, toNonNegativeInteger(activityIndex), false
 end
 
 local function sanitizeDescription(value)
@@ -530,13 +539,17 @@ local function buildCampaignActivities(key, trackedCampaignKey, trackedActivityI
     local totalActivities = 0
     local completedActivities = 0
 
-    local infoFn = rawget(_G, "GetPromotionalEventCampaignActivityInfo")
-    if type(infoFn) ~= "function" then
-        return activities, totalActivities, completedActivities
+    local infoFn = fetchPromoApi("GetPromotionalEventCampaignActivityInfo")
+    if infoFn == nil then
+        return activities, totalActivities, completedActivities, true
     end
 
-    local progressFn = rawget(_G, "GetPromotionalEventCampaignActivityProgress")
-    local countFn = rawget(_G, "GetNumPromotionalEventCampaignActivities")
+    local progressFn = fetchPromoApi("GetPromotionalEventCampaignActivityProgress")
+    if progressFn == nil then
+        return activities, totalActivities, completedActivities, true
+    end
+
+    local countFn = fetchPromoApi("GetNumPromotionalEventCampaignActivities")
 
     local activityCountOverride = nil
     if type(countFn) == "function" then
@@ -570,12 +583,10 @@ local function buildCampaignActivities(key, trackedCampaignKey, trackedActivityI
         local activityDescription = sanitizeDescription(description)
 
         local current, maximum = 0, 0
-        if type(progressFn) == "function" then
-            local okProgress, progressCurrent, progressMax = pcall(progressFn, key, index)
-            if okProgress then
-                current = ensureNumber(progressCurrent, 0)
-                maximum = ensureNumber(progressMax, 0)
-            end
+        local okProgress, progressCurrent, progressMax = pcall(progressFn, key, index)
+        if okProgress then
+            current = ensureNumber(progressCurrent, 0)
+            maximum = ensureNumber(progressMax, 0)
         end
 
         if current < 0 then
@@ -611,12 +622,12 @@ local function buildCampaignActivities(key, trackedCampaignKey, trackedActivityI
         end
     end
 
-    return activities, totalActivities, completedActivities
+    return activities, totalActivities, completedActivities, false
 end
 
 local function extractHasRewards(campaignKey)
-    local infoFn = rawget(_G, "GetPromotionalEventCampaignInfo")
-    if type(infoFn) ~= "function" then
+    local infoFn = fetchPromoApi("GetPromotionalEventCampaignInfo")
+    if infoFn == nil then
         return nil
     end
 
@@ -637,16 +648,29 @@ end
 
 local function buildCampaign(key, trackedCampaignKey, trackedActivityIndex)
     if key == nil then
-        return nil, 0, 0
+        return nil, 0, 0, false
     end
 
-    local okName, displayName = callGlobal("GetPromotionalEventCampaignDisplayName", key)
+    local nameFn = fetchPromoApi("GetPromotionalEventCampaignDisplayName")
+    if nameFn == nil then
+        return nil, 0, 0, true
+    end
+
+    local okName, displayName = pcall(nameFn, key)
     local campaignName = ensureString(okName and displayName or "")
 
-    local activities, activityCount, completedActivities = buildCampaignActivities(key, trackedCampaignKey, trackedActivityIndex)
+    local activities, activityCount, completedActivities, missingActivities = buildCampaignActivities(key, trackedCampaignKey, trackedActivityIndex)
+    if missingActivities then
+        return nil, 0, 0, true
+    end
 
     local progressCurrent, progressMax = 0, 0
-    local okProgress, currentValue, maxValue = callGlobal("GetPromotionalEventCampaignProgress", key)
+    local progressFn = fetchPromoApi("GetPromotionalEventCampaignProgress")
+    if progressFn == nil then
+        return nil, 0, 0, true
+    end
+
+    local okProgress, currentValue, maxValue = pcall(progressFn, key)
     if okProgress then
         progressCurrent = ensureNumber(currentValue, 0)
         progressMax = ensureNumber(maxValue, 0)
@@ -680,26 +704,43 @@ local function buildCampaign(key, trackedCampaignKey, trackedActivityIndex)
         isCompleted = isCompleted == true,
     }
 
-    return campaign, activityCount, completedActivities
+    return campaign, activityCount, completedActivities, false
 end
 
 local function buildCampaignViewModel()
     local campaigns = {}
-    local okCount, countValue = callGlobal("GetNumActivePromotionalEventCampaigns")
+    local countFn = fetchPromoApi("GetNumActivePromotionalEventCampaigns")
+    local keyFn = fetchPromoApi("GetActivePromotionalEventCampaignKey")
+    if countFn == nil or keyFn == nil then
+        return newEmptyCampaignViewModel(), newEmptyCampaignStats(), true
+    end
+
+    local okCount, countValue = pcall(countFn)
     local campaignCount = 0
     if okCount then
         campaignCount = toNonNegativeInteger(countValue)
     end
 
-    local trackedCampaignKey, trackedActivityIndex = fetchTrackedActivity()
+    local trackedCampaignKey, trackedActivityIndex, missingTracked = fetchTrackedActivity()
+    if missingTracked then
+        return newEmptyCampaignViewModel(), newEmptyCampaignStats(), true
+    end
 
     local totalActivities = 0
     local completedActivities = 0
 
     for index = 1, campaignCount do
-        local okKey, campaignKey = callGlobal("GetActivePromotionalEventCampaignKey", index)
-        if okKey and campaignKey ~= nil then
-            local campaign, activityCount, completedCount = buildCampaign(campaignKey, trackedCampaignKey, trackedActivityIndex)
+        local okKey, campaignKey = pcall(keyFn, index)
+        if not okKey then
+            break
+        end
+
+        if campaignKey ~= nil then
+            local campaign, activityCount, completedCount, missingApi = buildCampaign(campaignKey, trackedCampaignKey, trackedActivityIndex)
+            if missingApi then
+                return newEmptyCampaignViewModel(), newEmptyCampaignStats(), true
+            end
+
             if type(campaign) == "table" then
                 campaigns[#campaigns + 1] = campaign
                 totalActivities = totalActivities + (activityCount or 0)
@@ -714,20 +755,25 @@ local function buildCampaignViewModel()
         totalCampaigns = #campaigns,
         totalActivities = totalActivities,
         completedActivities = completedActivities,
-    }
+    }, false
 end
 
 function GoldenModel:RefreshFromGame(providerFn)
-    local viewModel, stats = buildCampaignViewModel()
+    local viewModel, stats, guardedEmpty = buildCampaignViewModel()
     if type(viewModel) ~= "table" then
         viewModel = newEmptyCampaignViewModel()
+    end
+
+    if guardedEmpty then
+        viewModel = newEmptyCampaignViewModel()
+        stats = newEmptyCampaignStats()
     end
 
     self._vm = viewModel
     self._viewData = deepCopyTable(viewModel) or newEmptyCampaignViewModel()
     self._rawData = nil
 
-    stats = type(stats) == "table" and stats or {}
+    stats = type(stats) == "table" and stats or newEmptyCampaignStats()
     self._counters = {
         campaigns = toNonNegativeInteger(stats.totalCampaigns),
         activitiesCompleted = toNonNegativeInteger(stats.completedActivities),
