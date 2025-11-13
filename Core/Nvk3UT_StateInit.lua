@@ -4,6 +4,47 @@
 
 Nvk3UT_StateInit = Nvk3UT_StateInit or {}
 
+-- Safe unpack for Lua 5.1/5.2 without shadowing
+local fn_unpack = _G.unpack or (table and table.unpack) or function(t, i)
+    i = i or 1
+    if type(t) == "table" and t[i] ~= nil then
+        return t[i], fn_unpack(t, i + 1)
+    end
+end
+
+local function ShallowCopy(dst, src)
+    if type(dst) ~= "table" then
+        dst = {}
+    end
+    if type(src) == "table" then
+        for k, v in pairs(src) do
+            dst[k] = v
+        end
+    end
+    return dst
+end
+
+local function Ensure(tbl, key, default)
+    if type(tbl) ~= "table" then
+        if type(default) == "table" then
+            return ShallowCopy({}, default)
+        end
+        return default
+    end
+
+    local value = tbl[key]
+    if value == nil then
+        if type(default) == "table" then
+            value = ShallowCopy({}, default)
+        else
+            value = default
+        end
+        tbl[key] = value
+    end
+
+    return value
+end
+
 -- Internal helper: shallow-safe table ensure
 local function EnsureTable(parent, key)
     if type(parent) ~= "table" then
@@ -257,69 +298,99 @@ local function EnsureEndeavorSettings(saved)
         return nil
     end
 
-    local endeavor = EnsureTable(saved, "Endeavor")
-    MergeDefaults(endeavor, defaults.Endeavor)
+    local achievementSettings = saved.Achievement or saved.AchievementTracker
+    local generalSettings = type(saved.General) == "table" and saved.General or nil
+    local achievementColors = achievementSettings and (achievementSettings.Colors or achievementSettings.colors)
+    local achievementFont = achievementSettings and (achievementSettings.Font or achievementSettings.font)
 
+    local endeavor = Ensure(saved, "Endeavor", {})
+
+    local enabledDefault = true
+    if type(achievementSettings) == "table" then
+        if achievementSettings.Enabled ~= nil then
+            enabledDefault = achievementSettings.Enabled ~= false
+        elseif achievementSettings.active ~= nil then
+            enabledDefault = achievementSettings.active ~= false
+        end
+    end
     local legacyTracker = saved.EndeavorTracker
-
-    if endeavor.Enabled == nil then
-        if type(legacyTracker) == "table" and legacyTracker.active ~= nil then
-            endeavor.Enabled = legacyTracker.active ~= false
-        else
-            local achievement = saved.AchievementTracker
-            if type(achievement) == "table" and achievement.active ~= nil then
-                endeavor.Enabled = achievement.active ~= false
-            else
-                endeavor.Enabled = defaults.Endeavor.Enabled
-            end
-        end
-    else
-        endeavor.Enabled = endeavor.Enabled ~= false
+    if enabledDefault and type(legacyTracker) == "table" and legacyTracker.active ~= nil then
+        enabledDefault = legacyTracker.active ~= false
     end
+    endeavor.Enabled = Ensure(endeavor, "Enabled", enabledDefault) ~= false
 
-    if endeavor.ShowCountsInHeaders == nil then
-        local general = saved.General or {}
-        local fallback = general.showAchievementCategoryCounts
-        if fallback == nil then
-            fallback = defaults.General.showAchievementCategoryCounts
+    local headerDefault = true
+    if type(achievementSettings) == "table" then
+        if achievementSettings.ShowCountsInHeaders ~= nil then
+            headerDefault = achievementSettings.ShowCountsInHeaders ~= false
+        elseif achievementSettings.showCountsInHeaders ~= nil then
+            headerDefault = achievementSettings.showCountsInHeaders ~= false
         end
-        endeavor.ShowCountsInHeaders = fallback ~= false
-    else
-        endeavor.ShowCountsInHeaders = endeavor.ShowCountsInHeaders ~= false
     end
+    if generalSettings and generalSettings.showAchievementCategoryCounts ~= nil then
+        headerDefault = generalSettings.showAchievementCategoryCounts ~= false
+    end
+    endeavor.ShowCountsInHeaders = Ensure(endeavor, "ShowCountsInHeaders", headerDefault) ~= false
 
     if type(endeavor.CompletedHandling) ~= "string" then
-        endeavor.CompletedHandling = defaults.Endeavor.CompletedHandling
+        endeavor.CompletedHandling = Ensure(endeavor, "CompletedHandling", "hide")
+    end
+    local normalizedHandling = string.lower(endeavor.CompletedHandling)
+    if normalizedHandling ~= "recolor" then
+        endeavor.CompletedHandling = "hide"
     else
-        local normalized = string.lower(endeavor.CompletedHandling)
-        if normalized ~= "recolor" then
-            endeavor.CompletedHandling = "hide"
-        else
-            endeavor.CompletedHandling = "recolor"
-        end
+        endeavor.CompletedHandling = "recolor"
     end
 
-    local colors = EnsureTable(endeavor, "Colors")
+    Ensure(endeavor, "Colors", {})
+    local colors = endeavor.Colors
     local appearance = EnsureTable(saved, "appearance")
     local trackerAppearance = EnsureTable(appearance, "endeavorTracker")
-    trackerAppearance.colors = trackerAppearance.colors or {}
+    trackerAppearance.colors = type(trackerAppearance.colors) == "table" and trackerAppearance.colors or {}
+
+    local function resolveSeedColor(configKey, role)
+        local color = colors[configKey]
+        if type(color) == "table" then
+            return color
+        end
+
+        if type(achievementColors) == "table" then
+            local candidate = achievementColors[configKey]
+            if type(candidate) == "table" then
+                return candidate
+            end
+        end
+
+        local appearanceColors = trackerAppearance.colors
+        if type(appearanceColors) == "table" then
+            local candidate = appearanceColors[role]
+            if type(candidate) == "table" then
+                return candidate
+            end
+        end
+
+        return defaults.Endeavor.Colors[configKey]
+    end
 
     for configKey, role in pairs(ENDEAVOR_COLOR_ROLE_MAPPING) do
         local defaultColor = defaults.Endeavor.Colors[configKey]
-        local color = EnsureTable(colors, configKey)
-        local appearanceColor = trackerAppearance.colors[role]
+        local seed = resolveSeedColor(configKey, role) or defaultColor
 
-        if type(appearanceColor) == "table" then
-            color.r = NormalizeColorComponent(color.r or appearanceColor.r, defaultColor.r)
-            color.g = NormalizeColorComponent(color.g or appearanceColor.g, defaultColor.g)
-            color.b = NormalizeColorComponent(color.b or appearanceColor.b, defaultColor.b)
-            color.a = NormalizeColorComponent(color.a or appearanceColor.a, defaultColor.a)
-        else
-            color.r = NormalizeColorComponent(color.r, defaultColor.r)
-            color.g = NormalizeColorComponent(color.g, defaultColor.g)
-            color.b = NormalizeColorComponent(color.b, defaultColor.b)
-            color.a = NormalizeColorComponent(color.a, defaultColor.a)
+        local color = colors[configKey]
+        if type(color) ~= "table" then
+            color = ShallowCopy({}, seed)
+            colors[configKey] = color
         end
+
+        local seedR = (type(seed) == "table" and (seed.r or seed[1])) or defaultColor.r
+        local seedG = (type(seed) == "table" and (seed.g or seed[2])) or defaultColor.g
+        local seedB = (type(seed) == "table" and (seed.b or seed[3])) or defaultColor.b
+        local seedA = (type(seed) == "table" and (seed.a or seed[4])) or defaultColor.a
+
+        color.r = NormalizeColorComponent(color.r or color[1], seedR)
+        color.g = NormalizeColorComponent(color.g or color[2], seedG)
+        color.b = NormalizeColorComponent(color.b or color[3], seedB)
+        color.a = NormalizeColorComponent(color.a or color[4], seedA)
 
         trackerAppearance.colors[role] = {
             r = color.r,
@@ -329,14 +400,23 @@ local function EnsureEndeavorSettings(saved)
         }
     end
 
-    local font = EnsureTable(endeavor, "Font")
+    local fontFallback = defaults.Endeavor.Font
+    if type(achievementFont) == "table" then
+        fontFallback = achievementFont
+    end
+
+    local font = Ensure(endeavor, "Font", fontFallback)
+    if type(font) ~= "table" then
+        font = Ensure(endeavor, "Font", fontFallback)
+    end
+
     if type(font.Family) ~= "string" or font.Family == "" then
-        font.Family = defaults.Endeavor.Font.Family
+        font.Family = fontFallback.Family or defaults.Endeavor.Font.Family
     end
 
     local size = tonumber(font.Size)
     if size == nil then
-        size = defaults.Endeavor.Font.Size
+        size = fontFallback.Size or defaults.Endeavor.Font.Size
     end
     size = math.floor(size + 0.5)
     if size < 12 then
@@ -347,7 +427,7 @@ local function EnsureEndeavorSettings(saved)
     font.Size = size
 
     if type(font.Outline) ~= "string" or font.Outline == "" then
-        font.Outline = defaults.Endeavor.Font.Outline
+        font.Outline = fontFallback.Outline or defaults.Endeavor.Font.Outline
     end
 
     return endeavor
