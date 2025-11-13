@@ -427,20 +427,29 @@ local function getEndeavorColor(colorKey, role)
     local config = getEndeavorConfig()
     local color = config.Colors[colorKey]
     if type(color) == "table" then
-        return color.r or 1, color.g or 1, color.b or 1, color.a or 1
+        local r = color.r or color[1] or 1
+        local g = color.g or color[2] or 1
+        local b = color.b or color[3] or 1
+        local a = color.a or color[4] or 1
+        return r, g, b, a
     end
     return getTrackerColor("endeavorTracker", role)
 end
 
 local function setEndeavorColor(colorKey, role, r, g, b, a)
     local config = getEndeavorConfig()
-    config.Colors[colorKey] = {
-        r = r or 1,
-        g = g or 1,
-        b = b or 1,
-        a = a or 1,
-    }
-    setTrackerColor("endeavorTracker", role, r, g, b, a)
+    local resolvedR = r or 1
+    local resolvedG = g or 1
+    local resolvedB = b or 1
+    local resolvedA = a or 1
+    local color = config.Colors[colorKey]
+    if type(color) ~= "table" then
+        color = {}
+        config.Colors[colorKey] = color
+    end
+    color[1], color[2], color[3], color[4] = resolvedR, resolvedG, resolvedB, resolvedA
+    color.r, color.g, color.b, color.a = resolvedR, resolvedG, resolvedB, resolvedA
+    setTrackerColor("endeavorTracker", role, resolvedR, resolvedG, resolvedB, resolvedA)
 end
 
 local function refreshEndeavorModel()
@@ -1670,21 +1679,92 @@ local function registerPanel(displayTitle)
                 },
             }
 
+            local function getAchievementColorDefault(colorKey)
+                local sv = getSavedVars()
+                if type(sv) ~= "table" then
+                    return nil
+                end
+
+                local achievement = sv.Achievement
+                if type(achievement) ~= "table" then
+                    return nil
+                end
+
+                local colors = achievement.Colors
+                if type(colors) ~= "table" then
+                    return nil
+                end
+
+                local candidate = colors[colorKey]
+                if candidate == nil and colorKey == "Completed" then
+                    candidate = colors.Completed or colors.Objective
+                end
+
+                if type(candidate) ~= "table" then
+                    return nil
+                end
+
+                local r = candidate[1] or candidate.r or 1
+                local g = candidate[2] or candidate.g or 1
+                local b = candidate[3] or candidate.b or 1
+                local a = candidate[4] or candidate.a or 1
+                return r, g, b, a
+            end
+
+            local function getEndeavorDefaultColor(colorKey, role)
+                local r, g, b, a = getAchievementColorDefault(colorKey)
+                if r ~= nil then
+                    return r, g, b, a
+                end
+
+                local fallback = getTrackerColorDefaultTable("endeavorTracker", role)
+                if type(fallback) == "table" then
+                    local fallbackR = fallback[1] or fallback.r or 1
+                    local fallbackG = fallback[2] or fallback.g or 1
+                    local fallbackB = fallback[3] or fallback.b or 1
+                    local fallbackA = fallback[4] or fallback.a or 1
+                    return fallbackR, fallbackG, fallbackB, fallbackA
+                end
+
+                if colorKey == "Completed" then
+                    return 0.8, 0.8, 0.8, 1
+                end
+
+                return 1, 1, 1, 1
+            end
+
             for index = 1, #colorEntries do
                 local entry = colorEntries[index]
                 controls[#controls + 1] = {
                     type = "colorpicker",
                     name = GetString(entry.name),
                     tooltip = GetString(entry.tooltip),
+                    width = "full",
                     getFunc = function()
-                        return getEndeavorColor(entry.key, entry.role)
+                        local config = getEndeavorConfig()
+                        local colors = config.Colors or {}
+                        local color = colors[entry.key]
+                        local r = (color and (color[1] or color.r)) or 1
+                        local g = (color and (color[2] or color.g)) or 1
+                        local b = (color and (color[3] or color.b)) or 1
+                        local a = (color and (color[4] or color.a)) or 1
+                        return r, g, b, a
                     end,
                     setFunc = function(r, g, b, a)
-                        setEndeavorColor(entry.key, entry.role, r, g, b, (a or 1))
+                        local config = getEndeavorConfig()
+                        config.Colors = config.Colors or {}
+                        config.Colors[entry.key] = config.Colors[entry.key] or { 1, 1, 1, 1 }
+                        local color = config.Colors[entry.key]
+                        local alpha = a or 1
+                        color[1], color[2], color[3], color[4] = r, g, b, alpha
+                        color.r, color.g, color.b, color.a = r, g, b, alpha
+                        setTrackerColor("endeavorTracker", entry.role, r, g, b, alpha)
                         markEndeavorDirty("appearance")
                         queueEndeavorDirty()
                     end,
-                    default = getTrackerColorDefaultTable("endeavorTracker", entry.role),
+                    default = function()
+                        return getEndeavorDefaultColor(entry.key, entry.role)
+                    end,
                 }
             end
 
