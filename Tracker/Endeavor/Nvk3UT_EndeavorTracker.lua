@@ -99,6 +99,7 @@ local SECTION_BOTTOM_GAP_COLLAPSED = 3
 local CATEGORY_CHEVRON_SIZE = 20
 local CATEGORY_LABEL_OFFSET_X = 4
 local SUBHEADER_INDENT_X = 18
+local TITLE_INDENT_DELTA_PX = 12
 
 local DEFAULT_CATEGORY_FONT = "$(BOLD_FONT)|20|soft-shadow-thick"
 local DEFAULT_SECTION_FONT = "$(BOLD_FONT)|16|soft-shadow-thick"
@@ -1125,7 +1126,7 @@ local function ensureUi(container)
         label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
         label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
         label:ClearAnchors()
-        label:SetAnchor(TOPLEFT, control, TOPLEFT, SUBHEADER_INDENT_X, 0)
+        label:SetAnchor(TOPLEFT, control, TOPLEFT, SUBHEADER_INDENT_X + TITLE_INDENT_DELTA_PX, 0)
         label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
         applyLabelFont(label, DEFAULT_SECTION_FONT, DEFAULT_SECTION_FONT)
 
@@ -1172,7 +1173,7 @@ local function ensureUi(container)
         label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
         label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
         label:ClearAnchors()
-        label:SetAnchor(TOPLEFT, control, TOPLEFT, SUBHEADER_INDENT_X, 0)
+        label:SetAnchor(TOPLEFT, control, TOPLEFT, SUBHEADER_INDENT_X + TITLE_INDENT_DELTA_PX, 0)
         label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
         applyLabelFont(label, DEFAULT_SECTION_FONT, DEFAULT_SECTION_FONT)
 
