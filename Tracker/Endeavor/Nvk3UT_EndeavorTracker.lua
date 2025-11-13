@@ -1093,6 +1093,47 @@ local function getObjectiveContainerHeight(rows, control)
     return 0
 end
 
+local function computeObjectivesHeight(rows, objectives, fallbackRowHeight)
+    if type(objectives) ~= "table" or #objectives == 0 then
+        return 0
+    end
+
+    local entrySpacing = getEntrySpacingValue(rows)
+    local heightPerRow = fallbackRowHeight or 0
+
+    if rows and type(rows.GetEntryRowHeight) == "function" then
+        local ok, resolved = pcall(rows.GetEntryRowHeight)
+        if ok and type(resolved) == "number" and resolved > 0 then
+            heightPerRow = resolved
+        end
+    end
+
+    if type(heightPerRow) ~= "number" or heightPerRow <= 0 then
+        heightPerRow = fallbackRowHeight or SECTION_ROW_HEIGHT
+    end
+
+    local total = 0
+
+    for index = 1, #objectives do
+        if index > 1 then
+            total = total + entrySpacing
+        end
+
+        total = total + heightPerRow
+
+        if rows and type(rows.GetSubrowsBlockHeight) == "function" then
+            local blockHeight = 0
+            local ok, computed = pcall(rows.GetSubrowsBlockHeight, objectives[index] and objectives[index].subrows)
+            if ok and type(computed) == "number" and computed > 0 then
+                blockHeight = computed
+            end
+            total = total + blockHeight
+        end
+    end
+
+    return total
+end
+
 local function ensureUi(container)
     if container == nil then
         return state.ui
@@ -1812,13 +1853,21 @@ function EndeavorTracker.Refresh(viewModel)
             end
 
             local dailyObjectivesHeight = 0
-            if dailyExpanded and dailyObjectivesControl then
-                dailyObjectivesHeight = getObjectiveContainerHeight(rows, dailyObjectivesControl)
+            if dailyExpanded then
+                if rows then
+                    dailyObjectivesHeight = computeObjectivesHeight(rows, dailyObjectivesList, rowHeight)
+                elseif dailyObjectivesControl then
+                    dailyObjectivesHeight = getObjectiveContainerHeight(rows, dailyObjectivesControl)
+                end
             end
 
             local weeklyObjectivesHeight = 0
-            if weeklyExpanded and weeklyObjectivesControl then
-                weeklyObjectivesHeight = getObjectiveContainerHeight(rows, weeklyObjectivesControl)
+            if weeklyExpanded then
+                if rows then
+                    weeklyObjectivesHeight = computeObjectivesHeight(rows, weeklyObjectivesList, rowHeight)
+                elseif weeklyObjectivesControl then
+                    weeklyObjectivesHeight = getObjectiveContainerHeight(rows, weeklyObjectivesControl)
+                end
             end
 
             local measuredHeight = applyDeterministicLayout(container, {
