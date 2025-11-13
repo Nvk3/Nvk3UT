@@ -8,8 +8,13 @@ Layout.__index = Layout
 
 local MODULE_TAG = addonName .. ".EndeavorTrackerLayout"
 
-local CATEGORY_ROW_HEIGHT = 26
+local CATEGORY_HEADER_HEIGHT = 26
 local SECTION_ROW_HEIGHT = 24
+local HEADER_TO_ROWS_GAP = 3
+local ROW_GAP = 3
+local SECTION_BOTTOM_GAP = 3
+local SECTION_BOTTOM_GAP_COLLAPSED = 3
+local BOTTOM_PIXEL_NUDGE = 3 -- Endeavor-only visual match to Quest/Achievement
 
 local lastHeight = 0
 
@@ -88,7 +93,11 @@ function Layout.Apply(container, context)
     end
 
     local previous
-    local function anchor(control)
+    local previousKind
+    local visibleCount = 0
+    local rowCount = 0
+
+    local function anchor(control, offsetY)
         if not control then
             return
         end
@@ -98,8 +107,9 @@ function Layout.Apply(container, context)
         end
 
         if previous then
-            control:SetAnchor(TOPLEFT, previous, BOTTOMLEFT, 0, 0)
-            control:SetAnchor(TOPRIGHT, previous, BOTTOMRIGHT, 0, 0)
+            local gap = offsetY or ROW_GAP
+            control:SetAnchor(TOPLEFT, previous, BOTTOMLEFT, 0, gap)
+            control:SetAnchor(TOPRIGHT, previous, BOTTOMRIGHT, 0, gap)
         else
             control:SetAnchor(TOPLEFT, container, TOPLEFT, 0, 0)
             control:SetAnchor(TOPRIGHT, container, TOPRIGHT, 0, 0)
@@ -108,16 +118,42 @@ function Layout.Apply(container, context)
         previous = control
     end
 
+    local function addControl(control, fallbackHeight, kind)
+        if not control then
+            return
+        end
+
+        if control.SetHidden then
+            control:SetHidden(false)
+        end
+
+        local gap = 0
+        if visibleCount > 0 then
+            if previousKind == "header" then
+                gap = HEADER_TO_ROWS_GAP
+            else
+                gap = ROW_GAP
+            end
+            measured = measured + gap
+        end
+
+        anchor(control, gap)
+
+        measured = measured + getControlHeight(control, fallbackHeight)
+        visibleCount = visibleCount + 1
+        previousKind = kind
+
+        if kind ~= "header" then
+            rowCount = rowCount + 1
+        end
+    end
+
     local data = type(context) == "table" and context or {}
 
     local categoryEntry = type(data.category) == "table" and data.category or {}
     local categoryControl = categoryEntry.control
     if categoryControl then
-        if categoryControl.SetHidden then
-            categoryControl:SetHidden(false)
-        end
-        anchor(categoryControl)
-        measured = measured + getControlHeight(categoryControl, CATEGORY_ROW_HEIGHT)
+        addControl(categoryControl, CATEGORY_HEADER_HEIGHT, "header")
     end
 
     local categoryExpanded = data.categoryExpanded == true
@@ -134,40 +170,24 @@ function Layout.Apply(container, context)
 
     if categoryExpanded then
         if dailyControl then
-            if dailyControl.SetHidden then
-                dailyControl:SetHidden(false)
-            end
-            anchor(dailyControl)
-            measured = measured + getControlHeight(dailyControl, SECTION_ROW_HEIGHT)
+            addControl(dailyControl, SECTION_ROW_HEIGHT, "row")
         end
 
         if dailyObjectivesControl then
             if shouldExpand(dailyObjectivesEntry) then
-                if dailyObjectivesControl.SetHidden then
-                    dailyObjectivesControl:SetHidden(false)
-                end
-                anchor(dailyObjectivesControl)
-                measured = measured + getControlHeight(dailyObjectivesControl, 0)
+                addControl(dailyObjectivesControl, 0, "row")
             elseif dailyObjectivesControl.SetHidden then
                 dailyObjectivesControl:SetHidden(true)
             end
         end
 
         if weeklyControl then
-            if weeklyControl.SetHidden then
-                weeklyControl:SetHidden(false)
-            end
-            anchor(weeklyControl)
-            measured = measured + getControlHeight(weeklyControl, SECTION_ROW_HEIGHT)
+            addControl(weeklyControl, SECTION_ROW_HEIGHT, "row")
         end
 
         if weeklyObjectivesControl then
             if shouldExpand(weeklyObjectivesEntry) then
-                if weeklyObjectivesControl.SetHidden then
-                    weeklyObjectivesControl:SetHidden(false)
-                end
-                anchor(weeklyObjectivesControl)
-                measured = measured + getControlHeight(weeklyObjectivesControl, 0)
+                addControl(weeklyObjectivesControl, 0, "row")
             elseif weeklyObjectivesControl.SetHidden then
                 weeklyObjectivesControl:SetHidden(true)
             end
@@ -185,6 +205,16 @@ function Layout.Apply(container, context)
         if weeklyObjectivesControl and weeklyObjectivesControl.SetHidden then
             weeklyObjectivesControl:SetHidden(true)
         end
+    end
+
+    if categoryExpanded and rowCount > 0 then
+        measured = measured + SECTION_BOTTOM_GAP
+    elseif visibleCount > 0 then
+        measured = measured + SECTION_BOTTOM_GAP_COLLAPSED
+    end
+
+    if visibleCount > 0 then
+        measured = measured + BOTTOM_PIXEL_NUDGE
     end
 
     if container then
