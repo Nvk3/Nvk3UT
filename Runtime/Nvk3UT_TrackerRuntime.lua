@@ -29,11 +29,25 @@ Runtime._initialized = Runtime._initialized == true
 Runtime._interactivityDirty = Runtime._interactivityDirty == true
 Runtime._endeavorVM = Runtime._endeavorVM
 Runtime._goldenShimLogged = Runtime._goldenShimLogged == true
+Runtime.goldenDirty = true
+Runtime.cache = type(Runtime.cache) == "table" and Runtime.cache or {}
+if type(Runtime.cache.goldenVM) ~= "table" then
+    Runtime.cache.goldenVM = { categories = {} }
+end
 
 local function debug(fmt, ...)
     if Addon and type(Addon.Debug) == "function" then
         Addon.Debug(fmt, ...)
     end
+end
+
+local function warn(fmt, ...)
+    if Addon and type(Addon.Warn) == "function" then
+        Addon.Warn(fmt, ...)
+        return
+    end
+
+    debug(fmt, ...)
 end
 
 local function debugVisibility(fmt, ...)
@@ -563,7 +577,7 @@ local function hasInteractivityWork()
 end
 
 local function hasPendingWork()
-    if hasDirtyFlags() or hasInteractivityWork() then
+    if hasDirtyFlags() or hasInteractivityWork() or Runtime.goldenDirty == true then
         return true
     end
 
@@ -615,6 +629,22 @@ function Runtime:QueueDirty(channel, opts)
     local normalized = type(channel) == "string" and channel or "all"
     local applyAll = normalized == "all"
 
+    if normalized == "golden" then
+        if not self.goldenDirty then
+            self.goldenDirty = true
+            queuedLog.golden = true
+            debug("Runtime.QueueDirty: golden")
+        else
+            queuedLog.golden = true
+        end
+
+        if hasPendingWork() then
+            scheduleProcessing()
+        end
+
+        return
+    end
+
     if not applyAll then
         local isKnown = normalized == "quest" or normalized == "endeavor" or normalized == "achievement" or normalized == "layout"
         if not isKnown then
@@ -644,9 +674,21 @@ function Runtime:QueueDirty(channel, opts)
         end
     end
 
+    if applyAll then
+        if not self.goldenDirty then
+            self.goldenDirty = true
+            debug("Runtime.QueueDirty: golden (all)")
+        end
+        queuedLog.golden = true
+    end
+
     if hasPendingWork() then
         scheduleProcessing()
     end
+end
+
+function Runtime:MarkGoldenDirty()
+    self:QueueDirty("golden")
 end
 
 function Runtime:ProcessFrame(nowMs)
@@ -678,6 +720,7 @@ function Runtime:ProcessFrame(nowMs)
         local endeavorDirty = dirty.endeavor == true
         local achievementDirty = dirty.achievement == true
         local layoutDirty = dirty.layout == true
+        local goldenDirty = self.goldenDirty == true
 
         dirty.quest = false
         dirty.endeavor = false
@@ -722,6 +765,56 @@ function Runtime:ProcessFrame(nowMs)
             achievementViewModel, achievementVmBuilt = buildAchievementViewModel()
             if achievementVmBuilt then
                 debug("Runtime: built achievement view model")
+            end
+        end
+
+        if goldenDirty then
+            self.goldenDirty = false
+
+            local cache = self.cache
+            if type(cache) ~= "table" then
+                cache = {}
+                self.cache = cache
+            end
+
+            if type(cache.goldenVM) ~= "table" then
+                cache.goldenVM = { categories = {} }
+            end
+
+            local controller = rawget(Addon, "GoldenTrackerController")
+            if type(controller) == "table" then
+                safeCall(function()
+                    if type(controller.Init) == "function" and not controller.__inited then
+                        controller:Init()
+                        controller.__inited = true
+                    end
+
+                    if type(controller.BuildViewModel) == "function" then
+                        controller:BuildViewModel()
+                    end
+
+                    if type(controller.GetViewModel) == "function" then
+                        cache.goldenVM = controller:GetViewModel() or { categories = {} }
+                    end
+
+                    if type(cache.goldenVM) ~= "table" then
+                        cache.goldenVM = { categories = {} }
+                    end
+
+                    local vm = cache.goldenVM
+                    local categories = 0
+                    if type(vm) == "table" and type(vm.categories) == "table" then
+                        categories = #vm.categories
+                    end
+
+                    debug(("Runtime: Golden VM built, cats=%d"):format(categories))
+                end)
+            else
+                if type(cache.goldenVM) ~= "table" then
+                    cache.goldenVM = { categories = {} }
+                end
+
+                warn("Runtime: GoldenTrackerController missing; cached empty VM")
             end
         end
 
