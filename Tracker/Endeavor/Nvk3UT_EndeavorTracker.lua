@@ -1594,6 +1594,7 @@ function EndeavorTracker.Refresh(viewModel)
             rowsOptions.colorKind = rowsOptions.colorKind or ENDEAVOR_TRACKER_COLOR_KIND
             rowsOptions.defaultRole = rowsOptions.defaultRole or "objectiveText"
             rowsOptions.completedRole = rowsOptions.completedRole or "completed"
+            rowsOptions.entryRole = rowsOptions.entryRole or ENTRY_COLOR_ROLE_DEFAULT
             rowsOptions.font = objectiveFont
             rowsOptions.rowHeight = rowHeight
             rowsOptions.colors = overrideColors
@@ -1601,6 +1602,22 @@ function EndeavorTracker.Refresh(viewModel)
 
             local dailyObjectivesList = type(dailyVm.objectives) == "table" and dailyVm.objectives or {}
             local weeklyObjectivesList = type(weeklyVm.objectives) == "table" and weeklyVm.objectives or {}
+
+            local sectionVm = type(vm.section) == "table" and vm.section or {}
+            local dailyHideRow = dailyVm.hideRow == true
+            local weeklyHideRow = weeklyVm.hideRow == true
+            local dailyHideObjectives = dailyVm.hideObjectives == true
+            local weeklyHideObjectives = weeklyVm.hideObjectives == true
+            local dailyUseCompletedStyle = dailyVm.useCompletedStyle == true
+            local weeklyUseCompletedStyle = weeklyVm.useCompletedStyle == true
+            local hideEntireSection = sectionVm.hideEntireSection == true
+
+            if hideEntireSection then
+                dailyHideRow = true
+                weeklyHideRow = true
+                dailyHideObjectives = true
+                weeklyHideObjectives = true
+            end
 
             safeDebug("[EndeavorTracker.UI] Refresh: daily=%d weekly=%d", #dailyObjectivesList, #weeklyObjectivesList)
 
@@ -1635,6 +1652,31 @@ function EndeavorTracker.Refresh(viewModel)
             local weeklyLabel = ui.weekly and ui.weekly.label
             local dailyObjectivesControl = ui.dailyObjectives and ui.dailyObjectives.control
             local weeklyObjectivesControl = ui.weeklyObjectives and ui.weeklyObjectives.control
+
+            if hideEntireSection then
+                resetObjectiveContainer(rows, dailyObjectivesControl)
+                resetObjectiveContainer(rows, weeklyObjectivesControl)
+
+                if categoryControl and categoryControl.SetHidden then
+                    categoryControl:SetHidden(true)
+                end
+                if dailyControl and dailyControl.SetHidden then
+                    dailyControl:SetHidden(true)
+                end
+                if weeklyControl and weeklyControl.SetHidden then
+                    weeklyControl:SetHidden(true)
+                end
+
+                if container.SetHidden then
+                    container:SetHidden(true)
+                end
+                state.currentHeight = 0
+                if container.SetHeight then
+                    container:SetHeight(0)
+                end
+
+                return
+            end
 
             local function resolveTitle(value, fallback)
                 if value == nil or value == "" then
@@ -1743,7 +1785,7 @@ function EndeavorTracker.Refresh(viewModel)
                 return
             end
 
-            if container.SetHidden then
+            if not hideEntireSection and container.SetHidden then
                 container:SetHidden(false)
             end
 
@@ -1774,12 +1816,35 @@ function EndeavorTracker.Refresh(viewModel)
             local dailyExpanded = categoryExpanded and dailyVm.expanded == true
             local weeklyExpanded = categoryExpanded and weeklyVm.expanded == true
 
-            if dailyLabel then
-                applyLabelColor(dailyLabel, ENTRY_COLOR_ROLE_DEFAULT, overrideColors)
+            local function applyGroupLabel(label, useCompletedStyle)
+                if not label then
+                    return
+                end
+
+                local applied
+                if rows and type(rows.ApplyGroupLabelColor) == "function" then
+                    local ok, result = pcall(rows.ApplyGroupLabelColor, label, rowsOptions, useCompletedStyle)
+                    if ok then
+                        applied = result == true
+                    end
+                end
+
+                if not applied then
+                    local role
+                    if useCompletedStyle then
+                        role = rowsOptions.completedRole or "completed"
+                    else
+                        role = rowsOptions.entryRole or ENTRY_COLOR_ROLE_DEFAULT
+                    end
+                    applyLabelColor(label, role, overrideColors)
+                end
             end
 
-            if weeklyLabel then
-                applyLabelColor(weeklyLabel, ENTRY_COLOR_ROLE_DEFAULT, overrideColors)
+            applyGroupLabel(dailyLabel, dailyUseCompletedStyle)
+            applyGroupLabel(weeklyLabel, weeklyUseCompletedStyle)
+
+            if dailyHideRow and dailyControl and dailyControl.SetHidden then
+                dailyControl:SetHidden(true)
             end
 
             if categoryControl and categoryControl.SetHidden then
@@ -1787,14 +1852,26 @@ function EndeavorTracker.Refresh(viewModel)
             end
 
             if dailyControl and dailyControl.SetHidden then
-                dailyControl:SetHidden(not categoryExpanded)
+                local shouldHideDaily = dailyHideRow or not categoryExpanded
+                dailyControl:SetHidden(shouldHideDaily)
             end
             if weeklyControl and weeklyControl.SetHidden then
-                weeklyControl:SetHidden(not categoryExpanded)
+                local shouldHideWeekly = weeklyHideRow or not categoryExpanded
+                weeklyControl:SetHidden(shouldHideWeekly)
             end
 
-            local dailyObjectivesIncluded = categoryExpanded and dailyExpanded and dailyObjectivesControl ~= nil
-            local weeklyObjectivesIncluded = categoryExpanded and weeklyExpanded and weeklyObjectivesControl ~= nil
+            local dailyObjectivesIncluded =
+                categoryExpanded
+                and dailyExpanded
+                and not dailyHideObjectives
+                and not dailyHideRow
+                and dailyObjectivesControl ~= nil
+            local weeklyObjectivesIncluded =
+                categoryExpanded
+                and weeklyExpanded
+                and not weeklyHideObjectives
+                and not weeklyHideRow
+                and weeklyObjectivesControl ~= nil
 
             if not categoryExpanded then
                 resetObjectiveContainer(rows, dailyObjectivesControl)
@@ -1823,13 +1900,13 @@ function EndeavorTracker.Refresh(viewModel)
             appendLayoutControl(layout, categoryControl, getCategoryRowHeightValue(rows, categoryExpanded), "header")
 
             if categoryExpanded then
-                if dailyControl then
+                if dailyControl and not dailyHideRow then
                     appendLayoutControl(layout, dailyControl, SECTION_ROW_HEIGHT, "row")
                 end
                 if dailyObjectivesIncluded then
                     appendLayoutControl(layout, dailyObjectivesControl, dailyObjectivesHeight, "row")
                 end
-                if weeklyControl then
+                if weeklyControl and not weeklyHideRow then
                     appendLayoutControl(layout, weeklyControl, SECTION_ROW_HEIGHT, "row")
                 end
                 if weeklyObjectivesIncluded then

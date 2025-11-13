@@ -801,7 +801,30 @@ function Layout.ApplyLayout(host, sizes)
             reportMissing(host, sectionId)
         else
             local _, height = measureSection(host, sectionId, container)
+            local isEndeavorSection = sectionId == "endeavor"
+            local collapsed = isEndeavorSection and height <= 0
+
+            if isEndeavorSection and container then
+                if collapsed then
+                    if container.SetHeight then
+                        container:SetHeight(0)
+                    end
+                    if container.SetHidden then
+                        container:SetHidden(true)
+                    end
+                    container._nvk3utAutoHidden = true
+                elseif container._nvk3utAutoHidden then
+                    if container.SetHidden then
+                        container:SetHidden(false)
+                    end
+                    container._nvk3utAutoHidden = nil
+                end
+            end
+
             local sectionVisible = not isControlHidden(container)
+            if collapsed then
+                sectionVisible = false
+            end
 
             if sectionVisible then
                 local predictedBottom = currentTop + height

@@ -66,6 +66,7 @@ local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
 local DEFAULT_OBJECTIVE_COLOR_ROLE = "objectiveText"
 local DEFAULT_TRACKER_COLOR_KIND = "endeavorTracker"
 local COMPLETED_COLOR_ROLE = "completed"
+local ENTRY_COLOR_ROLE = "entryTitle"
 local OBJECTIVE_INDENT_X = 60
 
 local SUBROW_ICON_SIZE = 16
@@ -1598,6 +1599,38 @@ local function applyObjectiveColor(label, options, objective)
     end
 end
 
+local function applyGroupLabelColor(label, options, useCompletedStyle)
+    if not label or not label.SetColor then
+        return false
+    end
+
+    local opts = type(options) == "table" and options or {}
+    local colors = type(opts.colors) == "table" and opts.colors or nil
+
+    local role
+    if useCompletedStyle then
+        role = opts.completedRole or COMPLETED_COLOR_ROLE
+    else
+        role = opts.entryRole or ENTRY_COLOR_ROLE
+    end
+
+    local r, g, b, a
+    if colors then
+        r, g, b, a = extractColorComponents(colors[role])
+    end
+
+    if r == nil then
+        r, g, b, a = getTrackerColor(role, opts.colorKind or DEFAULT_TRACKER_COLOR_KIND)
+    end
+
+    label:SetColor(r or 1, g or 1, b or 1, a or 1)
+    if label.SetAlpha then
+        label:SetAlpha(1)
+    end
+
+    return true
+end
+
 local function applyEntryRow(row, objective, options)
     if row == nil then
         return
@@ -1726,6 +1759,10 @@ end
 
 function Rows.ApplyEntryRow(row, objective, options)
     applyEntryRow(row, objective, options)
+end
+
+function Rows.ApplyGroupLabelColor(label, options, useCompletedStyle)
+    return applyGroupLabelColor(label, options, useCompletedStyle == true)
 end
 
 function Rows.Init()
