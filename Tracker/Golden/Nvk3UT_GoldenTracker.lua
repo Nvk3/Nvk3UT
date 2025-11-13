@@ -21,6 +21,7 @@ local state = {
 -- TEMP EVENT BOOTSTRAP (INTRO) now SHIM-routed to Controller handlers.
 -- Registrations bleiben hier bis GEVENTS_*_SWITCH, danach werden nur die Registrierungen verlagert.
 -- Handler-Signaturen bleiben stabil und werden weiterverwendet.
+-- Progress-only refresh: EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED löst den Sync aus; andere Events setzen nur Flags (keine UI/Layouts hier).
 -- SHIM InitKick: temporary startup refresh to seed Golden data.
 -- Will remain until GEVENTS_* migration centralizes lifecycle kicks.
 

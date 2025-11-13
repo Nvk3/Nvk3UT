@@ -14,6 +14,8 @@ local state = {
 }
 
 local INIT_KICK_FLAG_FIELD = "_didInitKick"
+local NEEDS_FULL_SYNC_FIELD = "_needsFullSync"
+local LAST_PROGRESS_FRAME_FIELD = "_lastProgressFrameId"
 
 local MODULE_TAG = addonName .. ".GoldenTrackerController"
 
@@ -62,14 +64,15 @@ local function isDiagnosticsDebugEnabled()
     return false
 end
 
-local function emitShimDebug(eventName)
+local function emitRequestFullSyncDebug(reason)
     if not isDiagnosticsDebugEnabled() then
         return
     end
 
     local diagnostics = resolveDiagnostics()
     if diagnostics and type(diagnostics.Debug) == "function" then
-        pcall(diagnostics.Debug, diagnostics, string.format("Golden SHIM: %s → refresh queued", tostring(eventName)))
+        local message = string.format("Golden SHIM: request full sync (%s)", tostring(reason))
+        pcall(diagnostics.Debug, diagnostics, message)
     end
 end
 
@@ -84,7 +87,43 @@ local function emitInitKickDebug()
     end
 end
 
-local function processTimedActivityEvent(controller, eventName)
+local function emitProgressRefreshDebug()
+    if not isDiagnosticsDebugEnabled() then
+        return
+    end
+
+    local diagnostics = resolveDiagnostics()
+    if diagnostics and type(diagnostics.Debug) == "function" then
+        pcall(diagnostics.Debug, diagnostics, "Golden SHIM: progress refresh completed")
+    end
+end
+
+local function shouldSkipProgressThisFrame(controller)
+    local frameTimeFn = rawget(_G, "GetFrameTimeMilliseconds")
+    if type(frameTimeFn) ~= "function" then
+        return false
+    end
+
+    local ok, frameTime = pcall(frameTimeFn)
+    if not ok or type(frameTime) ~= "number" then
+        return false
+    end
+
+    local lastFrame = controller[LAST_PROGRESS_FRAME_FIELD]
+    controller[LAST_PROGRESS_FRAME_FIELD] = frameTime
+    return lastFrame == frameTime
+end
+
+local function requestFullSync(controller, reason)
+    if type(controller) ~= "table" then
+        return
+    end
+
+    controller[NEEDS_FULL_SYNC_FIELD] = true
+    emitRequestFullSyncDebug(reason)
+end
+
+local function doProgressRefresh(controller)
     local root = Nvk3UT
     if type(root) ~= "table" then
         return
@@ -104,11 +143,17 @@ local function processTimedActivityEvent(controller, eventName)
         return
     end
 
+    if shouldSkipProgressThisFrame(controller) then
+        return
+    end
+
     model:RefreshFromGame()
     controller:MarkDirty()
     runtime:QueueDirty("golden")
 
-    emitShimDebug(eventName)
+    controller[NEEDS_FULL_SYNC_FIELD] = false
+
+    emitProgressRefreshDebug()
 end
 
 local function ensureViewModel()
@@ -127,6 +172,10 @@ end
 function Controller:Init()
     state.dirty = true
     state.viewModel = nil
+    if type(self) == "table" then
+        self[NEEDS_FULL_SYNC_FIELD] = false
+        self[LAST_PROGRESS_FRAME_FIELD] = nil
+    end
     safeDebug("Init")
 end
 
@@ -217,6 +266,7 @@ function Controller:InitKickOnce()
     end
 
     self[INIT_KICK_FLAG_FIELD] = true
+    self[NEEDS_FULL_SYNC_FIELD] = false
 
     model:RefreshFromGame()
     self:MarkDirty()
@@ -229,21 +279,21 @@ function Controller:OnTimedActivitiesUpdated(eventCode, ...)
     if type(self) == "table" and type(self.InitKickOnce) == "function" then
         self:InitKickOnce()
     end
-    processTimedActivityEvent(self, "EVENT_TIMED_ACTIVITIES_UPDATED")
+    requestFullSync(self, "activities_updated")
 end
 
 function Controller:OnTimedActivityProgressUpdated(eventCode, ...)
     if type(self) == "table" and type(self.InitKickOnce) == "function" then
         self:InitKickOnce()
     end
-    processTimedActivityEvent(self, "EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED")
+    doProgressRefresh(self)
 end
 
 function Controller:OnTimedActivitySystemStatusUpdated(eventCode, ...)
     if type(self) == "table" and type(self.InitKickOnce) == "function" then
         self:InitKickOnce()
     end
-    processTimedActivityEvent(self, "EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED")
+    requestFullSync(self, "system_status_updated")
 end
 
 return Controller
