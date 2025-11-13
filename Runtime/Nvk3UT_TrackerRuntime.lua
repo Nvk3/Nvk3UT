@@ -63,6 +63,50 @@ local function debugVisibility(fmt, ...)
     debug(fmt, ...)
 end
 
+local function resolveDiagnostics()
+    local diagnostics = Addon and Addon.Diagnostics
+    if type(diagnostics) == "table" then
+        return diagnostics
+    end
+
+    if type(Nvk3UT_Diagnostics) == "table" then
+        return Nvk3UT_Diagnostics
+    end
+
+    return nil
+end
+
+local function isDiagnosticsDebugEnabled()
+    local diagnostics = resolveDiagnostics()
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(diagnostics.IsDebugEnabled, diagnostics)
+        if ok and enabled then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function diagnosticsDebug(fmt, ...)
+    if not isDiagnosticsDebugEnabled() then
+        return
+    end
+
+    local diagnostics = resolveDiagnostics()
+    if diagnostics and type(diagnostics.Debug) == "function" then
+        local payload = fmt
+        if select("#", ...) > 0 then
+            local ok, formatted = pcall(string.format, fmt, ...)
+            if ok then
+                payload = formatted
+            end
+        end
+
+        pcall(diagnostics.Debug, diagnostics, payload)
+    end
+end
+
 local function safeCall(fn, ...)
     if Addon and type(Addon.SafeCall) == "function" then
         return Addon.SafeCall(fn, ...)
@@ -873,6 +917,7 @@ function Runtime:ProcessFrame(nowMs)
                 cache.goldenVM = viewModel
             end
 
+            diagnosticsDebug("[GoldenRT] handoff VM → cats=%d", type(viewModel.categories) == "table" and #viewModel.categories or 0)
             safeCall(function()
                 goldenTracker:Refresh(viewModel)
                 goldenRefreshed = true

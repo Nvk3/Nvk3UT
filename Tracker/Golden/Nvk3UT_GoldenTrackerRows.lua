@@ -55,6 +55,53 @@ local function isControl(candidate)
     return false
 end
 
+local function resolveDiagnostics()
+    local root = Nvk3UT
+    if type(root) == "table" then
+        local diagnostics = root.Diagnostics
+        if type(diagnostics) == "table" then
+            return diagnostics
+        end
+    end
+
+    if type(Nvk3UT_Diagnostics) == "table" then
+        return Nvk3UT_Diagnostics
+    end
+
+    return nil
+end
+
+local function isDiagnosticsDebugEnabled()
+    local diagnostics = resolveDiagnostics()
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(diagnostics.IsDebugEnabled, diagnostics)
+        if ok and enabled then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function diagnosticsDebug(message, ...)
+    if not isDiagnosticsDebugEnabled() then
+        return
+    end
+
+    local diagnostics = resolveDiagnostics()
+    if diagnostics and type(diagnostics.Debug) == "function" then
+        local payload = message
+        if select("#", ...) > 0 then
+            local ok, formatted = pcall(string.format, message, ...)
+            if ok then
+                payload = formatted
+            end
+        end
+
+        pcall(diagnostics.Debug, diagnostics, payload)
+    end
+end
+
 local function getWindowManager()
     local wm = rawget(_G, "WINDOW_MANAGER")
     if wm == nil then
@@ -256,14 +303,47 @@ function Rows.UpdateCategoryHeader(row, categoryData)
 end
 
 function Rows.AcquireCategoryHeader(parent, recycledRow, categoryData)
+    local debugEnabled = isDiagnosticsDebugEnabled()
+    local wm = rawget(_G, "WINDOW_MANAGER")
+    if debugEnabled and (not isControl(parent) or wm == nil) then
+        diagnosticsDebug("[Golden.Rows] WARN cannot create header: parent=%s WM=%s", tostring(parent), tostring(wm))
+    end
+
     local row = recycledRow
     if type(row) ~= "table" or not isControl(row.control) then
         row = Rows.CreateCategoryHeader(parent, categoryData)
+        if debugEnabled and row == nil then
+            diagnosticsDebug("[Golden.Rows] WARN header creation returned nil (factory path)")
+        end
     else
         if row.control.SetParent then
             row.control:SetParent(parent)
         end
         Rows.UpdateCategoryHeader(row, categoryData)
+    end
+
+    if debugEnabled and type(row) == "table" and isControl(row.control) then
+        local control = row.control
+        local controlName = nil
+        if type(control.GetName) == "function" then
+            local ok, name = pcall(control.GetName, control)
+            if ok then
+                controlName = name
+            end
+        end
+
+        local height = tonumber(row.height) or 0
+        if height == 0 and type(control.GetHeight) == "function" then
+            local okHeight, measured = pcall(control.GetHeight, control)
+            if okHeight and tonumber(measured) then
+                height = tonumber(measured)
+            end
+        end
+        if height == 0 and tonumber(control.__height) then
+            height = tonumber(control.__height)
+        end
+
+        diagnosticsDebug("[Golden.Rows] header '%s' h=%d", tostring(controlName or control), height)
     end
 
     return row

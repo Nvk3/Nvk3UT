@@ -563,7 +563,19 @@ function GoldenTracker.Init(parentControl, opts)
 end
 
 function GoldenTracker.Refresh(viewModel)
+    local debugEnabled = isDiagnosticsDebugEnabled()
+    local catsParam = {}
+    if debugEnabled then
+        if type(viewModel) == "table" and type(viewModel.categories) == "table" then
+            catsParam = viewModel.categories
+        end
+        safeDebug("[Golden.UI] Refresh(param) type(viewModel)=%s cats=%d", type(viewModel), #catsParam)
+    end
+
     if not state.initialized then
+        if debugEnabled then
+            safeDebug("[Golden.UI] EarlyReturn reason=not initialized")
+        end
         return
     end
 
@@ -574,6 +586,9 @@ function GoldenTracker.Refresh(viewModel)
     if not container or not root or not content then
         state.height = 0
         setContainerHeight(container, 0)
+        if debugEnabled then
+            safeDebug("[Golden.UI] EarlyReturn reason=missing container/root/content")
+        end
         return
     end
 
@@ -601,26 +616,30 @@ function GoldenTracker.Refresh(viewModel)
     state.viewModel = vm
     local categories = (vm and type(vm.categories) == "table" and vm.categories) or {}
     local categoryCount = #categories
-    local debugEnabled = isDiagnosticsDebugEnabled()
     if debugEnabled then
-        safeDebug("[Golden.UI] VM in → cats=%d", categoryCount)
+        safeDebug("[Golden.UI] After assign: catsParam=%d catsSelf=%d", #catsParam, categoryCount)
     end
 
     local activeRows = state.rows
     local rowCount = 0
+    local rowsFailed = 0
 
     local hasAcquire = rowsModule and type(rowsModule.AcquireCategoryHeader) == "function"
-    if rowsModule and not hasAcquire then
-        safeDebug("Rows module missing AcquireCategoryHeader; using inline fallback headers")
-    elseif not rowsModule then
-        safeDebug("Rows module unavailable; using inline fallback headers")
+    if debugEnabled then
+        if rowsModule and not hasAcquire then
+            safeDebug("Rows module missing AcquireCategoryHeader; using inline fallback headers")
+        elseif not rowsModule then
+            safeDebug("Rows module unavailable; using inline fallback headers")
+        end
     end
-
-    local fallbackRowBuilt = false
 
     for categoryIndex = 1, categoryCount do
         local categoryData = categories[categoryIndex]
         if type(categoryData) == "table" then
+            if debugEnabled then
+                safeDebug("[Golden.UI] build header for cat[%d] '%s'", categoryIndex, tostring(categoryData.name))
+            end
+
             local recycledRow = table.remove(state.rowCache)
             local row = nil
 
@@ -632,7 +651,11 @@ function GoldenTracker.Refresh(viewModel)
                     if recycledRow then
                         table.insert(state.rowCache, recycledRow)
                     end
-                    if not ok then
+                    rowsFailed = rowsFailed + 1
+                    if debugEnabled then
+                        safeDebug("[Golden.UI] WARN header-acquire failed for cat[%d] '%s'", categoryIndex, tostring(categoryData.name))
+                    end
+                    if not ok and debugEnabled then
                         safeDebug("AcquireCategoryHeader failed: %s", tostring(acquiredRow))
                     end
                 end
@@ -644,9 +667,6 @@ function GoldenTracker.Refresh(viewModel)
 
             if not row then
                 row = createFallbackHeaderRow(content, categoryData)
-                if row then
-                    fallbackRowBuilt = true
-                end
             end
 
             if row and row.control then
@@ -660,7 +680,7 @@ function GoldenTracker.Refresh(viewModel)
 
     if layoutModule and type(layoutModule.ApplyLayout) == "function" then
         totalHeight = layoutModule.ApplyLayout(content, activeRows) or 0
-    else
+    elseif debugEnabled then
         safeDebug("Layout module unavailable; skipping ApplyLayout")
     end
 
@@ -683,7 +703,8 @@ function GoldenTracker.Refresh(viewModel)
     setContainerHeight(container, totalHeight)
 
     if debugEnabled then
-        safeDebug("[Golden.UI] Refresh: cats=%d rows=%d height=%d fallback=%s", categoryCount, rowCount, totalHeight, tostring(fallbackRowBuilt))
+        local usedFallbackHeight = (rowCount == 0 and totalHeight == 86)
+        safeDebug("[Golden.UI] Refresh: cats=%d rows=%d rowsFailed=%d height=%d fallback=%s", categoryCount, rowCount, rowsFailed, totalHeight, tostring(usedFallbackHeight))
     end
 end
 

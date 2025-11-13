@@ -376,6 +376,68 @@ function Addon.OnPlayerActivatedEvent(...)
 end
 
 -- Diagnostics slash command ----------------------------------------------------
+local function DumpTableLimited(value, depth, visited)
+    depth = depth or 0
+    visited = visited or {}
+
+    if type(value) ~= "table" then
+        return tostring(value)
+    end
+
+    if visited[value] then
+        return "<cycle>"
+    end
+
+    visited[value] = true
+
+    if depth >= 2 then
+        visited[value] = nil
+        return "{…}"
+    end
+
+    local limit = 10
+    local parts = {}
+    local arrayLength = #value
+    local arrayLimit = math.min(arrayLength, limit)
+
+    for index = 1, arrayLimit do
+        parts[#parts + 1] = string.format("[%d]=%s", index, DumpTableLimited(value[index], depth + 1, visited))
+    end
+
+    if arrayLength > arrayLimit then
+        parts[#parts + 1] = string.format("…(+%d)", arrayLength - arrayLimit)
+    end
+
+    local count = arrayLimit
+    for key, child in pairs(value) do
+        if type(key) ~= "number" or key < 1 or key > arrayLength then
+            if count >= limit then
+                parts[#parts + 1] = "…"
+                break
+            end
+
+            parts[#parts + 1] = string.format("[%s]=%s", tostring(key), DumpTableLimited(child, depth + 1, visited))
+            count = count + 1
+        end
+    end
+
+    visited[value] = nil
+
+    return string.format("{%s}", table.concat(parts, ", "))
+end
+
+local function EmitGoldenDumpLine(line)
+    local message = string.format("[GoldenDump] %s", tostring(line))
+    if d then
+        d(message)
+        return
+    end
+
+    if Addon and type(Addon.Debug) == "function" then
+        Addon.Debug("%s", message)
+    end
+end
+
 SLASH_COMMANDS = SLASH_COMMANDS or {}
 SLASH_COMMANDS["/nvk3test"] = function()
     if Nvk3UT_Diagnostics and Nvk3UT_Diagnostics.SelfTest then
@@ -384,6 +446,64 @@ SLASH_COMMANDS["/nvk3test"] = function()
     if Nvk3UT_Diagnostics and Nvk3UT_Diagnostics.SystemTest then
         _SafeCall(Nvk3UT_Diagnostics.SystemTest)
     end
+end
+
+SLASH_COMMANDS["/nvkgoldenvm"] = function()
+    _SafeCall(function()
+        local root = Nvk3UT
+        local controller = root and root.GoldenTrackerController
+        if type(controller) ~= "table" then
+            EmitGoldenDumpLine("GoldenTrackerController missing")
+            return
+        end
+
+        local viewModel = nil
+        if type(controller.BuildViewModel) == "function" then
+            viewModel = controller:BuildViewModel()
+        end
+        if type(controller.GetViewModel) == "function" then
+            viewModel = controller:GetViewModel()
+        end
+
+        if type(viewModel) ~= "table" then
+            EmitGoldenDumpLine("view model unavailable")
+            return
+        end
+
+        local categories = viewModel.categories
+        if type(categories) ~= "table" then
+            categories = {}
+        end
+
+        EmitGoldenDumpLine(string.format("cats=%d", #categories))
+
+        local maxCategories = math.min(#categories, 10)
+        for index = 1, maxCategories do
+            local category = categories[index]
+            local entriesCount = nil
+            local hideFlag = nil
+            if type(category) == "table" then
+                if type(category.entries) == "table" then
+                    entriesCount = #category.entries
+                end
+                hideFlag = category.hide or category.hidden or category.hideEntire
+            end
+
+            local payload = {
+                index = index,
+                name = category and category.name,
+                entriesCount = entriesCount,
+                hide = hideFlag,
+                raw = category,
+            }
+
+            EmitGoldenDumpLine(string.format("cat[%d] %s", index, DumpTableLimited(payload, 0, {})))
+        end
+
+        if #categories > maxCategories then
+            EmitGoldenDumpLine(string.format("…(+%d categories)", #categories - maxCategories))
+        end
+    end)
 end
 
 SLASH_COMMANDS["/nvkendeavor"] = function()

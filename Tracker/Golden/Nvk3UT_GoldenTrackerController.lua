@@ -64,38 +64,35 @@ local function isDiagnosticsDebugEnabled()
     return false
 end
 
-local function emitRequestFullSyncDebug(reason)
+local function diagnosticsDebug(message, ...)
     if not isDiagnosticsDebugEnabled() then
         return
     end
 
     local diagnostics = resolveDiagnostics()
     if diagnostics and type(diagnostics.Debug) == "function" then
-        local message = string.format("Golden SHIM: request full sync (%s)", tostring(reason))
-        pcall(diagnostics.Debug, diagnostics, message)
+        local payload = message
+        if select("#", ...) > 0 then
+            local ok, formatted = pcall(string.format, message, ...)
+            if ok then
+                payload = formatted
+            end
+        end
+
+        pcall(diagnostics.Debug, diagnostics, payload)
     end
+end
+
+local function emitRequestFullSyncDebug(reason)
+    diagnosticsDebug("Golden SHIM: request full sync (%s)", tostring(reason))
 end
 
 local function emitInitKickDebug()
-    if not isDiagnosticsDebugEnabled() then
-        return
-    end
-
-    local diagnostics = resolveDiagnostics()
-    if diagnostics and type(diagnostics.Debug) == "function" then
-        pcall(diagnostics.Debug, diagnostics, "Golden InitKick → initial refresh queued")
-    end
+    diagnosticsDebug("Golden InitKick → initial refresh queued")
 end
 
 local function emitProgressRefreshDebug()
-    if not isDiagnosticsDebugEnabled() then
-        return
-    end
-
-    local diagnostics = resolveDiagnostics()
-    if diagnostics and type(diagnostics.Debug) == "function" then
-        pcall(diagnostics.Debug, diagnostics, "Golden SHIM: progress refresh completed")
-    end
+    diagnosticsDebug("Golden SHIM: progress refresh completed")
 end
 
 local function shouldSkipProgressThisFrame(controller)
@@ -223,6 +220,23 @@ function Controller:BuildViewModel()
     state.viewModel = {
         categories = categories,
     }
+
+    diagnosticsDebug("[GoldenVM] cats=%d", #(categories or {}))
+    local inspectCount = math.min(#categories, 5)
+    for index = 1, inspectCount do
+        local category = categories[index]
+        local entriesCount = nil
+        local hideFlag = nil
+        if type(category) == "table" then
+            local entries = category.entries
+            if type(entries) == "table" then
+                entriesCount = #entries
+            end
+            hideFlag = category.hide or category.hidden or category.hideEntire
+        end
+
+        diagnosticsDebug("[GoldenVM] cat[%d] name='%s' entries=%s hide=%s", index, tostring(category and category.name), tostring(entriesCount), tostring(hideFlag))
+    end
 
     local viewModel = ensureViewModel()
     state.dirty = false

@@ -94,8 +94,73 @@ local function applyRowDimensions(control, height)
     control.__height = numericHeight
 end
 
+local function resolveDiagnostics()
+    local root = Nvk3UT
+    if type(root) == "table" then
+        local diagnostics = root.Diagnostics
+        if type(diagnostics) == "table" then
+            return diagnostics
+        end
+    end
+
+    if type(Nvk3UT_Diagnostics) == "table" then
+        return Nvk3UT_Diagnostics
+    end
+
+    return nil
+end
+
+local function isDiagnosticsDebugEnabled()
+    local diagnostics = resolveDiagnostics()
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(diagnostics.IsDebugEnabled, diagnostics)
+        if ok and enabled then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function diagnosticsDebug(message, ...)
+    if not isDiagnosticsDebugEnabled() then
+        return
+    end
+
+    local diagnostics = resolveDiagnostics()
+    if diagnostics and type(diagnostics.Debug) == "function" then
+        local payload = message
+        if select("#", ...) > 0 then
+            local ok, formatted = pcall(string.format, message, ...)
+            if ok then
+                payload = formatted
+            end
+        end
+
+        pcall(diagnostics.Debug, diagnostics, payload)
+    end
+end
+
 function Layout.ApplyLayout(parentControl, rows)
+    local debugEnabled = isDiagnosticsDebugEnabled()
+    local rowsTable = type(rows) == "table" and rows or {}
+    local rowCount = #rowsTable
+    local parentName = tostring(parentControl)
+    if isControl(parentControl) and type(parentControl.GetName) == "function" then
+        local ok, resolvedName = pcall(parentControl.GetName, parentControl)
+        if ok and type(resolvedName) == "string" and resolvedName ~= "" then
+            parentName = resolvedName
+        end
+    end
+
+    if debugEnabled then
+        diagnosticsDebug("[Golden.Layout] apply parent=%s rows=%d", parentName, rowCount)
+    end
+
     if not isControl(parentControl) or type(rows) ~= "table" then
+        if debugEnabled then
+            diagnosticsDebug("[Golden.Layout] final height=0 fallback=false")
+        end
         return 0
     end
 
@@ -103,10 +168,9 @@ function Layout.ApplyLayout(parentControl, rows)
 
     local totalHeight = 0
     local previousControl = nil
-    local rowCount = #rows
 
     for index = 1, rowCount do
-        local row = rows[index]
+        local row = rowsTable[index]
         local control = row and row.control
         local height = row and row.height
 
@@ -134,6 +198,9 @@ function Layout.ApplyLayout(parentControl, rows)
             applyRowDimensions(control, height)
 
             totalHeight = totalHeight + (tonumber(height) or 0)
+            if debugEnabled then
+                diagnosticsDebug("[Golden.Layout] y+=%d → total=%d", tonumber(height) or 0, totalHeight)
+            end
             previousControl = control
         end
     end
@@ -148,6 +215,11 @@ function Layout.ApplyLayout(parentControl, rows)
 
     if parentControl.SetHidden then
         parentControl:SetHidden(false)
+    end
+
+    local fallbackApplied = (rowCount == 0 and totalHeight == MIN_HEIGHT)
+    if debugEnabled then
+        diagnosticsDebug("[Golden.Layout] final height=%d fallback=%s", totalHeight, tostring(fallbackApplied))
     end
 
     safeDebug("ApplyLayout rows=%d height=%d", rowCount, totalHeight)
