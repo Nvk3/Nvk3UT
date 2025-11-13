@@ -6,6 +6,88 @@ local DEFAULT_PANEL_TITLE = "Nvk3's Ultimate Tracker"
 local L = {}
 Nvk3UT.LAM = L
 
+local function registerString(id, text)
+    if type(id) ~= "string" or id == "" then
+        return
+    end
+
+    if type(text) ~= "string" then
+        text = tostring(text or "")
+    end
+
+    local stringId = _G[id]
+    if type(stringId) == "number" then
+        if type(SafeAddString) == "function" then
+            SafeAddString(stringId, text, 1)
+        end
+        return
+    end
+
+    if type(ZO_CreateStringId) == "function" then
+        ZO_CreateStringId(id, text)
+    else
+        _G[id] = text
+    end
+end
+
+registerString("SI_NVK3UT_LAM_ENDEAVOR_SECTION_FUNCTIONS", "FUNKTIONEN")
+registerString("SI_NVK3UT_LAM_ENDEAVOR_ENABLE", "Aktivieren")
+registerString("SI_NVK3UT_LAM_ENDEAVOR_ENABLE_TOOLTIP", "Schaltet den Bestrebungen-Tracker ein oder aus.")
+registerString("SI_NVK3UT_LAM_ENDEAVOR_SHOW_COUNTS", "Zähler in Abschnittsüberschriften anzeigen")
+registerString(
+    "SI_NVK3UT_LAM_ENDEAVOR_SHOW_COUNTS_TOOLTIP",
+    "Zeigt die verbleibende Anzahl direkt hinter den Überschriften an."
+)
+registerString("SI_NVK3UT_LAM_ENDEAVOR_COMPLETED_HEADER", "Abgeschlossen-Handling")
+registerString(
+    "SI_NVK3UT_LAM_ENDEAVOR_COMPLETED_TOOLTIP",
+    "Legt fest, wie abgeschlossene Ziele dargestellt werden."
+)
+registerString("SI_NVK3UT_LAM_ENDEAVOR_COMPLETED_HIDE", "Ausblenden")
+registerString("SI_NVK3UT_LAM_ENDEAVOR_COMPLETED_RECOLOR", "Umfärben")
+registerString("SI_NVK3UT_LAM_ENDEAVOR_SECTION_COLORS", "ERSCHEINUNG – FARBEN")
+registerString("SI_NVK3UT_LAM_ENDEAVOR_COLOR_CATEGORY", "Kategorie- / Abschnittstitel")
+registerString(
+    "SI_NVK3UT_LAM_ENDEAVOR_COLOR_CATEGORY_TOOLTIP",
+    "Farbe für den oberen Bestrebungen-Block."
+)
+registerString("SI_NVK3UT_LAM_ENDEAVOR_COLOR_ENTRY", "Eintragsname")
+registerString(
+    "SI_NVK3UT_LAM_ENDEAVOR_COLOR_ENTRY_TOOLTIP",
+    "Farbe für tägliche und wöchentliche Bestrebungen."
+)
+registerString("SI_NVK3UT_LAM_ENDEAVOR_COLOR_OBJECTIVE", "Zieltext")
+registerString(
+    "SI_NVK3UT_LAM_ENDEAVOR_COLOR_OBJECTIVE_TOOLTIP",
+    "Farbe für die Fortschrittszeilen der einzelnen Ziele."
+)
+registerString("SI_NVK3UT_LAM_ENDEAVOR_COLOR_ACTIVE", "Aktiver / fokussierter Eintrag")
+registerString(
+    "SI_NVK3UT_LAM_ENDEAVOR_COLOR_ACTIVE_TOOLTIP",
+    "Farbe, wenn ein Abschnitt geöffnet oder fokussiert ist."
+)
+registerString("SI_NVK3UT_LAM_ENDEAVOR_COLOR_COMPLETED", "Abgeschlossener Eintrag")
+registerString(
+    "SI_NVK3UT_LAM_ENDEAVOR_COLOR_COMPLETED_TOOLTIP",
+    "Farbe für abgeschlossene Ziele, wenn \"Umfärben\" aktiv ist."
+)
+registerString("SI_NVK3UT_LAM_ENDEAVOR_SECTION_FONTS", "ERSCHEINUNG – SCHRIFTARTEN")
+registerString("SI_NVK3UT_LAM_ENDEAVOR_FONT_FAMILY", "Schriftart")
+registerString(
+    "SI_NVK3UT_LAM_ENDEAVOR_FONT_FAMILY_TOOLTIP",
+    "Wählt die Schriftart für Kategorien, Abschnitte und Ziele."
+)
+registerString("SI_NVK3UT_LAM_ENDEAVOR_FONT_SIZE", "Größe")
+registerString(
+    "SI_NVK3UT_LAM_ENDEAVOR_FONT_SIZE_TOOLTIP",
+    "Legt die Basisschriftgröße des Trackers fest."
+)
+registerString("SI_NVK3UT_LAM_ENDEAVOR_FONT_OUTLINE", "Kontur")
+registerString(
+    "SI_NVK3UT_LAM_ENDEAVOR_FONT_OUTLINE_TOOLTIP",
+    "Bestimmt die Kontur bzw. den Schatten der Schrift."
+)
+
 local FONT_FACE_CHOICES = {
     { name = "Bold (Game Default)", face = "$(BOLD_FONT)" },
     { name = "Univers 67 (Game)", face = "EsoUI/Common/Fonts/univers67.otf" },
@@ -15,6 +97,15 @@ local FONT_FACE_CHOICES = {
     { name = "Trajan", face = "EsoUI/Common/Fonts/TrajanPro-Regular.otf" },
 }
 
+local FONT_FACE_NAMES, FONT_FACE_VALUES = (function()
+    local names, values = {}, {}
+    for index = 1, #FONT_FACE_CHOICES do
+        names[index] = FONT_FACE_CHOICES[index].name
+        values[index] = FONT_FACE_CHOICES[index].face
+    end
+    return names, values
+end)()
+
 local OUTLINE_CHOICES = {
     { name = "Keiner", value = "none" },
     { name = "Weich (dünn)", value = "soft-shadow-thin" },
@@ -22,6 +113,15 @@ local OUTLINE_CHOICES = {
     { name = "Schatten", value = "shadow" },
     { name = "Kontur", value = "outline" },
 }
+
+local OUTLINE_NAMES, OUTLINE_VALUES = (function()
+    local names, values = {}, {}
+    for index = 1, #OUTLINE_CHOICES do
+        names[index] = OUTLINE_CHOICES[index].name
+        values[index] = OUTLINE_CHOICES[index].value
+    end
+    return names, values
+end)()
 
 local DEFAULT_FONT_SIZE = {
     quest = { category = 20, title = 16, line = 14 },
@@ -277,6 +377,100 @@ local function getAchievementSettings()
     sv.AchievementTracker.fonts = sv.AchievementTracker.fonts or {}
     sv.AchievementTracker.sections = sv.AchievementTracker.sections or {}
     return sv.AchievementTracker
+end
+
+local ENDEAVOR_COLOR_ROLES = {
+    CategoryTitle = "categoryTitle",
+    EntryName = "entryTitle",
+    Objective = "objectiveText",
+    Active = "activeTitle",
+    Completed = "completed",
+}
+
+local function getEndeavorConfig()
+    local sv = getSavedVars()
+    sv.Endeavor = sv.Endeavor or {}
+    local config = sv.Endeavor
+    config.Colors = config.Colors or {}
+    config.Font = config.Font or {}
+    return config
+end
+
+local function clampEndeavorFontSize(value)
+    local numeric = tonumber(value)
+    if numeric == nil then
+        numeric = DEFAULT_FONT_SIZE.achievement.title
+    end
+    numeric = math.floor(numeric + 0.5)
+    if numeric < 12 then
+        numeric = 12
+    elseif numeric > 36 then
+        numeric = 36
+    end
+    return numeric
+end
+
+local function ensureEndeavorFont()
+    local font = getEndeavorConfig().Font
+    if type(font.Family) ~= "string" or font.Family == "" then
+        font.Family = FONT_FACE_CHOICES[1].face
+    end
+    font.Size = clampEndeavorFontSize(font.Size)
+    if type(font.Outline) ~= "string" or font.Outline == "" then
+        font.Outline = OUTLINE_CHOICES[3].value
+    end
+    return font
+end
+
+local function getEndeavorColor(colorKey, role)
+    ensureTrackerAppearance()
+    local config = getEndeavorConfig()
+    local color = config.Colors[colorKey]
+    if type(color) == "table" then
+        return color.r or 1, color.g or 1, color.b or 1, color.a or 1
+    end
+    return getTrackerColor("endeavorTracker", role)
+end
+
+local function setEndeavorColor(colorKey, role, r, g, b, a)
+    local config = getEndeavorConfig()
+    config.Colors[colorKey] = {
+        r = r or 1,
+        g = g or 1,
+        b = b or 1,
+        a = a or 1,
+    }
+    setTrackerColor("endeavorTracker", role, r, g, b, a)
+end
+
+local function refreshEndeavorModel()
+    local model = Nvk3UT and Nvk3UT.EndeavorModel
+    if type(model) == "table" then
+        local refresh = model.RefreshFromGame or model.Refresh
+        if type(refresh) == "function" then
+            pcall(refresh, model)
+        end
+    end
+end
+
+local function markEndeavorDirty(reason)
+    local controller = Nvk3UT and Nvk3UT.EndeavorTrackerController
+    if type(controller) == "table" then
+        local markDirty = controller.MarkDirty or controller.RequestRefresh
+        if type(markDirty) == "function" then
+            pcall(markDirty, controller, reason)
+        end
+    end
+end
+
+local function queueEndeavorDirty()
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if type(runtime) == "table" then
+        local queueDirty = runtime.QueueDirty or runtime.MarkDirty or runtime.RequestRefresh
+        if type(queueDirty) == "function" then
+            pcall(queueDirty, runtime, "endeavor")
+        end
+    end
 end
 
 local function ensureTrackerAppearance()
@@ -1359,10 +1553,196 @@ local function registerPanel(displayTitle)
         name = "Bestrebungen Tracker",
         controls = (function()
             local controls = {}
-            controls[#controls + 1] = { type = "header", name = "Hinweis" }
+            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_ENDEAVOR_SECTION_FUNCTIONS) }
+
             controls[#controls + 1] = {
-                type = "description",
-                text = "Der Bestrebungen-Tracker nutzt derzeit die globalen Host- und Layout-Einstellungen. Zusätzliche Optionen folgen in einer späteren Aktualisierung.",
+                type = "checkbox",
+                name = GetString(SI_NVK3UT_LAM_ENDEAVOR_ENABLE),
+                tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_ENABLE_TOOLTIP),
+                getFunc = function()
+                    local config = getEndeavorConfig()
+                    if config.Enabled == nil then
+                        local achievement = getAchievementSettings()
+                        return achievement.active ~= false
+                    end
+                    return config.Enabled ~= false
+                end,
+                setFunc = function(value)
+                    local config = getEndeavorConfig()
+                    config.Enabled = value ~= false
+                    refreshEndeavorModel()
+                    markEndeavorDirty("enable")
+                    queueEndeavorDirty()
+                end,
+                default = (function()
+                    local achievement = getAchievementSettings()
+                    return achievement.active ~= false
+                end)(),
+            }
+
+            controls[#controls + 1] = {
+                type = "checkbox",
+                name = GetString(SI_NVK3UT_LAM_ENDEAVOR_SHOW_COUNTS),
+                tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_SHOW_COUNTS_TOOLTIP),
+                getFunc = function()
+                    local config = getEndeavorConfig()
+                    if config.ShowCountsInHeaders == nil then
+                        local general = getGeneral()
+                        return general.showAchievementCategoryCounts ~= false
+                    end
+                    return config.ShowCountsInHeaders ~= false
+                end,
+                setFunc = function(value)
+                    local config = getEndeavorConfig()
+                    config.ShowCountsInHeaders = value ~= false
+                    markEndeavorDirty("headers")
+                    queueEndeavorDirty()
+                end,
+                default = (function()
+                    local general = getGeneral()
+                    return general.showAchievementCategoryCounts ~= false
+                end)(),
+            }
+
+            controls[#controls + 1] = {
+                type = "dropdown",
+                name = GetString(SI_NVK3UT_LAM_ENDEAVOR_COMPLETED_HEADER),
+                tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_COMPLETED_TOOLTIP),
+                choices = {
+                    GetString(SI_NVK3UT_LAM_ENDEAVOR_COMPLETED_HIDE),
+                    GetString(SI_NVK3UT_LAM_ENDEAVOR_COMPLETED_RECOLOR),
+                },
+                choicesValues = { "hide", "recolor" },
+                getFunc = function()
+                    local config = getEndeavorConfig()
+                    if config.CompletedHandling == "recolor" then
+                        return "recolor"
+                    end
+                    return "hide"
+                end,
+                setFunc = function(value)
+                    local config = getEndeavorConfig()
+                    local resolved = value == "recolor" and "recolor" or "hide"
+                    config.CompletedHandling = resolved
+                    if resolved == "hide" then
+                        refreshEndeavorModel()
+                        markEndeavorDirty("filter")
+                    else
+                        markEndeavorDirty("appearance")
+                    end
+                    queueEndeavorDirty()
+                end,
+                default = "hide",
+            }
+
+            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_ENDEAVOR_SECTION_COLORS) }
+
+            local colorEntries = {
+                {
+                    key = "CategoryTitle",
+                    role = ENDEAVOR_COLOR_ROLES.CategoryTitle,
+                    name = SI_NVK3UT_LAM_ENDEAVOR_COLOR_CATEGORY,
+                    tooltip = SI_NVK3UT_LAM_ENDEAVOR_COLOR_CATEGORY_TOOLTIP,
+                },
+                {
+                    key = "EntryName",
+                    role = ENDEAVOR_COLOR_ROLES.EntryName,
+                    name = SI_NVK3UT_LAM_ENDEAVOR_COLOR_ENTRY,
+                    tooltip = SI_NVK3UT_LAM_ENDEAVOR_COLOR_ENTRY_TOOLTIP,
+                },
+                {
+                    key = "Objective",
+                    role = ENDEAVOR_COLOR_ROLES.Objective,
+                    name = SI_NVK3UT_LAM_ENDEAVOR_COLOR_OBJECTIVE,
+                    tooltip = SI_NVK3UT_LAM_ENDEAVOR_COLOR_OBJECTIVE_TOOLTIP,
+                },
+                {
+                    key = "Active",
+                    role = ENDEAVOR_COLOR_ROLES.Active,
+                    name = SI_NVK3UT_LAM_ENDEAVOR_COLOR_ACTIVE,
+                    tooltip = SI_NVK3UT_LAM_ENDEAVOR_COLOR_ACTIVE_TOOLTIP,
+                },
+                {
+                    key = "Completed",
+                    role = ENDEAVOR_COLOR_ROLES.Completed,
+                    name = SI_NVK3UT_LAM_ENDEAVOR_COLOR_COMPLETED,
+                    tooltip = SI_NVK3UT_LAM_ENDEAVOR_COLOR_COMPLETED_TOOLTIP,
+                },
+            }
+
+            for index = 1, #colorEntries do
+                local entry = colorEntries[index]
+                controls[#controls + 1] = {
+                    type = "colorpicker",
+                    name = GetString(entry.name),
+                    tooltip = GetString(entry.tooltip),
+                    getFunc = function()
+                        return getEndeavorColor(entry.key, entry.role)
+                    end,
+                    setFunc = function(r, g, b, a)
+                        setEndeavorColor(entry.key, entry.role, r, g, b, (a or 1))
+                        markEndeavorDirty("appearance")
+                        queueEndeavorDirty()
+                    end,
+                    default = getTrackerColorDefaultTable("endeavorTracker", entry.role),
+                }
+            end
+
+            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_ENDEAVOR_SECTION_FONTS) }
+
+            controls[#controls + 1] = {
+                type = "dropdown",
+                name = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_FAMILY),
+                tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_FAMILY_TOOLTIP),
+                choices = FONT_FACE_NAMES,
+                choicesValues = FONT_FACE_VALUES,
+                getFunc = function()
+                    return ensureEndeavorFont().Family
+                end,
+                setFunc = function(value)
+                    local font = ensureEndeavorFont()
+                    font.Family = value
+                    markEndeavorDirty("appearance")
+                    queueEndeavorDirty()
+                end,
+                default = FONT_FACE_CHOICES[1].face,
+            }
+
+            controls[#controls + 1] = {
+                type = "slider",
+                name = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_SIZE),
+                tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_SIZE_TOOLTIP),
+                min = 12,
+                max = 36,
+                step = 1,
+                getFunc = function()
+                    return ensureEndeavorFont().Size
+                end,
+                setFunc = function(value)
+                    local font = ensureEndeavorFont()
+                    font.Size = clampEndeavorFontSize(value)
+                    markEndeavorDirty("appearance")
+                    queueEndeavorDirty()
+                end,
+                default = DEFAULT_FONT_SIZE.achievement.title,
+            }
+
+            controls[#controls + 1] = {
+                type = "dropdown",
+                name = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_OUTLINE),
+                tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_OUTLINE_TOOLTIP),
+                choices = OUTLINE_NAMES,
+                choicesValues = OUTLINE_VALUES,
+                getFunc = function()
+                    return ensureEndeavorFont().Outline
+                end,
+                setFunc = function(value)
+                    local font = ensureEndeavorFont()
+                    font.Outline = value
+                    markEndeavorDirty("appearance")
+                    queueEndeavorDirty()
+                end,
+                default = OUTLINE_CHOICES[3].value,
             }
             return controls
         end)(),

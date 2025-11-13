@@ -94,6 +94,15 @@ local DEFAULT_TRACKER_COLORS = {
             activeTitle = { r = 1, g = 1, b = 1, a = 1 },
         },
     },
+    endeavorTracker = {
+        colors = {
+            categoryTitle = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
+            objectiveText = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
+            entryTitle = { r = 1, g = 1, b = 0, a = 1 },
+            activeTitle = { r = 1, g = 1, b = 1, a = 1 },
+            completed = { r = 0.6, g = 0.6, b = 0.6, a = 1 },
+        },
+    },
 }
 
 local DEFAULT_COLOR_FALLBACK = { r = 1, g = 1, b = 1, a = 1 }

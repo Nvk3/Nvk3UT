@@ -72,22 +72,67 @@ local DEFAULT_ACHIEVEMENT_FONTS = {
     line = { face = DEFAULT_FONT_FACE_BOLD, size = 14, outline = DEFAULT_FONT_OUTLINE },
 }
 
+local function CopyColor(color)
+    if type(color) ~= "table" then
+        return { r = 1, g = 1, b = 1, a = 1 }
+    end
+
+    return {
+        r = color.r or 1,
+        g = color.g or 1,
+        b = color.b or 1,
+        a = color.a or 1,
+    }
+end
+
+local COLOR_CATEGORY = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 }
+local COLOR_ENTRY = { r = 1, g = 1, b = 0, a = 1 }
+local COLOR_ACTIVE = { r = 1, g = 1, b = 1, a = 1 }
+local COLOR_COMPLETED = { r = 0.6, g = 0.6, b = 0.6, a = 1 }
+
 local DEFAULT_TRACKER_APPEARANCE = {
     questTracker = {
         colors = {
-            categoryTitle = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
-            objectiveText = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
-            entryTitle = { r = 1, g = 1, b = 0, a = 1 },
-            activeTitle = { r = 1, g = 1, b = 1, a = 1 },
+            categoryTitle = CopyColor(COLOR_CATEGORY),
+            objectiveText = CopyColor(COLOR_CATEGORY),
+            entryTitle = CopyColor(COLOR_ENTRY),
+            activeTitle = CopyColor(COLOR_ACTIVE),
         },
     },
     achievementTracker = {
         colors = {
-            categoryTitle = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
-            objectiveText = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
-            entryTitle = { r = 1, g = 1, b = 0, a = 1 },
-            activeTitle = { r = 1, g = 1, b = 1, a = 1 },
+            categoryTitle = CopyColor(COLOR_CATEGORY),
+            objectiveText = CopyColor(COLOR_CATEGORY),
+            entryTitle = CopyColor(COLOR_ENTRY),
+            activeTitle = CopyColor(COLOR_ACTIVE),
         },
+    },
+    endeavorTracker = {
+        colors = {
+            categoryTitle = CopyColor(COLOR_CATEGORY),
+            objectiveText = CopyColor(COLOR_CATEGORY),
+            entryTitle = CopyColor(COLOR_ENTRY),
+            activeTitle = CopyColor(COLOR_ACTIVE),
+            completed = CopyColor(COLOR_COMPLETED),
+        },
+    },
+}
+
+local DEFAULT_ENDEAVOR_SETTINGS = {
+    Enabled = true,
+    ShowCountsInHeaders = true,
+    CompletedHandling = "hide",
+    Colors = {
+        CategoryTitle = CopyColor(COLOR_CATEGORY),
+        EntryName = CopyColor(COLOR_ENTRY),
+        Objective = CopyColor(COLOR_CATEGORY),
+        Active = CopyColor(COLOR_ACTIVE),
+        Completed = CopyColor(COLOR_COMPLETED),
+    },
+    Font = {
+        Family = DEFAULT_FONT_FACE_BOLD,
+        Size = DEFAULT_ACHIEVEMENT_FONTS.title.size,
+        Outline = DEFAULT_FONT_OUTLINE,
     },
 }
 
@@ -183,7 +228,130 @@ local defaults = {
     },
     AchievementCache = DEFAULT_ACHIEVEMENT_CACHE,
     EndeavorData = DEFAULT_ENDEAVOR_DATA,
+    Endeavor = DEFAULT_ENDEAVOR_SETTINGS,
 }
+
+local ENDEAVOR_COLOR_ROLE_MAPPING = {
+    CategoryTitle = "categoryTitle",
+    EntryName = "entryTitle",
+    Objective = "objectiveText",
+    Active = "activeTitle",
+    Completed = "completed",
+}
+
+local function NormalizeColorComponent(value, fallback)
+    local numeric = tonumber(value)
+    if numeric == nil then
+        numeric = fallback ~= nil and fallback or 1
+    end
+    if numeric < 0 then
+        numeric = 0
+    elseif numeric > 1 then
+        numeric = 1
+    end
+    return numeric
+end
+
+local function EnsureEndeavorSettings(saved)
+    if type(saved) ~= "table" then
+        return nil
+    end
+
+    local endeavor = EnsureTable(saved, "Endeavor")
+    MergeDefaults(endeavor, defaults.Endeavor)
+
+    local legacyTracker = saved.EndeavorTracker
+
+    if endeavor.Enabled == nil then
+        if type(legacyTracker) == "table" and legacyTracker.active ~= nil then
+            endeavor.Enabled = legacyTracker.active ~= false
+        else
+            local achievement = saved.AchievementTracker
+            if type(achievement) == "table" and achievement.active ~= nil then
+                endeavor.Enabled = achievement.active ~= false
+            else
+                endeavor.Enabled = defaults.Endeavor.Enabled
+            end
+        end
+    else
+        endeavor.Enabled = endeavor.Enabled ~= false
+    end
+
+    if endeavor.ShowCountsInHeaders == nil then
+        local general = saved.General or {}
+        local fallback = general.showAchievementCategoryCounts
+        if fallback == nil then
+            fallback = defaults.General.showAchievementCategoryCounts
+        end
+        endeavor.ShowCountsInHeaders = fallback ~= false
+    else
+        endeavor.ShowCountsInHeaders = endeavor.ShowCountsInHeaders ~= false
+    end
+
+    if type(endeavor.CompletedHandling) ~= "string" then
+        endeavor.CompletedHandling = defaults.Endeavor.CompletedHandling
+    else
+        local normalized = string.lower(endeavor.CompletedHandling)
+        if normalized ~= "recolor" then
+            endeavor.CompletedHandling = "hide"
+        else
+            endeavor.CompletedHandling = "recolor"
+        end
+    end
+
+    local colors = EnsureTable(endeavor, "Colors")
+    local appearance = EnsureTable(saved, "appearance")
+    local trackerAppearance = EnsureTable(appearance, "endeavorTracker")
+    trackerAppearance.colors = trackerAppearance.colors or {}
+
+    for configKey, role in pairs(ENDEAVOR_COLOR_ROLE_MAPPING) do
+        local defaultColor = defaults.Endeavor.Colors[configKey]
+        local color = EnsureTable(colors, configKey)
+        local appearanceColor = trackerAppearance.colors[role]
+
+        if type(appearanceColor) == "table" then
+            color.r = NormalizeColorComponent(color.r or appearanceColor.r, defaultColor.r)
+            color.g = NormalizeColorComponent(color.g or appearanceColor.g, defaultColor.g)
+            color.b = NormalizeColorComponent(color.b or appearanceColor.b, defaultColor.b)
+            color.a = NormalizeColorComponent(color.a or appearanceColor.a, defaultColor.a)
+        else
+            color.r = NormalizeColorComponent(color.r, defaultColor.r)
+            color.g = NormalizeColorComponent(color.g, defaultColor.g)
+            color.b = NormalizeColorComponent(color.b, defaultColor.b)
+            color.a = NormalizeColorComponent(color.a, defaultColor.a)
+        end
+
+        trackerAppearance.colors[role] = {
+            r = color.r,
+            g = color.g,
+            b = color.b,
+            a = color.a,
+        }
+    end
+
+    local font = EnsureTable(endeavor, "Font")
+    if type(font.Family) ~= "string" or font.Family == "" then
+        font.Family = defaults.Endeavor.Font.Family
+    end
+
+    local size = tonumber(font.Size)
+    if size == nil then
+        size = defaults.Endeavor.Font.Size
+    end
+    size = math.floor(size + 0.5)
+    if size < 12 then
+        size = 12
+    elseif size > 36 then
+        size = 36
+    end
+    font.Size = size
+
+    if type(font.Outline) ~= "string" or font.Outline == "" then
+        font.Outline = defaults.Endeavor.Font.Outline
+    end
+
+    return endeavor
+end
 
 local function EnsureAchievementCache(saved)
     local cache = EnsureTable(saved, "AchievementCache")
@@ -332,6 +500,8 @@ local function AdoptLegacySettings(saved)
     saved.AchievementTracker = MergeDefaults(saved.AchievementTracker, defaults.AchievementTracker)
     saved.appearance = MergeDefaults(saved.appearance, defaults.appearance)
 
+    EnsureEndeavorSettings(saved)
+
     saved.ui = saved.General
     saved.features = saved.General.features
 end
@@ -358,6 +528,7 @@ local function EnsureFirstLoginStructures(saved)
 
     local appearance = EnsureTable(saved, "appearance")
     MergeDefaults(appearance, defaults.appearance)
+    EnsureEndeavorSettings(saved)
     EnsureTable(appearance, "questTracker")
     EnsureTable(appearance, "achievementTracker")
 
