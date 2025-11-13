@@ -88,6 +88,12 @@ local categoryPool = {
     nextId = 1,
 }
 
+local entryPool = {
+    free = {},
+    used = {},
+    nextId = 1,
+}
+
 local lastHeight = 0
 
 local function safeDebug(fmt, ...)
@@ -279,6 +285,17 @@ local function getContainerName(parent)
     return "Nvk3UT_Endeavor"
 end
 
+local function buildEntryControlName(parent, index)
+    local containerName = getContainerName(parent)
+    local controlName = string.format("%s_Entry", containerName)
+
+    if type(index) == "number" and index > 1 then
+        controlName = string.format("%s%d", controlName, index)
+    end
+
+    return controlName
+end
+
 local function buildCategoryControlName(parent, index)
     local containerName = getContainerName(parent)
     local controlName = string.format("%s_Category", containerName)
@@ -304,6 +321,232 @@ local function ensureCategoryChild(control, childName, childType)
     end
 
     return child
+end
+
+local function ensureEntryChild(control, childName, childType)
+    local wm = WINDOW_MANAGER
+    if wm == nil or control == nil then
+        return nil
+    end
+
+    local child = GetControl(childName)
+    if not child then
+        child = wm:CreateControl(childName, control, childType)
+    else
+        child:SetParent(control)
+    end
+
+    return child
+end
+
+local function createEntryRow(parent)
+    local wm = WINDOW_MANAGER
+    if wm == nil then
+        return nil
+    end
+
+    local index = entryPool.nextId or 1
+    local controlName = buildEntryControlName(parent, index)
+    entryPool.nextId = index + 1
+
+    local control = GetControl(controlName)
+    if not control then
+        control = wm:CreateControl(controlName, parent, CT_CONTROL)
+    else
+        control:SetParent(parent)
+    end
+
+    control:SetResizeToFitDescendents(false)
+    control:SetMouseEnabled(false)
+    control:SetHidden(false)
+    control._poolState = "fresh"
+    control._poolParent = parent
+
+    safeDebug("[EntryPool] create %s", controlName)
+
+    return control
+end
+
+local function popFreeEntryRow()
+    while #entryPool.free > 0 do
+        local row = table.remove(entryPool.free)
+        if row then
+            local isValid = true
+            if type(row.GetName) == "function" then
+                local name = row:GetName()
+                if type(name) == "string" and name ~= "" then
+                    if GetControl(name) ~= row then
+                        isValid = false
+                    end
+                end
+            end
+
+            if isValid then
+                return row
+            end
+        end
+    end
+
+    return nil
+end
+
+local function markEntryUsed(row, parent)
+    if not row then
+        return
+    end
+
+    row._poolState = "used"
+    row._poolParent = parent
+    entryPool.used[#entryPool.used + 1] = row
+end
+
+local function detachEntryFromUsed(row)
+    if not row then
+        return
+    end
+
+    for index = #entryPool.used, 1, -1 do
+        if entryPool.used[index] == row then
+            table.remove(entryPool.used, index)
+            break
+        end
+    end
+end
+
+local function acquireEntryRow(parent)
+    if parent == nil then
+        return nil
+    end
+
+    local row = popFreeEntryRow()
+    if row then
+        if row.SetParent then
+            row:SetParent(parent)
+        end
+        if row.SetHidden then
+            row:SetHidden(false)
+        end
+    else
+        row = createEntryRow(parent)
+    end
+
+    if not row then
+        return nil
+    end
+
+    if row.ClearAnchors then
+        row:ClearAnchors()
+    end
+    if row.SetResizeToFitDescendents then
+        row:SetResizeToFitDescendents(false)
+    end
+    if row.SetMouseEnabled then
+        row:SetMouseEnabled(false)
+    end
+
+    markEntryUsed(row, parent)
+
+    local controlName = type(row.GetName) == "function" and row:GetName() or "<unnamed>"
+    safeDebug("[EntryPool] acquire %s free=%d used=%d", tostring(controlName), #entryPool.free, #entryPool.used)
+
+    return row
+end
+
+local function resetEntryRowContent(row)
+    if row == nil then
+        return
+    end
+
+    local rowName = type(row.GetName) == "function" and row:GetName() or nil
+
+    local label = row.Label
+    if not label and rowName then
+        label = GetControl(rowName .. "Title")
+    end
+    if label then
+        if label.SetText then
+            label:SetText("")
+        end
+        if label.SetHidden then
+            label:SetHidden(false)
+        end
+    end
+    row.Label = nil
+
+    local progress = row.Progress
+    if not progress and rowName then
+        progress = GetControl(rowName .. "Progress")
+    end
+    if progress then
+        if progress.SetText then
+            progress:SetText("")
+        end
+        if progress.SetHidden then
+            progress:SetHidden(true)
+        end
+    end
+    row.Progress = nil
+
+    if row.GetNamedChild then
+        local bullet = row:GetNamedChild("Bullet")
+        if bullet and bullet.SetHidden then
+            bullet:SetHidden(true)
+        end
+        local icon = row:GetNamedChild("Icon")
+        if icon and icon.SetHidden then
+            icon:SetHidden(true)
+        end
+        local dot = row:GetNamedChild("Dot")
+        if dot and dot.SetHidden then
+            dot:SetHidden(true)
+        end
+        local check = row:GetNamedChild("Check")
+        if check and check.SetHidden then
+            check:SetHidden(true)
+        end
+    end
+end
+
+local function releaseEntryRow(row)
+    if not row then
+        return
+    end
+
+    resetEntryRowContent(row)
+
+    if row.ClearAnchors then
+        row:ClearAnchors()
+    end
+    if row.SetHidden then
+        row:SetHidden(true)
+    end
+
+    detachEntryFromUsed(row)
+
+    row._poolParent = nil
+    row._poolState = "free"
+
+    entryPool.free[#entryPool.free + 1] = row
+
+    local controlName = type(row.GetName) == "function" and row:GetName() or "<unnamed>"
+    safeDebug("[EntryPool] release %s free=%d used=%d", tostring(controlName), #entryPool.free, #entryPool.used)
+end
+
+local function resetEntryPool(targetParent)
+    if targetParent == nil then
+        for index = #entryPool.used, 1, -1 do
+            releaseEntryRow(entryPool.used[index])
+        end
+    else
+        for index = #entryPool.used, 1, -1 do
+            local row = entryPool.used[index]
+            if row and (row._poolParent == targetParent or (row.GetParent and row:GetParent() == targetParent)) then
+                releaseEntryRow(row)
+            end
+        end
+    end
+
+    safeDebug("[EntryPool] reset target=%s free=%d used=%d", tostring(targetParent), #entryPool.free, #entryPool.used)
 end
 
 local function createCategoryRow(parent)
@@ -777,6 +1020,23 @@ function Rows.ApplyCategoryRow(row, data)
     applyCategoryRow(row, data)
 end
 
+function Rows.AcquireEntryRow(parent)
+    return acquireEntryRow(parent)
+end
+
+function Rows.ReleaseEntryRow(row)
+    releaseEntryRow(row)
+end
+
+function Rows.ResetEntryPool(targetParent)
+    resetEntryPool(targetParent)
+end
+
+function Rows.ResetPools()
+    Rows.ResetCategoryPool()
+    Rows.ResetEntryPool()
+end
+
 local function getConfiguredFonts(options)
     if type(options) == "table" and type(options.fontConfig) == "table" then
         return options.fontConfig
@@ -889,59 +1149,7 @@ local function getContainerCache(container)
     return cache
 end
 
-local function ensureObjectiveRow(container, baseName, index, previous, options)
-    local wm = WINDOW_MANAGER
-    if wm == nil then
-        return nil
-    end
-
-    local cache = getContainerCache(container)
-    if cache == nil then
-        return nil
-    end
-
-    local rows = cache.rows
-    local row = rows[index]
-    if row and (type(row.GetName) ~= "function" or GetControl(row:GetName()) ~= row) then
-        row = nil
-    end
-
-    local controlName = baseName .. index
-    if not row then
-        row = GetControl(controlName)
-        if not row then
-            row = wm:CreateControl(controlName, container, CT_CONTROL)
-        end
-        rows[index] = row
-    end
-
-    row:SetParent(container)
-    row:SetResizeToFitDescendents(false)
-    row:SetMouseEnabled(false)
-    row:SetHidden(false)
-
-    local rowHeight = OBJECTIVE_ROW_DEFAULT_HEIGHT
-    if type(options) == "table" then
-        local override = tonumber(options.rowHeight)
-        if override and override > 0 then
-            rowHeight = override
-        end
-    end
-
-    row:SetHeight(rowHeight)
-    row:ClearAnchors()
-    if previous then
-        row:SetAnchor(TOPLEFT, previous, BOTTOMLEFT, 0, ROW_GAP)
-        row:SetAnchor(TOPRIGHT, previous, BOTTOMRIGHT, 0, ROW_GAP)
-    else
-        row:SetAnchor(TOPLEFT, container, TOPLEFT, 0, 0)
-        row:SetAnchor(TOPRIGHT, container, TOPRIGHT, 0, 0)
-    end
-
-    return row, rowHeight
-end
-
-function Rows.ApplyObjectiveRow(row, objective, options)
+local function applyEntryRow(row, objective, options)
     if row == nil then
         return
     end
@@ -983,10 +1191,7 @@ function Rows.ApplyObjectiveRow(row, objective, options)
         end
     end
 
-    local title = GetControl(titleName)
-    if not title then
-        title = wm:CreateControl(titleName, row, CT_LABEL)
-    end
+    local title = ensureEntryChild(row, titleName, CT_LABEL)
     title:SetParent(row)
     local rowKind = type(objective) == "table" and objective.kind or nil
     local appliedConfiguredFont = applyConfiguredFontForKind and applyConfiguredFontForKind(title, rowKind, options)
@@ -1014,10 +1219,7 @@ function Rows.ApplyObjectiveRow(row, objective, options)
     title:SetText(combinedText)
     row.Label = title
 
-    local progress = GetControl(progressName)
-    if not progress then
-        progress = wm:CreateControl(progressName, row, CT_LABEL)
-    end
+    local progress = ensureEntryChild(row, progressName, CT_LABEL)
     progress:SetParent(row)
     if progress.SetHidden then
         progress:SetHidden(true)
@@ -1025,6 +1227,7 @@ function Rows.ApplyObjectiveRow(row, objective, options)
     if progress.SetText then
         progress:SetText("")
     end
+    row.Progress = progress
 
     applyObjectiveColor(title, options, data)
 
@@ -1035,6 +1238,14 @@ function Rows.ApplyObjectiveRow(row, objective, options)
     safeDebug("[EndeavorRows] objective inline: \"%s\"", combinedText)
 end
 
+function Rows.ApplyEntryRow(row, objective, options)
+    applyEntryRow(row, objective, options)
+end
+
+function Rows.ApplyObjectiveRow(row, objective, options)
+    applyEntryRow(row, objective, options)
+end
+
 function Rows.Init()
     Rows._cache = setmetatable({}, { __mode = "k" })
     categoryPool.free = categoryPool.free or {}
@@ -1042,20 +1253,22 @@ function Rows.Init()
     if type(categoryPool.nextId) ~= "number" or categoryPool.nextId < 1 then
         categoryPool.nextId = (#categoryPool.free or 0) + 1
     end
+    entryPool.free = entryPool.free or {}
+    entryPool.used = entryPool.used or {}
+    if type(entryPool.nextId) ~= "number" or entryPool.nextId < 1 then
+        entryPool.nextId = (#entryPool.free or 0) + 1
+    end
     Rows.ResetCategoryPool()
+    Rows.ResetEntryPool()
     lastHeight = 0
 end
 
 function Rows.ClearObjectives(container)
+    Rows.ResetEntryPool(container)
+
     local cache = getContainerCache(container)
     if cache then
-        local rows = cache.rows or {}
-        for index = 1, #rows do
-            local row = rows[index]
-            if row and row.SetHidden then
-                row:SetHidden(true)
-            end
-        end
+        cache.rows = {}
         cache.lastHeight = 0
     end
 
@@ -1096,14 +1309,7 @@ function Rows.BuildObjectives(container, list, options)
         return 0
     end
 
-    local containerName = nil
-    if type(container.GetName) == "function" then
-        local ok, name = pcall(container.GetName, container)
-        if ok and type(name) == "string" then
-            containerName = name
-        end
-    end
-    local baseName = (containerName or "Nvk3UT_Endeavor") .. "Obj"
+    Rows.ResetEntryPool(container)
 
     local rowHeight = OBJECTIVE_ROW_DEFAULT_HEIGHT
     if type(options) == "table" then
@@ -1116,23 +1322,29 @@ function Rows.BuildObjectives(container, list, options)
     local totalHeight = 0
     local previous
 
+    cache.rows = {}
+
     for index = 1, count do
-        local row, appliedHeight = ensureObjectiveRow(container, baseName, index, previous, options)
+        local row = acquireEntryRow(container)
         if row then
-            Rows.ApplyObjectiveRow(row, sequence[index], options)
+            if row.SetHeight then
+                row:SetHeight(rowHeight)
+            end
+            if previous then
+                row:SetAnchor(TOPLEFT, previous, BOTTOMLEFT, 0, ROW_GAP)
+                row:SetAnchor(TOPRIGHT, previous, BOTTOMRIGHT, 0, ROW_GAP)
+            else
+                row:SetAnchor(TOPLEFT, container, TOPLEFT, 0, 0)
+                row:SetAnchor(TOPRIGHT, container, TOPRIGHT, 0, 0)
+            end
+
+            Rows.ApplyEntryRow(row, sequence[index], options)
+            cache.rows[index] = row
             previous = row
             if index > 1 then
                 totalHeight = totalHeight + ROW_GAP
             end
-            totalHeight = totalHeight + (appliedHeight or rowHeight)
-        end
-    end
-
-    local rows = cache.rows
-    for index = count + 1, #rows do
-        local extra = rows[index]
-        if extra and extra.SetHidden then
-            extra:SetHidden(true)
+            totalHeight = totalHeight + rowHeight
         end
     end
 
