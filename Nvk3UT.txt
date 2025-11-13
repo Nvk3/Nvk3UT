@@ -44,12 +44,13 @@ Journal/Nvk3UT_TodoSummary.lua
 Journal/Nvk3UT_CompletedCategory.lua
 Journal/Nvk3UT_CompletedSummary.lua
 ## === Runtime ===
-## Runtime order: Runtime -> Host -> HostLayout (Endeavor sits between Quest & Achievement at layout time)
+## Runtime order: Runtime -> Host -> HostLayout (Quest -> Endeavor -> Achievement -> Golden enforced via layout)
 Runtime/Nvk3UT_TrackerRuntime.lua
 Runtime/Nvk3UT_TrackerHost.lua
 Runtime/Nvk3UT_TrackerHostLayout.lua
+## Golden kommt nach Achievement (HostLayout enforced). Falls später Runtime-Dateien für Golden hinzukommen, diese unter Achievement-relevanten Runtime-Einträgen einfügen.
 ## === Tracker ===
-## Tracker order: Quest -> Endeavor -> Achievement
+## Tracker order: Quest -> Endeavor -> Achievement -> Golden
 Nvk3UT_QuestTracker.xml
 Nvk3UT_QuestTracker.lua
 ## Endeavor files: Facade -> Tracker -> Rows -> Layout (no events in this token)
@@ -60,6 +61,13 @@ Tracker/Endeavor/Nvk3UT_EndeavorTrackerRows.lua
 Tracker/Endeavor/Nvk3UT_EndeavorTrackerLayout.lua
 Nvk3UT_AchievementTracker.xml
 Nvk3UT_AchievementTracker.lua
+# Golden Tracker (after Achievement)
+Tracker/Golden/Nvk3UT_GoldenTracker.lua
+Tracker/Golden/Nvk3UT_GoldenTrackerRows.lua
+Tracker/Golden/Nvk3UT_GoldenTrackerLayout.lua
+# Golden Controller
+Tracker/Golden/Nvk3UT_GoldenTrackerController.lua
+# Note: further Golden modules (Controller/Events) will be added in later tokens.
 ## === Events ===
 ## === UI ===
 Nvk3UT_UI.lua

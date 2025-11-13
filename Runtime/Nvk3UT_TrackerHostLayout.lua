@@ -8,15 +8,24 @@ local SECTION_DEFINITIONS = {
     questSectionContainer = { id = "quest", displayName = "Quest" },
     endeavorSectionContainer = { id = "endeavor", displayName = "Endeavor" },
     achievementSectionContainer = { id = "achievement", displayName = "Achievement" },
+    goldenSectionContainer = { id = "golden", displayName = "Golden" },
 }
 
 local DEFAULT_SECTION_ORDER = {
     "questSectionContainer",
     "endeavorSectionContainer",
     "achievementSectionContainer",
+    "goldenSectionContainer",
 }
 
-local SECTION_STACK_GAP = 0
+local ORDERED_SECTIONS = {
+    { key = "questSectionContainer", id = "quest" },
+    { key = "endeavorSectionContainer", id = "endeavor" },
+    { key = "achievementSectionContainer", id = "achievement" },
+    { key = "goldenSectionContainer", id = "golden" },
+}
+
+local SECTION_SPACING_Y = 0
 
 local function copyOrder(order)
     local copy = {}
@@ -88,10 +97,6 @@ local function getHost(host)
     return nil
 end
 
-local function getSectionOrder()
-    return Layout.GetSectionOrder()
-end
-
 local function getSectionParent(host)
     if host and type(host.GetSectionParent) == "function" then
         local parent = host.GetSectionParent()
@@ -101,6 +106,44 @@ local function getSectionParent(host)
     end
 
     return nil
+end
+
+local function GetOrderedSections(host)
+    host = getHost(host)
+
+    local registry
+    local trackerHost = Addon and Addon.TrackerHost
+    if type(trackerHost) == "table" and type(trackerHost.sectionContainers) == "table" then
+        registry = trackerHost.sectionContainers
+    end
+
+    if not registry and host and type(host.sectionContainers) == "table" then
+        registry = host.sectionContainers
+    end
+
+    local ordered = {}
+
+    for _, spec in ipairs(ORDERED_SECTIONS) do
+        local container
+        if registry then
+            container = registry[spec.id]
+        end
+
+        if not container then
+            container = getSectionContainer(host, spec.key)
+        end
+
+        if container then
+            ordered[#ordered + 1] = {
+                id = spec.id,
+                key = spec.key,
+                definition = SECTION_DEFINITIONS[spec.key],
+                container = container,
+            }
+        end
+    end
+
+    return ordered
 end
 
 local function getSectionContainer(host, sectionKey)
@@ -489,6 +532,7 @@ end
 
 Layout._lastSizes = Layout._lastSizes or nil
 Layout._lastScrollMetrics = Layout._lastScrollMetrics or setmetatable({}, { __mode = "k" })
+Layout._loggedSectionSpacing = Layout._loggedSectionSpacing or false
 
 function Layout.UpdateHeaderFooterSizes(host)
     host = getHost(host)
@@ -767,18 +811,23 @@ function Layout.ApplyLayout(host, sizes)
         return 0
     end
 
+    if not Layout._loggedSectionSpacing then
+        debugLog("HostLayout: Section spacing set to %dpx", SECTION_SPACING_Y)
+        Layout._loggedSectionSpacing = true
+    end
+
     if type(sizes) ~= "table" then
         sizes = Layout.UpdateHeaderFooterSizes(host)
     end
-
-    local order = getSectionOrder()
 
     local parent = getSectionParent(host)
     if not parent then
         return 0
     end
 
-    local gap = SECTION_STACK_GAP
+    local sections = GetOrderedSections(host)
+
+    local gap = SECTION_SPACING_Y
 
     local startOffset = sanitizeLength(sizes and sizes.contentTopY)
     local topPadding = sanitizeLength(sizes and sizes.contentTopPadding)
@@ -793,72 +842,103 @@ function Layout.ApplyLayout(host, sizes)
     local placedCount = 0
     local currentTop = startOffset
 
-    for _, sectionKey in ipairs(order) do
-        local definition = SECTION_DEFINITIONS[sectionKey]
-        local sectionId = definition and definition.id or sectionKey
-        local container = getSectionContainer(host, sectionKey)
-        if not container then
-            reportMissing(host, sectionId)
-        else
-            local _, height = measureSection(host, sectionId, container)
-            local isEndeavorSection = sectionId == "endeavor"
-            local collapsed = isEndeavorSection and height <= 0
+    local foundSections = {}
+    for _, entry in ipairs(sections) do
+        foundSections[entry.id] = true
+    end
 
-            if isEndeavorSection and container then
-                if collapsed then
-                    if container.SetHeight then
-                        container:SetHeight(0)
-                    end
-                    if container.SetHidden then
-                        container:SetHidden(true)
-                    end
-                    container._nvk3utAutoHidden = true
-                elseif container._nvk3utAutoHidden then
-                    if container.SetHidden then
-                        container:SetHidden(false)
-                    end
-                    container._nvk3utAutoHidden = nil
-                end
-            end
+    for _, spec in ipairs(ORDERED_SECTIONS) do
+        if not foundSections[spec.id] then
+            reportMissing(host, spec.id)
+        end
+    end
 
-            local sectionVisible = not isControlHidden(container)
+    local goldenAccounted = false
+
+    for _, section in ipairs(sections) do
+        local container = section.container
+        local sectionId = section.id
+
+        local _, height = measureSection(host, sectionId, container)
+        local isEndeavorSection = sectionId == "endeavor"
+        local collapsed = isEndeavorSection and height <= 0
+
+        if isEndeavorSection and container then
             if collapsed then
-                sectionVisible = false
+                if container.SetHeight then
+                    container:SetHeight(0)
+                end
+                if container.SetHidden then
+                    container:SetHidden(true)
+                end
+                container._nvk3utAutoHidden = true
+            elseif container._nvk3utAutoHidden then
+                if container.SetHidden then
+                    container:SetHidden(false)
+                end
+                container._nvk3utAutoHidden = nil
+            end
+        end
+
+        local sectionVisible = not isControlHidden(container)
+        if collapsed then
+            sectionVisible = false
+        end
+
+        if sectionVisible then
+            local predictedBottom = currentTop + height
+            if limitBottom and predictedBottom > (limitBottom + ANCHOR_TOLERANCE) then
+                break
+            end
+            local anchorTarget = previousVisible or parent
+            local anchors
+
+            if previousVisible then
+                anchors = {
+                    { point = TOPLEFT, relativeTo = anchorTarget, relativePoint = BOTTOMLEFT, offsetX = 0, offsetY = gap },
+                    { point = TOPRIGHT, relativeTo = anchorTarget, relativePoint = BOTTOMRIGHT, offsetX = 0, offsetY = gap },
+                }
+            else
+                anchors = {
+                    { point = TOPLEFT, relativeTo = anchorTarget, relativePoint = TOPLEFT, offsetX = 0, offsetY = startOffset },
+                    { point = TOPRIGHT, relativeTo = anchorTarget, relativePoint = TOPRIGHT, offsetX = 0, offsetY = startOffset },
+                }
             end
 
-            if sectionVisible then
-                local predictedBottom = currentTop + height
-                if limitBottom and predictedBottom > (limitBottom + ANCHOR_TOLERANCE) then
-                    break
-                end
-                local anchorTarget = previousVisible or parent
-                local anchors
-
-                if previousVisible then
-                    anchors = {
-                        { point = TOPLEFT, relativeTo = anchorTarget, relativePoint = BOTTOMLEFT, offsetX = 0, offsetY = gap },
-                        { point = TOPRIGHT, relativeTo = anchorTarget, relativePoint = BOTTOMRIGHT, offsetX = 0, offsetY = gap },
-                    }
-                else
-                    anchors = {
-                        { point = TOPLEFT, relativeTo = anchorTarget, relativePoint = TOPLEFT, offsetX = 0, offsetY = startOffset },
-                        { point = TOPRIGHT, relativeTo = anchorTarget, relativePoint = TOPRIGHT, offsetX = 0, offsetY = startOffset },
-                    }
-                end
-
+            if container and type(container.SetAnchor) == "function" and type(container.ClearAnchors) == "function" then
                 applyAnchors(container, anchors)
-
-                if placedCount > 0 then
-                    totalHeight = totalHeight + gap
-                end
-
-                totalHeight = totalHeight + height
-                currentTop = currentTop + height + gap
-                previousVisible = container
-                placedCount = placedCount + 1
             end
 
-            reportAnchored(host, sectionId)
+            if placedCount > 0 then
+                totalHeight = totalHeight + gap
+            end
+
+            totalHeight = totalHeight + height
+            currentTop = currentTop + height + gap
+            previousVisible = container
+            placedCount = placedCount + 1
+
+            if sectionId == "golden" then
+                goldenAccounted = true
+            end
+        elseif sectionId == "golden" then
+            goldenAccounted = goldenAccounted or height > 0
+        end
+
+        reportAnchored(host, sectionId)
+    end
+
+    if not goldenAccounted then
+        local goldenTracker = Addon and Addon.GoldenTracker
+        local getHeight = goldenTracker and goldenTracker.GetHeight
+        if type(getHeight) == "function" then
+            local ok, measured = pcall(getHeight, goldenTracker)
+            if ok then
+                local extraHeight = sanitizeLength(measured)
+                if extraHeight > 0 then
+                    totalHeight = totalHeight + extraHeight
+                end
+            end
         end
     end
 
@@ -871,16 +951,35 @@ function Layout.ApplyLayout(host, sizes)
     Layout.UpdateScrollAreaHeight(host, totalHeight, sizes)
 
     local orderLabels = {}
-    for index, key in ipairs(order) do
-        local definition = SECTION_DEFINITIONS[key]
-        orderLabels[index] = definition and definition.displayName or tostring(key)
+    local controlNames = {}
+    for index, section in ipairs(sections) do
+        local sectionId = section.id
+        local definition = section.definition
+        orderLabels[index] = definition and definition.displayName or tostring(sectionId)
+
+        local controlName
+        local control = section.container
+        if control and type(control.GetName) == "function" then
+            local ok, name = pcall(control.GetName, control)
+            if ok and name then
+                controlName = tostring(name)
+            end
+        end
+
+        controlNames[index] = controlName or tostring(sectionId)
+    end
+
+    local suffix = ""
+    if #controlNames > 0 then
+        suffix = string.format("; controls=%s", table.concat(controlNames, " → "))
     end
 
     debugLog(
-        "HostLayout: section stack gap = %dpx (%s); placed=%d",
-        SECTION_STACK_GAP,
+        "HostLayout: section spacing = %dpx (%s); placed=%d%s",
+        SECTION_SPACING_Y,
         table.concat(orderLabels, " → "),
-        placedCount
+        placedCount,
+        suffix
     )
 
     return totalHeight
