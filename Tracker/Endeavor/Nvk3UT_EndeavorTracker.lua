@@ -1543,8 +1543,15 @@ function EndeavorTracker.Refresh(viewModel)
             end
 
             if rows then
+                if type(rows.ResetEntryPool) == "function" then
+                    rows.ResetEntryPool()
+                end
+
                 if dailyObjectivesControl then
                     if dailyExpanded and type(rows.BuildObjectives) == "function" then
+                        if type(rows.ResetEntryPool) == "function" then
+                            rows.ResetEntryPool(dailyObjectivesControl)
+                        end
                         rows.BuildObjectives(dailyObjectivesControl, dailyObjectivesList, rowsOptions)
                         dailyObjectivesControl:SetHidden(false)
                     else
@@ -1561,6 +1568,9 @@ function EndeavorTracker.Refresh(viewModel)
 
                 if weeklyObjectivesControl then
                     if weeklyExpanded and type(rows.BuildObjectives) == "function" then
+                        if type(rows.ResetEntryPool) == "function" then
+                            rows.ResetEntryPool(weeklyObjectivesControl)
+                        end
                         rows.BuildObjectives(weeklyObjectivesControl, weeklyObjectivesList, rowsOptions)
                         weeklyObjectivesControl:SetHidden(false)
                     else
