@@ -152,13 +152,52 @@ local function debugLog(fmt, ...)
     end
 end
 
-local TRACKER_SECTION_ORDER = { "quest", "endeavor", "achievement" }
+local TRACKER_SECTION_ORDER = { "quest", "endeavor", "golden", "achievement" }
 local VALID_SECTION_KEYS = {
     quest = "quest",
     endeavor = "endeavor",
+    golden = "golden",
     achievement = "achievement",
     layout = "layout",
 }
+
+local function resolveSafeCall()
+    local root = getRoot()
+    if type(root) == "table" and type(root.SafeCall) == "function" then
+        return root.SafeCall
+    end
+
+    if Nvk3UT and type(Nvk3UT.SafeCall) == "function" then
+        return Nvk3UT.SafeCall
+    end
+
+    return nil
+end
+
+local function queueGoldenDirtyChannel()
+    local runtime = getRuntime()
+    if type(runtime) ~= "table" then
+        return false
+    end
+
+    local queueDirty = runtime.QueueDirty or runtime.queueDirty
+    if type(queueDirty) ~= "function" then
+        return false
+    end
+
+    local safeCall = resolveSafeCall()
+    if type(safeCall) == "function" then
+        local result = safeCall(queueDirty, runtime, "golden")
+        if result == false then
+            return false
+        end
+
+        return true
+    end
+
+    local label = "TrackerRuntime.QueueDirty(golden)"
+    return safeInvoke(label, queueDirty, runtime, "golden") == true
+end
 
 local function queueDirtyChannel(channel)
     local runtime = getRuntime()
@@ -238,7 +277,14 @@ local function queueSectionsInternal(sectionFlags, context)
     for order = 1, #TRACKER_SECTION_ORDER do
         local key = TRACKER_SECTION_ORDER[order]
         if sectionFlags[key] then
-            if queueDirtyChannel(key) then
+            local queuedChannel = false
+            if key == "golden" then
+                queuedChannel = queueGoldenDirtyChannel()
+            else
+                queuedChannel = queueDirtyChannel(key)
+            end
+
+            if queuedChannel then
                 queued[#queued + 1] = key
                 triggered = true
             end
@@ -393,6 +439,20 @@ function Rebuild.ForceEndeavorRefresh(context)
     return triggered
 end
 
+---Queue the golden tracker to refresh via the runtime dirty queue.
+---@param context string|nil
+---@return boolean triggered
+function Rebuild.Golden(context)
+    describeContext("Golden", context)
+
+    local triggered = queueGoldenDirtyChannel()
+    if triggered then
+        debugLog("Rebuild Golden requested (dirty queued)")
+    end
+
+    return triggered
+end
+
 ---Force a global refresh touching quests, achievements, and tracker host state.
 ---@param context string|nil
 function Rebuild.ForceGlobalRefresh(context)
@@ -434,6 +494,20 @@ function Rebuild.MarkAllDirty(context)
     return queueSectionsInternal(flags, context)
 end
 
+---Queue quests, endeavors, golden, achievements, and layout in a single call.
+---@param context string|nil
+---@return boolean triggered
+function Rebuild.All(context)
+    describeContext("All", context)
+
+    local flags = { layout = true }
+    for order = 1, #TRACKER_SECTION_ORDER do
+        flags[TRACKER_SECTION_ORDER[order]] = true
+    end
+
+    return queueSectionsInternal(flags, context)
+end
+
 ---Queue specified tracker sections to rebuild.
 ---@param sections string|string[]
 ---@param context string|nil
@@ -457,6 +531,31 @@ function Rebuild.Trackers(context)
     end
 
     return queueSectionsInternal(flags, context)
+end
+
+---Queue tracker or layout rebuild by name.
+---@param name string
+---@param context string|nil
+---@return boolean triggered
+function Rebuild.ByName(name, context)
+    describeContext("ByName", context)
+
+    if type(name) ~= "string" or name == "" then
+        return false
+    end
+
+    local normalized = string.lower(name)
+    if normalized == "golden" then
+        return Rebuild.Golden(context)
+    elseif normalized == "all" then
+        return Rebuild.All(context)
+    elseif normalized == "trackers" then
+        return Rebuild.Trackers(context)
+    elseif normalized == "layout" then
+        return Rebuild.ForceLayout(context)
+    end
+
+    return Rebuild.Sections(normalized, context)
 end
 
 ---Queue the tracker host layout for recompute.
