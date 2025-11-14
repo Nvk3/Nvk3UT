@@ -16,6 +16,7 @@ local state = {
     content = nil,
     height = 0,
     initialized = false,
+    options = nil,
 }
 
 local function getAddonRoot()
@@ -247,17 +248,54 @@ local function safeCreateRow(rowFn, parent, data)
     return nil
 end
 
-function GoldenTracker.Init(parentControl)
+local function resolveInitArguments(...)
+    local first = ...
+    if first == GoldenTracker or (type(first) == "table" and first.__index == GoldenTracker) then
+        return select(2, ...), select(3, ...)
+    end
+
+    return first, select(2, ...)
+end
+
+local function isControl(control)
+    if control == nil then
+        return false
+    end
+
+    if type(control) == "userdata" then
+        return true
+    end
+
+    local getType = control and control.GetType
+    if type(getType) == "function" then
+        local ok, objectType = pcall(getType, control)
+        if ok and type(objectType) == "number" then
+            return true
+        end
+    end
+
+    return false
+end
+
+function GoldenTracker.Init(...)
+    local parentControl, options = resolveInitArguments(...)
+
+    if parentControl == nil then
+        safeDebug("Init skipped; parent control missing")
+        return
+    end
+
+    if not isControl(parentControl) then
+        safeDebug("Init skipped; parent control invalid (type=%s)", type(parentControl))
+        return
+    end
+
     state.parent = parentControl
+    state.options = type(options) == "table" and options or nil
     state.height = 0
     state.initialized = false
     state.root = nil
     state.content = nil
-
-    if not parentControl then
-        safeDebug("Init skipped; parent control missing")
-        return
-    end
 
     local root, content = createRootAndContent(parentControl)
     state.root = root

@@ -3235,6 +3235,21 @@ local function initModels()
     if Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.Init then
         pcall(Nvk3UT.AchievementModel.Init, { saved = sv })
     end
+
+    local goldenState = Nvk3UT and Nvk3UT.GoldenState
+    if type(goldenState) == "table" and type(goldenState.Init) == "function" then
+        pcall(goldenState.Init, goldenState, sv)
+    end
+
+    local goldenList = Nvk3UT and Nvk3UT.GoldenList
+    if type(goldenList) == "table" and type(goldenList.Init) == "function" then
+        pcall(goldenList.Init, goldenList, sv)
+    end
+
+    local goldenModel = Nvk3UT and Nvk3UT.GoldenModel
+    if type(goldenModel) == "table" and type(goldenModel.Init) == "function" then
+        pcall(goldenModel.Init, goldenModel, sv, goldenState, goldenList)
+    end
 end
 
 local function initTrackers()
@@ -3284,7 +3299,8 @@ local function initTrackers()
     if type(goldenTracker) == "table" and type(goldenTracker.Init) == "function" and goldenContainer then
         local safeInvoke = Nvk3UT and Nvk3UT.SafeCall
         local function initGolden()
-            goldenTracker:Init(goldenContainer)
+            local goldenOpts = cloneTable(sv.GoldenTracker or {})
+            goldenTracker.Init(goldenTracker, goldenContainer, goldenOpts)
             if Nvk3UT and type(Nvk3UT.Debug) == "function" then
                 Nvk3UT.Debug("TrackerHost: GoldenTracker Init shim complete")
             else
