@@ -149,7 +149,11 @@ function Rows.CreateCategoryHeader(parent, categoryData)
 
         local text = ""
         if type(categoryData) == "table" then
-            text = tostring(categoryData.name or categoryData.title or "")
+            local display = categoryData.displayName or categoryData.title or categoryData.name
+            if display == nil then
+                display = ""
+            end
+            text = tostring(display)
         end
         if label.SetText then
             label:SetText(text)
@@ -183,32 +187,41 @@ function Rows.CreateEntryRow(parent, entryData)
 
         local text = ""
         if type(entryData) == "table" then
-            text = tostring(entryData.name or entryData.title or "")
+            local display = entryData.displayName or entryData.title or entryData.name
+            if display == nil then
+                display = ""
+            end
+            text = tostring(display)
         end
         if label.SetText then
             label:SetText(text)
         end
     end
 
-    if type(entryData) == "table" then
-        local count = tonumber(entryData.count)
-        local maxValue = tonumber(entryData.max)
-        if count and maxValue then
-            local counterLabel = createLabel(control, "EntryCounter")
-            if counterLabel then
-                if counterLabel.SetAnchor then
-                    counterLabel:SetAnchor(RIGHT, control, RIGHT, 0, 0)
-                end
-                applyLabelDefaults(counterLabel, DEFAULTS.ENTRY_FONT, DEFAULTS.ENTRY_COLOR)
-                if counterLabel.SetHorizontalAlignment and rawget(_G, "TEXT_ALIGN_RIGHT") then
-                    counterLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
-                end
-                if counterLabel.SetText then
-                    counterLabel:SetText(string.format("%d/%d", count, maxValue))
+        if type(entryData) == "table" then
+            local counterText = entryData.counterText
+            local count = tonumber(entryData.count or entryData.progressDisplay)
+            local maxValue = tonumber(entryData.max or entryData.maxDisplay)
+            if not counterText and count and maxValue then
+                counterText = string.format("%d/%d", count, maxValue)
+            end
+
+            if counterText then
+                local counterLabel = createLabel(control, "EntryCounter")
+                if counterLabel then
+                    if counterLabel.SetAnchor then
+                        counterLabel:SetAnchor(RIGHT, control, RIGHT, 0, 0)
+                    end
+                    applyLabelDefaults(counterLabel, DEFAULTS.ENTRY_FONT, DEFAULTS.ENTRY_COLOR)
+                    if counterLabel.SetHorizontalAlignment and rawget(_G, "TEXT_ALIGN_RIGHT") then
+                        counterLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+                    end
+                    if counterLabel.SetText then
+                        counterLabel:SetText(tostring(counterText))
+                    end
                 end
             end
         end
-    end
 
     return control
 end
@@ -237,11 +250,20 @@ function Rows.CreateObjectiveRow(parent, objectiveData)
 
         local text = ""
         if type(objectiveData) == "table" then
-            text = tostring(objectiveData.name or objectiveData.title or objectiveData.text or "")
-            local progress = tonumber(objectiveData.progress or objectiveData.current)
-            local maxValue = tonumber(objectiveData.max)
-            if progress and maxValue then
-                text = string.format("%s (%d/%d)", text, progress, maxValue)
+            local display = objectiveData.displayName or objectiveData.title or objectiveData.name or objectiveData.text
+            if display == nil then
+                display = ""
+            end
+            text = tostring(display)
+
+            local counterText = objectiveData.counterText
+            local progress = tonumber(objectiveData.progressDisplay or objectiveData.progress or objectiveData.current)
+            local maxValue = tonumber(objectiveData.maxDisplay or objectiveData.max)
+            if not counterText and progress and maxValue then
+                counterText = string.format("%d/%d", progress, maxValue)
+            end
+            if counterText and counterText ~= "" then
+                text = string.format("%s (%s)", text, counterText)
             end
         end
 
