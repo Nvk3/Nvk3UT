@@ -308,6 +308,18 @@ function GoldenList:_ensureData()
     return self._data
 end
 
+function GoldenList:Init(svRoot)
+    if type(svRoot) == "table" then
+        self._svRoot = svRoot
+    else
+        self._svRoot = nil
+    end
+
+    self._data = newEmptyData()
+
+    debugLog("initialized GoldenList module")
+end
+
 local function normalizeCounters(counters)
     local normalized = newEmptyCounters()
     if type(counters) == "table" then
