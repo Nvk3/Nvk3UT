@@ -82,6 +82,73 @@ local function safeCall(fn, ...)
     return nil
 end
 
+local function resolveDeepCopyFunction()
+    local root = resolveRoot()
+    if type(root) == "table" then
+        local candidate = root.DeepCopyTable or root.DeepCopy or root.CopyTable
+        if type(candidate) == "function" then
+            return candidate
+        end
+    end
+
+    local utils = resolveUtils()
+    if type(utils) == "table" then
+        local candidate = utils.DeepCopyTable or utils.DeepCopy or utils.CopyTable
+        if type(candidate) == "function" then
+            return candidate
+        end
+    end
+
+    local globalCandidate = rawget(_G, "deepCopyTable")
+    if type(globalCandidate) == "function" then
+        return globalCandidate
+    end
+
+    return nil
+end
+
+local function fallbackDeepCopyTable(source)
+    if type(source) ~= "table" then
+        return nil
+    end
+
+    local function clone(value, seen)
+        if type(value) ~= "table" then
+            return value
+        end
+
+        if seen[value] then
+            return seen[value]
+        end
+
+        local result = {}
+        seen[value] = result
+
+        if value[1] ~= nil then
+            for index = 1, #value do
+                result[index] = clone(value[index], seen)
+            end
+        end
+
+        for key, child in pairs(value) do
+            if result[key] == nil then
+                result[key] = clone(child, seen)
+            end
+        end
+
+        return result
+    end
+
+    local ok, copy = pcall(function()
+        return clone(source, {})
+    end)
+    if ok and type(copy) == "table" then
+        return copy
+    end
+
+    return nil
+end
+
 local function isDebugEnabled()
     local utils = resolveUtils()
     if utils and type(utils.IsDebugEnabled) == "function" then
@@ -392,12 +459,36 @@ end
 
 function GoldenList:GetRawData()
     local data = self:_ensureData()
-    local copy = deepCopyTable({
+    local source = {
         categories = data.categories,
-    })
+    }
+
+    local copy
+    local copyFn = resolveDeepCopyFunction()
+    if type(copyFn) == "function" then
+        local ok, result = pcall(copyFn, source)
+        if ok and type(result) == "table" then
+            copy = result
+        else
+            debugLog("GetRawData: deep copy function failed; using fallback")
+        end
+    else
+        debugLog("GetRawData: deep copy function missing; using fallback")
+    end
+
     if type(copy) ~= "table" then
+        copy = fallbackDeepCopyTable(source)
+    end
+
+    if type(copy) ~= "table" then
+        debugLog("GetRawData: fallback clone failed; returning empty data")
         return newEmptyData()
     end
+
+    if type(copy.categories) ~= "table" then
+        copy.categories = {}
+    end
+
     return copy
 end
 

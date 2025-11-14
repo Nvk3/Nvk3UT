@@ -43,6 +43,20 @@ local function getGoldenState()
     return nil
 end
 
+local function getGoldenModel()
+    local root = getAddonRoot()
+    if type(root) ~= "table" then
+        return nil
+    end
+
+    local goldenModel = rawget(root, "GoldenModel")
+    if type(goldenModel) == "table" then
+        return goldenModel
+    end
+
+    return nil
+end
+
 local function isDebugEnabled()
     local root = getAddonRoot()
 
@@ -123,6 +137,26 @@ local function callStateMethod(goldenState, methodName)
     return nil
 end
 
+local function callModelMethod(model, methodName, ...)
+    if type(model) ~= "table" or type(methodName) ~= "string" then
+        return nil
+    end
+
+    local method = model[methodName]
+    if type(method) ~= "function" then
+        safeDebug("GoldenModel:%s missing; skipping call", tostring(methodName))
+        return nil
+    end
+
+    local ok, result = pcall(method, model, ...)
+    if ok then
+        return result
+    end
+
+    safeDebug("Call to GoldenModel:%s failed: %s", methodName, tostring(result))
+    return nil
+end
+
 local function copyStatus(status)
     local snapshot = {
         isAvailable = false,
@@ -161,6 +195,43 @@ local function resolveExpansionFlags(goldenState)
     return {
         header = headerExpanded,
     }
+end
+
+local function newEmptyViewModel(status, expansionFlags)
+    local viewStatus = copyStatus(status)
+
+    local headerExpanded = true
+    if type(expansionFlags) == "table" and expansionFlags.header ~= nil then
+        headerExpanded = expansionFlags.header ~= false
+    end
+
+    local viewModel = {
+        status = viewStatus,
+        header = { isExpanded = headerExpanded },
+        categories = {},
+        summary = {
+            totalEntries = 0,
+            totalCompleted = 0,
+            totalRemaining = 0,
+            campaignCount = 0,
+        },
+    }
+
+    return viewModel
+end
+
+local function ensureViewModel()
+    if type(state.viewModel) == "table" then
+        return state.viewModel
+    end
+
+    local goldenState = getGoldenState()
+    local expansionFlags = resolveExpansionFlags(goldenState)
+    local viewStatus = resolveStateStatus(goldenState)
+
+    state.viewModel = newEmptyViewModel(viewStatus, expansionFlags)
+    safeDebug("ensureViewModel fallback: created empty view model")
+    return state.viewModel
 end
 
 local function normalizeEntry(rawCategory, rawEntry, index)
