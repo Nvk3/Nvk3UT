@@ -21,6 +21,12 @@ local state = {
     viewModel = nil,
 }
 
+local attachments = {
+    model = nil,
+    tracker = nil,
+    debugLogger = nil,
+}
+
 local function getAddonRoot()
     local root = rawget(_G, addonName)
     if type(root) == "table" then
@@ -44,6 +50,10 @@ local function getGoldenState()
 end
 
 local function getGoldenModel()
+    if type(attachments.model) == "table" then
+        return attachments.model
+    end
+
     local root = getAddonRoot()
     if type(root) ~= "table" then
         return nil
@@ -100,8 +110,11 @@ local function safeDebug(message, ...)
         return
     end
 
-    local root = getAddonRoot()
-    local debugFn = root and root.Debug
+    local debugFn = attachments.debugLogger
+    if type(debugFn) ~= "function" then
+        local root = getAddonRoot()
+        debugFn = root and root.Debug
+    end
     if type(debugFn) ~= "function" then
         return
     end
@@ -418,14 +431,33 @@ local function buildCategory(rawCategory)
     return categoryVm
 end
 
+function Controller:New(model, tracker, debugLogger)
+    if type(model) == "table" then
+        attachments.model = model
+    end
+
+    if type(tracker) == "table" then
+        attachments.tracker = tracker
+    end
+
+    if debugLogger ~= nil then
+        attachments.debugLogger = debugLogger
+    end
+
+    return self
+end
+
 function Controller:Init()
     state.dirty = true
     state.viewModel = nil
     safeDebug("Init")
 end
 
-function Controller:MarkDirty()
+function Controller:MarkDirty(reason)
     state.dirty = true
+    if reason ~= nil then
+        safeDebug("MarkDirty(%s)", tostring(reason))
+    end
 end
 
 function Controller:IsDirty()
@@ -436,58 +468,83 @@ function Controller:ClearDirty()
     state.dirty = false
 end
 
-function Controller:BuildViewModel()
+function Controller:BuildViewModel(options)
     local goldenState = getGoldenState()
     local expansionFlags = resolveExpansionFlags(goldenState)
-    local viewStatus = resolveStateStatus(goldenState)
-    local viewModel = newEmptyViewModel(viewStatus, expansionFlags)
+    local stateStatus = resolveStateStatus(goldenState)
+    local viewModel = newEmptyViewModel(stateStatus, expansionFlags)
+
+    local isAvailable = stateStatus.isAvailable == true
+    local isLocked = stateStatus.isLocked == true
+    local hasEntries = stateStatus.hasEntries == true
+
+    if not isAvailable then
+        state.viewModel = viewModel
+        state.dirty = false
+        safeDebug(
+            "BuildViewModel gated (state unavailable): locked=%s hasEntries=%s",
+            tostring(isLocked),
+            tostring(hasEntries)
+        )
+        return viewModel
+    end
+
+    if isLocked then
+        state.viewModel = viewModel
+        state.dirty = false
+        safeDebug("BuildViewModel gated (state locked)")
+        return viewModel
+    end
+
+    if not hasEntries then
+        state.viewModel = viewModel
+        state.dirty = false
+        safeDebug("BuildViewModel gated (state empty)")
+        return viewModel
+    end
 
     local model = getGoldenModel()
     if model == nil then
         state.viewModel = viewModel
         state.dirty = false
         safeDebug("BuildViewModel fallback: GoldenModel missing")
-        return state.viewModel
+        return viewModel
     end
 
     local modelStatus = callModelMethod(model, "GetSystemStatus")
     if type(modelStatus) == "table" then
         viewModel.status = copyStatus(modelStatus)
+        isAvailable = viewModel.status.isAvailable == true
+        isLocked = viewModel.status.isLocked == true
+        hasEntries = viewModel.status.hasEntries == true
     else
-        viewModel.status = copyStatus(viewStatus)
-    end
-
-    local isAvailable = viewModel.status.isAvailable == true
-    local isLocked = viewModel.status.isLocked == true
-    local hasEntries = viewModel.status.hasEntries == true
-
-    if isLocked then
-        state.viewModel = viewModel
-        state.dirty = false
-        safeDebug(
-            "BuildViewModel gated: locked (available=%s hasEntries=%s)",
-            tostring(isAvailable),
-            tostring(hasEntries)
-        )
-        return state.viewModel
+        viewModel.status = copyStatus(stateStatus)
+        viewModel.status.hasEntries = true
     end
 
     if not isAvailable then
         state.viewModel = viewModel
         state.dirty = false
         safeDebug(
-            "BuildViewModel gated: unavailable (locked=%s hasEntries=%s)",
+            "BuildViewModel gated (model unavailable): locked=%s hasEntries=%s",
             tostring(isLocked),
             tostring(hasEntries)
         )
-        return state.viewModel
+        return viewModel
+    end
+
+    if isLocked then
+        state.viewModel = viewModel
+        state.dirty = false
+        safeDebug("BuildViewModel gated (model locked)")
+        return viewModel
     end
 
     if not hasEntries then
         state.viewModel = viewModel
         state.dirty = false
-        safeDebug("BuildViewModel gated: empty (available=true)")
-        return state.viewModel
+        safeDebug("BuildViewModel gated (model empty)")
+        return viewModel
     end
 
     local rawData = callModelMethod(model, "GetViewData") or {}
@@ -534,16 +591,11 @@ function Controller:BuildViewModel()
     state.viewModel = viewModel
     state.dirty = false
 
-    local statusSummary = string.format(
-        "avail=%s locked=%s hasEntries=%s",
+    safeDebug(
+        "BuildViewModel populated: avail=%s locked=%s hasEntries=%s campaigns=%d activities=%d/%d",
         tostring(viewModel.status.isAvailable),
         tostring(viewModel.status.isLocked),
-        tostring(viewModel.status.hasEntries)
-    )
-
-    safeDebug(
-        "BuildViewModel populated: %s campaigns=%d activities=%d/%d",
-        statusSummary,
+        tostring(viewModel.status.hasEntries),
         summary.campaignCount,
         summary.totalCompleted,
         summary.totalEntries

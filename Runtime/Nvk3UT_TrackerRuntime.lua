@@ -469,6 +469,28 @@ local function refreshEndeavorTracker(viewModel)
     return refreshed
 end
 
+local function refreshGoldenModel()
+    local model = rawget(Addon, "GoldenModel")
+    if type(model) ~= "table" then
+        return false
+    end
+
+    local refresh = model.RefreshFromGame or model.Refresh
+    if type(refresh) ~= "function" then
+        return false
+    end
+
+    local refreshed = false
+    safeCall(function()
+        local invoked = callWithOptionalSelf(model, refresh, false)
+        if invoked then
+            refreshed = true
+        end
+    end)
+
+    return refreshed
+end
+
 local function ensureGoldenCache(runtime)
     if type(runtime) ~= "table" then
         return { goldenVM = { categories = {} } }, { categories = {} }
@@ -493,7 +515,7 @@ local function ensureGoldenCache(runtime)
     return cache, viewModel
 end
 
-local function buildGoldenViewModel(runtime)
+local function buildGoldenViewModel(runtime, shouldRefreshModel)
     local cache, fallbackVm = ensureGoldenCache(runtime)
 
     local controller = rawget(Addon, "GoldenTrackerController")
@@ -501,6 +523,35 @@ local function buildGoldenViewModel(runtime)
         warn("Runtime: GoldenTrackerController missing; cached empty VM")
         cache.goldenVM = fallbackVm
         return fallbackVm, false
+    end
+
+    if shouldRefreshModel then
+        local refreshed = refreshGoldenModel()
+        if refreshed then
+            debug("Runtime: GoldenModel refreshed from game")
+        end
+    end
+
+    if type(controller.New) == "function" and controller.__newInitialized ~= true then
+        local modelModule = rawget(Addon, "GoldenModel")
+        local trackerModule = rawget(Addon, "GoldenTracker")
+        local debugLogger = nil
+        if type(Addon) == "table" and type(Addon.Debug) == "function" then
+            debugLogger = Addon.Debug
+        end
+        safeCall(function()
+            local invoked = callWithOptionalSelf(
+                controller,
+                controller.New,
+                false,
+                modelModule,
+                trackerModule,
+                debugLogger
+            )
+            if invoked then
+                controller.__newInitialized = true
+            end
+        end)
     end
 
     local viewModel = fallbackVm
@@ -874,7 +925,7 @@ function Runtime:ProcessFrame(nowMs)
         local goldenVmBuilt = false
 
         if goldenDirty then
-            local builtViewModel, buildInvoked = buildGoldenViewModel(self)
+            local builtViewModel, buildInvoked = buildGoldenViewModel(self, true)
             goldenViewModel = builtViewModel
             goldenVmBuilt = buildInvoked
             self.goldenDirty = false
