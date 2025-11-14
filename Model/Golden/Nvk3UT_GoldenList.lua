@@ -266,10 +266,60 @@ local function ensureBoolean(value)
     return value == true
 end
 
+local function newEmptyStatus()
+    return {
+        isAvailable = false,
+        isLocked = false,
+        hasEntries = false,
+    }
+end
+
+local function normalizeStatus(status)
+    local normalized = newEmptyStatus()
+    if type(status) == "table" then
+        normalized.isAvailable = status.isAvailable == true
+        normalized.isLocked = status.isLocked == true
+        normalized.hasEntries = status.hasEntries == true
+    end
+    return normalized
+end
+
+local function newEmptyCounters()
+    return {
+        campaignCount = 0,
+        totalActivities = 0,
+        completedActivities = 0,
+    }
+end
+
 local function newEmptyData()
     return {
         categories = {},
+        status = newEmptyStatus(),
+        counters = newEmptyCounters(),
     }
+end
+
+local function normalizeCounters(counters)
+    local normalized = newEmptyCounters()
+    if type(counters) == "table" then
+        normalized.campaignCount = ensureNonNegative(counters.campaignCount)
+        normalized.totalActivities = ensureNonNegative(counters.totalActivities)
+        normalized.completedActivities = ensureNonNegative(counters.completedActivities)
+    end
+    return normalized
+end
+
+local function normalizeRawSnapshot(snapshot)
+    if type(snapshot) ~= "table" then
+        return newEmptyData()
+    end
+
+    snapshot.categories = type(snapshot.categories) == "table" and snapshot.categories or {}
+    snapshot.status = normalizeStatus(snapshot.status)
+    snapshot.counters = normalizeCounters(snapshot.counters)
+
+    return snapshot
 end
 
 local function normalizeEntry(rawEntry, categoryKey, fallbackRemaining, entryIndex)
@@ -441,13 +491,34 @@ function GoldenList:RefreshFromGame(providerFn)
 
     local categories = applyProviderPayload(payload)
     data.categories = categories
+    data.status = normalizeStatus(payload and payload.status)
+    data.counters = normalizeCounters(payload and payload.counters)
 
     local totalEntries = 0
+    local completedActivities = 0
     for index = 1, #categories do
         local category = categories[index]
         if type(category) == "table" and type(category.entries) == "table" then
-            totalEntries = totalEntries + #category.entries
+            local entryCount = #category.entries
+            totalEntries = totalEntries + entryCount
+
+            for entryIndex = 1, entryCount do
+                local entry = category.entries[entryIndex]
+                if type(entry) == "table" and entry.isCompleted == true then
+                    completedActivities = completedActivities + 1
+                end
+            end
         end
+    end
+
+    if data.counters.campaignCount < #categories then
+        data.counters.campaignCount = #categories
+    end
+    if data.counters.totalActivities < totalEntries then
+        data.counters.totalActivities = totalEntries
+    end
+    if data.counters.completedActivities < completedActivities then
+        data.counters.completedActivities = completedActivities
     end
 
     debugLog(
@@ -459,16 +530,18 @@ end
 
 function GoldenList:GetRawData()
     local data = self:_ensureData()
-    local source = {
+    local source = normalizeRawSnapshot({
         categories = data.categories,
-    }
+        status = data.status,
+        counters = data.counters,
+    })
 
     local copy
     local copyFn = resolveDeepCopyFunction()
     if type(copyFn) == "function" then
         local ok, result = pcall(copyFn, source)
         if ok and type(result) == "table" then
-            copy = result
+            copy = normalizeRawSnapshot(result)
         else
             debugLog("GetRawData: deep copy function failed; using fallback")
         end
@@ -477,16 +550,15 @@ function GoldenList:GetRawData()
     end
 
     if type(copy) ~= "table" then
-        copy = fallbackDeepCopyTable(source)
+        local fallback = fallbackDeepCopyTable(source)
+        if type(fallback) == "table" then
+            copy = normalizeRawSnapshot(fallback)
+        end
     end
 
     if type(copy) ~= "table" then
         debugLog("GetRawData: fallback clone failed; returning empty data")
         return newEmptyData()
-    end
-
-    if type(copy.categories) ~= "table" then
-        copy.categories = {}
     end
 
     return copy
