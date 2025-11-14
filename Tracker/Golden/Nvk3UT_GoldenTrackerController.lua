@@ -105,6 +105,29 @@ local function emitInitPollerTickDebug(attemptIndex, campaignCount)
     diagnosticsDebug("[Golden SHIM] init-poller tick %d → campaigns=%d", attemptIndex or 0, campaignCount or 0)
 end
 
+local function shouldDelayPromoRefresh()
+    local lockFn = rawget(_G, "IsPromotionalEventSystemLocked")
+    if type(lockFn) == "function" then
+        local okLocked, lockedValue = pcall(lockFn)
+        if okLocked and lockedValue then
+            return true
+        end
+    end
+
+    local countFn = rawget(_G, "GetNumActivePromotionalEventCampaigns")
+    if type(countFn) == "function" then
+        local okCount, countValue = pcall(countFn)
+        if okCount then
+            local numeric = tonumber(countValue) or 0
+            if numeric <= 0 then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
 local function shouldSkipProgressThisFrame(controller)
     local frameTimeFn = rawget(_G, "GetFrameTimeMilliseconds")
     if type(frameTimeFn) ~= "function" then
@@ -284,6 +307,19 @@ local function scheduleInitPollerTick(controller)
         end
 
         local attemptIndex = (INIT_POLLER_MAX_ATTEMPTS - remaining) + 1
+
+        if shouldDelayPromoRefresh() then
+            controller[INIT_POLLER_REMAINING_FIELD] = remaining
+            local callLater = rawget(_G, "zo_callLater")
+            if type(callLater) == "function" then
+                controller[INIT_POLLER_ACTIVE_FIELD] = true
+                scheduleInitPollerTick(controller)
+            else
+                controller[INIT_POLLER_ACTIVE_FIELD] = false
+            end
+            return
+        end
+
         controller[INIT_POLLER_REMAINING_FIELD] = remaining - 1
 
         local model, campaignCount = performModelRefresh(controller)

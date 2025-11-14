@@ -29,10 +29,10 @@ local state = {
     fallbackHeaderCounter = 0,
 }
 
--- TEMP EVENT BOOTSTRAP (INTRO) now SHIM-routed to Controller handlers.
+-- TEMP EVENT BOOTSTRAP routes promotional events to SHIM dirties.
 -- Registrations bleiben hier bis GEVENTS_*_SWITCH, danach werden nur die Registrierungen verlagert.
 -- Handler-Signaturen bleiben stabil und werden weiterverwendet.
--- Progress-only refresh: EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED löst den Sync aus; andere Events setzen nur Flags (keine UI/Layouts hier).
+-- Promotional events only mark the controller dirty and queue runtime refresh (no UI/layout work here).
 -- SHIM InitKick: temporary startup refresh to seed Golden data.
 -- Will remain until GEVENTS_* migration centralizes lifecycle kicks.
 
@@ -183,6 +183,24 @@ local function deferInitKick()
     end
 end
 
+-- [GEVENTS_SWITCH_REMOVE] Deferred SHIM dirty tick to mirror VEQ startup behavior.
+local function schedulePostInitDirty()
+    if not state.initialized then
+        return
+    end
+
+    local function trigger()
+        markGoldenDirty("post_init_defer")
+    end
+
+    local callLater = rawget(_G, "zo_callLater")
+    if type(callLater) == "function" then
+        pcall(callLater, trigger, 5300)
+    else
+        trigger()
+    end
+end
+
 local function callMethod(target, methodName, ...)
     if type(target) ~= "table" then
         return false
@@ -219,7 +237,29 @@ local function routeTempEvent(handlerName, ...)
     callMethod(controller, handlerName, ...)
 end
 
-local function registerTempEvent(eventManager, eventName, eventCode, handlerName)
+-- [GEVENTS_SWITCH_REMOVE] Promotional TempEvents mark dirty only; remove on GEVENTS switch.
+local function markGoldenDirty(eventName)
+    if not state.initialized then
+        return
+    end
+
+    local root = Nvk3UT
+    if type(root) ~= "table" then
+        return
+    end
+
+    local controller = root.GoldenTrackerController
+    if type(controller) == "table" and type(controller.MarkDirty) == "function" then
+        pcall(controller.MarkDirty, controller)
+    end
+
+    local runtime = root.TrackerRuntime
+    if type(runtime) == "table" and type(runtime.QueueDirty) == "function" then
+        pcall(runtime.QueueDirty, runtime, "golden")
+    end
+end
+
+local function registerTempEvent(eventManager, eventName, eventCode, handler)
     if eventManager == nil then
         return
     end
@@ -234,8 +274,19 @@ local function registerTempEvent(eventManager, eventName, eventCode, handlerName
     end
 
     local namespace = string.format("%s.%s", TEMP_EVENT_NAMESPACE, tostring(eventName))
-    local callback = function(eventCode, ...)
-        routeTempEvent(handlerName, eventCode, ...)
+    local callback
+    if type(handler) == "function" then
+        callback = function(eventCode, ...)
+            handler(eventName, eventCode, ...)
+        end
+    elseif type(handler) == "string" then
+        callback = function(eventCode, ...)
+            routeTempEvent(handler, eventCode, ...)
+        end
+    else
+        callback = function()
+            markGoldenDirty(eventName)
+        end
     end
 
     pcall(registerFn, eventManager, namespace, eventCode, callback)
@@ -252,11 +303,11 @@ local function InitializeTempEvents()
     end
 
     -- [GEVENTS_SWITCH_REMOVE] TempEvent registration (to be deleted on SWITCH)
-    registerTempEvent(eventManager, "EVENT_TIMED_ACTIVITIES_UPDATED", EVENT_TIMED_ACTIVITIES_UPDATED, "OnTimedActivitiesUpdated")
+    registerTempEvent(eventManager, "EVENT_PROMOTIONAL_EVENTS_ACTIVATED", EVENT_PROMOTIONAL_EVENTS_ACTIVATED, markGoldenDirty)
     -- [GEVENTS_SWITCH_REMOVE] TempEvent registration (to be deleted on SWITCH)
-    registerTempEvent(eventManager, "EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED", EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED, "OnTimedActivityProgressUpdated")
+    registerTempEvent(eventManager, "EVENT_PROMOTIONAL_EVENTS_ACTIVITY_PROGRESS_UPDATED", EVENT_PROMOTIONAL_EVENTS_ACTIVITY_PROGRESS_UPDATED, markGoldenDirty)
     -- [GEVENTS_SWITCH_REMOVE] TempEvent registration (to be deleted on SWITCH)
-    registerTempEvent(eventManager, "EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED", EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED, "OnTimedActivitySystemStatusUpdated")
+    registerTempEvent(eventManager, "EVENT_PROMOTIONAL_EVENTS_REWARD_CLAIM_STATE_CHANGED", EVENT_PROMOTIONAL_EVENTS_REWARD_CLAIM_STATE_CHANGED, markGoldenDirty)
 
     tempEventsRegistered = true
 
@@ -281,9 +332,9 @@ local function UnregisterTempEvents_Golden()
         pcall(unregisterFn, eventManager, namespace)
     end
 
-    unregister("EVENT_TIMED_ACTIVITIES_UPDATED")
-    unregister("EVENT_TIMED_ACTIVITY_PROGRESS_UPDATED")
-    unregister("EVENT_TIMED_ACTIVITY_SYSTEM_STATUS_UPDATED")
+    unregister("EVENT_PROMOTIONAL_EVENTS_ACTIVATED")
+    unregister("EVENT_PROMOTIONAL_EVENTS_ACTIVITY_PROGRESS_UPDATED")
+    unregister("EVENT_PROMOTIONAL_EVENTS_REWARD_CLAIM_STATE_CHANGED")
 end
 
 local function createRootAndContent(parentControl)
@@ -586,6 +637,8 @@ function GoldenTracker.Init(parentControl, opts)
 
     -- [GEVENTS_SWITCH_REMOVE] Deferred InitKick/Poller (SHIM)
     deferInitKick()
+    -- [GEVENTS_SWITCH_REMOVE] Deferred post-init dirty tick (SHIM)
+    schedulePostInitDirty()
 
     emitTempEventsActiveDebug()
 
