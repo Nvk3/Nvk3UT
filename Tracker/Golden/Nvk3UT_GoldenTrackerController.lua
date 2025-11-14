@@ -44,6 +44,20 @@ local function getAddonRoot()
     return Nvk3UT
 end
 
+local function getGoldenState()
+    local root = getAddonRoot()
+    if type(root) ~= "table" then
+        return nil
+    end
+
+    local goldenState = rawget(root, "GoldenState")
+    if type(goldenState) == "table" then
+        return goldenState
+    end
+
+    return nil
+end
+
 local function isDebugEnabled()
     local root = getAddonRoot()
 
@@ -105,6 +119,25 @@ local function safeDebug(message, ...)
     pcall(debugFn, string.format("%s: %s", MODULE_TAG, tostring(payload)))
 end
 
+local function callStateMethod(goldenState, methodName)
+    if type(goldenState) ~= "table" or type(methodName) ~= "string" then
+        return nil
+    end
+
+    local method = goldenState[methodName]
+    if type(method) ~= "function" then
+        return nil
+    end
+
+    local ok, result = pcall(method, goldenState)
+    if ok then
+        return result
+    end
+
+    safeDebug("Call to GoldenState:%s failed: %s", methodName, tostring(result))
+    return nil
+end
+
 local function copyStatus(status)
     local snapshot = {
         isAvailable = false,
@@ -119,6 +152,44 @@ local function copyStatus(status)
     end
 
     return snapshot
+end
+
+local function resolveStateStatus(goldenState)
+    local status = callStateMethod(goldenState, "GetSystemStatus")
+    if type(status) == "table" then
+        return copyStatus(status)
+    end
+
+    return copyStatus(DEFAULT_STATUS)
+end
+
+local function resolveExpansionFlags(goldenState)
+    local headerExpanded = true
+    local dailyExpanded = true
+    local weeklyExpanded = true
+
+    if goldenState then
+        local header = callStateMethod(goldenState, "IsHeaderExpanded")
+        if header ~= nil then
+            headerExpanded = header ~= false
+        end
+
+        local daily = callStateMethod(goldenState, "IsDailyExpanded")
+        if daily ~= nil then
+            dailyExpanded = daily ~= false
+        end
+
+        local weekly = callStateMethod(goldenState, "IsWeeklyExpanded")
+        if weekly ~= nil then
+            weeklyExpanded = weekly ~= false
+        end
+    end
+
+    return {
+        header = headerExpanded,
+        daily = dailyExpanded,
+        weekly = weeklyExpanded,
+    }
 end
 
 local function newEmptyCategory(definition, expanded)
@@ -150,10 +221,20 @@ local function newEmptyCategory(definition, expanded)
     }
 end
 
-local function newEmptyViewModel()
+local function newEmptyViewModel(status, expansionFlags)
     local categories = {}
+    local categoryExpansion = type(expansionFlags) == "table" and expansionFlags or nil
+
     for index = 1, #CATEGORY_DEFINITIONS do
-        categories[index] = newEmptyCategory(CATEGORY_DEFINITIONS[index], true)
+        local definition = CATEGORY_DEFINITIONS[index]
+        local expanded = nil
+        if categoryExpansion then
+            local value = categoryExpansion[definition.key]
+            if value ~= nil then
+                expanded = value ~= false
+            end
+        end
+        categories[index] = newEmptyCategory(definition, expanded)
     end
 
     local summary = {
@@ -166,11 +247,16 @@ local function newEmptyViewModel()
         },
     }
 
+    local headerExpanded = true
+    if categoryExpansion and categoryExpansion.header ~= nil then
+        headerExpanded = categoryExpansion.header ~= false
+    end
+
     return {
         header = {
-            isExpanded = true,
+            isExpanded = headerExpanded,
         },
-        status = copyStatus(DEFAULT_STATUS),
+        status = copyStatus(status or DEFAULT_STATUS),
         categories = categories,
         summary = summary,
     }
@@ -515,7 +601,10 @@ function Controller:ClearDirty()
 end
 
 function Controller:BuildViewModel()
-    local viewModel = newEmptyViewModel()
+    local goldenState = getGoldenState()
+    local expansionFlags = resolveExpansionFlags(goldenState)
+    local viewStatus = resolveStateStatus(goldenState)
+    local viewModel = newEmptyViewModel(viewStatus, expansionFlags)
 
     local model = getGoldenModel()
     if model == nil then
@@ -525,13 +614,50 @@ function Controller:BuildViewModel()
         return state.viewModel
     end
 
-    local status = callModelMethod(model, "GetSystemStatus")
-    viewModel.status = copyStatus(status or DEFAULT_STATUS)
+    local modelStatus = callModelMethod(model, "GetSystemStatus")
+    if type(modelStatus) == "table" then
+        viewModel.status = copyStatus(modelStatus)
+    else
+        viewModel.status = copyStatus(viewStatus)
+    end
+
+    local isAvailable = viewModel.status.isAvailable == true
+    local isLocked = viewModel.status.isLocked == true
+    local hasEntries = viewModel.status.hasEntries == true
+
+    if isLocked then
+        state.viewModel = viewModel
+        state.dirty = false
+        safeDebug(
+            "BuildViewModel gated: locked (available=%s hasEntries=%s)",
+            tostring(isAvailable),
+            tostring(hasEntries)
+        )
+        return state.viewModel
+    end
+
+    if not isAvailable then
+        state.viewModel = viewModel
+        state.dirty = false
+        safeDebug(
+            "BuildViewModel gated: unavailable (locked=%s hasEntries=%s)",
+            tostring(isLocked),
+            tostring(hasEntries)
+        )
+        return state.viewModel
+    end
+
+    if not hasEntries then
+        state.viewModel = viewModel
+        state.dirty = false
+        safeDebug("BuildViewModel gated: empty (available=true)")
+        return state.viewModel
+    end
 
     local rawData = callModelMethod(model, "GetViewData") or {}
     local counters = callModelMethod(model, "GetCounters") or {}
 
-    local headerExpanded = true
+    local headerExpanded = expansionFlags.header ~= false
     if type(rawData) == "table" and rawData.headerExpanded ~= nil then
         headerExpanded = rawData.headerExpanded ~= false
     end
@@ -554,6 +680,12 @@ function Controller:BuildViewModel()
         local definition = CATEGORY_DEFINITIONS[index]
         local rawCategory = categoryMap[definition.key]
         local expanded = rawCategory and rawCategory.expanded
+        if expanded == nil then
+            local stateExpanded = expansionFlags[definition.key]
+            if stateExpanded ~= nil then
+                expanded = stateExpanded ~= false
+            end
+        end
         local categoryVm = buildCategory(definition, rawCategory, counters, expanded)
 
         categories[index] = categoryVm
@@ -588,7 +720,6 @@ function Controller:BuildViewModel()
     state.viewModel = viewModel
     state.dirty = false
 
-    local categoryCount = #categories
     local statusSummary = string.format(
         "avail=%s locked=%s hasEntries=%s",
         tostring(viewModel.status.isAvailable),
@@ -596,29 +727,15 @@ function Controller:BuildViewModel()
         tostring(viewModel.status.hasEntries)
     )
 
-    if viewModel.status.isLocked then
-        safeDebug("BuildViewModel locked: %s categories=%d", statusSummary, categoryCount)
-    elseif not viewModel.status.isAvailable then
-        safeDebug("BuildViewModel unavailable: %s categories=%d", statusSummary, categoryCount)
-    elseif not viewModel.status.hasEntries then
-        safeDebug(
-            "BuildViewModel empty: %s categories=%d daily=%d weekly=%d",
-            statusSummary,
-            categoryCount,
-            summary.categories.daily.total or 0,
-            summary.categories.weekly.total or 0
-        )
-    else
-        safeDebug(
-            "BuildViewModel populated: %s daily=%d/%d weekly=%d/%d totalEntries=%d",
-            statusSummary,
-            summary.categories.daily.completed or 0,
-            summary.categories.daily.total or 0,
-            summary.categories.weekly.completed or 0,
-            summary.categories.weekly.total or 0,
-            summary.totalEntries
-        )
-    end
+    safeDebug(
+        "BuildViewModel populated: %s daily=%d/%d weekly=%d/%d totalEntries=%d",
+        statusSummary,
+        summary.categories.daily.completed or 0,
+        summary.categories.daily.total or 0,
+        summary.categories.weekly.completed or 0,
+        summary.categories.weekly.total or 0,
+        summary.totalEntries
+    )
 
     return viewModel
 end
