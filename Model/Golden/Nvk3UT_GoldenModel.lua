@@ -13,13 +13,9 @@ GoldenModel._list = type(GoldenModel._list) == "table" and GoldenModel._list or 
 GoldenModel._rawData = type(GoldenModel._rawData) == "table" and GoldenModel._rawData or nil
 GoldenModel._viewData = type(GoldenModel._viewData) == "table" and GoldenModel._viewData or nil
 GoldenModel._counters = type(GoldenModel._counters) == "table" and GoldenModel._counters or nil
+GoldenModel._systemStatus = type(GoldenModel._systemStatus) == "table" and GoldenModel._systemStatus or nil
 
 local unpack = _G.unpack or (table and table.unpack)
-
-local CATEGORY_ORDER = {
-    { key = "daily", name = "DAILY", stateGetter = "IsDailyExpanded" },
-    { key = "weekly", name = "WEEKLY", stateGetter = "IsWeeklyExpanded" },
-}
 
 local function resolveRoot()
     local root = rawget(_G, "Nvk3UT")
@@ -184,6 +180,16 @@ local function ensureNumber(value, fallback)
     return numeric
 end
 
+local function ensureString(value, fallback)
+    if value == nil then
+        if fallback ~= nil then
+            return tostring(fallback)
+        end
+        return ""
+    end
+    return tostring(value)
+end
+
 local function deepCopyTable(source)
     if type(source) ~= "table" then
         return nil
@@ -225,35 +231,72 @@ local function deepCopyTable(source)
     return nil
 end
 
-local function newEmptyCategory(descriptor)
-    return {
-        key = descriptor.key,
-        name = descriptor.name,
-        entries = {},
-        countCompleted = 0,
-        countTotal = 0,
-        timeRemainingSec = 0,
-        expanded = true,
-    }
-end
-
 local function newEmptyRawData()
-    local categories = {}
-    for index = 1, #CATEGORY_ORDER do
-        categories[index] = newEmptyCategory(CATEGORY_ORDER[index])
-    end
-    return {
-        categories = categories,
-    }
+    return { categories = {} }
 end
 
 local function newEmptyCounters()
     return {
-        dailyCompleted = 0,
-        dailyTotal = 0,
-        weeklyCompleted = 0,
-        weeklyTotal = 0,
+        campaignCount = 0,
+        completedActivities = 0,
+        totalActivities = 0,
     }
+end
+
+local function newSystemStatus()
+    return {
+        isAvailable = false,
+        isLocked = false,
+        hasEntries = false,
+    }
+end
+
+local function copySystemStatus(status)
+    local snapshot = newSystemStatus()
+    if type(status) == "table" then
+        snapshot.isAvailable = status.isAvailable == true
+        snapshot.isLocked = status.isLocked == true
+        snapshot.hasEntries = status.hasEntries == true
+    end
+    return snapshot
+end
+
+local function resolveSystemStatus(self, create)
+    local status = self._systemStatus
+    if type(status) == "table" then
+        return status
+    end
+
+    if not create then
+        return nil
+    end
+
+    status = newSystemStatus()
+    self._systemStatus = status
+    return status
+end
+
+local function applyStateSystemStatus(state, status)
+    if type(state) ~= "table" then
+        return
+    end
+
+    local snapshot = copySystemStatus(status)
+
+    local function invoke(methodName, value)
+        local method = state[methodName]
+        if type(method) ~= "function" then
+            return
+        end
+
+        safeCall(function()
+            method(state, value)
+        end)
+    end
+
+    invoke("SetSystemAvailable", snapshot.isAvailable)
+    invoke("SetSystemLocked", snapshot.isLocked)
+    invoke("SetHasEntries", snapshot.hasEntries)
 end
 
 local function copyOrEmpty(value, fallbackFactory)
@@ -362,22 +405,24 @@ local function buildCounters(data)
         return counters
     end
 
+    local totalActivities = 0
+    local completedActivities = 0
+
     for index = 1, #categories do
         local category = categories[index]
         if type(category) == "table" then
-            local key = category.key
             local entries = category.entries
             local completed = coerceCount(category.countCompleted, entries)
             local total = coerceCount(category.countTotal, entries)
-            if key == "daily" then
-                counters.dailyCompleted = completed
-                counters.dailyTotal = total
-            elseif key == "weekly" then
-                counters.weeklyCompleted = completed
-                counters.weeklyTotal = total
-            end
+
+            counters.campaignCount = counters.campaignCount + 1
+            totalActivities = totalActivities + total
+            completedActivities = completedActivities + math.min(completed, total)
         end
     end
+
+    counters.totalActivities = totalActivities
+    counters.completedActivities = completedActivities
 
     return counters
 end
@@ -387,27 +432,506 @@ local function computeIsEmpty(counters)
         return true
     end
 
-    local dailyTotal = tonumber(counters.dailyTotal) or 0
-    local weeklyTotal = tonumber(counters.weeklyTotal) or 0
+    local total = tonumber(counters.totalActivities) or 0
 
-    return dailyTotal <= 0 and weeklyTotal <= 0
+    return total <= 0
 end
 
-local function buildCategoryView(descriptor, rawCategory, state)
-    local entries = coerceEntries(rawCategory)
-    local countCompleted = coerceCount(rawCategory and rawCategory.countCompleted, entries)
-    local countTotal = coerceCount(rawCategory and rawCategory.countTotal, entries)
-    local remaining = ensureNumber(rawCategory and rawCategory.timeRemainingSec, 0)
-    local expanded = getStateBoolean(state, descriptor.stateGetter, true)
+local goldenApi
+
+do
+    -- Local Golden API facade that centralizes promotional event queries for Golden pursuits.
+    local function fetchGlobal(name)
+        if type(_G) == "table" then
+            local fn = rawget(_G, name)
+            if type(fn) == "function" then
+                return fn
+            end
+        end
+        return nil
+    end
+
+    local RequestPromotionalEventCampaignData = fetchGlobal("RequestPromotionalEventCampaignData")
+    local GetNumActivePromotionalEventCampaigns = fetchGlobal("GetNumActivePromotionalEventCampaigns")
+    local GetActivePromotionalEventCampaignKey = fetchGlobal("GetActivePromotionalEventCampaignKey")
+    local GetPromotionalEventCampaignInfo = fetchGlobal("GetPromotionalEventCampaignInfo")
+    local GetPromotionalEventCampaignDisplayName = fetchGlobal("GetPromotionalEventCampaignDisplayName")
+    local GetPromotionalEventCampaignDescription = fetchGlobal("GetPromotionalEventCampaignDescription")
+    local GetSecondsRemainingInPromotionalEventCampaign = fetchGlobal("GetSecondsRemainingInPromotionalEventCampaign")
+    local GetPromotionalEventCampaignProgress = fetchGlobal("GetPromotionalEventCampaignProgress")
+    local GetNumPromotionalEventCampaignActivities = fetchGlobal("GetNumPromotionalEventCampaignActivities")
+    local GetPromotionalEventCampaignActivityInfo = fetchGlobal("GetPromotionalEventCampaignActivityInfo")
+    local GetPromotionalEventCampaignActivityProgress = fetchGlobal("GetPromotionalEventCampaignActivityProgress")
+    local GetPromotionalEventCampaignActivityTimeRemainingSeconds = fetchGlobal("GetPromotionalEventCampaignActivityTimeRemainingSeconds")
+    local IsPromotionalEventSystemLocked = fetchGlobal("IsPromotionalEventSystemLocked")
+
+    goldenApi = {}
+
+    function goldenApi:HasRequiredApis()
+        local required = {
+            { "GetNumActivePromotionalEventCampaigns", GetNumActivePromotionalEventCampaigns },
+            { "GetActivePromotionalEventCampaignKey", GetActivePromotionalEventCampaignKey },
+            { "GetPromotionalEventCampaignInfo", GetPromotionalEventCampaignInfo },
+            { "GetPromotionalEventCampaignDisplayName", GetPromotionalEventCampaignDisplayName },
+            { "GetPromotionalEventCampaignDescription", GetPromotionalEventCampaignDescription },
+            { "GetSecondsRemainingInPromotionalEventCampaign", GetSecondsRemainingInPromotionalEventCampaign },
+            { "GetPromotionalEventCampaignProgress", GetPromotionalEventCampaignProgress },
+            { "GetNumPromotionalEventCampaignActivities", GetNumPromotionalEventCampaignActivities },
+            { "GetPromotionalEventCampaignActivityInfo", GetPromotionalEventCampaignActivityInfo },
+            { "GetPromotionalEventCampaignActivityProgress", GetPromotionalEventCampaignActivityProgress },
+            { "IsPromotionalEventSystemLocked", IsPromotionalEventSystemLocked },
+        }
+
+        for index = 1, #required do
+            local entry = required[index]
+            if type(entry[2]) ~= "function" then
+                return false, entry[1]
+            end
+        end
+
+        return true, nil
+    end
+
+    function goldenApi:InvokeProvider(providerFn)
+        if type(providerFn) ~= "function" then
+            return nil
+        end
+
+        local payload = safeCall(providerFn)
+        if payload ~= nil then
+            return payload
+        end
+
+        local ok, fallback = pcall(providerFn)
+        if ok then
+            return fallback
+        end
+
+        return nil
+    end
+
+    function goldenApi:IsSystemLocked()
+        if type(IsPromotionalEventSystemLocked) ~= "function" then
+            return false
+        end
+
+        local locked = safeCall(IsPromotionalEventSystemLocked)
+        return locked == true
+    end
+
+    function goldenApi:GetActiveCampaignCount()
+        if type(GetNumActivePromotionalEventCampaigns) ~= "function" then
+            return 0
+        end
+
+        local count = safeCall(GetNumActivePromotionalEventCampaigns)
+        count = ensureNumber(count, 0)
+        if count < 0 then
+            count = 0
+        end
+
+        return count
+    end
+
+    function goldenApi:WarmupCampaignData()
+        if type(RequestPromotionalEventCampaignData) ~= "function" then
+            return
+        end
+
+        safeCall(RequestPromotionalEventCampaignData)
+    end
+
+    function goldenApi:CollectVeqAugment(campaignHandle, activityIndex)
+        -- Placeholder for Phase B2 VEQ augmentation hook.
+        -- Future tokens will enrich Golden pursuit activities with VEQ data here.
+        return nil
+    end
+
+    function goldenApi:BuildActivityPayload(campaignKey, campaignIndex, activityIndex, campaignMeta)
+        local payload = {
+            campaignIndex = campaignIndex,
+            campaignHandle = campaignKey,
+            activityIndex = activityIndex,
+            campaignId = campaignMeta and campaignMeta.id,
+            campaignKey = campaignMeta and campaignMeta.key,
+            campaignName = campaignMeta and campaignMeta.displayName,
+        }
+
+        local activityId, name, description, completionThreshold, rewardId, rewardQuantity = safeCall(
+            GetPromotionalEventCampaignActivityInfo,
+            campaignKey,
+            activityIndex
+        )
+
+        payload.id = activityId or string.format("%s:%d", tostring(campaignKey), activityIndex)
+        payload.name = ensureString(name)
+        payload.description = ensureString(description)
+        payload.rewardId = rewardId
+        payload.rewardQuantity = rewardQuantity
+
+        if completionThreshold ~= nil then
+            payload.maxProgress = ensureNumber(completionThreshold, 1)
+        end
+
+        local progress, isRewardClaimed = safeCall(
+            GetPromotionalEventCampaignActivityProgress,
+            campaignKey,
+            activityIndex
+        )
+        if progress ~= nil then
+            payload.progress = ensureNumber(progress, payload.progress or 0)
+        end
+        if isRewardClaimed ~= nil then
+            payload.isCompleted = isRewardClaimed == true
+            payload.isRewardClaimed = isRewardClaimed == true
+        end
+
+        if payload.progress == nil then
+            payload.progress = 0
+        end
+
+        if payload.maxProgress == nil then
+            payload.maxProgress = 1
+        end
+
+        if payload.isCompleted == nil then
+            payload.isCompleted = payload.progress >= payload.maxProgress and payload.maxProgress > 0
+        end
+
+        local remaining = safeCall(
+            GetPromotionalEventCampaignActivityTimeRemainingSeconds,
+            campaignKey,
+            activityIndex
+        )
+        if remaining ~= nil then
+            payload.timeRemainingSec = ensureNumber(remaining, 0)
+        elseif campaignMeta and campaignMeta.timeRemainingSec ~= nil then
+            payload.timeRemainingSec = ensureNumber(campaignMeta.timeRemainingSec, 0)
+        end
+
+        if payload.timeRemainingSec ~= nil then
+            payload.remainingSeconds = payload.timeRemainingSec
+        end
+
+        local veqAugment = self:CollectVeqAugment(campaignKey, activityIndex)
+        if veqAugment ~= nil then
+            payload.veq = veqAugment
+        end
+
+        return payload
+    end
+
+    function goldenApi:CollectActivitiesForCampaign(campaignKey, campaignIndex, campaignMeta)
+        local activities = {}
+
+        local count = ensureNumber(safeCall(GetNumPromotionalEventCampaignActivities, campaignKey), 0)
+        if count <= 0 then
+            return activities
+        end
+
+        for activityIndex = 1, count do
+            local entry = self:BuildActivityPayload(campaignKey, campaignIndex, activityIndex, campaignMeta)
+            if type(entry) == "table" then
+                activities[#activities + 1] = entry
+            end
+        end
+
+        return activities
+    end
+
+    function goldenApi:CollectCampaignActivities()
+        local campaigns = {}
+
+        local count = self:GetActiveCampaignCount()
+        if count <= 0 then
+            return campaigns
+        end
+
+        for index = 1, count do
+            local campaignKey = safeCall(GetActivePromotionalEventCampaignKey, index)
+            if campaignKey ~= nil then
+                local campaignId, numActivities, numMilestones, capstoneCompletionThreshold, capstoneRewardId, capstoneRewardQuantity, campaignFrequency = safeCall(
+                    GetPromotionalEventCampaignInfo,
+                    campaignKey
+                )
+
+                local campaignName
+                if campaignId ~= nil then
+                    campaignName = safeCall(GetPromotionalEventCampaignDisplayName, campaignId)
+                end
+
+                local campaignDescription
+                if campaignId ~= nil then
+                    campaignDescription = safeCall(GetPromotionalEventCampaignDescription, campaignId)
+                end
+
+                local secondsRemaining = ensureNumber(
+                    safeCall(GetSecondsRemainingInPromotionalEventCampaign, campaignKey),
+                    0
+                )
+
+                local completedActivities, isCapstoneRewardClaimed = safeCall(
+                    GetPromotionalEventCampaignProgress,
+                    campaignKey
+                )
+
+                local campaignMeta = {
+                    id = campaignId or campaignKey or index,
+                    handle = campaignKey,
+                    key = campaignKey,
+                    index = index,
+                    displayName = campaignName,
+                    description = campaignDescription,
+                    timeRemainingSec = secondsRemaining,
+                    resetFrequency = campaignFrequency,
+                    numActivities = ensureNumber(numActivities, 0),
+                    numMilestones = ensureNumber(numMilestones, 0),
+                    capstoneCompletionThreshold = ensureNumber(capstoneCompletionThreshold, 0),
+                    capstoneRewardId = capstoneRewardId,
+                    capstoneRewardQuantity = capstoneRewardQuantity,
+                    numCompletedActivities = ensureNumber(completedActivities, 0),
+                    isCapstoneRewardClaimed = isCapstoneRewardClaimed == true,
+                }
+
+                local activities = self:CollectActivitiesForCampaign(campaignKey, index, campaignMeta)
+                if type(activities) == "table" and #activities > 0 then
+                    campaigns[#campaigns + 1] = {
+                        id = campaignMeta.id,
+                        index = index,
+                        handle = campaignKey,
+                        key = campaignKey,
+                        timeRemainingSec = campaignMeta.timeRemainingSec,
+                        resetFrequency = campaignMeta.resetFrequency,
+                        displayName = ensureString(campaignMeta.displayName),
+                        description = ensureString(campaignMeta.description),
+                        activities = activities,
+                        numActivities = campaignMeta.numActivities,
+                        activityCount = #activities,
+                        numCompleted = campaignMeta.numCompletedActivities,
+                        capstoneCompletionThreshold = campaignMeta.capstoneCompletionThreshold,
+                        capstoneRewardId = campaignMeta.capstoneRewardId,
+                        capstoneRewardQuantity = campaignMeta.capstoneRewardQuantity,
+                        isCapstoneRewardClaimed = campaignMeta.isCapstoneRewardClaimed,
+                    }
+                end
+            end
+        end
+
+        return campaigns
+    end
+
+    local function computeCategoryKey(campaign, index)
+        if type(campaign) ~= "table" then
+            return string.format("campaign_%d", index)
+        end
+
+        local key = campaign.id or campaign.handle or campaign.key
+        if key == nil or key == "" then
+            key = string.format("campaign_%d", index)
+        end
+
+        return ensureString(key)
+    end
+
+    local function buildCampaignCategory(campaign, index)
+        if type(campaign) ~= "table" then
+            return nil
+        end
+
+        local activities = type(campaign.activities) == "table" and campaign.activities or {}
+        if #activities == 0 then
+            return nil
+        end
+
+        local categoryKey = computeCategoryKey(campaign, index)
+        local entries = {}
+        local completed = 0
+        local fallbackRemaining = ensureNumber(campaign.timeRemainingSec, 0)
+        local minRemaining = fallbackRemaining > 0 and fallbackRemaining or nil
+
+        for activityIndex = 1, #activities do
+            local activity = activities[activityIndex]
+            if type(activity) == "table" then
+                local entryId = activity.id
+                if entryId == nil or entryId == "" then
+                    entryId = string.format("%s:%d", categoryKey, ensureNumber(activity.activityIndex, activityIndex))
+                end
+
+                local progress = ensureNumber(activity.progress, 0)
+                local maxProgress = ensureNumber(activity.maxProgress, 1)
+                local entryRemaining = ensureNumber(activity.timeRemainingSec, fallbackRemaining)
+                if entryRemaining > 0 then
+                    if minRemaining == nil then
+                        minRemaining = entryRemaining
+                    else
+                        minRemaining = math.min(minRemaining, entryRemaining)
+                    end
+                end
+
+                local entryCompleted = ensureBoolean(activity.isCompleted, false) or (maxProgress > 0 and progress >= maxProgress)
+                if entryCompleted then
+                    completed = completed + 1
+                end
+
+                local entry = {
+                    id = ensureString(entryId),
+                    name = ensureString(activity.name),
+                    description = ensureString(activity.description),
+                    progress = progress,
+                    maxProgress = maxProgress,
+                    isCompleted = entryCompleted,
+                    timeRemainingSec = entryRemaining,
+                    remainingSeconds = entryRemaining,
+                    type = activity.type,
+                    campaignId = campaign.id,
+                    campaignKey = campaign.key,
+                    campaignIndex = campaign.index or index,
+                }
+
+                entries[#entries + 1] = entry
+            end
+        end
+
+        if #entries == 0 then
+            return nil
+        end
+
+        if minRemaining == nil then
+            minRemaining = fallbackRemaining
+        end
+        minRemaining = ensureNumber(minRemaining, 0)
+
+        return {
+            key = categoryKey,
+            id = categoryKey,
+            name = ensureString(campaign.displayName),
+            displayName = ensureString(campaign.displayName),
+            description = ensureString(campaign.description),
+            entries = entries,
+            countCompleted = completed,
+            countTotal = #entries,
+            timeRemainingSec = minRemaining,
+            remainingSeconds = minRemaining,
+            campaignId = campaign.id,
+            campaignKey = campaign.key,
+            campaignIndex = campaign.index or index,
+        }
+    end
+
+    function goldenApi:BuildCampaignCategories(campaigns)
+        local categories = {}
+        if type(campaigns) ~= "table" then
+            return categories
+        end
+
+        for index = 1, #campaigns do
+            local category = buildCampaignCategory(campaigns[index], index)
+            if type(category) == "table" then
+                categories[#categories + 1] = category
+            end
+        end
+
+        return categories
+    end
+
+    function goldenApi:CollectCampaignState()
+        local hasApis, missingApi = self:HasRequiredApis()
+        if not hasApis then
+            return {
+                hasRequiredApis = false,
+                missingApi = missingApi,
+                isLocked = false,
+                isAvailable = false,
+                hasEntries = false,
+                campaigns = {},
+            }
+        end
+
+        local locked = self:IsSystemLocked()
+        if locked then
+            return {
+                hasRequiredApis = true,
+                missingApi = nil,
+                isLocked = true,
+                isAvailable = false,
+                hasEntries = false,
+                campaigns = {},
+            }
+        end
+
+        self:WarmupCampaignData()
+
+        local campaigns = self:CollectCampaignActivities()
+        local hasEntries = type(campaigns) == "table" and #campaigns > 0
+
+        return {
+            hasRequiredApis = true,
+            missingApi = nil,
+            isLocked = false,
+            isAvailable = true,
+            hasEntries = hasEntries,
+            campaigns = campaigns or {},
+        }
+    end
+
+    function goldenApi:BuildPayloadFromCampaigns(campaigns)
+        local categories = self:BuildCampaignCategories(campaigns)
+        return { categories = categories }
+    end
+
+    function goldenApi:BuildPayload(providerFn)
+        local payload = self:InvokeProvider(providerFn)
+        if type(payload) == "table" and type(payload.categories) == "table" then
+            return payload
+        end
+
+        local state = self:CollectCampaignState()
+        return self:BuildPayloadFromCampaigns(state.campaigns)
+    end
+
+    function goldenApi:CreateProvider(providerFn)
+        return function()
+            return goldenApi:BuildPayload(providerFn)
+        end
+    end
+end
+
+local function getCategoryExpanded(state, key, fallback)
+    if type(state) == "table" and type(state.IsCategoryExpanded) == "function" and key ~= nil then
+        local ok, value = pcall(state.IsCategoryExpanded, state, key)
+        if ok then
+            return ensureBoolean(value, fallback)
+        end
+    end
+
+    return ensureBoolean(fallback, true)
+end
+
+local function buildCategoryView(rawCategory, state)
+    local source = type(rawCategory) == "table" and rawCategory or {}
+    local entries = coerceEntries(source)
+    local countCompleted = coerceCount(source.countCompleted, entries)
+    local countTotal = coerceCount(source.countTotal, entries)
+    local remaining = ensureNumber(source.timeRemainingSec, 0)
+    local key = ensureString(source.key or source.id or "")
+    local expanded = getCategoryExpanded(state, key, true)
 
     return {
-        key = descriptor.key,
-        name = descriptor.name,
+        key = key,
+        id = ensureString(source.id or key),
+        name = ensureString(source.name or source.displayName or key),
+        displayName = ensureString(source.displayName or source.name or key),
+        description = ensureString(source.description),
         entries = entries,
         countCompleted = countCompleted,
         countTotal = countTotal,
         timeRemainingSec = remaining,
+        remainingSeconds = remaining,
         expanded = expanded,
+        hasEntries = #entries > 0,
+        campaignId = source.campaignId,
+        campaignKey = source.campaignKey,
+        campaignIndex = source.campaignIndex,
     }
 end
 
@@ -416,10 +940,9 @@ local function buildViewDataSnapshot(rawData, state)
     local headerExpanded = getStateBoolean(state, "IsHeaderExpanded", true)
 
     local categories = {}
-    for index = 1, #CATEGORY_ORDER do
-        local descriptor = CATEGORY_ORDER[index]
-        local source = findCategoryByKey(data, descriptor.key)
-        categories[index] = buildCategoryView(descriptor, source, state)
+    local rawCategories = type(data.categories) == "table" and data.categories or {}
+    for index = 1, #rawCategories do
+        categories[index] = buildCategoryView(rawCategories[index], state)
     end
 
     return {
@@ -460,6 +983,12 @@ function GoldenModel:Init(svRoot, goldenState, goldenList)
     self._counters = buildCounters(self._rawData)
     self._isEmpty = computeIsEmpty(self._counters)
 
+    local status = resolveSystemStatus(self, true)
+    status.isAvailable = false
+    status.isLocked = false
+    status.hasEntries = false
+    applyStateSystemStatus(self._state, status)
+
     debugLog("init")
 
     return self
@@ -473,15 +1002,74 @@ local function runListRefresh(list, providerFn)
 end
 
 function GoldenModel:RefreshFromGame(providerFn)
-    if type(self._list) ~= "table" then
+    local status = resolveSystemStatus(self, true)
+    status.hasEntries = false
+
+    local function resetModelData()
         self._rawData = newEmptyRawData()
         self._viewData = buildViewDataSnapshot(self._rawData, self._state)
         self._counters = buildCounters(self._rawData)
-        self._isEmpty = computeIsEmpty(self._counters)
+        self._isEmpty = true
+    end
+
+    debugLog(
+        "refresh start: provider=%s list=%s",
+        type(providerFn) == "function" and "function" or tostring(providerFn),
+        type(self._list) == "table" and "ready" or "missing"
+    )
+
+    if type(self._list) ~= "table" then
+        status.isAvailable = false
+        status.isLocked = false
+        resetModelData()
+        applyStateSystemStatus(self._state, status)
         return false
     end
 
-    safeCall(runListRefresh, self._list, providerFn)
+    local campaignState = goldenApi:CollectCampaignState()
+    status.isAvailable = campaignState.isAvailable == true
+    status.isLocked = campaignState.isLocked == true
+    status.hasEntries = campaignState.hasEntries == true
+
+    local campaigns = {}
+    if type(campaignState.campaigns) == "table" then
+        campaigns = campaignState.campaigns
+    end
+
+    debugLog(
+        "refresh status: hasApis=%s locked=%s available=%s campaigns=%d",
+        tostring(campaignState.hasRequiredApis ~= false),
+        tostring(status.isLocked),
+        tostring(status.isAvailable),
+        #campaigns
+    )
+    applyStateSystemStatus(self._state, status)
+
+    if campaignState.hasRequiredApis == false then
+        resetModelData()
+        safeCall(runListRefresh, self._list, nil)
+        debugLog("refresh gated: missing promotional event API %s", tostring(campaignState.missingApi))
+        applyStateSystemStatus(self._state, status)
+        return false
+    end
+
+    if status.isLocked then
+        resetModelData()
+        safeCall(runListRefresh, self._list, nil)
+        debugLog("refresh gated: promotional event system locked")
+        applyStateSystemStatus(self._state, status)
+        return false
+    end
+
+    local dataProvider
+    if type(providerFn) == "function" then
+        dataProvider = goldenApi:CreateProvider(providerFn)
+    else
+        dataProvider = function()
+            return goldenApi:BuildPayloadFromCampaigns(campaigns)
+        end
+    end
+    safeCall(runListRefresh, self._list, dataProvider)
 
     local rawData = copyOrEmpty(self._list.GetRawData and self._list:GetRawData(), newEmptyRawData)
     if type(rawData.categories) ~= "table" then
@@ -491,15 +1079,27 @@ function GoldenModel:RefreshFromGame(providerFn)
     self._rawData = rawData
     self._viewData = buildViewDataSnapshot(self._rawData, self._state)
     self._counters = buildCounters(self._rawData)
-    self._isEmpty = computeIsEmpty(self._counters)
 
-    debugLog(
-        "refresh: daily=%d/%d weekly=%d/%d",
-        self._counters.dailyCompleted or 0,
-        self._counters.dailyTotal or 0,
-        self._counters.weeklyCompleted or 0,
-        self._counters.weeklyTotal or 0
-    )
+    local isEmpty = computeIsEmpty(self._counters)
+    self._isEmpty = isEmpty
+    status.hasEntries = not isEmpty
+
+    local campaignCount = self._counters.campaignCount or 0
+    local totalActivities = self._counters.totalActivities or 0
+    local completedActivities = self._counters.completedActivities or 0
+
+    if isEmpty then
+        debugLog("refresh: available but no Golden entries (campaigns=%d)", campaignCount)
+    else
+        debugLog(
+            "refresh: campaigns=%d activities=%d/%d",
+            campaignCount,
+            completedActivities,
+            totalActivities
+        )
+    end
+
+    applyStateSystemStatus(self._state, status)
 
     return true
 end
@@ -527,11 +1127,38 @@ function GoldenModel:GetCounters()
     end
 
     return {
-        dailyCompleted = counters.dailyCompleted or 0,
-        dailyTotal = counters.dailyTotal or 0,
-        weeklyCompleted = counters.weeklyCompleted or 0,
-        weeklyTotal = counters.weeklyTotal or 0,
+        campaignCount = counters.campaignCount or 0,
+        completedActivities = counters.completedActivities or 0,
+        totalActivities = counters.totalActivities or 0,
     }
+end
+
+function GoldenModel:IsSystemAvailable()
+    local status = resolveSystemStatus(self, false)
+    if type(status) ~= "table" then
+        return false
+    end
+    return status.isAvailable == true
+end
+
+function GoldenModel:IsSystemLocked()
+    local status = resolveSystemStatus(self, false)
+    if type(status) ~= "table" then
+        return false
+    end
+    return status.isLocked == true
+end
+
+function GoldenModel:HasEntries()
+    local status = resolveSystemStatus(self, false)
+    if type(status) ~= "table" then
+        return false
+    end
+    return status.hasEntries == true
+end
+
+function GoldenModel:GetSystemStatus()
+    return copySystemStatus(resolveSystemStatus(self, false))
 end
 
 function GoldenModel:IsEmpty()
