@@ -300,6 +300,14 @@ local function newEmptyData()
     }
 end
 
+function GoldenList:_ensureData()
+    if type(self._data) ~= "table" then
+        self._data = newEmptyData()
+    end
+
+    return self._data
+end
+
 local function normalizeCounters(counters)
     local normalized = newEmptyCounters()
     if type(counters) == "table" then
