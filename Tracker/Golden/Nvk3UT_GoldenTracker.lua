@@ -411,6 +411,100 @@ end
 GoldenTracker.RequestRefresh = GoldenTracker.RequestDataRefresh
 GoldenTracker.RequestFullRefresh = GoldenTracker.RequestDataRefresh
 
+local function getFrameTimeMilliseconds()
+    local getter = rawget(_G, "GetFrameTimeMilliseconds")
+    if type(getter) ~= "function" then
+        getter = rawget(_G, "GetGameTimeMilliseconds")
+    end
+
+    if type(getter) == "function" then
+        local ok, value = pcall(getter)
+        if ok and type(value) == "number" then
+            return value
+        end
+    end
+
+    return 0
+end
+
+local function scheduleLater(delayMs, callback)
+    local delay = tonumber(delayMs)
+    if delay == nil or delay < 0 then
+        delay = 0
+    end
+
+    if type(callback) ~= "function" then
+        return nil
+    end
+
+    local callLater = rawget(_G, "zo_callLater")
+    if type(callLater) == "function" then
+        local ok, handle = pcall(callLater, callback, delay)
+        if ok and handle ~= nil then
+            return handle
+        end
+    end
+
+    local callbackLabel = tostring(callback):gsub("[^%w_]", "_")
+    local identifier = string.format("Nvk3UT_Golden_Once_%s_%d", callbackLabel, getFrameTimeMilliseconds())
+
+    local eventManager = rawget(_G, "EVENT_MANAGER")
+    if eventManager ~= nil and type(eventManager.RegisterForUpdate) == "function" then
+        if type(eventManager.UnregisterForUpdate) == "function" then
+            eventManager:UnregisterForUpdate(identifier)
+        end
+
+        eventManager:RegisterForUpdate(identifier, delay, function()
+            local manager = rawget(_G, "EVENT_MANAGER")
+            if manager ~= nil and type(manager.UnregisterForUpdate) == "function" then
+                manager:UnregisterForUpdate(identifier)
+            end
+
+            pcall(callback)
+        end)
+
+        return identifier
+    end
+
+    return nil
+end
+
+local function cancelScheduled(handle)
+    if handle == nil then
+        return
+    end
+
+    if type(handle) == "number" then
+        local remover = rawget(_G, "zo_removeCallLater")
+        if type(remover) == "function" then
+            pcall(remover, handle)
+        end
+        return
+    end
+
+    if type(handle) == "string" then
+        local eventManager = rawget(_G, "EVENT_MANAGER")
+        if eventManager ~= nil and type(eventManager.UnregisterForUpdate) == "function" then
+            eventManager:UnregisterForUpdate(handle)
+        end
+    end
+end
+
+local function formatTempEventReason(reason)
+    if reason == nil then
+        return "n/a"
+    end
+
+    if type(reason) == "string" then
+        if reason == "" then
+            return "n/a"
+        end
+        return reason
+    end
+
+    return tostring(reason)
+end
+
 -- TEMP EVENTS (Golden) — will be removed in GEVENTS_00X_SWITCH
 -- Will be removed in GEVENTS_00X_SWITCH
 --[[ GEVENTS_TEMP_EVENTS_BEGIN: Golden (remove on GEVENTS_00X_SWITCH) ]]
@@ -437,27 +531,168 @@ local GOLDEN_TEMP_EVENT_IDS = {
 
 local goldenTempEventsState = {
     registered = false,
+    pending = false,
+    timerHandle = nil,
+    lastQueuedAtMs = 0,
+    debounceMs = 150,
 }
 
+local goldenProgressFallbackState = {
+    timerHandle = nil,
+    lastProgressAtMs = nil,
+    delayMs = 750,
+    pendingReason = nil,
+}
+
+local function clearGoldenTempEventsTimer()
+    if goldenTempEventsState.timerHandle ~= nil then
+        cancelScheduled(goldenTempEventsState.timerHandle)
+        goldenTempEventsState.timerHandle = nil
+    end
+
+    goldenTempEventsState.pending = false
+    goldenTempEventsState.lastQueuedAtMs = 0
+end
+
+local function cancelGoldenProgressFallbackTimer()
+    if goldenProgressFallbackState.timerHandle ~= nil then
+        cancelScheduled(goldenProgressFallbackState.timerHandle)
+        goldenProgressFallbackState.timerHandle = nil
+    end
+
+    goldenProgressFallbackState.pendingReason = nil
+end
+
+local function queueGoldenTempEventRefresh(reason)
+    local now = getFrameTimeMilliseconds()
+    local lastQueued = goldenTempEventsState.lastQueuedAtMs or 0
+    local elapsed = now - lastQueued
+    if elapsed < 0 then
+        elapsed = 0
+    end
+
+    local debounceMs = tonumber(goldenTempEventsState.debounceMs) or 0
+    if debounceMs < 0 then
+        debounceMs = 0
+    end
+
+    if elapsed >= debounceMs then
+        goldenTempEventsState.lastQueuedAtMs = now
+        GoldenTracker.RequestFullRefresh(GoldenTracker, reason)
+        return
+    end
+
+    if goldenTempEventsState.pending then
+        return
+    end
+
+    goldenTempEventsState.pending = true
+
+    local delay = debounceMs - elapsed
+    if delay < 0 then
+        delay = 0
+    end
+
+    goldenTempEventsState.timerHandle = scheduleLater(delay, function()
+        goldenTempEventsState.timerHandle = nil
+        goldenTempEventsState.pending = false
+        goldenTempEventsState.lastQueuedAtMs = getFrameTimeMilliseconds()
+        GoldenTracker.RequestFullRefresh(GoldenTracker, reason)
+    end)
+
+    if goldenTempEventsState.timerHandle == nil then
+        goldenTempEventsState.pending = false
+        goldenTempEventsState.lastQueuedAtMs = now
+        GoldenTracker.RequestFullRefresh(GoldenTracker, reason)
+        return
+    end
+
+    safeDebug(
+        "[GoldenTracker.TempEvents] refresh queued (debounced; reason=%s)",
+        formatTempEventReason(reason)
+    )
+end
+
+local function queueGoldenTempEventRefreshSafe(reason)
+    runSafe(function()
+        queueGoldenTempEventRefresh(reason)
+    end)
+end
+
+local function scheduleGoldenProgressFallback(reason)
+    if goldenProgressFallbackState.timerHandle ~= nil then
+        return
+    end
+
+    local fallbackReason = reason or GOLDEN_TEMP_EVENT_REASONS.updated
+
+    runSafe(function()
+        local delay = tonumber(goldenProgressFallbackState.delayMs) or 0
+        if delay < 0 then
+            delay = 0
+        end
+
+        goldenProgressFallbackState.pendingReason = fallbackReason
+        goldenProgressFallbackState.timerHandle = scheduleLater(delay, function()
+            goldenProgressFallbackState.timerHandle = nil
+
+            local now = getFrameTimeMilliseconds()
+            local lastProgress = goldenProgressFallbackState.lastProgressAtMs or 0
+            local elapsed = now - lastProgress
+            if elapsed < 0 then
+                elapsed = 0
+            end
+
+            if elapsed >= delay then
+                safeDebug(
+                    "[GoldenTracker.TempEvents] fallback triggered (reason=%s)",
+                    formatTempEventReason(fallbackReason)
+                )
+                queueGoldenTempEventRefreshSafe(fallbackReason)
+            end
+
+            goldenProgressFallbackState.pendingReason = nil
+        end)
+
+        if goldenProgressFallbackState.timerHandle ~= nil then
+            safeDebug(
+                "[GoldenTracker.TempEvents] fallback scheduled (reason=%s)",
+                formatTempEventReason(fallbackReason)
+            )
+        else
+            goldenProgressFallbackState.pendingReason = nil
+            queueGoldenTempEventRefreshSafe(fallbackReason)
+        end
+    end)
+end
+
 local function onGoldenPursuitsUpdated(...)
-    safeDebug("[GoldenTracker.TempEvents] %s", GOLDEN_TEMP_EVENT_REASONS.updated)
-    GoldenTracker:RequestFullRefresh(GOLDEN_TEMP_EVENT_REASONS.updated)
+    local reason = GOLDEN_TEMP_EVENT_REASONS.updated
+    safeDebug("[GoldenTracker.TempEvents] %s", reason)
+    scheduleGoldenProgressFallback(reason)
 end
 
 local function onGoldenPursuitsProgressUpdated(...)
-    safeDebug("[GoldenTracker.TempEvents] %s", GOLDEN_TEMP_EVENT_REASONS.progress)
-    GoldenTracker:RequestFullRefresh(GOLDEN_TEMP_EVENT_REASONS.progress)
+    local reason = GOLDEN_TEMP_EVENT_REASONS.progress
+    goldenProgressFallbackState.lastProgressAtMs = getFrameTimeMilliseconds()
+    safeDebug("[GoldenTracker.TempEvents] progress → queue (reason=%s)", formatTempEventReason(reason))
+    queueGoldenTempEventRefreshSafe(reason)
 end
 
 local function onGoldenPursuitsStatusUpdated(...)
-    safeDebug("[GoldenTracker.TempEvents] %s", GOLDEN_TEMP_EVENT_REASONS.status)
-    GoldenTracker:RequestFullRefresh(GOLDEN_TEMP_EVENT_REASONS.status)
+    local reason = GOLDEN_TEMP_EVENT_REASONS.status
+    safeDebug("[GoldenTracker.TempEvents] %s", reason)
+    scheduleGoldenProgressFallback(reason)
 end
 
 local function registerGoldenTempEvents()
     if goldenTempEventsState.registered then
         return
     end
+
+    clearGoldenTempEventsTimer()
+    cancelGoldenProgressFallbackTimer()
+    goldenProgressFallbackState.lastProgressAtMs = nil
 
     local eventManager = rawget(_G, "EVENT_MANAGER")
     if eventManager == nil then
@@ -505,6 +740,10 @@ local function registerGoldenTempEvents()
 end
 
 local function unregisterGoldenTempEvents()
+    clearGoldenTempEventsTimer()
+    cancelGoldenProgressFallbackTimer()
+    goldenProgressFallbackState.lastProgressAtMs = nil
+
     if not goldenTempEventsState.registered then
         return
     end
