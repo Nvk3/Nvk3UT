@@ -546,9 +546,7 @@ function GoldenList:GetRawData()
         categories = data.categories,
     })
     if type(copy) ~= "table" then
-        return {
-            categories = {},
-        }
+        return newEmptyData()
     end
     return copy
 end

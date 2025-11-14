@@ -1214,6 +1214,12 @@ function GoldenModel:RefreshFromGame(providerFn)
         self._isEmpty = true
     end
 
+    debugLog(
+        "refresh start: provider=%s list=%s",
+        type(providerFn) == "function" and "function" or tostring(providerFn),
+        type(self._list) == "table" and "ready" or "missing"
+    )
+
     if type(self._list) ~= "table" then
         status.isAvailable = false
         status.isLocked = false
@@ -1226,6 +1232,12 @@ function GoldenModel:RefreshFromGame(providerFn)
     status.isAvailable = systemStatus.isAvailable == true
     status.isLocked = systemStatus.isLocked == true
     status.hasEntries = false
+    debugLog(
+        "refresh status: hasApis=%s locked=%s available=%s",
+        tostring(systemStatus.hasRequiredApis ~= false),
+        tostring(status.isLocked),
+        tostring(status.isAvailable)
+    )
     applyStateSystemStatus(self._state, status)
 
     if systemStatus.hasRequiredApis == false then

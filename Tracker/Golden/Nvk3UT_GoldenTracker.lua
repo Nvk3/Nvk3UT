@@ -18,16 +18,68 @@ local state = {
     initialized = false,
 }
 
+local function getAddonRoot()
+    local root = rawget(_G, addonName)
+    if type(root) == "table" then
+        return root
+    end
+    return Nvk3UT
+end
+
+local function isDebugEnabled()
+    local root = getAddonRoot()
+
+    local utils = root and root.Utils or Nvk3UT_Utils
+    if type(utils) == "table" and type(utils.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(utils.IsDebugEnabled)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    local diagnostics = root and root.Diagnostics or Nvk3UT_Diagnostics
+    if type(diagnostics) == "table" and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return diagnostics:IsDebugEnabled()
+        end)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    if type(root) == "table" and type(root.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return root:IsDebugEnabled()
+        end)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    local sv = root and (root.sv or root.SV)
+    if type(sv) == "table" and sv.debug ~= nil then
+        return sv.debug == true
+    end
+
+    return false
+end
+
 local function safeDebug(message, ...)
-    local debugFn = Nvk3UT and Nvk3UT.Debug
+    if not isDebugEnabled() then
+        return
+    end
+
+    local root = getAddonRoot()
+    local debugFn = root and root.Debug
     if type(debugFn) ~= "function" then
         return
     end
 
-    local payload = message
+    local payload = tostring(message)
     if select("#", ...) > 0 then
-        local ok, formatted = pcall(string.format, message, ...)
-        if ok then
+        local formatString = type(message) == "string" and message or payload
+        local ok, formatted = pcall(string.format, formatString, ...)
+        if ok and formatted ~= nil then
             payload = formatted
         end
     end
@@ -233,6 +285,15 @@ function GoldenTracker.Refresh(viewModel)
 
     local vm = type(viewModel) == "table" and viewModel or {}
     local categories = type(vm.categories) == "table" and vm.categories or {}
+    local status = type(vm.status) == "table" and vm.status or {}
+    local statusSummary = string.format(
+        "avail=%s locked=%s hasEntries=%s",
+        tostring(status.isAvailable),
+        tostring(status.isLocked),
+        tostring(status.hasEntries)
+    )
+
+    safeDebug("Refresh start: %s categories=%d", statusSummary, #categories)
 
     if rowsModule and #categories > 0 then
         for categoryIndex = 1, #categories do
@@ -283,7 +344,7 @@ function GoldenTracker.Refresh(viewModel)
     state.height = totalHeight
     setContainerHeight(container, totalHeight)
 
-    safeDebug("Refresh passthrough layout, rows=%d height=%d", #rows, totalHeight)
+    safeDebug("Refresh complete: %s rows=%d height=%d", statusSummary, #rows, totalHeight)
 end
 
 function GoldenTracker.GetHeight()
