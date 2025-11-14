@@ -3300,7 +3300,7 @@ local function initTrackers()
         local safeInvoke = Nvk3UT and Nvk3UT.SafeCall
         local function initGolden()
             local goldenOpts = cloneTable(sv.GoldenTracker or {})
-            goldenTracker.Init(goldenTracker, goldenContainer, goldenOpts)
+            goldenTracker.Init(goldenContainer, goldenOpts)
             if Nvk3UT and type(Nvk3UT.Debug) == "function" then
                 Nvk3UT.Debug("TrackerHost: GoldenTracker Init shim complete")
             else

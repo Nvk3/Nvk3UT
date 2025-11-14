@@ -88,6 +88,44 @@ local function safeDebug(message, ...)
     pcall(debugFn, string.format("%s: %s", MODULE_TAG, tostring(payload)))
 end
 
+local function logTrackerError(message, ...)
+    local payload = tostring(message)
+    if select("#", ...) > 0 then
+        local formatString = type(message) == "string" and message or payload
+        local ok, formatted = pcall(string.format, formatString, ...)
+        if ok and formatted ~= nil then
+            payload = formatted
+        end
+    end
+
+    local root = getAddonRoot()
+    local diagnostics = root and root.Diagnostics
+    if type(diagnostics) == "table" then
+        local errorFn = diagnostics.Error or diagnostics.Warn or diagnostics.Debug
+        if type(errorFn) == "function" then
+            pcall(errorFn, diagnostics, string.format("%s: %s", MODULE_TAG, payload))
+            return
+        end
+    end
+
+    if type(root) == "table" then
+        if type(root.Warn) == "function" then
+            pcall(root.Warn, string.format("%s: %s", MODULE_TAG, payload))
+            return
+        elseif type(root.Debug) == "function" then
+            pcall(root.Debug, string.format("%s: %s", MODULE_TAG, payload))
+            return
+        end
+    end
+
+    if type(d) == "function" then
+        pcall(d, string.format("[Nvk3UT][GoldenTracker] %s", payload))
+        return
+    end
+
+    safeDebug(payload)
+end
+
 local function runSafe(fn)
     if type(fn) ~= "function" then
         return
@@ -281,12 +319,12 @@ function GoldenTracker.Init(...)
     local parentControl, options = resolveInitArguments(...)
 
     if parentControl == nil then
-        safeDebug("Init skipped; parent control missing")
+        logTrackerError("Init aborted; missing parent control")
         return
     end
 
     if not isControl(parentControl) then
-        safeDebug("Init skipped; parent control invalid (type=%s)", type(parentControl))
+        logTrackerError("Init aborted; invalid parent control (type=%s)", type(parentControl))
         return
     end
 
