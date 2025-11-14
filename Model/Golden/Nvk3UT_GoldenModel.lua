@@ -393,6 +393,241 @@ local function computeIsEmpty(counters)
     return dailyTotal <= 0 and weeklyTotal <= 0
 end
 
+local goldenApi
+
+do
+    -- Local Golden API facade that centralizes promotional event queries for Golden pursuits.
+    local function fetchGlobal(name)
+        if type(_G) == "table" then
+            local fn = rawget(_G, name)
+            if type(fn) == "function" then
+                return fn
+            end
+        end
+        return nil
+    end
+
+    local RequestPromotionalEventCampaignData = fetchGlobal("RequestPromotionalEventCampaignData")
+    local GetNumActivePromotionalEventCampaigns = fetchGlobal("GetNumActivePromotionalEventCampaigns")
+    local GetActivePromotionalEventCampaignId = fetchGlobal("GetActivePromotionalEventCampaignId")
+    local GetPromotionalEventCampaignId = fetchGlobal("GetPromotionalEventCampaignId")
+    local GetPromotionalEventCampaignInfo = fetchGlobal("GetPromotionalEventCampaignInfo")
+    local GetNumPromotionalEventActivities = fetchGlobal("GetNumPromotionalEventActivities")
+    local GetPromotionalEventActivityInfo = fetchGlobal("GetPromotionalEventActivityInfo")
+    local GetPromotionalEventActivityTimeRemainingSeconds = fetchGlobal("GetPromotionalEventActivityTimeRemainingSeconds")
+    local IsPromotionalEventSystemLocked = fetchGlobal("IsPromotionalEventSystemLocked")
+
+    goldenApi = {}
+
+    local function resolveCampaignHandle(index, explicitId)
+        if explicitId ~= nil then
+            return explicitId
+        end
+        if type(GetActivePromotionalEventCampaignId) == "function" then
+            local value = safeCall(GetActivePromotionalEventCampaignId, index)
+            if value ~= nil then
+                return value
+            end
+        end
+        if type(GetPromotionalEventCampaignId) == "function" then
+            local value = safeCall(GetPromotionalEventCampaignId, index)
+            if value ~= nil then
+                return value
+            end
+        end
+        return index
+    end
+
+    function goldenApi:InvokeProvider(providerFn)
+        if type(providerFn) ~= "function" then
+            return nil
+        end
+
+        local payload = safeCall(providerFn)
+        if payload ~= nil then
+            return payload
+        end
+
+        local ok, fallback = pcall(providerFn)
+        if ok then
+            return fallback
+        end
+
+        return nil
+    end
+
+    function goldenApi:IsSystemLocked()
+        if type(IsPromotionalEventSystemLocked) ~= "function" then
+            return false
+        end
+
+        local locked = safeCall(IsPromotionalEventSystemLocked)
+        return locked == true
+    end
+
+    function goldenApi:GetActiveCampaignCount()
+        if type(GetNumActivePromotionalEventCampaigns) ~= "function" then
+            return 0
+        end
+
+        local count = safeCall(GetNumActivePromotionalEventCampaigns)
+        count = ensureNumber(count, 0)
+        if count < 0 then
+            count = 0
+        end
+
+        return count
+    end
+
+    function goldenApi:WarmupCampaignData()
+        if type(RequestPromotionalEventCampaignData) ~= "function" then
+            return
+        end
+
+        safeCall(RequestPromotionalEventCampaignData)
+    end
+
+    function goldenApi:CollectVeqAugment(campaignHandle, activityIndex)
+        -- Placeholder for Phase B2 VEQ augmentation hook.
+        -- Future tokens will enrich Golden pursuit activities with VEQ data here.
+        return nil
+    end
+
+    function goldenApi:BuildActivityPayload(campaignHandle, campaignIndex, activityIndex)
+        local payload = {
+            campaignIndex = campaignIndex,
+            campaignHandle = campaignHandle,
+            activityIndex = activityIndex,
+        }
+
+        if type(GetPromotionalEventActivityInfo) == "function" then
+            local name, description, progress, maxProgress, completed, frequency = safeCall(
+                GetPromotionalEventActivityInfo,
+                campaignHandle,
+                activityIndex
+            )
+            if name ~= nil then
+                payload.name = name
+            end
+            if description ~= nil then
+                payload.description = description
+            end
+            if progress ~= nil then
+                payload.progress = progress
+            end
+            if maxProgress ~= nil then
+                payload.maxProgress = maxProgress
+            end
+            if completed ~= nil then
+                payload.isCompleted = completed == true
+            end
+            if frequency ~= nil then
+                payload.frequency = frequency
+            end
+        end
+
+        if type(GetPromotionalEventActivityTimeRemainingSeconds) == "function" then
+            local remaining = safeCall(
+                GetPromotionalEventActivityTimeRemainingSeconds,
+                campaignHandle,
+                activityIndex
+            )
+            payload.timeRemainingSec = ensureNumber(remaining, 0)
+        end
+
+        local veqAugment = self:CollectVeqAugment(campaignHandle, activityIndex)
+        if veqAugment ~= nil then
+            payload.veq = veqAugment
+        end
+
+        return payload
+    end
+
+    function goldenApi:CollectActivitiesForCampaign(campaignHandle, campaignIndex)
+        local activities = {}
+
+        if type(GetNumPromotionalEventActivities) ~= "function" then
+            return activities
+        end
+
+        local count = safeCall(GetNumPromotionalEventActivities, campaignHandle)
+        if count == nil and campaignHandle ~= campaignIndex then
+            count = safeCall(GetNumPromotionalEventActivities, campaignIndex)
+        end
+        count = ensureNumber(count, 0)
+
+        if count <= 0 then
+            return activities
+        end
+
+        for activityIndex = 1, count do
+            activities[#activities + 1] = self:BuildActivityPayload(campaignHandle, campaignIndex, activityIndex)
+        end
+
+        return activities
+    end
+
+    function goldenApi:CollectCampaignActivities()
+        local campaigns = {}
+
+        local total = self:GetActiveCampaignCount()
+        if total <= 0 then
+            return campaigns
+        end
+
+        for index = 1, total do
+            local campaignId
+            if type(GetPromotionalEventCampaignInfo) == "function" then
+                campaignId = safeCall(GetPromotionalEventCampaignInfo, index)
+            end
+
+            local handle = resolveCampaignHandle(index, campaignId)
+            local activities = self:CollectActivitiesForCampaign(handle, index)
+
+            campaigns[#campaigns + 1] = {
+                id = campaignId or handle or index,
+                index = index,
+                handle = handle,
+                activities = activities,
+            }
+        end
+
+        return campaigns
+    end
+
+    function goldenApi:CollectDefaultPayload()
+        self:WarmupCampaignData()
+
+        local campaigns = self:CollectCampaignActivities()
+        if type(campaigns) == "table" and #campaigns > 0 then
+            -- Data is intentionally held back until the Golden tracker wiring lands.
+            -- Returning nil keeps Phase B1 behavior (no Golden payload).
+        end
+
+        return nil
+    end
+
+    function goldenApi:BuildPayload(providerFn)
+        local payload = self:InvokeProvider(providerFn)
+        if type(payload) == "table" then
+            return payload
+        end
+
+        payload = self:CollectDefaultPayload()
+        if type(payload) == "table" then
+            return payload
+        end
+
+        return nil
+    end
+
+    function goldenApi:CreateProvider(providerFn)
+        return function()
+            return goldenApi:BuildPayload(providerFn)
+        end
+    end
+end
+
 local function buildCategoryView(descriptor, rawCategory, state)
     local entries = coerceEntries(rawCategory)
     local countCompleted = coerceCount(rawCategory and rawCategory.countCompleted, entries)
@@ -481,7 +716,8 @@ function GoldenModel:RefreshFromGame(providerFn)
         return false
     end
 
-    safeCall(runListRefresh, self._list, providerFn)
+    local dataProvider = goldenApi:CreateProvider(providerFn)
+    safeCall(runListRefresh, self._list, dataProvider)
 
     local rawData = copyOrEmpty(self._list.GetRawData and self._list:GetRawData(), newEmptyRawData)
     if type(rawData.categories) ~= "table" then

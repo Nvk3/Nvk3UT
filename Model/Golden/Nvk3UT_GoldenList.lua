@@ -424,34 +424,17 @@ function GoldenList:Init(svRoot)
     debugLog("initialized GoldenList module")
 end
 
-function GoldenList:RefreshFromGame(providerFn)
-    local data = self:_ensureData()
-    local categories = data.categories
-    local categoryMap = {}
-    for index = 1, #categories do
-        local category = categories[index]
-        if type(category) == "table" then
-            wipeCategory(category)
-            categoryMap[category.key] = category
-        end
-    end
+local function applyProviderPayload(categoryMap, payload)
+    local totals = { daily = 0, weekly = 0 }
+    local completed = { daily = 0, weekly = 0 }
 
-    local payload
-    if type(providerFn) == "function" then
-        payload = safeCall(providerFn)
-        if payload == nil then
-            local ok, fallback = pcall(providerFn)
-            if ok then
-                payload = fallback
-            end
-        end
+    if type(categoryMap) ~= "table" then
+        return totals, completed
     end
-
-    -- TODO: Golden provider wiring
 
     if type(payload) ~= "table" then
         debugLog("refresh: provider returned no data; using empty list")
-        return
+        return totals, completed
     end
 
     local keyedPayload = {}
@@ -472,9 +455,6 @@ function GoldenList:RefreshFromGame(providerFn)
     if type(payload.weekly) == "table" then
         keyedPayload.weekly = normalizeCategoryPayload(payload.weekly)
     end
-
-    local totals = { daily = 0, weekly = 0 }
-    local completed = { daily = 0, weekly = 0 }
 
     for key, payloadCategory in pairs(keyedPayload) do
         local bucketKey = toCategoryKey(key)
@@ -515,6 +495,34 @@ function GoldenList:RefreshFromGame(providerFn)
             end
         end
     end
+
+    return totals, completed
+end
+
+function GoldenList:RefreshFromGame(providerFn)
+    local data = self:_ensureData()
+    local categories = data.categories
+    local categoryMap = {}
+    for index = 1, #categories do
+        local category = categories[index]
+        if type(category) == "table" then
+            wipeCategory(category)
+            categoryMap[category.key] = category
+        end
+    end
+
+    local payload
+    if type(providerFn) == "function" then
+        payload = safeCall(providerFn)
+        if payload == nil then
+            local ok, fallback = pcall(providerFn)
+            if ok then
+                payload = fallback
+            end
+        end
+    end
+
+    local totals, completed = applyProviderPayload(categoryMap, payload)
 
     for key, category in pairs(categoryMap) do
         if category.countTotal <= 0 then
