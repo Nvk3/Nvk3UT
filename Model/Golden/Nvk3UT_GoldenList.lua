@@ -11,11 +11,6 @@ GoldenList._data = type(GoldenList._data) == "table" and GoldenList._data or nil
 
 local unpack = _G.unpack or (table and table.unpack)
 
-local CATEGORY_ORDER = {
-    { key = "daily", name = "DAILY" },
-    { key = "weekly", name = "WEEKLY" },
-}
-
 local function resolveRoot()
     local root = rawget(_G, "Nvk3UT")
     if type(root) == "table" then
@@ -204,103 +199,13 @@ local function ensureBoolean(value)
     return value == true
 end
 
-local function newEmptyCategory(key, name)
-    return {
-        key = key,
-        name = name,
-        entries = {},
-        countCompleted = 0,
-        countTotal = 0,
-        timeRemainingSec = 0,
-    }
-end
-
-local function wipeCategory(category)
-    category.countCompleted = 0
-    category.countTotal = 0
-    category.timeRemainingSec = 0
-
-    local entries = category.entries
-    if type(entries) ~= "table" then
-        category.entries = {}
-        return
-    end
-
-    for index = #entries, 1, -1 do
-        entries[index] = nil
-    end
-end
-
 local function newEmptyData()
-    local categories = {}
-    for index = 1, #CATEGORY_ORDER do
-        local descriptor = CATEGORY_ORDER[index]
-        categories[index] = newEmptyCategory(descriptor.key, descriptor.name)
-    end
     return {
-        categories = categories,
+        categories = {},
     }
 end
 
-local function deepCopyTable(source)
-    if type(source) ~= "table" then
-        return nil
-    end
-
-    local function copier(tbl, seen)
-        if seen[tbl] then
-            return seen[tbl]
-        end
-
-        local clone = {}
-        seen[tbl] = clone
-
-        for key, value in pairs(tbl) do
-            if type(value) == "table" then
-                clone[key] = copier(value, seen)
-            else
-                clone[key] = value
-            end
-        end
-
-        return clone
-    end
-
-    local function copyWrapper()
-        return copier(source, {})
-    end
-
-    local copy = safeCall(copyWrapper)
-    if type(copy) == "table" then
-        return copy
-    end
-
-    local ok, fallback = pcall(copyWrapper)
-    if ok and type(fallback) == "table" then
-        return fallback
-    end
-
-    return nil
-end
-
-local function getCategoryMap(data)
-    local map = {}
-    local categories = type(data) == "table" and data.categories
-    if type(categories) ~= "table" then
-        return map
-    end
-
-    for index = 1, #categories do
-        local category = categories[index]
-        if type(category) == "table" and type(category.key) == "string" then
-            map[category.key] = category
-        end
-    end
-
-    return map
-end
-
-local function normalizeEntry(rawEntry, typeKey, fallbackRemaining)
+local function normalizeEntry(rawEntry, categoryKey, fallbackRemaining, entryIndex)
     local normalized = {}
     if type(rawEntry) ~= "table" then
         normalized.id = ""
@@ -309,207 +214,152 @@ local function normalizeEntry(rawEntry, typeKey, fallbackRemaining)
         normalized.progress = 0
         normalized.maxProgress = 1
         normalized.isCompleted = false
-        normalized.type = typeKey
+        normalized.type = categoryKey
         normalized.timeRemainingSec = ensureNonNegative(fallbackRemaining)
+        normalized.remainingSeconds = normalized.timeRemainingSec
+        normalized.campaignId = nil
+        normalized.campaignKey = nil
+        normalized.campaignIndex = nil
+        normalized.rewardId = nil
+        normalized.rewardQuantity = nil
+        normalized.isRewardClaimed = false
         return normalized
     end
 
-    normalized.id = rawEntry.id ~= nil and rawEntry.id or ""
-    normalized.name = ensureString(rawEntry.name)
-    normalized.description = ensureString(rawEntry.description)
+    local identifier = rawEntry.id
+    if identifier == nil or identifier == "" then
+        identifier = string.format("%s:%d", ensureString(categoryKey), tonumber(entryIndex) or 0)
+    end
 
     local progress = ensureNonNegative(rawEntry.progress)
     local maxProgress = ensureMaxProgress(rawEntry.maxProgress)
+    local remaining = rawEntry.timeRemainingSec
+    if remaining == nil then
+        remaining = rawEntry.remainingSeconds
+    end
+    remaining = ensureNonNegative(remaining or fallbackRemaining)
 
+    normalized.id = ensureString(identifier)
+    normalized.name = ensureString(rawEntry.name)
+    normalized.description = ensureString(rawEntry.description)
     normalized.progress = progress
     normalized.maxProgress = maxProgress
-    normalized.type = typeKey
-
-    local entryRemaining = rawEntry.timeRemainingSec
-    if entryRemaining == nil and rawEntry.remainingSeconds ~= nil then
-        entryRemaining = rawEntry.remainingSeconds
-    end
-    normalized.timeRemainingSec = ensureNonNegative(entryRemaining or fallbackRemaining)
-
-    if rawEntry.isCompleted ~= nil then
-        normalized.isCompleted = ensureBoolean(rawEntry.isCompleted)
-    else
-        normalized.isCompleted = progress >= maxProgress and maxProgress > 0
-    end
+    normalized.isCompleted = ensureBoolean(rawEntry.isCompleted) or (maxProgress > 0 and progress >= maxProgress)
+    normalized.type = rawEntry.type or categoryKey
+    normalized.timeRemainingSec = remaining
+    normalized.remainingSeconds = remaining
+    normalized.campaignId = rawEntry.campaignId
+    normalized.campaignKey = rawEntry.campaignKey
+    normalized.campaignIndex = rawEntry.campaignIndex
+    normalized.rewardId = rawEntry.rewardId
+    normalized.rewardQuantity = rawEntry.rewardQuantity
+    normalized.isRewardClaimed = rawEntry.isRewardClaimed == true
+    normalized.veq = rawEntry.veq
 
     return normalized
 end
 
-local function toCategoryKey(identifier)
-    if identifier == "daily" or identifier == "Daily" or identifier == "DAILY" then
-        return "daily"
-    end
-    if identifier == "weekly" or identifier == "Weekly" or identifier == "WEEKLY" then
-        return "weekly"
-    end
-    return nil
-end
-
-local function normalizeCategoryPayload(payload)
+local function normalizeCategoryPayload(payload, index)
     if type(payload) ~= "table" then
-        return {
-            entries = {},
-            countCompleted = 0,
-            countTotal = 0,
-            hasCountCompleted = false,
-            hasCountTotal = false,
-            timeRemainingSec = 0,
-        }
+        return nil
     end
 
-    local hasCountCompleted = payload.hasCountCompleted
-    if hasCountCompleted == nil then
-        hasCountCompleted = payload.countCompleted ~= nil
-    else
-        hasCountCompleted = hasCountCompleted == true
+    local key = toCategoryKey(payload.key or payload.id or payload.name or index)
+    if key == nil or key == "" then
+        key = string.format("campaign_%d", tonumber(index) or 1)
     end
+    key = ensureString(key)
 
-    local hasCountTotal = payload.hasCountTotal
-    if hasCountTotal == nil then
-        hasCountTotal = payload.countTotal ~= nil
-    else
-        hasCountTotal = hasCountTotal == true
-    end
+    local fallbackRemaining = ensureNonNegative(payload.timeRemainingSec or payload.remainingSeconds)
 
-    local result = {
-        entries = {},
-        countCompleted = clampNumber(payload.countCompleted, 0, 0),
-        countTotal = clampNumber(payload.countTotal, 0, 0),
-        hasCountCompleted = hasCountCompleted,
-        hasCountTotal = hasCountTotal,
-        timeRemainingSec = ensureNonNegative(payload.timeRemainingSec),
-    }
-
-    if result.timeRemainingSec == 0 and payload.remainingSeconds ~= nil then
-        result.timeRemainingSec = ensureNonNegative(payload.remainingSeconds)
-    end
-
+    local entries = {}
     local rawEntries = payload.entries
     if type(rawEntries) == "table" then
-        if #rawEntries > 0 then
-            for index = 1, #rawEntries do
-                result.entries[#result.entries + 1] = rawEntries[index]
+        if rawEntries[1] ~= nil then
+            for entryIndex = 1, #rawEntries do
+                entries[#entries + 1] = normalizeEntry(rawEntries[entryIndex], key, fallbackRemaining, entryIndex)
             end
         else
+            local entryIndex = 0
             for _, value in pairs(rawEntries) do
-                result.entries[#result.entries + 1] = value
+                entryIndex = entryIndex + 1
+                entries[#entries + 1] = normalizeEntry(value, key, fallbackRemaining, entryIndex)
             end
         end
     end
 
-    return result
-end
-
-function GoldenList:_ensureData()
-    if type(self._data) ~= "table" then
-        self._data = newEmptyData()
-    end
-    return self._data
-end
-
-function GoldenList:Init(svRoot)
-    if type(svRoot) == "table" then
-        self._svRoot = svRoot
+    local countCompleted = payload.countCompleted
+    if countCompleted == nil then
+        local completed = 0
+        for i = 1, #entries do
+            if entries[i].isCompleted then
+                completed = completed + 1
+            end
+        end
+        countCompleted = completed
     else
-        self._svRoot = nil
+        countCompleted = clampNumber(countCompleted, 0, #entries)
     end
 
-    self._data = newEmptyData()
+    local countTotal = payload.countTotal
+    if countTotal == nil then
+        countTotal = #entries
+    else
+        countTotal = clampNumber(countTotal, 0, #entries)
+    end
 
-    debugLog("initialized GoldenList module")
+    local name = ensureString(payload.name or payload.displayName or key)
+    local displayName = ensureString(payload.displayName or name)
+    local description = ensureString(payload.description)
+
+    return {
+        key = key,
+        id = ensureString(payload.id or key),
+        name = name,
+        displayName = displayName,
+        description = description,
+        entries = entries,
+        countCompleted = countCompleted,
+        countTotal = countTotal,
+        timeRemainingSec = fallbackRemaining,
+        remainingSeconds = fallbackRemaining,
+        campaignId = payload.campaignId,
+        campaignKey = payload.campaignKey,
+        campaignIndex = payload.campaignIndex or index,
+    }
 end
 
-local function applyProviderPayload(categoryMap, payload)
-    local totals = { daily = 0, weekly = 0 }
-    local completed = { daily = 0, weekly = 0 }
-
-    if type(categoryMap) ~= "table" then
-        return totals, completed
-    end
+local function applyProviderPayload(payload)
+    local categories = {}
 
     if type(payload) ~= "table" then
         debugLog("refresh: provider returned no data; using empty list")
-        return totals, completed
+        return categories
     end
 
-    local keyedPayload = {}
-    if payload.categories and type(payload.categories) == "table" then
-        for _, item in pairs(payload.categories) do
-            if type(item) == "table" then
-                local key = toCategoryKey(item.key or item.type or item.id or item.name)
-                if key ~= nil then
-                    keyedPayload[key] = normalizeCategoryPayload(item)
-                end
-            end
+    local rawCategories = {}
+    if type(payload.categories) == "table" then
+        for index = 1, #payload.categories do
+            rawCategories[#rawCategories + 1] = payload.categories[index]
+        end
+    elseif type(payload.campaigns) == "table" then
+        for index = 1, #payload.campaigns do
+            rawCategories[#rawCategories + 1] = payload.campaigns[index]
         end
     end
 
-    if type(payload.daily) == "table" then
-        keyedPayload.daily = normalizeCategoryPayload(payload.daily)
-    end
-    if type(payload.weekly) == "table" then
-        keyedPayload.weekly = normalizeCategoryPayload(payload.weekly)
-    end
-
-    for key, payloadCategory in pairs(keyedPayload) do
-        local bucketKey = toCategoryKey(key)
-        local category = categoryMap[bucketKey]
-        if category then
-            local fallbackRemaining = ensureNonNegative(payloadCategory.timeRemainingSec)
-
-            local normalizedEntries = {}
-            local rawEntries = payloadCategory.entries
-            if type(rawEntries) ~= "table" then
-                rawEntries = {}
-            end
-
-            for index = 1, #rawEntries do
-                local normalized = normalizeEntry(rawEntries[index], bucketKey, fallbackRemaining)
-                normalizedEntries[index] = normalized
-                if normalized.isCompleted then
-                    completed[bucketKey] = completed[bucketKey] + 1
-                end
-            end
-
-            category.entries = normalizedEntries
-            if payloadCategory.hasCountTotal then
-                category.countTotal = clampNumber(payloadCategory.countTotal, 0, #normalizedEntries)
-            else
-                category.countTotal = #normalizedEntries
-            end
-            if payloadCategory.hasCountCompleted then
-                category.countCompleted = clampNumber(payloadCategory.countCompleted, 0, category.countTotal)
-            else
-                category.countCompleted = completed[bucketKey]
-            end
-            category.timeRemainingSec = fallbackRemaining
-
-            totals[bucketKey] = #normalizedEntries
-            if category.countCompleted < completed[bucketKey] then
-                category.countCompleted = completed[bucketKey]
-            end
+    for index = 1, #rawCategories do
+        local category = normalizeCategoryPayload(rawCategories[index], index)
+        if type(category) == "table" then
+            categories[#categories + 1] = category
         end
     end
 
-    return totals, completed
+    return categories
 end
 
 function GoldenList:RefreshFromGame(providerFn)
     local data = self:_ensureData()
-    local categories = data.categories
-    local categoryMap = {}
-    for index = 1, #categories do
-        local category = categories[index]
-        if type(category) == "table" then
-            wipeCategory(category)
-            categoryMap[category.key] = category
-        end
-    end
 
     local payload
     if type(providerFn) == "function" then
@@ -522,21 +372,21 @@ function GoldenList:RefreshFromGame(providerFn)
         end
     end
 
-    local totals, completed = applyProviderPayload(categoryMap, payload)
+    local categories = applyProviderPayload(payload)
+    data.categories = categories
 
-    for key, category in pairs(categoryMap) do
-        if category.countTotal <= 0 then
-            category.countTotal = totals[key] or 0
-        end
-        if category.countCompleted <= 0 and (totals[key] or 0) > 0 then
-            category.countCompleted = completed[key] or 0
+    local totalEntries = 0
+    for index = 1, #categories do
+        local category = categories[index]
+        if type(category) == "table" and type(category.entries) == "table" then
+            totalEntries = totalEntries + #category.entries
         end
     end
 
     debugLog(
-        "refresh: daily=%d weekly=%d",
-        totals.daily or 0,
-        totals.weekly or 0
+        "refresh: categories=%d entries=%d",
+        #categories,
+        totalEntries
     )
 end
 

@@ -544,6 +544,25 @@ local function setStateBoolean(self, key, value)
     return true
 end
 
+local function getCategoryExpansionMap(self, create)
+    local state = getStateTable(self, create)
+    if type(state) ~= "table" then
+        return nil
+    end
+
+    local expansion = state.categoryExpansion
+    if type(expansion) ~= "table" then
+        if not create then
+            return nil
+        end
+
+        expansion = {}
+        state.categoryExpansion = expansion
+    end
+
+    return expansion
+end
+
 function GoldenState:Init(svRoot)
     if type(svRoot) ~= "table" then
         self._root = nil
@@ -703,6 +722,42 @@ function GoldenState:SetWeeklyExpanded(expanded)
     return setStateBoolean(self, "weeklyExpanded", expanded)
 end
 
+function GoldenState:IsCategoryExpanded(key)
+    if key == nil or key == "" then
+        return true
+    end
+
+    local expansion = getCategoryExpansionMap(self, false)
+    if type(expansion) ~= "table" then
+        return true
+    end
+
+    local value = expansion[key]
+    if value == nil then
+        return true
+    end
+
+    return value ~= false
+end
+
+function GoldenState:SetCategoryExpanded(key, expanded)
+    if key == nil or key == "" then
+        return false
+    end
+
+    local expansion = getCategoryExpansionMap(self, true)
+    if type(expansion) ~= "table" then
+        return false
+    end
+
+    local normalized = expanded ~= false
+    expansion[key] = normalized
+
+    debugLog("set categoryExpanded[%s]=%s", tostring(key), tostring(normalized))
+
+    return normalized
+end
+
 function GoldenState:GetCompletedHandling()
     local state = getStateTable(self, false)
     if type(state) == "table" then
@@ -762,6 +817,7 @@ function GoldenState:ResetToDefaults()
     state.dailyExpanded = resolveDefaultBoolean(self, "dailyExpanded")
     state.weeklyExpanded = resolveDefaultBoolean(self, "weeklyExpanded")
     state.completedHandling = resolveDefaultHandling(self)
+    state.categoryExpansion = nil
 
     debugLog("reset to defaults")
 

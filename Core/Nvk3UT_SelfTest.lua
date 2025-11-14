@@ -387,6 +387,10 @@ local function checkGoldenModelSafeReturns()
         return false, "GoldenModel:GetCounters did not return a table"
     end
 
+    if counters.campaignCount == nil or counters.completedActivities == nil or counters.totalActivities == nil then
+        return false, "GoldenModel:GetCounters missing campaign/activities fields"
+    end
+
     local okStatus, status = pcall(goldenModel.GetSystemStatus, goldenModel)
     if not okStatus then
         return false, "GoldenModel:GetSystemStatus threw: " .. tostring(status)
@@ -469,6 +473,12 @@ local function checkGoldenViewModelStructure()
         return false, "ViewModel summary is not a table"
     end
 
+    if type(summary) == "table" then
+        if summary.campaignCount == nil or summary.totalEntries == nil or summary.totalCompleted == nil or summary.totalRemaining == nil then
+            return false, "ViewModel summary missing campaign/activity totals"
+        end
+    end
+
     local stateStatus
     local goldenState = rawget(root, "GoldenState")
     if type(goldenState) == "table" and type(goldenState.GetSystemStatus) == "function" then
@@ -542,8 +552,11 @@ local function checkGoldenViewModelStructure()
         end
     end
 
+    local campaignCount = type(summary) == "table" and (summary.campaignCount or #categories) or #categories
+
     return true, string.format(
-        "Golden VM ok (categories=%d entries=%d hasEntries=%s)",
+        "Golden VM ok (campaigns=%d categories=%d entries=%d hasEntries=%s)",
+        campaignCount,
         #categories,
         totalEntries,
         tostring(hasEntries)
