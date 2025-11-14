@@ -283,6 +283,273 @@ local function summarize(results)
     end
 end
 
+local function getAddonRoot()
+    local root = rawget(_G, "Nvk3UT")
+    if type(root) == "table" then
+        return root
+    end
+
+    if type(Nvk3UT) == "table" then
+        return Nvk3UT
+    end
+
+    return nil
+end
+
+local function ensureBoolean(value)
+    return value == true
+end
+
+local function checkGoldenStateStatus()
+    local root = getAddonRoot()
+    if type(root) ~= "table" then
+        return nil, "Addon root not initialized; Golden modules unavailable"
+    end
+
+    local goldenState = rawget(root, "GoldenState")
+    if type(goldenState) ~= "table" or type(goldenState.GetSystemStatus) ~= "function" then
+        return false, "GoldenState module missing or does not expose GetSystemStatus"
+    end
+
+    local ok, status = pcall(goldenState.GetSystemStatus, goldenState)
+    if not ok then
+        return false, "GoldenState:GetSystemStatus threw: " .. tostring(status)
+    end
+
+    if type(status) ~= "table" then
+        return false, "GoldenState:GetSystemStatus returned a non-table value"
+    end
+
+    local isAvailable = ensureBoolean(status.isAvailable)
+    local isLocked = ensureBoolean(status.isLocked)
+    local hasEntries = ensureBoolean(status.hasEntries)
+
+    if isLocked and isAvailable then
+        return false, string.format("State inconsistent: locked=true but available=true")
+    end
+
+    if not isAvailable and hasEntries then
+        return false, "State inconsistent: hasEntries=true while available=false"
+    end
+
+    if isLocked and hasEntries then
+        return false, "State inconsistent: locked=true while hasEntries=true"
+    end
+
+    return true, string.format(
+        "GoldenState status ok (available=%s locked=%s hasEntries=%s)",
+        tostring(isAvailable),
+        tostring(isLocked),
+        tostring(hasEntries)
+    )
+end
+
+local function checkGoldenModelSafeReturns()
+    local root = getAddonRoot()
+    if type(root) ~= "table" then
+        return nil, "Addon root not initialized; Golden modules unavailable"
+    end
+
+    local goldenModel = rawget(root, "GoldenModel")
+    if type(goldenModel) ~= "table" then
+        return false, "GoldenModel module missing"
+    end
+
+    local goldenList = rawget(root, "GoldenList")
+    if type(goldenList) ~= "table" then
+        return false, "GoldenList module missing"
+    end
+
+    local okRaw, rawData = pcall(goldenModel.GetRawData, goldenModel)
+    if not okRaw then
+        return false, "GoldenModel:GetRawData threw: " .. tostring(rawData)
+    end
+
+    if type(rawData) ~= "table" or type(rawData.categories) ~= "table" then
+        return false, "GoldenModel:GetRawData did not return categories table"
+    end
+
+    local okView, viewData = pcall(goldenModel.GetViewData, goldenModel)
+    if not okView then
+        return false, "GoldenModel:GetViewData threw: " .. tostring(viewData)
+    end
+
+    if type(viewData) ~= "table" or type(viewData.categories) ~= "table" then
+        return false, "GoldenModel:GetViewData did not return categories table"
+    end
+
+    local okCounters, counters = pcall(goldenModel.GetCounters, goldenModel)
+    if not okCounters then
+        return false, "GoldenModel:GetCounters threw: " .. tostring(counters)
+    end
+
+    if type(counters) ~= "table" then
+        return false, "GoldenModel:GetCounters did not return a table"
+    end
+
+    local okStatus, status = pcall(goldenModel.GetSystemStatus, goldenModel)
+    if not okStatus then
+        return false, "GoldenModel:GetSystemStatus threw: " .. tostring(status)
+    end
+
+    if type(status) ~= "table" then
+        return false, "GoldenModel:GetSystemStatus did not return a table"
+    end
+
+    local okListRaw, listRaw = pcall(goldenList.GetRawData, goldenList)
+    if not okListRaw then
+        return false, "GoldenList:GetRawData threw: " .. tostring(listRaw)
+    end
+
+    if type(listRaw) ~= "table" or type(listRaw.categories) ~= "table" then
+        return false, "GoldenList:GetRawData did not return categories table"
+    end
+
+    for index = 1, #listRaw.categories do
+        local category = listRaw.categories[index]
+        if type(category) ~= "table" or type(category.entries) ~= "table" then
+            return false, string.format("GoldenList category %d missing entries table", index)
+        end
+    end
+
+    local okIsEmpty, isEmpty = pcall(goldenList.IsEmpty, goldenList)
+    if not okIsEmpty then
+        return false, "GoldenList:IsEmpty threw: " .. tostring(isEmpty)
+    end
+
+    if type(isEmpty) ~= "boolean" then
+        return false, "GoldenList:IsEmpty did not return boolean"
+    end
+
+    return true, string.format(
+        "GoldenModel safe returns ok (categories=%d viewCategories=%d listCategories=%d)",
+        #rawData.categories,
+        #viewData.categories,
+        #listRaw.categories
+    )
+end
+
+local function checkGoldenViewModelStructure()
+    local root = getAddonRoot()
+    if type(root) ~= "table" then
+        return nil, "Addon root not initialized; Golden modules unavailable"
+    end
+
+    local controller = rawget(root, "GoldenTrackerController")
+    if type(controller) ~= "table" or type(controller.BuildViewModel) ~= "function" then
+        return false, "GoldenTrackerController missing or does not expose BuildViewModel"
+    end
+
+    local okVm, viewModel = pcall(controller.BuildViewModel, controller)
+    if not okVm then
+        return false, "GoldenTrackerController:BuildViewModel threw: " .. tostring(viewModel)
+    end
+
+    if type(viewModel) ~= "table" then
+        return false, "BuildViewModel did not return a table"
+    end
+
+    local categories = viewModel.categories
+    if type(categories) ~= "table" then
+        return false, "ViewModel missing categories table"
+    end
+
+    local status = viewModel.status
+    if type(status) ~= "table" then
+        return false, "ViewModel missing status table"
+    end
+
+    local header = viewModel.header
+    if header ~= nil and type(header) ~= "table" then
+        return false, "ViewModel header is not a table"
+    end
+
+    local summary = viewModel.summary
+    if summary ~= nil and type(summary) ~= "table" then
+        return false, "ViewModel summary is not a table"
+    end
+
+    local stateStatus
+    local goldenState = rawget(root, "GoldenState")
+    if type(goldenState) == "table" and type(goldenState.GetSystemStatus) == "function" then
+        local okStatus, resolved = pcall(goldenState.GetSystemStatus, goldenState)
+        if okStatus and type(resolved) == "table" then
+            stateStatus = resolved
+        end
+    end
+
+    if stateStatus then
+        local stateAvailable = ensureBoolean(stateStatus.isAvailable)
+        local stateLocked = ensureBoolean(stateStatus.isLocked)
+        local stateHasEntries = ensureBoolean(stateStatus.hasEntries)
+
+        if stateAvailable ~= ensureBoolean(status.isAvailable)
+            or stateLocked ~= ensureBoolean(status.isLocked)
+            or stateHasEntries ~= ensureBoolean(status.hasEntries) then
+            return false, string.format(
+                "ViewModel status mismatch (state avail=%s locked=%s entries=%s vs vm avail=%s locked=%s entries=%s)",
+                tostring(stateAvailable),
+                tostring(stateLocked),
+                tostring(stateHasEntries),
+                tostring(ensureBoolean(status.isAvailable)),
+                tostring(ensureBoolean(status.isLocked)),
+                tostring(ensureBoolean(status.hasEntries))
+            )
+        end
+    end
+
+    local totalEntries = 0
+    local firstCategoryWithEntries
+    local firstEntry
+
+    for index = 1, #categories do
+        local category = categories[index]
+        if type(category) ~= "table" then
+            return false, string.format("Category %d is not a table", index)
+        end
+
+        if type(category.entries) ~= "table" then
+            return false, string.format("Category %d missing entries table", index)
+        end
+
+        totalEntries = totalEntries + #category.entries
+        if not firstCategoryWithEntries and #category.entries > 0 then
+            firstCategoryWithEntries = category
+            firstEntry = category.entries[1]
+        end
+    end
+
+    local hasEntries = ensureBoolean(status.hasEntries)
+    if hasEntries and (not firstCategoryWithEntries or type(firstEntry) ~= "table") then
+        return false, "ViewModel reports entries but no entry data present"
+    end
+
+    if hasEntries then
+        if type(firstEntry.entryId) ~= "string" or firstEntry.entryId == "" then
+            return false, "First Golden entry missing entryId"
+        end
+
+        if type(firstEntry.title) ~= "string" then
+            return false, "First Golden entry missing title"
+        end
+
+        if type(firstEntry.objectives) ~= "table" then
+            return false, "First Golden entry missing objectives table"
+        end
+    else
+        if totalEntries > 0 then
+            return false, string.format("ViewModel marked empty but contains %d entries", totalEntries)
+        end
+    end
+
+    return true, string.format(
+        "Golden VM ok (categories=%d entries=%d hasEntries=%s)",
+        #categories,
+        totalEntries,
+        tostring(hasEntries)
+    )
+end
+
 -- Main entry point: safe to call via Nvk3UT.SafeCall
 function SelfTest.RunCoreSanityCheck()
     local results = _newResults()
@@ -296,6 +563,9 @@ function SelfTest.RunCoreSanityCheck()
     _runCheck(results, "SavedVariables", checkSavedVariables)
     _runCheck(results, "FavoritesData", checkFavoritesData)
     _runCheck(results, "RecentData", checkRecentData)
+    _runCheck(results, "GoldenState", checkGoldenStateStatus)
+    _runCheck(results, "GoldenModel", checkGoldenModelSafeReturns)
+    _runCheck(results, "GoldenViewModel", checkGoldenViewModelStructure)
 
     summarize(results)
 
