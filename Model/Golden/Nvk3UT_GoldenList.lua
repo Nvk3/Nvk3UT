@@ -528,6 +528,16 @@ function GoldenList:RefreshFromGame(providerFn)
     )
 end
 
+local function cloneSnapshotWithFallback(source)
+    local fallback = fallbackDeepCopyTable(source)
+    if type(fallback) == "table" then
+        return normalizeRawSnapshot(fallback)
+    end
+
+    debugLog("GetRawData: fallback clone failed; returning empty data")
+    return newEmptyData()
+end
+
 function GoldenList:GetRawData()
     local data = self:_ensureData()
     local source = normalizeRawSnapshot({
@@ -536,29 +546,22 @@ function GoldenList:GetRawData()
         counters = data.counters,
     })
 
-    local copy
     local copyFn = resolveDeepCopyFunction()
-    if type(copyFn) == "function" then
-        local ok, result = pcall(copyFn, source)
-        if ok and type(result) == "table" then
-            copy = normalizeRawSnapshot(result)
-        else
-            debugLog("GetRawData: deep copy function failed; using fallback")
-        end
-    else
-        debugLog("GetRawData: deep copy function missing; using fallback")
+    if type(copyFn) ~= "function" then
+        debugLog("GetRawData: deep copy function missing; using fallback data")
+        return cloneSnapshotWithFallback(source)
     end
 
-    if type(copy) ~= "table" then
-        local fallback = fallbackDeepCopyTable(source)
-        if type(fallback) == "table" then
-            copy = normalizeRawSnapshot(fallback)
-        end
+    local ok, result = pcall(copyFn, source)
+    if not ok or type(result) ~= "table" then
+        debugLog("GetRawData: deep copy function failed; using fallback data")
+        return cloneSnapshotWithFallback(source)
     end
 
+    local copy = normalizeRawSnapshot(result)
     if type(copy) ~= "table" then
-        debugLog("GetRawData: fallback clone failed; returning empty data")
-        return newEmptyData()
+        debugLog("GetRawData: normalized copy invalid; using fallback data")
+        return cloneSnapshotWithFallback(source)
     end
 
     return copy
