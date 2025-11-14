@@ -454,130 +454,42 @@ do
     local RequestPromotionalEventCampaignData = fetchGlobal("RequestPromotionalEventCampaignData")
     local GetNumActivePromotionalEventCampaigns = fetchGlobal("GetNumActivePromotionalEventCampaigns")
     local GetActivePromotionalEventCampaignKey = fetchGlobal("GetActivePromotionalEventCampaignKey")
-    local GetActivePromotionalEventCampaignId = fetchGlobal("GetActivePromotionalEventCampaignId")
-    local GetPromotionalEventCampaignId = fetchGlobal("GetPromotionalEventCampaignId")
     local GetPromotionalEventCampaignInfo = fetchGlobal("GetPromotionalEventCampaignInfo")
     local GetPromotionalEventCampaignDisplayName = fetchGlobal("GetPromotionalEventCampaignDisplayName")
     local GetPromotionalEventCampaignDescription = fetchGlobal("GetPromotionalEventCampaignDescription")
     local GetSecondsRemainingInPromotionalEventCampaign = fetchGlobal("GetSecondsRemainingInPromotionalEventCampaign")
+    local GetPromotionalEventCampaignProgress = fetchGlobal("GetPromotionalEventCampaignProgress")
     local GetNumPromotionalEventCampaignActivities = fetchGlobal("GetNumPromotionalEventCampaignActivities")
-    local GetNumPromotionalEventActivities = fetchGlobal("GetNumPromotionalEventActivities")
     local GetPromotionalEventCampaignActivityInfo = fetchGlobal("GetPromotionalEventCampaignActivityInfo")
     local GetPromotionalEventCampaignActivityProgress = fetchGlobal("GetPromotionalEventCampaignActivityProgress")
     local GetPromotionalEventCampaignActivityTimeRemainingSeconds = fetchGlobal("GetPromotionalEventCampaignActivityTimeRemainingSeconds")
-    local GetPromotionalEventActivityInfo = fetchGlobal("GetPromotionalEventActivityInfo")
-    local GetPromotionalEventActivityTimeRemainingSeconds = fetchGlobal("GetPromotionalEventActivityTimeRemainingSeconds")
     local IsPromotionalEventSystemLocked = fetchGlobal("IsPromotionalEventSystemLocked")
 
     goldenApi = {}
 
     function goldenApi:HasRequiredApis()
-        if type(GetNumActivePromotionalEventCampaigns) ~= "function" then
-            return false, "GetNumActivePromotionalEventCampaigns"
-        end
+        local required = {
+            { "GetNumActivePromotionalEventCampaigns", GetNumActivePromotionalEventCampaigns },
+            { "GetActivePromotionalEventCampaignKey", GetActivePromotionalEventCampaignKey },
+            { "GetPromotionalEventCampaignInfo", GetPromotionalEventCampaignInfo },
+            { "GetPromotionalEventCampaignDisplayName", GetPromotionalEventCampaignDisplayName },
+            { "GetPromotionalEventCampaignDescription", GetPromotionalEventCampaignDescription },
+            { "GetSecondsRemainingInPromotionalEventCampaign", GetSecondsRemainingInPromotionalEventCampaign },
+            { "GetPromotionalEventCampaignProgress", GetPromotionalEventCampaignProgress },
+            { "GetNumPromotionalEventCampaignActivities", GetNumPromotionalEventCampaignActivities },
+            { "GetPromotionalEventCampaignActivityInfo", GetPromotionalEventCampaignActivityInfo },
+            { "GetPromotionalEventCampaignActivityProgress", GetPromotionalEventCampaignActivityProgress },
+            { "IsPromotionalEventSystemLocked", IsPromotionalEventSystemLocked },
+        }
 
-        if type(IsPromotionalEventSystemLocked) ~= "function" then
-            return false, "IsPromotionalEventSystemLocked"
-        end
-
-        local hasCampaignInfo = type(GetPromotionalEventCampaignInfo) == "function" or type(GetPromotionalEventCampaignId) == "function"
-        if not hasCampaignInfo then
-            return false, "GetPromotionalEventCampaignInfo"
-        end
-
-        local hasActivityInfo = type(GetPromotionalEventCampaignActivityInfo) == "function" or type(GetPromotionalEventActivityInfo) == "function"
-        if not hasActivityInfo then
-            return false, "GetPromotionalEventActivityInfo"
+        for index = 1, #required do
+            local entry = required[index]
+            if type(entry[2]) ~= "function" then
+                return false, entry[1]
+            end
         end
 
         return true, nil
-    end
-
-    local function collectHandles(campaignHandle, campaignIndex, campaignMeta)
-        local handles = {}
-
-        local function push(value)
-            if value ~= nil then
-                handles[#handles + 1] = value
-            end
-        end
-
-        push(campaignHandle)
-        if campaignMeta then
-            push(campaignMeta.id)
-            push(campaignMeta.handle)
-            push(campaignMeta.key)
-        end
-        push(campaignIndex)
-
-        return handles
-    end
-
-    local function invokeCampaignFunction(fn, campaignHandle, campaignIndex, campaignMeta)
-        if type(fn) ~= "function" then
-            return nil
-        end
-
-        local handles = collectHandles(campaignHandle, campaignIndex, campaignMeta)
-        for index = 1, #handles do
-            local handle = handles[index]
-            local results = { safeCall(fn, handle) }
-            if #results > 0 and results[1] ~= nil then
-                if unpack then
-                    return unpack(results)
-                end
-                return results[1]
-            end
-        end
-
-        return nil
-    end
-
-    local function invokeCampaignActivityFunction(fn, campaignHandle, campaignIndex, campaignMeta, activityIndex)
-        if type(fn) ~= "function" then
-            return nil
-        end
-
-        local handles = collectHandles(campaignHandle, campaignIndex, campaignMeta)
-        handles[#handles + 1] = activityIndex
-
-        for index = 1, #handles do
-            local handle = handles[index]
-            local results = { safeCall(fn, handle, activityIndex) }
-            if #results > 0 and results[1] ~= nil then
-                if unpack then
-                    return unpack(results)
-                end
-                return results[1]
-            end
-        end
-
-        return nil
-    end
-
-    local function resolveCampaignHandle(index, explicitHandle)
-        if explicitHandle ~= nil then
-            return explicitHandle
-        end
-        if type(GetActivePromotionalEventCampaignKey) == "function" then
-            local key = safeCall(GetActivePromotionalEventCampaignKey, index)
-            if key ~= nil then
-                return key
-            end
-        end
-        if type(GetActivePromotionalEventCampaignId) == "function" then
-            local value = safeCall(GetActivePromotionalEventCampaignId, index)
-            if value ~= nil then
-                return value
-            end
-        end
-        if type(GetPromotionalEventCampaignId) == "function" then
-            local value = safeCall(GetPromotionalEventCampaignId, index)
-            if value ~= nil then
-                return value
-            end
-        end
-        return index
     end
 
     function goldenApi:InvokeProvider(providerFn)
@@ -635,59 +547,23 @@ do
         return nil
     end
 
-    function goldenApi:BuildActivityPayload(campaignHandle, campaignIndex, activityIndex, campaignMeta)
+    function goldenApi:BuildActivityPayload(campaignKey, campaignIndex, activityIndex, campaignMeta)
         local payload = {
             campaignIndex = campaignIndex,
-            campaignHandle = campaignHandle,
+            campaignHandle = campaignKey,
             activityIndex = activityIndex,
             campaignId = campaignMeta and campaignMeta.id,
             campaignKey = campaignMeta and campaignMeta.key,
             campaignName = campaignMeta and campaignMeta.displayName,
         }
 
-        local activityId
-        local name
-        local description
-        local completionThreshold
-        local rewardId
-        local rewardQuantity
+        local activityId, name, description, completionThreshold, rewardId, rewardQuantity = safeCall(
+            GetPromotionalEventCampaignActivityInfo,
+            campaignKey,
+            activityIndex
+        )
 
-        if type(GetPromotionalEventCampaignActivityInfo) == "function" then
-            activityId, name, description, completionThreshold, rewardId, rewardQuantity = invokeCampaignActivityFunction(
-                GetPromotionalEventCampaignActivityInfo,
-                campaignHandle,
-                campaignIndex,
-                campaignMeta,
-                activityIndex
-            )
-        end
-
-        if type(GetPromotionalEventActivityInfo) == "function" then
-            local fallbackName, fallbackDescription, progress, maxProgress, completed = invokeCampaignActivityFunction(
-                GetPromotionalEventActivityInfo,
-                campaignHandle,
-                campaignIndex,
-                campaignMeta,
-                activityIndex
-            )
-            if name == nil and fallbackName ~= nil then
-                name = fallbackName
-            end
-            if description == nil and fallbackDescription ~= nil then
-                description = fallbackDescription
-            end
-            if payload.progress == nil and progress ~= nil then
-                payload.progress = progress
-            end
-            if completionThreshold == nil and maxProgress ~= nil then
-                completionThreshold = maxProgress
-            end
-            if payload.isCompleted == nil and completed ~= nil then
-                payload.isCompleted = completed == true
-            end
-        end
-
-        payload.id = activityId or string.format("%s:%d", tostring(campaignHandle), activityIndex)
+        payload.id = activityId or string.format("%s:%d", tostring(campaignKey), activityIndex)
         payload.name = ensureString(name)
         payload.description = ensureString(description)
         payload.rewardId = rewardId
@@ -697,20 +573,16 @@ do
             payload.maxProgress = ensureNumber(completionThreshold, 1)
         end
 
-        if type(GetPromotionalEventCampaignActivityProgress) == "function" then
-            local progress, isRewardClaimed = invokeCampaignActivityFunction(
-                GetPromotionalEventCampaignActivityProgress,
-                campaignHandle,
-                campaignIndex,
-                campaignMeta,
-                activityIndex
-            )
-            if progress ~= nil then
-                payload.progress = ensureNumber(progress, payload.progress or 0)
-            end
-            if isRewardClaimed ~= nil and payload.isCompleted == nil then
-                payload.isCompleted = isRewardClaimed == true
-            end
+        local progress, isRewardClaimed = safeCall(
+            GetPromotionalEventCampaignActivityProgress,
+            campaignKey,
+            activityIndex
+        )
+        if progress ~= nil then
+            payload.progress = ensureNumber(progress, payload.progress or 0)
+        end
+        if isRewardClaimed ~= nil then
+            payload.isCompleted = isRewardClaimed == true
             payload.isRewardClaimed = isRewardClaimed == true
         end
 
@@ -726,25 +598,11 @@ do
             payload.isCompleted = payload.progress >= payload.maxProgress and payload.maxProgress > 0
         end
 
-        local remaining
-        if type(GetPromotionalEventCampaignActivityTimeRemainingSeconds) == "function" then
-            remaining = invokeCampaignActivityFunction(
-                GetPromotionalEventCampaignActivityTimeRemainingSeconds,
-                campaignHandle,
-                campaignIndex,
-                campaignMeta,
-                activityIndex
-            )
-        elseif type(GetPromotionalEventActivityTimeRemainingSeconds) == "function" then
-            remaining = invokeCampaignActivityFunction(
-                GetPromotionalEventActivityTimeRemainingSeconds,
-                campaignHandle,
-                campaignIndex,
-                campaignMeta,
-                activityIndex
-            )
-        end
-
+        local remaining = safeCall(
+            GetPromotionalEventCampaignActivityTimeRemainingSeconds,
+            campaignKey,
+            activityIndex
+        )
         if remaining ~= nil then
             payload.timeRemainingSec = ensureNumber(remaining, 0)
         elseif campaignMeta and campaignMeta.timeRemainingSec ~= nil then
@@ -755,7 +613,7 @@ do
             payload.remainingSeconds = payload.timeRemainingSec
         end
 
-        local veqAugment = self:CollectVeqAugment(campaignHandle, activityIndex)
+        local veqAugment = self:CollectVeqAugment(campaignKey, activityIndex)
         if veqAugment ~= nil then
             payload.veq = veqAugment
         end
@@ -763,35 +621,16 @@ do
         return payload
     end
 
-    function goldenApi:CollectActivitiesForCampaign(campaignHandle, campaignIndex, campaignMeta)
+    function goldenApi:CollectActivitiesForCampaign(campaignKey, campaignIndex, campaignMeta)
         local activities = {}
 
-        local count
-        if type(GetNumPromotionalEventCampaignActivities) == "function" then
-            count = invokeCampaignFunction(
-                GetNumPromotionalEventCampaignActivities,
-                campaignHandle,
-                campaignIndex,
-                campaignMeta
-            )
-        end
-        if count == nil and type(GetNumPromotionalEventActivities) == "function" then
-            count = invokeCampaignFunction(
-                GetNumPromotionalEventActivities,
-                campaignHandle,
-                campaignIndex,
-                campaignMeta
-            )
-        end
-
-        count = ensureNumber(count, 0)
-
+        local count = ensureNumber(safeCall(GetNumPromotionalEventCampaignActivities, campaignKey), 0)
         if count <= 0 then
             return activities
         end
 
         for activityIndex = 1, count do
-            local entry = self:BuildActivityPayload(campaignHandle, campaignIndex, activityIndex, campaignMeta)
+            local entry = self:BuildActivityPayload(campaignKey, campaignIndex, activityIndex, campaignMeta)
             if type(entry) == "table" then
                 activities[#activities + 1] = entry
             end
@@ -809,83 +648,72 @@ do
         end
 
         for index = 1, count do
-            local handle = resolveCampaignHandle(index)
-            local baseMeta = { index = index, handle = handle }
-            local campaignKey
-            local campaignId
-            local campaignFrequency
-            local numActivities
-            local campaignName
-            local campaignDescription
-
-            if type(GetPromotionalEventCampaignInfo) == "function" then
-                campaignId, numActivities, baseMeta.numMilestones, baseMeta.capstoneCompletionThreshold, baseMeta.capstoneRewardId, baseMeta.capstoneRewardQuantity, campaignFrequency = invokeCampaignFunction(
+            local campaignKey = safeCall(GetActivePromotionalEventCampaignKey, index)
+            if campaignKey ~= nil then
+                local campaignId, numActivities, numMilestones, capstoneCompletionThreshold, capstoneRewardId, capstoneRewardQuantity, campaignFrequency = safeCall(
                     GetPromotionalEventCampaignInfo,
-                    handle,
-                    index,
-                    baseMeta
+                    campaignKey
                 )
-            elseif type(GetPromotionalEventCampaignId) == "function" then
-                campaignId = invokeCampaignFunction(GetPromotionalEventCampaignId, handle, index, baseMeta)
-            end
 
-            if type(GetActivePromotionalEventCampaignKey) == "function" then
-                campaignKey = invokeCampaignFunction(GetActivePromotionalEventCampaignKey, handle, index, baseMeta)
-            end
-            if type(GetPromotionalEventCampaignDisplayName) == "function" then
-                campaignName = invokeCampaignFunction(
-                    GetPromotionalEventCampaignDisplayName,
-                    campaignId,
-                    index,
-                    baseMeta
+                local campaignName
+                if campaignId ~= nil then
+                    campaignName = safeCall(GetPromotionalEventCampaignDisplayName, campaignId)
+                end
+
+                local campaignDescription
+                if campaignId ~= nil then
+                    campaignDescription = safeCall(GetPromotionalEventCampaignDescription, campaignId)
+                end
+
+                local secondsRemaining = ensureNumber(
+                    safeCall(GetSecondsRemainingInPromotionalEventCampaign, campaignKey),
+                    0
                 )
-            end
-            if type(GetPromotionalEventCampaignDescription) == "function" then
-                campaignDescription = invokeCampaignFunction(
-                    GetPromotionalEventCampaignDescription,
-                    campaignId,
-                    index,
-                    baseMeta
+
+                local completedActivities, isCapstoneRewardClaimed = safeCall(
+                    GetPromotionalEventCampaignProgress,
+                    campaignKey
                 )
-            end
 
-            local secondsRemaining
-            if type(GetSecondsRemainingInPromotionalEventCampaign) == "function" then
-                secondsRemaining = invokeCampaignFunction(
-                    GetSecondsRemainingInPromotionalEventCampaign,
-                    handle,
-                    index,
-                    baseMeta
-                )
-            end
-            secondsRemaining = ensureNumber(secondsRemaining, 0)
-
-            local campaignMeta = {
-                id = campaignId or campaignKey or handle or index,
-                handle = handle,
-                key = campaignKey,
-                index = index,
-                resetFrequency = campaignFrequency,
-                numActivities = ensureNumber(numActivities, 0),
-                displayName = campaignName,
-                description = campaignDescription,
-                timeRemainingSec = secondsRemaining,
-            }
-
-            local activities = self:CollectActivitiesForCampaign(handle, index, campaignMeta)
-
-            if type(activities) == "table" and #activities > 0 then
-                campaigns[#campaigns + 1] = {
-                    id = campaignMeta.id,
-                    index = index,
-                    handle = handle,
+                local campaignMeta = {
+                    id = campaignId or campaignKey or index,
+                    handle = campaignKey,
                     key = campaignKey,
-                    timeRemainingSec = secondsRemaining,
-                    resetFrequency = campaignFrequency,
+                    index = index,
                     displayName = campaignName,
                     description = campaignDescription,
-                    activities = activities,
+                    timeRemainingSec = secondsRemaining,
+                    resetFrequency = campaignFrequency,
+                    numActivities = ensureNumber(numActivities, 0),
+                    numMilestones = ensureNumber(numMilestones, 0),
+                    capstoneCompletionThreshold = ensureNumber(capstoneCompletionThreshold, 0),
+                    capstoneRewardId = capstoneRewardId,
+                    capstoneRewardQuantity = capstoneRewardQuantity,
+                    numCompletedActivities = ensureNumber(completedActivities, 0),
+                    isCapstoneRewardClaimed = isCapstoneRewardClaimed == true,
                 }
+
+                local activities = self:CollectActivitiesForCampaign(campaignKey, index, campaignMeta)
+                if type(activities) == "table" and #activities > 0 then
+                    campaigns[#campaigns + 1] = {
+                        id = campaignMeta.id,
+                        index = index,
+                        handle = campaignKey,
+                        key = campaignKey,
+                        timeRemainingSec = campaignMeta.timeRemainingSec,
+                        resetFrequency = campaignMeta.resetFrequency,
+                        displayName = ensureString(campaignMeta.displayName),
+                        description = ensureString(campaignMeta.description),
+                        activities = activities,
+                        numActivities = campaignMeta.numActivities,
+                        activityCount = #activities,
+                        numCompleted = campaignMeta.numCompletedActivities,
+                        capstoneCompletionThreshold = campaignMeta.capstoneCompletionThreshold,
+                        capstoneRewardId = campaignMeta.capstoneRewardId,
+                        capstoneRewardQuantity = campaignMeta.capstoneRewardQuantity,
+                        isCapstoneRewardClaimed = campaignMeta.isCapstoneRewardClaimed,
+                    }
+                end
             end
         end
 
