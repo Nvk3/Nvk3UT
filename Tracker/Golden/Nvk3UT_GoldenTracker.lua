@@ -87,6 +87,25 @@ local function safeDebug(message, ...)
     pcall(debugFn, string.format("%s: %s", MODULE_TAG, tostring(payload)))
 end
 
+local function runSafe(fn)
+    if type(fn) ~= "function" then
+        return
+    end
+
+    local root = getAddonRoot()
+    if type(root) == "table" then
+        local safeCall = rawget(root, "SafeCall")
+        if type(safeCall) == "function" then
+            local ok = pcall(safeCall, fn)
+            if ok then
+                return
+            end
+        end
+    end
+
+    pcall(fn)
+end
+
 local function getRowsModule()
     if Rows and type(Rows) == "table" then
         return Rows
@@ -262,6 +281,94 @@ function GoldenTracker.Init(parentControl)
     safeDebug("Init")
 end
 
+local function goldenDataChanged(reason)
+    local reasonForLog = reason
+    if reasonForLog == nil or reasonForLog == "" then
+        reasonForLog = "n/a"
+    else
+        reasonForLog = tostring(reasonForLog)
+    end
+
+    local results = {
+        modelRefreshed = false,
+        controllerMarked = false,
+        runtimeQueued = false,
+    }
+
+    runSafe(function()
+        local root = getAddonRoot()
+        if type(root) ~= "table" then
+            safeDebug("[GoldenTracker.SHIM] data change aborted (reason=%s; addon missing)", reasonForLog)
+            return
+        end
+
+        local model = rawget(root, "GoldenModel")
+        if type(model) == "table" then
+            local refresh = model.RefreshFromGame or model.Refresh
+            if type(refresh) == "function" then
+                local ok, err = pcall(refresh, model)
+                if ok then
+                    results.modelRefreshed = true
+                    safeDebug("[GoldenTracker.SHIM] model refreshed (reason=%s)", reasonForLog)
+                else
+                    safeDebug("[GoldenTracker.SHIM] model refresh failed (reason=%s, error=%s)", reasonForLog, tostring(err))
+                end
+            end
+        end
+
+        local controller = rawget(root, "GoldenTrackerController")
+        if type(controller) == "table" then
+            local markDirty = controller.MarkDirty or controller.RequestRefresh
+            if type(markDirty) == "function" then
+                local ok, err = pcall(markDirty, controller, reason)
+                if ok then
+                    results.controllerMarked = true
+                else
+                    safeDebug("[GoldenTracker.SHIM] mark dirty failed (reason=%s, error=%s)", reasonForLog, tostring(err))
+                end
+            end
+        end
+
+        local runtime = rawget(root, "TrackerRuntime")
+        if type(runtime) == "table" then
+            local queueDirty = runtime.QueueDirty or runtime.MarkDirty or runtime.RequestRefresh
+            if type(queueDirty) == "function" then
+                local ok, err = pcall(queueDirty, runtime, "golden")
+                if ok then
+                    results.runtimeQueued = true
+                else
+                    safeDebug("[GoldenTracker.SHIM] queue dirty failed (reason=%s, error=%s)", reasonForLog, tostring(err))
+                end
+            end
+        end
+
+        safeDebug(
+            "[GoldenTracker.SHIM] data changed (reason=%s model=%s dirty=%s queued=%s)",
+            reasonForLog,
+            tostring(results.modelRefreshed),
+            tostring(results.controllerMarked),
+            tostring(results.runtimeQueued)
+        )
+    end)
+
+    return results.modelRefreshed or results.controllerMarked or results.runtimeQueued
+end
+
+function GoldenTracker:NotifyDataChanged(reason)
+    local resolvedReason = reason
+    if resolvedReason == nil and type(self) ~= "table" then
+        resolvedReason = self
+    end
+
+    return goldenDataChanged(resolvedReason) == true
+end
+
+GoldenTracker.RequestDataRefresh = function(...)
+    return GoldenTracker:NotifyDataChanged(...)
+end
+
+GoldenTracker.RequestRefresh = GoldenTracker.RequestDataRefresh
+
 -- TEMP EVENTS (Golden) — will be removed in GEVENTS_00X_SWITCH
 -- Will be removed in GEVENTS_00X_SWITCH
 --[[ GEVENTS_TEMP_EVENTS_BEGIN: Golden (remove on GEVENTS_00X_SWITCH) ]]
@@ -274,6 +381,12 @@ local GOLDEN_TEMP_EVENT_HANDLES = {
     status = GOLDEN_TEMP_EVENT_NAMESPACE .. ".StatusUpdated",
 }
 
+local GOLDEN_TEMP_EVENT_REASONS = {
+    updated = "EVENT_GOLDEN_PURSUITS_UPDATED",
+    progress = "EVENT_GOLDEN_PURSUITS_PROGRESS_UPDATED",
+    status = "EVENT_GOLDEN_PURSUITS_STATUS_UPDATED",
+}
+
 local GOLDEN_TEMP_EVENT_IDS = {
     updated = rawget(_G, "EVENT_GOLDEN_PURSUITS_UPDATED"),
     progress = rawget(_G, "EVENT_GOLDEN_PURSUITS_PROGRESS_UPDATED"),
@@ -284,22 +397,19 @@ local goldenTempEventsState = {
     registered = false,
 }
 
-local function onGoldenPursuitsUpdated()
-    Nvk3UT.GoldenModel:RefreshFromGame()
-    Nvk3UT.GoldenTrackerController:MarkDirty()
-    Nvk3UT.TrackerRuntime:QueueDirty("golden")
+local function onGoldenPursuitsUpdated(...)
+    safeDebug("[GoldenTracker.TempEvents] %s", GOLDEN_TEMP_EVENT_REASONS.updated)
+    goldenDataChanged(GOLDEN_TEMP_EVENT_REASONS.updated)
 end
 
-local function onGoldenPursuitsProgressUpdated()
-    Nvk3UT.GoldenModel:RefreshFromGame()
-    Nvk3UT.GoldenTrackerController:MarkDirty()
-    Nvk3UT.TrackerRuntime:QueueDirty("golden")
+local function onGoldenPursuitsProgressUpdated(...)
+    safeDebug("[GoldenTracker.TempEvents] %s", GOLDEN_TEMP_EVENT_REASONS.progress)
+    goldenDataChanged(GOLDEN_TEMP_EVENT_REASONS.progress)
 end
 
-local function onGoldenPursuitsStatusUpdated()
-    Nvk3UT.GoldenModel:RefreshFromGame()
-    Nvk3UT.GoldenTrackerController:MarkDirty()
-    Nvk3UT.TrackerRuntime:QueueDirty("golden")
+local function onGoldenPursuitsStatusUpdated(...)
+    safeDebug("[GoldenTracker.TempEvents] %s", GOLDEN_TEMP_EVENT_REASONS.status)
+    goldenDataChanged(GOLDEN_TEMP_EVENT_REASONS.status)
 end
 
 local function registerGoldenTempEvents()
