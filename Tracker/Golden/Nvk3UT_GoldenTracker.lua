@@ -262,6 +262,131 @@ function GoldenTracker.Init(parentControl)
     safeDebug("Init")
 end
 
+-- TEMP EVENTS (Golden) — will be removed in GEVENTS_00X_SWITCH
+-- Will be removed in GEVENTS_00X_SWITCH
+--[[ GEVENTS_TEMP_EVENTS_BEGIN: Golden (remove on GEVENTS_00X_SWITCH) ]]
+
+local GOLDEN_TEMP_EVENT_NAMESPACE = MODULE_TAG .. ".TempEvents"
+
+local GOLDEN_TEMP_EVENT_HANDLES = {
+    updated = GOLDEN_TEMP_EVENT_NAMESPACE .. ".PursuitsUpdated",
+    progress = GOLDEN_TEMP_EVENT_NAMESPACE .. ".ProgressUpdated",
+    status = GOLDEN_TEMP_EVENT_NAMESPACE .. ".StatusUpdated",
+}
+
+local GOLDEN_TEMP_EVENT_IDS = {
+    updated = rawget(_G, "EVENT_GOLDEN_PURSUITS_UPDATED"),
+    progress = rawget(_G, "EVENT_GOLDEN_PURSUITS_PROGRESS_UPDATED"),
+    status = rawget(_G, "EVENT_GOLDEN_PURSUITS_STATUS_UPDATED"),
+}
+
+local goldenTempEventsState = {
+    registered = false,
+}
+
+local function onGoldenPursuitsUpdated()
+    Nvk3UT.GoldenModel:RefreshFromGame()
+    Nvk3UT.GoldenTrackerController:MarkDirty()
+    Nvk3UT.TrackerRuntime:QueueDirty("golden")
+end
+
+local function onGoldenPursuitsProgressUpdated()
+    Nvk3UT.GoldenModel:RefreshFromGame()
+    Nvk3UT.GoldenTrackerController:MarkDirty()
+    Nvk3UT.TrackerRuntime:QueueDirty("golden")
+end
+
+local function onGoldenPursuitsStatusUpdated()
+    Nvk3UT.GoldenModel:RefreshFromGame()
+    Nvk3UT.GoldenTrackerController:MarkDirty()
+    Nvk3UT.TrackerRuntime:QueueDirty("golden")
+end
+
+local function registerGoldenTempEvents()
+    if goldenTempEventsState.registered then
+        return
+    end
+
+    local eventManager = rawget(_G, "EVENT_MANAGER")
+    if eventManager == nil then
+        return
+    end
+
+    local registerMethod = eventManager.RegisterForEvent
+    if type(registerMethod) ~= "function" then
+        return
+    end
+
+    local registeredCount = 0
+
+    if GOLDEN_TEMP_EVENT_IDS.updated ~= nil then
+        eventManager:RegisterForEvent(
+            GOLDEN_TEMP_EVENT_HANDLES.updated,
+            GOLDEN_TEMP_EVENT_IDS.updated,
+            onGoldenPursuitsUpdated
+        )
+        registeredCount = registeredCount + 1
+    end
+
+    if GOLDEN_TEMP_EVENT_IDS.progress ~= nil then
+        eventManager:RegisterForEvent(
+            GOLDEN_TEMP_EVENT_HANDLES.progress,
+            GOLDEN_TEMP_EVENT_IDS.progress,
+            onGoldenPursuitsProgressUpdated
+        )
+        registeredCount = registeredCount + 1
+    end
+
+    if GOLDEN_TEMP_EVENT_IDS.status ~= nil then
+        eventManager:RegisterForEvent(
+            GOLDEN_TEMP_EVENT_HANDLES.status,
+            GOLDEN_TEMP_EVENT_IDS.status,
+            onGoldenPursuitsStatusUpdated
+        )
+        registeredCount = registeredCount + 1
+    end
+
+    if registeredCount > 0 then
+        goldenTempEventsState.registered = true
+        safeDebug("[GoldenTracker.TempEvents] register (%d handlers)", registeredCount)
+    end
+end
+
+local function unregisterGoldenTempEvents()
+    if not goldenTempEventsState.registered then
+        return
+    end
+
+    local eventManager = rawget(_G, "EVENT_MANAGER")
+    if eventManager == nil then
+        return
+    end
+
+    local unregisterMethod = eventManager.UnregisterForEvent
+    if type(unregisterMethod) ~= "function" then
+        return
+    end
+
+    unregisterMethod(eventManager, GOLDEN_TEMP_EVENT_HANDLES.updated)
+    unregisterMethod(eventManager, GOLDEN_TEMP_EVENT_HANDLES.progress)
+    unregisterMethod(eventManager, GOLDEN_TEMP_EVENT_HANDLES.status)
+
+    goldenTempEventsState.registered = false
+    safeDebug("[GoldenTracker.TempEvents] unregister")
+end
+
+function GoldenTracker:TempEvents_Register()
+    registerGoldenTempEvents()
+end
+
+function GoldenTracker:TempEvents_Unregister()
+    unregisterGoldenTempEvents()
+end
+
+registerGoldenTempEvents()
+
+--[[ GEVENTS_TEMP_EVENTS_END: Golden ]]
+
 function GoldenTracker.Refresh(viewModel)
     if not state.initialized then
         return
