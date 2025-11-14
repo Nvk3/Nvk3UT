@@ -174,6 +174,8 @@ local function resolveSafeCall()
     return nil
 end
 
+-- MARK: GEVENTS_SWITCH_GOLDEN_REFRESH_CALLERS
+-- GEVENTS note: Rebuild/StateInit keep calling into GoldenTracker's refresh API even after ESO registrations migrate to Events/.
 local function queueGoldenDirtyChannel(context)
     local root = getRoot()
     local tracker = type(root) == "table" and rawget(root, "GoldenTracker") or nil

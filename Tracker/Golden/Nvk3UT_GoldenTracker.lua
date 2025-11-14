@@ -285,6 +285,8 @@ function GoldenTracker.Init(parentControl)
     GoldenTracker:RequestFullRefresh(initReason)
 end
 
+-- MARK: GEVENTS_SWITCH_KEEP_REFRESH_HELPER
+-- GEVENTS note: This shim helper persists after GEVENTS_*_SWITCH; only the ESO registrations migrate to Events/.
 local function goldenDataChanged(reason)
     local reasonForLog = reason
     if reasonForLog == nil or reasonForLog == "" then
@@ -398,6 +400,8 @@ local function requestGoldenDataRefreshInternal(reason)
     return goldenDataChanged(reason) == true
 end
 
+-- MARK: GEVENTS_SWITCH_REFRESH_API
+-- GEVENTS note: TempEvents and lifecycle callers use this API; future Events/Nvk3UT_GoldenEventHandler.lua should keep calling it.
 function GoldenTracker:NotifyDataChanged(reason)
     local resolvedReason = resolveGoldenRefreshReason(self, reason)
     return requestGoldenDataRefreshInternal(resolvedReason)
@@ -505,9 +509,13 @@ local function formatTempEventReason(reason)
     return tostring(reason)
 end
 
--- TEMP EVENTS (Golden) — will be removed in GEVENTS_00X_SWITCH
--- Will be removed in GEVENTS_00X_SWITCH
---[[ GEVENTS_TEMP_EVENTS_BEGIN: Golden (remove on GEVENTS_00X_SWITCH) ]]
+-- GEVENT TempEvents (Golden)
+-- Purpose: temporary ESO registrations until GEVENTS_*_SWITCH migrates handlers into Events/Nvk3UT_GoldenEventHandler.lua.
+-- Removal plan:
+--   1) Delete the code enclosed by GEVENTS_TEMP_EVENTS_BEGIN/END markers when GEVENTS_*_SWITCH lands.
+--   2) Ensure Events/Nvk3UT_GoldenEventHandler.lua wires the ESO events and calls the GoldenTracker refresh helper.
+-- Search tags: @GEVENTS @TEMP @GOLDEN @REMOVE_ON_GEVENTS_SWITCH
+--[[ GEVENTS_TEMP_EVENTS_BEGIN: Golden (remove on GEVENTS_*_SWITCH) ]]
 
 local GOLDEN_TEMP_EVENT_NAMESPACE = MODULE_TAG .. ".TempEvents"
 
@@ -776,7 +784,7 @@ end
 
 registerGoldenTempEvents()
 
---[[ GEVENTS_TEMP_EVENTS_END: Golden ]]
+--[[ GEVENTS_TEMP_EVENTS_END: Golden (remove on GEVENTS_*_SWITCH) ]]
 
 function GoldenTracker.Refresh(viewModel)
     if not state.initialized then
@@ -873,6 +881,8 @@ end
 
 Nvk3UT.GoldenTracker = GoldenTracker
 
+-- MARK: GEVENTS_SWITCH_REFRESH_EXPORT
+-- GEVENTS note: Central events will continue to call this entry point after ESO registrations move to Events/.
 function Nvk3UT_GoldenTracker_RequestFullRefresh(...)
     return GoldenTracker.RequestFullRefresh(...)
 end
