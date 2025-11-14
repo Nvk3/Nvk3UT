@@ -279,6 +279,10 @@ function GoldenTracker.Init(parentControl)
     state.initialized = true
 
     safeDebug("Init")
+
+    local initReason = "init"
+    safeDebug("[GoldenTracker.SHIM] init-kick (reason=%s)", initReason)
+    GoldenTracker:RequestFullRefresh(initReason)
 end
 
 local function goldenDataChanged(reason)
@@ -354,20 +358,58 @@ local function goldenDataChanged(reason)
     return results.modelRefreshed or results.controllerMarked or results.runtimeQueued
 end
 
-function GoldenTracker:NotifyDataChanged(reason)
-    local resolvedReason = reason
-    if resolvedReason == nil and type(self) ~= "table" then
-        resolvedReason = self
+local function resolveGoldenRefreshReason(...)
+    local argumentCount = select("#", ...)
+    if argumentCount == 0 then
+        return nil
     end
 
-    return goldenDataChanged(resolvedReason) == true
+    local first = select(1, ...)
+    if type(first) == "table" then
+        if first == GoldenTracker then
+            if argumentCount >= 2 then
+                return select(2, ...)
+            end
+            return nil
+        end
+
+        local mt = getmetatable(first)
+        if mt ~= nil then
+            if mt == GoldenTracker then
+                if argumentCount >= 2 then
+                    return select(2, ...)
+                end
+                return nil
+            end
+
+            if type(mt) == "table" and mt.__index == GoldenTracker then
+                if argumentCount >= 2 then
+                    return select(2, ...)
+                end
+                return nil
+            end
+        end
+    end
+
+    return first
 end
 
-GoldenTracker.RequestDataRefresh = function(...)
-    return GoldenTracker:NotifyDataChanged(...)
+local function requestGoldenDataRefreshInternal(reason)
+    return goldenDataChanged(reason) == true
+end
+
+function GoldenTracker:NotifyDataChanged(reason)
+    local resolvedReason = resolveGoldenRefreshReason(self, reason)
+    return requestGoldenDataRefreshInternal(resolvedReason)
+end
+
+function GoldenTracker.RequestDataRefresh(...)
+    local resolvedReason = resolveGoldenRefreshReason(...)
+    return requestGoldenDataRefreshInternal(resolvedReason)
 end
 
 GoldenTracker.RequestRefresh = GoldenTracker.RequestDataRefresh
+GoldenTracker.RequestFullRefresh = GoldenTracker.RequestDataRefresh
 
 -- TEMP EVENTS (Golden) — will be removed in GEVENTS_00X_SWITCH
 -- Will be removed in GEVENTS_00X_SWITCH
@@ -399,17 +441,17 @@ local goldenTempEventsState = {
 
 local function onGoldenPursuitsUpdated(...)
     safeDebug("[GoldenTracker.TempEvents] %s", GOLDEN_TEMP_EVENT_REASONS.updated)
-    goldenDataChanged(GOLDEN_TEMP_EVENT_REASONS.updated)
+    GoldenTracker:RequestFullRefresh(GOLDEN_TEMP_EVENT_REASONS.updated)
 end
 
 local function onGoldenPursuitsProgressUpdated(...)
     safeDebug("[GoldenTracker.TempEvents] %s", GOLDEN_TEMP_EVENT_REASONS.progress)
-    goldenDataChanged(GOLDEN_TEMP_EVENT_REASONS.progress)
+    GoldenTracker:RequestFullRefresh(GOLDEN_TEMP_EVENT_REASONS.progress)
 end
 
 local function onGoldenPursuitsStatusUpdated(...)
     safeDebug("[GoldenTracker.TempEvents] %s", GOLDEN_TEMP_EVENT_REASONS.status)
-    goldenDataChanged(GOLDEN_TEMP_EVENT_REASONS.status)
+    GoldenTracker:RequestFullRefresh(GOLDEN_TEMP_EVENT_REASONS.status)
 end
 
 local function registerGoldenTempEvents()
@@ -591,5 +633,9 @@ function GoldenTracker.GetHeight()
 end
 
 Nvk3UT.GoldenTracker = GoldenTracker
+
+function Nvk3UT_GoldenTracker_RequestFullRefresh(...)
+    return GoldenTracker.RequestFullRefresh(...)
+end
 
 return GoldenTracker

@@ -209,15 +209,19 @@ local function queueGoldenDirtyChannel(context)
     end
 
     if type(tracker) == "table" then
+        if invokeHelper(tracker.RequestFullRefresh, "GoldenTracker.RequestFullRefresh", true) then
+            return true
+        end
+
         if invokeHelper(tracker.NotifyDataChanged, "GoldenTracker.NotifyDataChanged", true) then
             return true
         end
 
-        if invokeHelper(tracker.RequestDataRefresh, "GoldenTracker.RequestDataRefresh", false) then
+        if invokeHelper(tracker.RequestDataRefresh, "GoldenTracker.RequestDataRefresh", true) then
             return true
         end
 
-        if invokeHelper(tracker.RequestRefresh, "GoldenTracker.RequestRefresh", false) then
+        if invokeHelper(tracker.RequestRefresh, "GoldenTracker.RequestRefresh", true) then
             return true
         end
     end
