@@ -10,6 +10,7 @@ GoldenState._root = type(GoldenState._root) == "table" and GoldenState._root or 
 GoldenState._config = type(GoldenState._config) == "table" and GoldenState._config or nil
 GoldenState._state = type(GoldenState._state) == "table" and GoldenState._state or nil
 GoldenState._defaults = type(GoldenState._defaults) == "table" and GoldenState._defaults or nil
+GoldenState._status = type(GoldenState._status) == "table" and GoldenState._status or nil
 
 local unpack = _G.unpack or (table and table.unpack)
 
@@ -23,6 +24,12 @@ local DEFAULT_BEHAVIOR = {
     dailyExpanded = true,
     weeklyExpanded = true,
     completedHandling = "hide",
+}
+
+local DEFAULT_STATUS = {
+    isAvailable = false,
+    isLocked = false,
+    hasEntries = false,
 }
 
 local function getSafeCall()
@@ -72,6 +79,39 @@ local function resolveGlobalGoldenDefaults()
     end
 
     return nil
+end
+
+local function newStatus()
+    return {
+        isAvailable = false,
+        isLocked = false,
+        hasEntries = false,
+    }
+end
+
+local function copyStatus(status)
+    local snapshot = newStatus()
+    if type(status) == "table" then
+        snapshot.isAvailable = status.isAvailable == true
+        snapshot.isLocked = status.isLocked == true
+        snapshot.hasEntries = status.hasEntries == true
+    end
+    return snapshot
+end
+
+local function ensureStatus(self, create)
+    local status = self._status
+    if type(status) == "table" then
+        return status
+    end
+
+    if not create then
+        return nil
+    end
+
+    status = newStatus()
+    self._status = status
+    return status
 end
 
 local function deepCopyTable(source)
@@ -172,6 +212,14 @@ local function debugLog(fmt, ...)
     elseif type(d) == "function" then
         d(string.format("[Nvk3UT] %s", payload))
     end
+end
+
+local function statusDebugLog(self, key, value)
+    if not isDebugEnabled() then
+        return
+    end
+
+    debugLog("status %s=%s", tostring(key), tostring(value))
 end
 
 local function fetchConfig(self)
@@ -527,9 +575,108 @@ function GoldenState:Init(svRoot)
         self._defaults = resolveGlobalGoldenDefaults()
     end
 
+    ensureStatus(self, true)
+
     debugLog("init")
 
     return state
+end
+
+function GoldenState:GetSystemStatus()
+    return copyStatus(self._status)
+end
+
+function GoldenState:IsSystemAvailable()
+    local status = self._status
+    if type(status) ~= "table" then
+        return DEFAULT_STATUS.isAvailable
+    end
+    return status.isAvailable == true
+end
+
+function GoldenState:IsSystemLocked()
+    local status = self._status
+    if type(status) ~= "table" then
+        return DEFAULT_STATUS.isLocked
+    end
+    return status.isLocked == true
+end
+
+function GoldenState:HasEntries()
+    local status = self._status
+    if type(status) ~= "table" then
+        return DEFAULT_STATUS.hasEntries
+    end
+    return status.hasEntries == true
+end
+
+function GoldenState:SetSystemAvailable(isAvailable)
+    local status = ensureStatus(self, true)
+    if type(status) ~= "table" then
+        return false
+    end
+
+    local normalized = isAvailable == true
+    if status.isAvailable ~= normalized then
+        status.isAvailable = normalized
+        if not normalized then
+            status.hasEntries = false
+        else
+            status.isLocked = false
+        end
+        statusDebugLog(self, "available", normalized)
+    elseif normalized and status.isLocked then
+        status.isLocked = false
+    end
+
+    return status.isAvailable == true
+end
+
+function GoldenState:SetSystemLocked(isLocked)
+    local status = ensureStatus(self, true)
+    if type(status) ~= "table" then
+        return false
+    end
+
+    local normalized = isLocked == true
+    if status.isLocked ~= normalized then
+        status.isLocked = normalized
+        if normalized then
+            status.isAvailable = false
+            status.hasEntries = false
+        end
+        statusDebugLog(self, "locked", normalized)
+    elseif normalized then
+        status.isAvailable = false
+        status.hasEntries = false
+    end
+
+    return status.isLocked == true
+end
+
+function GoldenState:SetHasEntries(hasEntries)
+    local status = ensureStatus(self, true)
+    if type(status) ~= "table" then
+        return false
+    end
+
+    local normalized = hasEntries == true
+    if status.hasEntries ~= normalized then
+        status.hasEntries = normalized
+        statusDebugLog(self, "hasEntries", normalized)
+    end
+
+    if normalized then
+        status.isAvailable = true
+    end
+
+    return status.hasEntries == true
+end
+
+function GoldenState:ResetSystemStatus()
+    self._status = copyStatus(DEFAULT_STATUS)
+    statusDebugLog(self, "reset", "defaults")
+    return true
 end
 
 function GoldenState:IsHeaderExpanded()

@@ -13,6 +13,7 @@ GoldenModel._list = type(GoldenModel._list) == "table" and GoldenModel._list or 
 GoldenModel._rawData = type(GoldenModel._rawData) == "table" and GoldenModel._rawData or nil
 GoldenModel._viewData = type(GoldenModel._viewData) == "table" and GoldenModel._viewData or nil
 GoldenModel._counters = type(GoldenModel._counters) == "table" and GoldenModel._counters or nil
+GoldenModel._systemStatus = type(GoldenModel._systemStatus) == "table" and GoldenModel._systemStatus or nil
 
 local unpack = _G.unpack or (table and table.unpack)
 
@@ -266,6 +267,62 @@ local function newEmptyCounters()
     }
 end
 
+local function newSystemStatus()
+    return {
+        isAvailable = false,
+        isLocked = false,
+        hasEntries = false,
+    }
+end
+
+local function copySystemStatus(status)
+    local snapshot = newSystemStatus()
+    if type(status) == "table" then
+        snapshot.isAvailable = status.isAvailable == true
+        snapshot.isLocked = status.isLocked == true
+        snapshot.hasEntries = status.hasEntries == true
+    end
+    return snapshot
+end
+
+local function resolveSystemStatus(self, create)
+    local status = self._systemStatus
+    if type(status) == "table" then
+        return status
+    end
+
+    if not create then
+        return nil
+    end
+
+    status = newSystemStatus()
+    self._systemStatus = status
+    return status
+end
+
+local function applyStateSystemStatus(state, status)
+    if type(state) ~= "table" then
+        return
+    end
+
+    local snapshot = copySystemStatus(status)
+
+    local function invoke(methodName, value)
+        local method = state[methodName]
+        if type(method) ~= "function" then
+            return
+        end
+
+        safeCall(function()
+            method(state, value)
+        end)
+    end
+
+    invoke("SetSystemAvailable", snapshot.isAvailable)
+    invoke("SetSystemLocked", snapshot.isLocked)
+    invoke("SetHasEntries", snapshot.hasEntries)
+end
+
 local function copyOrEmpty(value, fallbackFactory)
     if type(value) == "table" then
         local copy = deepCopyTable(value)
@@ -441,6 +498,50 @@ do
     local PROMO_RESET_FREQ_WEEKLY = rawget(_G, "PROMOTIONAL_EVENT_RESET_FREQUENCY_WEEKLY")
 
     goldenApi = {}
+
+    function goldenApi:HasRequiredApis()
+        if type(GetNumActivePromotionalEventCampaigns) ~= "function" then
+            return false, "GetNumActivePromotionalEventCampaigns"
+        end
+
+        if type(IsPromotionalEventSystemLocked) ~= "function" then
+            return false, "IsPromotionalEventSystemLocked"
+        end
+
+        local hasCampaignInfo = type(GetPromotionalEventCampaignInfo) == "function" or type(GetPromotionalEventCampaignId) == "function"
+        if not hasCampaignInfo then
+            return false, "GetPromotionalEventCampaignInfo"
+        end
+
+        local hasActivityInfo = type(GetPromotionalEventCampaignActivityInfo) == "function" or type(GetPromotionalEventActivityInfo) == "function"
+        if not hasActivityInfo then
+            return false, "GetPromotionalEventActivityInfo"
+        end
+
+        return true, nil
+    end
+
+    function goldenApi:EvaluateSystemStatus()
+        local hasApis, missingApi = self:HasRequiredApis()
+        if not hasApis then
+            return {
+                hasRequiredApis = false,
+                missingApi = missingApi,
+                isLocked = false,
+                isAvailable = false,
+            }
+        end
+
+        local locked = self:IsSystemLocked()
+        local isLocked = locked == true
+
+        return {
+            hasRequiredApis = true,
+            missingApi = nil,
+            isLocked = isLocked,
+            isAvailable = not isLocked,
+        }
+    end
 
     local function collectHandles(campaignHandle, campaignIndex, campaignMeta)
         local handles = {}
@@ -1084,6 +1185,12 @@ function GoldenModel:Init(svRoot, goldenState, goldenList)
     self._counters = buildCounters(self._rawData)
     self._isEmpty = computeIsEmpty(self._counters)
 
+    local status = resolveSystemStatus(self, true)
+    status.isAvailable = false
+    status.isLocked = false
+    status.hasEntries = false
+    applyStateSystemStatus(self._state, status)
+
     debugLog("init")
 
     return self
@@ -1097,11 +1204,43 @@ local function runListRefresh(list, providerFn)
 end
 
 function GoldenModel:RefreshFromGame(providerFn)
-    if type(self._list) ~= "table" then
+    local status = resolveSystemStatus(self, true)
+    status.hasEntries = false
+
+    local function resetModelData()
         self._rawData = newEmptyRawData()
         self._viewData = buildViewDataSnapshot(self._rawData, self._state)
         self._counters = buildCounters(self._rawData)
-        self._isEmpty = computeIsEmpty(self._counters)
+        self._isEmpty = true
+    end
+
+    if type(self._list) ~= "table" then
+        status.isAvailable = false
+        status.isLocked = false
+        resetModelData()
+        applyStateSystemStatus(self._state, status)
+        return false
+    end
+
+    local systemStatus = goldenApi:EvaluateSystemStatus()
+    status.isAvailable = systemStatus.isAvailable == true
+    status.isLocked = systemStatus.isLocked == true
+    status.hasEntries = false
+    applyStateSystemStatus(self._state, status)
+
+    if systemStatus.hasRequiredApis == false then
+        resetModelData()
+        safeCall(runListRefresh, self._list, nil)
+        debugLog("refresh gated: missing promotional event API %s", tostring(systemStatus.missingApi))
+        applyStateSystemStatus(self._state, status)
+        return false
+    end
+
+    if status.isLocked then
+        resetModelData()
+        safeCall(runListRefresh, self._list, nil)
+        debugLog("refresh gated: promotional event system locked")
+        applyStateSystemStatus(self._state, status)
         return false
     end
 
@@ -1116,15 +1255,24 @@ function GoldenModel:RefreshFromGame(providerFn)
     self._rawData = rawData
     self._viewData = buildViewDataSnapshot(self._rawData, self._state)
     self._counters = buildCounters(self._rawData)
-    self._isEmpty = computeIsEmpty(self._counters)
 
-    debugLog(
-        "refresh: daily=%d/%d weekly=%d/%d",
-        self._counters.dailyCompleted or 0,
-        self._counters.dailyTotal or 0,
-        self._counters.weeklyCompleted or 0,
-        self._counters.weeklyTotal or 0
-    )
+    local isEmpty = computeIsEmpty(self._counters)
+    self._isEmpty = isEmpty
+    status.hasEntries = not isEmpty
+
+    if isEmpty then
+        debugLog("refresh: available but no Golden entries")
+    else
+        debugLog(
+            "refresh: daily=%d/%d weekly=%d/%d",
+            self._counters.dailyCompleted or 0,
+            self._counters.dailyTotal or 0,
+            self._counters.weeklyCompleted or 0,
+            self._counters.weeklyTotal or 0
+        )
+    end
+
+    applyStateSystemStatus(self._state, status)
 
     return true
 end
@@ -1157,6 +1305,34 @@ function GoldenModel:GetCounters()
         weeklyCompleted = counters.weeklyCompleted or 0,
         weeklyTotal = counters.weeklyTotal or 0,
     }
+end
+
+function GoldenModel:IsSystemAvailable()
+    local status = resolveSystemStatus(self, false)
+    if type(status) ~= "table" then
+        return false
+    end
+    return status.isAvailable == true
+end
+
+function GoldenModel:IsSystemLocked()
+    local status = resolveSystemStatus(self, false)
+    if type(status) ~= "table" then
+        return false
+    end
+    return status.isLocked == true
+end
+
+function GoldenModel:HasEntries()
+    local status = resolveSystemStatus(self, false)
+    if type(status) ~= "table" then
+        return false
+    end
+    return status.hasEntries == true
+end
+
+function GoldenModel:GetSystemStatus()
+    return copySystemStatus(resolveSystemStatus(self, false))
 end
 
 function GoldenModel:IsEmpty()
