@@ -469,6 +469,109 @@ local function refreshEndeavorTracker(viewModel)
     return refreshed
 end
 
+local function ensureGoldenCache(runtime)
+    if type(runtime) ~= "table" then
+        return { goldenVM = { categories = {} } }, { categories = {} }
+    end
+
+    local cache = runtime.cache
+    if type(cache) ~= "table" then
+        cache = {}
+        runtime.cache = cache
+    end
+
+    local viewModel = cache.goldenVM
+    if type(viewModel) ~= "table" then
+        viewModel = { categories = {} }
+        cache.goldenVM = viewModel
+    end
+
+    if type(viewModel.categories) ~= "table" then
+        viewModel.categories = {}
+    end
+
+    return cache, viewModel
+end
+
+local function buildGoldenViewModel(runtime)
+    local cache, fallbackVm = ensureGoldenCache(runtime)
+
+    local controller = rawget(Addon, "GoldenTrackerController")
+    if type(controller) ~= "table" then
+        warn("Runtime: GoldenTrackerController missing; cached empty VM")
+        cache.goldenVM = fallbackVm
+        return fallbackVm, false
+    end
+
+    local viewModel = fallbackVm
+    local buildInvoked = false
+
+    safeCall(function()
+        local init = controller.Init
+        if type(init) == "function" and controller.__inited ~= true then
+            local invoked = callWithOptionalSelf(controller, init, false)
+            if invoked then
+                controller.__inited = true
+            end
+        end
+
+        local build = controller.BuildViewModel or controller.Build
+        if type(build) == "function" then
+            local invoked, result = callWithOptionalSelf(controller, build, false)
+            if invoked then
+                buildInvoked = true
+                if type(result) == "table" then
+                    viewModel = result
+                end
+            end
+        end
+
+        local getter = controller.GetViewModel
+        if type(getter) == "function" then
+            local invoked, result = callWithOptionalSelf(controller, getter, false)
+            if invoked and type(result) == "table" then
+                viewModel = result
+            end
+        end
+    end)
+
+    if type(viewModel) ~= "table" then
+        viewModel = { categories = {} }
+    end
+
+    if type(viewModel.categories) ~= "table" then
+        viewModel.categories = {}
+    end
+
+    cache.goldenVM = viewModel
+
+    return viewModel, buildInvoked
+end
+
+local function refreshGoldenTracker(tracker, viewModel)
+    if type(tracker) ~= "table" then
+        return false
+    end
+
+    local payload = type(viewModel) == "table" and viewModel or { categories = {} }
+
+    local refresh = tracker.Refresh or tracker.RefreshWithViewModel or tracker.RefreshFromViewModel
+    if type(refresh) ~= "function" then
+        return false
+    end
+
+    local refreshed = false
+
+    safeCall(function()
+        local invoked = callWithOptionalSelf(tracker, refresh, false, payload)
+        if invoked then
+            refreshed = true
+        end
+    end)
+
+    return refreshed
+end
+
 local function getEndeavorHeight()
     local facade = rawget(Addon, "Endeavor")
     if type(facade) == "table" then
@@ -767,54 +870,26 @@ function Runtime:ProcessFrame(nowMs)
             end
         end
 
+        local cache, goldenViewModel = ensureGoldenCache(self)
+        local goldenVmBuilt = false
+
         if goldenDirty then
+            local builtViewModel, buildInvoked = buildGoldenViewModel(self)
+            goldenViewModel = builtViewModel
+            goldenVmBuilt = buildInvoked
             self.goldenDirty = false
 
-            local cache = self.cache
-            if type(cache) ~= "table" then
-                cache = {}
-                self.cache = cache
-            end
-
-            if type(cache.goldenVM) ~= "table" then
-                cache.goldenVM = { categories = {} }
-            end
-
-            local controller = rawget(Addon, "GoldenTrackerController")
-            if type(controller) == "table" then
-                safeCall(function()
-                    if type(controller.Init) == "function" and not controller.__inited then
-                        controller:Init()
-                        controller.__inited = true
-                    end
-
-                    if type(controller.BuildViewModel) == "function" then
-                        controller:BuildViewModel()
-                    end
-
-                    if type(controller.GetViewModel) == "function" then
-                        cache.goldenVM = controller:GetViewModel() or { categories = {} }
-                    end
-
-                    if type(cache.goldenVM) ~= "table" then
-                        cache.goldenVM = { categories = {} }
-                    end
-
-                    local vm = cache.goldenVM
-                    local categories = 0
-                    if type(vm) == "table" and type(vm.categories) == "table" then
-                        categories = #vm.categories
-                    end
-
-                    debug(("Runtime: Golden VM built, cats=%d"):format(categories))
-                end)
-            else
-                if type(cache.goldenVM) ~= "table" then
-                    cache.goldenVM = { categories = {} }
-                end
-
-                warn("Runtime: GoldenTrackerController missing; cached empty VM")
-            end
+            local status = type(goldenViewModel.status) == "table" and goldenViewModel.status or {}
+            local categories = type(goldenViewModel.categories) == "table" and #goldenViewModel.categories or 0
+            debug(
+                "Runtime.BuildVM.Golden: avail=%s locked=%s hasEntries=%s cats=%d",
+                tostring(status.isAvailable),
+                tostring(status.isLocked),
+                tostring(status.hasEntries),
+                categories
+            )
+        else
+            goldenViewModel = cache.goldenVM
         end
 
         local questGeometryChanged = false
@@ -859,33 +934,29 @@ function Runtime:ProcessFrame(nowMs)
         local goldenGeometryChanged = false
         local goldenRefreshed = false
         local goldenTracker = rawget(Addon, "GoldenTracker")
-        local shouldRefreshGolden = goldenDirty or layoutDirty or questGeometryChanged or endeavorGeometryChanged or achievementGeometryChanged
-        if shouldRefreshGolden and type(goldenTracker) == "table" and type(goldenTracker.Refresh) == "function" then
-            local cache = self.cache
-            if type(cache) ~= "table" then
-                cache = {}
-                self.cache = cache
+        local shouldRefreshGolden = goldenDirty or goldenVmBuilt or layoutDirty or questGeometryChanged or endeavorGeometryChanged or achievementGeometryChanged
+        if shouldRefreshGolden then
+            if type(goldenViewModel) ~= "table" then
+                goldenViewModel = cache.goldenVM or { categories = {} }
             end
 
-            local viewModel = cache.goldenVM
-            if type(viewModel) ~= "table" then
-                viewModel = { categories = {} }
-                cache.goldenVM = viewModel
+            if type(goldenViewModel.categories) ~= "table" then
+                goldenViewModel.categories = {}
             end
 
-            safeCall(function()
-                goldenTracker:Refresh(viewModel)
-                goldenRefreshed = true
+            goldenRefreshed = refreshGoldenTracker(goldenTracker, goldenViewModel)
 
-                if goldenDirty then
-                    local categoryCount = 0
-                    if type(viewModel.categories) == "table" then
-                        categoryCount = #viewModel.categories
-                    end
-
-                    debug(("Runtime: Golden refresh wired, cats=%d"):format(categoryCount))
-                end
-            end)
+            if goldenRefreshed and goldenDirty then
+                local categoryCount = #goldenViewModel.categories
+                local status = type(goldenViewModel.status) == "table" and goldenViewModel.status or {}
+                debug(
+                    "Runtime.Refresh.Golden: avail=%s locked=%s hasEntries=%s cats=%d",
+                    tostring(status.isAvailable),
+                    tostring(status.isLocked),
+                    tostring(status.hasEntries),
+                    categoryCount
+                )
+            end
         end
 
         if goldenRefreshed then
