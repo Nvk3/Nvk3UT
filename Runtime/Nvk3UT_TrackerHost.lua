@@ -4018,7 +4018,15 @@ function TrackerHost.Init()
     state.initialized = true
     state.initializing = false
 
-    notifyContentChanged()
+    -- After the host window and sections are fully created and the
+    -- initial settings applied, run a full host refresh so all tracker
+    -- contents and layout state start in the same condition as a manual
+    -- rebuild.
+    if performFullHostRefresh then
+        performFullHostRefresh("init")
+    elseif notifyContentChanged then
+        notifyContentChanged()
+    end
 
     ensureSceneFragment(state.root)
 
