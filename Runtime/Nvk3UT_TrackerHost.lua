@@ -122,7 +122,13 @@ local DEFAULT_HOST_SETTINGS = {
 
 local LEFT_MOUSE_BUTTON = _G.MOUSE_BUTTON_INDEX_LEFT or 1
 local MOUSE_CURSOR_RESIZE_CORNER = _G.MOUSE_CURSOR_RESIZE_NWSE or _G.MOUSE_CURSOR_RESIZE_ALL or _G.MOUSE_CURSOR_RESIZE
-local MOUSE_CURSOR_DEFAULT = _G.MOUSE_CURSOR_DO_NOT_CARE or _G.MOUSE_CURSOR_ARROW or 0
+local MOUSE_CURSOR_RESIZE_HORIZONTAL = _G.MOUSE_CURSOR_RESIZE_HORIZONTAL
+local MOUSE_CURSOR_RESIZE_VERTICAL = _G.MOUSE_CURSOR_RESIZE_VERTICAL
+local MOUSE_CURSOR_RESIZE_NW_SE = _G.MOUSE_CURSOR_RESIZE_NW_SE or _G.MOUSE_CURSOR_RESIZE_NWSE
+local MOUSE_CURSOR_RESIZE_NE_SW = _G.MOUSE_CURSOR_RESIZE_NE_SW or _G.MOUSE_CURSOR_RESIZE_NESW
+local MOUSE_CURSOR_RESIZE_DIAGONAL = _G.MOUSE_CURSOR_RESIZE_DIAGONAL
+local MOUSE_CURSOR_DO_NOT_CARE = _G.MOUSE_CURSOR_DO_NOT_CARE
+local MOUSE_CURSOR_DEFAULT = MOUSE_CURSOR_DO_NOT_CARE or _G.MOUSE_CURSOR_ARROW or 0
 local unpack = unpack or table.unpack
 
 local function Num0(v)
@@ -226,6 +232,50 @@ local state = {
 local resizeState = {
     active = false,
 }
+
+local function SetResizeCursor(mode)
+    if not SetMouseCursor then
+        return
+    end
+
+    if mode == "horizontal" then
+        if MOUSE_CURSOR_RESIZE_HORIZONTAL then
+            SetMouseCursor(MOUSE_CURSOR_RESIZE_HORIZONTAL)
+        end
+    elseif mode == "vertical" then
+        if MOUSE_CURSOR_RESIZE_VERTICAL then
+            SetMouseCursor(MOUSE_CURSOR_RESIZE_VERTICAL)
+        end
+    elseif mode == "nwse" then
+        if MOUSE_CURSOR_RESIZE_NW_SE then
+            SetMouseCursor(MOUSE_CURSOR_RESIZE_NW_SE)
+        elseif MOUSE_CURSOR_RESIZE_DIAGONAL then
+            SetMouseCursor(MOUSE_CURSOR_RESIZE_DIAGONAL)
+        elseif MOUSE_CURSOR_RESIZE_CORNER then
+            SetMouseCursor(MOUSE_CURSOR_RESIZE_CORNER)
+        end
+    elseif mode == "nesw" then
+        if MOUSE_CURSOR_RESIZE_NE_SW then
+            SetMouseCursor(MOUSE_CURSOR_RESIZE_NE_SW)
+        elseif MOUSE_CURSOR_RESIZE_DIAGONAL then
+            SetMouseCursor(MOUSE_CURSOR_RESIZE_DIAGONAL)
+        elseif MOUSE_CURSOR_RESIZE_CORNER then
+            SetMouseCursor(MOUSE_CURSOR_RESIZE_CORNER)
+        end
+    end
+end
+
+local function ResetResizeCursor()
+    if not SetMouseCursor then
+        return
+    end
+
+    if MOUSE_CURSOR_DO_NOT_CARE then
+        SetMouseCursor(MOUSE_CURSOR_DO_NOT_CARE)
+    elseif MOUSE_CURSOR_DEFAULT then
+        SetMouseCursor(MOUSE_CURSOR_DEFAULT)
+    end
+end
 
 local lamPreview = {
     active = false,
@@ -812,6 +862,16 @@ local function beginResize(mode)
 
     resizeState.active = true
     resizeState.mode = mode or "bottomright"
+    local cursorMode = resizeState.mode
+    if cursorMode == "left" or cursorMode == "right" then
+        SetResizeCursor("horizontal")
+    elseif cursorMode == "top" or cursorMode == "bottom" then
+        SetResizeCursor("vertical")
+    elseif cursorMode == "topleft" or cursorMode == "bottomright" then
+        SetResizeCursor("nwse")
+    elseif cursorMode == "topright" or cursorMode == "bottomleft" then
+        SetResizeCursor("nesw")
+    end
     resizeState.startX = startX
     resizeState.startY = startY
     resizeState.startWidth = state.root:GetWidth() or state.window.width or DEFAULT_WINDOW.width
@@ -932,9 +992,7 @@ local function endResize()
     resizeState.startLeft = nil
     resizeState.startTop = nil
 
-    if SetMouseCursor and MOUSE_CURSOR_DEFAULT then
-        SetMouseCursor(MOUSE_CURSOR_DEFAULT)
-    end
+    ResetResizeCursor()
 
     if state.root and state.window and saveWindowSize then
         saveWindowSize()
@@ -2562,18 +2620,6 @@ local function createResizeGrip()
 
         grip:SetMouseEnabled(true)
 
-        grip:SetHandler("OnMouseEnter", function()
-            if SetMouseCursor and MOUSE_CURSOR_RESIZE_CORNER then
-                SetMouseCursor(MOUSE_CURSOR_RESIZE_CORNER)
-            end
-        end)
-
-        grip:SetHandler("OnMouseExit", function()
-            if not resizeState.active and SetMouseCursor and MOUSE_CURSOR_DEFAULT then
-                SetMouseCursor(MOUSE_CURSOR_DEFAULT)
-            end
-        end)
-
         grip:SetHandler("OnMouseDown", function(_, button)
             if button ~= LEFT_MOUSE_BUTTON then
                 return
@@ -2585,9 +2631,24 @@ local function createResizeGrip()
         grip:SetHandler("OnMouseUp", function(_, button)
             if button == LEFT_MOUSE_BUTTON then
                 endResize()
-                if SetMouseCursor and MOUSE_CURSOR_DEFAULT then
-                    SetMouseCursor(MOUSE_CURSOR_DEFAULT)
-                end
+            end
+        end)
+    end
+
+    local function attachHoverHandlers(grip, cursorMode)
+        if not grip then
+            return
+        end
+
+        grip:SetHandler("OnMouseEnter", function()
+            if cursorMode then
+                SetResizeCursor(cursorMode)
+            end
+        end)
+
+        grip:SetHandler("OnMouseExit", function()
+            if not resizeState.active then
+                ResetResizeCursor()
             end
         end)
     end
@@ -2625,6 +2686,7 @@ local function createResizeGrip()
         applyCornerTexture(cornerBR, 0)
 
         attachGripHandlers(cornerBR, "bottomright")
+        attachHoverHandlers(cornerBR, "nwse")
         grips.bottomright = cornerBR
     end
 
@@ -2640,6 +2702,7 @@ local function createResizeGrip()
         applyCornerTexture(cornerTR, math.pi * 0.5)
 
         attachGripHandlers(cornerTR, "topright")
+        attachHoverHandlers(cornerTR, "nesw")
         grips.topright = cornerTR
     end
 
@@ -2655,6 +2718,7 @@ local function createResizeGrip()
         applyCornerTexture(cornerBL, math.pi * 1.5)
 
         attachGripHandlers(cornerBL, "bottomleft")
+        attachHoverHandlers(cornerBL, "nesw")
         grips.bottomleft = cornerBL
     end
 
@@ -2670,6 +2734,7 @@ local function createResizeGrip()
         applyCornerTexture(cornerTL, math.pi)
 
         attachGripHandlers(cornerTL, "topleft")
+        attachHoverHandlers(cornerTL, "nwse")
         grips.topleft = cornerTL
     end
 
@@ -2687,6 +2752,7 @@ local function createResizeGrip()
         end
 
         attachGripHandlers(bottom, "bottom")
+        attachHoverHandlers(bottom, "vertical")
         grips.bottom = bottom
     end
 
@@ -2704,6 +2770,7 @@ local function createResizeGrip()
         end
 
         attachGripHandlers(right, "right")
+        attachHoverHandlers(right, "horizontal")
         grips.right = right
     end
 
@@ -2721,6 +2788,7 @@ local function createResizeGrip()
         end
 
         attachGripHandlers(top, "top")
+        attachHoverHandlers(top, "vertical")
         grips.top = top
     end
 
@@ -2738,6 +2806,7 @@ local function createResizeGrip()
         end
 
         attachGripHandlers(left, "left")
+        attachHoverHandlers(left, "horizontal")
         grips.left = left
     end
 
