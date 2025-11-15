@@ -23,6 +23,7 @@ local SCROLL_CONTENT_NAME = SCROLL_CONTAINER_NAME .. "_Content"
 local SCROLLBAR_NAME = SCROLL_CONTAINER_NAME .. "_ScrollBar"
 local RESIZE_GRIP_NAME = addonName .. "_ResizeGrip"
 local RESIZE_EVENT_NAMESPACE = addonName .. "_ManualResize"
+local RESIZE_BORDER_THICKNESS = 20 -- ~0.5 cm border area for manual resize grips
 local HEADER_BAR_NAME = SCROLL_CONTENT_NAME .. "_HeaderBar"
 local CONTENT_STACK_NAME = SCROLL_CONTENT_NAME .. "_ContentStack"
 local FOOTER_BAR_NAME = SCROLL_CONTENT_NAME .. "_FooterBar"
@@ -218,7 +219,8 @@ local state = {
     isInHUDScene = true,
     isLAMOpen = false,
     visibilityGates = nil,
-    resizeGrip = nil,
+    resizeGrip = nil,        -- legacy single grip (unused)
+    resizeGrips = nil,       -- collection of bottom/right border grips
 }
 
 local resizeState = {
@@ -2480,67 +2482,122 @@ local function createScrollContainer()
 end
 
 local function createResizeGrip()
-    if state.resizeGrip or not (state.root and WINDOW_MANAGER) then
+    if state.resizeGrips or not (state.root and WINDOW_MANAGER) then
         return
     end
 
-    local grip = WINDOW_MANAGER:CreateControl(RESIZE_GRIP_NAME, state.root, CT_CONTROL)
-    if not grip then
-        return
-    end
-
-    grip:SetDimensions(RESIZE_GRIP_SIZE, RESIZE_GRIP_SIZE)
-    grip:ClearAnchors()
-    grip:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, -4, -4)
-    grip:SetDrawLayer(DL_OVERLAY)
-    grip:SetDrawTier(DT_LOW)
-    grip:SetDrawLevel(1)
-    grip:SetMouseEnabled(true)
-
-    local texture = WINDOW_MANAGER:CreateControl(nil, grip, CT_TEXTURE)
-    if texture then
-        texture:SetAnchorFill()
-        texture:SetTexture("EsoUI/Art/ChatWindow/chat_resizeGrip.dds")
-        texture:SetColor(1, 1, 1, 0.75)
-    end
-
-    grip:SetHandler("OnMouseEnter", function()
-        if SetMouseCursor and MOUSE_CURSOR_RESIZE_CORNER then
-            SetMouseCursor(MOUSE_CURSOR_RESIZE_CORNER)
-        end
-    end)
-
-    grip:SetHandler("OnMouseExit", function()
-        if SetMouseCursor and MOUSE_CURSOR_DEFAULT then
-            SetMouseCursor(MOUSE_CURSOR_DEFAULT)
-        end
-    end)
-
-    grip:SetHandler("OnMouseDown", function(_, button)
-        if button ~= LEFT_MOUSE_BUTTON then
+    local function attachGripHandlers(grip)
+        if not grip then
             return
         end
 
-        beginResize("corner")
-    end)
+        grip:SetMouseEnabled(true)
 
-    grip:SetHandler("OnMouseUp", function(_, button)
-        if button == LEFT_MOUSE_BUTTON then
-            endResize()
-            if SetMouseCursor and MOUSE_CURSOR_DEFAULT then
+        grip:SetHandler("OnMouseEnter", function()
+            if SetMouseCursor and MOUSE_CURSOR_RESIZE_CORNER then
+                SetMouseCursor(MOUSE_CURSOR_RESIZE_CORNER)
+            end
+        end)
+
+        grip:SetHandler("OnMouseExit", function()
+            if not resizeState.active and SetMouseCursor and MOUSE_CURSOR_DEFAULT then
                 SetMouseCursor(MOUSE_CURSOR_DEFAULT)
             end
-        end
-    end)
+        end)
 
-    state.window = state.window or ensureWindowSettings()
+        grip:SetHandler("OnMouseDown", function(_, button)
+            if button ~= LEFT_MOUSE_BUTTON then
+                return
+            end
 
-    if state.window.locked == true then
-        grip:SetMouseEnabled(false)
-        grip:SetHidden(true)
+            beginResize("corner")
+        end)
+
+        grip:SetHandler("OnMouseUp", function(_, button)
+            if button == LEFT_MOUSE_BUTTON then
+                endResize()
+                if SetMouseCursor and MOUSE_CURSOR_DEFAULT then
+                    SetMouseCursor(MOUSE_CURSOR_DEFAULT)
+                end
+            end
+        end)
     end
 
-    state.resizeGrip = grip
+    local grips = {}
+
+    local corner = WINDOW_MANAGER:CreateControl(RESIZE_GRIP_NAME .. "_Corner", state.root, CT_CONTROL)
+    if corner then
+        corner:SetDimensions(RESIZE_GRIP_SIZE, RESIZE_GRIP_SIZE)
+        corner:ClearAnchors()
+        corner:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, -4, -4)
+        corner:SetDrawLayer(DL_OVERLAY)
+        corner:SetDrawTier(DT_LOW)
+        corner:SetDrawLevel(1)
+
+        local texture = WINDOW_MANAGER:CreateControl(nil, corner, CT_TEXTURE)
+        if texture then
+            texture:SetAnchorFill()
+            texture:SetTexture("EsoUI/Art/ChatWindow/chat_resizeGrip.dds")
+            texture:SetColor(1, 1, 1, 0.75)
+        end
+
+        attachGripHandlers(corner)
+        grips.corner = corner
+    end
+
+    local bottom = WINDOW_MANAGER:CreateControl(RESIZE_GRIP_NAME .. "_Bottom", state.root, CT_CONTROL)
+    if bottom then
+        bottom:ClearAnchors()
+        bottom:SetAnchor(BOTTOMLEFT, state.root, BOTTOMLEFT, 0, 0)
+        bottom:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, -(RESIZE_GRIP_SIZE + 4), 0)
+        bottom:SetHeight(RESIZE_BORDER_THICKNESS)
+        bottom:SetDrawLayer(DL_OVERLAY)
+        bottom:SetDrawTier(DT_LOW)
+        bottom:SetDrawLevel(0)
+        if bottom.SetAlpha then
+            bottom:SetAlpha(0)
+        end
+
+        attachGripHandlers(bottom)
+        grips.bottom = bottom
+    end
+
+    local right = WINDOW_MANAGER:CreateControl(RESIZE_GRIP_NAME .. "_Right", state.root, CT_CONTROL)
+    if right then
+        right:ClearAnchors()
+        right:SetAnchor(TOPRIGHT, state.root, TOPRIGHT, 0, 0)
+        right:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, 0, -(RESIZE_GRIP_SIZE + 4))
+        right:SetWidth(RESIZE_BORDER_THICKNESS)
+        right:SetDrawLayer(DL_OVERLAY)
+        right:SetDrawTier(DT_LOW)
+        right:SetDrawLevel(0)
+        if right.SetAlpha then
+            right:SetAlpha(0)
+        end
+
+        attachGripHandlers(right)
+        grips.right = right
+    end
+
+    if not (grips.corner or grips.bottom or grips.right) then
+        return
+    end
+
+    state.resizeGrips = grips
+    state.window = state.window or ensureWindowSettings()
+
+    if state.window and state.window.locked == true then
+        for _, grip in pairs(grips) do
+            if grip then
+                if grip.SetMouseEnabled then
+                    grip:SetMouseEnabled(false)
+                end
+                if grip.SetHidden then
+                    grip:SetHidden(true)
+                end
+            end
+        end
+    end
 end
 
 local function SafeCreateSectionContainer(name, parent)
@@ -2836,9 +2893,18 @@ local function applyWindowLock()
     state.root:SetMovable(not locked)
     state.root:SetResizeHandleSize(locked and 0 or RESIZE_HANDLE_SIZE)
 
-    if state.resizeGrip then
-        state.resizeGrip:SetMouseEnabled(not locked)
-        state.resizeGrip:SetHidden(locked)
+    local grips = state.resizeGrips
+    if grips then
+        for _, grip in pairs(grips) do
+            if grip then
+                if grip.SetMouseEnabled then
+                    grip:SetMouseEnabled(not locked)
+                end
+                if grip.SetHidden then
+                    grip:SetHidden(locked)
+                end
+            end
+        end
     end
 end
 
