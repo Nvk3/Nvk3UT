@@ -121,14 +121,12 @@ local DEFAULT_HOST_SETTINGS = {
 }
 
 local LEFT_MOUSE_BUTTON = _G.MOUSE_BUTTON_INDEX_LEFT or 1
-local MOUSE_CURSOR_RESIZE_CORNER = _G.MOUSE_CURSOR_RESIZE_NWSE or _G.MOUSE_CURSOR_RESIZE_ALL or _G.MOUSE_CURSOR_RESIZE
-local MOUSE_CURSOR_RESIZE_HORIZONTAL = _G.MOUSE_CURSOR_RESIZE_HORIZONTAL
-local MOUSE_CURSOR_RESIZE_VERTICAL = _G.MOUSE_CURSOR_RESIZE_VERTICAL
-local MOUSE_CURSOR_RESIZE_NW_SE = _G.MOUSE_CURSOR_RESIZE_NW_SE or _G.MOUSE_CURSOR_RESIZE_NWSE
-local MOUSE_CURSOR_RESIZE_NE_SW = _G.MOUSE_CURSOR_RESIZE_NE_SW or _G.MOUSE_CURSOR_RESIZE_NESW
-local MOUSE_CURSOR_RESIZE_DIAGONAL = _G.MOUSE_CURSOR_RESIZE_DIAGONAL
+local MOUSE_CURSOR_RESIZE_EW = _G.MOUSE_CURSOR_RESIZE_EW
+local MOUSE_CURSOR_RESIZE_NS = _G.MOUSE_CURSOR_RESIZE_NS
+local MOUSE_CURSOR_RESIZE_NESW = _G.MOUSE_CURSOR_RESIZE_NESW
+local MOUSE_CURSOR_RESIZE_NWSE = _G.MOUSE_CURSOR_RESIZE_NWSE
 local MOUSE_CURSOR_DO_NOT_CARE = _G.MOUSE_CURSOR_DO_NOT_CARE
-local MOUSE_CURSOR_DEFAULT = MOUSE_CURSOR_DO_NOT_CARE or _G.MOUSE_CURSOR_ARROW or 0
+local MOUSE_CURSOR_DEFAULT_CURSOR = _G.MOUSE_CURSOR_DEFAULT_CURSOR
 local unpack = unpack or table.unpack
 
 local function Num0(v)
@@ -234,46 +232,38 @@ local resizeState = {
 }
 
 local function SetResizeCursor(mode)
-    if not SetMouseCursor then
+    if not WINDOW_MANAGER or not WINDOW_MANAGER.SetMouseCursor then
         return
     end
 
     if mode == "horizontal" then
-        if MOUSE_CURSOR_RESIZE_HORIZONTAL then
-            SetMouseCursor(MOUSE_CURSOR_RESIZE_HORIZONTAL)
+        if MOUSE_CURSOR_RESIZE_EW then
+            WINDOW_MANAGER:SetMouseCursor(MOUSE_CURSOR_RESIZE_EW)
         end
     elseif mode == "vertical" then
-        if MOUSE_CURSOR_RESIZE_VERTICAL then
-            SetMouseCursor(MOUSE_CURSOR_RESIZE_VERTICAL)
+        if MOUSE_CURSOR_RESIZE_NS then
+            WINDOW_MANAGER:SetMouseCursor(MOUSE_CURSOR_RESIZE_NS)
         end
     elseif mode == "nwse" then
-        if MOUSE_CURSOR_RESIZE_NW_SE then
-            SetMouseCursor(MOUSE_CURSOR_RESIZE_NW_SE)
-        elseif MOUSE_CURSOR_RESIZE_DIAGONAL then
-            SetMouseCursor(MOUSE_CURSOR_RESIZE_DIAGONAL)
-        elseif MOUSE_CURSOR_RESIZE_CORNER then
-            SetMouseCursor(MOUSE_CURSOR_RESIZE_CORNER)
+        if MOUSE_CURSOR_RESIZE_NWSE then
+            WINDOW_MANAGER:SetMouseCursor(MOUSE_CURSOR_RESIZE_NWSE)
         end
     elseif mode == "nesw" then
-        if MOUSE_CURSOR_RESIZE_NE_SW then
-            SetMouseCursor(MOUSE_CURSOR_RESIZE_NE_SW)
-        elseif MOUSE_CURSOR_RESIZE_DIAGONAL then
-            SetMouseCursor(MOUSE_CURSOR_RESIZE_DIAGONAL)
-        elseif MOUSE_CURSOR_RESIZE_CORNER then
-            SetMouseCursor(MOUSE_CURSOR_RESIZE_CORNER)
+        if MOUSE_CURSOR_RESIZE_NESW then
+            WINDOW_MANAGER:SetMouseCursor(MOUSE_CURSOR_RESIZE_NESW)
         end
     end
 end
 
 local function ResetResizeCursor()
-    if not SetMouseCursor then
+    if not WINDOW_MANAGER or not WINDOW_MANAGER.SetMouseCursor then
         return
     end
 
     if MOUSE_CURSOR_DO_NOT_CARE then
-        SetMouseCursor(MOUSE_CURSOR_DO_NOT_CARE)
-    elseif MOUSE_CURSOR_DEFAULT then
-        SetMouseCursor(MOUSE_CURSOR_DEFAULT)
+        WINDOW_MANAGER:SetMouseCursor(MOUSE_CURSOR_DO_NOT_CARE)
+    elseif MOUSE_CURSOR_DEFAULT_CURSOR then
+        WINDOW_MANAGER:SetMouseCursor(MOUSE_CURSOR_DEFAULT_CURSOR)
     end
 end
 
