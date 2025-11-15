@@ -869,13 +869,9 @@ local function endResize()
         SetMouseCursor(MOUSE_CURSOR_DEFAULT)
     end
 
-    if not (state.root and state.window) then
-        return
+    if state.root and state.window and saveWindowSize then
+        saveWindowSize()
     end
-
-    saveWindowSize()
-    updateSectionLayout()
-    notifyContentChanged()
 end
 
 if EVENT_MANAGER and EVENT_GLOBAL_MOUSE_UP then
