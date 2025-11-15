@@ -328,6 +328,7 @@ local queueRuntimeLayout
 local applyBootstrapVisibility
 local startWindowDrag
 local stopWindowDrag
+local requestWindowLayoutRefresh
 local getCurrentScrollOffset
 local ensureVisibilityGates
 local setVisibilityGate
@@ -1073,12 +1074,18 @@ local function endResize()
 
     ResetResizeCursor()
 
-    if state.root and state.window and saveWindowSize then
-        saveWindowSize()
-    end
+    if state.root and state.window then
+        if saveWindowSize then
+            saveWindowSize()
+        end
 
-    if state.root and state.window and saveWindowPosition then
-        saveWindowPosition()
+        if saveWindowPosition then
+            saveWindowPosition()
+        end
+
+        if requestWindowLayoutRefresh then
+            requestWindowLayoutRefresh("windowResize")
+        end
     end
 end
 
@@ -3473,6 +3480,15 @@ local function notifyContentChanged()
     scheduleDeferredRefresh(preservedOffset)
 end
 
+local function requestWindowLayoutRefresh(reason)
+    if not state.root then
+        return
+    end
+
+    updateSectionLayout()
+    notifyContentChanged()
+end
+
 local function applyWindowClamp()
     if not (state.root and state.window) then
         return
@@ -3724,13 +3740,21 @@ local function createRootControl()
     control:SetDrawLevel(0)
 
     control:SetHandler("OnMoveStop", function()
-        saveWindowPosition()
+        if saveWindowPosition then
+            saveWindowPosition()
+        end
+        if requestWindowLayoutRefresh then
+            requestWindowLayoutRefresh("windowMove")
+        end
     end)
 
     control:SetHandler("OnResizeStop", function()
-        saveWindowSize()
-        updateSectionLayout()
-        notifyContentChanged()
+        if saveWindowSize then
+            saveWindowSize()
+        end
+        if requestWindowLayoutRefresh then
+            requestWindowLayoutRefresh("windowResizeStop")
+        end
     end)
 
     control:SetHandler("OnMouseWheel", function(_, delta)
