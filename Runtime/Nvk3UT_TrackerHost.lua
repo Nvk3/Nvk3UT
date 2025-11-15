@@ -336,7 +336,8 @@ local beginResize
 local updateResize
 local endResize
 local createResizeGrip
-local requestFullTrackerRebuild
+local performLocalWindowRefresh
+local performFullHostRefresh
 
 local function getSavedVars()
     return Nvk3UT and Nvk3UT.sv
@@ -1083,8 +1084,8 @@ local function endResize()
             saveWindowPosition()
         end
 
-        if requestFullTrackerRebuild then
-            requestFullTrackerRebuild("manualResize")
+        if performFullHostRefresh then
+            performFullHostRefresh("manualResize")
         end
     end
 end
@@ -3469,7 +3470,7 @@ local function scrollControlIntoView(control)
     return true, true
 end
 
-local function notifyContentChanged()
+performLocalWindowRefresh = function()
     if not state.root then
         return
     end
@@ -3480,33 +3481,27 @@ local function notifyContentChanged()
     scheduleDeferredRefresh(preservedOffset)
 end
 
-requestFullTrackerRebuild = function(reason)
+performFullHostRefresh = function(reason)
     local rebuild = (Nvk3UT and Nvk3UT.Rebuild) or _G.Nvk3UT_Rebuild
-    local context = "windowGeometryChanged"
-    if reason ~= nil and reason ~= "" then
-        context = string.format("%s:%s", context, tostring(reason))
-    end
-
-    if type(rebuild) == "table" then
-        if type(rebuild.All) == "function" then
-            safeCall(rebuild.All, context)
-            return
+    if type(rebuild) == "table" and type(rebuild.All) == "function" then
+        local context = reason
+        if context == nil or context == "" then
+            context = "hostRefresh"
+        else
+            context = string.format("hostRefresh:%s", tostring(reason))
         end
 
-        if type(rebuild.MarkAllDirty) == "function" then
-            safeCall(rebuild.MarkAllDirty, context)
-            return
-        end
-
-        if type(rebuild.Trackers) == "function" then
-            safeCall(rebuild.Trackers, context)
-            return
-        end
+        safeCall(rebuild.All, context)
+        return
     end
 
-    if notifyContentChanged then
-        notifyContentChanged()
+    if performLocalWindowRefresh then
+        performLocalWindowRefresh()
     end
+end
+
+local function notifyContentChanged()
+    performFullHostRefresh("contentChanged")
 end
 
 local function applyWindowClamp()
@@ -3763,8 +3758,8 @@ local function createRootControl()
         if saveWindowPosition then
             saveWindowPosition()
         end
-        if requestFullTrackerRebuild then
-            requestFullTrackerRebuild("windowMove")
+        if performFullHostRefresh then
+            performFullHostRefresh("windowMove")
         end
     end)
 
@@ -3772,8 +3767,8 @@ local function createRootControl()
         if saveWindowSize then
             saveWindowSize()
         end
-        if requestFullTrackerRebuild then
-            requestFullTrackerRebuild("nativeResize")
+        if performFullHostRefresh then
+            performFullHostRefresh("nativeResize")
         end
     end)
 
