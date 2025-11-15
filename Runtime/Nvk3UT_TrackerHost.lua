@@ -2579,7 +2579,41 @@ local function createResizeGrip()
         grips.right = right
     end
 
-    if not (grips.corner or grips.bottom or grips.right) then
+    local top = WINDOW_MANAGER:CreateControl(RESIZE_GRIP_NAME .. "_Top", state.root, CT_CONTROL)
+    if top then
+        top:ClearAnchors()
+        top:SetAnchor(TOPLEFT, state.root, TOPLEFT, 0, 0)
+        top:SetAnchor(TOPRIGHT, state.root, TOPRIGHT, 0, 0)
+        top:SetHeight(RESIZE_BORDER_THICKNESS)
+        top:SetDrawLayer(DL_OVERLAY)
+        top:SetDrawTier(DT_LOW)
+        top:SetDrawLevel(0)
+        if top.SetAlpha then
+            top:SetAlpha(0)
+        end
+
+        attachGripHandlers(top)
+        grips.top = top
+    end
+
+    local left = WINDOW_MANAGER:CreateControl(RESIZE_GRIP_NAME .. "_Left", state.root, CT_CONTROL)
+    if left then
+        left:ClearAnchors()
+        left:SetAnchor(TOPLEFT, state.root, TOPLEFT, 0, 0)
+        left:SetAnchor(BOTTOMLEFT, state.root, BOTTOMLEFT, 0, 0)
+        left:SetWidth(RESIZE_BORDER_THICKNESS)
+        left:SetDrawLayer(DL_OVERLAY)
+        left:SetDrawTier(DT_LOW)
+        left:SetDrawLevel(0)
+        if left.SetAlpha then
+            left:SetAlpha(0)
+        end
+
+        attachGripHandlers(left)
+        grips.left = left
+    end
+
+    if not (grips.corner or grips.bottom or grips.right or grips.top or grips.left) then
         return
     end
 
