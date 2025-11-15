@@ -14,6 +14,8 @@ GoldenModel._rawData = type(GoldenModel._rawData) == "table" and GoldenModel._ra
 GoldenModel._viewData = type(GoldenModel._viewData) == "table" and GoldenModel._viewData or nil
 GoldenModel._counters = type(GoldenModel._counters) == "table" and GoldenModel._counters or nil
 GoldenModel._systemStatus = type(GoldenModel._systemStatus) == "table" and GoldenModel._systemStatus or nil
+GoldenModel._stateInitialized = GoldenModel._stateInitialized == true
+GoldenModel._listInitialized = GoldenModel._listInitialized == true
 
 local unpack = _G.unpack or (table and table.unpack)
 
@@ -392,6 +394,90 @@ local function refreshListInit(list, svRoot)
     safeCall(function()
         list:Init(svRoot)
     end)
+end
+
+local function resolveSavedVarsRoot()
+    local root = resolveRoot()
+    if type(root) ~= "table" then
+        return nil
+    end
+
+    local sv = rawget(root, "sv") or rawget(root, "SV")
+    if type(sv) == "table" then
+        return sv
+    end
+
+    return nil
+end
+
+local function ensureSavedVars(self, svRoot)
+    if type(self) ~= "table" then
+        return nil
+    end
+
+    if type(svRoot) == "table" then
+        self._svRoot = svRoot
+        return svRoot
+    end
+
+    local resolved = resolveSavedVarsRoot()
+    if type(resolved) == "table" then
+        self._svRoot = resolved
+        return resolved
+    end
+
+    self._svRoot = nil
+    return nil
+end
+
+local function ensureGoldenState(self, svRoot)
+    if type(self) ~= "table" then
+        return nil
+    end
+
+    local state = self._state
+    if type(state) ~= "table" then
+        local root = resolveRoot()
+        state = root and root.GoldenState
+        if type(state) == "table" then
+            self._state = state
+        else
+            self._state = nil
+            return nil
+        end
+    end
+
+    if self._stateInitialized ~= true then
+        refreshStateInit(self._state, svRoot)
+        self._stateInitialized = true
+    end
+
+    return self._state
+end
+
+local function ensureGoldenList(self, svRoot)
+    if type(self) ~= "table" then
+        return nil
+    end
+
+    local list = self._list
+    if type(list) ~= "table" or type(list.RefreshFromGame) ~= "function" then
+        local root = resolveRoot()
+        list = root and root.GoldenList
+        if type(list) == "table" and type(list.RefreshFromGame) == "function" then
+            self._list = list
+        else
+            self._list = nil
+            return nil
+        end
+    end
+
+    if self._listInitialized ~= true then
+        refreshListInit(self._list, svRoot)
+        self._listInitialized = true
+    end
+
+    return self._list
 end
 
 local function buildCounters(data)
@@ -952,11 +1038,10 @@ local function buildViewDataSnapshot(rawData, state)
 end
 
 function GoldenModel:Init(svRoot, goldenState, goldenList)
-    if type(svRoot) == "table" then
-        self._svRoot = svRoot
-    else
-        self._svRoot = nil
-    end
+    self._stateInitialized = false
+    self._listInitialized = false
+
+    local resolvedSv = ensureSavedVars(self, svRoot)
 
     if type(goldenState) == "table" then
         self._state = goldenState
@@ -970,16 +1055,11 @@ function GoldenModel:Init(svRoot, goldenState, goldenList)
         self._list = type(Nvk3UT.GoldenList) == "table" and Nvk3UT.GoldenList or nil
     end
 
-    if self._state then
-        refreshStateInit(self._state, self._svRoot)
-    end
-
-    if self._list then
-        refreshListInit(self._list, self._svRoot)
-    end
+    local state = ensureGoldenState(self, resolvedSv)
+    local list = ensureGoldenList(self, resolvedSv)
 
     self._rawData = newEmptyRawData()
-    self._viewData = buildViewDataSnapshot(self._rawData, self._state)
+    self._viewData = buildViewDataSnapshot(self._rawData, state)
     self._counters = buildCounters(self._rawData)
     self._isEmpty = computeIsEmpty(self._counters)
 
@@ -987,9 +1067,13 @@ function GoldenModel:Init(svRoot, goldenState, goldenList)
     status.isAvailable = false
     status.isLocked = false
     status.hasEntries = false
-    applyStateSystemStatus(self._state, status)
+    applyStateSystemStatus(state, status)
 
-    debugLog("init")
+    if list == nil then
+        debugLog("init: GoldenList unavailable; model will lazy-resolve on refresh")
+    else
+        debugLog("init")
+    end
 
     return self
 end
@@ -1005,25 +1089,15 @@ function GoldenModel:RefreshFromGame(providerFn)
     local status = resolveSystemStatus(self, true)
     status.hasEntries = false
 
+    local svRoot = ensureSavedVars(self, self._svRoot)
+    local state = ensureGoldenState(self, svRoot)
+    local list = ensureGoldenList(self, svRoot)
+
     local function resetModelData()
         self._rawData = newEmptyRawData()
-        self._viewData = buildViewDataSnapshot(self._rawData, self._state)
+        self._viewData = buildViewDataSnapshot(self._rawData, state)
         self._counters = buildCounters(self._rawData)
         self._isEmpty = true
-    end
-
-    debugLog(
-        "refresh start: provider=%s list=%s",
-        type(providerFn) == "function" and "function" or tostring(providerFn),
-        type(self._list) == "table" and "ready" or "missing"
-    )
-
-    if type(self._list) ~= "table" then
-        status.isAvailable = false
-        status.isLocked = false
-        resetModelData()
-        applyStateSystemStatus(self._state, status)
-        return false
     end
 
     local campaignState = goldenApi:CollectCampaignState()
@@ -1036,31 +1110,6 @@ function GoldenModel:RefreshFromGame(providerFn)
         campaigns = campaignState.campaigns
     end
 
-    debugLog(
-        "refresh status: hasApis=%s locked=%s available=%s campaigns=%d",
-        tostring(campaignState.hasRequiredApis ~= false),
-        tostring(status.isLocked),
-        tostring(status.isAvailable),
-        #campaigns
-    )
-    applyStateSystemStatus(self._state, status)
-
-    if campaignState.hasRequiredApis == false then
-        resetModelData()
-        safeCall(runListRefresh, self._list, nil)
-        debugLog("refresh gated: missing promotional event API %s", tostring(campaignState.missingApi))
-        applyStateSystemStatus(self._state, status)
-        return false
-    end
-
-    if status.isLocked then
-        resetModelData()
-        safeCall(runListRefresh, self._list, nil)
-        debugLog("refresh gated: promotional event system locked")
-        applyStateSystemStatus(self._state, status)
-        return false
-    end
-
     local dataProvider
     if type(providerFn) == "function" then
         dataProvider = goldenApi:CreateProvider(providerFn)
@@ -1069,15 +1118,57 @@ function GoldenModel:RefreshFromGame(providerFn)
             return goldenApi:BuildPayloadFromCampaigns(campaigns)
         end
     end
-    safeCall(runListRefresh, self._list, dataProvider)
 
-    local rawData = copyOrEmpty(self._list.GetRawData and self._list:GetRawData(), newEmptyRawData)
+    debugLog(
+        "refresh start: provider=%s list=%s",
+        type(dataProvider) == "function" and "function" or tostring(dataProvider),
+        type(list) == "table" and "ready" or "missing"
+    )
+
+    applyStateSystemStatus(state, status)
+
+    if type(list) ~= "table" then
+        status.isAvailable = false
+        status.hasEntries = false
+        resetModelData()
+        applyStateSystemStatus(state, status)
+        debugLog("refresh gated: GoldenList missing")
+        return false
+    end
+
+    debugLog(
+        "refresh status: hasApis=%s locked=%s available=%s campaigns=%d",
+        tostring(campaignState.hasRequiredApis ~= false),
+        tostring(status.isLocked),
+        tostring(status.isAvailable),
+        #campaigns
+    )
+
+    if campaignState.hasRequiredApis == false then
+        resetModelData()
+        safeCall(runListRefresh, list, nil)
+        debugLog("refresh gated: missing promotional event API %s", tostring(campaignState.missingApi))
+        applyStateSystemStatus(state, status)
+        return false
+    end
+
+    if status.isLocked then
+        resetModelData()
+        safeCall(runListRefresh, list, nil)
+        debugLog("refresh gated: promotional event system locked")
+        applyStateSystemStatus(state, status)
+        return false
+    end
+
+    safeCall(runListRefresh, list, dataProvider)
+
+    local rawData = copyOrEmpty(list.GetRawData and list:GetRawData(), newEmptyRawData)
     if type(rawData.categories) ~= "table" then
         rawData = newEmptyRawData()
     end
 
     self._rawData = rawData
-    self._viewData = buildViewDataSnapshot(self._rawData, self._state)
+    self._viewData = buildViewDataSnapshot(self._rawData, state)
     self._counters = buildCounters(self._rawData)
 
     local isEmpty = computeIsEmpty(self._counters)
@@ -1099,7 +1190,7 @@ function GoldenModel:RefreshFromGame(providerFn)
         )
     end
 
-    applyStateSystemStatus(self._state, status)
+    applyStateSystemStatus(state, status)
 
     return true
 end

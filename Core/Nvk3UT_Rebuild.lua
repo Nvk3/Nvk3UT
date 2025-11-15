@@ -174,7 +174,60 @@ local function resolveSafeCall()
     return nil
 end
 
-local function queueGoldenDirtyChannel()
+-- MARK: GEVENTS_SWITCH_GOLDEN_REFRESH_CALLERS
+-- GEVENTS note: Rebuild/StateInit keep calling into GoldenTracker's refresh API even after ESO registrations migrate to Events/.
+local function queueGoldenDirtyChannel(context)
+    local root = getRoot()
+    local tracker = type(root) == "table" and rawget(root, "GoldenTracker") or nil
+
+    local resolvedReason = context
+    if resolvedReason == nil or resolvedReason == "" then
+        resolvedReason = "rebuild"
+    else
+        resolvedReason = tostring(resolvedReason)
+    end
+
+    local function invokeHelper(helper, label, passSelf)
+        if type(helper) ~= "function" then
+            return false
+        end
+
+        local ok, result
+        if passSelf then
+            ok, result = safeInvoke(label, helper, tracker, resolvedReason)
+        else
+            ok, result = safeInvoke(label, helper, resolvedReason)
+        end
+
+        if not ok then
+            return false
+        end
+
+        if result == nil then
+            return true
+        end
+
+        return result ~= false
+    end
+
+    if type(tracker) == "table" then
+        if invokeHelper(tracker.RequestFullRefresh, "GoldenTracker.RequestFullRefresh", true) then
+            return true
+        end
+
+        if invokeHelper(tracker.NotifyDataChanged, "GoldenTracker.NotifyDataChanged", true) then
+            return true
+        end
+
+        if invokeHelper(tracker.RequestDataRefresh, "GoldenTracker.RequestDataRefresh", true) then
+            return true
+        end
+
+        if invokeHelper(tracker.RequestRefresh, "GoldenTracker.RequestRefresh", true) then
+            return true
+        end
+    end
+
     local runtime = getRuntime()
     if type(runtime) ~= "table" then
         return false
@@ -279,7 +332,11 @@ local function queueSectionsInternal(sectionFlags, context)
         if sectionFlags[key] then
             local queuedChannel = false
             if key == "golden" then
-                queuedChannel = queueGoldenDirtyChannel()
+                local reason = context
+                if reason == nil or reason == "" then
+                    reason = string.format("sections:%s", key)
+                end
+                queuedChannel = queueGoldenDirtyChannel(reason)
             else
                 queuedChannel = queueDirtyChannel(key)
             end
@@ -445,7 +502,14 @@ end
 function Rebuild.Golden(context)
     describeContext("Golden", context)
 
-    local triggered = queueGoldenDirtyChannel()
+    local reason = context
+    if reason == nil or reason == "" then
+        reason = "rebuild"
+    else
+        reason = string.format("rebuild:%s", tostring(reason))
+    end
+
+    local triggered = queueGoldenDirtyChannel(reason)
     if triggered then
         debugLog("Rebuild Golden requested (dirty queued)")
     end

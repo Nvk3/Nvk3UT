@@ -16,6 +16,7 @@ local state = {
     content = nil,
     height = 0,
     initialized = false,
+    options = nil,
 }
 
 local function getAddonRoot()
@@ -85,6 +86,63 @@ local function safeDebug(message, ...)
     end
 
     pcall(debugFn, string.format("%s: %s", MODULE_TAG, tostring(payload)))
+end
+
+local function logTrackerError(message, ...)
+    local payload = tostring(message)
+    if select("#", ...) > 0 then
+        local formatString = type(message) == "string" and message or payload
+        local ok, formatted = pcall(string.format, formatString, ...)
+        if ok and formatted ~= nil then
+            payload = formatted
+        end
+    end
+
+    local root = getAddonRoot()
+    local diagnostics = root and root.Diagnostics
+    if type(diagnostics) == "table" then
+        local errorFn = diagnostics.Error or diagnostics.Warn or diagnostics.Debug
+        if type(errorFn) == "function" then
+            pcall(errorFn, diagnostics, string.format("%s: %s", MODULE_TAG, payload))
+            return
+        end
+    end
+
+    if type(root) == "table" then
+        if type(root.Warn) == "function" then
+            pcall(root.Warn, string.format("%s: %s", MODULE_TAG, payload))
+            return
+        elseif type(root.Debug) == "function" then
+            pcall(root.Debug, string.format("%s: %s", MODULE_TAG, payload))
+            return
+        end
+    end
+
+    if type(d) == "function" then
+        pcall(d, string.format("[Nvk3UT][GoldenTracker] %s", payload))
+        return
+    end
+
+    safeDebug(payload)
+end
+
+local function runSafe(fn)
+    if type(fn) ~= "function" then
+        return
+    end
+
+    local root = getAddonRoot()
+    if type(root) == "table" then
+        local safeCall = rawget(root, "SafeCall")
+        if type(safeCall) == "function" then
+            local ok = pcall(safeCall, fn)
+            if ok then
+                return
+            end
+        end
+    end
+
+    pcall(fn)
 end
 
 local function getRowsModule()
@@ -228,17 +286,54 @@ local function safeCreateRow(rowFn, parent, data)
     return nil
 end
 
-function GoldenTracker.Init(parentControl)
+local function resolveInitArguments(...)
+    local first = ...
+    if first == GoldenTracker or (type(first) == "table" and first.__index == GoldenTracker) then
+        return select(2, ...), select(3, ...)
+    end
+
+    return first, select(2, ...)
+end
+
+local function isControl(control)
+    if control == nil then
+        return false
+    end
+
+    if type(control) == "userdata" then
+        return true
+    end
+
+    local getType = control and control.GetType
+    if type(getType) == "function" then
+        local ok, objectType = pcall(getType, control)
+        if ok and type(objectType) == "number" then
+            return true
+        end
+    end
+
+    return false
+end
+
+function GoldenTracker.Init(...)
+    local parentControl, options = resolveInitArguments(...)
+
+    if parentControl == nil then
+        logTrackerError("Init aborted; missing parent control")
+        return
+    end
+
+    if not isControl(parentControl) then
+        logTrackerError("Init aborted; invalid parent control (type=%s)", type(parentControl))
+        return
+    end
+
     state.parent = parentControl
+    state.options = type(options) == "table" and options or nil
     state.height = 0
     state.initialized = false
     state.root = nil
     state.content = nil
-
-    if not parentControl then
-        safeDebug("Init skipped; parent control missing")
-        return
-    end
 
     local root, content = createRootAndContent(parentControl)
     state.root = root
@@ -260,7 +355,512 @@ function GoldenTracker.Init(parentControl)
     state.initialized = true
 
     safeDebug("Init")
+
+    local initReason = "init"
+    safeDebug("[GoldenTracker.SHIM] init-kick (reason=%s)", initReason)
+    GoldenTracker:RequestFullRefresh(initReason)
 end
+
+-- MARK: GEVENTS_SWITCH_KEEP_REFRESH_HELPER
+-- GEVENTS note: This shim helper persists after GEVENTS_*_SWITCH; only the ESO registrations migrate to Events/.
+local function goldenDataChanged(reason)
+    local reasonForLog = reason
+    if reasonForLog == nil or reasonForLog == "" then
+        reasonForLog = "n/a"
+    else
+        reasonForLog = tostring(reasonForLog)
+    end
+
+    local results = {
+        modelRefreshed = false,
+        controllerMarked = false,
+        runtimeQueued = false,
+    }
+
+    runSafe(function()
+        local root = getAddonRoot()
+        if type(root) ~= "table" then
+            safeDebug("[GoldenTracker.SHIM] data change aborted (reason=%s; addon missing)", reasonForLog)
+            return
+        end
+
+        local model = rawget(root, "GoldenModel")
+        if type(model) == "table" then
+            local refresh = model.RefreshFromGame or model.Refresh
+            if type(refresh) == "function" then
+                local ok, err = pcall(refresh, model)
+                if ok then
+                    results.modelRefreshed = true
+                    safeDebug("[GoldenTracker.SHIM] model refreshed (reason=%s)", reasonForLog)
+                else
+                    safeDebug("[GoldenTracker.SHIM] model refresh failed (reason=%s, error=%s)", reasonForLog, tostring(err))
+                end
+            end
+        end
+
+        local controller = rawget(root, "GoldenTrackerController")
+        if type(controller) == "table" then
+            local markDirty = controller.MarkDirty or controller.RequestRefresh
+            if type(markDirty) == "function" then
+                local ok, err = pcall(markDirty, controller, reason)
+                if ok then
+                    results.controllerMarked = true
+                else
+                    safeDebug("[GoldenTracker.SHIM] mark dirty failed (reason=%s, error=%s)", reasonForLog, tostring(err))
+                end
+            end
+        end
+
+        local runtime = rawget(root, "TrackerRuntime")
+        if type(runtime) == "table" then
+            local queueDirty = runtime.QueueDirty or runtime.MarkDirty or runtime.RequestRefresh
+            if type(queueDirty) == "function" then
+                local ok, err = pcall(queueDirty, runtime, "golden")
+                if ok then
+                    results.runtimeQueued = true
+                else
+                    safeDebug("[GoldenTracker.SHIM] queue dirty failed (reason=%s, error=%s)", reasonForLog, tostring(err))
+                end
+            end
+        end
+
+        safeDebug(
+            "[GoldenTracker.SHIM] data changed (reason=%s model=%s dirty=%s queued=%s)",
+            reasonForLog,
+            tostring(results.modelRefreshed),
+            tostring(results.controllerMarked),
+            tostring(results.runtimeQueued)
+        )
+    end)
+
+    return results.modelRefreshed or results.controllerMarked or results.runtimeQueued
+end
+
+local function resolveGoldenRefreshReason(...)
+    local argumentCount = select("#", ...)
+    if argumentCount == 0 then
+        return nil
+    end
+
+    local first = select(1, ...)
+    if type(first) == "table" then
+        if first == GoldenTracker then
+            if argumentCount >= 2 then
+                return select(2, ...)
+            end
+            return nil
+        end
+
+        local mt = getmetatable(first)
+        if mt ~= nil then
+            if mt == GoldenTracker then
+                if argumentCount >= 2 then
+                    return select(2, ...)
+                end
+                return nil
+            end
+
+            if type(mt) == "table" and mt.__index == GoldenTracker then
+                if argumentCount >= 2 then
+                    return select(2, ...)
+                end
+                return nil
+            end
+        end
+    end
+
+    return first
+end
+
+local function requestGoldenDataRefreshInternal(reason)
+    return goldenDataChanged(reason) == true
+end
+
+-- MARK: GEVENTS_SWITCH_REFRESH_API
+-- GEVENTS note: TempEvents and lifecycle callers use this API; future Events/Nvk3UT_GoldenEventHandler.lua should keep calling it.
+function GoldenTracker:NotifyDataChanged(reason)
+    local resolvedReason = resolveGoldenRefreshReason(self, reason)
+    return requestGoldenDataRefreshInternal(resolvedReason)
+end
+
+function GoldenTracker.RequestDataRefresh(...)
+    local resolvedReason = resolveGoldenRefreshReason(...)
+    return requestGoldenDataRefreshInternal(resolvedReason)
+end
+
+GoldenTracker.RequestRefresh = GoldenTracker.RequestDataRefresh
+GoldenTracker.RequestFullRefresh = GoldenTracker.RequestDataRefresh
+
+local function getFrameTimeMilliseconds()
+    local getter = rawget(_G, "GetFrameTimeMilliseconds")
+    if type(getter) ~= "function" then
+        getter = rawget(_G, "GetGameTimeMilliseconds")
+    end
+
+    if type(getter) == "function" then
+        local ok, value = pcall(getter)
+        if ok and type(value) == "number" then
+            return value
+        end
+    end
+
+    return 0
+end
+
+local function scheduleLater(delayMs, callback)
+    local delay = tonumber(delayMs)
+    if delay == nil or delay < 0 then
+        delay = 0
+    end
+
+    if type(callback) ~= "function" then
+        return nil
+    end
+
+    local callLater = rawget(_G, "zo_callLater")
+    if type(callLater) == "function" then
+        local ok, handle = pcall(callLater, callback, delay)
+        if ok and handle ~= nil then
+            return handle
+        end
+    end
+
+    local callbackLabel = tostring(callback):gsub("[^%w_]", "_")
+    local identifier = string.format("Nvk3UT_Golden_Once_%s_%d", callbackLabel, getFrameTimeMilliseconds())
+
+    local eventManager = rawget(_G, "EVENT_MANAGER")
+    if eventManager ~= nil and type(eventManager.RegisterForUpdate) == "function" then
+        if type(eventManager.UnregisterForUpdate) == "function" then
+            eventManager:UnregisterForUpdate(identifier)
+        end
+
+        eventManager:RegisterForUpdate(identifier, delay, function()
+            local manager = rawget(_G, "EVENT_MANAGER")
+            if manager ~= nil and type(manager.UnregisterForUpdate) == "function" then
+                manager:UnregisterForUpdate(identifier)
+            end
+
+            pcall(callback)
+        end)
+
+        return identifier
+    end
+
+    return nil
+end
+
+local function cancelScheduled(handle)
+    if handle == nil then
+        return
+    end
+
+    if type(handle) == "number" then
+        local remover = rawget(_G, "zo_removeCallLater")
+        if type(remover) == "function" then
+            pcall(remover, handle)
+        end
+        return
+    end
+
+    if type(handle) == "string" then
+        local eventManager = rawget(_G, "EVENT_MANAGER")
+        if eventManager ~= nil and type(eventManager.UnregisterForUpdate) == "function" then
+            eventManager:UnregisterForUpdate(handle)
+        end
+    end
+end
+
+local function formatTempEventReason(reason)
+    if reason == nil then
+        return "n/a"
+    end
+
+    if type(reason) == "string" then
+        if reason == "" then
+            return "n/a"
+        end
+        return reason
+    end
+
+    return tostring(reason)
+end
+
+-- GEVENT TempEvents (Golden)
+-- Purpose: temporary ESO registrations until GEVENTS_*_SWITCH migrates handlers into Events/Nvk3UT_GoldenEventHandler.lua.
+-- Removal plan:
+--   1) Delete the code enclosed by GEVENTS_TEMP_EVENTS_BEGIN/END markers when GEVENTS_*_SWITCH lands.
+--   2) Ensure Events/Nvk3UT_GoldenEventHandler.lua wires the ESO events and calls the GoldenTracker refresh helper.
+-- Search tags: @GEVENTS @TEMP @GOLDEN @REMOVE_ON_GEVENTS_SWITCH
+--[[ GEVENTS_TEMP_EVENTS_BEGIN: Golden (remove on GEVENTS_*_SWITCH) ]]
+
+local GOLDEN_TEMP_EVENT_NAMESPACE = MODULE_TAG .. ".TempEvents"
+
+local GOLDEN_TEMP_EVENT_HANDLES = {
+    updated = GOLDEN_TEMP_EVENT_NAMESPACE .. ".PursuitsUpdated",
+    progress = GOLDEN_TEMP_EVENT_NAMESPACE .. ".ProgressUpdated",
+    status = GOLDEN_TEMP_EVENT_NAMESPACE .. ".StatusUpdated",
+}
+
+local GOLDEN_TEMP_EVENT_REASONS = {
+    updated = "EVENT_GOLDEN_PURSUITS_UPDATED",
+    progress = "EVENT_GOLDEN_PURSUITS_PROGRESS_UPDATED",
+    status = "EVENT_GOLDEN_PURSUITS_STATUS_UPDATED",
+}
+
+local GOLDEN_TEMP_EVENT_IDS = {
+    updated = rawget(_G, "EVENT_GOLDEN_PURSUITS_UPDATED"),
+    progress = rawget(_G, "EVENT_GOLDEN_PURSUITS_PROGRESS_UPDATED"),
+    status = rawget(_G, "EVENT_GOLDEN_PURSUITS_STATUS_UPDATED"),
+}
+
+local goldenTempEventsState = {
+    registered = false,
+    pending = false,
+    timerHandle = nil,
+    lastQueuedAtMs = 0,
+    debounceMs = 150,
+}
+
+local goldenProgressFallbackState = {
+    timerHandle = nil,
+    lastProgressAtMs = nil,
+    delayMs = 750,
+    pendingReason = nil,
+}
+
+local function clearGoldenTempEventsTimer()
+    if goldenTempEventsState.timerHandle ~= nil then
+        cancelScheduled(goldenTempEventsState.timerHandle)
+        goldenTempEventsState.timerHandle = nil
+    end
+
+    goldenTempEventsState.pending = false
+    goldenTempEventsState.lastQueuedAtMs = 0
+end
+
+local function cancelGoldenProgressFallbackTimer()
+    if goldenProgressFallbackState.timerHandle ~= nil then
+        cancelScheduled(goldenProgressFallbackState.timerHandle)
+        goldenProgressFallbackState.timerHandle = nil
+    end
+
+    goldenProgressFallbackState.pendingReason = nil
+end
+
+local function queueGoldenTempEventRefresh(reason)
+    local now = getFrameTimeMilliseconds()
+    local lastQueued = goldenTempEventsState.lastQueuedAtMs or 0
+    local elapsed = now - lastQueued
+    if elapsed < 0 then
+        elapsed = 0
+    end
+
+    local debounceMs = tonumber(goldenTempEventsState.debounceMs) or 0
+    if debounceMs < 0 then
+        debounceMs = 0
+    end
+
+    if elapsed >= debounceMs then
+        goldenTempEventsState.lastQueuedAtMs = now
+        GoldenTracker.RequestFullRefresh(GoldenTracker, reason)
+        return
+    end
+
+    if goldenTempEventsState.pending then
+        return
+    end
+
+    goldenTempEventsState.pending = true
+
+    local delay = debounceMs - elapsed
+    if delay < 0 then
+        delay = 0
+    end
+
+    goldenTempEventsState.timerHandle = scheduleLater(delay, function()
+        goldenTempEventsState.timerHandle = nil
+        goldenTempEventsState.pending = false
+        goldenTempEventsState.lastQueuedAtMs = getFrameTimeMilliseconds()
+        GoldenTracker.RequestFullRefresh(GoldenTracker, reason)
+    end)
+
+    if goldenTempEventsState.timerHandle == nil then
+        goldenTempEventsState.pending = false
+        goldenTempEventsState.lastQueuedAtMs = now
+        GoldenTracker.RequestFullRefresh(GoldenTracker, reason)
+        return
+    end
+
+    safeDebug(
+        "[GoldenTracker.TempEvents] refresh queued (debounced; reason=%s)",
+        formatTempEventReason(reason)
+    )
+end
+
+local function queueGoldenTempEventRefreshSafe(reason)
+    runSafe(function()
+        queueGoldenTempEventRefresh(reason)
+    end)
+end
+
+local function scheduleGoldenProgressFallback(reason)
+    if goldenProgressFallbackState.timerHandle ~= nil then
+        return
+    end
+
+    local fallbackReason = reason or GOLDEN_TEMP_EVENT_REASONS.updated
+
+    runSafe(function()
+        local delay = tonumber(goldenProgressFallbackState.delayMs) or 0
+        if delay < 0 then
+            delay = 0
+        end
+
+        goldenProgressFallbackState.pendingReason = fallbackReason
+        goldenProgressFallbackState.timerHandle = scheduleLater(delay, function()
+            goldenProgressFallbackState.timerHandle = nil
+
+            local now = getFrameTimeMilliseconds()
+            local lastProgress = goldenProgressFallbackState.lastProgressAtMs or 0
+            local elapsed = now - lastProgress
+            if elapsed < 0 then
+                elapsed = 0
+            end
+
+            if elapsed >= delay then
+                safeDebug(
+                    "[GoldenTracker.TempEvents] fallback triggered (reason=%s)",
+                    formatTempEventReason(fallbackReason)
+                )
+                queueGoldenTempEventRefreshSafe(fallbackReason)
+            end
+
+            goldenProgressFallbackState.pendingReason = nil
+        end)
+
+        if goldenProgressFallbackState.timerHandle ~= nil then
+            safeDebug(
+                "[GoldenTracker.TempEvents] fallback scheduled (reason=%s)",
+                formatTempEventReason(fallbackReason)
+            )
+        else
+            goldenProgressFallbackState.pendingReason = nil
+            queueGoldenTempEventRefreshSafe(fallbackReason)
+        end
+    end)
+end
+
+local function onGoldenPursuitsUpdated(...)
+    local reason = GOLDEN_TEMP_EVENT_REASONS.updated
+    safeDebug("[GoldenTracker.TempEvents] %s", reason)
+    scheduleGoldenProgressFallback(reason)
+end
+
+local function onGoldenPursuitsProgressUpdated(...)
+    local reason = GOLDEN_TEMP_EVENT_REASONS.progress
+    goldenProgressFallbackState.lastProgressAtMs = getFrameTimeMilliseconds()
+    safeDebug("[GoldenTracker.TempEvents] progress → queue (reason=%s)", formatTempEventReason(reason))
+    queueGoldenTempEventRefreshSafe(reason)
+end
+
+local function onGoldenPursuitsStatusUpdated(...)
+    local reason = GOLDEN_TEMP_EVENT_REASONS.status
+    safeDebug("[GoldenTracker.TempEvents] %s", reason)
+    scheduleGoldenProgressFallback(reason)
+end
+
+local function registerGoldenTempEvents()
+    if goldenTempEventsState.registered then
+        return
+    end
+
+    clearGoldenTempEventsTimer()
+    cancelGoldenProgressFallbackTimer()
+    goldenProgressFallbackState.lastProgressAtMs = nil
+
+    local eventManager = rawget(_G, "EVENT_MANAGER")
+    if eventManager == nil then
+        return
+    end
+
+    local registerMethod = eventManager.RegisterForEvent
+    if type(registerMethod) ~= "function" then
+        return
+    end
+
+    local registeredCount = 0
+
+    if GOLDEN_TEMP_EVENT_IDS.updated ~= nil then
+        eventManager:RegisterForEvent(
+            GOLDEN_TEMP_EVENT_HANDLES.updated,
+            GOLDEN_TEMP_EVENT_IDS.updated,
+            onGoldenPursuitsUpdated
+        )
+        registeredCount = registeredCount + 1
+    end
+
+    if GOLDEN_TEMP_EVENT_IDS.progress ~= nil then
+        eventManager:RegisterForEvent(
+            GOLDEN_TEMP_EVENT_HANDLES.progress,
+            GOLDEN_TEMP_EVENT_IDS.progress,
+            onGoldenPursuitsProgressUpdated
+        )
+        registeredCount = registeredCount + 1
+    end
+
+    if GOLDEN_TEMP_EVENT_IDS.status ~= nil then
+        eventManager:RegisterForEvent(
+            GOLDEN_TEMP_EVENT_HANDLES.status,
+            GOLDEN_TEMP_EVENT_IDS.status,
+            onGoldenPursuitsStatusUpdated
+        )
+        registeredCount = registeredCount + 1
+    end
+
+    if registeredCount > 0 then
+        goldenTempEventsState.registered = true
+        safeDebug("[GoldenTracker.TempEvents] register (%d handlers)", registeredCount)
+    end
+end
+
+local function unregisterGoldenTempEvents()
+    clearGoldenTempEventsTimer()
+    cancelGoldenProgressFallbackTimer()
+    goldenProgressFallbackState.lastProgressAtMs = nil
+
+    if not goldenTempEventsState.registered then
+        return
+    end
+
+    local eventManager = rawget(_G, "EVENT_MANAGER")
+    if eventManager == nil then
+        return
+    end
+
+    local unregisterMethod = eventManager.UnregisterForEvent
+    if type(unregisterMethod) ~= "function" then
+        return
+    end
+
+    unregisterMethod(eventManager, GOLDEN_TEMP_EVENT_HANDLES.updated)
+    unregisterMethod(eventManager, GOLDEN_TEMP_EVENT_HANDLES.progress)
+    unregisterMethod(eventManager, GOLDEN_TEMP_EVENT_HANDLES.status)
+
+    goldenTempEventsState.registered = false
+    safeDebug("[GoldenTracker.TempEvents] unregister")
+end
+
+function GoldenTracker:TempEvents_Register()
+    registerGoldenTempEvents()
+end
+
+function GoldenTracker:TempEvents_Unregister()
+    unregisterGoldenTempEvents()
+end
+
+registerGoldenTempEvents()
+
+--[[ GEVENTS_TEMP_EVENTS_END: Golden (remove on GEVENTS_*_SWITCH) ]]
 
 function GoldenTracker.Refresh(viewModel)
     if not state.initialized then
@@ -356,5 +956,11 @@ function GoldenTracker.GetHeight()
 end
 
 Nvk3UT.GoldenTracker = GoldenTracker
+
+-- MARK: GEVENTS_SWITCH_REFRESH_EXPORT
+-- GEVENTS note: Central events will continue to call this entry point after ESO registrations move to Events/.
+function Nvk3UT_GoldenTracker_RequestFullRefresh(...)
+    return GoldenTracker.RequestFullRefresh(...)
+end
 
 return GoldenTracker
