@@ -32,7 +32,7 @@ local MIN_WIDTH = 260
 local MIN_HEIGHT = 240
 local RESIZE_HANDLE_SIZE = 12
 local RESIZE_BORDER_INSET = 20 -- leave a clearly accessible border so the ESO resize hit-test reaches the root control
-local RESIZE_GRIP_SIZE = 24
+local RESIZE_GRIP_SIZE = 26 -- larger corner grips for easier interactions
 local SCROLLBAR_WIDTH = 18
 local SCROLL_OVERSHOOT_PADDING = 100 -- allow scrolling so the last entry can sit around mid-window
 local FRAGMENT_RETRY_DELAY_MS = 200
@@ -874,6 +874,29 @@ local function updateResize()
         local bottomEdge = startTop + startHeight
         newHeight = targetHeight
         newTop = bottomEdge - targetHeight
+    elseif mode == "topleft" then
+        local targetWidth = clamp(startWidth - dx, minWidth, maxWidth)
+        local targetHeight = clamp(startHeight - dy, minHeight, maxHeight)
+        local rightEdge = startLeft + startWidth
+        local bottomEdge = startTop + startHeight
+        newWidth = targetWidth
+        newHeight = targetHeight
+        newLeft = rightEdge - targetWidth
+        newTop = bottomEdge - targetHeight
+    elseif mode == "topright" then
+        local targetWidth = clamp(startWidth + dx, minWidth, maxWidth)
+        local targetHeight = clamp(startHeight - dy, minHeight, maxHeight)
+        local bottomEdge = startTop + startHeight
+        newWidth = targetWidth
+        newHeight = targetHeight
+        newTop = bottomEdge - targetHeight
+    elseif mode == "bottomleft" then
+        local targetWidth = clamp(startWidth - dx, minWidth, maxWidth)
+        local targetHeight = clamp(startHeight + dy, minHeight, maxHeight)
+        local rightEdge = startLeft + startWidth
+        newWidth = targetWidth
+        newHeight = targetHeight
+        newLeft = rightEdge - targetWidth
     else -- bottomright / fallback corner behavior
         newWidth = clamp(startWidth + dx, minWidth, maxWidth)
         newHeight = clamp(startHeight + dy, minHeight, maxHeight)
@@ -2569,33 +2592,92 @@ local function createResizeGrip()
         end)
     end
 
-    local grips = {}
-
-    local corner = WINDOW_MANAGER:CreateControl(RESIZE_GRIP_NAME .. "_Corner", state.root, CT_CONTROL)
-    if corner then
-        corner:SetDimensions(RESIZE_GRIP_SIZE, RESIZE_GRIP_SIZE)
-        corner:ClearAnchors()
-        corner:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, -4, -4)
-        corner:SetDrawLayer(DL_OVERLAY)
-        corner:SetDrawTier(DT_LOW)
-        corner:SetDrawLevel(1)
-
-        local texture = WINDOW_MANAGER:CreateControl(nil, corner, CT_TEXTURE)
-        if texture then
-            texture:SetAnchorFill()
-            texture:SetTexture("EsoUI/Art/ChatWindow/chat_resizeGrip.dds")
-            texture:SetColor(1, 1, 1, 0.75)
+    local function applyCornerTexture(control, rotation)
+        if not control then
+            return
         end
 
-        attachGripHandlers(corner, "bottomright")
-        grips.corner = corner
+        local texture = WINDOW_MANAGER:CreateControl(nil, control, CT_TEXTURE)
+        if not texture then
+            return
+        end
+
+        texture:SetAnchorFill()
+        texture:SetTexture("EsoUI/Art/ChatWindow/chat_resizeGrip.dds")
+        texture:SetColor(1, 1, 1, 0.75)
+        if rotation and texture.SetTextureRotation then
+            texture:SetTextureRotation(rotation)
+        end
+    end
+
+    local grips = {}
+    local CORNER_CLEARANCE = RESIZE_GRIP_SIZE + 4
+
+    local cornerBR = WINDOW_MANAGER:CreateControl(RESIZE_GRIP_NAME .. "_BottomRight", state.root, CT_CONTROL)
+    if cornerBR then
+        cornerBR:SetDimensions(RESIZE_GRIP_SIZE, RESIZE_GRIP_SIZE)
+        cornerBR:ClearAnchors()
+        cornerBR:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, -4, -4)
+        cornerBR:SetDrawLayer(DL_OVERLAY)
+        cornerBR:SetDrawTier(DT_LOW)
+        cornerBR:SetDrawLevel(1)
+
+        applyCornerTexture(cornerBR, 0)
+
+        attachGripHandlers(cornerBR, "bottomright")
+        grips.bottomright = cornerBR
+    end
+
+    local cornerTR = WINDOW_MANAGER:CreateControl(RESIZE_GRIP_NAME .. "_TopRight", state.root, CT_CONTROL)
+    if cornerTR then
+        cornerTR:SetDimensions(RESIZE_GRIP_SIZE, RESIZE_GRIP_SIZE)
+        cornerTR:ClearAnchors()
+        cornerTR:SetAnchor(TOPRIGHT, state.root, TOPRIGHT, -4, 4)
+        cornerTR:SetDrawLayer(DL_OVERLAY)
+        cornerTR:SetDrawTier(DT_LOW)
+        cornerTR:SetDrawLevel(1)
+
+        applyCornerTexture(cornerTR, math.pi * 0.5)
+
+        attachGripHandlers(cornerTR, "topright")
+        grips.topright = cornerTR
+    end
+
+    local cornerBL = WINDOW_MANAGER:CreateControl(RESIZE_GRIP_NAME .. "_BottomLeft", state.root, CT_CONTROL)
+    if cornerBL then
+        cornerBL:SetDimensions(RESIZE_GRIP_SIZE, RESIZE_GRIP_SIZE)
+        cornerBL:ClearAnchors()
+        cornerBL:SetAnchor(BOTTOMLEFT, state.root, BOTTOMLEFT, 4, -4)
+        cornerBL:SetDrawLayer(DL_OVERLAY)
+        cornerBL:SetDrawTier(DT_LOW)
+        cornerBL:SetDrawLevel(1)
+
+        applyCornerTexture(cornerBL, math.pi * 1.5)
+
+        attachGripHandlers(cornerBL, "bottomleft")
+        grips.bottomleft = cornerBL
+    end
+
+    local cornerTL = WINDOW_MANAGER:CreateControl(RESIZE_GRIP_NAME .. "_TopLeft", state.root, CT_CONTROL)
+    if cornerTL then
+        cornerTL:SetDimensions(RESIZE_GRIP_SIZE, RESIZE_GRIP_SIZE)
+        cornerTL:ClearAnchors()
+        cornerTL:SetAnchor(TOPLEFT, state.root, TOPLEFT, 4, 4)
+        cornerTL:SetDrawLayer(DL_OVERLAY)
+        cornerTL:SetDrawTier(DT_LOW)
+        cornerTL:SetDrawLevel(1)
+
+        applyCornerTexture(cornerTL, math.pi)
+
+        attachGripHandlers(cornerTL, "topleft")
+        grips.topleft = cornerTL
     end
 
     local bottom = WINDOW_MANAGER:CreateControl(RESIZE_GRIP_NAME .. "_Bottom", state.root, CT_CONTROL)
     if bottom then
         bottom:ClearAnchors()
-        bottom:SetAnchor(BOTTOMLEFT, state.root, BOTTOMLEFT, 0, 0)
-        bottom:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, -(RESIZE_GRIP_SIZE + 4), 0)
+        bottom:SetAnchor(BOTTOMLEFT, state.root, BOTTOMLEFT, CORNER_CLEARANCE, 0)
+        bottom:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, -CORNER_CLEARANCE, 0)
         bottom:SetHeight(RESIZE_BORDER_THICKNESS)
         bottom:SetDrawLayer(DL_OVERLAY)
         bottom:SetDrawTier(DT_LOW)
@@ -2611,8 +2693,8 @@ local function createResizeGrip()
     local right = WINDOW_MANAGER:CreateControl(RESIZE_GRIP_NAME .. "_Right", state.root, CT_CONTROL)
     if right then
         right:ClearAnchors()
-        right:SetAnchor(TOPRIGHT, state.root, TOPRIGHT, 0, 0)
-        right:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, 0, -(RESIZE_GRIP_SIZE + 4))
+        right:SetAnchor(TOPRIGHT, state.root, TOPRIGHT, 0, CORNER_CLEARANCE)
+        right:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, 0, -CORNER_CLEARANCE)
         right:SetWidth(RESIZE_BORDER_THICKNESS)
         right:SetDrawLayer(DL_OVERLAY)
         right:SetDrawTier(DT_LOW)
@@ -2628,8 +2710,8 @@ local function createResizeGrip()
     local top = WINDOW_MANAGER:CreateControl(RESIZE_GRIP_NAME .. "_Top", state.root, CT_CONTROL)
     if top then
         top:ClearAnchors()
-        top:SetAnchor(TOPLEFT, state.root, TOPLEFT, 0, 0)
-        top:SetAnchor(TOPRIGHT, state.root, TOPRIGHT, 0, 0)
+        top:SetAnchor(TOPLEFT, state.root, TOPLEFT, CORNER_CLEARANCE, 0)
+        top:SetAnchor(TOPRIGHT, state.root, TOPRIGHT, -CORNER_CLEARANCE, 0)
         top:SetHeight(RESIZE_BORDER_THICKNESS)
         top:SetDrawLayer(DL_OVERLAY)
         top:SetDrawTier(DT_LOW)
@@ -2645,8 +2727,8 @@ local function createResizeGrip()
     local left = WINDOW_MANAGER:CreateControl(RESIZE_GRIP_NAME .. "_Left", state.root, CT_CONTROL)
     if left then
         left:ClearAnchors()
-        left:SetAnchor(TOPLEFT, state.root, TOPLEFT, 0, 0)
-        left:SetAnchor(BOTTOMLEFT, state.root, BOTTOMLEFT, 0, 0)
+        left:SetAnchor(TOPLEFT, state.root, TOPLEFT, 0, CORNER_CLEARANCE)
+        left:SetAnchor(BOTTOMLEFT, state.root, BOTTOMLEFT, 0, -CORNER_CLEARANCE)
         left:SetWidth(RESIZE_BORDER_THICKNESS)
         left:SetDrawLayer(DL_OVERLAY)
         left:SetDrawTier(DT_LOW)
@@ -2659,7 +2741,7 @@ local function createResizeGrip()
         grips.left = left
     end
 
-    if not (grips.corner or grips.bottom or grips.right or grips.top or grips.left) then
+    if not next(grips) then
         return
     end
 
