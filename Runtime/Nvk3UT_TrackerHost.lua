@@ -328,7 +328,6 @@ local queueRuntimeLayout
 local applyBootstrapVisibility
 local startWindowDrag
 local stopWindowDrag
-local requestWindowLayoutRefresh
 local getCurrentScrollOffset
 local ensureVisibilityGates
 local setVisibilityGate
@@ -1083,8 +1082,8 @@ local function endResize()
             saveWindowPosition()
         end
 
-        if requestWindowLayoutRefresh then
-            requestWindowLayoutRefresh("windowResize")
+        if notifyContentChanged then
+            notifyContentChanged()
         end
     end
 end
@@ -3480,15 +3479,6 @@ local function notifyContentChanged()
     scheduleDeferredRefresh(preservedOffset)
 end
 
-local function requestWindowLayoutRefresh(reason)
-    if not state.root then
-        return
-    end
-
-    updateSectionLayout()
-    notifyContentChanged()
-end
-
 local function applyWindowClamp()
     if not (state.root and state.window) then
         return
@@ -3743,8 +3733,8 @@ local function createRootControl()
         if saveWindowPosition then
             saveWindowPosition()
         end
-        if requestWindowLayoutRefresh then
-            requestWindowLayoutRefresh("windowMove")
+        if notifyContentChanged then
+            notifyContentChanged()
         end
     end)
 
@@ -3752,8 +3742,8 @@ local function createRootControl()
         if saveWindowSize then
             saveWindowSize()
         end
-        if requestWindowLayoutRefresh then
-            requestWindowLayoutRefresh("windowResizeStop")
+        if notifyContentChanged then
+            notifyContentChanged()
         end
     end)
 
