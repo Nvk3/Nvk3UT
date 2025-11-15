@@ -28,6 +28,7 @@ local FOOTER_BAR_NAME = SCROLL_CONTENT_NAME .. "_FooterBar"
 local MIN_WIDTH = 260
 local MIN_HEIGHT = 240
 local RESIZE_HANDLE_SIZE = 12
+local RESIZE_BORDER_INSET = 4 -- leave a thin border so the ESO resize hit-test reaches the root control
 local SCROLLBAR_WIDTH = 18
 local SCROLL_OVERSHOOT_PADDING = 100 -- allow scrolling so the last entry can sit around mid-window
 local FRAGMENT_RETRY_DELAY_MS = 200
@@ -2290,8 +2291,8 @@ local function createScrollContainer()
 
     scrollContainer:SetMouseEnabled(true)
     scrollContainer:SetClampedToScreen(false)
-    scrollContainer:SetAnchor(TOPLEFT, state.root, TOPLEFT, 0, 0)
-    scrollContainer:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, 0, 0)
+    scrollContainer:SetAnchor(TOPLEFT, state.root, TOPLEFT, RESIZE_BORDER_INSET, RESIZE_BORDER_INSET)
+    scrollContainer:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, -RESIZE_BORDER_INSET, -RESIZE_BORDER_INSET)
     if scrollContainer.SetBackgroundColor then
         scrollContainer:SetBackgroundColor(0, 0, 0, 0)
     end
