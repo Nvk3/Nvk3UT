@@ -229,6 +229,9 @@ local state = {
 
 local resizeState = {
     active = false,
+    mode = nil,
+    allowH = true,
+    allowV = true,
 }
 
 local function SetResizeCursor(mode)
@@ -264,6 +267,41 @@ local function ResetResizeCursor()
         WINDOW_MANAGER:SetMouseCursor(MOUSE_CURSOR_DO_NOT_CARE)
     elseif MOUSE_CURSOR_DEFAULT_CURSOR then
         WINDOW_MANAGER:SetMouseCursor(MOUSE_CURSOR_DEFAULT_CURSOR)
+    end
+end
+
+local function IsHorizontalResizeAllowed()
+    state.layout = state.layout or ensureLayoutSettings()
+    local layout = state.layout or ensureLayoutSettings()
+
+    return layout.autoGrowH ~= true
+end
+
+local function IsVerticalResizeAllowed()
+    state.layout = state.layout or ensureLayoutSettings()
+    local layout = state.layout or ensureLayoutSettings()
+
+    return layout.autoGrowV ~= true
+end
+
+local function IsResizeModeEnabled(mode, allowH, allowV)
+    if allowH == nil then
+        allowH = IsHorizontalResizeAllowed()
+    end
+    if allowV == nil then
+        allowV = IsVerticalResizeAllowed()
+    end
+
+    if mode == "left" or mode == "right" then
+        return allowH
+    elseif mode == "top" or mode == "bottom" then
+        return allowV
+    elseif mode == "topleft" or mode == "bottomright" then
+        return allowH or allowV
+    elseif mode == "topright" or mode == "bottomleft" then
+        return allowH or allowV
+    else
+        return true
     end
 end
 
@@ -841,6 +879,13 @@ local function beginResize(mode)
         return
     end
 
+    local resizeMode = mode or "bottomright"
+    local allowH = IsHorizontalResizeAllowed()
+    local allowV = IsVerticalResizeAllowed()
+    if not IsResizeModeEnabled(resizeMode, allowH, allowV) then
+        return
+    end
+
     if type(GetUIMousePosition) ~= "function" then
         return
     end
@@ -851,16 +896,34 @@ local function beginResize(mode)
     end
 
     resizeState.active = true
-    resizeState.mode = mode or "bottomright"
-    local cursorMode = resizeState.mode
-    if cursorMode == "left" or cursorMode == "right" then
-        SetResizeCursor("horizontal")
-    elseif cursorMode == "top" or cursorMode == "bottom" then
-        SetResizeCursor("vertical")
-    elseif cursorMode == "topleft" or cursorMode == "bottomright" then
-        SetResizeCursor("nwse")
-    elseif cursorMode == "topright" or cursorMode == "bottomleft" then
-        SetResizeCursor("nesw")
+    resizeState.mode = resizeMode
+    resizeState.allowH = allowH
+    resizeState.allowV = allowV
+
+    if resizeMode == "left" or resizeMode == "right" then
+        if allowH then
+            SetResizeCursor("horizontal")
+        end
+    elseif resizeMode == "top" or resizeMode == "bottom" then
+        if allowV then
+            SetResizeCursor("vertical")
+        end
+    elseif resizeMode == "topleft" or resizeMode == "bottomright" then
+        if allowH and allowV then
+            SetResizeCursor("nwse")
+        elseif allowH then
+            SetResizeCursor("horizontal")
+        elseif allowV then
+            SetResizeCursor("vertical")
+        end
+    elseif resizeMode == "topright" or resizeMode == "bottomleft" then
+        if allowH and allowV then
+            SetResizeCursor("nesw")
+        elseif allowH then
+            SetResizeCursor("horizontal")
+        elseif allowV then
+            SetResizeCursor("vertical")
+        end
     end
     resizeState.startX = startX
     resizeState.startY = startY
@@ -904,6 +967,8 @@ local function updateResize()
     local startTop = resizeState.startTop or state.root:GetTop() or window.top or 0
 
     local mode = resizeState.mode or "bottomright"
+    local allowH = resizeState.allowH ~= false
+    local allowV = resizeState.allowV ~= false
 
     local newWidth = startWidth
     local newHeight = startHeight
@@ -911,45 +976,67 @@ local function updateResize()
     local newTop = startTop
 
     if mode == "right" then
-        newWidth = clamp(startWidth + dx, minWidth, maxWidth)
+        if allowH then
+            newWidth = clamp(startWidth + dx, minWidth, maxWidth)
+        end
     elseif mode == "bottom" then
-        newHeight = clamp(startHeight + dy, minHeight, maxHeight)
+        if allowV then
+            newHeight = clamp(startHeight + dy, minHeight, maxHeight)
+        end
     elseif mode == "left" then
-        local targetWidth = clamp(startWidth - dx, minWidth, maxWidth)
-        local rightEdge = startLeft + startWidth
-        newWidth = targetWidth
-        newLeft = rightEdge - targetWidth
+        if allowH then
+            local targetWidth = clamp(startWidth - dx, minWidth, maxWidth)
+            local rightEdge = startLeft + startWidth
+            newWidth = targetWidth
+            newLeft = rightEdge - targetWidth
+        end
     elseif mode == "top" then
-        local targetHeight = clamp(startHeight - dy, minHeight, maxHeight)
-        local bottomEdge = startTop + startHeight
-        newHeight = targetHeight
-        newTop = bottomEdge - targetHeight
+        if allowV then
+            local targetHeight = clamp(startHeight - dy, minHeight, maxHeight)
+            local bottomEdge = startTop + startHeight
+            newHeight = targetHeight
+            newTop = bottomEdge - targetHeight
+        end
     elseif mode == "topleft" then
-        local targetWidth = clamp(startWidth - dx, minWidth, maxWidth)
-        local targetHeight = clamp(startHeight - dy, minHeight, maxHeight)
         local rightEdge = startLeft + startWidth
         local bottomEdge = startTop + startHeight
-        newWidth = targetWidth
-        newHeight = targetHeight
-        newLeft = rightEdge - targetWidth
-        newTop = bottomEdge - targetHeight
+        if allowH then
+            local targetWidth = clamp(startWidth - dx, minWidth, maxWidth)
+            newWidth = targetWidth
+            newLeft = rightEdge - targetWidth
+        end
+        if allowV then
+            local targetHeight = clamp(startHeight - dy, minHeight, maxHeight)
+            newHeight = targetHeight
+            newTop = bottomEdge - targetHeight
+        end
     elseif mode == "topright" then
-        local targetWidth = clamp(startWidth + dx, minWidth, maxWidth)
-        local targetHeight = clamp(startHeight - dy, minHeight, maxHeight)
         local bottomEdge = startTop + startHeight
-        newWidth = targetWidth
-        newHeight = targetHeight
-        newTop = bottomEdge - targetHeight
+        if allowH then
+            newWidth = clamp(startWidth + dx, minWidth, maxWidth)
+        end
+        if allowV then
+            local targetHeight = clamp(startHeight - dy, minHeight, maxHeight)
+            newHeight = targetHeight
+            newTop = bottomEdge - targetHeight
+        end
     elseif mode == "bottomleft" then
-        local targetWidth = clamp(startWidth - dx, minWidth, maxWidth)
-        local targetHeight = clamp(startHeight + dy, minHeight, maxHeight)
         local rightEdge = startLeft + startWidth
-        newWidth = targetWidth
-        newHeight = targetHeight
-        newLeft = rightEdge - targetWidth
+        if allowH then
+            local targetWidth = clamp(startWidth - dx, minWidth, maxWidth)
+            newWidth = targetWidth
+            newLeft = rightEdge - targetWidth
+        end
+        if allowV then
+            newHeight = clamp(startHeight + dy, minHeight, maxHeight)
+        end
     else -- bottomright / fallback corner behavior
-        newWidth = clamp(startWidth + dx, minWidth, maxWidth)
-        newHeight = clamp(startHeight + dy, minHeight, maxHeight)
+        if allowH then
+            newWidth = clamp(startWidth + dx, minWidth, maxWidth)
+        end
+        if allowV then
+            newHeight = clamp(startHeight + dy, minHeight, maxHeight)
+        end
     end
 
     window.width = math.floor(newWidth + 0.5)
@@ -981,6 +1068,8 @@ local function endResize()
     resizeState.startHeight = nil
     resizeState.startLeft = nil
     resizeState.startTop = nil
+    resizeState.allowH = true
+    resizeState.allowV = true
 
     ResetResizeCursor()
 
@@ -2625,14 +2714,46 @@ local function createResizeGrip()
         end)
     end
 
-    local function attachHoverHandlers(grip, cursorMode)
+    local function attachHoverHandlers(grip, mode)
         if not grip then
             return
         end
 
         grip:SetHandler("OnMouseEnter", function()
-            if cursorMode then
-                SetResizeCursor(cursorMode)
+            if not mode then
+                return
+            end
+
+            local allowH = IsHorizontalResizeAllowed()
+            local allowV = IsVerticalResizeAllowed()
+            if not IsResizeModeEnabled(mode, allowH, allowV) then
+                return
+            end
+
+            if mode == "left" or mode == "right" then
+                if allowH then
+                    SetResizeCursor("horizontal")
+                end
+            elseif mode == "top" or mode == "bottom" then
+                if allowV then
+                    SetResizeCursor("vertical")
+                end
+            elseif mode == "topleft" or mode == "bottomright" then
+                if allowH and allowV then
+                    SetResizeCursor("nwse")
+                elseif allowH then
+                    SetResizeCursor("horizontal")
+                elseif allowV then
+                    SetResizeCursor("vertical")
+                end
+            elseif mode == "topright" or mode == "bottomleft" then
+                if allowH and allowV then
+                    SetResizeCursor("nesw")
+                elseif allowH then
+                    SetResizeCursor("horizontal")
+                elseif allowV then
+                    SetResizeCursor("vertical")
+                end
             end
         end)
 
@@ -2676,7 +2797,7 @@ local function createResizeGrip()
         applyCornerTexture(cornerBR, 0)
 
         attachGripHandlers(cornerBR, "bottomright")
-        attachHoverHandlers(cornerBR, "nwse")
+        attachHoverHandlers(cornerBR, "bottomright")
         grips.bottomright = cornerBR
     end
 
@@ -2692,7 +2813,7 @@ local function createResizeGrip()
         applyCornerTexture(cornerTR, math.pi * 0.5)
 
         attachGripHandlers(cornerTR, "topright")
-        attachHoverHandlers(cornerTR, "nesw")
+        attachHoverHandlers(cornerTR, "topright")
         grips.topright = cornerTR
     end
 
@@ -2708,7 +2829,7 @@ local function createResizeGrip()
         applyCornerTexture(cornerBL, math.pi * 1.5)
 
         attachGripHandlers(cornerBL, "bottomleft")
-        attachHoverHandlers(cornerBL, "nesw")
+        attachHoverHandlers(cornerBL, "bottomleft")
         grips.bottomleft = cornerBL
     end
 
@@ -2724,7 +2845,7 @@ local function createResizeGrip()
         applyCornerTexture(cornerTL, math.pi)
 
         attachGripHandlers(cornerTL, "topleft")
-        attachHoverHandlers(cornerTL, "nwse")
+        attachHoverHandlers(cornerTL, "topleft")
         grips.topleft = cornerTL
     end
 
@@ -2742,7 +2863,7 @@ local function createResizeGrip()
         end
 
         attachGripHandlers(bottom, "bottom")
-        attachHoverHandlers(bottom, "vertical")
+        attachHoverHandlers(bottom, "bottom")
         grips.bottom = bottom
     end
 
@@ -2760,7 +2881,7 @@ local function createResizeGrip()
         end
 
         attachGripHandlers(right, "right")
-        attachHoverHandlers(right, "horizontal")
+        attachHoverHandlers(right, "right")
         grips.right = right
     end
 
@@ -2778,7 +2899,7 @@ local function createResizeGrip()
         end
 
         attachGripHandlers(top, "top")
-        attachHoverHandlers(top, "vertical")
+        attachHoverHandlers(top, "top")
         grips.top = top
     end
 
@@ -2796,7 +2917,7 @@ local function createResizeGrip()
         end
 
         attachGripHandlers(left, "left")
-        attachHoverHandlers(left, "horizontal")
+        attachHoverHandlers(left, "left")
         grips.left = left
     end
 
