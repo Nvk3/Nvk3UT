@@ -3132,29 +3132,6 @@ local function createRootControl()
     control:SetDrawTier(DT_LOW)
     control:SetDrawLevel(0)
 
-    control:SetHandler("OnMouseDown", function(_, button)
-        if button ~= LEFT_MOUSE_BUTTON then
-            return
-        end
-
-        local headerBar = state.headerBar
-        if headerBar then
-            local isHidden = headerBar.IsHidden and headerBar:IsHidden()
-            local headerHeight = headerBar.GetHeight and headerBar:GetHeight() or 0
-            if not isHidden and headerHeight > 0 then
-                return
-            end
-        end
-
-        startWindowDrag()
-    end)
-
-    control:SetHandler("OnMouseUp", function(_, button)
-        if button == LEFT_MOUSE_BUTTON then
-            stopWindowDrag()
-        end
-    end)
-
     control:SetHandler("OnMoveStop", function()
         saveWindowPosition()
     end)
