@@ -28,7 +28,7 @@ local FOOTER_BAR_NAME = SCROLL_CONTENT_NAME .. "_FooterBar"
 local MIN_WIDTH = 260
 local MIN_HEIGHT = 240
 local RESIZE_HANDLE_SIZE = 12
-local RESIZE_BORDER_INSET = 4 -- leave a thin border so the ESO resize hit-test reaches the root control
+local RESIZE_BORDER_INSET = 20 -- leave a clearly accessible border so the ESO resize hit-test reaches the root control
 local SCROLLBAR_WIDTH = 18
 local SCROLL_OVERSHOOT_PADDING = 100 -- allow scrolling so the last entry can sit around mid-window
 local FRAGMENT_RETRY_DELAY_MS = 200
@@ -2974,6 +2974,7 @@ local function createBackdrop()
     if control.SetExcludeFromResizeToFitExtents then
         control:SetExcludeFromResizeToFitExtents(true)
     end
+    control:SetMouseEnabled(false)
     if control.SetCenterColor then
         control:SetCenterColor(0, 0, 0, 0)
     end
