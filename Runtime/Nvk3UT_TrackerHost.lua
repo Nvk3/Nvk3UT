@@ -220,7 +220,7 @@ local state = {
     isLAMOpen = false,
     visibilityGates = nil,
     resizeGrip = nil,        -- legacy single grip (unused)
-    resizeGrips = nil,       -- collection of bottom/right border grips
+    resizeGrips = nil,       -- collection of resize grips along the full border
 }
 
 local resizeState = {
@@ -811,11 +811,13 @@ local function beginResize(mode)
     end
 
     resizeState.active = true
-    resizeState.mode = mode or "corner"
+    resizeState.mode = mode or "bottomright"
     resizeState.startX = startX
     resizeState.startY = startY
     resizeState.startWidth = state.root:GetWidth() or state.window.width or DEFAULT_WINDOW.width
     resizeState.startHeight = state.root:GetHeight() or state.window.height or DEFAULT_WINDOW.height
+    resizeState.startLeft = state.root:GetLeft() or state.window.left or DEFAULT_WINDOW.left
+    resizeState.startTop = state.root:GetTop() or state.window.top or DEFAULT_WINDOW.top
 end
 
 local function updateResize()
@@ -846,13 +848,51 @@ local function updateResize()
     local dx = currentX - (resizeState.startX or currentX)
     local dy = currentY - (resizeState.startY or currentY)
 
-    local newWidth = clamp((resizeState.startWidth or window.width or minWidth) + dx, minWidth, maxWidth)
-    local newHeight = clamp((resizeState.startHeight or window.height or minHeight) + dy, minHeight, maxHeight)
+    local startWidth = resizeState.startWidth or window.width or minWidth
+    local startHeight = resizeState.startHeight or window.height or minHeight
+    local startLeft = resizeState.startLeft or state.root:GetLeft() or window.left or 0
+    local startTop = resizeState.startTop or state.root:GetTop() or window.top or 0
 
-    state.root:SetDimensions(newWidth, newHeight)
+    local mode = resizeState.mode or "bottomright"
+
+    local newWidth = startWidth
+    local newHeight = startHeight
+    local newLeft = startLeft
+    local newTop = startTop
+
+    if mode == "right" then
+        newWidth = clamp(startWidth + dx, minWidth, maxWidth)
+    elseif mode == "bottom" then
+        newHeight = clamp(startHeight + dy, minHeight, maxHeight)
+    elseif mode == "left" then
+        local targetWidth = clamp(startWidth - dx, minWidth, maxWidth)
+        local rightEdge = startLeft + startWidth
+        newWidth = targetWidth
+        newLeft = rightEdge - targetWidth
+    elseif mode == "top" then
+        local targetHeight = clamp(startHeight - dy, minHeight, maxHeight)
+        local bottomEdge = startTop + startHeight
+        newHeight = targetHeight
+        newTop = bottomEdge - targetHeight
+    else -- bottomright / fallback corner behavior
+        newWidth = clamp(startWidth + dx, minWidth, maxWidth)
+        newHeight = clamp(startHeight + dy, minHeight, maxHeight)
+    end
 
     window.width = math.floor(newWidth + 0.5)
     window.height = math.floor(newHeight + 0.5)
+    window.left = math.floor(newLeft + 0.5)
+    window.top = math.floor(newTop + 0.5)
+
+    clampWindowToScreen(window.width, window.height)
+
+    local anchorParent = GuiRoot or state.root:GetParent() or state.root
+    local finalLeft = window.left or newLeft
+    local finalTop = window.top or newTop
+
+    state.root:ClearAnchors()
+    state.root:SetAnchor(TOPLEFT, anchorParent, TOPLEFT, finalLeft, finalTop)
+    state.root:SetDimensions(window.width, window.height)
 end
 
 local function endResize()
@@ -866,6 +906,8 @@ local function endResize()
     resizeState.startY = nil
     resizeState.startWidth = nil
     resizeState.startHeight = nil
+    resizeState.startLeft = nil
+    resizeState.startTop = nil
 
     if SetMouseCursor and MOUSE_CURSOR_DEFAULT then
         SetMouseCursor(MOUSE_CURSOR_DEFAULT)
@@ -873,6 +915,10 @@ local function endResize()
 
     if state.root and state.window and saveWindowSize then
         saveWindowSize()
+    end
+
+    if state.root and state.window and saveWindowPosition then
+        saveWindowPosition()
     end
 end
 
@@ -2486,7 +2532,7 @@ local function createResizeGrip()
         return
     end
 
-    local function attachGripHandlers(grip)
+    local function attachGripHandlers(grip, mode)
         if not grip then
             return
         end
@@ -2510,7 +2556,7 @@ local function createResizeGrip()
                 return
             end
 
-            beginResize("corner")
+            beginResize(mode)
         end)
 
         grip:SetHandler("OnMouseUp", function(_, button)
@@ -2541,7 +2587,7 @@ local function createResizeGrip()
             texture:SetColor(1, 1, 1, 0.75)
         end
 
-        attachGripHandlers(corner)
+        attachGripHandlers(corner, "bottomright")
         grips.corner = corner
     end
 
@@ -2558,7 +2604,7 @@ local function createResizeGrip()
             bottom:SetAlpha(0)
         end
 
-        attachGripHandlers(bottom)
+        attachGripHandlers(bottom, "bottom")
         grips.bottom = bottom
     end
 
@@ -2575,7 +2621,7 @@ local function createResizeGrip()
             right:SetAlpha(0)
         end
 
-        attachGripHandlers(right)
+        attachGripHandlers(right, "right")
         grips.right = right
     end
 
@@ -2592,7 +2638,7 @@ local function createResizeGrip()
             top:SetAlpha(0)
         end
 
-        attachGripHandlers(top)
+        attachGripHandlers(top, "top")
         grips.top = top
     end
 
@@ -2609,7 +2655,7 @@ local function createResizeGrip()
             left:SetAlpha(0)
         end
 
-        attachGripHandlers(left)
+        attachGripHandlers(left, "left")
         grips.left = left
     end
 
