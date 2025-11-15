@@ -336,6 +336,7 @@ local beginResize
 local updateResize
 local endResize
 local createResizeGrip
+local requestFullTrackerRebuild
 
 local function getSavedVars()
     return Nvk3UT and Nvk3UT.sv
@@ -1082,8 +1083,8 @@ local function endResize()
             saveWindowPosition()
         end
 
-        if notifyContentChanged then
-            notifyContentChanged()
+        if requestFullTrackerRebuild then
+            requestFullTrackerRebuild("manualResize")
         end
     end
 end
@@ -3479,6 +3480,35 @@ local function notifyContentChanged()
     scheduleDeferredRefresh(preservedOffset)
 end
 
+requestFullTrackerRebuild = function(reason)
+    local rebuild = (Nvk3UT and Nvk3UT.Rebuild) or _G.Nvk3UT_Rebuild
+    local context = "windowGeometryChanged"
+    if reason ~= nil and reason ~= "" then
+        context = string.format("%s:%s", context, tostring(reason))
+    end
+
+    if type(rebuild) == "table" then
+        if type(rebuild.All) == "function" then
+            safeCall(rebuild.All, context)
+            return
+        end
+
+        if type(rebuild.MarkAllDirty) == "function" then
+            safeCall(rebuild.MarkAllDirty, context)
+            return
+        end
+
+        if type(rebuild.Trackers) == "function" then
+            safeCall(rebuild.Trackers, context)
+            return
+        end
+    end
+
+    if notifyContentChanged then
+        notifyContentChanged()
+    end
+end
+
 local function applyWindowClamp()
     if not (state.root and state.window) then
         return
@@ -3733,8 +3763,8 @@ local function createRootControl()
         if saveWindowPosition then
             saveWindowPosition()
         end
-        if notifyContentChanged then
-            notifyContentChanged()
+        if requestFullTrackerRebuild then
+            requestFullTrackerRebuild("windowMove")
         end
     end)
 
@@ -3742,8 +3772,8 @@ local function createRootControl()
         if saveWindowSize then
             saveWindowSize()
         end
-        if notifyContentChanged then
-            notifyContentChanged()
+        if requestFullTrackerRebuild then
+            requestFullTrackerRebuild("nativeResize")
         end
     end)
 
