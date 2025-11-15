@@ -521,9 +521,9 @@ local function migrateHostSettings(general)
 
     if general.layout.autoGrowV == nil then
         if quest and quest.autoGrowV ~= nil then
-            general.layout.autoGrowV = quest.autoGrowV ~= false
+            general.layout.autoGrowV = quest.autoGrowV == true
         elseif achievement and achievement.autoGrowV ~= nil then
-            general.layout.autoGrowV = achievement.autoGrowV ~= false
+            general.layout.autoGrowV = achievement.autoGrowV == true
         end
     end
 
@@ -573,7 +573,7 @@ local function ensureLayoutSettings()
     if layout.autoGrowV == nil then
         layout.autoGrowV = DEFAULT_LAYOUT.autoGrowV
     else
-        layout.autoGrowV = layout.autoGrowV ~= false
+        layout.autoGrowV = layout.autoGrowV == true
     end
 
     if layout.autoGrowH == nil then
