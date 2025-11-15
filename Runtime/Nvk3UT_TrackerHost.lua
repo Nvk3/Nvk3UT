@@ -2289,7 +2289,7 @@ local function createScrollContainer()
         return
     end
 
-    scrollContainer:SetMouseEnabled(true)
+    scrollContainer:SetMouseEnabled(false)
     scrollContainer:SetClampedToScreen(false)
     scrollContainer:SetAnchor(TOPLEFT, state.root, TOPLEFT, RESIZE_BORDER_INSET, RESIZE_BORDER_INSET)
     scrollContainer:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, -RESIZE_BORDER_INSET, -RESIZE_BORDER_INSET)
