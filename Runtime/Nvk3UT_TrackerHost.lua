@@ -21,6 +21,8 @@ local SECTION_TEMPLATE_NAME = "Nvk3UT_SectionContainerTemplate"
 local SCROLL_CONTAINER_NAME = addonName .. "_ScrollContainer"
 local SCROLL_CONTENT_NAME = SCROLL_CONTAINER_NAME .. "_Content"
 local SCROLLBAR_NAME = SCROLL_CONTAINER_NAME .. "_ScrollBar"
+local RESIZE_GRIP_NAME = addonName .. "_ResizeGrip"
+local RESIZE_EVENT_NAMESPACE = addonName .. "_ManualResize"
 local HEADER_BAR_NAME = SCROLL_CONTENT_NAME .. "_HeaderBar"
 local CONTENT_STACK_NAME = SCROLL_CONTENT_NAME .. "_ContentStack"
 local FOOTER_BAR_NAME = SCROLL_CONTENT_NAME .. "_FooterBar"
@@ -29,6 +31,7 @@ local MIN_WIDTH = 260
 local MIN_HEIGHT = 240
 local RESIZE_HANDLE_SIZE = 12
 local RESIZE_BORDER_INSET = 20 -- leave a clearly accessible border so the ESO resize hit-test reaches the root control
+local RESIZE_GRIP_SIZE = 24
 local SCROLLBAR_WIDTH = 18
 local SCROLL_OVERSHOOT_PADDING = 100 -- allow scrolling so the last entry can sit around mid-window
 local FRAGMENT_RETRY_DELAY_MS = 200
@@ -117,6 +120,8 @@ local DEFAULT_HOST_SETTINGS = {
 }
 
 local LEFT_MOUSE_BUTTON = _G.MOUSE_BUTTON_INDEX_LEFT or 1
+local MOUSE_CURSOR_RESIZE_CORNER = _G.MOUSE_CURSOR_RESIZE_NWSE or _G.MOUSE_CURSOR_RESIZE_ALL or _G.MOUSE_CURSOR_RESIZE
+local MOUSE_CURSOR_DEFAULT = _G.MOUSE_CURSOR_DO_NOT_CARE or _G.MOUSE_CURSOR_ARROW or 0
 local unpack = unpack or table.unpack
 
 local function Num0(v)
@@ -213,6 +218,11 @@ local state = {
     isInHUDScene = true,
     isLAMOpen = false,
     visibilityGates = nil,
+    resizeGrip = nil,
+}
+
+local resizeState = {
+    active = false,
 }
 
 local lamPreview = {
@@ -242,6 +252,10 @@ local getCurrentScrollOffset
 local ensureVisibilityGates
 local setVisibilityGate
 local refreshVisibilityGates
+local beginResize
+local updateResize
+local endResize
+local createResizeGrip
 
 local function getSavedVars()
     return Nvk3UT and Nvk3UT.sv
@@ -772,6 +786,104 @@ stopWindowDrag = function()
 
     state.root:StopMovingOrResizing()
     saveWindowPosition()
+end
+
+local function beginResize(mode)
+    if not (state.root and state.window) then
+        return
+    end
+
+    state.window = state.window or ensureWindowSettings()
+
+    if state.window.locked == true then
+        return
+    end
+
+    if type(GetUIMousePosition) ~= "function" then
+        return
+    end
+
+    local startX, startY = GetUIMousePosition()
+    if not (startX and startY) then
+        return
+    end
+
+    resizeState.active = true
+    resizeState.mode = mode or "corner"
+    resizeState.startX = startX
+    resizeState.startY = startY
+    resizeState.startWidth = state.root:GetWidth() or state.window.width or DEFAULT_WINDOW.width
+    resizeState.startHeight = state.root:GetHeight() or state.window.height or DEFAULT_WINDOW.height
+end
+
+local function updateResize()
+    if not (resizeState.active and state.root) then
+        return
+    end
+
+    if type(GetUIMousePosition) ~= "function" then
+        return
+    end
+
+    local currentX, currentY = GetUIMousePosition()
+    if not (currentX and currentY) then
+        return
+    end
+
+    state.layout = state.layout or ensureLayoutSettings()
+    state.window = state.window or ensureWindowSettings()
+
+    local layout = state.layout
+    local window = state.window
+
+    local minWidth = layout.minWidth or MIN_WIDTH
+    local minHeight = layout.minHeight or MIN_HEIGHT
+    local maxWidth = layout.maxWidth or math.max(minWidth, resizeState.startWidth or minWidth)
+    local maxHeight = layout.maxHeight or math.max(minHeight, resizeState.startHeight or minHeight)
+
+    local dx = currentX - (resizeState.startX or currentX)
+    local dy = currentY - (resizeState.startY or currentY)
+
+    local newWidth = clamp((resizeState.startWidth or window.width or minWidth) + dx, minWidth, maxWidth)
+    local newHeight = clamp((resizeState.startHeight or window.height or minHeight) + dy, minHeight, maxHeight)
+
+    state.root:SetDimensions(newWidth, newHeight)
+
+    window.width = math.floor(newWidth + 0.5)
+    window.height = math.floor(newHeight + 0.5)
+end
+
+local function endResize()
+    if not resizeState.active then
+        return
+    end
+
+    resizeState.active = false
+    resizeState.mode = nil
+    resizeState.startX = nil
+    resizeState.startY = nil
+    resizeState.startWidth = nil
+    resizeState.startHeight = nil
+
+    if SetMouseCursor and MOUSE_CURSOR_DEFAULT then
+        SetMouseCursor(MOUSE_CURSOR_DEFAULT)
+    end
+
+    if not (state.root and state.window) then
+        return
+    end
+
+    saveWindowSize()
+    updateSectionLayout()
+    notifyContentChanged()
+end
+
+if EVENT_MANAGER and EVENT_GLOBAL_MOUSE_UP then
+    EVENT_MANAGER:RegisterForEvent(RESIZE_EVENT_NAMESPACE, EVENT_GLOBAL_MOUSE_UP, function(_, button)
+        if button == LEFT_MOUSE_BUTTON and resizeState.active then
+            endResize()
+        end
+    end)
 end
 
 local function isDebugEnabled()
@@ -2371,6 +2483,70 @@ local function createScrollContainer()
     applyViewportPadding()
 end
 
+local function createResizeGrip()
+    if state.resizeGrip or not (state.root and WINDOW_MANAGER) then
+        return
+    end
+
+    local grip = WINDOW_MANAGER:CreateControl(RESIZE_GRIP_NAME, state.root, CT_CONTROL)
+    if not grip then
+        return
+    end
+
+    grip:SetDimensions(RESIZE_GRIP_SIZE, RESIZE_GRIP_SIZE)
+    grip:ClearAnchors()
+    grip:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, -4, -4)
+    grip:SetDrawLayer(DL_OVERLAY)
+    grip:SetDrawTier(DT_LOW)
+    grip:SetDrawLevel(1)
+    grip:SetMouseEnabled(true)
+
+    local texture = WINDOW_MANAGER:CreateControl(nil, grip, CT_TEXTURE)
+    if texture then
+        texture:SetAnchorFill()
+        texture:SetTexture("EsoUI/Art/ChatWindow/chat_resizeGrip.dds")
+        texture:SetColor(1, 1, 1, 0.75)
+    end
+
+    grip:SetHandler("OnMouseEnter", function()
+        if SetMouseCursor and MOUSE_CURSOR_RESIZE_CORNER then
+            SetMouseCursor(MOUSE_CURSOR_RESIZE_CORNER)
+        end
+    end)
+
+    grip:SetHandler("OnMouseExit", function()
+        if SetMouseCursor and MOUSE_CURSOR_DEFAULT then
+            SetMouseCursor(MOUSE_CURSOR_DEFAULT)
+        end
+    end)
+
+    grip:SetHandler("OnMouseDown", function(_, button)
+        if button ~= LEFT_MOUSE_BUTTON then
+            return
+        end
+
+        beginResize("corner")
+    end)
+
+    grip:SetHandler("OnMouseUp", function(_, button)
+        if button == LEFT_MOUSE_BUTTON then
+            endResize()
+            if SetMouseCursor and MOUSE_CURSOR_DEFAULT then
+                SetMouseCursor(MOUSE_CURSOR_DEFAULT)
+            end
+        end
+    end)
+
+    state.window = state.window or ensureWindowSettings()
+
+    if state.window.locked == true then
+        grip:SetMouseEnabled(false)
+        grip:SetHidden(true)
+    end
+
+    state.resizeGrip = grip
+end
+
 local function SafeCreateSectionContainer(name, parent)
     if not (WINDOW_MANAGER and parent and name) then
         return nil
@@ -2427,6 +2603,7 @@ local function createContainers()
     end
 
     createScrollContainer()
+    createResizeGrip()
 
     state.windowBars = ensureWindowBarSettings()
 
@@ -2657,8 +2834,16 @@ local function applyWindowLock()
     end
 
     local locked = state.window.locked == true
+    if locked and resizeState.active then
+        endResize()
+    end
     state.root:SetMovable(not locked)
     state.root:SetResizeHandleSize(locked and 0 or RESIZE_HANDLE_SIZE)
+
+    if state.resizeGrip then
+        state.resizeGrip:SetMouseEnabled(not locked)
+        state.resizeGrip:SetHidden(locked)
+    end
 end
 
 local function applyWindowVisibility()
@@ -3146,6 +3331,12 @@ local function createRootControl()
 
     control:SetHandler("OnMouseWheel", function(_, delta)
         adjustScroll(delta)
+    end)
+
+    control:SetHandler("OnUpdate", function()
+        if resizeState.active then
+            updateResize()
+        end
     end)
 
     state.root = control
