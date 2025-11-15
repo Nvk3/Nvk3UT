@@ -303,7 +303,7 @@ local function getLayoutSettings()
     if layout.autoGrowV == nil then
         layout.autoGrowV = DEFAULT_LAYOUT.autoGrowV
     else
-        layout.autoGrowV = layout.autoGrowV ~= false
+        layout.autoGrowV = layout.autoGrowV == true
     end
 
     if layout.autoGrowH == nil then
@@ -1146,7 +1146,7 @@ local function registerPanel(displayTitle)
                     end
                 end,
                 disabled = function()
-                    return getLayoutSettings().autoGrowV ~= false
+                    return getLayoutSettings().autoGrowV == true
                 end,
                 default = DEFAULT_WINDOW.height,
             })
@@ -1357,11 +1357,11 @@ local function registerPanel(displayTitle)
                 name = "Automatisch vertikal anpassen",
                 getFunc = function()
                     local layout = getLayoutSettings()
-                    return layout.autoGrowV ~= false
+                    return layout.autoGrowV == true
                 end,
                 setFunc = function(value)
                     local layout = getLayoutSettings()
-                    layout.autoGrowV = value ~= false
+                    layout.autoGrowV = value == true
                     if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
                         Nvk3UT.TrackerHost.ApplySettings()
                     end

@@ -21,6 +21,9 @@ local SECTION_TEMPLATE_NAME = "Nvk3UT_SectionContainerTemplate"
 local SCROLL_CONTAINER_NAME = addonName .. "_ScrollContainer"
 local SCROLL_CONTENT_NAME = SCROLL_CONTAINER_NAME .. "_Content"
 local SCROLLBAR_NAME = SCROLL_CONTAINER_NAME .. "_ScrollBar"
+local RESIZE_GRIP_NAME = addonName .. "_ResizeGrip"
+local RESIZE_EVENT_NAMESPACE = addonName .. "_ManualResize"
+local RESIZE_BORDER_THICKNESS = 20 -- ~0.5 cm border area for manual resize grips
 local HEADER_BAR_NAME = SCROLL_CONTENT_NAME .. "_HeaderBar"
 local CONTENT_STACK_NAME = SCROLL_CONTENT_NAME .. "_ContentStack"
 local FOOTER_BAR_NAME = SCROLL_CONTENT_NAME .. "_FooterBar"
@@ -28,6 +31,8 @@ local FOOTER_BAR_NAME = SCROLL_CONTENT_NAME .. "_FooterBar"
 local MIN_WIDTH = 260
 local MIN_HEIGHT = 240
 local RESIZE_HANDLE_SIZE = 12
+local RESIZE_BORDER_INSET = 20 -- leave a clearly accessible border so the ESO resize hit-test reaches the root control
+local RESIZE_GRIP_SIZE = 26 -- larger corner grips for easier interactions
 local SCROLLBAR_WIDTH = 18
 local SCROLL_OVERSHOOT_PADDING = 100 -- allow scrolling so the last entry can sit around mid-window
 local FRAGMENT_RETRY_DELAY_MS = 200
@@ -116,6 +121,8 @@ local DEFAULT_HOST_SETTINGS = {
 }
 
 local LEFT_MOUSE_BUTTON = _G.MOUSE_BUTTON_INDEX_LEFT or 1
+local MOUSE_CURSOR_RESIZE_CORNER = _G.MOUSE_CURSOR_RESIZE_NWSE or _G.MOUSE_CURSOR_RESIZE_ALL or _G.MOUSE_CURSOR_RESIZE
+local MOUSE_CURSOR_DEFAULT = _G.MOUSE_CURSOR_DO_NOT_CARE or _G.MOUSE_CURSOR_ARROW or 0
 local unpack = unpack or table.unpack
 
 local function Num0(v)
@@ -212,6 +219,12 @@ local state = {
     isInHUDScene = true,
     isLAMOpen = false,
     visibilityGates = nil,
+    resizeGrip = nil,        -- legacy single grip (unused)
+    resizeGrips = nil,       -- collection of resize grips along the full border
+}
+
+local resizeState = {
+    active = false,
 }
 
 local lamPreview = {
@@ -241,6 +254,10 @@ local getCurrentScrollOffset
 local ensureVisibilityGates
 local setVisibilityGate
 local refreshVisibilityGates
+local beginResize
+local updateResize
+local endResize
+local createResizeGrip
 
 local function getSavedVars()
     return Nvk3UT and Nvk3UT.sv
@@ -521,9 +538,9 @@ local function migrateHostSettings(general)
 
     if general.layout.autoGrowV == nil then
         if quest and quest.autoGrowV ~= nil then
-            general.layout.autoGrowV = quest.autoGrowV ~= false
+            general.layout.autoGrowV = quest.autoGrowV == true
         elseif achievement and achievement.autoGrowV ~= nil then
-            general.layout.autoGrowV = achievement.autoGrowV ~= false
+            general.layout.autoGrowV = achievement.autoGrowV == true
         end
     end
 
@@ -573,7 +590,7 @@ local function ensureLayoutSettings()
     if layout.autoGrowV == nil then
         layout.autoGrowV = DEFAULT_LAYOUT.autoGrowV
     else
-        layout.autoGrowV = layout.autoGrowV ~= false
+        layout.autoGrowV = layout.autoGrowV == true
     end
 
     if layout.autoGrowH == nil then
@@ -771,6 +788,169 @@ stopWindowDrag = function()
 
     state.root:StopMovingOrResizing()
     saveWindowPosition()
+end
+
+local function beginResize(mode)
+    if not (state.root and state.window) then
+        return
+    end
+
+    state.window = state.window or ensureWindowSettings()
+
+    if state.window.locked == true then
+        return
+    end
+
+    if type(GetUIMousePosition) ~= "function" then
+        return
+    end
+
+    local startX, startY = GetUIMousePosition()
+    if not (startX and startY) then
+        return
+    end
+
+    resizeState.active = true
+    resizeState.mode = mode or "bottomright"
+    resizeState.startX = startX
+    resizeState.startY = startY
+    resizeState.startWidth = state.root:GetWidth() or state.window.width or DEFAULT_WINDOW.width
+    resizeState.startHeight = state.root:GetHeight() or state.window.height or DEFAULT_WINDOW.height
+    resizeState.startLeft = state.root:GetLeft() or state.window.left or DEFAULT_WINDOW.left
+    resizeState.startTop = state.root:GetTop() or state.window.top or DEFAULT_WINDOW.top
+end
+
+local function updateResize()
+    if not (resizeState.active and state.root) then
+        return
+    end
+
+    if type(GetUIMousePosition) ~= "function" then
+        return
+    end
+
+    local currentX, currentY = GetUIMousePosition()
+    if not (currentX and currentY) then
+        return
+    end
+
+    state.layout = state.layout or ensureLayoutSettings()
+    state.window = state.window or ensureWindowSettings()
+
+    local layout = state.layout
+    local window = state.window
+
+    local minWidth = layout.minWidth or MIN_WIDTH
+    local minHeight = layout.minHeight or MIN_HEIGHT
+    local maxWidth = layout.maxWidth or math.max(minWidth, resizeState.startWidth or minWidth)
+    local maxHeight = layout.maxHeight or math.max(minHeight, resizeState.startHeight or minHeight)
+
+    local dx = currentX - (resizeState.startX or currentX)
+    local dy = currentY - (resizeState.startY or currentY)
+
+    local startWidth = resizeState.startWidth or window.width or minWidth
+    local startHeight = resizeState.startHeight or window.height or minHeight
+    local startLeft = resizeState.startLeft or state.root:GetLeft() or window.left or 0
+    local startTop = resizeState.startTop or state.root:GetTop() or window.top or 0
+
+    local mode = resizeState.mode or "bottomright"
+
+    local newWidth = startWidth
+    local newHeight = startHeight
+    local newLeft = startLeft
+    local newTop = startTop
+
+    if mode == "right" then
+        newWidth = clamp(startWidth + dx, minWidth, maxWidth)
+    elseif mode == "bottom" then
+        newHeight = clamp(startHeight + dy, minHeight, maxHeight)
+    elseif mode == "left" then
+        local targetWidth = clamp(startWidth - dx, minWidth, maxWidth)
+        local rightEdge = startLeft + startWidth
+        newWidth = targetWidth
+        newLeft = rightEdge - targetWidth
+    elseif mode == "top" then
+        local targetHeight = clamp(startHeight - dy, minHeight, maxHeight)
+        local bottomEdge = startTop + startHeight
+        newHeight = targetHeight
+        newTop = bottomEdge - targetHeight
+    elseif mode == "topleft" then
+        local targetWidth = clamp(startWidth - dx, minWidth, maxWidth)
+        local targetHeight = clamp(startHeight - dy, minHeight, maxHeight)
+        local rightEdge = startLeft + startWidth
+        local bottomEdge = startTop + startHeight
+        newWidth = targetWidth
+        newHeight = targetHeight
+        newLeft = rightEdge - targetWidth
+        newTop = bottomEdge - targetHeight
+    elseif mode == "topright" then
+        local targetWidth = clamp(startWidth + dx, minWidth, maxWidth)
+        local targetHeight = clamp(startHeight - dy, minHeight, maxHeight)
+        local bottomEdge = startTop + startHeight
+        newWidth = targetWidth
+        newHeight = targetHeight
+        newTop = bottomEdge - targetHeight
+    elseif mode == "bottomleft" then
+        local targetWidth = clamp(startWidth - dx, minWidth, maxWidth)
+        local targetHeight = clamp(startHeight + dy, minHeight, maxHeight)
+        local rightEdge = startLeft + startWidth
+        newWidth = targetWidth
+        newHeight = targetHeight
+        newLeft = rightEdge - targetWidth
+    else -- bottomright / fallback corner behavior
+        newWidth = clamp(startWidth + dx, minWidth, maxWidth)
+        newHeight = clamp(startHeight + dy, minHeight, maxHeight)
+    end
+
+    window.width = math.floor(newWidth + 0.5)
+    window.height = math.floor(newHeight + 0.5)
+    window.left = math.floor(newLeft + 0.5)
+    window.top = math.floor(newTop + 0.5)
+
+    clampWindowToScreen(window.width, window.height)
+
+    local anchorParent = GuiRoot or state.root:GetParent() or state.root
+    local finalLeft = window.left or newLeft
+    local finalTop = window.top or newTop
+
+    state.root:ClearAnchors()
+    state.root:SetAnchor(TOPLEFT, anchorParent, TOPLEFT, finalLeft, finalTop)
+    state.root:SetDimensions(window.width, window.height)
+end
+
+local function endResize()
+    if not resizeState.active then
+        return
+    end
+
+    resizeState.active = false
+    resizeState.mode = nil
+    resizeState.startX = nil
+    resizeState.startY = nil
+    resizeState.startWidth = nil
+    resizeState.startHeight = nil
+    resizeState.startLeft = nil
+    resizeState.startTop = nil
+
+    if SetMouseCursor and MOUSE_CURSOR_DEFAULT then
+        SetMouseCursor(MOUSE_CURSOR_DEFAULT)
+    end
+
+    if state.root and state.window and saveWindowSize then
+        saveWindowSize()
+    end
+
+    if state.root and state.window and saveWindowPosition then
+        saveWindowPosition()
+    end
+end
+
+if EVENT_MANAGER and EVENT_GLOBAL_MOUSE_UP then
+    EVENT_MANAGER:RegisterForEvent(RESIZE_EVENT_NAMESPACE, EVENT_GLOBAL_MOUSE_UP, function(_, button)
+        if button == LEFT_MOUSE_BUTTON and resizeState.active then
+            endResize()
+        end
+    end)
 end
 
 local function isDebugEnabled()
@@ -2288,10 +2468,10 @@ local function createScrollContainer()
         return
     end
 
-    scrollContainer:SetMouseEnabled(true)
+    scrollContainer:SetMouseEnabled(false)
     scrollContainer:SetClampedToScreen(false)
-    scrollContainer:SetAnchor(TOPLEFT, state.root, TOPLEFT, 0, 0)
-    scrollContainer:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, 0, 0)
+    scrollContainer:SetAnchor(TOPLEFT, state.root, TOPLEFT, RESIZE_BORDER_INSET, RESIZE_BORDER_INSET)
+    scrollContainer:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, -RESIZE_BORDER_INSET, -RESIZE_BORDER_INSET)
     if scrollContainer.SetBackgroundColor then
         scrollContainer:SetBackgroundColor(0, 0, 0, 0)
     end
@@ -2370,6 +2550,218 @@ local function createScrollContainer()
     applyViewportPadding()
 end
 
+local function createResizeGrip()
+    if state.resizeGrips or not (state.root and WINDOW_MANAGER) then
+        return
+    end
+
+    local function attachGripHandlers(grip, mode)
+        if not grip then
+            return
+        end
+
+        grip:SetMouseEnabled(true)
+
+        grip:SetHandler("OnMouseEnter", function()
+            if SetMouseCursor and MOUSE_CURSOR_RESIZE_CORNER then
+                SetMouseCursor(MOUSE_CURSOR_RESIZE_CORNER)
+            end
+        end)
+
+        grip:SetHandler("OnMouseExit", function()
+            if not resizeState.active and SetMouseCursor and MOUSE_CURSOR_DEFAULT then
+                SetMouseCursor(MOUSE_CURSOR_DEFAULT)
+            end
+        end)
+
+        grip:SetHandler("OnMouseDown", function(_, button)
+            if button ~= LEFT_MOUSE_BUTTON then
+                return
+            end
+
+            beginResize(mode)
+        end)
+
+        grip:SetHandler("OnMouseUp", function(_, button)
+            if button == LEFT_MOUSE_BUTTON then
+                endResize()
+                if SetMouseCursor and MOUSE_CURSOR_DEFAULT then
+                    SetMouseCursor(MOUSE_CURSOR_DEFAULT)
+                end
+            end
+        end)
+    end
+
+    local function applyCornerTexture(control, rotation)
+        if not control then
+            return
+        end
+
+        local texture = WINDOW_MANAGER:CreateControl(nil, control, CT_TEXTURE)
+        if not texture then
+            return
+        end
+
+        texture:SetAnchorFill()
+        texture:SetTexture("EsoUI/Art/ChatWindow/chat_resizeGrip.dds")
+        texture:SetColor(1, 1, 1, 0.75)
+        if rotation and texture.SetTextureRotation then
+            texture:SetTextureRotation(rotation)
+        end
+    end
+
+    local grips = {}
+    local CORNER_CLEARANCE = RESIZE_GRIP_SIZE + 4
+
+    local cornerBR = WINDOW_MANAGER:CreateControl(RESIZE_GRIP_NAME .. "_BottomRight", state.root, CT_CONTROL)
+    if cornerBR then
+        cornerBR:SetDimensions(RESIZE_GRIP_SIZE, RESIZE_GRIP_SIZE)
+        cornerBR:ClearAnchors()
+        cornerBR:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, -4, -4)
+        cornerBR:SetDrawLayer(DL_OVERLAY)
+        cornerBR:SetDrawTier(DT_LOW)
+        cornerBR:SetDrawLevel(1)
+
+        applyCornerTexture(cornerBR, 0)
+
+        attachGripHandlers(cornerBR, "bottomright")
+        grips.bottomright = cornerBR
+    end
+
+    local cornerTR = WINDOW_MANAGER:CreateControl(RESIZE_GRIP_NAME .. "_TopRight", state.root, CT_CONTROL)
+    if cornerTR then
+        cornerTR:SetDimensions(RESIZE_GRIP_SIZE, RESIZE_GRIP_SIZE)
+        cornerTR:ClearAnchors()
+        cornerTR:SetAnchor(TOPRIGHT, state.root, TOPRIGHT, -4, 4)
+        cornerTR:SetDrawLayer(DL_OVERLAY)
+        cornerTR:SetDrawTier(DT_LOW)
+        cornerTR:SetDrawLevel(1)
+
+        applyCornerTexture(cornerTR, math.pi * 0.5)
+
+        attachGripHandlers(cornerTR, "topright")
+        grips.topright = cornerTR
+    end
+
+    local cornerBL = WINDOW_MANAGER:CreateControl(RESIZE_GRIP_NAME .. "_BottomLeft", state.root, CT_CONTROL)
+    if cornerBL then
+        cornerBL:SetDimensions(RESIZE_GRIP_SIZE, RESIZE_GRIP_SIZE)
+        cornerBL:ClearAnchors()
+        cornerBL:SetAnchor(BOTTOMLEFT, state.root, BOTTOMLEFT, 4, -4)
+        cornerBL:SetDrawLayer(DL_OVERLAY)
+        cornerBL:SetDrawTier(DT_LOW)
+        cornerBL:SetDrawLevel(1)
+
+        applyCornerTexture(cornerBL, math.pi * 1.5)
+
+        attachGripHandlers(cornerBL, "bottomleft")
+        grips.bottomleft = cornerBL
+    end
+
+    local cornerTL = WINDOW_MANAGER:CreateControl(RESIZE_GRIP_NAME .. "_TopLeft", state.root, CT_CONTROL)
+    if cornerTL then
+        cornerTL:SetDimensions(RESIZE_GRIP_SIZE, RESIZE_GRIP_SIZE)
+        cornerTL:ClearAnchors()
+        cornerTL:SetAnchor(TOPLEFT, state.root, TOPLEFT, 4, 4)
+        cornerTL:SetDrawLayer(DL_OVERLAY)
+        cornerTL:SetDrawTier(DT_LOW)
+        cornerTL:SetDrawLevel(1)
+
+        applyCornerTexture(cornerTL, math.pi)
+
+        attachGripHandlers(cornerTL, "topleft")
+        grips.topleft = cornerTL
+    end
+
+    local bottom = WINDOW_MANAGER:CreateControl(RESIZE_GRIP_NAME .. "_Bottom", state.root, CT_CONTROL)
+    if bottom then
+        bottom:ClearAnchors()
+        bottom:SetAnchor(BOTTOMLEFT, state.root, BOTTOMLEFT, CORNER_CLEARANCE, 0)
+        bottom:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, -CORNER_CLEARANCE, 0)
+        bottom:SetHeight(RESIZE_BORDER_THICKNESS)
+        bottom:SetDrawLayer(DL_OVERLAY)
+        bottom:SetDrawTier(DT_LOW)
+        bottom:SetDrawLevel(0)
+        if bottom.SetAlpha then
+            bottom:SetAlpha(0)
+        end
+
+        attachGripHandlers(bottom, "bottom")
+        grips.bottom = bottom
+    end
+
+    local right = WINDOW_MANAGER:CreateControl(RESIZE_GRIP_NAME .. "_Right", state.root, CT_CONTROL)
+    if right then
+        right:ClearAnchors()
+        right:SetAnchor(TOPRIGHT, state.root, TOPRIGHT, 0, CORNER_CLEARANCE)
+        right:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, 0, -CORNER_CLEARANCE)
+        right:SetWidth(RESIZE_BORDER_THICKNESS)
+        right:SetDrawLayer(DL_OVERLAY)
+        right:SetDrawTier(DT_LOW)
+        right:SetDrawLevel(0)
+        if right.SetAlpha then
+            right:SetAlpha(0)
+        end
+
+        attachGripHandlers(right, "right")
+        grips.right = right
+    end
+
+    local top = WINDOW_MANAGER:CreateControl(RESIZE_GRIP_NAME .. "_Top", state.root, CT_CONTROL)
+    if top then
+        top:ClearAnchors()
+        top:SetAnchor(TOPLEFT, state.root, TOPLEFT, CORNER_CLEARANCE, 0)
+        top:SetAnchor(TOPRIGHT, state.root, TOPRIGHT, -CORNER_CLEARANCE, 0)
+        top:SetHeight(RESIZE_BORDER_THICKNESS)
+        top:SetDrawLayer(DL_OVERLAY)
+        top:SetDrawTier(DT_LOW)
+        top:SetDrawLevel(0)
+        if top.SetAlpha then
+            top:SetAlpha(0)
+        end
+
+        attachGripHandlers(top, "top")
+        grips.top = top
+    end
+
+    local left = WINDOW_MANAGER:CreateControl(RESIZE_GRIP_NAME .. "_Left", state.root, CT_CONTROL)
+    if left then
+        left:ClearAnchors()
+        left:SetAnchor(TOPLEFT, state.root, TOPLEFT, 0, CORNER_CLEARANCE)
+        left:SetAnchor(BOTTOMLEFT, state.root, BOTTOMLEFT, 0, -CORNER_CLEARANCE)
+        left:SetWidth(RESIZE_BORDER_THICKNESS)
+        left:SetDrawLayer(DL_OVERLAY)
+        left:SetDrawTier(DT_LOW)
+        left:SetDrawLevel(0)
+        if left.SetAlpha then
+            left:SetAlpha(0)
+        end
+
+        attachGripHandlers(left, "left")
+        grips.left = left
+    end
+
+    if not next(grips) then
+        return
+    end
+
+    state.resizeGrips = grips
+    state.window = state.window or ensureWindowSettings()
+
+    if state.window and state.window.locked == true then
+        for _, grip in pairs(grips) do
+            if grip then
+                if grip.SetMouseEnabled then
+                    grip:SetMouseEnabled(false)
+                end
+                if grip.SetHidden then
+                    grip:SetHidden(true)
+                end
+            end
+        end
+    end
+end
+
 local function SafeCreateSectionContainer(name, parent)
     if not (WINDOW_MANAGER and parent and name) then
         return nil
@@ -2426,6 +2818,7 @@ local function createContainers()
     end
 
     createScrollContainer()
+    createResizeGrip()
 
     state.windowBars = ensureWindowBarSettings()
 
@@ -2656,8 +3049,25 @@ local function applyWindowLock()
     end
 
     local locked = state.window.locked == true
+    if locked and resizeState.active then
+        endResize()
+    end
     state.root:SetMovable(not locked)
     state.root:SetResizeHandleSize(locked and 0 or RESIZE_HANDLE_SIZE)
+
+    local grips = state.resizeGrips
+    if grips then
+        for _, grip in pairs(grips) do
+            if grip then
+                if grip.SetMouseEnabled then
+                    grip:SetMouseEnabled(not locked)
+                end
+                if grip.SetHidden then
+                    grip:SetHidden(locked)
+                end
+            end
+        end
+    end
 end
 
 local function applyWindowVisibility()
@@ -2973,6 +3383,7 @@ local function createBackdrop()
     if control.SetExcludeFromResizeToFitExtents then
         control:SetExcludeFromResizeToFitExtents(true)
     end
+    control:SetMouseEnabled(false)
     if control.SetCenterColor then
         control:SetCenterColor(0, 0, 0, 0)
     end
@@ -3132,29 +3543,6 @@ local function createRootControl()
     control:SetDrawTier(DT_LOW)
     control:SetDrawLevel(0)
 
-    control:SetHandler("OnMouseDown", function(_, button)
-        if button ~= LEFT_MOUSE_BUTTON then
-            return
-        end
-
-        local headerBar = state.headerBar
-        if headerBar then
-            local isHidden = headerBar.IsHidden and headerBar:IsHidden()
-            local headerHeight = headerBar.GetHeight and headerBar:GetHeight() or 0
-            if not isHidden and headerHeight > 0 then
-                return
-            end
-        end
-
-        startWindowDrag()
-    end)
-
-    control:SetHandler("OnMouseUp", function(_, button)
-        if button == LEFT_MOUSE_BUTTON then
-            stopWindowDrag()
-        end
-    end)
-
     control:SetHandler("OnMoveStop", function()
         saveWindowPosition()
     end)
@@ -3167,6 +3555,12 @@ local function createRootControl()
 
     control:SetHandler("OnMouseWheel", function(_, delta)
         adjustScroll(delta)
+    end)
+
+    control:SetHandler("OnUpdate", function()
+        if resizeState.active then
+            updateResize()
+        end
     end)
 
     state.root = control
@@ -3856,8 +4250,6 @@ function TrackerHost.Shutdown()
     state.backdrop = nil
 
     if state.root then
-        state.root:SetHandler("OnMouseDown", nil)
-        state.root:SetHandler("OnMouseUp", nil)
         state.root:SetHandler("OnMoveStop", nil)
         state.root:SetHandler("OnResizeStop", nil)
         state.root:SetHandler("OnMouseWheel", nil)
