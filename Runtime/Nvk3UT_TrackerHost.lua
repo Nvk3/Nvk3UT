@@ -3833,8 +3833,6 @@ function TrackerHost.Shutdown()
     state.backdrop = nil
 
     if state.root then
-        state.root:SetHandler("OnMouseDown", nil)
-        state.root:SetHandler("OnMouseUp", nil)
         state.root:SetHandler("OnMoveStop", nil)
         state.root:SetHandler("OnResizeStop", nil)
         state.root:SetHandler("OnMouseWheel", nil)
