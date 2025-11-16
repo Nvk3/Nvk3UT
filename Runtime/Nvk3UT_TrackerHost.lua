@@ -184,6 +184,7 @@ local state = {
     updatingScrollbar = false,
     deferredRefreshScheduled = false,
     pendingDeferredOffset = nil,
+    pendingDeferredReason = nil,
     initFullRefreshScheduled = false,
     questContainer = nil,
     endeavorContainer = nil,
@@ -2306,7 +2307,8 @@ applyViewportPadding = function()
     end
 end
 
-refreshScroll = function(targetOffset)
+refreshScroll = function(targetOffset, reason)
+    local resolvedReason = reason or "refreshScroll"
     local scrollContainer = state.scrollContainer
     local scrollContent = state.scrollContent
     local scrollbar = state.scrollbar
@@ -2314,6 +2316,8 @@ refreshScroll = function(targetOffset)
     if not (scrollContainer and scrollContent and scrollbar) then
         return
     end
+
+    debugLog("TrackerHost: RefreshScroll reason=%s", tostring(resolvedReason))
 
     local previousActual = state.scrollOffset
     if previousActual == nil then
@@ -2426,159 +2430,7 @@ refreshScroll = function(targetOffset)
 
         layoutModule.ApplyLayout(TrackerHost, sizes)
     else
-        local headerBar = state.headerBar
-        local footerBar = state.footerBar
-        local bars = state.windowBars or ensureWindowBarSettings()
-
-        local headerTargetHeight = math.max(0, Num0(bars and bars.headerHeightPx))
-        local footerTargetHeight = math.max(0, Num0(bars and bars.footerHeightPx))
-        local headerVisible = headerTargetHeight > 0
-        local footerVisible = footerTargetHeight > 0
-        local headerHeight = headerTargetHeight
-        local footerHeight = footerTargetHeight
-
-        if headerBar and headerBar.GetHeight then
-            local measured = Num0(function()
-                return headerBar:GetHeight()
-            end)
-            if measured > 0 then
-                headerHeight = math.max(0, measured)
-            end
-        end
-        if footerBar and footerBar.GetHeight then
-            local measured = Num0(function()
-                return footerBar:GetHeight()
-            end)
-            if measured > 0 then
-                footerHeight = math.max(0, measured)
-            end
-        end
-
-        if headerBar then
-            if headerBar.SetHeight then
-                local currentHeight = headerBar.GetHeight and headerBar:GetHeight() or headerTargetHeight
-                if numbersDiffer(currentHeight, headerTargetHeight) then
-                    headerBar:SetHeight(headerTargetHeight)
-                end
-            end
-            if headerBar.SetHidden then
-                local shouldHide = not headerVisible
-                local currentHidden = headerBar.IsHidden and headerBar:IsHidden()
-                if currentHidden ~= shouldHide then
-                    headerBar:SetHidden(shouldHide)
-                end
-            end
-            headerBar:SetMouseEnabled(headerVisible)
-        end
-
-        if footerBar then
-            if footerBar.SetHeight then
-                local currentHeight = footerBar.GetHeight and footerBar:GetHeight() or footerTargetHeight
-                if numbersDiffer(currentHeight, footerTargetHeight) then
-                    footerBar:SetHeight(footerTargetHeight)
-                end
-            end
-            if footerBar.SetHidden then
-                local shouldHide = not footerVisible
-                local currentHidden = footerBar.IsHidden and footerBar:IsHidden()
-                if currentHidden ~= shouldHide then
-                    footerBar:SetHidden(shouldHide)
-                end
-            end
-            footerBar:SetMouseEnabled(footerVisible)
-        end
-
-        if not headerVisible then
-            headerHeight = 0
-        else
-            headerHeight = headerTargetHeight
-        end
-
-        if not footerVisible then
-            footerHeight = 0
-        else
-            footerHeight = footerTargetHeight
-        end
-
-        local topPadding = 0
-        local bottomPadding = 0
-
-        local contentStackHeight = topPadding
-        if questVisible then
-            contentStackHeight = contentStackHeight + questHeight
-        end
-        if endeavorVisible then
-            if questVisible then
-                contentStackHeight = contentStackHeight + gap
-            end
-            contentStackHeight = contentStackHeight + endeavorHeight
-        end
-        if achievementVisible then
-            if questVisible or endeavorVisible then
-                contentStackHeight = contentStackHeight + gap
-            end
-            contentStackHeight = contentStackHeight + achievementHeight
-        end
-        if goldenVisible then
-            if questVisible or endeavorVisible or achievementVisible then
-                contentStackHeight = contentStackHeight + gap
-            end
-            contentStackHeight = contentStackHeight + goldenHeight
-        end
-        contentStackHeight = contentStackHeight + bottomPadding
-        contentStackHeight = math.max(0, contentStackHeight)
-
-        if state.contentStack and state.contentStack.SetHeight then
-            state.contentStack:SetHeight(contentStackHeight)
-        end
-
-        local contentHeight = headerHeight + contentStackHeight + footerHeight
-        contentHeight = math.max(0, contentHeight)
-        totalContentHeight = contentHeight
-        debugHeaderHeight = headerHeight
-        debugFooterHeight = footerHeight
-
-        if scrollContent.SetResizeToFitDescendents then
-            scrollContent:SetResizeToFitDescendents(false)
-        end
-        if scrollContent.SetHeight then
-            scrollContent:SetHeight(contentHeight)
-        end
-
-        local viewportHeight = Num0(scrollContainer and scrollContainer.GetHeight and scrollContainer:GetHeight())
-        local overshootPadding = 0
-        if viewportHeight > 0 and contentHeight > viewportHeight then
-            overshootPadding = SCROLL_OVERSHOOT_PADDING
-        end
-
-        local maxOffset = math.max(contentHeight - viewportHeight + overshootPadding, 0)
-        local showScrollbar = maxOffset > 0.5
-
-        local scrollbarWidth = Num0(scrollbar and scrollbar.GetWidth and scrollbar:GetWidth())
-        if scrollbarWidth <= 0 then
-            scrollbarWidth = SCROLLBAR_WIDTH
-        end
-        local desiredRightOffset = showScrollbar and -scrollbarWidth or 0
-
-        if scrollbar.SetMinMax then
-            state.updatingScrollbar = true
-            local ok, err = pcall(scrollbar.SetMinMax, scrollbar, 0, maxOffset)
-            state.updatingScrollbar = false
-            if not ok then
-                debugLog("Failed to update scroll range", err)
-            end
-        end
-
-        if scrollbar.SetHidden then
-            scrollbar:SetHidden(not showScrollbar)
-        end
-
-        state.scrollMaxOffset = maxOffset
-
-        if numbersDiffer(state.scrollContentRightOffset or 0, desiredRightOffset, 0.01) then
-            state.scrollContentRightOffset = desiredRightOffset
-            applyViewportPadding()
-        end
+        debugLog("TrackerHost: Layout module unavailable during refreshScroll")
     end
 
     debugLog(string.format(
@@ -3220,7 +3072,7 @@ local function createContainers()
     end
 
     applyWindowBars()
-    refreshScroll()
+    refreshScroll(nil, "init-containers")
 end
 
 local function updateSectionLayout()
@@ -3364,7 +3216,7 @@ function TrackerHost.ApplyVisibilityRules()
     return changed
 end
 
-local function refreshWindowLayout(targetOffset)
+local function refreshWindowLayout(targetOffset, reason)
     if not state.root then
         return
     end
@@ -3372,15 +3224,16 @@ local function refreshWindowLayout(targetOffset)
     ensureSceneFragment(state.root)
     updateWindowGeometry()
     applyWindowVisibility()
-    refreshScroll(targetOffset)
+    refreshScroll(targetOffset, reason or "window-layout")
 end
 
-local function scheduleDeferredRefresh(targetOffset)
+local function scheduleDeferredRefresh(targetOffset, reason)
     if not (zo_callLater and state.root) then
         return
     end
 
     state.pendingDeferredOffset = targetOffset
+    state.pendingDeferredReason = reason
 
     if state.deferredRefreshScheduled then
         return
@@ -3396,9 +3249,11 @@ local function scheduleDeferredRefresh(targetOffset)
         end
 
         local offset = state.pendingDeferredOffset
+        local deferredReason = state.pendingDeferredReason
         state.pendingDeferredOffset = nil
+        state.pendingDeferredReason = nil
 
-        refreshWindowLayout(offset)
+        refreshWindowLayout(offset, deferredReason or "deferred-refresh")
     end, 0)
 end
 
@@ -3466,20 +3321,20 @@ local function scrollControlIntoView(control)
     end
 
     setScrollOffset(targetOffset)
-    scheduleDeferredRefresh(targetOffset)
+    scheduleDeferredRefresh(targetOffset, "control-into-view")
 
     return true, true
 end
 
-performLocalWindowRefresh = function()
+performLocalWindowRefresh = function(reason)
     if not state.root then
         return
     end
 
     local preservedOffset = getCurrentScrollOffset()
 
-    refreshWindowLayout(preservedOffset)
-    scheduleDeferredRefresh(preservedOffset)
+    refreshWindowLayout(preservedOffset, reason or "content-change")
+    scheduleDeferredRefresh(preservedOffset, reason)
 end
 
 performFullHostRefresh = function(reason)
@@ -3501,12 +3356,12 @@ performFullHostRefresh = function(reason)
     end
 
     if performLocalWindowRefresh then
-        performLocalWindowRefresh()
+        performLocalWindowRefresh(reason)
     end
 end
 
-local function notifyContentChanged()
-    performLocalWindowRefresh()
+local function notifyContentChanged(reason)
+    performLocalWindowRefresh(reason)
 end
 
 local function applyWindowClamp()
@@ -3583,7 +3438,7 @@ local function applyWindowSettings()
     applyWindowTopmost()
     ensureSceneFragment(state.root)
     applyWindowVisibility()
-    refreshScroll()
+    refreshScroll(nil, "host-init")
 end
 
 local function createBackdrop()
@@ -4036,7 +3891,7 @@ function TrackerHost.Init()
                 end
             end, 1)
         elseif notifyContentChanged then
-            notifyContentChanged()
+            notifyContentChanged("init-delayed")
         end
     end
 
@@ -4156,7 +4011,7 @@ function TrackerHost.ApplyWindowBars()
     end
 
     applyWindowBars()
-    notifyContentChanged()
+    notifyContentChanged("apply-window-bars")
 end
 
 function TrackerHost.Refresh()
@@ -4177,7 +4032,7 @@ function TrackerHost.Refresh()
     end
 
     updateSectionLayout()
-    notifyContentChanged()
+    notifyContentChanged("trackerhost-refresh")
 end
 
 function TrackerHost.ApplyAppearance()
@@ -4186,7 +4041,7 @@ function TrackerHost.ApplyAppearance()
     end
 
     applyAppearance()
-    notifyContentChanged()
+    notifyContentChanged("apply-appearance")
 end
 
 function TrackerHost.EnsureAppearanceDefaults()
@@ -4516,7 +4371,17 @@ end
 
 Nvk3UT.TrackerHost = TrackerHost
 
-TrackerHost.RefreshScroll = refreshScroll
+function TrackerHost.RefreshScroll(arg1, arg2)
+    local reason
+    if arg1 == TrackerHost or type(arg1) == "table" then
+        reason = arg2
+    else
+        reason = arg1
+    end
+
+    return refreshScroll(nil, reason)
+end
+
 TrackerHost.NotifyContentChanged = notifyContentChanged
 TrackerHost.ScrollControlIntoView = scrollControlIntoView
 

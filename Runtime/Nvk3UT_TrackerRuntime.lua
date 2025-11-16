@@ -1020,6 +1020,13 @@ function Runtime:ProcessFrame(nowMs)
         if layoutDirty or questGeometryChanged or endeavorGeometryChanged or achievementGeometryChanged or goldenGeometryChanged then
             if applyTrackerHostLayout() then
                 debugVisibility("Runtime: applied tracker host layout")
+
+                local hostModule = rawget(Addon, "TrackerHost")
+                if type(hostModule) == "table" and type(hostModule.RefreshScroll) == "function" then
+                    safeCall(function()
+                        hostModule:RefreshScroll("runtime-layout")
+                    end)
+                end
             end
         end
 

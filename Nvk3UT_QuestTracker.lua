@@ -2563,13 +2563,23 @@ local function UnregisterTrackingEvents()
     state.trackingEventsRegistered = false
 end
 
-local function NotifyHostContentChanged()
+local function NotifyHostContentChanged(reason)
     local host = Nvk3UT and Nvk3UT.TrackerHost
-    if not (host and host.NotifyContentChanged) then
+    if not host then
         return
     end
 
-    pcall(host.NotifyContentChanged)
+    local contextReason = reason or "quest-content-change"
+    local refreshed = false
+
+    if type(host.RefreshScroll) == "function" then
+        local ok = pcall(host.RefreshScroll, host, contextReason)
+        refreshed = ok == true
+    end
+
+    if not refreshed and type(host.NotifyContentChanged) == "function" then
+        pcall(host.NotifyContentChanged, contextReason)
+    end
 end
 
 local function NotifyStatusRefresh()
@@ -3456,7 +3466,7 @@ local function RelayoutFromCategoryIndex(startCategoryIndex)
         ReleaseAll(state.conditionPool)
         ResetLayoutState()
         UpdateContentSize()
-        NotifyHostContentChanged()
+        NotifyHostContentChanged("quest-relayout-empty")
         ProcessPendingExternalReveal()
         return
     end
@@ -3481,7 +3491,7 @@ local function RelayoutFromCategoryIndex(startCategoryIndex)
     end
 
     UpdateContentSize()
-    NotifyHostContentChanged()
+    NotifyHostContentChanged("quest-relayout")
     ProcessPendingExternalReveal()
 end
 
@@ -3564,7 +3574,7 @@ local function Rebuild()
 
     if not state.snapshot or not state.snapshot.categories or not state.snapshot.categories.ordered then
         UpdateContentSize()
-        NotifyHostContentChanged()
+        NotifyHostContentChanged("quest-rebuild-empty")
         state.isRebuildInProgress = false
         if IsDebugLoggingEnabled() then
             DebugLog("REBUILD_END")
@@ -3582,7 +3592,7 @@ local function Rebuild()
     end
 
     UpdateContentSize()
-    NotifyHostContentChanged()
+    NotifyHostContentChanged("quest-rebuild")
     ProcessPendingExternalReveal()
 
     state.isRebuildInProgress = false
@@ -3600,7 +3610,7 @@ local function RefreshVisibility()
     local hidden = state.opts.active == false
 
     state.control:SetHidden(hidden)
-    NotifyHostContentChanged()
+    NotifyHostContentChanged("quest-visibility")
 end
 
 function QuestTracker.Init(parentControl, opts)
@@ -3703,7 +3713,7 @@ function QuestTracker.Shutdown()
     state.selectedQuestKey = nil
     state.isRebuildInProgress = false
     state.questModelSubscription = nil
-    NotifyHostContentChanged()
+    NotifyHostContentChanged("quest-shutdown")
 end
 
 function QuestTracker.SetActive(active)

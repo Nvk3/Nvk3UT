@@ -385,6 +385,25 @@ local function queueTrackerDirty()
     end)
 end
 
+local function NotifyHostContentChanged(reason)
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if not host then
+        return
+    end
+
+    local contextReason = reason or "endeavor-content-change"
+    local refreshed = false
+
+    if type(host.RefreshScroll) == "function" then
+        local ok = pcall(host.RefreshScroll, host, contextReason)
+        refreshed = ok == true
+    end
+
+    if not refreshed and type(host.NotifyContentChanged) == "function" then
+        pcall(host.NotifyContentChanged, contextReason)
+    end
+end
+
 local function toggleRootExpanded()
     local stateModule = getEndeavorState()
     if type(stateModule) ~= "table" then
@@ -1946,6 +1965,7 @@ function EndeavorTracker.Refresh(viewModel)
     end, handleError)
 
     release()
+    NotifyHostContentChanged("endeavor-refresh")
 
     if not ok then
         if type(CallErrorHandler) == "function" then
@@ -1967,6 +1987,7 @@ function EndeavorTracker.Dispose()
     state.currentHeight = 0
     state.container = nil
     state.ui = nil
+    NotifyHostContentChanged("endeavor-shutdown")
 end
 
 Nvk3UT.EndeavorTracker = EndeavorTracker

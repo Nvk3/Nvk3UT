@@ -476,6 +476,25 @@ local function requestGoldenDataRefreshInternal(reason)
     return goldenDataChanged(reason) == true
 end
 
+local function NotifyHostContentChanged(reason)
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if not host then
+        return
+    end
+
+    local contextReason = reason or "golden-content-change"
+    local refreshed = false
+
+    if type(host.RefreshScroll) == "function" then
+        local ok = pcall(host.RefreshScroll, host, contextReason)
+        refreshed = ok == true
+    end
+
+    if not refreshed and type(host.NotifyContentChanged) == "function" then
+        pcall(host.NotifyContentChanged, contextReason)
+    end
+end
+
 -- MARK: GEVENTS_SWITCH_REFRESH_API
 -- GEVENTS note: TempEvents and lifecycle callers use this API; future Events/Nvk3UT_GoldenEventHandler.lua should keep calling it.
 function GoldenTracker:NotifyDataChanged(reason)
@@ -874,6 +893,7 @@ function GoldenTracker.Refresh(viewModel)
     if not container or not root or not content then
         state.height = 0
         setContainerHeight(container, 0)
+        NotifyHostContentChanged("golden-empty")
         return
     end
 
@@ -945,6 +965,7 @@ function GoldenTracker.Refresh(viewModel)
     setContainerHeight(container, totalHeight)
 
     safeDebug("Refresh complete: %s rows=%d height=%d", statusSummary, #rows, totalHeight)
+    NotifyHostContentChanged("golden-refresh")
 end
 
 function GoldenTracker.GetHeight()

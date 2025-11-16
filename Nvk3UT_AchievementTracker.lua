@@ -384,13 +384,23 @@ local function LogCategoryExpansion(action, trigger, beforeExpanded, afterExpand
     EmitDebugAction(action, trigger, "category", fields)
 end
 
-local function NotifyHostContentChanged()
+local function NotifyHostContentChanged(reason)
     local host = Nvk3UT and Nvk3UT.TrackerHost
-    if not (host and host.NotifyContentChanged) then
+    if not host then
         return
     end
 
-    pcall(host.NotifyContentChanged)
+    local contextReason = reason or "achievement-content-change"
+    local refreshed = false
+
+    if type(host.RefreshScroll) == "function" then
+        local ok = pcall(host.RefreshScroll, host, contextReason)
+        refreshed = ok == true
+    end
+
+    if not refreshed and type(host.NotifyContentChanged) == "function" then
+        pcall(host.NotifyContentChanged, contextReason)
+    end
 end
 
 local function EnsureSavedVars()
@@ -1025,7 +1035,7 @@ local function RefreshVisibility()
 
     local hidden = state.opts and state.opts.active == false
     state.control:SetHidden(hidden)
-    NotifyHostContentChanged()
+    NotifyHostContentChanged("achievement-visibility")
 end
 
 local function ResetLayoutState()
@@ -1614,7 +1624,7 @@ local function Rebuild()
     LayoutCategory()
 
     UpdateContentSize()
-    NotifyHostContentChanged()
+    NotifyHostContentChanged("achievement-rebuild")
 end
 
 local function OnSnapshotUpdated(snapshot)
@@ -1717,7 +1727,7 @@ function AchievementTracker.Shutdown()
     state.contentWidth = 0
     state.contentHeight = 0
     state.lastHeight = 0
-    NotifyHostContentChanged()
+    NotifyHostContentChanged("achievement-shutdown")
 end
 
 local function EnsureSections()
