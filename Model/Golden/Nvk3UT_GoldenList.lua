@@ -259,6 +259,28 @@ local function ensureString(value)
     return tostring(value)
 end
 
+local function toCategoryKey(value)
+    if value == nil then
+        return nil
+    end
+
+    -- Accept either a raw value or a thunk that returns the key; never call nil.
+    if type(value) == "function" then
+        local ok, resolved = pcall(value)
+        if not ok then
+            return nil
+        end
+        value = resolved
+    end
+
+    local key = ensureString(value)
+    if key == nil or key == "" then
+        return nil
+    end
+
+    return key
+end
+
 local function ensureBoolean(value)
     if value == nil then
         return false

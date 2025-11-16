@@ -28,6 +28,9 @@ Runtime._scheduledCallId = Runtime._scheduledCallId or nil
 Runtime._initialized = Runtime._initialized == true
 Runtime._interactivityDirty = Runtime._interactivityDirty == true
 Runtime._endeavorVM = Runtime._endeavorVM
+Runtime._goldenHardError = Runtime._goldenHardError == true
+Runtime._goldenRetryAtMs = Runtime._goldenRetryAtMs or nil
+Runtime._goldenFailureReason = Runtime._goldenFailureReason
 Runtime.goldenDirty = true
 Runtime.cache = type(Runtime.cache) == "table" and Runtime.cache or {}
 if type(Runtime.cache.goldenVM) ~= "table" then
@@ -281,6 +284,29 @@ local function getFrameTimeMs()
     end
 
     return nil
+end
+
+local function markGoldenFailure(runtime, err, reason)
+    if type(runtime) ~= "table" then
+        return
+    end
+
+    runtime.goldenDirty = false
+    runtime._goldenHardError = true
+    runtime._goldenFailureReason = reason or err
+
+    local now = getFrameTimeMs()
+    if now ~= nil then
+        runtime._goldenRetryAtMs = now + 2000 -- back off briefly before retrying
+    else
+        runtime._goldenRetryAtMs = nil
+    end
+
+    if err ~= nil then
+        warn("Runtime: golden rebuild suppressed after error: %s", tostring(err))
+    else
+        warn("Runtime: golden rebuild suppressed after failed build (%s)", tostring(reason))
+    end
 end
 
 local function formatChannelList(set)
@@ -783,6 +809,17 @@ function Runtime:QueueDirty(channel, opts)
     local applyAll = normalized == "all"
 
     if normalized == "golden" then
+        local now = getFrameTimeMs()
+        if self._goldenHardError and self._goldenRetryAtMs ~= nil and now ~= nil and now < self._goldenRetryAtMs then
+            debug("Runtime.QueueDirty: golden suppressed (hard error active, reason=%s)", tostring(self._goldenFailureReason))
+            return
+        end
+
+        if self._goldenHardError then
+            self._goldenHardError = false
+            self._goldenRetryAtMs = nil
+        end
+
         if not self.goldenDirty then
             self.goldenDirty = true
             queuedLog.golden = true
@@ -807,6 +844,9 @@ function Runtime:QueueDirty(channel, opts)
     end
 
     if applyAll then
+        self._goldenHardError = false
+        self._goldenRetryAtMs = nil
+        self._goldenFailureReason = nil
         for index = 1, #DIRTY_CHANNEL_ORDER do
             local key = DIRTY_CHANNEL_ORDER[index]
             if not dirty[key] then
@@ -925,10 +965,26 @@ function Runtime:ProcessFrame(nowMs)
         local goldenVmBuilt = false
 
         if goldenDirty then
-            local builtViewModel, buildInvoked = buildGoldenViewModel(self, true)
-            goldenViewModel = builtViewModel
-            goldenVmBuilt = buildInvoked
-            self.goldenDirty = false
+            local buildOk, builtViewModel, buildInvoked = pcall(buildGoldenViewModel, self, true)
+            if buildOk then
+                goldenViewModel = builtViewModel
+                goldenVmBuilt = buildInvoked
+                self.goldenDirty = false
+
+                if goldenVmBuilt then
+                    self._goldenHardError = false
+                    self._goldenRetryAtMs = nil
+                    self._goldenFailureReason = nil
+                else
+                    -- Build was invoked but did not return a view model; avoid spamming rebuild attempts.
+                    markGoldenFailure(self, nil, "golden-view-model-not-built")
+                end
+            else
+                -- Capture the error string from pcall() in builtViewModel when buildOk == false.
+                markGoldenFailure(self, builtViewModel, "golden-build-exception")
+                goldenViewModel = cache.goldenVM
+                goldenVmBuilt = false
+            end
 
             local status = type(goldenViewModel.status) == "table" and goldenViewModel.status or {}
             local categories = type(goldenViewModel.categories) == "table" and #goldenViewModel.categories or 0
