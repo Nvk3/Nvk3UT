@@ -3374,8 +3374,26 @@ local function requestFullRefresh(reason)
     return false
 end
 
+local function doFullResizeLikeRefresh(reason)
+    if type(performFullHostRefresh) == "function" then
+        return performFullHostRefresh(reason or "windowResized")
+    end
+
+    if type(performLocalWindowRefresh) == "function" then
+        return performLocalWindowRefresh(reason or "windowResized")
+    end
+
+    if type(refreshScroll) == "function" then
+        return refreshScroll(nil, reason)
+    end
+end
+
 local function notifyContentChanged(reason)
-    performLocalWindowRefresh(reason)
+    return doFullResizeLikeRefresh(reason or "contentChanged")
+end
+
+local function notifyWindowSizeChanged(reason)
+    return doFullResizeLikeRefresh(reason or "windowResized")
 end
 
 local function applyWindowClamp()
@@ -4401,7 +4419,28 @@ function TrackerHost.RefreshScroll(arg1, arg2)
     return refreshScroll(nil, reason)
 end
 
-TrackerHost.NotifyContentChanged = notifyContentChanged
+function TrackerHost.NotifyWindowSizeChanged(arg1, arg2)
+    local reason
+    if arg1 == TrackerHost or type(arg1) == "table" then
+        reason = arg2
+    else
+        reason = arg1
+    end
+
+    return notifyWindowSizeChanged(reason)
+end
+
+function TrackerHost.NotifyContentChanged(arg1, arg2)
+    local reason
+    if arg1 == TrackerHost or type(arg1) == "table" then
+        reason = arg2
+    else
+        reason = arg1
+    end
+
+    return notifyContentChanged(reason)
+end
+
 TrackerHost.RequestFullRefresh = requestFullRefresh
 TrackerHost.ScrollControlIntoView = scrollControlIntoView
 

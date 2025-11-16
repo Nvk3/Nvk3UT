@@ -491,15 +491,10 @@ local function NotifyHostContentChanged(reason)
     end
 
     local contextReason = reason or "golden-content-change"
-    local refreshed = false
-
-    if type(host.RefreshScroll) == "function" then
-        local ok = pcall(host.RefreshScroll, host, contextReason)
-        refreshed = ok == true
-    end
-
-    if not refreshed and type(host.NotifyContentChanged) == "function" then
-        pcall(host.NotifyContentChanged, contextReason)
+    if type(host.NotifyContentChanged) == "function" then
+        pcall(host.NotifyContentChanged, host, contextReason)
+    elseif type(host.RefreshScroll) == "function" then
+        pcall(host.RefreshScroll, host, contextReason)
     end
 end
 
