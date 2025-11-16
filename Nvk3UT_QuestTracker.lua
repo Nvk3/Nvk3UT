@@ -2563,13 +2563,38 @@ local function UnregisterTrackingEvents()
     state.trackingEventsRegistered = false
 end
 
+local function RequestHostFullRefresh(reason)
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if not host then
+        return false
+    end
+
+    local debugFlag = rawget(host, "DEBUG_FORCE_FULL_REFRESH_ON_CATEGORY_TOGGLE")
+    if debugFlag == false then
+        return false
+    end
+
+    local requestFn = host.RequestFullRefresh
+    if type(requestFn) ~= "function" then
+        return false
+    end
+
+    local ok, result = pcall(requestFn, reason or "questCategoryToggle")
+    return ok and result ~= false
+end
+
 local function NotifyHostContentChanged(reason)
+    local contextReason = reason or "quest-content-change"
+
+    if RequestHostFullRefresh(contextReason) then
+        return
+    end
+
     local host = Nvk3UT and Nvk3UT.TrackerHost
     if not host then
         return
     end
 
-    local contextReason = reason or "quest-content-change"
     local refreshed = false
 
     if type(host.RefreshScroll) == "function" then
@@ -3068,6 +3093,7 @@ local function AcquireCategoryControl()
             })
             if changed then
                 QuestTracker.Refresh()
+                RequestHostFullRefresh("questCategoryToggle")
             end
         end)
         control:SetHandler("OnMouseEnter", function(ctrl)

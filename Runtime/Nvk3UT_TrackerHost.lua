@@ -120,6 +120,8 @@ local DEFAULT_HOST_SETTINGS = {
     HideInCombat = false,
 }
 
+local DEBUG_FORCE_FULL_REFRESH_ON_CATEGORY_TOGGLE = true
+
 local LEFT_MOUSE_BUTTON = _G.MOUSE_BUTTON_INDEX_LEFT or 1
 local MOUSE_CURSOR_RESIZE_EW = _G.MOUSE_CURSOR_RESIZE_EW
 local MOUSE_CURSOR_RESIZE_NS = _G.MOUSE_CURSOR_RESIZE_NS
@@ -3360,6 +3362,19 @@ performFullHostRefresh = function(reason)
     end
 end
 
+local function requestFullRefresh(reason)
+    if performFullHostRefresh then
+        performFullHostRefresh(reason or "hostContentChange")
+        return true
+    end
+
+    if performLocalWindowRefresh then
+        performLocalWindowRefresh(reason)
+    end
+
+    return false
+end
+
 local function notifyContentChanged(reason)
     performLocalWindowRefresh(reason)
 end
@@ -4371,6 +4386,8 @@ end
 
 Nvk3UT.TrackerHost = TrackerHost
 
+TrackerHost.DEBUG_FORCE_FULL_REFRESH_ON_CATEGORY_TOGGLE = DEBUG_FORCE_FULL_REFRESH_ON_CATEGORY_TOGGLE
+
 function TrackerHost.RefreshScroll(arg1, arg2)
     local reason
     if arg1 == TrackerHost or type(arg1) == "table" then
@@ -4383,6 +4400,7 @@ function TrackerHost.RefreshScroll(arg1, arg2)
 end
 
 TrackerHost.NotifyContentChanged = notifyContentChanged
+TrackerHost.RequestFullRefresh = requestFullRefresh
 TrackerHost.ScrollControlIntoView = scrollControlIntoView
 
 function TrackerHost.EnsureVisible(options)
