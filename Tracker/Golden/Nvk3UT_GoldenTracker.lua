@@ -392,6 +392,12 @@ local function goldenDataChanged(reason)
             return
         end
 
+        local runtime = rawget(root, "TrackerRuntime")
+        if type(runtime) == "table" and type(runtime.IsGoldenHardError) == "function" and runtime:IsGoldenHardError() then
+            safeDebug("[GoldenTracker.SHIM] data change suppressed (hard error active, reason=%s)", tostring(runtime._goldenFailureReason))
+            return
+        end
+
         local model = rawget(root, "GoldenModel")
         if type(model) == "table" then
             local refresh = model.RefreshFromGame or model.Refresh
@@ -419,7 +425,6 @@ local function goldenDataChanged(reason)
             end
         end
 
-        local runtime = rawget(root, "TrackerRuntime")
         if type(runtime) == "table" then
             local queueDirty = runtime.QueueDirty or runtime.MarkDirty or runtime.RequestRefresh
             if type(queueDirty) == "function" then

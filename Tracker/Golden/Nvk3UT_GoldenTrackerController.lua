@@ -335,6 +335,41 @@ local function normalizeEntry(rawCategory, rawEntry, index)
     return entryVm
 end
 
+-- Build a simple objective payload from an entry so row creation never depends on
+-- optional builder callbacks. This avoids calling nil as a function when
+-- categories lack specialized objective factories.
+local function buildObjectiveFromEntry(entryVm)
+    if type(entryVm) ~= "table" then
+        return {
+            title = "",
+            displayName = "",
+            progressDisplay = 0,
+            maxDisplay = 0,
+        }
+    end
+
+    local progress = tonumber(entryVm.progressDisplay or entryVm.progress or entryVm.current) or 0
+    local maxValue = tonumber(entryVm.maxDisplay or entryVm.max or entryVm.maxProgress) or 0
+
+    return {
+        entryId = entryVm.entryId or entryVm.id,
+        objectiveId = string.format("%s:objective", tostring(entryVm.entryId or entryVm.id or "")),
+        categoryKey = entryVm.categoryKey,
+        title = entryVm.title,
+        displayName = entryVm.displayName or entryVm.title,
+        name = entryVm.name or entryVm.title,
+        text = entryVm.description,
+        progress = progress,
+        progressDisplay = progress,
+        maxDisplay = maxValue,
+        max = maxValue,
+        progressText = entryVm.progressText,
+        counterText = entryVm.counterText or entryVm.progressText,
+        remainingSeconds = entryVm.remainingSeconds,
+        timeRemainingSec = entryVm.timeRemainingSec,
+    }
+end
+
 local function buildCategory(rawCategory)
     if type(rawCategory) ~= "table" then
         return nil
@@ -562,8 +597,17 @@ function Controller:BuildViewModel(options)
     local totalCompleted = 0
 
     for index = 1, #rawCategories do
-        local categoryVm = buildCategory(rawCategories[index])
-        if categoryVm then
+        local rawCategory = rawCategories[index]
+        local ok, categoryVm = pcall(buildCategory, rawCategory)
+
+        if not ok then
+            safeDebug(
+                "BuildViewModel: skipped category %s (campaignId=%s) due to error: %s",
+                tostring(rawCategory and (rawCategory.key or rawCategory.id or index) or index),
+                tostring(rawCategory and rawCategory.campaignId or "n/a"),
+                tostring(categoryVm)
+            )
+        elseif categoryVm then
             categories[#categories + 1] = categoryVm
             totalEntries = totalEntries + clampNonNegative(categoryVm.entryCount)
             totalCompleted = totalCompleted + clampNonNegative(categoryVm.completedCount)

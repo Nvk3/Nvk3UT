@@ -233,6 +233,11 @@ local function queueGoldenDirtyChannel(context)
         return false
     end
 
+    if type(runtime.IsGoldenHardError) == "function" and runtime:IsGoldenHardError() then
+        debugLog("queueGoldenDirtyChannel suppressed: golden hard error active")
+        return false
+    end
+
     local queueDirty = runtime.QueueDirty or runtime.queueDirty
     if type(queueDirty) ~= "function" then
         return false

@@ -29,7 +29,6 @@ Runtime._initialized = Runtime._initialized == true
 Runtime._interactivityDirty = Runtime._interactivityDirty == true
 Runtime._endeavorVM = Runtime._endeavorVM
 Runtime._goldenHardError = Runtime._goldenHardError == true
-Runtime._goldenRetryAtMs = Runtime._goldenRetryAtMs or nil
 Runtime._goldenFailureReason = Runtime._goldenFailureReason
 Runtime.goldenDirty = true
 Runtime.cache = type(Runtime.cache) == "table" and Runtime.cache or {}
@@ -294,19 +293,22 @@ local function markGoldenFailure(runtime, err, reason)
     runtime.goldenDirty = false
     runtime._goldenHardError = true
     runtime._goldenFailureReason = reason or err
-
-    local now = getFrameTimeMs()
-    if now ~= nil then
-        runtime._goldenRetryAtMs = now + 2000 -- back off briefly before retrying
-    else
-        runtime._goldenRetryAtMs = nil
-    end
+    runtime._goldenRetryAtMs = nil
 
     if err ~= nil then
         warn("Runtime: golden rebuild suppressed after error: %s", tostring(err))
     else
         warn("Runtime: golden rebuild suppressed after failed build (%s)", tostring(reason))
     end
+end
+
+function Runtime:IsGoldenHardError()
+    return self._goldenHardError == true
+end
+
+function Runtime:SetGoldenHardError(reason)
+    self._goldenHardError = reason ~= false
+    self._goldenFailureReason = reason
 end
 
 local function formatChannelList(set)
@@ -543,6 +545,10 @@ end
 
 local function buildGoldenViewModel(runtime, shouldRefreshModel)
     local cache, fallbackVm = ensureGoldenCache(runtime)
+
+    if runtime and runtime._goldenHardError then
+        return fallbackVm, false
+    end
 
     local controller = rawget(Addon, "GoldenTrackerController")
     if type(controller) ~= "table" then
@@ -809,15 +815,14 @@ function Runtime:QueueDirty(channel, opts)
     local applyAll = normalized == "all"
 
     if normalized == "golden" then
-        local now = getFrameTimeMs()
-        if self._goldenHardError and self._goldenRetryAtMs ~= nil and now ~= nil and now < self._goldenRetryAtMs then
+        if self._goldenHardError and not (opts and opts.force) then
             debug("Runtime.QueueDirty: golden suppressed (hard error active, reason=%s)", tostring(self._goldenFailureReason))
             return
         end
 
         if self._goldenHardError then
             self._goldenHardError = false
-            self._goldenRetryAtMs = nil
+            self._goldenFailureReason = nil
         end
 
         if not self.goldenDirty then
@@ -963,6 +968,13 @@ function Runtime:ProcessFrame(nowMs)
 
         local cache, goldenViewModel = ensureGoldenCache(self)
         local goldenVmBuilt = false
+
+        if goldenDirty and self._goldenHardError then
+            debug("Runtime: golden build skipped due to hard error (%s)", tostring(self._goldenFailureReason))
+            self.goldenDirty = false
+            goldenDirty = false
+            goldenViewModel = cache.goldenVM
+        end
 
         if goldenDirty then
             local buildOk, builtViewModel, buildInvoked = pcall(buildGoldenViewModel, self, true)
