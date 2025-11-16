@@ -732,6 +732,14 @@ function Layout.UpdateScrollAreaHeight(host, contentHeight, sizes)
         topY = 0
     end
 
+    local childTopY
+    if type(scrollContent.GetTop) == "function" then
+        local ok, top = pcall(scrollContent.GetTop, scrollContent)
+        if ok then
+            childTopY = sanitizeLength(top)
+        end
+    end
+
     local footerBottomY
     local footerControl = getFooterControl(host)
     if footerControl and not isControlHidden(footerControl) then
@@ -744,13 +752,14 @@ function Layout.UpdateScrollAreaHeight(host, contentHeight, sizes)
         end
     end
 
-    if footerBottomY then
-        local footerBasedHeight = footerBottomY - topY
-        if footerBasedHeight < 0 then
-            footerBasedHeight = 0
+    local requiredHeight
+    if childTopY and footerBottomY then
+        requiredHeight = footerBottomY - childTopY
+        if requiredHeight < 0 then
+            requiredHeight = 0
         end
-        if footerBasedHeight > scrollChildHeight then
-            scrollChildHeight = footerBasedHeight
+        if requiredHeight > scrollChildHeight then
+            scrollChildHeight = requiredHeight
         end
     end
 
@@ -806,13 +815,15 @@ function Layout.UpdateScrollAreaHeight(host, contentHeight, sizes)
     end
 
     debugLog(
-        "HostLayout: scroll child base=%.2f adjusted=%.2f viewport=%.2f top=%.2f bottom=%.2f footerBottom=%.2f baseOffset=%.2f finalMax=%.2f",
+        "HostLayout: scroll child base=%.2f adjusted=%.2f childTop=%.2f footerBottom=%.2f required=%.2f viewport=%.2f top=%.2f bottom=%.2f baseOffset=%.2f finalMax=%.2f",
         baseScrollChildHeight,
         scrollChildHeight,
+        childTopY or -1,
+        footerBottomY or -1,
+        requiredHeight or -1,
         viewportHeight,
         topY,
         viewportBottomY or -1,
-        footerBottomY or -1,
         baseMaxOffset,
         maxOffset
     )
