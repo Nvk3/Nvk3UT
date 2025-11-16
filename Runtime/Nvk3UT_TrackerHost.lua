@@ -4393,6 +4393,11 @@ function TrackerHost.RefreshScroll(arg1, arg2)
         reason = arg1
     end
 
+    if type(performLocalWindowRefresh) == "function" then
+        performLocalWindowRefresh(reason or "refresh-scroll")
+        return true
+    end
+
     return refreshScroll(nil, reason)
 end
 
