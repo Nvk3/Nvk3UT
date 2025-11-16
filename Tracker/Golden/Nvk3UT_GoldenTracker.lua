@@ -503,22 +503,6 @@ local function NotifyHostContentChanged(reason)
     end
 end
 
-local function RequestDebugFullRebuild(reason)
-    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
-    if type(runtime) ~= "table" then
-        return
-    end
-
-    if runtime.debugForceFullRebuildOnCategoryToggle == false then
-        return
-    end
-
-    local forceFn = runtime.DebugForceFullRebuild
-    if type(forceFn) == "function" then
-        pcall(forceFn, runtime, reason or "golden-category-toggle")
-    end
-end
-
 local function TrackExpansionChanges(viewModel)
     local categories = type(viewModel) == "table" and viewModel.categories or {}
     local previousSnapshot = type(state.expansionSnapshot) == "table" and state.expansionSnapshot or {}
@@ -536,8 +520,7 @@ local function TrackExpansionChanges(viewModel)
                     if hasPrevious then
                         local previous = previousSnapshot[key]
                         if previous ~= nil and previous ~= expanded then
-                            local action = expanded and "expand" or "collapse"
-                            RequestDebugFullRebuild(string.format("golden-category-%s-%s", action, key))
+                            -- Previously this triggered a forced rebuild; retain the snapshot update only.
                         end
                     end
                 end
@@ -558,8 +541,7 @@ local function TrackExpansionChanges(viewModel)
 
     if headerExpanded ~= nil then
         if state.headerSnapshotReady and state.lastHeaderExpanded ~= nil and state.lastHeaderExpanded ~= headerExpanded then
-            local action = headerExpanded and "expand" or "collapse"
-            RequestDebugFullRebuild(string.format("golden-header-%s", action))
+            -- Snapshot change noted; no forced rebuild.
         end
         state.lastHeaderExpanded = headerExpanded
         if not state.headerSnapshotReady then

@@ -403,22 +403,6 @@ local function NotifyHostContentChanged(reason)
     end
 end
 
-local function RequestDebugFullRebuild(reason)
-    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
-    if type(runtime) ~= "table" then
-        return
-    end
-
-    if runtime.debugForceFullRebuildOnCategoryToggle == false then
-        return
-    end
-
-    local forceFn = runtime.DebugForceFullRebuild
-    if type(forceFn) == "function" then
-        pcall(forceFn, runtime, reason or "achievement-category-toggle")
-    end
-end
-
 local function EnsureSavedVars()
     Nvk3UT.sv = Nvk3UT.sv or {}
     local root = Nvk3UT.sv
@@ -1155,7 +1139,6 @@ local function SetCategoryExpanded(expanded, context)
             source
         )
         local action = afterExpanded and "expand" or "collapse"
-        RequestDebugFullRebuild(string.format("achievement-category-%s", action))
     end
 end
 
@@ -1182,7 +1165,6 @@ local function SetEntryExpanded(achievementId, expanded, source)
 
     if beforeExpanded ~= afterExpanded then
         local action = afterExpanded and "expand" or "collapse"
-        RequestDebugFullRebuild(string.format("achievement-entry-%s-%s", action, tostring(achievementId)))
     end
 end
 

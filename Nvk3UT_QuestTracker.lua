@@ -2563,38 +2563,13 @@ local function UnregisterTrackingEvents()
     state.trackingEventsRegistered = false
 end
 
-local function RequestHostFullRefresh(reason)
-    local host = Nvk3UT and Nvk3UT.TrackerHost
-    if not host then
-        return false
-    end
-
-    local debugFlag = rawget(host, "DEBUG_FORCE_FULL_REFRESH_ON_CATEGORY_TOGGLE")
-    if debugFlag == false then
-        return false
-    end
-
-    local requestFn = host.RequestFullRefresh
-    if type(requestFn) ~= "function" then
-        return false
-    end
-
-    local ok, result = pcall(requestFn, reason or "questCategoryToggle")
-    return ok and result ~= false
-end
-
 local function NotifyHostContentChanged(reason)
-    local contextReason = reason or "quest-content-change"
-
-    if RequestHostFullRefresh(contextReason) then
-        return
-    end
-
     local host = Nvk3UT and Nvk3UT.TrackerHost
     if not host then
         return
     end
 
+    local contextReason = reason or "quest-content-change"
     local refreshed = false
 
     if type(host.RefreshScroll) == "function" then
@@ -2604,22 +2579,6 @@ local function NotifyHostContentChanged(reason)
 
     if not refreshed and type(host.NotifyContentChanged) == "function" then
         pcall(host.NotifyContentChanged, contextReason)
-    end
-end
-
-local function RequestDebugFullRebuild(reason)
-    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
-    if type(runtime) ~= "table" then
-        return
-    end
-
-    if runtime.debugForceFullRebuildOnCategoryToggle == false then
-        return
-    end
-
-    local forceFn = runtime.DebugForceFullRebuild
-    if type(forceFn) == "function" then
-        pcall(forceFn, runtime, reason or "quest-category-toggle")
     end
 end
 
@@ -2961,9 +2920,6 @@ SetCategoryExpanded = function(categoryKey, expanded, context)
         extraFields
     )
 
-    local action = expanded and "expand" or "collapse"
-    RequestDebugFullRebuild(string.format("quest-category-%s-%s", action, tostring(key)))
-
     return true
 end
 
@@ -3011,9 +2967,6 @@ SetQuestExpanded = function(journalIndex, expanded, context)
         expanded,
         (context and context.source) or "QuestTracker:SetQuestExpanded"
     )
-
-    local action = expanded and "expand" or "collapse"
-    RequestDebugFullRebuild(string.format("quest-entry-%s-%s", action, tostring(key)))
 
     return true
 end
@@ -3093,7 +3046,6 @@ local function AcquireCategoryControl()
             })
             if changed then
                 QuestTracker.Refresh()
-                RequestHostFullRefresh("questCategoryToggle")
             end
         end)
         control:SetHandler("OnMouseEnter", function(ctrl)

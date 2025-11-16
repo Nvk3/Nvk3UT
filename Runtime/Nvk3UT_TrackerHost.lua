@@ -120,8 +120,6 @@ local DEFAULT_HOST_SETTINGS = {
     HideInCombat = false,
 }
 
-local DEBUG_FORCE_FULL_REFRESH_ON_CATEGORY_TOGGLE = true
-local DEBUG_DEFERRED_SCROLL_FIX = true
 
 local LEFT_MOUSE_BUTTON = _G.MOUSE_BUTTON_INDEX_LEFT or 1
 local MOUSE_CURSOR_RESIZE_EW = _G.MOUSE_CURSOR_RESIZE_EW
@@ -231,8 +229,6 @@ local state = {
     resizeGrip = nil,        -- legacy single grip (unused)
     resizeGrips = nil,       -- collection of resize grips along the full border
 }
-
-local pendingDeferredFullRefresh = false
 
 local resizeState = {
     active = false,
@@ -3262,58 +3258,6 @@ local function scheduleDeferredRefresh(targetOffset, reason)
     end, 0)
 end
 
-local function isDeferredFullRefreshReason(reason)
-    if type(reason) ~= "string" then
-        return false
-    end
-
-    return string.sub(reason, 1, string.len("fullHostRefresh:")) == "fullHostRefresh:"
-end
-
-local function resolveDeferredFullRefreshReason(reason)
-    local text = tostring(reason or "deferredScrollFix")
-    if text == "" then
-        text = "deferredScrollFix"
-    end
-
-    if not isDeferredFullRefreshReason(text) then
-        text = string.format("fullHostRefresh:%s", text)
-    end
-
-    return text
-end
-
-local function scheduleDeferredFullRefresh(reason)
-    if not DEBUG_DEFERRED_SCROLL_FIX then
-        return false
-    end
-
-    if pendingDeferredFullRefresh then
-        return false
-    end
-
-    pendingDeferredFullRefresh = true
-
-    local function dispatch()
-        pendingDeferredFullRefresh = false
-
-        local deferredReason = resolveDeferredFullRefreshReason(reason)
-        if performFullHostRefresh then
-            performFullHostRefresh(deferredReason)
-        elseif performLocalWindowRefresh then
-            performLocalWindowRefresh(deferredReason)
-        end
-    end
-
-    if type(zo_callLater) == "function" then
-        zo_callLater(dispatch, 1)
-    else
-        dispatch()
-    end
-
-    return true
-end
-
 local function scrollControlIntoView(control)
     if not control then
         return false, false
@@ -3392,10 +3336,6 @@ performLocalWindowRefresh = function(reason)
 
     refreshWindowLayout(preservedOffset, reason or "content-change")
     scheduleDeferredRefresh(preservedOffset, reason)
-
-    if DEBUG_DEFERRED_SCROLL_FIX and not isDeferredFullRefreshReason(reason) then
-        scheduleDeferredFullRefresh(reason or "localWindowRefresh")
-    end
 end
 
 performFullHostRefresh = function(reason)
@@ -3413,10 +3353,6 @@ performFullHostRefresh = function(reason)
         end
 
         safeCall(rebuildAll, context)
-
-        if DEBUG_DEFERRED_SCROLL_FIX and not isDeferredFullRefreshReason(reason) then
-            scheduleDeferredFullRefresh(reason or "fullHostRefresh")
-        end
         return
     end
 
@@ -4449,9 +4385,6 @@ end
 
 Nvk3UT.TrackerHost = TrackerHost
 
-TrackerHost.DEBUG_FORCE_FULL_REFRESH_ON_CATEGORY_TOGGLE = DEBUG_FORCE_FULL_REFRESH_ON_CATEGORY_TOGGLE
-TrackerHost.DEBUG_DEFERRED_SCROLL_FIX = DEBUG_DEFERRED_SCROLL_FIX
-
 function TrackerHost.RefreshScroll(arg1, arg2)
     local reason
     if arg1 == TrackerHost or type(arg1) == "table" then
@@ -4465,7 +4398,6 @@ end
 
 TrackerHost.NotifyContentChanged = notifyContentChanged
 TrackerHost.RequestFullRefresh = requestFullRefresh
-TrackerHost.ScheduleDeferredFullRefresh = scheduleDeferredFullRefresh
 TrackerHost.ScrollControlIntoView = scrollControlIntoView
 
 function TrackerHost.EnsureVisible(options)

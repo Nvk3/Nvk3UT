@@ -33,9 +33,6 @@ Runtime.cache = type(Runtime.cache) == "table" and Runtime.cache or {}
 if type(Runtime.cache.goldenVM) ~= "table" then
     Runtime.cache.goldenVM = { categories = {} }
 end
-if Runtime.debugForceFullRebuildOnCategoryToggle == nil then
-    Runtime.debugForceFullRebuildOnCategoryToggle = true
-end
 
 local function debug(fmt, ...)
     if Addon and type(Addon.Debug) == "function" then
@@ -845,28 +842,6 @@ end
 
 function Runtime:MarkGoldenDirty()
     self:QueueDirty("golden")
-end
-
-function Runtime:DebugForceFullRebuild(reason)
-    if self.debugForceFullRebuildOnCategoryToggle == false then
-        return false
-    end
-
-    if self._initialized ~= true then
-        return false
-    end
-
-    if not getHostWindow() then
-        return false
-    end
-
-    local resolvedReason = tostring(reason or "category-toggle")
-    debug("Runtime.DebugForceFullRebuild reason=%s", resolvedReason)
-
-    self:QueueDirty("all")
-    self.goldenDirty = true
-
-    return true
 end
 
 function Runtime:ProcessFrame(nowMs)

@@ -385,29 +385,6 @@ local function queueTrackerDirty()
     end)
 end
 
-local function requestDebugFullRebuild(reason)
-    runSafe(function()
-        local addon = getAddon()
-        if type(addon) ~= "table" then
-            return
-        end
-
-        local runtime = rawget(addon, "TrackerRuntime")
-        if type(runtime) ~= "table" then
-            return
-        end
-
-        if runtime.debugForceFullRebuildOnCategoryToggle == false then
-            return
-        end
-
-        local forceFn = runtime.DebugForceFullRebuild
-        if type(forceFn) == "function" then
-            pcall(forceFn, runtime, reason or "endeavor-category-toggle")
-        end
-    end)
-end
-
 local function NotifyHostContentChanged(reason)
     local host = Nvk3UT and Nvk3UT.TrackerHost
     if not host then
@@ -444,7 +421,6 @@ local function toggleRootExpanded()
     if okSet then
         queueTrackerDirty()
         local action = nextExpanded and "expand" or "collapse"
-        requestDebugFullRebuild(string.format("endeavor-root-%s", action))
     end
 end
 
@@ -469,7 +445,6 @@ local function toggleCategoryExpanded(key)
     if okSet then
         queueTrackerDirty()
         local action = nextExpanded and "expand" or "collapse"
-        requestDebugFullRebuild(string.format("endeavor-category-%s-%s", action, tostring(key)))
     end
 end
 
