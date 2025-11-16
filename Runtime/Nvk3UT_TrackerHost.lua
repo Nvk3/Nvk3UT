@@ -34,7 +34,7 @@ local RESIZE_HANDLE_SIZE = 12
 local RESIZE_BORDER_INSET = 20 -- leave a clearly accessible border so the ESO resize hit-test reaches the root control
 local RESIZE_GRIP_SIZE = 26 -- larger corner grips for easier interactions
 local SCROLLBAR_WIDTH = 18
-local SCROLL_OVERSHOOT_PADDING = 100 -- allow scrolling so the last entry can sit around mid-window
+local SCROLL_OVERSHOOT_PADDING = 0 -- no overshoot, scroll range == content height
 local FRAGMENT_RETRY_DELAY_MS = 200
 local MAX_BAR_HEIGHT = 250
 
