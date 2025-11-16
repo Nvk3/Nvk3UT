@@ -727,10 +727,6 @@ function Layout.UpdateScrollAreaHeight(host, contentHeight, sizes)
     end
 
     local baseScrollChildHeight = scrollChildHeight
-    local topY = sizes and sanitizeLength(sizes.contentTopY) or 0
-    if topY < 0 then
-        topY = 0
-    end
 
     local childTopY
     if type(scrollContent.GetTop) == "function" then
@@ -791,6 +787,34 @@ function Layout.UpdateScrollAreaHeight(host, contentHeight, sizes)
 
     last.viewportHeight = viewportHeight
 
+    local containerTopY
+    if type(scrollContainer.GetTop) == "function" then
+        local ok, top = pcall(scrollContainer.GetTop, scrollContainer)
+        if ok then
+            containerTopY = sanitizeLength(top)
+        end
+    end
+
+    local viewportBottomYActual
+    if containerTopY then
+        viewportBottomYActual = containerTopY + viewportHeight
+    end
+
+    local viewportTopYFromSizes
+    local viewportBottomYFromSizes
+    if sizes then
+        local topFromSizes = sanitizeLength(sizes.contentTopY)
+        if topFromSizes < 0 then
+            topFromSizes = 0
+        end
+        viewportTopYFromSizes = topFromSizes
+
+        local bottom = tonumber(sizes.contentBottomY)
+        if bottom and bottom ~= math.huge then
+            viewportBottomYFromSizes = sanitizeLength(bottom)
+        end
+    end
+
     local overshoot = getScrollOvershootPadding(host)
     local baseMaxOffset = math.max(baseScrollChildHeight - viewportHeight + overshoot, 0)
     if baseMaxOffset < 0 then
@@ -799,23 +823,18 @@ function Layout.UpdateScrollAreaHeight(host, contentHeight, sizes)
 
     local maxOffset = math.max(scrollChildHeight - viewportHeight + overshoot, 0)
 
-    local viewportBottomY = sizes and tonumber(sizes.contentBottomY)
-    if viewportBottomY and viewportBottomY ~= math.huge then
-        viewportBottomY = sanitizeLength(viewportBottomY)
-    else
-        viewportBottomY = nil
-    end
-
     debugLog(
-        "HostLayout: scroll child base=%.2f adjusted=%.2f childTop=%.2f footerBottom=%.2f required=%.2f viewport=%.2f top=%.2f bottom=%.2f baseOffset=%.2f finalMax=%.2f",
+        "HostLayout: scroll child base=%.2f adjusted=%.2f childTop=%.2f footerBottom=%.2f required=%.2f viewport=%.2f containerTop=%.2f viewportBottom=%.2f sizesTop=%.2f sizesBottom=%.2f baseOffset=%.2f finalMax=%.2f",
         baseScrollChildHeight,
         scrollChildHeight,
         childTopY or -1,
         footerBottomY or -1,
         requiredHeight or -1,
         viewportHeight,
-        topY,
-        viewportBottomY or -1,
+        containerTopY or -1,
+        viewportBottomYActual or -1,
+        viewportTopYFromSizes or -1,
+        viewportBottomYFromSizes or -1,
         baseMaxOffset,
         maxOffset
     )
