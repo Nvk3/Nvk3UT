@@ -184,6 +184,7 @@ local state = {
     updatingScrollbar = false,
     deferredRefreshScheduled = false,
     pendingDeferredOffset = nil,
+    initFullRefreshScheduled = false,
     questContainer = nil,
     endeavorContainer = nil,
     achievementContainer = nil,
@@ -336,7 +337,8 @@ local beginResize
 local updateResize
 local endResize
 local createResizeGrip
-local requestFullTrackerRebuild
+local performLocalWindowRefresh
+local performFullHostRefresh
 
 local function getSavedVars()
     return Nvk3UT and Nvk3UT.sv
@@ -1083,8 +1085,8 @@ local function endResize()
             saveWindowPosition()
         end
 
-        if requestFullTrackerRebuild then
-            requestFullTrackerRebuild("manualResize")
+        if performFullHostRefresh then
+            performFullHostRefresh("manualResize")
         end
     end
 end
@@ -3469,7 +3471,7 @@ local function scrollControlIntoView(control)
     return true, true
 end
 
-local function notifyContentChanged()
+performLocalWindowRefresh = function()
     if not state.root then
         return
     end
@@ -3480,33 +3482,31 @@ local function notifyContentChanged()
     scheduleDeferredRefresh(preservedOffset)
 end
 
-requestFullTrackerRebuild = function(reason)
-    local rebuild = (Nvk3UT and Nvk3UT.Rebuild) or _G.Nvk3UT_Rebuild
-    local context = "windowGeometryChanged"
-    if reason ~= nil and reason ~= "" then
-        context = string.format("%s:%s", context, tostring(reason))
+performFullHostRefresh = function(reason)
+    local addonRoot = type(Nvk3UT) == "table" and Nvk3UT or nil
+    if addonRoot and addonRoot._rebuild_lock then
+        return
     end
 
-    if type(rebuild) == "table" then
-        if type(rebuild.All) == "function" then
-            safeCall(rebuild.All, context)
-            return
+    local rebuild = (addonRoot and addonRoot.Rebuild) or _G.Nvk3UT_Rebuild
+    local rebuildAll = rebuild and rebuild.All
+    if type(rebuildAll) == "function" then
+        local context = "hostRefresh"
+        if reason ~= nil and reason ~= "" then
+            context = string.format("hostRefresh:%s", tostring(reason))
         end
 
-        if type(rebuild.MarkAllDirty) == "function" then
-            safeCall(rebuild.MarkAllDirty, context)
-            return
-        end
-
-        if type(rebuild.Trackers) == "function" then
-            safeCall(rebuild.Trackers, context)
-            return
-        end
+        safeCall(rebuildAll, context)
+        return
     end
 
-    if notifyContentChanged then
-        notifyContentChanged()
+    if performLocalWindowRefresh then
+        performLocalWindowRefresh()
     end
+end
+
+local function notifyContentChanged()
+    performLocalWindowRefresh()
 end
 
 local function applyWindowClamp()
@@ -3763,8 +3763,8 @@ local function createRootControl()
         if saveWindowPosition then
             saveWindowPosition()
         end
-        if requestFullTrackerRebuild then
-            requestFullTrackerRebuild("windowMove")
+        if performFullHostRefresh then
+            performFullHostRefresh("windowMove")
         end
     end)
 
@@ -3772,8 +3772,8 @@ local function createRootControl()
         if saveWindowSize then
             saveWindowSize()
         end
-        if requestFullTrackerRebuild then
-            requestFullTrackerRebuild("nativeResize")
+        if performFullHostRefresh then
+            performFullHostRefresh("nativeResize")
         end
     end)
 
@@ -4023,7 +4023,22 @@ function TrackerHost.Init()
     state.initialized = true
     state.initializing = false
 
-    notifyContentChanged()
+    -- After initial layout/state is applied, schedule a delayed full host
+    -- refresh so the first visible frame matches a manual rebuild without
+    -- causing immediate re-entry into the rebuild pipeline.
+    if not state.initFullRefreshScheduled then
+        state.initFullRefreshScheduled = true
+
+        if zo_callLater and performFullHostRefresh then
+            zo_callLater(function()
+                if state.root and performFullHostRefresh then
+                    performFullHostRefresh("initDelayed")
+                end
+            end, 1)
+        elseif notifyContentChanged then
+            notifyContentChanged()
+        end
+    end
 
     ensureSceneFragment(state.root)
 
