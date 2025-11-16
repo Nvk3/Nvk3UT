@@ -88,6 +88,31 @@ registerString(
     "Bestimmt die Kontur bzw. den Schatten der Schrift."
 )
 
+local function getAddonVersionString()
+    local addon = Nvk3UT
+    if type(addon) ~= "table" then
+        return nil
+    end
+
+    local versionString = addon.versionString or addon.addonVersion
+    if type(versionString) == "number" then
+        versionString = tostring(versionString)
+    elseif type(versionString) ~= "string" then
+        versionString = nil
+    end
+
+    if versionString == nil or versionString == "" then
+        return nil
+    end
+
+    local major, minor, patch = versionString:match("(%d+)%.(%d+)%.(%d+)")
+    if major and minor and patch then
+        return string.format("%d.%d.%d", tonumber(major), tonumber(minor), tonumber(patch))
+    end
+
+    return versionString
+end
+
 local FONT_FACE_CHOICES = {
     { name = "Bold (Game Default)", face = "$(BOLD_FONT)" },
     { name = "Univers 67 (Game)", face = "EsoUI/Common/Fonts/univers67.otf" },
@@ -957,7 +982,7 @@ local function registerPanel(displayTitle)
         name = displayTitle or DEFAULT_PANEL_TITLE,
         displayName = "|c66CCFF" .. (displayTitle or DEFAULT_PANEL_TITLE) .. "|r",
         author = "Nvk3",
-        version = "{VERSION}",
+        version = getAddonVersionString() or "Unknown",
         registerForRefresh = true,
         registerForDefaults = false,
     }
