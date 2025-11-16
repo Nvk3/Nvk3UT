@@ -765,6 +765,52 @@ function Layout.UpdateScrollAreaHeight(host, contentHeight, sizes)
 
     local overshoot = getScrollOvershootPadding(host)
     local maxOffset = math.max(scrollChildHeight - viewportHeight + overshoot, 0)
+    local baseMaxOffset = maxOffset
+
+    local footerBottomY
+    local footerOvershoot = 0
+    local footerControl = getFooterControl(host)
+    if footerControl and not isControlHidden(footerControl) then
+        local getBottom = footerControl.GetBottom
+        if type(getBottom) == "function" then
+            local ok, bottom = pcall(getBottom, footerControl)
+            if ok then
+                footerBottomY = sanitizeLength(bottom)
+            end
+        end
+    end
+
+    local viewportBottomY = sizes and tonumber(sizes.contentBottomY)
+    if viewportBottomY and viewportBottomY ~= math.huge then
+        viewportBottomY = sanitizeLength(viewportBottomY)
+    else
+        viewportBottomY = nil
+    end
+
+    if footerBottomY and viewportBottomY then
+        footerOvershoot = footerBottomY - viewportBottomY
+        if footerOvershoot < 0 then
+            footerOvershoot = 0
+        end
+    end
+
+    if footerOvershoot > 0 then
+        local requiredOffsetForFooter = footerOvershoot
+        if requiredOffsetForFooter > maxOffset then
+            maxOffset = requiredOffsetForFooter
+        end
+    end
+
+    debugLog(
+        "HostLayout: scroll child=%.2f viewport=%.2f base=%.2f footerBottom=%.2f viewportBottom=%.2f overshoot=%.2f finalMax=%.2f",
+        scrollChildHeight,
+        viewportHeight,
+        baseMaxOffset,
+        footerBottomY or -1,
+        viewportBottomY or -1,
+        footerOvershoot,
+        maxOffset
+    )
 
     if not last.maxOffset or numbersDiffer(last.maxOffset, maxOffset) then
         setScrollMaxOffset(host, maxOffset)
