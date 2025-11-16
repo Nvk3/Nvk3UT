@@ -17,6 +17,10 @@ local state = {
     height = 0,
     initialized = false,
     options = nil,
+    expansionSnapshot = nil,
+    expansionSnapshotReady = false,
+    headerSnapshotReady = false,
+    lastHeaderExpanded = nil,
 }
 
 local function getAddonRoot()
@@ -334,6 +338,10 @@ function GoldenTracker.Init(...)
     state.initialized = false
     state.root = nil
     state.content = nil
+    state.expansionSnapshot = nil
+    state.expansionSnapshotReady = false
+    state.headerSnapshotReady = false
+    state.lastHeaderExpanded = nil
 
     local root, content = createRootAndContent(parentControl)
     state.root = root
@@ -492,6 +500,71 @@ local function NotifyHostContentChanged(reason)
 
     if not refreshed and type(host.NotifyContentChanged) == "function" then
         pcall(host.NotifyContentChanged, contextReason)
+    end
+end
+
+local function RequestDebugFullRebuild(reason)
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if type(runtime) ~= "table" then
+        return
+    end
+
+    if runtime.debugForceFullRebuildOnCategoryToggle == false then
+        return
+    end
+
+    local forceFn = runtime.DebugForceFullRebuild
+    if type(forceFn) == "function" then
+        pcall(forceFn, runtime, reason or "golden-category-toggle")
+    end
+end
+
+local function TrackExpansionChanges(viewModel)
+    local categories = type(viewModel) == "table" and viewModel.categories or {}
+    local previousSnapshot = type(state.expansionSnapshot) == "table" and state.expansionSnapshot or {}
+    local newSnapshot = {}
+    local hasPrevious = state.expansionSnapshotReady == true
+
+    if type(categories) == "table" then
+        for index = 1, #categories do
+            local category = categories[index]
+            if type(category) == "table" then
+                local key = category.key or category.id or tostring(index)
+                if key and key ~= "" then
+                    local expanded = category.expanded ~= false
+                    newSnapshot[key] = expanded
+                    if hasPrevious then
+                        local previous = previousSnapshot[key]
+                        if previous ~= nil and previous ~= expanded then
+                            local action = expanded and "expand" or "collapse"
+                            RequestDebugFullRebuild(string.format("golden-category-%s-%s", action, key))
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    state.expansionSnapshot = newSnapshot
+    if not state.expansionSnapshotReady then
+        state.expansionSnapshotReady = true
+    end
+
+    local headerInfo = type(viewModel) == "table" and viewModel.header
+    local headerExpanded
+    if type(headerInfo) == "table" then
+        headerExpanded = headerInfo.isExpanded ~= false
+    end
+
+    if headerExpanded ~= nil then
+        if state.headerSnapshotReady and state.lastHeaderExpanded ~= nil and state.lastHeaderExpanded ~= headerExpanded then
+            local action = headerExpanded and "expand" or "collapse"
+            RequestDebugFullRebuild(string.format("golden-header-%s", action))
+        end
+        state.lastHeaderExpanded = headerExpanded
+        if not state.headerSnapshotReady then
+            state.headerSnapshotReady = true
+        end
     end
 end
 
@@ -965,6 +1038,7 @@ function GoldenTracker.Refresh(viewModel)
     setContainerHeight(container, totalHeight)
 
     safeDebug("Refresh complete: %s rows=%d height=%d", statusSummary, #rows, totalHeight)
+    TrackExpansionChanges(vm)
     NotifyHostContentChanged("golden-refresh")
 end
 

@@ -403,6 +403,22 @@ local function NotifyHostContentChanged(reason)
     end
 end
 
+local function RequestDebugFullRebuild(reason)
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if type(runtime) ~= "table" then
+        return
+    end
+
+    if runtime.debugForceFullRebuildOnCategoryToggle == false then
+        return
+    end
+
+    local forceFn = runtime.DebugForceFullRebuild
+    if type(forceFn) == "function" then
+        pcall(forceFn, runtime, reason or "achievement-category-toggle")
+    end
+end
+
 local function EnsureSavedVars()
     Nvk3UT.sv = Nvk3UT.sv or {}
     local root = Nvk3UT.sv
@@ -1138,19 +1154,36 @@ local function SetCategoryExpanded(expanded, context)
             afterExpanded,
             source
         )
+        local action = afterExpanded and "expand" or "collapse"
+        RequestDebugFullRebuild(string.format("achievement-category-%s", action))
     end
 end
 
 local function SetEntryExpanded(achievementId, expanded, source)
+    local beforeExpanded = IsEntryExpanded(achievementId)
+    local afterExpanded = beforeExpanded
+    local handled = false
     local achievementState = GetAchievementState()
     if achievementState and achievementState.SetGroupExpanded then
         achievementState.SetGroupExpanded(achievementId, expanded, source or "AchievementTracker:SetEntryExpanded")
+        if achievementState.IsGroupExpanded then
+            afterExpanded = achievementState.IsGroupExpanded(achievementId) ~= false
+        end
+        handled = true
+    elseif state.saved and achievementId then
+        state.saved.entryExpanded[achievementId] = expanded and true or false
+        afterExpanded = IsEntryExpanded(achievementId)
+        handled = true
+    end
+
+    if not handled then
         return
     end
-    if not state.saved or not achievementId then
-        return
+
+    if beforeExpanded ~= afterExpanded then
+        local action = afterExpanded and "expand" or "collapse"
+        RequestDebugFullRebuild(string.format("achievement-entry-%s-%s", action, tostring(achievementId)))
     end
-    state.saved.entryExpanded[achievementId] = expanded and true or false
 end
 
 local function IsEntryExpanded(achievementId)

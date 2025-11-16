@@ -2582,6 +2582,22 @@ local function NotifyHostContentChanged(reason)
     end
 end
 
+local function RequestDebugFullRebuild(reason)
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if type(runtime) ~= "table" then
+        return
+    end
+
+    if runtime.debugForceFullRebuildOnCategoryToggle == false then
+        return
+    end
+
+    local forceFn = runtime.DebugForceFullRebuild
+    if type(forceFn) == "function" then
+        pcall(forceFn, runtime, reason or "quest-category-toggle")
+    end
+end
+
 local function NotifyStatusRefresh()
     local ui = Nvk3UT and Nvk3UT.UI
     if ui and ui.UpdateStatus then
@@ -2920,6 +2936,9 @@ SetCategoryExpanded = function(categoryKey, expanded, context)
         extraFields
     )
 
+    local action = expanded and "expand" or "collapse"
+    RequestDebugFullRebuild(string.format("quest-category-%s-%s", action, tostring(key)))
+
     return true
 end
 
@@ -2967,6 +2986,9 @@ SetQuestExpanded = function(journalIndex, expanded, context)
         expanded,
         (context and context.source) or "QuestTracker:SetQuestExpanded"
     )
+
+    local action = expanded and "expand" or "collapse"
+    RequestDebugFullRebuild(string.format("quest-entry-%s-%s", action, tostring(key)))
 
     return true
 end
