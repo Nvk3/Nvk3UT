@@ -88,6 +88,131 @@ registerString(
     "Bestimmt die Kontur bzw. den Schatten der Schrift."
 )
 
+local function colorizeLamHeaderText(text)
+    if ZO_HIGHLIGHT_TEXT and ZO_HIGHLIGHT_TEXT.Colorize then
+        return ZO_HIGHLIGHT_TEXT:Colorize(text)
+    end
+    return text
+end
+
+local function normalizeSemVerComponent(value)
+    if type(value) == "number" then
+        return value
+    end
+
+    if type(value) == "string" then
+        local digits = value:match("%d+")
+        if digits then
+            return tonumber(digits)
+        end
+    end
+
+    return nil
+end
+
+local SEMVER_MAJOR_KEYS = { "versionMajor", "VersionMajor", "major", "Major" }
+local SEMVER_MINOR_KEYS = { "versionMinor", "VersionMinor", "minor", "Minor" }
+local SEMVER_PATCH_KEYS = { "versionPatch", "VersionPatch", "patch", "Patch" }
+local SEMVER_NESTED_KEYS = { "semver", "SemVer", "Semver", "version", "Version", "manifest", "Manifest" }
+
+local function readMatchingField(tbl, keys)
+    if type(tbl) ~= "table" then
+        return nil
+    end
+
+    for index = 1, #keys do
+        local key = keys[index]
+        if tbl[key] ~= nil then
+            return tbl[key]
+        end
+    end
+
+    return nil
+end
+
+local function extractSemVerFromTable(tbl, visited)
+    if type(tbl) ~= "table" then
+        return nil
+    end
+
+    visited = visited or {}
+    if visited[tbl] then
+        return nil
+    end
+    visited[tbl] = true
+
+    local major = normalizeSemVerComponent(readMatchingField(tbl, SEMVER_MAJOR_KEYS))
+    local minor = normalizeSemVerComponent(readMatchingField(tbl, SEMVER_MINOR_KEYS))
+    local patch = normalizeSemVerComponent(readMatchingField(tbl, SEMVER_PATCH_KEYS))
+
+    if major ~= nil and minor ~= nil and patch ~= nil then
+        return string.format("%d.%d.%d", major, minor, patch)
+    end
+
+    for index = 1, #SEMVER_NESTED_KEYS do
+        local nested = tbl[SEMVER_NESTED_KEYS[index]]
+        if type(nested) == "table" then
+            local value = extractSemVerFromTable(nested, visited)
+            if value then
+                return value
+            end
+        end
+    end
+
+    return nil
+end
+
+local function normalizeSemVerString(value)
+    if type(value) ~= "string" then
+        return nil
+    end
+
+    local major, minor, patch = value:match("(%d+)%.(%d+)%.(%d+)")
+    if major and minor and patch then
+        return string.format("%d.%d.%d", tonumber(major), tonumber(minor), tonumber(patch))
+    end
+
+    return nil
+end
+
+local function resolveAddonVersionString()
+    local addon = Nvk3UT
+    if type(addon) ~= "table" then
+        return nil
+    end
+
+    local semverFromTable = extractSemVerFromTable(addon)
+    if semverFromTable then
+        return semverFromTable
+    end
+
+    local manifestString = addon.versionString or addon.VersionString
+    local normalizedManifest = normalizeSemVerString(manifestString)
+    if normalizedManifest then
+        return normalizedManifest
+    end
+
+    local addonVersion = addon.addonVersion
+    if type(addonVersion) == "string" then
+        local normalizedAddonVersion = normalizeSemVerString(addonVersion)
+        if normalizedAddonVersion then
+            return normalizedAddonVersion
+        end
+        if addonVersion ~= "" then
+            return addonVersion
+        end
+    elseif addonVersion ~= nil then
+        return tostring(addonVersion)
+    end
+
+    return nil
+end
+
+local function getLamVersionDescription()
+    local versionString = resolveAddonVersionString() or "Unknown"
+    return colorizeLamHeaderText(string.format("Version: %s", versionString))
+end
+
 local FONT_FACE_CHOICES = {
     { name = "Bold (Game Default)", face = "$(BOLD_FONT)" },
     { name = "Univers 67 (Game)", face = "EsoUI/Common/Fonts/univers67.otf" },
@@ -963,6 +1088,14 @@ local function registerPanel(displayTitle)
     }
 
     local options = {}
+    local versionDescription = getLamVersionDescription()
+    if versionDescription then
+        options[#options + 1] = {
+            type = "description",
+            text = versionDescription,
+            width = "full",
+        }
+    end
     options[#options + 1] = {
         type = "submenu",
         name = "Journal Erweiterungen",
