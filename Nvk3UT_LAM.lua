@@ -398,6 +398,54 @@ local function getEndeavorConfig()
     return config
 end
 
+local function LamQueueFullRebuild(reason)
+    local context = "lam"
+    if reason ~= nil then
+        local suffix = tostring(reason)
+        if suffix ~= "" then
+            context = string.format("lam:%s", suffix)
+        end
+    end
+
+    local addon = type(Nvk3UT) == "table" and Nvk3UT or nil
+    local rebuild = addon and addon.Rebuild
+    if type(rebuild) ~= "table" then
+        local globalRoot = type(_G) == "table" and _G.Nvk3UT_Rebuild or Nvk3UT_Rebuild
+        if type(globalRoot) == "table" then
+            rebuild = globalRoot
+        end
+    end
+
+    if type(rebuild) ~= "table" then
+        return false
+    end
+
+    local sections = rebuild.Sections or rebuild.sections
+    if type(sections) == "function" then
+        local ok, triggered = pcall(sections, { "trackers", "layout" }, context)
+        if ok then
+            if triggered == nil then
+                return true
+            end
+            return triggered ~= false
+        end
+        return false
+    end
+
+    local rebuildAll = rebuild.All or rebuild.all
+    if type(rebuildAll) == "function" then
+        local ok, triggered = pcall(rebuildAll, context)
+        if ok then
+            if triggered == nil then
+                return true
+            end
+            return triggered ~= false
+        end
+    end
+
+    return false
+end
+
 local function clampEndeavorFontSize(value)
     local numeric = tonumber(value)
     if numeric == nil then
@@ -1520,6 +1568,9 @@ local function registerPanel(displayTitle)
                 setFunc = function(value)
                     local settings = getQuestSettings()
                     settings.active = value
+                    if LamQueueFullRebuild("questActive") then
+                        return
+                    end
                     if Nvk3UT and Nvk3UT.QuestTracker and Nvk3UT.QuestTracker.SetActive then
                         Nvk3UT.QuestTracker.SetActive(value)
                     end
@@ -1686,6 +1737,9 @@ local function registerPanel(displayTitle)
                     local config = getEndeavorConfig()
                     config.Enabled = value ~= false
                     refreshEndeavorModel()
+                    if LamQueueFullRebuild("endeavorEnable") then
+                        return
+                    end
                     markEndeavorDirty("enable")
                     queueEndeavorDirty()
                 end,
@@ -1739,8 +1793,11 @@ local function registerPanel(displayTitle)
                     local config = getEndeavorConfig()
                     local resolved = value == "recolor" and "recolor" or "hide"
                     config.CompletedHandling = resolved
+                    refreshEndeavorModel()
+                    if LamQueueFullRebuild("endeavorCompletedHandling") then
+                        return
+                    end
                     if resolved == "hide" then
-                        refreshEndeavorModel()
                         markEndeavorDirty("filter")
                     else
                         markEndeavorDirty("appearance")
@@ -1958,6 +2015,9 @@ local function registerPanel(displayTitle)
                 setFunc = function(value)
                     local settings = getAchievementSettings()
                     settings.active = value
+                    if LamQueueFullRebuild("achievementActive") then
+                        return
+                    end
                     if Nvk3UT and Nvk3UT.AchievementTracker and Nvk3UT.AchievementTracker.SetActive then
                         Nvk3UT.AchievementTracker.SetActive(value)
                     end
