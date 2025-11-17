@@ -2604,11 +2604,27 @@ refreshScroll = function(targetOffset)
 
     local debugScrollRange = state.scrollMaxOffset
 
+    local debugScrollChildHeight = nil
+    local scrollChildForDebug = scrollContent
+    if scrollChildForDebug and scrollChildForDebug.GetHeight then
+        local ok, h = pcall(scrollChildForDebug.GetHeight, scrollChildForDebug)
+        if ok and type(h) == "number" then
+            debugScrollChildHeight = h
+        end
+    end
+
+    local debugEngineRange = 0
+    if type(debugViewportHeight) == "number" and type(debugScrollChildHeight) == "number" then
+        debugEngineRange = math.max(debugScrollChildHeight - debugViewportHeight, 0)
+    end
+
     debugLog(string.format(
-        "Scroll viewport=%s content=%s range=%s",
+        "Scroll viewport=%s content=%s range=%s child=%s engineRange=%s",
         tostring(debugViewportHeight),
         tostring(totalContentHeight),
-        tostring(debugScrollRange)
+        tostring(debugScrollRange),
+        tostring(debugScrollChildHeight),
+        tostring(debugEngineRange)
     ))
 
     local desiredOffset = math.max(0, previousDesired or 0)
