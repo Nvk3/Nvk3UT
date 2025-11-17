@@ -801,13 +801,30 @@ local function BuildAchievementContextMenuEntries(data)
     local achievementId = data and data.achievementId
 
     entries[#entries + 1] = {
-        label = "Aus Favoriten entfernen",
+        label = "In Chat einfügen",
         enabled = function()
-            return IsFavoriteAchievement(achievementId)
+            return type(achievementId) == "number"
+                and achievementId > 0
+                and type(GetAchievementLink) == "function"
+                and type(ZO_LinkHandler_InsertLink) == "function"
         end,
         callback = function()
-            if achievementId and IsFavoriteAchievement(achievementId) then
-                RemoveAchievementFromFavorites(achievementId)
+            local hasId = type(achievementId) == "number" and achievementId > 0
+            local canGet = type(GetAchievementLink) == "function"
+            local canInsert = type(ZO_LinkHandler_InsertLink) == "function"
+            if not (hasId and canGet and canInsert) then
+                return
+            end
+
+            local link
+            if LINK_STYLE_BRACKETS ~= nil then
+                link = GetAchievementLink(achievementId, LINK_STYLE_BRACKETS)
+            else
+                link = GetAchievementLink(achievementId)
+            end
+
+            if type(link) == "string" and link ~= "" then
+                ZO_LinkHandler_InsertLink(link)
             end
         end,
     }
@@ -820,6 +837,18 @@ local function BuildAchievementContextMenuEntries(data)
         callback = function()
             if achievementId and CanShowInAchievements(achievementId) then
                 ShowAchievementInAchievements(achievementId)
+            end
+        end,
+    }
+
+    entries[#entries + 1] = {
+        label = "Aus Favoriten entfernen",
+        enabled = function()
+            return IsFavoriteAchievement(achievementId)
+        end,
+        callback = function()
+            if achievementId and IsFavoriteAchievement(achievementId) then
+                RemoveAchievementFromFavorites(achievementId)
             end
         end,
     }
