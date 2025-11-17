@@ -794,28 +794,48 @@ function Layout.UpdateScrollAreaHeight(host, contentHeight, sizes)
         setScrollOffset(host, maxOffset, true)
     end
 
-    -- TEMP: Force ESO scroll engine to refresh its internal extents 1 frame later
-    if not last._debugScrollReflowScheduled then
-        last._debugScrollReflowScheduled = true
-        zo_callLater(function()
-            last._debugScrollReflowScheduled = nil
-            local scrollContainer = getScrollContainer(host)
-            local scrollContent = getScrollContent(host)
-            if scrollContainer and scrollContent and scrollContent.GetHeight then
-                local okH, h = pcall(scrollContent.GetHeight, scrollContent)
-                if okH and type(h) == "number" and scrollContainer.SetScrollExtents then
-                    local okC, vh = pcall(scrollContainer.GetHeight, scrollContainer)
-                    if okC and type(vh) == "number" then
-                        local engineRange = math.max(h - vh, 0)
-                        scrollContainer:SetScrollExtents(0, engineRange)
-                        debugLog(string.format(
-                            "DeferredScrollFix: child=%s viewport=%s engineRange=%s",
-                            tostring(h), tostring(vh), tostring(engineRange)
-                        ))
+    -- HARD TEST: 3-phase reflow to force ESO to update internal scroll cache
+    if not last._hardReflowPending then
+        last._hardReflowPending = true
+
+        local scrollContainer = getScrollContainer(host)
+        local scrollContent = getScrollContent(host)
+
+        if scrollContainer and scrollContent then
+            -- Phase 1: next frame, repeat height
+            zo_callLater(function()
+                if scrollContent.SetHeight then
+                    local okH, h = pcall(scrollContent.GetHeight, scrollContent)
+                    if okH and type(h) == "number" then
+                        scrollContent:SetHeight(h)
                     end
                 end
-            end
-        end, 0)
+
+                -- Phase 2: immediately after reflow, fix scroll extents
+                zo_callLater(function()
+                    local okH, h = pcall(scrollContent.GetHeight, scrollContent)
+                    local okV, vh = pcall(scrollContainer.GetHeight, scrollContainer)
+                    if okH and okV and type(h) == "number" and type(vh) == "number" then
+                        local newRange = math.max(h - vh, 0)
+                        scrollContainer:SetScrollExtents(0, newRange)
+                        debugLog(string.format("[HardReflow] child=%s viewport=%s newRange=%s", tostring(h), tostring(vh), tostring(newRange)))
+                    end
+
+                    -- Phase 3: clamp scroll offset in final frame
+                    zo_callLater(function()
+                        last._hardReflowPending = nil
+                        local offset = scrollContainer:GetScrollOffset()
+                        local maxO = state.scrollMaxOffset or 0
+                        if offset > maxO then
+                            scrollContainer:SetScrollOffset(maxO)
+                        end
+                    end, 0)
+
+                end, 0)
+            end, 0)
+        else
+            last._hardReflowPending = nil
+        end
     end
 
     return viewportHeight
