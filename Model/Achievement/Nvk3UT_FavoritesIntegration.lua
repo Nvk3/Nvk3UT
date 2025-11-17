@@ -232,16 +232,6 @@ local function _shouldRefreshFavorites()
         return false
     end
 
-    local control = achievements.control
-    if control and control.IsHidden and control:IsHidden() then
-        return false
-    end
-
-    local sceneManager = SCENE_MANAGER
-    if sceneManager and sceneManager.IsShowing and not sceneManager:IsShowing("achievements") then
-        return false
-    end
-
     local tree = achievements.categoryTree
     if not (tree and tree.GetSelectedData) then
         return false
