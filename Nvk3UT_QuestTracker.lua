@@ -1273,24 +1273,7 @@ end
 
 local function CanQuestBeShownOnMap(journalIndex)
     local normalized = NormalizeJournalIndex(journalIndex)
-    if not normalized then
-        return false
-    end
-
-    -- Mirror the base quest journal gating so availability matches the vanilla UI.
-    local managerOk, managerResult = QuestManagerCall("CanShowOnMap", normalized)
-    if managerOk then
-        return IsTruthy(managerResult)
-    end
-
-    if type(DoesJournalQuestHaveWorldMapLocation) == "function" then
-        local ok, hasLocation = SafeCall(DoesJournalQuestHaveWorldMapLocation, normalized)
-        if ok then
-            return IsTruthy(hasLocation)
-        end
-    end
-
-    return false
+    return normalized ~= nil
 end
 
 local function ShowQuestOnMap(journalIndex)
@@ -1301,6 +1284,14 @@ local function ShowQuestOnMap(journalIndex)
 
     if type(ZO_WorldMap_ShowQuestOnMap) ~= "function" then
         return
+    end
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format(
+            "SHOW_QUEST_ON_MAP questIndex=%s normalized=%s",
+            tostring(journalIndex),
+            tostring(normalized)
+        ))
     end
 
     -- Mirror the reference tracker by delegating straight to the base-game
@@ -1362,9 +1353,7 @@ local function BuildQuestContextMenuEntries(journalIndex)
             return CanQuestBeShownOnMap(journalIndex)
         end,
         callback = function()
-            if CanQuestBeShownOnMap(journalIndex) then
-                ShowQuestOnMap(journalIndex)
-            end
+            ShowQuestOnMap(journalIndex)
         end,
     }
 
