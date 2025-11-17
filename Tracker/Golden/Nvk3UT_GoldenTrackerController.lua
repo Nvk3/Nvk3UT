@@ -225,23 +225,21 @@ local function normalizeProgressPair(progressValue, maxValue)
 end
 
 local function buildObjectiveFromEntry(entryVm)
-    -- Adapter: Golden entry → Objective-Payload for GoldenTrackerRows
+    -- Golden-entry → Objective table for tracker rows
     if type(entryVm) ~= "table" then
         return nil
     end
 
     local title = tostring(entryVm.title or entryVm.displayName or entryVm.name or "")
-    local description = entryVm.description or title
 
-    local progress = tonumber(entryVm.progressDisplay or entryVm.progressCurrent or entryVm.current) or 0
-    local maxValue = tonumber(entryVm.maxDisplay or entryVm.max or entryVm.progressMax) or 0
+    local progress = tonumber(entryVm.current or entryVm.progressCurrent or entryVm.progressDisplay) or 0
+    local maxValue = tonumber(entryVm.max or entryVm.progressMax or entryVm.maxDisplay) or 0
 
     local objective = {
         title = title,
         displayName = title,
         name = title,
-        text = description,
-        description = description,
+        text = entryVm.description or title,
         progress = progress,
         max = maxValue,
         progressDisplay = progress,
