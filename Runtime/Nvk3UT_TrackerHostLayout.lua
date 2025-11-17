@@ -799,39 +799,49 @@ function Layout.UpdateScrollAreaHeight(host, contentHeight, sizes)
         last._hardReflowPending = true
 
         local scrollContainer = getScrollContainer(host)
-        local scrollContent = getScrollContent(host)
+        local scrollContent   = getScrollContent(host)
 
         if scrollContainer and scrollContent then
+
             -- Phase 1: next frame, repeat height
             zo_callLater(function()
-                if scrollContent.SetHeight then
+                -- Repeat height to break ESO's stale region cache
+                if scrollContent.GetHeight and scrollContent.SetHeight then
                     local okH, h = pcall(scrollContent.GetHeight, scrollContent)
                     if okH and type(h) == "number" then
                         scrollContent:SetHeight(h)
                     end
                 end
 
-                -- Phase 2: immediately after reflow, fix scroll extents
+                -- Phase 2: next frame, fix scroll extents
                 zo_callLater(function()
-                    local okH, h = pcall(scrollContent.GetHeight, scrollContent)
+                    local okH, h  = pcall(scrollContent.GetHeight, scrollContent)
                     local okV, vh = pcall(scrollContainer.GetHeight, scrollContainer)
-                    if okH and okV and type(h) == "number" and type(vh) == "number" then
+                    if okH and okV and type(h)=="number" and type(vh)=="number" then
                         local newRange = math.max(h - vh, 0)
                         scrollContainer:SetScrollExtents(0, newRange)
-                        debugLog(string.format("[HardReflow] child=%s viewport=%s newRange=%s", tostring(h), tostring(vh), tostring(newRange)))
+                        debugLog(string.format(
+                            "[HardReflow] child=%s viewport=%s newRange=%s",
+                            tostring(h), tostring(vh), tostring(newRange)
+                        ))
                     end
 
-                    -- Phase 3: clamp scroll offset in final frame
+                    -- Phase 3: clamp scroll offset
                     zo_callLater(function()
                         last._hardReflowPending = nil
-                        local offset = scrollContainer:GetScrollOffset()
-                        local maxO = state.scrollMaxOffset or 0
-                        if offset > maxO then
-                            scrollContainer:SetScrollOffset(maxO)
+                        if scrollContainer.GetScrollOffset and scrollContainer.SetScrollOffset then
+                            local current = scrollContainer:GetScrollOffset()
+                            local maxO    = state.scrollMaxOffset or 0
+                            if current > maxO then
+                                scrollContainer:SetScrollOffset(maxO)
+                            end
+                        else
+                            last._hardReflowPending = nil
                         end
                     end, 0)
 
                 end, 0)
+
             end, 0)
         else
             last._hardReflowPending = nil
