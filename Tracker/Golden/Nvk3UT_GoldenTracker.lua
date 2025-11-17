@@ -926,71 +926,47 @@ function GoldenTracker.Refresh(...)
 
     tracker.viewModel = type(viewModel) == "table" and viewModel or nil
     local vm = tracker.viewModel or {}
-    local categories = type(vm.categories) == "table" and vm.categories or {}
-    local status = type(vm.status) == "table" and vm.status or {}
+    local summary = type(vm.summary) == "table" and vm.summary or {}
+    local objectives = type(vm.objectives) == "table" and vm.objectives or {}
     local statusSummary = string.format(
-        "avail=%s locked=%s hasEntries=%s",
-        tostring(status.isAvailable),
-        tostring(status.isLocked),
-        tostring(status.hasEntries)
+        "hasCampaign=%s remaining=%s",
+        tostring(summary.hasActiveCampaign),
+        tostring(summary.remainingObjectivesToNextReward)
     )
 
     local rows = tracker.rows or {}
     resetRows(rows)
     tracker.rows = rows
 
-    safeDebug("Refresh start: %s categories=%d", statusSummary, #categories)
+    safeDebug("Refresh start: %s objectives=%d", statusSummary, #objectives)
 
-    if vm == nil then
+    if vm == nil or summary.hasActiveCampaign ~= true then
         tracker.height = 0
         state.height = 0
         setContainerHeight(container, 0)
         applyVisibility(root, true)
         applyVisibility(content, true)
-        safeDebug("Refresh aborted: no viewModel")
-        return
-    end
-
-    local hasEntries = status.hasEntries ~= false and #categories > 0
-    if not hasEntries then
-        tracker.height = 0
-        state.height = 0
-        setContainerHeight(container, 0)
-        applyVisibility(root, true)
-        applyVisibility(content, true)
-        safeDebug("Refresh aborted: no entries")
+        safeDebug("Refresh aborted: no active campaign")
         return
     end
 
     if rowsModule then
-        for categoryIndex = 1, #categories do
-            local categoryData = categories[categoryIndex]
-            if type(categoryData) == "table" then
-                local categoryRow = safeCreateRow(rowsModule.CreateCategoryHeader, content, categoryData)
-                if categoryRow then
-                    table.insert(rows, categoryRow)
-                end
+        local categoryRow = safeCreateRow(rowsModule.CreateCategoryRow, content, summary)
+        if categoryRow then
+            table.insert(rows, categoryRow)
+        end
 
-                local entries = type(categoryData.entries) == "table" and categoryData.entries or {}
-                for entryIndex = 1, #entries do
-                    local entryData = entries[entryIndex]
-                    if type(entryData) == "table" then
-                        local entryRow = safeCreateRow(rowsModule.CreateEntryRow, content, entryData)
-                        if entryRow then
-                            table.insert(rows, entryRow)
-                        end
+        local campaignRow = safeCreateRow(rowsModule.CreateCampaignRow, content, summary)
+        if campaignRow then
+            table.insert(rows, campaignRow)
+        end
 
-                        local objectives = type(entryData.objectives) == "table" and entryData.objectives or {}
-                        for objectiveIndex = 1, #objectives do
-                            local objectiveData = objectives[objectiveIndex]
-                            if type(objectiveData) == "table" then
-                                local objectiveRow = safeCreateRow(rowsModule.CreateObjectiveRow, content, objectiveData)
-                                if objectiveRow then
-                                    table.insert(rows, objectiveRow)
-                                end
-                            end
-                        end
-                    end
+        for objectiveIndex = 1, #objectives do
+            local objectiveData = objectives[objectiveIndex]
+            if type(objectiveData) == "table" then
+                local objectiveRow = safeCreateRow(rowsModule.CreateObjectiveRow, content, objectiveData)
+                if objectiveRow then
+                    table.insert(rows, objectiveRow)
                 end
             end
         end

@@ -7,6 +7,8 @@ Layout.__index = Layout
 
 local MODULE_TAG = addonName .. ".GoldenTrackerLayout"
 
+local ROW_GAP = 3
+
 local function safeDebug(message, ...)
     local debugFn = Nvk3UT and Nvk3UT.Debug
     if type(debugFn) ~= "function" then
@@ -94,8 +96,6 @@ function Layout.ApplyLayout(parentControl, rows)
         return 0
     end
 
-    clearChildren(parentControl)
-
     local totalHeight = 0
     local previousRow = nil
     local parentWidth = getParentWidth(parentControl)
@@ -117,7 +117,7 @@ function Layout.ApplyLayout(parentControl, rows)
 
             if type(row.SetAnchor) == "function" then
                 if previousRow and type(previousRow.SetAnchor) == "function" then
-                    row:SetAnchor(TOPLEFT, previousRow, BOTTOMLEFT, 0, 0)
+                    row:SetAnchor(TOPLEFT, previousRow, BOTTOMLEFT, 0, ROW_GAP)
                 else
                     row:SetAnchor(TOPLEFT, parentControl, TOPLEFT, 0, 0)
                 end
@@ -126,9 +126,21 @@ function Layout.ApplyLayout(parentControl, rows)
             applyDimensions(row, parentWidth)
 
             local height = tonumber(row.__height) or 0
-            if height < 0 then
+            if type(row.GetHeight) == "function" then
+                local ok, measured = pcall(row.GetHeight, row)
+                if ok and type(measured) == "number" then
+                    height = measured
+                end
+            end
+
+            if height ~= height or height < 0 then
                 height = 0
             end
+
+            if previousRow ~= nil then
+                totalHeight = totalHeight + ROW_GAP
+            end
+
             totalHeight = totalHeight + height
             previousRow = row
         end
