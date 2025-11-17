@@ -534,6 +534,8 @@ Layout._lastSizes = Layout._lastSizes or nil
 Layout._lastScrollMetrics = Layout._lastScrollMetrics or setmetatable({}, { __mode = "k" })
 Layout._loggedSectionSpacing = Layout._loggedSectionSpacing or false
 
+local SCROLL_SECOND_PASS_UPDATE_NAME = "Nvk3UT_TrackerHost_ScrollSecondPass"
+
 function Layout.UpdateHeaderFooterSizes(host)
     host = getHost(host)
 
@@ -683,10 +685,16 @@ function Layout.UpdateHeaderFooterSizes(host)
     return result
 end
 
-function Layout.UpdateScrollAreaHeight(host, contentHeight, sizes)
+function Layout.UpdateScrollAreaHeight(host, contentHeight, sizes, isFromResize)
     host = getHost(host)
     if not host then
         return 0
+    end
+
+    if isFromResize == nil then
+        isFromResize = false
+    else
+        isFromResize = isFromResize == true
     end
 
     if type(sizes) ~= "table" then
@@ -705,6 +713,9 @@ function Layout.UpdateScrollAreaHeight(host, contentHeight, sizes)
         last = {}
         metrics[host] = last
     end
+
+    last.lastContentHeight = contentHeight
+    last.lastSizes = sizes
 
     local stackHeight = sanitizeLength(contentHeight)
     if stackHeight < 0 then
@@ -792,6 +803,31 @@ function Layout.UpdateScrollAreaHeight(host, contentHeight, sizes)
     local actual = state and tonumber(state.actual) or 0
     if actual > maxOffset then
         setScrollOffset(host, maxOffset, true)
+    end
+
+    if not isFromResize then
+        if not last.pendingSecondPass then
+            last.pendingSecondPass = true
+            EVENT_MANAGER:RegisterForUpdate(SCROLL_SECOND_PASS_UPDATE_NAME, 1, function()
+                EVENT_MANAGER:UnregisterForUpdate(SCROLL_SECOND_PASS_UPDATE_NAME)
+                last.pendingSecondPass = false
+
+                local secondPassContentHeight = last.lastContentHeight
+                local secondPassSizes = last.lastSizes
+                if secondPassContentHeight == nil or secondPassSizes == nil then
+                    return
+                end
+
+                local safeCall = Addon and Addon.SafeCall
+                if type(safeCall) == "function" then
+                    safeCall(function()
+                        Layout.UpdateScrollAreaHeight(host, secondPassContentHeight, secondPassSizes, true)
+                    end)
+                else
+                    Layout.UpdateScrollAreaHeight(host, secondPassContentHeight, secondPassSizes, true)
+                end
+            end)
+        end
     end
 
     return viewportHeight
