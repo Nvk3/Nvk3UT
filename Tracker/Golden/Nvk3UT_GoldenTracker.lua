@@ -7,11 +7,19 @@ local Layout = Nvk3UT and Nvk3UT.GoldenTrackerLayout
 
 local GoldenTracker = {}
 GoldenTracker.__index = GoldenTracker
+GoldenTracker.rows = {}
+GoldenTracker.height = 0
+GoldenTracker.viewModel = nil
+GoldenTracker.initialized = false
+GoldenTracker.container = nil
+GoldenTracker.root = nil
+GoldenTracker.content = nil
+GoldenTracker.options = nil
 
 local MODULE_TAG = addonName .. ".GoldenTracker"
 
 local state = {
-    parent = nil,
+    container = nil,
     root = nil,
     content = nil,
     height = 0,
@@ -289,10 +297,29 @@ end
 local function resolveInitArguments(...)
     local first = ...
     if first == GoldenTracker or (type(first) == "table" and first.__index == GoldenTracker) then
-        return select(2, ...), select(3, ...)
+        return first, select(2, ...), select(3, ...)
     end
 
-    return first, select(2, ...)
+    return GoldenTracker, first, select(2, ...)
+end
+
+local function resolveRefreshArguments(...)
+    local first = ...
+    if first == GoldenTracker or (type(first) == "table" and first.__index == GoldenTracker) then
+        return first, select(2, ...)
+    end
+
+    return GoldenTracker, first
+end
+
+local function resetRows(rows)
+    if type(rows) ~= "table" then
+        return
+    end
+
+    for index = #rows, 1, -1 do
+        rows[index] = nil
+    end
 end
 
 local function isControl(control)
@@ -316,7 +343,7 @@ local function isControl(control)
 end
 
 function GoldenTracker.Init(...)
-    local parentControl, options = resolveInitArguments(...)
+    local tracker, parentControl, options = resolveInitArguments(...)
 
     if parentControl == nil then
         logTrackerError("Init aborted; missing parent control")
@@ -328,14 +355,25 @@ function GoldenTracker.Init(...)
         return
     end
 
-    state.parent = parentControl
-    state.options = type(options) == "table" and options or nil
-    state.height = 0
+    tracker.container = parentControl
+    tracker.options = type(options) == "table" and options or nil
+    tracker.height = 0
+    tracker.viewModel = nil
+    tracker.rows = tracker.rows or {}
+    tracker.root = nil
+    tracker.content = nil
+    tracker.initialized = false
+
+    state.container = parentControl
+    state.options = tracker.options
+    state.height = tracker.height
     state.initialized = false
     state.root = nil
     state.content = nil
 
     local root, content = createRootAndContent(parentControl)
+    tracker.root = root
+    tracker.content = content
     state.root = root
     state.content = content
 
@@ -346,12 +384,14 @@ function GoldenTracker.Init(...)
 
     ClearChildren(content)
 
+    tracker.height = 0
     state.height = 0
     setContainerHeight(parentControl, 0)
     applyVisibility(parentControl, false)
     applyVisibility(root, true)
     applyVisibility(content, true)
 
+    tracker.initialized = true
     state.initialized = true
 
     safeDebug("Init")
@@ -862,16 +902,18 @@ registerGoldenTempEvents()
 
 --[[ GEVENTS_TEMP_EVENTS_END: Golden (remove on GEVENTS_*_SWITCH) ]]
 
-function GoldenTracker.Refresh(viewModel)
-    if not state.initialized then
+function GoldenTracker.Refresh(...)
+    local tracker, viewModel = resolveRefreshArguments(...)
+    if not tracker.initialized then
         return
     end
 
-    local container = state.parent
-    local root = state.root
-    local content = state.content
+    local container = tracker.container or state.container
+    local root = tracker.root or state.root
+    local content = tracker.content or state.content
 
     if not container or not root or not content then
+        tracker.height = 0
         state.height = 0
         setContainerHeight(container, 0)
         return
@@ -881,9 +923,9 @@ function GoldenTracker.Refresh(viewModel)
 
     local rowsModule = getRowsModule()
     local layoutModule = getLayoutModule()
-    local rows = {}
 
-    local vm = type(viewModel) == "table" and viewModel or {}
+    tracker.viewModel = type(viewModel) == "table" and viewModel or nil
+    local vm = tracker.viewModel or {}
     local categories = type(vm.categories) == "table" and vm.categories or {}
     local status = type(vm.status) == "table" and vm.status or {}
     local statusSummary = string.format(
@@ -893,9 +935,34 @@ function GoldenTracker.Refresh(viewModel)
         tostring(status.hasEntries)
     )
 
+    local rows = tracker.rows or {}
+    resetRows(rows)
+    tracker.rows = rows
+
     safeDebug("Refresh start: %s categories=%d", statusSummary, #categories)
 
-    if rowsModule and #categories > 0 then
+    if vm == nil then
+        tracker.height = 0
+        state.height = 0
+        setContainerHeight(container, 0)
+        applyVisibility(root, true)
+        applyVisibility(content, true)
+        safeDebug("Refresh aborted: no viewModel")
+        return
+    end
+
+    local hasEntries = status.hasEntries ~= false and #categories > 0
+    if not hasEntries then
+        tracker.height = 0
+        state.height = 0
+        setContainerHeight(container, 0)
+        applyVisibility(root, true)
+        applyVisibility(content, true)
+        safeDebug("Refresh aborted: no entries")
+        return
+    end
+
+    if rowsModule then
         for categoryIndex = 1, #categories do
             local categoryData = categories[categoryIndex]
             if type(categoryData) == "table" then
@@ -927,6 +994,8 @@ function GoldenTracker.Refresh(viewModel)
                 end
             end
         end
+    else
+        safeDebug("Refresh aborted; rows module unavailable")
     end
 
     local totalHeight = 0
@@ -941,14 +1010,16 @@ function GoldenTracker.Refresh(viewModel)
     applyVisibility(root, not hasRows)
     applyVisibility(content, not hasRows)
 
+    tracker.height = totalHeight
     state.height = totalHeight
     setContainerHeight(container, totalHeight)
 
     safeDebug("Refresh complete: %s rows=%d height=%d", statusSummary, #rows, totalHeight)
 end
 
-function GoldenTracker.GetHeight()
-    local height = tonumber(state.height) or 0
+function GoldenTracker:GetHeight()
+    local resolvedHeight = self and self.height or state.height
+    local height = tonumber(resolvedHeight) or 0
     if height < 0 then
         height = 0
     end
