@@ -38,6 +38,10 @@ local DEFAULTS = {
     OBJECTIVE_INDENT_X = 14,
 }
 
+local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
+local MIN_FONT_SIZE = 12
+local MAX_FONT_SIZE = 36
+
 local controlCounters = {
     category = 0,
     entry = 0,
@@ -106,6 +110,108 @@ local function applyLabelDefaults(label, font, color)
     if label.SetWrapMode and rawget(_G, "TEXT_WRAP_MODE_ELLIPSIS") then
         label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
     end
+end
+
+local function getAddon()
+    return rawget(_G, addonName)
+end
+
+local function clampFontSize(value)
+    local numeric = tonumber(value)
+    if numeric == nil then
+        return nil
+    end
+
+    numeric = math.floor(numeric + 0.5)
+    if numeric < MIN_FONT_SIZE then
+        numeric = MIN_FONT_SIZE
+    elseif numeric > MAX_FONT_SIZE then
+        numeric = MAX_FONT_SIZE
+    end
+
+    return numeric
+end
+
+local function buildFontString(face, size, outline)
+    if type(face) ~= "string" or face == "" then
+        return nil
+    end
+
+    local resolvedSize = clampFontSize(size)
+    if resolvedSize == nil then
+        return nil
+    end
+
+    local resolvedOutline = outline
+    if type(resolvedOutline) ~= "string" or resolvedOutline == "" then
+        resolvedOutline = DEFAULT_FONT_OUTLINE
+    end
+
+    return string.format("%s|%d|%s", face, resolvedSize, resolvedOutline)
+end
+
+local function getConfiguredFonts()
+    local addon = getAddon()
+    if type(addon) ~= "table" then
+        return nil
+    end
+
+    local sv = addon.SV or addon.sv
+    if type(sv) ~= "table" then
+        return nil
+    end
+
+    local golden = sv.Golden
+    if type(golden) ~= "table" then
+        return nil
+    end
+
+    local tracker = golden.Tracker
+    if type(tracker) ~= "table" then
+        return nil
+    end
+
+    return tracker.Fonts
+end
+
+local function selectFontGroup(fonts, key)
+    if type(fonts) ~= "table" then
+        return nil
+    end
+
+    local group = fonts[key]
+    if type(group) ~= "table" then
+        local altKey = type(key) == "string" and string.lower(key)
+        if altKey and type(fonts[altKey]) == "table" then
+            group = fonts[altKey]
+        end
+    end
+
+    return group
+end
+
+local function applyConfiguredFont(label, key)
+    if not (label and label.SetFont) then
+        return false
+    end
+
+    local fonts = getConfiguredFonts()
+    if type(fonts) ~= "table" then
+        return false
+    end
+
+    local group = selectFontGroup(fonts, key)
+    if type(group) ~= "table" then
+        return false
+    end
+
+    local fontString = buildFontString(group.Face or group.face, group.Size or group.size, group.Outline or group.outline)
+    if fontString == nil then
+        return false
+    end
+
+    label:SetFont(fontString)
+    return true
 end
 
 local function sanitizeColorNumber(value)
@@ -285,7 +391,8 @@ function Rows.CreateCategoryHeader(parent, categoryData)
         end
         local colorRole = resolveCategoryColorRole(categoryData)
         local r, g, b, a = resolveGoldenColor(colorRole)
-        applyLabelDefaults(label, DEFAULTS.CATEGORY_FONT, { r, g, b, a })
+        local appliedFont = applyConfiguredFont(label, "Category")
+        applyLabelDefaults(label, appliedFont and nil or DEFAULTS.CATEGORY_FONT, { r, g, b, a })
 
         local text = ""
         if type(categoryData) == "table" then
@@ -326,7 +433,8 @@ function Rows.CreateEntryRow(parent, entryData)
         local role = entryData and (entryData.isComplete == true or entryData.isCompleted == true) and GOLDEN_COLOR_ROLES.Completed
             or GOLDEN_COLOR_ROLES.EntryName
         local r, g, b, a = resolveGoldenColor(role)
-        applyLabelDefaults(label, DEFAULTS.ENTRY_FONT, { r, g, b, a })
+        local appliedFont = applyConfiguredFont(label, "Title")
+        applyLabelDefaults(label, appliedFont and nil or DEFAULTS.ENTRY_FONT, { r, g, b, a })
 
         local text = ""
         if type(entryData) == "table" then
@@ -355,7 +463,8 @@ function Rows.CreateEntryRow(parent, entryData)
                     if counterLabel.SetAnchor then
                         counterLabel:SetAnchor(RIGHT, control, RIGHT, 0, 0)
                     end
-                    applyLabelDefaults(counterLabel, DEFAULTS.ENTRY_FONT, { r, g, b, a })
+                    local counterFontApplied = applyConfiguredFont(counterLabel, "Title")
+                    applyLabelDefaults(counterLabel, counterFontApplied and nil or DEFAULTS.ENTRY_FONT, { r, g, b, a })
                     if counterLabel.SetHorizontalAlignment and rawget(_G, "TEXT_ALIGN_RIGHT") then
                         counterLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
                     end
@@ -393,7 +502,8 @@ function Rows.CreateObjectiveRow(parent, objectiveData)
             and GOLDEN_COLOR_ROLES.Completed
             or GOLDEN_COLOR_ROLES.Objective
         local r, g, b, a = resolveGoldenColor(role)
-        applyLabelDefaults(label, DEFAULTS.OBJECTIVE_FONT, { r, g, b, a })
+        local appliedFont = applyConfiguredFont(label, "Objective")
+        applyLabelDefaults(label, appliedFont and nil or DEFAULTS.OBJECTIVE_FONT, { r, g, b, a })
 
         local text = ""
         if type(objectiveData) == "table" then
