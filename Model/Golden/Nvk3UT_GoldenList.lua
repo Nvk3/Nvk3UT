@@ -396,6 +396,32 @@ local function normalizeEntry(rawEntry, categoryKey, fallbackRemaining, entryInd
     return normalized
 end
 
+local function toCategoryKey(raw)
+    if raw == nil then
+        return nil
+    end
+
+    local rawType = type(raw)
+    if rawType == "number" then
+        return tostring(raw)
+    end
+
+    if rawType == "string" then
+        local trimmed = raw
+        if type(zo_strtrim) == "function" then
+            trimmed = zo_strtrim(trimmed)
+        end
+
+        if trimmed == nil or trimmed == "" then
+            return nil
+        end
+
+        return trimmed
+    end
+
+    return nil
+end
+
 local function normalizeCategoryPayload(payload, index)
     if type(payload) ~= "table" then
         return nil
