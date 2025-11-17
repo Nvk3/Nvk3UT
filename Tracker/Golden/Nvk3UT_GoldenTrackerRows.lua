@@ -7,6 +7,27 @@ Rows.__index = Rows
 
 local MODULE_TAG = addonName .. ".GoldenTrackerRows"
 
+local GOLDEN_COLOR_ROLES = {
+    CategoryTitleClosed = "categoryTitleClosed",
+    CategoryTitleOpen = "categoryTitleOpen",
+    EntryName = "entryTitle",
+    Objective = "objectiveText",
+    Active = "activeTitle",
+    Completed = "completed",
+}
+
+local ROLE_FALLBACKS = {
+    [GOLDEN_COLOR_ROLES.CategoryTitleClosed] = "categoryTitle",
+    [GOLDEN_COLOR_ROLES.CategoryTitleOpen] = "entryTitle",
+    [GOLDEN_COLOR_ROLES.EntryName] = "entryTitle",
+    [GOLDEN_COLOR_ROLES.Objective] = "objectiveText",
+    [GOLDEN_COLOR_ROLES.Active] = "activeTitle",
+    [GOLDEN_COLOR_ROLES.Completed] = "completed",
+}
+
+local DEFAULT_COLOR_KIND = "goldenTracker"
+local DEFAULT_FALLBACK_COLOR_KIND = "endeavorTracker"
+
 local DEFAULTS = {
     CATEGORY_HEIGHT = 24,
     ENTRY_HEIGHT = 22,
@@ -14,9 +35,6 @@ local DEFAULTS = {
     CATEGORY_FONT = "ZoFontGameBold",
     ENTRY_FONT = "ZoFontGameMedium",
     OBJECTIVE_FONT = "ZoFontGameSmall",
-    CATEGORY_COLOR = {1, 1, 1, 1},
-    ENTRY_COLOR = {1, 1, 1, 1},
-    OBJECTIVE_COLOR = {1, 1, 1, 1},
     OBJECTIVE_INDENT_X = 14,
 }
 
@@ -78,12 +96,132 @@ local function applyLabelDefaults(label, font, color)
     end
 
     if label.SetColor and type(color) == "table" then
-        label:SetColor(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
+        local r = color[1] or color.r or 1
+        local g = color[2] or color.g or 1
+        local b = color[3] or color.b or 1
+        local a = color[4] or color.a or 1
+        label:SetColor(r, g, b, a)
     end
 
     if label.SetWrapMode and rawget(_G, "TEXT_WRAP_MODE_ELLIPSIS") then
         label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
     end
+end
+
+local function sanitizeColorNumber(value)
+    local numeric = tonumber(value)
+    if numeric == nil then
+        return nil
+    end
+    if numeric < 0 then
+        numeric = 0
+    elseif numeric > 1 then
+        numeric = 1
+    end
+    return numeric
+end
+
+local function extractColorComponents(color)
+    if type(color) ~= "table" then
+        return nil
+    end
+
+    local r = sanitizeColorNumber(color.r or color[1])
+    local g = sanitizeColorNumber(color.g or color[2])
+    local b = sanitizeColorNumber(color.b or color[3])
+    local a = sanitizeColorNumber(color.a or color[4] or 1)
+
+    if r == nil or g == nil or b == nil then
+        return nil
+    end
+
+    return r, g, b, a or 1
+end
+
+local function coerceFunctionColor(entry, context, role, colorKind)
+    if type(entry) ~= "function" then
+        return nil
+    end
+
+    local ok, value1, value2, value3, value4 = pcall(entry, context, role, colorKind)
+    if not ok then
+        safeDebug("resolveGoldenColor failed for role=%s: %s", tostring(role), tostring(value1))
+        return nil
+    end
+
+    return extractColorComponents({ value1, value2, value3, value4 })
+end
+
+local function resolveGoldenColor(role, overrideColors, colorKind)
+    local resolvedKind = colorKind
+    if type(resolvedKind) ~= "string" or resolvedKind == "" then
+        resolvedKind = DEFAULT_COLOR_KIND
+    end
+
+    if type(overrideColors) == "table" then
+        local overrideEntry = overrideColors[role]
+        if type(overrideEntry) == "function" then
+            local r, g, b, a = coerceFunctionColor(overrideEntry, overrideColors, role, resolvedKind)
+            if r ~= nil then
+                return r, g, b, a
+            end
+        elseif type(overrideEntry) == "table" then
+            local r, g, b, a = extractColorComponents(overrideEntry)
+            if r ~= nil then
+                return r, g, b, a
+            end
+        end
+    end
+
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    local function fetch(kind, requestedRole)
+        if host and host.GetTrackerColor then
+            return host.GetTrackerColor(kind, requestedRole or role)
+        end
+        return nil
+    end
+
+    local r, g, b, a = fetch(resolvedKind, role)
+    if r ~= nil and g ~= nil and b ~= nil then
+        return r, g, b, a
+    end
+
+    local fallbackRole = ROLE_FALLBACKS[role] or role
+    r, g, b, a = fetch(DEFAULT_FALLBACK_COLOR_KIND, fallbackRole)
+    if r ~= nil and g ~= nil and b ~= nil then
+        return r, g, b, a
+    end
+
+    return 1, 1, 1, 1
+end
+
+local function resolveCategoryColorRole(categoryData)
+    if type(categoryData) ~= "table" then
+        return GOLDEN_COLOR_ROLES.CategoryTitleClosed
+    end
+
+    local completed = tonumber(categoryData.completedCount or categoryData.countCompleted)
+    local total = tonumber(categoryData.totalCount or categoryData.countTotal)
+    local isComplete = categoryData.isComplete == true or categoryData.isCompleted == true
+    if completed ~= nil and total ~= nil and total > 0 and completed >= total then
+        isComplete = true
+    end
+
+    if isComplete then
+        return GOLDEN_COLOR_ROLES.Completed
+    end
+
+    local expanded = categoryData.isExpanded
+    if expanded == nil then
+        expanded = categoryData.expanded
+    end
+
+    local collapsed = expanded == false or categoryData.isCollapsed == true
+    if collapsed and total ~= nil and completed ~= nil and total > 0 and completed < total then
+        return GOLDEN_COLOR_ROLES.CategoryTitleOpen
+    end
+
+    return GOLDEN_COLOR_ROLES.CategoryTitleClosed
 end
 
 local function createControl(parent, kind)
@@ -145,7 +283,9 @@ function Rows.CreateCategoryHeader(parent, categoryData)
         if label.SetAnchor then
             label:SetAnchor(LEFT, control, LEFT, 0, 0)
         end
-        applyLabelDefaults(label, DEFAULTS.CATEGORY_FONT, DEFAULTS.CATEGORY_COLOR)
+        local colorRole = resolveCategoryColorRole(categoryData)
+        local r, g, b, a = resolveGoldenColor(colorRole)
+        applyLabelDefaults(label, DEFAULTS.CATEGORY_FONT, { r, g, b, a })
 
         local text = ""
         if type(categoryData) == "table" then
@@ -183,7 +323,10 @@ function Rows.CreateEntryRow(parent, entryData)
         if label.SetAnchor then
             label:SetAnchor(LEFT, control, LEFT, 0, 0)
         end
-        applyLabelDefaults(label, DEFAULTS.ENTRY_FONT, DEFAULTS.ENTRY_COLOR)
+        local role = entryData and (entryData.isComplete == true or entryData.isCompleted == true) and GOLDEN_COLOR_ROLES.Completed
+            or GOLDEN_COLOR_ROLES.EntryName
+        local r, g, b, a = resolveGoldenColor(role)
+        applyLabelDefaults(label, DEFAULTS.ENTRY_FONT, { r, g, b, a })
 
         local text = ""
         if type(entryData) == "table" then
@@ -212,7 +355,7 @@ function Rows.CreateEntryRow(parent, entryData)
                     if counterLabel.SetAnchor then
                         counterLabel:SetAnchor(RIGHT, control, RIGHT, 0, 0)
                     end
-                    applyLabelDefaults(counterLabel, DEFAULTS.ENTRY_FONT, DEFAULTS.ENTRY_COLOR)
+                    applyLabelDefaults(counterLabel, DEFAULTS.ENTRY_FONT, { r, g, b, a })
                     if counterLabel.SetHorizontalAlignment and rawget(_G, "TEXT_ALIGN_RIGHT") then
                         counterLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
                     end
@@ -246,7 +389,11 @@ function Rows.CreateObjectiveRow(parent, objectiveData)
         if label.SetAnchor then
             label:SetAnchor(LEFT, control, LEFT, DEFAULTS.OBJECTIVE_INDENT_X, 0)
         end
-        applyLabelDefaults(label, DEFAULTS.OBJECTIVE_FONT, DEFAULTS.OBJECTIVE_COLOR)
+        local role = objectiveData and (objectiveData.isComplete == true or objectiveData.isCompleted == true)
+            and GOLDEN_COLOR_ROLES.Completed
+            or GOLDEN_COLOR_ROLES.Objective
+        local r, g, b, a = resolveGoldenColor(role)
+        applyLabelDefaults(label, DEFAULTS.OBJECTIVE_FONT, { r, g, b, a })
 
         local text = ""
         if type(objectiveData) == "table" then
