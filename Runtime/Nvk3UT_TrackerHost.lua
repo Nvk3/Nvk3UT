@@ -205,6 +205,7 @@ local state = {
         achievementMissing = false,
         goldenMissing = false,
     },
+    dragLayer = nil,
     previousDefaultQuestTrackerHidden = nil,
     initializing = false,
     lamPreviewForceVisible = false,
@@ -869,6 +870,34 @@ stopWindowDrag = function()
 
     state.root:StopMovingOrResizing()
     saveWindowPosition()
+end
+
+local function attachDragHandlers(control)
+    if not control then
+        return
+    end
+
+    control:SetMouseEnabled(true)
+
+    control:SetHandler("OnMouseDown", function(_, button)
+        if button ~= LEFT_MOUSE_BUTTON then
+            return
+        end
+
+        startWindowDrag()
+    end)
+
+    control:SetHandler("OnMouseUp", function(_, button)
+        if button == LEFT_MOUSE_BUTTON then
+            stopWindowDrag()
+        end
+    end)
+
+    control:SetHandler("OnMouseUpOutside", function(_, button)
+        if button == LEFT_MOUSE_BUTTON then
+            stopWindowDrag()
+        end
+    end)
 end
 
 local function beginResize(mode)
@@ -2615,6 +2644,33 @@ refreshScroll = function(targetOffset)
     setScrollOffset(desiredOffset)
 end
 
+local function createDragLayer()
+    if state.dragLayer or not (state.root and WINDOW_MANAGER) then
+        return
+    end
+
+    local dragLayer = WINDOW_MANAGER:CreateControl(nil, state.root, CT_CONTROL)
+    if not dragLayer then
+        return
+    end
+
+    dragLayer:SetAnchorFill()
+    dragLayer:SetDrawLayer(DL_BACKGROUND)
+    dragLayer:SetDrawTier(DT_LOW)
+    dragLayer:SetDrawLevel(1)
+    dragLayer:SetMouseEnabled(true)
+    if dragLayer.SetExcludeFromResizeToFitExtents then
+        dragLayer:SetExcludeFromResizeToFitExtents(true)
+    end
+    dragLayer:SetHandler("OnMouseWheel", function(_, delta)
+        adjustScroll(delta)
+    end)
+
+    attachDragHandlers(dragLayer)
+
+    state.dragLayer = dragLayer
+end
+
 local function createScrollContainer()
     if state.scrollContainer or not (state.root and WINDOW_MANAGER) then
         return
@@ -3024,6 +3080,7 @@ local function createContainers()
         globalHost.sectionContainers = globalHost.sectionContainers or TrackerHost.sectionContainers
     end
 
+    createDragLayer()
     createScrollContainer()
     createResizeGrip()
 
@@ -3047,17 +3104,7 @@ local function createContainers()
         headerBar:SetHandler("OnMouseWheel", function(_, delta)
             adjustScroll(delta)
         end)
-        headerBar:SetHandler("OnMouseDown", function(_, button)
-            if button ~= LEFT_MOUSE_BUTTON then
-                return
-            end
-            startWindowDrag()
-        end)
-        headerBar:SetHandler("OnMouseUp", function(_, button)
-            if button == LEFT_MOUSE_BUTTON then
-                stopWindowDrag()
-            end
-        end)
+        attachDragHandlers(headerBar)
         local headerHeight = clamp(tonumber(bars.headerHeightPx) or DEFAULT_WINDOW_BARS.headerHeightPx, 0, MAX_BAR_HEIGHT)
         headerBar:SetHeight(headerHeight)
         if headerBar.SetHidden then
@@ -3081,6 +3128,7 @@ local function createContainers()
         contentStack:SetHandler("OnMouseWheel", function(_, delta)
             adjustScroll(delta)
         end)
+        attachDragHandlers(contentStack)
         state.contentStack = contentStack
     end
 
