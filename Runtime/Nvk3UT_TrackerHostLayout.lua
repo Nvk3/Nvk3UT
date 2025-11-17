@@ -721,6 +721,7 @@ function Layout.UpdateScrollAreaHeight(host, contentHeight, sizes)
         footerHeight = sanitizeLength(sizes.footerTargetHeight or sizes.footerHeight)
     end
 
+    local previousScrollChildHeight = last.scrollChildHeight
     local scrollChildHeight = headerHeight + stackHeight + footerHeight
     if scrollChildHeight < 0 then
         scrollChildHeight = 0
@@ -730,8 +731,11 @@ function Layout.UpdateScrollAreaHeight(host, contentHeight, sizes)
         scrollContent:SetResizeToFitDescendents(false)
     end
 
+    local scrollChildHeightChanged = not previousScrollChildHeight
+        or numbersDiffer(previousScrollChildHeight, scrollChildHeight)
+
     if type(scrollContent.SetHeight) == "function" then
-        if not last.scrollChildHeight or numbersDiffer(last.scrollChildHeight, scrollChildHeight) then
+        if scrollChildHeightChanged then
             scrollContent:SetHeight(scrollChildHeight)
             last.scrollChildHeight = scrollChildHeight
         end
@@ -792,6 +796,37 @@ function Layout.UpdateScrollAreaHeight(host, contentHeight, sizes)
     local actual = state and tonumber(state.actual) or 0
     if actual > maxOffset then
         setScrollOffset(host, maxOffset, true)
+    end
+
+    if scrollChildHeightChanged then
+        if not last._pendingDeferredScrollRange then
+            last._pendingDeferredScrollRange = true
+
+            zo_callLater(function()
+                last._pendingDeferredScrollRange = nil
+
+                -- Re-read scroll child and viewport
+                local scrollContainer = getScrollContainer(host)
+                local scrollContent   = getScrollContent(host)
+
+                if scrollContainer and scrollContent then
+                    local okH, h  = pcall(scrollContent.GetHeight, scrollContent)
+                    local okV, vh = pcall(scrollContainer.GetHeight, scrollContainer)
+                    if okH and okV and type(h) == "number" and type(vh) == "number" then
+                        local newRange = math.max(h - vh, 0)
+
+                        -- Use our own scroll range function (same as main path)
+                        setScrollMaxOffset(host, newRange)
+                        updateScrollbarRange(host, 0, newRange)
+
+                        debugLog(string.format(
+                            "[DeferredRange] child=%s viewport=%s newRange=%s",
+                            tostring(h), tostring(vh), tostring(newRange)
+                        ))
+                    end
+                end
+            end, 0)
+        end
     end
 
     return viewportHeight
