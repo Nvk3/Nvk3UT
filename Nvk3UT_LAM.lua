@@ -87,7 +87,7 @@ registerString(
     "SI_NVK3UT_LAM_ENDEAVOR_FONT_OUTLINE_TOOLTIP",
     "Bestimmt die Kontur bzw. den Schatten der Schrift."
 )
-registerString("SI_NVK3UT_LAM_GOLDEN_SECTION_FUNCTIONS", "GOLDENE VORHABEN – FUNKTIONEN")
+registerString("SI_NVK3UT_LAM_GOLDEN_SECTION_FUNCTIONS", "GOLDENE VORHABEN TRACKER – FUNKTIONEN")
 registerString("SI_NVK3UT_LAM_GOLDEN_ENABLE", "Aktivieren")
 registerString("SI_NVK3UT_LAM_GOLDEN_ENABLE_TOOLTIP", "Schaltet den Golden-Tracker ein oder aus.")
 registerString("SI_NVK3UT_LAM_GOLDEN_SHOW_COUNTS", "Zähler in Abschnittsüberschriften anzeigen")
@@ -108,7 +108,7 @@ registerString(
 registerString("SI_NVK3UT_LAM_GOLDEN_COMPLETED_HIDE", "Ausblenden")
 registerString("SI_NVK3UT_LAM_GOLDEN_COMPLETED_RECOLOR", "Umfärben")
 registerString("SI_NVK3UT_LAM_GOLDEN_COMPLETED_SHOW_OPEN_OBJECTIVES", "Offene weiter anzeigen")
-registerString("SI_NVK3UT_LAM_GOLDEN_SECTION_COLORS", "ERSCHEINUNG – FARBEN (GOLDENE VORHABEN)")
+registerString("SI_NVK3UT_LAM_GOLDEN_SECTION_COLORS", "ERSCHEINUNG – FARBEN (GOLDENE VORHABEN TRACKER)")
 registerString("SI_NVK3UT_LAM_GOLDEN_COLOR_CATEGORY_CLOSED", "Kategorie- / Abschnittstitel (abgeschlossen)")
 registerString(
     "SI_NVK3UT_LAM_GOLDEN_COLOR_CATEGORY_CLOSED_TOOLTIP",
@@ -139,7 +139,7 @@ registerString(
     "SI_NVK3UT_LAM_GOLDEN_COLOR_COMPLETED_TOOLTIP",
     "Farbe für abgeschlossene Ziele, wenn \"Umfärben\" aktiv ist."
 )
-registerString("SI_NVK3UT_LAM_GOLDEN_SECTION_FONTS", "ERSCHEINUNG – SCHRIFTARTEN (GOLDENE VORHABEN)")
+registerString("SI_NVK3UT_LAM_GOLDEN_SECTION_FONTS", "ERSCHEINUNG – SCHRIFTARTEN (GOLDENE VORHABEN TRACKER)")
 registerString("SI_NVK3UT_LAM_GOLDEN_FONT_FAMILY", "Schriftart")
 registerString(
     "SI_NVK3UT_LAM_GOLDEN_FONT_FAMILY_TOOLTIP",
@@ -2484,7 +2484,7 @@ local function registerPanel(displayTitle)
 
     options[#options + 1] = {
         type = "submenu",
-        name = "Goldene Vorhaben",
+        name = "Goldene Vorhaben Tracker",
         controls = (function()
             local controls = {}
 

@@ -563,6 +563,26 @@ function Controller:BuildViewModel(options)
     local stateStatus = resolveStateStatus(goldenState)
     local viewModel = newEmptyViewModel(stateStatus, expansionFlags)
 
+    local isEnabled = true
+    if goldenState ~= nil then
+        local enabled = callStateMethod(goldenState, "IsEnabled")
+        if enabled ~= nil then
+            isEnabled = enabled ~= false
+        end
+    end
+
+    if not isEnabled then
+        local gatedStatus = copyStatus(stateStatus)
+        gatedStatus.isAvailable = false
+        gatedStatus.isLocked = false
+        gatedStatus.hasEntries = false
+        viewModel = newEmptyViewModel(gatedStatus, expansionFlags)
+        state.viewModel = viewModel
+        state.dirty = false
+        safeDebug("BuildViewModel gated (disabled)")
+        return viewModel
+    end
+
     local isAvailable = stateStatus.isAvailable == true
     local isLocked = stateStatus.isLocked == true
     local hasEntries = stateStatus.hasEntries == true
