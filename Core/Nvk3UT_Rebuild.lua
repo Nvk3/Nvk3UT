@@ -93,6 +93,37 @@ local function getRuntime()
     return nil
 end
 
+local function getHost()
+    local root = getRoot()
+    if type(root) ~= "table" then
+        return nil
+    end
+
+    local host = rawget(root, "TrackerHost")
+    if type(host) ~= "table" then
+        return nil
+    end
+
+    return host
+end
+
+local function isHostVisible()
+    local host = getHost()
+    if type(host) ~= "table" then
+        return true
+    end
+
+    local isVisible = host.IsVisible or host.IsShown
+    if type(isVisible) == "function" then
+        local ok, visible = pcall(isVisible, host)
+        if ok and visible ~= nil then
+            return visible == true
+        end
+    end
+
+    return false
+end
+
 local function isDebugEnabled()
     local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
     if utils and type(utils.IsDebugEnabled) == "function" then
@@ -563,6 +594,19 @@ end
 ---@return boolean triggered
 function Rebuild.All(context)
     describeContext("All", context)
+
+    if not isHostVisible() then
+        local runtime = getRuntime()
+        local setPending = runtime and (runtime.SetPendingFullRebuild or runtime.setPendingFullRebuild)
+        if type(setPending) == "function" then
+            local reason = context
+            if reason == nil or reason == "" then
+                reason = "hidden"
+            end
+
+            safeInvoke("TrackerRuntime.SetPendingFullRebuild", setPending, runtime, reason)
+        end
+    end
 
     local flags = { layout = true }
     for order = 1, #TRACKER_SECTION_ORDER do

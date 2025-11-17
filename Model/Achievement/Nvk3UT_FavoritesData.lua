@@ -226,6 +226,11 @@ local function NotifyFavoritesChanged()
 
     queueAchievementDirty()
 
+    local Rebuild = Nvk3UT and Nvk3UT.Rebuild
+    if Rebuild and Rebuild.All then
+        pcall(Rebuild.All, "favorites")
+    end
+
     local cache = Nvk3UT and Nvk3UT.AchievementCache
     if cache and cache.OnFavoritesChanged then
         pcall(cache.OnFavoritesChanged)

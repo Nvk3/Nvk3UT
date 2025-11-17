@@ -33,6 +33,10 @@ Runtime.cache = type(Runtime.cache) == "table" and Runtime.cache or {}
 if type(Runtime.cache.goldenVM) ~= "table" then
     Runtime.cache.goldenVM = { categories = {} }
 end
+Runtime._pendingFullRebuild = Runtime._pendingFullRebuild == true
+Runtime._pendingFullRebuildReason = type(Runtime._pendingFullRebuildReason) == "string"
+        and Runtime._pendingFullRebuildReason
+    or nil
 
 local function debug(fmt, ...)
     if Addon and type(Addon.Debug) == "function" then
@@ -840,6 +844,18 @@ function Runtime:QueueDirty(channel, opts)
     end
 end
 
+function Runtime:SetPendingFullRebuild(reason)
+    if type(reason) == "string" and reason ~= "" then
+        self._pendingFullRebuildReason = reason
+    end
+
+    self._pendingFullRebuild = true
+end
+
+function Runtime:HasPendingFullRebuild()
+    return self._pendingFullRebuild == true
+end
+
 function Runtime:MarkGoldenDirty()
     self:QueueDirty("golden")
 end
@@ -1051,6 +1067,19 @@ function Runtime:ProcessFrame(nowMs)
     if not ok then
         error(err)
     end
+end
+
+function Runtime:ConsumePendingFullRebuild()
+    if not self._pendingFullRebuild then
+        return nil
+    end
+
+    local reason = self._pendingFullRebuildReason
+
+    self._pendingFullRebuild = false
+    self._pendingFullRebuildReason = nil
+
+    return reason or true
 end
 
 function Runtime:SetCombatState(isInCombat)
