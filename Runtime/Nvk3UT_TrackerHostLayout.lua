@@ -794,6 +794,30 @@ function Layout.UpdateScrollAreaHeight(host, contentHeight, sizes)
         setScrollOffset(host, maxOffset, true)
     end
 
+    -- TEMP: Force ESO scroll engine to refresh its internal extents 1 frame later
+    if not last._debugScrollReflowScheduled then
+        last._debugScrollReflowScheduled = true
+        zo_callLater(function()
+            last._debugScrollReflowScheduled = nil
+            local scrollContainer = getScrollContainer(host)
+            local scrollContent = getScrollContent(host)
+            if scrollContainer and scrollContent and scrollContent.GetHeight then
+                local okH, h = pcall(scrollContent.GetHeight, scrollContent)
+                if okH and type(h) == "number" and scrollContainer.SetScrollExtents then
+                    local okC, vh = pcall(scrollContainer.GetHeight, scrollContainer)
+                    if okC and type(vh) == "number" then
+                        local engineRange = math.max(h - vh, 0)
+                        scrollContainer:SetScrollExtents(0, engineRange)
+                        debugLog(string.format(
+                            "DeferredScrollFix: child=%s viewport=%s engineRange=%s",
+                            tostring(h), tostring(vh), tostring(engineRange)
+                        ))
+                    end
+                end
+            end
+        end, 0)
+    end
+
     return viewportHeight
 end
 
