@@ -87,6 +87,74 @@ registerString(
     "SI_NVK3UT_LAM_ENDEAVOR_FONT_OUTLINE_TOOLTIP",
     "Bestimmt die Kontur bzw. den Schatten der Schrift."
 )
+registerString("SI_NVK3UT_LAM_GOLDEN_SECTION_FUNCTIONS", "GOLDENE VORHABEN TRACKER – FUNKTIONEN")
+registerString("SI_NVK3UT_LAM_GOLDEN_ENABLE", "Aktivieren")
+registerString("SI_NVK3UT_LAM_GOLDEN_ENABLE_TOOLTIP", "Schaltet den Golden-Tracker ein oder aus.")
+registerString("SI_NVK3UT_LAM_GOLDEN_SHOW_COUNTS", "Zähler in Abschnittsüberschriften anzeigen")
+registerString(
+    "SI_NVK3UT_LAM_GOLDEN_SHOW_COUNTS_TOOLTIP",
+    "Zeigt die verbleibende Anzahl direkt hinter den Überschriften an."
+)
+registerString("SI_NVK3UT_LAM_GOLDEN_COMPLETED_HEADER_GENERAL", "Abgeschlossen-Handling (Allgemein)")
+registerString(
+    "SI_NVK3UT_LAM_GOLDEN_COMPLETED_GENERAL_TOOLTIP",
+    "Legt fest, wie das Vorhaben nach Abschluss behandelt wird."
+)
+registerString("SI_NVK3UT_LAM_GOLDEN_COMPLETED_HEADER_OBJECTIVES", "Abgeschlossen-Handling (Ziele)")
+registerString(
+    "SI_NVK3UT_LAM_GOLDEN_COMPLETED_OBJECTIVES_TOOLTIP",
+    "Legt fest, wie einzelne Ziele nach Abschluss behandelt werden."
+)
+registerString("SI_NVK3UT_LAM_GOLDEN_COMPLETED_HIDE", "Ausblenden")
+registerString("SI_NVK3UT_LAM_GOLDEN_COMPLETED_RECOLOR", "Umfärben")
+registerString("SI_NVK3UT_LAM_GOLDEN_COMPLETED_SHOW_OPEN_OBJECTIVES", "Offene weiter anzeigen")
+registerString("SI_NVK3UT_LAM_GOLDEN_SECTION_COLORS", "ERSCHEINUNG – FARBEN (GOLDENE VORHABEN TRACKER)")
+registerString("SI_NVK3UT_LAM_GOLDEN_COLOR_CATEGORY_CLOSED", "Kategorie- / Abschnittstitel (abgeschlossen)")
+registerString(
+    "SI_NVK3UT_LAM_GOLDEN_COLOR_CATEGORY_CLOSED_TOOLTIP",
+    "Farbe für den Abschnittstitel, wenn die Kategorie geschlossen oder abgeschlossen ist."
+)
+registerString("SI_NVK3UT_LAM_GOLDEN_COLOR_CATEGORY_OPEN", "Kategorie- / Abschnittstitel (offen)")
+registerString(
+    "SI_NVK3UT_LAM_GOLDEN_COLOR_CATEGORY_OPEN_TOOLTIP",
+    "Wird verwendet, wenn die Kampagne noch nicht voll abgeschlossen ist und die Kategorie zugeklappt ist."
+)
+registerString("SI_NVK3UT_LAM_GOLDEN_COLOR_ENTRY", "Eintragsname")
+registerString(
+    "SI_NVK3UT_LAM_GOLDEN_COLOR_ENTRY_TOOLTIP",
+    "Farbe für Golden-Vorhaben-Einträge."
+)
+registerString("SI_NVK3UT_LAM_GOLDEN_COLOR_OBJECTIVE", "Zieltext")
+registerString(
+    "SI_NVK3UT_LAM_GOLDEN_COLOR_OBJECTIVE_TOOLTIP",
+    "Farbe für die Fortschrittszeilen der einzelnen Ziele."
+)
+registerString("SI_NVK3UT_LAM_GOLDEN_COLOR_ACTIVE", "Aktiver / fokussierter Eintrag")
+registerString(
+    "SI_NVK3UT_LAM_GOLDEN_COLOR_ACTIVE_TOOLTIP",
+    "Farbe, wenn ein Abschnitt geöffnet oder fokussiert ist."
+)
+registerString("SI_NVK3UT_LAM_GOLDEN_COLOR_COMPLETED", "Abgeschlossener Eintrag")
+registerString(
+    "SI_NVK3UT_LAM_GOLDEN_COLOR_COMPLETED_TOOLTIP",
+    "Farbe für abgeschlossene Ziele, wenn \"Umfärben\" aktiv ist."
+)
+registerString("SI_NVK3UT_LAM_GOLDEN_SECTION_FONTS", "ERSCHEINUNG – SCHRIFTARTEN (GOLDENE VORHABEN TRACKER)")
+registerString("SI_NVK3UT_LAM_GOLDEN_FONT_FAMILY", "Schriftart")
+registerString(
+    "SI_NVK3UT_LAM_GOLDEN_FONT_FAMILY_TOOLTIP",
+    "Wählt die Schriftart für Kategorien, Abschnitte und Ziele."
+)
+registerString("SI_NVK3UT_LAM_GOLDEN_FONT_SIZE", "Größe")
+registerString(
+    "SI_NVK3UT_LAM_GOLDEN_FONT_SIZE_TOOLTIP",
+    "Legt die Basisschriftgröße des Golden-Trackers fest."
+)
+registerString("SI_NVK3UT_LAM_GOLDEN_FONT_OUTLINE", "Kontur")
+registerString(
+    "SI_NVK3UT_LAM_GOLDEN_FONT_OUTLINE_TOOLTIP",
+    "Bestimmt die Kontur bzw. den Schatten der Schrift."
+)
 
 local function getAddonVersionString()
     local addon = Nvk3UT
@@ -412,6 +480,18 @@ local ENDEAVOR_COLOR_ROLES = {
     Completed = "completed",
 }
 
+local GOLDEN_COLOR_ROLES = {
+    CategoryTitleClosed = "categoryTitleClosed",
+    CategoryTitleOpen = "categoryTitleOpen",
+    EntryName = "entryTitle",
+    Objective = "objectiveText",
+    Active = "activeTitle",
+    Completed = "completed",
+}
+
+local goldenFontDefaults
+local ensureGoldenFontGroup
+
 local function getEndeavorConfig()
     local sv = getSavedVars()
     sv.Endeavor = sv.Endeavor or {}
@@ -420,6 +500,102 @@ local function getEndeavorConfig()
     config.Font = config.Font or {}
     config.Tracker = config.Tracker or {}
     config.Tracker.Fonts = config.Tracker.Fonts or {}
+    return config
+end
+
+local function getGoldenConfig()
+    local sv = getSavedVars()
+    sv.Golden = sv.Golden or {}
+    local config = sv.Golden
+    config.Colors = config.Colors or {}
+    config.Font = config.Font or {}
+    config.Tracker = config.Tracker or {}
+    config.Tracker.Fonts = config.Tracker.Fonts or {}
+
+    local endeavorConfig = getEndeavorConfig()
+    local endeavorColors = (endeavorConfig and endeavorConfig.Colors) or {}
+
+    local function coerceColor(candidate)
+        if type(candidate) ~= "table" then
+            return nil
+        end
+
+        local r = candidate[1] or candidate.r or 1
+        local g = candidate[2] or candidate.g or 1
+        local b = candidate[3] or candidate.b or 1
+        local a = candidate[4] or candidate.a or 1
+        return { r, g, b, a, r = r, g = g, b = b, a = a }
+    end
+
+    local goldenColors = config.Colors
+    local colorDefaults = {
+        CategoryTitleClosed = { key = "CategoryTitle", role = ENDEAVOR_COLOR_ROLES.CategoryTitle },
+        EntryName = { key = "EntryName", role = ENDEAVOR_COLOR_ROLES.EntryName },
+        Objective = { key = "Objective", role = ENDEAVOR_COLOR_ROLES.Objective },
+        Active = { key = "Active", role = ENDEAVOR_COLOR_ROLES.Active },
+        Completed = { key = "Completed", role = ENDEAVOR_COLOR_ROLES.Completed },
+    }
+
+    local function applyEndeavorColorDefault(targetKey, sourceKey, sourceRole)
+        if goldenColors[targetKey] ~= nil then
+            return
+        end
+
+        local candidate = coerceColor(endeavorColors[sourceKey])
+        if candidate == nil then
+            candidate = coerceColor(getTrackerColorDefaultTable("endeavorTracker", sourceRole))
+        end
+
+        goldenColors[targetKey] = candidate
+    end
+
+    for targetKey, source in pairs(colorDefaults) do
+        applyEndeavorColorDefault(targetKey, source.key, source.role)
+    end
+
+    if goldenColors.CategoryTitleOpen == nil then
+        local entryColor = goldenColors.EntryName
+        if entryColor == nil then
+            applyEndeavorColorDefault("EntryName", "EntryName", ENDEAVOR_COLOR_ROLES.EntryName)
+            entryColor = goldenColors.EntryName
+        end
+
+        goldenColors.CategoryTitleOpen = coerceColor(entryColor)
+            or coerceColor(getTrackerColorDefaultTable("endeavorTracker", ENDEAVOR_COLOR_ROLES.EntryName))
+    end
+
+    local endeavorFonts = (endeavorConfig and endeavorConfig.Tracker and endeavorConfig.Tracker.Fonts) or {}
+
+    local function copyEndeavorFontDefaults(key)
+        local source = endeavorFonts[key]
+        if type(source) ~= "table" then
+            local altKey = type(key) == "string" and string.lower(key)
+            if altKey and type(endeavorFonts[altKey]) == "table" then
+                source = endeavorFonts[altKey]
+            end
+        end
+
+        if type(source) ~= "table" then
+            return nil
+        end
+
+        return {
+            face = source.Face or source.face,
+            size = source.Size or source.size,
+            outline = source.Outline or source.outline,
+        }
+    end
+
+    ensureGoldenFontGroup(config, "Category", function()
+        return copyEndeavorFontDefaults("Category")
+    end)
+    ensureGoldenFontGroup(config, "Title", function()
+        return copyEndeavorFontDefaults("Title")
+    end)
+    ensureGoldenFontGroup(config, "Objective", function()
+        return copyEndeavorFontDefaults("Objective")
+    end)
+
     return config
 end
 
@@ -515,8 +691,48 @@ local function setEndeavorColor(colorKey, role, r, g, b, a)
     setTrackerColor("endeavorTracker", role, resolvedR, resolvedG, resolvedB, resolvedA)
 end
 
+local function getGoldenColor(colorKey, role)
+    ensureTrackerAppearance()
+    local config = getGoldenConfig()
+    local color = config.Colors[colorKey]
+    if type(color) == "table" then
+        local r = color.r or color[1] or 1
+        local g = color.g or color[2] or 1
+        local b = color.b or color[3] or 1
+        local a = color.a or color[4] or 1
+        return r, g, b, a
+    end
+    return getTrackerColor("goldenTracker", role)
+end
+
+local function setGoldenColor(colorKey, role, r, g, b, a)
+    local config = getGoldenConfig()
+    local resolvedR = r or 1
+    local resolvedG = g or 1
+    local resolvedB = b or 1
+    local resolvedA = a or 1
+    local color = config.Colors[colorKey]
+    if type(color) ~= "table" then
+        color = {}
+        config.Colors[colorKey] = color
+    end
+    color[1], color[2], color[3], color[4] = resolvedR, resolvedG, resolvedB, resolvedA
+    color.r, color.g, color.b, color.a = resolvedR, resolvedG, resolvedB, resolvedA
+    setTrackerColor("goldenTracker", role, resolvedR, resolvedG, resolvedB, resolvedA)
+end
+
 local function refreshEndeavorModel()
     local model = Nvk3UT and Nvk3UT.EndeavorModel
+    if type(model) == "table" then
+        local refresh = model.RefreshFromGame or model.Refresh
+        if type(refresh) == "function" then
+            pcall(refresh, model)
+        end
+    end
+end
+
+local function refreshGoldenModel()
+    local model = Nvk3UT and Nvk3UT.GoldenModel
     if type(model) == "table" then
         local refresh = model.RefreshFromGame or model.Refresh
         if type(refresh) == "function" then
@@ -535,12 +751,32 @@ local function markEndeavorDirty(reason)
     end
 end
 
+local function markGoldenDirty(reason)
+    local controller = Nvk3UT and Nvk3UT.GoldenTrackerController
+    if type(controller) == "table" then
+        local markDirty = controller.MarkDirty or controller.RequestRefresh
+        if type(markDirty) == "function" then
+            pcall(markDirty, controller, reason)
+        end
+    end
+end
+
 local function queueEndeavorDirty()
     local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
     if type(runtime) == "table" then
         local queueDirty = runtime.QueueDirty or runtime.MarkDirty or runtime.RequestRefresh
         if type(queueDirty) == "function" then
             pcall(queueDirty, runtime, "endeavor")
+        end
+    end
+end
+
+local function queueGoldenDirty()
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if type(runtime) == "table" then
+        local queueDirty = runtime.QueueDirty or runtime.MarkDirty or runtime.RequestRefresh
+        if type(queueDirty) == "function" then
+            pcall(queueDirty, runtime, "golden")
         end
     end
 end
@@ -710,6 +946,68 @@ local function endeavorFontDefaults(key)
         Size = size,
         Outline = "soft-shadow-thick",
     }
+end
+
+function goldenFontDefaults(key)
+    local endeavorDefaults = endeavorFontDefaults(key)
+    if not endeavorDefaults then
+        return { face = FONT_FACE_CHOICES[1].face, size = 16, outline = "soft-shadow-thick" }
+    end
+
+    return {
+        face = endeavorDefaults.Face or endeavorDefaults.face,
+        size = endeavorDefaults.Size or endeavorDefaults.size,
+        outline = endeavorDefaults.Outline or endeavorDefaults.outline,
+    }
+end
+
+function ensureGoldenFontGroup(config, key, defaults)
+    local defaultsValue = defaults
+    if type(defaultsValue) == "function" then
+        defaultsValue = defaults()
+    end
+    if defaultsValue == nil then
+        defaultsValue = goldenFontDefaults(key)
+    end
+
+    if type(config) ~= "table" then
+        return defaultsValue
+    end
+
+    config.Tracker = config.Tracker or {}
+    local tracker = config.Tracker
+    tracker.Fonts = tracker.Fonts or {}
+    local fonts = tracker.Fonts
+
+    local group = fonts[key]
+    if type(group) ~= "table" then
+        group = {}
+        fonts[key] = group
+    end
+
+    if type(group.face) ~= "string" or group.face == "" then
+        group.face = group.Face
+    end
+    if group.size == nil then
+        group.size = group.Size
+    end
+    if type(group.outline) ~= "string" or group.outline == "" then
+        group.outline = group.Outline
+    end
+
+    local defaultsFace = defaultsValue and (defaultsValue.face or defaultsValue.Face)
+    local defaultsSize = defaultsValue and (defaultsValue.size or defaultsValue.Size)
+    local defaultsOutline = defaultsValue and (defaultsValue.outline or defaultsValue.Outline)
+
+    group.face = group.face or defaultsFace
+    group.size = group.size or defaultsSize
+    group.outline = group.outline or defaultsOutline
+
+    group.Face = group.Face or group.face
+    group.Size = group.Size or group.size
+    group.Outline = group.Outline or group.outline
+
+    return group
 end
 
 local function ensureEndeavorFontGroup(config, key, defaults)
@@ -2184,6 +2482,373 @@ local function registerPanel(displayTitle)
     }
 
 
+    options[#options + 1] = {
+        type = "submenu",
+        name = "Goldene Vorhaben Tracker",
+        controls = (function()
+            local controls = {}
+
+            local function getGoldenDefaults()
+                local sv = getSavedVars()
+                local trackerDefaults = sv and sv.TrackerDefaults
+                return trackerDefaults and trackerDefaults.GoldenDefaults or {}
+            end
+
+            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_GOLDEN_SECTION_FUNCTIONS) }
+
+            controls[#controls + 1] = {
+                type = "checkbox",
+                name = GetString(SI_NVK3UT_LAM_GOLDEN_ENABLE),
+                tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_ENABLE_TOOLTIP),
+                getFunc = function()
+                    local config = getGoldenConfig()
+                    if config.Enabled == nil then
+                        local defaults = getGoldenDefaults()
+                        if defaults.Enabled ~= nil then
+                            return defaults.Enabled ~= false
+                        end
+                        return true
+                    end
+                    return config.Enabled ~= false
+                end,
+                setFunc = function(value)
+                    local config = getGoldenConfig()
+                    config.Enabled = value ~= false
+                    refreshGoldenModel()
+                    if LamQueueFullRebuild("goldenEnable") then
+                        return
+                    end
+                    markGoldenDirty("enable")
+                    queueGoldenDirty()
+                end,
+                default = (function()
+                    local defaults = getGoldenDefaults()
+                    if defaults.Enabled ~= nil then
+                        return defaults.Enabled ~= false
+                    end
+                    return true
+                end)(),
+            }
+
+            controls[#controls + 1] = {
+                type = "checkbox",
+                name = GetString(SI_NVK3UT_LAM_GOLDEN_SHOW_COUNTS),
+                tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_SHOW_COUNTS_TOOLTIP),
+                getFunc = function()
+                    local config = getGoldenConfig()
+                    if config.ShowCountsInHeaders == nil then
+                        local defaults = getGoldenDefaults()
+                        if defaults.ShowCountsInHeaders ~= nil then
+                            return defaults.ShowCountsInHeaders ~= false
+                        end
+                        return true
+                    end
+                    return config.ShowCountsInHeaders ~= false
+                end,
+                setFunc = function(value)
+                    local config = getGoldenConfig()
+                    config.ShowCountsInHeaders = value ~= false
+                    markGoldenDirty("appearance")
+                    queueGoldenDirty()
+                end,
+                default = (function()
+                    local defaults = getGoldenDefaults()
+                    if defaults.ShowCountsInHeaders ~= nil then
+                        return defaults.ShowCountsInHeaders ~= false
+                    end
+                    return true
+                end)(),
+            }
+
+            controls[#controls + 1] = {
+                type = "dropdown",
+                name = GetString(SI_NVK3UT_LAM_GOLDEN_COMPLETED_HEADER_GENERAL),
+                tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_COMPLETED_GENERAL_TOOLTIP),
+                choices = {
+                    GetString(SI_NVK3UT_LAM_GOLDEN_COMPLETED_HIDE),
+                    GetString(SI_NVK3UT_LAM_GOLDEN_COMPLETED_RECOLOR),
+                    GetString(SI_NVK3UT_LAM_GOLDEN_COMPLETED_SHOW_OPEN_OBJECTIVES),
+                },
+                choicesValues = { "hide", "recolor", "openObjectives" },
+                getFunc = function()
+                    local config = getGoldenConfig()
+                    local value = config.CompletedHandlingGeneral
+                    if value == nil then
+                        local legacy = config.CompletedHandling
+                        if legacy == "recolor" then
+                            return "recolor"
+                        end
+                        return "hide"
+                    end
+                    if value == "recolor" then
+                        return "recolor"
+                    elseif value == "openObjectives" then
+                        return "openObjectives"
+                    end
+                    return "hide"
+                end,
+                setFunc = function(value)
+                    local config = getGoldenConfig()
+                    local resolved = "hide"
+                    if value == "recolor" then
+                        resolved = "recolor"
+                    elseif value == "openObjectives" then
+                        resolved = "openObjectives"
+                    end
+                    config.CompletedHandlingGeneral = resolved
+                    if config.CompletedHandling ~= nil then
+                        if resolved == "recolor" then
+                            config.CompletedHandling = "recolor"
+                        else
+                            config.CompletedHandling = "hide"
+                        end
+                    end
+                    refreshGoldenModel()
+                    if LamQueueFullRebuild("goldenCompletedHandlingGeneral") then
+                        return
+                    end
+                    if resolved == "hide" then
+                        markGoldenDirty("filter")
+                    else
+                        markGoldenDirty("appearance")
+                    end
+                    queueGoldenDirty()
+                end,
+                default = "hide",
+            }
+
+            controls[#controls + 1] = {
+                type = "dropdown",
+                name = GetString(SI_NVK3UT_LAM_GOLDEN_COMPLETED_HEADER_OBJECTIVES),
+                tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_COMPLETED_OBJECTIVES_TOOLTIP),
+                choices = {
+                    GetString(SI_NVK3UT_LAM_GOLDEN_COMPLETED_HIDE),
+                    GetString(SI_NVK3UT_LAM_GOLDEN_COMPLETED_RECOLOR),
+                },
+                choicesValues = { "hide", "recolor" },
+                getFunc = function()
+                    local config = getGoldenConfig()
+                    local value = config.CompletedHandlingObjectives
+                    if value == "recolor" then
+                        return "recolor"
+                    end
+                    if value == "hide" then
+                        return "hide"
+                    end
+
+                    local general = config.CompletedHandlingGeneral
+                    if general == "recolor" or general == "hide" then
+                        return general
+                    end
+                    return "hide"
+                end,
+                setFunc = function(value)
+                    local config = getGoldenConfig()
+                    local resolved = value == "recolor" and "recolor" or "hide"
+                    config.CompletedHandlingObjectives = resolved
+                    refreshGoldenModel()
+                    if LamQueueFullRebuild("goldenCompletedHandlingObjectives") then
+                        return
+                    end
+                    if resolved == "hide" then
+                        markGoldenDirty("filter")
+                    else
+                        markGoldenDirty("appearance")
+                    end
+                    queueGoldenDirty()
+                end,
+                default = "hide",
+            }
+
+            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_GOLDEN_SECTION_COLORS) }
+
+            local colorEntries = {
+                {
+                    key = "CategoryTitleClosed",
+                    role = GOLDEN_COLOR_ROLES.CategoryTitleClosed,
+                    name = SI_NVK3UT_LAM_GOLDEN_COLOR_CATEGORY_CLOSED,
+                    tooltip = SI_NVK3UT_LAM_GOLDEN_COLOR_CATEGORY_CLOSED_TOOLTIP,
+                },
+                {
+                    key = "CategoryTitleOpen",
+                    role = GOLDEN_COLOR_ROLES.CategoryTitleOpen,
+                    name = SI_NVK3UT_LAM_GOLDEN_COLOR_CATEGORY_OPEN,
+                    tooltip = SI_NVK3UT_LAM_GOLDEN_COLOR_CATEGORY_OPEN_TOOLTIP,
+                },
+                {
+                    key = "EntryName",
+                    role = GOLDEN_COLOR_ROLES.EntryName,
+                    name = SI_NVK3UT_LAM_GOLDEN_COLOR_ENTRY,
+                    tooltip = SI_NVK3UT_LAM_GOLDEN_COLOR_ENTRY_TOOLTIP,
+                },
+                {
+                    key = "Objective",
+                    role = GOLDEN_COLOR_ROLES.Objective,
+                    name = SI_NVK3UT_LAM_GOLDEN_COLOR_OBJECTIVE,
+                    tooltip = SI_NVK3UT_LAM_GOLDEN_COLOR_OBJECTIVE_TOOLTIP,
+                },
+                {
+                    key = "Active",
+                    role = GOLDEN_COLOR_ROLES.Active,
+                    name = SI_NVK3UT_LAM_GOLDEN_COLOR_ACTIVE,
+                    tooltip = SI_NVK3UT_LAM_GOLDEN_COLOR_ACTIVE_TOOLTIP,
+                },
+                {
+                    key = "Completed",
+                    role = GOLDEN_COLOR_ROLES.Completed,
+                    name = SI_NVK3UT_LAM_GOLDEN_COLOR_COMPLETED,
+                    tooltip = SI_NVK3UT_LAM_GOLDEN_COLOR_COMPLETED_TOOLTIP,
+                },
+            }
+
+            local function getGoldenDefaultColor(colorKey, role)
+                local defaults = getGoldenDefaults()
+                local colors = defaults.Colors
+                local sourceKey = colorKey
+                if colorKey == "CategoryTitleClosed" then
+                    sourceKey = "CategoryTitle"
+                elseif colorKey == "CategoryTitleOpen" then
+                    sourceKey = "EntryName"
+                end
+
+                if type(colors) == "table" then
+                    local candidate = colors[sourceKey]
+                    if type(candidate) == "table" then
+                        local r = candidate[1] or candidate.r or 1
+                        local g = candidate[2] or candidate.g or 1
+                        local b = candidate[3] or candidate.b or 1
+                        local a = candidate[4] or candidate.a or 1
+                        return r, g, b, a
+                    end
+                end
+
+                local fallbackRole = role
+                if colorKey == "CategoryTitleClosed" then
+                    fallbackRole = ENDEAVOR_COLOR_ROLES.CategoryTitle
+                elseif colorKey == "CategoryTitleOpen" then
+                    fallbackRole = ENDEAVOR_COLOR_ROLES.EntryName
+                elseif colorKey == "EntryName" then
+                    fallbackRole = ENDEAVOR_COLOR_ROLES.EntryName
+                elseif colorKey == "Objective" then
+                    fallbackRole = ENDEAVOR_COLOR_ROLES.Objective
+                elseif colorKey == "Active" then
+                    fallbackRole = ENDEAVOR_COLOR_ROLES.Active
+                elseif colorKey == "Completed" then
+                    fallbackRole = ENDEAVOR_COLOR_ROLES.Completed
+                end
+
+                local fallback = getTrackerColorDefaultTable("endeavorTracker", fallbackRole or role)
+                if type(fallback) == "table" then
+                    local r = fallback[1] or fallback.r or 1
+                    local g = fallback[2] or fallback.g or 1
+                    local b = fallback[3] or fallback.b or 1
+                    local a = fallback[4] or fallback.a or 1
+                    return r, g, b, a
+                end
+
+                return 1, 1, 1, 1
+            end
+
+            for index = 1, #colorEntries do
+                local entry = colorEntries[index]
+                controls[#controls + 1] = {
+                    type = "colorpicker",
+                    name = GetString(entry.name),
+                    tooltip = GetString(entry.tooltip),
+                    width = "full",
+                    getFunc = function()
+                        local config = getGoldenConfig()
+                        local colors = config.Colors or {}
+                        local color = colors[entry.key]
+                        local r = (color and (color[1] or color.r)) or 1
+                        local g = (color and (color[2] or color.g)) or 1
+                        local b = (color and (color[3] or color.b)) or 1
+                        local a = (color and (color[4] or color.a)) or 1
+                        return r, g, b, a
+                    end,
+                    setFunc = function(r, g, b, a)
+                        local alpha = a or 1
+                        setGoldenColor(entry.key, entry.role, r, g, b, alpha)
+                        markGoldenDirty("appearance")
+                        queueGoldenDirty()
+                    end,
+                    default = function()
+                        return getGoldenDefaultColor(entry.key, entry.role)
+                    end,
+                }
+            end
+
+            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_GOLDEN_SECTION_FONTS) }
+
+            local fontGroups = {
+                { key = "Category", label = "Kategorie-Header" },
+                { key = "Title", label = "Titel" },
+                { key = "Objective", label = "Zeilen" },
+            }
+
+            local config = getGoldenConfig()
+            for index = 1, #fontGroups do
+                local group = fontGroups[index]
+                local defaultsFactory = function()
+                    return goldenFontDefaults(group.key)
+                end
+                local defaultsValue = defaultsFactory()
+                local fontControls = buildFontControls(
+                    group.label,
+                    config,
+                    group.key,
+                    defaultsFactory,
+                    function()
+                        markGoldenDirty("appearance")
+                        queueGoldenDirty()
+                    end,
+                    {
+                        ensureFont = ensureGoldenFontGroup,
+                        getFace = function(font)
+                            return font.Face or font.face
+                        end,
+                        setFace = function(font, value)
+                            font.face = value
+                            font.Face = value
+                        end,
+                        getSize = function(font)
+                            return font.Size or font.size
+                        end,
+                        setSize = function(font, value)
+                            local resolved = clampEndeavorFontSize(value)
+                            font.size = resolved
+                            font.Size = resolved
+                        end,
+                        getOutline = function(font)
+                            return font.Outline or font.outline
+                        end,
+                        setOutline = function(font, value)
+                            font.outline = value
+                            font.Outline = value
+                        end,
+                        clampSize = clampEndeavorFontSize,
+                    }
+                )
+
+                for i = 1, #fontControls do
+                    local control = fontControls[i]
+                    if i == 1 then
+                        control.tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_FONT_FAMILY_TOOLTIP)
+                        control.default = defaultsValue.face or defaultsValue.Face
+                    elseif i == 2 then
+                        control.tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_FONT_SIZE_TOOLTIP)
+                        control.default = defaultsValue.size or defaultsValue.Size
+                    else
+                        control.tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_FONT_OUTLINE_TOOLTIP)
+                        control.default = defaultsValue.outline or defaultsValue.Outline
+                    end
+                    controls[#controls + 1] = control
+                end
+            end
+
+            return controls
+        end)(),
+    }
     options[#options + 1] = {
         type = "submenu",
         name = "Debug & Support",
