@@ -19,6 +19,7 @@ local ACHIEVEMENT_CONTAINER_NAME = addonName .. "_AchievementContainer"
 local GOLDEN_CONTAINER_NAME = addonName .. "_GoldenContainer"
 local SECTION_TEMPLATE_NAME = "Nvk3UT_SectionContainerTemplate"
 local SCROLL_CONTAINER_NAME = addonName .. "_ScrollContainer"
+local SCROLL_BACKGROUND_NAME = SCROLL_CONTAINER_NAME .. "_Background"
 local SCROLL_CONTENT_NAME = SCROLL_CONTAINER_NAME .. "_Content"
 local SCROLLBAR_NAME = SCROLL_CONTAINER_NAME .. "_ScrollBar"
 local RESIZE_GRIP_NAME = addonName .. "_ResizeGrip"
@@ -2694,6 +2695,28 @@ local function createScrollContainer()
     scrollContainer:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, -RESIZE_BORDER_INSET, -RESIZE_BORDER_INSET)
     if scrollContainer.SetBackgroundColor then
         scrollContainer:SetBackgroundColor(0, 0, 0, 0)
+    end
+
+    local scrollBackground = WINDOW_MANAGER:CreateControl(SCROLL_BACKGROUND_NAME, scrollContainer, CT_CONTROL)
+    if scrollBackground then
+        scrollBackground:SetAnchorFill()
+        scrollBackground:SetMouseEnabled(true)
+        scrollBackground:SetDrawLayer(DL_BACKGROUND)
+        scrollBackground:SetDrawTier(DT_LOW)
+        scrollBackground:SetDrawLevel(0)
+        if scrollBackground.SetAlpha then
+            scrollBackground:SetAlpha(0)
+        end
+        if scrollBackground.SetExcludeFromResizeToFitExtents then
+            scrollBackground:SetExcludeFromResizeToFitExtents(true)
+        end
+        scrollBackground:SetHandler("OnMouseWheel", function(_, delta)
+            adjustScroll(delta)
+        end)
+
+        attachDragHandlers(scrollBackground)
+
+        state.scrollBackground = scrollBackground
     end
 
     local scrollContent = scrollContainer:GetNamedChild("ScrollChild")
