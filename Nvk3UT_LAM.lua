@@ -489,6 +489,9 @@ local GOLDEN_COLOR_ROLES = {
     Completed = "completed",
 }
 
+local goldenFontDefaults
+local ensureGoldenFontGroup
+
 local function getEndeavorConfig()
     local sv = getSavedVars()
     sv.Endeavor = sv.Endeavor or {}
@@ -562,15 +565,8 @@ local function getGoldenConfig()
     end
 
     local endeavorFonts = (endeavorConfig and endeavorConfig.Tracker and endeavorConfig.Tracker.Fonts) or {}
-    local goldenFonts = config.Tracker.Fonts
 
-    local function ensureGoldenFontGroup(key)
-        local target = goldenFonts[key]
-        if type(target) ~= "table" then
-            target = {}
-            goldenFonts[key] = target
-        end
-
+    local function copyEndeavorFontDefaults(key)
         local source = endeavorFonts[key]
         if type(source) ~= "table" then
             local altKey = type(key) == "string" and string.lower(key)
@@ -579,23 +575,26 @@ local function getGoldenConfig()
             end
         end
 
-        if source then
-            target.Face = target.Face or target.face or source.Face or source.face
-            target.Size = target.Size or target.size or source.Size or source.size
-            target.Outline = target.Outline or target.outline or source.Outline or source.outline
+        if type(source) ~= "table" then
+            return nil
         end
 
-        local defaults = endeavorFontDefaults(key)
-        target.Face = target.Face or target.face or defaults.Face
-        target.Size = clampEndeavorFontSize(target.Size or target.size or defaults.Size)
-        target.Outline = target.Outline or target.outline or defaults.Outline
-
-        return target
+        return {
+            face = source.Face or source.face,
+            size = source.Size or source.size,
+            outline = source.Outline or source.outline,
+        }
     end
 
-    ensureGoldenFontGroup("Category")
-    ensureGoldenFontGroup("Title")
-    ensureGoldenFontGroup("Objective")
+    ensureGoldenFontGroup(config, "Category", function()
+        return copyEndeavorFontDefaults("Category")
+    end)
+    ensureGoldenFontGroup(config, "Title", function()
+        return copyEndeavorFontDefaults("Title")
+    end)
+    ensureGoldenFontGroup(config, "Objective", function()
+        return copyEndeavorFontDefaults("Objective")
+    end)
 
     return config
 end
@@ -947,6 +946,68 @@ local function endeavorFontDefaults(key)
         Size = size,
         Outline = "soft-shadow-thick",
     }
+end
+
+function goldenFontDefaults(key)
+    local endeavorDefaults = endeavorFontDefaults(key)
+    if not endeavorDefaults then
+        return { face = FONT_FACE_CHOICES[1].face, size = 16, outline = "soft-shadow-thick" }
+    end
+
+    return {
+        face = endeavorDefaults.Face or endeavorDefaults.face,
+        size = endeavorDefaults.Size or endeavorDefaults.size,
+        outline = endeavorDefaults.Outline or endeavorDefaults.outline,
+    }
+end
+
+function ensureGoldenFontGroup(config, key, defaults)
+    local defaultsValue = defaults
+    if type(defaultsValue) == "function" then
+        defaultsValue = defaults()
+    end
+    if defaultsValue == nil then
+        defaultsValue = goldenFontDefaults(key)
+    end
+
+    if type(config) ~= "table" then
+        return defaultsValue
+    end
+
+    config.Tracker = config.Tracker or {}
+    local tracker = config.Tracker
+    tracker.Fonts = tracker.Fonts or {}
+    local fonts = tracker.Fonts
+
+    local group = fonts[key]
+    if type(group) ~= "table" then
+        group = {}
+        fonts[key] = group
+    end
+
+    if type(group.face) ~= "string" or group.face == "" then
+        group.face = group.Face
+    end
+    if group.size == nil then
+        group.size = group.Size
+    end
+    if type(group.outline) ~= "string" or group.outline == "" then
+        group.outline = group.Outline
+    end
+
+    local defaultsFace = defaultsValue and (defaultsValue.face or defaultsValue.Face)
+    local defaultsSize = defaultsValue and (defaultsValue.size or defaultsValue.Size)
+    local defaultsOutline = defaultsValue and (defaultsValue.outline or defaultsValue.Outline)
+
+    group.face = group.face or defaultsFace
+    group.size = group.size or defaultsSize
+    group.outline = group.outline or defaultsOutline
+
+    group.Face = group.Face or group.face
+    group.Size = group.Size or group.size
+    group.Outline = group.Outline or group.outline
+
+    return group
 end
 
 local function ensureEndeavorFontGroup(config, key, defaults)
@@ -2729,7 +2790,7 @@ local function registerPanel(displayTitle)
             for index = 1, #fontGroups do
                 local group = fontGroups[index]
                 local defaultsFactory = function()
-                    return endeavorFontDefaults(group.key)
+                    return goldenFontDefaults(group.key)
                 end
                 local defaultsValue = defaultsFactory()
                 local fontControls = buildFontControls(
@@ -2742,23 +2803,27 @@ local function registerPanel(displayTitle)
                         queueGoldenDirty()
                     end,
                     {
-                        ensureFont = ensureEndeavorFontGroup,
+                        ensureFont = ensureGoldenFontGroup,
                         getFace = function(font)
-                            return font.Face
+                            return font.Face or font.face
                         end,
                         setFace = function(font, value)
+                            font.face = value
                             font.Face = value
                         end,
                         getSize = function(font)
-                            return font.Size
+                            return font.Size or font.size
                         end,
                         setSize = function(font, value)
-                            font.Size = clampEndeavorFontSize(value)
+                            local resolved = clampEndeavorFontSize(value)
+                            font.size = resolved
+                            font.Size = resolved
                         end,
                         getOutline = function(font)
-                            return font.Outline
+                            return font.Outline or font.outline
                         end,
                         setOutline = function(font, value)
+                            font.outline = value
                             font.Outline = value
                         end,
                         clampSize = clampEndeavorFontSize,
@@ -2769,13 +2834,13 @@ local function registerPanel(displayTitle)
                     local control = fontControls[i]
                     if i == 1 then
                         control.tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_FONT_FAMILY_TOOLTIP)
-                        control.default = defaultsValue.Face
+                        control.default = defaultsValue.face or defaultsValue.Face
                     elseif i == 2 then
                         control.tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_FONT_SIZE_TOOLTIP)
-                        control.default = defaultsValue.Size
+                        control.default = defaultsValue.size or defaultsValue.Size
                     else
                         control.tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_FONT_OUTLINE_TOOLTIP)
-                        control.default = defaultsValue.Outline
+                        control.default = defaultsValue.outline or defaultsValue.Outline
                     end
                     controls[#controls + 1] = control
                 end
