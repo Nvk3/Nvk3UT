@@ -2592,6 +2592,12 @@ refreshScroll = function(targetOffset)
         tostring(debugFooterHeight),
         tostring(gap)
     ))
+    debugLog(string.format(
+        "Scroll viewport=%s content=%s range=%s",
+        tostring(viewportHeight),
+        tostring(totalContentHeight),
+        tostring(maxOffset)
+    ))
 
     local desiredOffset = math.max(0, previousDesired or 0)
     setScrollOffset(desiredOffset)
