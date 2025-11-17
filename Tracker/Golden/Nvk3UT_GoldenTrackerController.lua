@@ -131,35 +131,6 @@ local function safeDebug(message, ...)
     pcall(debugFn, string.format("%s: %s", MODULE_TAG, tostring(payload)))
 end
 
-local function ensureString(value)
-    if value == nil then
-        return ""
-    end
-    return tostring(value)
-end
-
-local function coerceNumber(value, fallback)
-    local numeric = tonumber(value)
-    if numeric == nil then
-        numeric = fallback or 0
-    end
-
-    if numeric ~= numeric then
-        numeric = fallback or 0
-    end
-
-    return numeric
-end
-
-local function clampNonNegative(value, fallback)
-    local numeric = coerceNumber(value, fallback or 0)
-    if numeric < 0 then
-        numeric = 0
-    end
-
-    return numeric
-end
-
 local function callStateMethod(goldenState, methodName)
     if type(goldenState) ~= "table" or type(methodName) ~= "string" then
         return nil
@@ -197,6 +168,35 @@ local function callModelMethod(model, methodName, ...)
 
     safeDebug("Call to GoldenModel:%s failed: %s", methodName, tostring(result))
     return nil
+end
+
+local function ensureString(value)
+    if value == nil then
+        return ""
+    end
+    return tostring(value)
+end
+
+local function coerceNumber(value, fallback)
+    local numeric = tonumber(value)
+    if numeric == nil then
+        numeric = fallback or 0
+    end
+
+    if numeric ~= numeric then
+        numeric = fallback or 0
+    end
+
+    return numeric
+end
+
+local function clampNonNegative(value, fallback)
+    local numeric = coerceNumber(value, fallback or 0)
+    if numeric < 0 then
+        numeric = 0
+    end
+
+    return numeric
 end
 
 local function copyStatus(status)
