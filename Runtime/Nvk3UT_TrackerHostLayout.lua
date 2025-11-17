@@ -739,20 +739,12 @@ function Layout.UpdateScrollAreaHeight(host, contentHeight, sizes)
         last.scrollChildHeight = scrollChildHeight
     end
 
-    local topY = sizes and sanitizeLength(sizes.contentTopY) or 0
-    local bottomY = sizes and tonumber(sizes.contentBottomY)
     local viewportHeight
 
-    if bottomY and bottomY ~= math.huge then
-        viewportHeight = bottomY - topY
-    end
-
-    if not viewportHeight or viewportHeight <= 0 then
-        if type(scrollContainer.GetHeight) == "function" then
-            local ok, height = pcall(scrollContainer.GetHeight, scrollContainer)
-            if ok then
-                viewportHeight = sanitizeLength(height)
-            end
+    if type(scrollContainer.GetHeight) == "function" then
+        local ok, height = pcall(scrollContainer.GetHeight, scrollContainer)
+        if ok then
+            viewportHeight = sanitizeLength(height)
         end
     end
 
