@@ -199,6 +199,31 @@ local function clampNonNegative(value, fallback)
     return numeric
 end
 
+local function clampProgress(value, maxValue)
+    local numeric = clampNonNegative(value, 0)
+    if type(maxValue) == "number" and maxValue >= 0 and numeric > maxValue then
+        numeric = maxValue
+    end
+
+    return numeric
+end
+
+local function clampMax(value)
+    local numeric = coerceNumber(value, 1)
+    if numeric < 1 then
+        numeric = 1
+    end
+
+    return numeric
+end
+
+local function normalizeProgressPair(progressValue, maxValue)
+    local maxNumeric = clampMax(maxValue)
+    local currentNumeric = clampProgress(progressValue, maxNumeric)
+
+    return currentNumeric, maxNumeric
+end
+
 local function copyStatus(status)
     local snapshot = {
         isAvailable = false,
