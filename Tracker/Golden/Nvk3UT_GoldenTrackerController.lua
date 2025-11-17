@@ -224,6 +224,40 @@ local function normalizeProgressPair(progressValue, maxValue)
     return currentNumeric, maxNumeric
 end
 
+local function buildObjectiveFromEntry(entryVm)
+    -- Adapter: Golden entry → Objective-Payload for GoldenTrackerRows
+    if type(entryVm) ~= "table" then
+        return nil
+    end
+
+    local title = tostring(entryVm.title or entryVm.displayName or entryVm.name or "")
+    local description = entryVm.description or title
+
+    local progress = tonumber(entryVm.progressDisplay or entryVm.progressCurrent or entryVm.current) or 0
+    local maxValue = tonumber(entryVm.maxDisplay or entryVm.max or entryVm.progressMax) or 0
+
+    local objective = {
+        title = title,
+        displayName = title,
+        name = title,
+        text = description,
+        description = description,
+        progress = progress,
+        max = maxValue,
+        progressDisplay = progress,
+        maxDisplay = maxValue,
+        counterText = entryVm.counterText or entryVm.progressText,
+        progressText = entryVm.progressText or entryVm.counterText,
+        completed = entryVm.isComplete == true or entryVm.isCompleted == true,
+        remainingSeconds = entryVm.remainingSeconds or entryVm.timeRemainingSec,
+        entryId = entryVm.entryId or entryVm.id,
+        categoryKey = entryVm.categoryKey,
+        campaignId = entryVm.campaignId,
+    }
+
+    return objective
+end
+
 local function copyStatus(status)
     local snapshot = {
         isAvailable = false,
@@ -383,7 +417,10 @@ local function normalizeEntry(rawCategory, rawEntry, index)
         veq = rawEntry.veq,
     }
 
-    entryVm.objectives[1] = buildObjectiveFromEntry(entryVm)
+    local objective = buildObjectiveFromEntry(entryVm)
+    if objective then
+        entryVm.objectives[1] = objective
+    end
     entryVm.hasObjectives = #entryVm.objectives > 0
 
     return entryVm
