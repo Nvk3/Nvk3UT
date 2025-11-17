@@ -170,6 +170,92 @@ local function callModelMethod(model, methodName, ...)
     return nil
 end
 
+local function ensureString(value)
+    if value == nil then
+        return ""
+    end
+    return tostring(value)
+end
+
+local function coerceNumber(value, fallback)
+    local numeric = tonumber(value)
+    if numeric == nil then
+        numeric = fallback or 0
+    end
+
+    if numeric ~= numeric then
+        numeric = fallback or 0
+    end
+
+    return numeric
+end
+
+local function clampNonNegative(value, fallback)
+    local numeric = coerceNumber(value, fallback or 0)
+    if numeric < 0 then
+        numeric = 0
+    end
+
+    return numeric
+end
+
+local function clampProgress(value, maxValue)
+    local numeric = clampNonNegative(value, 0)
+    if type(maxValue) == "number" and maxValue >= 0 and numeric > maxValue then
+        numeric = maxValue
+    end
+
+    return numeric
+end
+
+local function clampMax(value)
+    local numeric = coerceNumber(value, 1)
+    if numeric < 1 then
+        numeric = 1
+    end
+
+    return numeric
+end
+
+local function normalizeProgressPair(progressValue, maxValue)
+    local maxNumeric = clampMax(maxValue)
+    local currentNumeric = clampProgress(progressValue, maxNumeric)
+
+    return currentNumeric, maxNumeric
+end
+
+local function buildObjectiveFromEntry(entryVm)
+    -- Golden-entry → Objective table for tracker rows
+    if type(entryVm) ~= "table" then
+        return nil
+    end
+
+    local title = tostring(entryVm.title or entryVm.displayName or entryVm.name or "")
+
+    local progress = tonumber(entryVm.current or entryVm.progressCurrent or entryVm.progressDisplay) or 0
+    local maxValue = tonumber(entryVm.max or entryVm.progressMax or entryVm.maxDisplay) or 0
+
+    local objective = {
+        title = title,
+        displayName = title,
+        name = title,
+        text = entryVm.description or title,
+        progress = progress,
+        max = maxValue,
+        progressDisplay = progress,
+        maxDisplay = maxValue,
+        counterText = entryVm.counterText or entryVm.progressText,
+        progressText = entryVm.progressText or entryVm.counterText,
+        completed = entryVm.isComplete == true or entryVm.isCompleted == true,
+        remainingSeconds = entryVm.remainingSeconds or entryVm.timeRemainingSec,
+        entryId = entryVm.entryId or entryVm.id,
+        categoryKey = entryVm.categoryKey,
+        campaignId = entryVm.campaignId,
+    }
+
+    return objective
+end
+
 local function copyStatus(status)
     local snapshot = {
         isAvailable = false,
@@ -329,7 +415,10 @@ local function normalizeEntry(rawCategory, rawEntry, index)
         veq = rawEntry.veq,
     }
 
-    entryVm.objectives[1] = buildObjectiveFromEntry(entryVm)
+    local objective = buildObjectiveFromEntry(entryVm)
+    if objective then
+        entryVm.objectives[1] = objective
+    end
     entryVm.hasObjectives = #entryVm.objectives > 0
 
     return entryVm
