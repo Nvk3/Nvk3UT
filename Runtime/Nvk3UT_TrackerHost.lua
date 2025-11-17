@@ -1233,6 +1233,46 @@ queueRuntimeLayout = function()
     callRuntime("QueueDirty", "layout")
 end
 
+local function requestPendingFullRebuild()
+    local runtime = getRuntime()
+    if not runtime then
+        return
+    end
+
+    local consume = runtime.ConsumePendingFullRebuild or runtime.consumePendingFullRebuild
+    if type(consume) ~= "function" then
+        return
+    end
+
+    local rebuild = (Nvk3UT and Nvk3UT.Rebuild) or _G.Nvk3UT_Rebuild
+    local rebuildAll = rebuild and (rebuild.All or rebuild.all)
+    if type(rebuildAll) ~= "function" then
+        return
+    end
+
+    local hasPending = runtime.HasPendingFullRebuild or runtime.hasPendingFullRebuild
+    if type(hasPending) == "function" then
+        local pending = hasPending(runtime)
+        if pending ~= true then
+            return
+        end
+    end
+
+    local reason = consume(runtime)
+    if not reason then
+        return
+    end
+
+    local context = "pendingVisible"
+    if type(reason) == "string" and reason ~= "" then
+        context = string.format("%s:%s", context, reason)
+    end
+
+    safeCall(function()
+        rebuildAll(context)
+    end)
+end
+
 ensureVisibilityGates = function()
     if not state.visibilityGates then
         state.visibilityGates = {
@@ -3406,6 +3446,7 @@ end
 function TrackerHost.ApplyVisibilityRules()
     local hostSettings = getHostSettings()
     local previousSceneHidden = state.sceneHidden == true
+    local previousVisible = TrackerHost.IsVisible()
 
     local gates = refreshVisibilityGates(hostSettings)
     local lamOverride = gates.lam == true
@@ -3448,6 +3489,11 @@ function TrackerHost.ApplyVisibilityRules()
             state.sceneHidden and "hidden" or "visible",
             applyLabel
         )
+    end
+
+    local nowVisible = TrackerHost.IsVisible()
+    if not previousVisible and nowVisible then
+        requestPendingFullRebuild()
     end
 
     return changed
@@ -4165,6 +4211,9 @@ function TrackerHost.SetVisible(isVisible)
     end
 
     local newVisible = TrackerHost.IsVisible()
+    if not previousVisible and newVisible then
+        requestPendingFullRebuild()
+    end
     if changed or previousVisible ~= newVisible then
         queueRuntimeLayout()
     end
