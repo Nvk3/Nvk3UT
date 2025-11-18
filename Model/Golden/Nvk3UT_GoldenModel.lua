@@ -497,19 +497,41 @@ local function buildCounters(data)
     for index = 1, #categories do
         local category = categories[index]
         if type(category) == "table" then
-            local entries = category.entries
-            local completed = coerceCount(category.countCompleted, entries)
-            local total = coerceCount(category.countTotal, entries)
+            local capTotal = tonumber(category.capstoneCompletionThreshold)
+            local completedFromCap = tonumber(category.completedActivities)
 
-            counters.campaignCount = counters.campaignCount + 1
-            totalActivities = totalActivities + total
-            completedActivities = completedActivities + math.min(completed, total)
+            if capTotal == nil or capTotal <= 0 or completedFromCap == nil then
+                debugLog(
+                    "Counters gated: missing capstone for category=%s",
+                    ensureString(category.name or category.displayName or category.key or tostring(index))
+                )
+            else
+                local total = math.max(capTotal, 0)
+                local completed = math.max(completedFromCap, 0)
+
+                if total > 0 then
+                    completed = math.min(completed, total)
+                    totalActivities = totalActivities + total
+                    completedActivities = completedActivities + completed
+                    debugLog(
+                        "Counters capstone: category=%s completed=%d total=%d",
+                        ensureString(category.name or category.displayName or category.key or tostring(index)),
+                        completed,
+                        total
+                    )
+                else
+                    debugLog(
+                        "Counters gated: non-positive capstone for category=%s",
+                        ensureString(category.name or category.displayName or category.key or tostring(index))
+                    )
+                end
+            end
         end
     end
 
     counters.totalActivities = totalActivities
     counters.completedActivities = completedActivities
-
+    counters.campaignCount = #categories
     return counters
 end
 
@@ -779,6 +801,15 @@ do
                     isCapstoneRewardClaimed = isCapstoneRewardClaimed == true,
                 }
 
+                debugLog(
+                    "Campaign meta: id=%s name=%s objectives=%d completed=%d capstone=%d",
+                    tostring(campaignMeta.id),
+                    ensureString(campaignMeta.displayName),
+                    campaignMeta.numActivities or 0,
+                    campaignMeta.numCompletedActivities or 0,
+                    campaignMeta.capstoneCompletionThreshold or 0
+                )
+
                 local activities = self:CollectActivitiesForCampaign(campaignKey, index, campaignMeta)
                 if type(activities) == "table" and #activities > 0 then
                     campaigns[#campaigns + 1] = {
@@ -901,8 +932,8 @@ do
             countTotal = #entries,
             timeRemainingSec = minRemaining,
             remainingSeconds = minRemaining,
-            capstoneCompletionThreshold = ensureNumber(campaign.capstoneCompletionThreshold, #entries),
-            completedActivities = ensureNumber(campaign.numCompleted, completed),
+            capstoneCompletionThreshold = tonumber(campaign.capstoneCompletionThreshold) or nil,
+            completedActivities = tonumber(campaign.numCompleted or campaign.completedActivities or campaign.numCompletedActivities) or nil,
             campaignId = campaign.id,
             campaignKey = campaign.key,
             campaignIndex = campaign.index or index,
@@ -1018,6 +1049,8 @@ local function buildCategoryView(rawCategory, state)
         countTotal = countTotal,
         timeRemainingSec = remaining,
         remainingSeconds = remaining,
+        capstoneCompletionThreshold = source.capstoneCompletionThreshold,
+        completedActivities = source.completedActivities,
         expanded = expanded,
         hasEntries = #entries > 0,
         campaignId = source.campaignId,
@@ -1057,21 +1090,26 @@ local function buildViewDataSnapshot(rawData, state)
 
     local primaryCategory = categories[1]
     if type(primaryCategory) == "table" then
-        summary.hasActiveCampaign = true
-        summary.campaignName = primaryCategory.displayName or primaryCategory.name or ""
-
-        local completed = ensureNumber(primaryCategory.completedActivities, primaryCategory.countCompleted)
-        local maxTier = ensureNumber(primaryCategory.capstoneCompletionThreshold, primaryCategory.countTotal)
+        local maxTier = ensureNumber(primaryCategory.capstoneCompletionThreshold, 0)
+        local completed = ensureNumber(primaryCategory.completedActivities, 0)
 
         if maxTier < 0 then
             maxTier = 0
         end
 
-        if maxTier == 0 then
-            maxTier = ensureNumber(primaryCategory.countTotal, 0)
+        if completed < 0 then
+            completed = 0
         end
 
-        completed = math.min(math.max(completed, 0), maxTier)
+        if maxTier > 0 then
+            completed = math.min(completed, maxTier)
+            summary.hasActiveCampaign = true
+        else
+            completed = 0
+            summary.hasActiveCampaign = false
+        end
+
+        summary.campaignName = primaryCategory.displayName or primaryCategory.name or ""
 
         summary.completedObjectives = completed
         summary.maxRewardTier = maxTier
@@ -1266,12 +1304,21 @@ function GoldenModel:RefreshFromGame(providerFn)
     self._viewData = buildViewDataSnapshot(self._rawData, state)
     self._counters = buildCounters(self._rawData)
 
+    local campaignCount = self._counters.campaignCount or 0
+    local totalActivities = self._counters.totalActivities or 0
+
+    if campaignCount > 0 and totalActivities <= 0 then
+        debugLog("refresh gated: capstone data not ready (campaigns=%d)", campaignCount)
+        resetModelData()
+        status.hasEntries = false
+        applyStateSystemStatus(state, status)
+        return false
+    end
+
     local isEmpty = computeIsEmpty(self._counters)
     self._isEmpty = isEmpty
     status.hasEntries = not isEmpty
 
-    local campaignCount = self._counters.campaignCount or 0
-    local totalActivities = self._counters.totalActivities or 0
     local completedActivities = self._counters.completedActivities or 0
 
     if isEmpty then
