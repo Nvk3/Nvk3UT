@@ -29,6 +29,30 @@ local attachments = {
     debugLogger = nil,
 }
 
+local function getTrackerRuntime()
+    local root = getAddonRoot()
+    if type(root) ~= "table" then
+        return nil
+    end
+
+    return rawget(root, "TrackerRuntime")
+end
+
+local function queueGoldenDirty(reason)
+    local runtime = getTrackerRuntime()
+    if type(runtime) ~= "table" or type(runtime.QueueDirty) ~= "function" then
+        return false
+    end
+
+    local ok, err = pcall(runtime.QueueDirty, runtime, "golden")
+    if ok then
+        return true
+    end
+
+    safeDebug("TrackerRuntime.QueueDirty(golden) failed: %s", tostring(err))
+    return false
+end
+
 local function getAddonRoot()
     local root = rawget(_G, addonName)
     if type(root) == "table" then
@@ -567,6 +591,8 @@ function Controller:MarkDirty(reason)
     if reason ~= nil then
         safeDebug("MarkDirty(%s)", tostring(reason))
     end
+
+    queueGoldenDirty(reason)
 end
 
 function Controller:IsDirty()

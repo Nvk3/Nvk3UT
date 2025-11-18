@@ -470,7 +470,7 @@ function Rows.CreateCategoryRow(parent, categoryData)
     end
 
     if control and control.SetHandler then
-        control:SetHandler("OnMouseUp", function(_, button, upInside)
+        control:SetHandler("OnMouseUp", function(rowControl, button, upInside)
             if button == MOUSE_BUTTON_LEFT and upInside then
                 local controller = rawget(Nvk3UT, "GoldenTrackerController")
                 if controller and type(controller.ToggleCategoryExpanded) == "function" then
