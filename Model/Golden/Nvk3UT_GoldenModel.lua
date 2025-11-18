@@ -512,13 +512,16 @@ local function buildCounters(data)
             local entries = category.entries or {}
             local entryCount = #entries
 
-            local capTotal = safeNonNegativeNumber(category.capstoneCompletionThreshold)
-            local totalFromCategory = safeNonNegativeNumber(category.countTotal, entryCount)
-            local total = capTotal or totalFromCategory or 0
+            local total = safeNonNegativeNumber(
+                category.capstoneCompletionThreshold,
+                category.countTotal,
+                entryCount
+            ) or 0
 
-            local completedFromCap = safeNonNegativeNumber(category.completedActivities)
-            local completedFromCategory = safeNonNegativeNumber(category.countCompleted)
-            local completed = completedFromCap or completedFromCategory or 0
+            local completed = safeNonNegativeNumber(
+                category.completedActivities,
+                category.countCompleted
+            ) or 0
 
             if total > 0 then
                 totalActivities = totalActivities + total
@@ -912,9 +915,6 @@ do
         end
         minRemaining = ensureNumber(minRemaining, 0)
 
-        local capstoneThreshold = tonumber(campaign.capstoneCompletionThreshold)
-        local completedActivities = tonumber(campaign.numCompleted or campaign.completedActivities)
-
         return {
             key = categoryKey,
             id = categoryKey,
@@ -926,8 +926,8 @@ do
             countTotal = #entries,
             timeRemainingSec = minRemaining,
             remainingSeconds = minRemaining,
-            capstoneCompletionThreshold = capstoneThreshold or ensureNumber(campaign.capstoneCompletionThreshold, #entries),
-            completedActivities = completedActivities or ensureNumber(campaign.numCompleted, completed),
+            capstoneCompletionThreshold = tonumber(campaign.capstoneCompletionThreshold) or nil,
+            completedActivities = tonumber(campaign.numCompleted or campaign.completedActivities) or nil,
             campaignId = campaign.id,
             campaignKey = campaign.key,
             campaignIndex = campaign.index or index,

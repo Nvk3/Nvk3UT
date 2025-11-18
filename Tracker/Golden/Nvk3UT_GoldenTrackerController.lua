@@ -503,7 +503,7 @@ local function buildCategory(rawCategory)
         total = tonumber(rawCategory.countTotal) or categoryVm.entryCount or 0
     end
 
-    local completed = tonumber(rawCategory.completedActivities or rawCategory.numCompleted)
+    local completed = tonumber(rawCategory.completedActivities)
     if not completed or completed < 0 then
         completed = tonumber(rawCategory.countCompleted)
         if completed == nil then
