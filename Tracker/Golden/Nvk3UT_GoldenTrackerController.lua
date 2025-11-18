@@ -605,13 +605,6 @@ function Controller:BuildViewModel(options)
         return viewModel
     end
 
-    if not hasEntries then
-        state.viewModel = viewModel
-        state.dirty = false
-        safeDebug("BuildViewModel gated (state empty)")
-        return viewModel
-    end
-
     local model = getGoldenModel()
     if model == nil then
         state.viewModel = viewModel
@@ -649,15 +642,19 @@ function Controller:BuildViewModel(options)
         return viewModel
     end
 
-    if not hasEntries then
-        state.viewModel = viewModel
-        state.dirty = false
-        safeDebug("BuildViewModel gated (model empty)")
-        return viewModel
-    end
-
     local rawData = callModelMethod(model, "GetViewData") or {}
     local counters = callModelMethod(model, "GetCounters") or {}
+
+    local rawSummary = type(rawData.summary) == "table" and rawData.summary or {}
+    local rawObjectives = type(rawData.objectives) == "table" and rawData.objectives or {}
+
+    safeDebug(
+        "BuildViewModel raw data: nil=%s hasEntriesForTracker=%s hasCampaign=%s objectives=%d",
+        tostring(rawData == nil),
+        tostring(rawData and rawData.hasEntriesForTracker),
+        tostring(rawSummary.hasActiveCampaign),
+        #rawObjectives
+    )
 
     local headerExpanded = expansionFlags.header ~= false
     if type(rawData) == "table" and rawData.headerExpanded ~= nil then
@@ -682,32 +679,46 @@ function Controller:BuildViewModel(options)
     viewModel.categories = categories
 
     local summary = {
+        hasActiveCampaign = rawSummary.hasActiveCampaign == true,
+        campaignName = ensureString(rawSummary.campaignName),
+        completedObjectives = clampNonNegative(rawSummary.completedObjectives),
+        maxRewardTier = clampNonNegative(rawSummary.maxRewardTier),
+        remainingObjectivesToNextReward = clampNonNegative(rawSummary.remainingObjectivesToNextReward),
         totalEntries = clampNonNegative(counters.totalActivities or totalEntries),
         totalCompleted = clampNonNegative(counters.completedActivities or totalCompleted),
-        campaignCount = clampNonNegative(counters.campaignCount or #categories),
+        campaignCount = clampNonNegative(rawSummary.campaignCount or counters.campaignCount or #categories),
     }
     summary.totalRemaining = math.max(0, summary.totalEntries - summary.totalCompleted)
 
     viewModel.summary = summary
+    viewModel.objectives = rawObjectives
 
-    if summary.totalEntries > 0 then
+    viewModel.hasEntriesForTracker = (rawData and rawData.hasEntriesForTracker) == true
+        or #categories > 0
+        or #rawObjectives > 0
+
+    if viewModel.hasEntriesForTracker then
         viewModel.status.isAvailable = true
         viewModel.status.hasEntries = true
+        viewModel.status.hasEntriesForTracker = true
     else
         viewModel.status.hasEntries = false
+        viewModel.status.hasEntriesForTracker = false
     end
 
     state.viewModel = viewModel
     state.dirty = false
 
     safeDebug(
-        "BuildViewModel populated: avail=%s locked=%s hasEntries=%s campaigns=%d activities=%d/%d",
+        "BuildViewModel populated: avail=%s locked=%s hasEntries=%s hasEntriesForTracker=%s campaigns=%d activities=%d/%d objectives=%d",
         tostring(viewModel.status.isAvailable),
         tostring(viewModel.status.isLocked),
         tostring(viewModel.status.hasEntries),
+        tostring(viewModel.hasEntriesForTracker),
         summary.campaignCount,
         summary.totalCompleted,
-        summary.totalEntries
+        summary.totalEntries,
+        #rawObjectives
     )
 
     return viewModel

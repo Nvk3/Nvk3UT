@@ -925,40 +925,54 @@ function GoldenTracker.Refresh(...)
     local layoutModule = getLayoutModule()
 
     tracker.viewModel = type(viewModel) == "table" and viewModel or nil
-    local vm = tracker.viewModel or {}
-    local summary = type(vm.summary) == "table" and vm.summary or {}
-    local objectives = type(vm.objectives) == "table" and vm.objectives or {}
-    local statusSummary = string.format(
-        "hasCampaign=%s remaining=%s",
+    local vm = tracker.viewModel
+    local summary = type(vm) == "table" and type(vm.summary) == "table" and vm.summary or {}
+    local objectives = type(vm) == "table" and type(vm.objectives) == "table" and vm.objectives or {}
+    local hasEntriesForTracker = type(vm) == "table" and vm.hasEntriesForTracker == true
+
+    safeDebug(
+        "Refresh start: vmNil=%s hasEntriesForTracker=%s hasCampaign=%s objectives=%d",
+        tostring(vm == nil),
+        tostring(hasEntriesForTracker),
         tostring(summary.hasActiveCampaign),
-        tostring(summary.remainingObjectivesToNextReward)
+        #objectives
     )
 
-    local rows = tracker.rows or {}
-    resetRows(rows)
-    tracker.rows = rows
-
-    safeDebug("Refresh start: %s objectives=%d", statusSummary, #objectives)
-
-    if vm == nil or summary.hasActiveCampaign ~= true then
+    if vm == nil then
         tracker.height = 0
         state.height = 0
         setContainerHeight(container, 0)
         applyVisibility(root, true)
         applyVisibility(content, true)
-        safeDebug("Refresh aborted: no active campaign")
+        safeDebug("Refresh aborted: view model missing")
+        return
+    end
+
+    local rows = tracker.rows or {}
+    resetRows(rows)
+    tracker.rows = rows
+
+    if not hasEntriesForTracker then
+        tracker.height = 0
+        state.height = 0
+        setContainerHeight(container, 0)
+        applyVisibility(root, true)
+        applyVisibility(content, true)
+        safeDebug("Refresh aborted: no tracker entries")
         return
     end
 
     if rowsModule then
-        local categoryRow = safeCreateRow(rowsModule.CreateCategoryRow, content, summary)
-        if categoryRow then
-            table.insert(rows, categoryRow)
-        end
+        if summary.hasActiveCampaign == true then
+            local categoryRow = safeCreateRow(rowsModule.CreateCategoryRow, content, summary)
+            if categoryRow then
+                table.insert(rows, categoryRow)
+            end
 
-        local campaignRow = safeCreateRow(rowsModule.CreateCampaignRow, content, summary)
-        if campaignRow then
-            table.insert(rows, campaignRow)
+            local campaignRow = safeCreateRow(rowsModule.CreateCampaignRow, content, summary)
+            if campaignRow then
+                table.insert(rows, campaignRow)
+            end
         end
 
         for objectiveIndex = 1, #objectives do
@@ -990,7 +1004,13 @@ function GoldenTracker.Refresh(...)
     state.height = totalHeight
     setContainerHeight(container, totalHeight)
 
-    safeDebug("Refresh complete: %s rows=%d height=%d", statusSummary, #rows, totalHeight)
+    safeDebug(
+        "Refresh complete: rows=%d height=%d hasCampaign=%s remaining=%s",
+        #rows,
+        totalHeight,
+        tostring(summary.hasActiveCampaign),
+        tostring(summary.remainingObjectivesToNextReward)
+    )
 end
 
 function GoldenTracker:GetHeight()

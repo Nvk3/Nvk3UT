@@ -506,15 +506,38 @@ local function ensureGoldenCache(runtime)
         runtime.cache = cache
     end
 
-    local viewModel = cache.goldenVM
-    if type(viewModel) ~= "table" then
-        viewModel = { categories = {} }
-        cache.goldenVM = viewModel
+    local function normalizeGoldenViewModel(viewModel)
+        if type(viewModel) ~= "table" then
+            viewModel = { categories = {} }
+        end
+
+        if type(viewModel.categories) ~= "table" then
+            viewModel.categories = {}
+        end
+
+        if type(viewModel.objectives) ~= "table" then
+            viewModel.objectives = {}
+        end
+
+        if type(viewModel.summary) ~= "table" then
+            viewModel.summary = {
+                hasActiveCampaign = false,
+                campaignName = "",
+                completedObjectives = 0,
+                maxRewardTier = 0,
+                remainingObjectivesToNextReward = 0,
+            }
+        end
+
+        if viewModel.hasEntriesForTracker == nil then
+            viewModel.hasEntriesForTracker = false
+        end
+
+        return viewModel
     end
 
-    if type(viewModel.categories) ~= "table" then
-        viewModel.categories = {}
-    end
+    local viewModel = normalizeGoldenViewModel(cache.goldenVM)
+    cache.goldenVM = viewModel
 
     return cache, viewModel
 end
@@ -596,6 +619,24 @@ local function buildGoldenViewModel(runtime, shouldRefreshModel)
 
     if type(viewModel.categories) ~= "table" then
         viewModel.categories = {}
+    end
+
+    if type(viewModel.objectives) ~= "table" then
+        viewModel.objectives = {}
+    end
+
+    if type(viewModel.summary) ~= "table" then
+        viewModel.summary = {
+            hasActiveCampaign = false,
+            campaignName = "",
+            completedObjectives = 0,
+            maxRewardTier = 0,
+            remainingObjectivesToNextReward = 0,
+        }
+    end
+
+    if viewModel.hasEntriesForTracker == nil then
+        viewModel.hasEntriesForTracker = false
     end
 
     cache.goldenVM = viewModel
@@ -948,11 +989,18 @@ function Runtime:ProcessFrame(nowMs)
 
             local status = type(goldenViewModel.status) == "table" and goldenViewModel.status or {}
             local categories = type(goldenViewModel.categories) == "table" and #goldenViewModel.categories or 0
+            local hasEntriesForTracker = goldenViewModel.hasEntriesForTracker
+            if hasEntriesForTracker == nil then
+                hasEntriesForTracker = status.hasEntriesForTracker
+            end
+            if hasEntriesForTracker == nil then
+                hasEntriesForTracker = status.hasEntries
+            end
             debug(
-                "Runtime.BuildVM.Golden: avail=%s locked=%s hasEntries=%s cats=%d",
+                "Runtime.BuildVM.Golden: avail=%s locked=%s hasEntriesForTracker=%s cats=%d",
                 tostring(status.isAvailable),
                 tostring(status.isLocked),
-                tostring(status.hasEntries),
+                tostring(hasEntriesForTracker),
                 categories
             )
         else
@@ -1016,11 +1064,18 @@ function Runtime:ProcessFrame(nowMs)
             if goldenRefreshed and goldenDirty then
                 local categoryCount = #goldenViewModel.categories
                 local status = type(goldenViewModel.status) == "table" and goldenViewModel.status or {}
+                local hasEntriesForTracker = goldenViewModel.hasEntriesForTracker
+                if hasEntriesForTracker == nil then
+                    hasEntriesForTracker = status.hasEntriesForTracker
+                end
+                if hasEntriesForTracker == nil then
+                    hasEntriesForTracker = status.hasEntries
+                end
                 debug(
-                    "Runtime.Refresh.Golden: avail=%s locked=%s hasEntries=%s cats=%d",
+                    "Runtime.Refresh.Golden: avail=%s locked=%s hasEntriesForTracker=%s cats=%d",
                     tostring(status.isAvailable),
                     tostring(status.isLocked),
-                    tostring(status.hasEntries),
+                    tostring(hasEntriesForTracker),
                     categoryCount
                 )
             end

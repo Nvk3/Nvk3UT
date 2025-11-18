@@ -1108,12 +1108,28 @@ local function buildViewDataSnapshot(rawData, state)
         summary.remainingObjectivesToNextReward = closestRewardRemaining
     end
 
-    return {
+    local hasEntriesForTracker = (#categories > 0) or (#objectives > 0)
+
+    local viewData = {
         headerExpanded = headerExpanded,
         categories = categories,
         objectives = objectives,
         summary = summary,
+        hasEntriesForTracker = hasEntriesForTracker,
     }
+
+    debugLog(
+        "view snapshot: campaigns=%d objectives=%d active=%s name=%s completed=%d/%d remaining=%d",
+        #categories,
+        #objectives,
+        tostring(summary.hasActiveCampaign),
+        tostring(summary.campaignName),
+        summary.completedObjectives,
+        summary.maxRewardTier,
+        summary.remainingObjectivesToNextReward
+    )
+
+    return viewData
 end
 
 function GoldenModel:Init(svRoot, goldenState, goldenList)
