@@ -289,8 +289,13 @@ local function resolveExpansionFlags(goldenState)
 
     if goldenState then
         local header = callStateMethod(goldenState, "IsHeaderExpanded")
-            or callStateMethod(goldenState, "IsCategoryHeaderExpanded")
-        categoryExpanded = header ~= false
+        if header == nil then
+            header = callStateMethod(goldenState, "IsCategoryHeaderExpanded")
+        end
+
+        if header ~= nil then
+            categoryExpanded = header ~= false
+        end
 
         local entry = callStateMethod(goldenState, "IsEntryExpanded")
         if entry ~= nil then
@@ -763,26 +768,6 @@ function Controller:GetViewModel()
     return ensureViewModel()
 end
 
-local function toggleCategoryExpanded()
-    local goldenState = getGoldenState()
-    if goldenState and (type(goldenState.IsHeaderExpanded) == "function"
-        or type(goldenState.IsCategoryHeaderExpanded) == "function") then
-        local current = callStateMethod(goldenState, "IsHeaderExpanded")
-            or callStateMethod(goldenState, "IsCategoryHeaderExpanded")
-        local nextState = current == false
-        if type(goldenState.SetHeaderExpanded) == "function" then
-            pcall(goldenState.SetHeaderExpanded, goldenState, nextState)
-        elseif type(goldenState.SetCategoryHeaderExpanded) == "function" then
-            pcall(goldenState.SetCategoryHeaderExpanded, goldenState, nextState)
-        end
-        state.categoryExpanded = nextState
-        return nextState
-    end
-
-    state.categoryExpanded = not (state.categoryExpanded == false)
-    return state.categoryExpanded
-end
-
 local function toggleEntryExpanded()
     local goldenState = getGoldenState()
     if goldenState and type(goldenState.IsEntryExpanded) == "function" then
@@ -800,8 +785,29 @@ local function toggleEntryExpanded()
 end
 
 function Controller:ToggleHeaderExpanded()
-    toggleCategoryExpanded()
-    self:MarkDirty("ToggleHeaderExpanded")
+    local goldenState = getGoldenState()
+    local wasExpanded = true
+    if goldenState and type(goldenState.IsHeaderExpanded) == "function" then
+        wasExpanded = callStateMethod(goldenState, "IsHeaderExpanded") ~= false
+    elseif state.categoryExpanded ~= nil then
+        wasExpanded = state.categoryExpanded ~= false
+    end
+
+    local nowExpanded = not wasExpanded
+    local changed = false
+
+    if goldenState and type(goldenState.SetHeaderExpanded) == "function" then
+        changed = callStateMethod(goldenState, "SetHeaderExpanded", nowExpanded) ~= false
+    elseif goldenState and type(goldenState.SetCategoryHeaderExpanded) == "function" then
+        changed = callStateMethod(goldenState, "SetCategoryHeaderExpanded", nowExpanded) ~= false
+    else
+        changed = state.categoryExpanded ~= nowExpanded
+        state.categoryExpanded = nowExpanded
+    end
+
+    if changed then
+        self:MarkDirty("ToggleHeaderExpanded")
+    end
 end
 
 function Controller:ToggleCategoryExpanded()

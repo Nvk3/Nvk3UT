@@ -714,11 +714,29 @@ function GoldenState:ResetSystemStatus()
 end
 
 function GoldenState:IsHeaderExpanded()
-    return getStateBoolean(self, "headerExpanded")
+    local expanded = getStateBoolean(self, "headerExpanded")
+    return expanded ~= false
 end
 
 function GoldenState:SetHeaderExpanded(expanded)
-    return setStateBoolean(self, "headerExpanded", expanded)
+    if expanded == nil then
+        return false
+    end
+
+    local state = getStateTable(self, true)
+    if type(state) ~= "table" then
+        return false
+    end
+
+    local previous = state.headerExpanded
+    local normalized = expanded and true or false
+    local changed = previous ~= normalized
+
+    state.headerExpanded = normalized
+
+    debugLog("set headerExpanded: %s -> %s", tostring(previous), tostring(normalized))
+
+    return changed
 end
 
 function GoldenState:IsCategoryHeaderExpanded()
