@@ -123,6 +123,35 @@ local function applyLabelDefaults(label, font, color)
     end
 end
 
+local function formatObjectiveCounter(current, max)
+    local currentNum = tonumber(current)
+    if currentNum == nil then
+        return nil
+    end
+
+    currentNum = math.floor(currentNum + 0.5)
+    if currentNum < 0 then
+        currentNum = 0
+    end
+
+    local maxNum = tonumber(max)
+    if maxNum ~= nil then
+        maxNum = math.floor(maxNum + 0.5)
+        if maxNum < 0 then
+            maxNum = 0
+        end
+    end
+
+    if maxNum and maxNum > 1 then
+        if currentNum > maxNum then
+            currentNum = maxNum
+        end
+        return string.format("(%d/%d)", currentNum, maxNum)
+    end
+
+    return string.format("(%d)", currentNum)
+end
+
 local function getAddon()
     return rawget(_G, addonName)
 end
@@ -578,20 +607,28 @@ function Rows.CreateObjectiveRow(parent, objectiveData)
         local text = ""
         if type(objectiveData) == "table" then
             local display = objectiveData.displayName or objectiveData.title or objectiveData.name or objectiveData.text
-            if display == nil then
-                display = ""
+            if display == nil or display == "" then
+                display = "Objective"
             end
-            text = tostring(display)
 
-            local counterText = objectiveData.counterText
-            local progress = tonumber(objectiveData.progressDisplay or objectiveData.progress or objectiveData.current)
-            local maxValue = tonumber(objectiveData.maxDisplay or objectiveData.max)
-            if not counterText and progress and maxValue then
-                counterText = string.format("%d/%d", progress, maxValue)
+            local baseText = tostring(display or "")
+            local counterText = formatObjectiveCounter(
+                objectiveData.progressDisplay or objectiveData.progress or objectiveData.current,
+                objectiveData.maxDisplay or objectiveData.max
+            )
+            if counterText == nil then
+                local fallbackCounter = objectiveData.counterText
+                if type(fallbackCounter) == "string" and fallbackCounter ~= "" then
+                    counterText = string.format("(%s)", fallbackCounter)
+                end
             end
+
+            text = baseText
             if counterText and counterText ~= "" then
-                text = string.format("%s (%s)", text, counterText)
+                text = string.format("%s %s", baseText, counterText)
             end
+
+            text = text:gsub("%s+", " "):gsub("%s+%)", ")")
         end
 
         if label.SetText then
