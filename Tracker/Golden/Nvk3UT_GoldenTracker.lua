@@ -211,6 +211,84 @@ local function ClearChildren(control)
     end
 end
 
+local function resolveGoldenContainer(candidate)
+    local fallback = nil
+
+    local uiRegistry = Nvk3UT and Nvk3UT.UI
+    if uiRegistry and uiRegistry.GoldenContainer then
+        fallback = uiRegistry.GoldenContainer
+    end
+
+    local hostRegistry = Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.sectionContainers
+    if hostRegistry and hostRegistry.golden then
+        fallback = hostRegistry.golden
+    end
+
+    local candidateName
+    if candidate and type(candidate.GetName) == "function" then
+        local ok, name = pcall(candidate.GetName, candidate)
+        if ok and type(name) == "string" then
+            candidateName = name
+        end
+    end
+
+    local isGoldenCandidate = candidateName and string.find(candidateName, "GoldenContainer", 1, true) ~= nil
+    if not isGoldenCandidate and fallback and fallback ~= candidate then
+        local fallbackName = fallback.GetName and fallback:GetName() or "<unknown>"
+        safeDebug(
+            "createRootAndContent: parent corrected from %s to %s",
+            tostring(candidateName or "<nil>"),
+            tostring(fallbackName)
+        )
+        return fallback
+    end
+
+    return candidate or fallback
+end
+
+local function getParentBaseName(parentControl)
+    if parentControl and type(parentControl.GetName) == "function" then
+        local ok, name = pcall(parentControl.GetName, parentControl)
+        if ok and type(name) == "string" and name ~= "" then
+            return name
+        end
+    end
+
+    return "Nvk3UT_Golden"
+end
+
+local function cleanupOrphanedControls(parentControl)
+    local parentName = getParentBaseName(parentControl)
+    local targets = {
+        parentName .. "Root",
+        parentName .. "Content",
+    }
+
+    for _, controlName in ipairs(targets) do
+        local control = _G[controlName]
+        if control then
+            local parent = control.GetParent and control:GetParent()
+            if parent ~= parentControl then
+                local parentLabel = parent and parent.GetName and parent:GetName() or "<nil>"
+                safeDebug(
+                    "Init: orphaned control %s cleaned up (parent=%s)",
+                    tostring(controlName),
+                    tostring(parentLabel)
+                )
+                if control.ClearAnchors then
+                    control:ClearAnchors()
+                end
+                if control.SetHidden then
+                    control:SetHidden(true)
+                end
+                if control.SetParent then
+                    control:SetParent(nil)
+                end
+            end
+        end
+    end
+end
+
 local function createRootAndContent(parentControl)
     local wm = rawget(_G, "WINDOW_MANAGER")
     if wm == nil then
@@ -218,17 +296,18 @@ local function createRootAndContent(parentControl)
         return nil, nil
     end
 
-    local parentName = "Nvk3UT_Golden"
-    if parentControl and type(parentControl.GetName) == "function" then
-        local okName, name = pcall(parentControl.GetName, parentControl)
-        if okName and type(name) == "string" and name ~= "" then
-            parentName = name
-        end
+    local resolvedParent = resolveGoldenContainer(parentControl)
+    if resolvedParent == nil then
+        safeDebug("Init aborted; Golden container missing")
+        return nil, nil
     end
 
+    local parentName = getParentBaseName(resolvedParent)
+
     local rootName = parentName .. "Root"
-    local rootControl = wm:CreateControl(rootName, parentControl, CT_CONTROL)
+    local rootControl = wm:CreateControl(rootName, resolvedParent, CT_CONTROL)
     if rootControl then
+        rootControl:SetParent(resolvedParent)
         if rootControl.SetResizeToFitDescendents then
             rootControl:SetResizeToFitDescendents(true)
         end
@@ -238,6 +317,13 @@ local function createRootAndContent(parentControl)
         if rootControl.SetMouseEnabled then
             rootControl:SetMouseEnabled(false)
         end
+        if rootControl.ClearAnchors then
+            rootControl:ClearAnchors()
+        end
+        if rootControl.SetAnchor then
+            rootControl:SetAnchor(TOPLEFT, resolvedParent, TOPLEFT, 0, 0)
+            rootControl:SetAnchor(TOPRIGHT, resolvedParent, TOPRIGHT, 0, 0)
+        end
     end
 
     local contentControl
@@ -245,6 +331,7 @@ local function createRootAndContent(parentControl)
         local contentName = parentName .. "Content"
         contentControl = wm:CreateControl(contentName, rootControl, CT_CONTROL)
         if contentControl then
+            contentControl:SetParent(rootControl)
             if contentControl.SetResizeToFitDescendents then
                 contentControl:SetResizeToFitDescendents(true)
             end
@@ -253,6 +340,13 @@ local function createRootAndContent(parentControl)
             end
             if contentControl.SetMouseEnabled then
                 contentControl:SetMouseEnabled(false)
+            end
+            if contentControl.ClearAnchors then
+                contentControl:ClearAnchors()
+            end
+            if contentControl.SetAnchor then
+                contentControl:SetAnchor(TOPLEFT, rootControl, TOPLEFT, 0, 0)
+                contentControl:SetAnchor(TOPRIGHT, rootControl, TOPRIGHT, 0, 0)
             end
         end
     end
@@ -355,7 +449,9 @@ function GoldenTracker.Init(...)
         return
     end
 
-    tracker.container = parentControl
+    local resolvedContainer = resolveGoldenContainer(parentControl)
+
+    tracker.container = resolvedContainer or parentControl
     tracker.options = type(options) == "table" and options or nil
     tracker.height = 0
     tracker.viewModel = nil
@@ -364,14 +460,16 @@ function GoldenTracker.Init(...)
     tracker.content = nil
     tracker.initialized = false
 
-    state.container = parentControl
+    state.container = resolvedContainer or parentControl
     state.options = tracker.options
     state.height = tracker.height
     state.initialized = false
     state.root = nil
     state.content = nil
 
-    local root, content = createRootAndContent(parentControl)
+    cleanupOrphanedControls(resolvedContainer or parentControl)
+
+    local root, content = createRootAndContent(resolvedContainer or parentControl)
     tracker.root = root
     tracker.content = content
     state.root = root
@@ -386,15 +484,20 @@ function GoldenTracker.Init(...)
 
     tracker.height = 0
     state.height = 0
-    setContainerHeight(parentControl, 0)
-    applyVisibility(parentControl, false)
+    setContainerHeight(tracker.container, 0)
+    applyVisibility(tracker.container, false)
     applyVisibility(root, true)
     applyVisibility(content, true)
 
     tracker.initialized = true
     state.initialized = true
 
-    safeDebug("Init")
+    safeDebug("Init: container=%s parent=%s root=%s content=%s", 
+        tracker.container and tracker.container.GetName and tracker.container:GetName() or "<nil>",
+        tracker.container and tracker.container.GetParent and tracker.container:GetParent() and tracker.container:GetParent():GetName() or "<nil>",
+        root and root.GetName and root:GetName() or "<nil>",
+        content and content.GetName and content:GetName() or "<nil>"
+    )
 
     local initReason = "init"
     safeDebug("[GoldenTracker.SHIM] init-kick (reason=%s)", initReason)
@@ -925,21 +1028,18 @@ function GoldenTracker.Refresh(...)
     local layoutModule = getLayoutModule()
 
     tracker.viewModel = type(viewModel) == "table" and viewModel or nil
-    local vm = tracker.viewModel or {}
-    local categories = type(vm.categories) == "table" and vm.categories or {}
-    local status = type(vm.status) == "table" and vm.status or {}
-    local statusSummary = string.format(
-        "avail=%s locked=%s hasEntries=%s",
-        tostring(status.isAvailable),
-        tostring(status.isLocked),
-        tostring(status.hasEntries)
+    local vm = tracker.viewModel
+    local summary = type(vm) == "table" and type(vm.summary) == "table" and vm.summary or {}
+    local objectives = type(vm) == "table" and type(vm.objectives) == "table" and vm.objectives or {}
+    local hasEntriesForTracker = type(vm) == "table" and vm.hasEntriesForTracker == true
+
+    safeDebug(
+        "Refresh start: vmNil=%s hasEntriesForTracker=%s hasCampaign=%s objectives=%d",
+        tostring(vm == nil),
+        tostring(hasEntriesForTracker),
+        tostring(summary.hasActiveCampaign),
+        #objectives
     )
-
-    local rows = tracker.rows or {}
-    resetRows(rows)
-    tracker.rows = rows
-
-    safeDebug("Refresh start: %s categories=%d", statusSummary, #categories)
 
     if vm == nil then
         tracker.height = 0
@@ -947,50 +1047,43 @@ function GoldenTracker.Refresh(...)
         setContainerHeight(container, 0)
         applyVisibility(root, true)
         applyVisibility(content, true)
-        safeDebug("Refresh aborted: no viewModel")
+        safeDebug("Refresh aborted: view model missing")
         return
     end
 
-    local hasEntries = status.hasEntries ~= false and #categories > 0
-    if not hasEntries then
+    local rows = tracker.rows or {}
+    resetRows(rows)
+    tracker.rows = rows
+
+    if not hasEntriesForTracker then
         tracker.height = 0
         state.height = 0
         setContainerHeight(container, 0)
         applyVisibility(root, true)
         applyVisibility(content, true)
-        safeDebug("Refresh aborted: no entries")
+        safeDebug("Refresh aborted: no tracker entries")
         return
     end
 
     if rowsModule then
-        for categoryIndex = 1, #categories do
-            local categoryData = categories[categoryIndex]
-            if type(categoryData) == "table" then
-                local categoryRow = safeCreateRow(rowsModule.CreateCategoryHeader, content, categoryData)
-                if categoryRow then
-                    table.insert(rows, categoryRow)
-                end
+        if summary.hasActiveCampaign == true then
+            local categoryRow = safeCreateRow(rowsModule.CreateCategoryRow, content, summary)
+            if categoryRow then
+                table.insert(rows, categoryRow)
+            end
 
-                local entries = type(categoryData.entries) == "table" and categoryData.entries or {}
-                for entryIndex = 1, #entries do
-                    local entryData = entries[entryIndex]
-                    if type(entryData) == "table" then
-                        local entryRow = safeCreateRow(rowsModule.CreateEntryRow, content, entryData)
-                        if entryRow then
-                            table.insert(rows, entryRow)
-                        end
+            local campaignRow = safeCreateRow(rowsModule.CreateCampaignRow, content, summary)
+            if campaignRow then
+                table.insert(rows, campaignRow)
+            end
+        end
 
-                        local objectives = type(entryData.objectives) == "table" and entryData.objectives or {}
-                        for objectiveIndex = 1, #objectives do
-                            local objectiveData = objectives[objectiveIndex]
-                            if type(objectiveData) == "table" then
-                                local objectiveRow = safeCreateRow(rowsModule.CreateObjectiveRow, content, objectiveData)
-                                if objectiveRow then
-                                    table.insert(rows, objectiveRow)
-                                end
-                            end
-                        end
-                    end
+        for objectiveIndex = 1, #objectives do
+            local objectiveData = objectives[objectiveIndex]
+            if type(objectiveData) == "table" then
+                local objectiveRow = safeCreateRow(rowsModule.CreateObjectiveRow, content, objectiveData)
+                if objectiveRow then
+                    table.insert(rows, objectiveRow)
                 end
             end
         end
@@ -1014,7 +1107,13 @@ function GoldenTracker.Refresh(...)
     state.height = totalHeight
     setContainerHeight(container, totalHeight)
 
-    safeDebug("Refresh complete: %s rows=%d height=%d", statusSummary, #rows, totalHeight)
+    safeDebug(
+        "Refresh complete: rows=%d height=%d hasCampaign=%s remaining=%s",
+        #rows,
+        totalHeight,
+        tostring(summary.hasActiveCampaign),
+        tostring(summary.remainingObjectivesToNextReward)
+    )
 end
 
 function GoldenTracker:GetHeight()

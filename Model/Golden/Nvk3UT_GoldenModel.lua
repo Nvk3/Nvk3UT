@@ -868,6 +868,9 @@ do
                     isCompleted = entryCompleted,
                     timeRemainingSec = entryRemaining,
                     remainingSeconds = entryRemaining,
+                    rewardId = activity.rewardId,
+                    rewardQuantity = activity.rewardQuantity,
+                    isRewardClaimed = activity.isRewardClaimed,
                     type = activity.type,
                     campaignId = campaign.id,
                     campaignKey = campaign.key,
@@ -898,6 +901,8 @@ do
             countTotal = #entries,
             timeRemainingSec = minRemaining,
             remainingSeconds = minRemaining,
+            capstoneCompletionThreshold = ensureNumber(campaign.capstoneCompletionThreshold, #entries),
+            completedActivities = ensureNumber(campaign.numCompleted, completed),
             campaignId = campaign.id,
             campaignKey = campaign.key,
             campaignIndex = campaign.index or index,
@@ -1031,10 +1036,100 @@ local function buildViewDataSnapshot(rawData, state)
         categories[index] = buildCategoryView(rawCategories[index], state)
     end
 
-    return {
+    local summary = {
+        hasActiveCampaign = false,
+        campaignName = "",
+        completedObjectives = 0,
+        maxRewardTier = 0,
+        remainingObjectivesToNextReward = 0,
+    }
+
+    local objectives = {}
+    for categoryIndex = 1, #categories do
+        local category = categories[categoryIndex]
+        if type(category) == "table" then
+            local entries = type(category.entries) == "table" and category.entries or {}
+            for entryIndex = 1, #entries do
+                objectives[#objectives + 1] = entries[entryIndex]
+            end
+        end
+    end
+
+    local primaryCategory = categories[1]
+    if type(primaryCategory) == "table" then
+        summary.hasActiveCampaign = true
+        summary.campaignName = primaryCategory.displayName or primaryCategory.name or ""
+
+        local completed = ensureNumber(primaryCategory.completedActivities, primaryCategory.countCompleted)
+        local maxTier = ensureNumber(primaryCategory.capstoneCompletionThreshold, primaryCategory.countTotal)
+
+        if maxTier < 0 then
+            maxTier = 0
+        end
+
+        if maxTier == 0 then
+            maxTier = ensureNumber(primaryCategory.countTotal, 0)
+        end
+
+        completed = math.min(math.max(completed, 0), maxTier)
+
+        summary.completedObjectives = completed
+        summary.maxRewardTier = maxTier
+
+        local remainingToCapstone = math.max(0, maxTier - completed)
+        local closestRewardRemaining = nil
+
+        local entries = type(primaryCategory.entries) == "table" and primaryCategory.entries or {}
+        for entryIndex = 1, #entries do
+            local entry = entries[entryIndex]
+            if type(entry) == "table" and entry.isCompleted ~= true then
+                local rewardQuantity = ensureNumber(entry.rewardQuantity)
+                if rewardQuantity and rewardQuantity > 0 then
+                    local progress = ensureNumber(entry.progress, 0)
+                    local maxProgress = ensureNumber(entry.maxProgress, 1)
+                    local remaining = math.max(0, maxProgress - progress)
+                    if remaining == 0 then
+                        remaining = 1
+                    end
+
+                    if closestRewardRemaining == nil then
+                        closestRewardRemaining = remaining
+                    else
+                        closestRewardRemaining = math.min(closestRewardRemaining, remaining)
+                    end
+                end
+            end
+        end
+
+        if closestRewardRemaining == nil then
+            closestRewardRemaining = remainingToCapstone
+        end
+
+        summary.remainingObjectivesToNextReward = closestRewardRemaining
+    end
+
+    local hasEntriesForTracker = (#categories > 0) or (#objectives > 0)
+
+    local viewData = {
         headerExpanded = headerExpanded,
         categories = categories,
+        objectives = objectives,
+        summary = summary,
+        hasEntriesForTracker = hasEntriesForTracker,
     }
+
+    debugLog(
+        "view snapshot: campaigns=%d objectives=%d active=%s name=%s completed=%d/%d remaining=%d",
+        #categories,
+        #objectives,
+        tostring(summary.hasActiveCampaign),
+        tostring(summary.campaignName),
+        summary.completedObjectives,
+        summary.maxRewardTier,
+        summary.remainingObjectivesToNextReward
+    )
+
+    return viewData
 end
 
 function GoldenModel:Init(svRoot, goldenState, goldenList)

@@ -29,13 +29,13 @@ local DEFAULT_COLOR_KIND = "goldenTracker"
 local DEFAULT_FALLBACK_COLOR_KIND = "endeavorTracker"
 
 local DEFAULTS = {
-    CATEGORY_HEIGHT = 24,
-    ENTRY_HEIGHT = 22,
+    CATEGORY_HEIGHT = 26,
+    ENTRY_HEIGHT = 24,
     OBJECTIVE_HEIGHT = 20,
-    CATEGORY_FONT = "ZoFontGameBold",
-    ENTRY_FONT = "ZoFontGameMedium",
-    OBJECTIVE_FONT = "ZoFontGameSmall",
-    OBJECTIVE_INDENT_X = 14,
+    CATEGORY_FONT = "$(BOLD_FONT)|20|soft-shadow-thick",
+    ENTRY_FONT = "$(BOLD_FONT)|16|soft-shadow-thick",
+    OBJECTIVE_FONT = "$(BOLD_FONT)|16|soft-shadow-thick",
+    OBJECTIVE_INDENT_X = 60,
 }
 
 local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
@@ -369,7 +369,19 @@ local function createLabel(parent, suffix)
     return label
 end
 
-function Rows.CreateCategoryHeader(parent, categoryData)
+local function applyLabelColor(label, role)
+    if not (label and label.SetColor) then
+        return
+    end
+
+    local r, g, b, a = resolveGoldenColor(role)
+    label:SetColor(r or 1, g or 1, b or 1, a or 1)
+    if label.SetAlpha then
+        label:SetAlpha(1)
+    end
+end
+
+function Rows.CreateCategoryRow(parent, categoryData)
     if parent == nil then
         return nil
     end
@@ -387,20 +399,16 @@ function Rows.CreateCategoryHeader(parent, categoryData)
     local label = createLabel(control, "Category")
     if label then
         if label.SetAnchor then
-            label:SetAnchor(LEFT, control, LEFT, 0, 0)
+            label:SetAnchor(LEFT, control, LEFT, 4, 0)
         end
-        local colorRole = resolveCategoryColorRole(categoryData)
-        local r, g, b, a = resolveGoldenColor(colorRole)
         local appliedFont = applyConfiguredFont(label, "Category")
-        applyLabelDefaults(label, appliedFont and nil or DEFAULTS.CATEGORY_FONT, { r, g, b, a })
+        applyLabelDefaults(label, appliedFont and nil or DEFAULTS.CATEGORY_FONT)
+        applyLabelColor(label, GOLDEN_COLOR_ROLES.Active)
 
         local text = ""
         if type(categoryData) == "table" then
-            local display = categoryData.displayName or categoryData.title or categoryData.name
-            if display == nil then
-                display = ""
-            end
-            text = tostring(display)
+            local remaining = tonumber(categoryData.remainingObjectivesToNextReward) or 0
+            text = string.format("Goldene Vorhaben (%d)", remaining)
         end
         if label.SetText then
             label:SetText(text)
@@ -410,7 +418,7 @@ function Rows.CreateCategoryHeader(parent, categoryData)
     return control
 end
 
-function Rows.CreateEntryRow(parent, entryData)
+function Rows.CreateCampaignRow(parent, entryData)
     if parent == nil then
         return nil
     end
@@ -430,50 +438,49 @@ function Rows.CreateEntryRow(parent, entryData)
         if label.SetAnchor then
             label:SetAnchor(LEFT, control, LEFT, 0, 0)
         end
-        local role = entryData and (entryData.isComplete == true or entryData.isCompleted == true) and GOLDEN_COLOR_ROLES.Completed
-            or GOLDEN_COLOR_ROLES.EntryName
-        local r, g, b, a = resolveGoldenColor(role)
         local appliedFont = applyConfiguredFont(label, "Title")
-        applyLabelDefaults(label, appliedFont and nil or DEFAULTS.ENTRY_FONT, { r, g, b, a })
+        applyLabelDefaults(label, appliedFont and nil or DEFAULTS.ENTRY_FONT)
+        applyLabelColor(label, GOLDEN_COLOR_ROLES.EntryName)
 
         local text = ""
         if type(entryData) == "table" then
-            local display = entryData.displayName or entryData.title or entryData.name
-            if display == nil then
-                display = ""
-            end
-            text = tostring(display)
+            local display = entryData.campaignName or entryData.displayName or entryData.title or entryData.name
+            text = tostring(display or "")
         end
         if label.SetText then
             label:SetText(text)
         end
     end
 
-        if type(entryData) == "table" then
-            local counterText = entryData.counterText
-            local count = tonumber(entryData.count or entryData.progressDisplay)
-            local maxValue = tonumber(entryData.max or entryData.maxDisplay)
-            if not counterText and count and maxValue then
-                counterText = string.format("%d/%d", count, maxValue)
+    if type(entryData) == "table" then
+        local counterLabel = createLabel(control, "EntryCounter")
+        if counterLabel then
+            if counterLabel.SetAnchor then
+                counterLabel:SetAnchor(RIGHT, control, RIGHT, 0, 0)
             end
-
-            if counterText then
-                local counterLabel = createLabel(control, "EntryCounter")
-                if counterLabel then
-                    if counterLabel.SetAnchor then
-                        counterLabel:SetAnchor(RIGHT, control, RIGHT, 0, 0)
-                    end
-                    local counterFontApplied = applyConfiguredFont(counterLabel, "Title")
-                    applyLabelDefaults(counterLabel, counterFontApplied and nil or DEFAULTS.ENTRY_FONT, { r, g, b, a })
-                    if counterLabel.SetHorizontalAlignment and rawget(_G, "TEXT_ALIGN_RIGHT") then
-                        counterLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
-                    end
-                    if counterLabel.SetText then
-                        counterLabel:SetText(tostring(counterText))
-                    end
-                end
+            local counterFontApplied = applyConfiguredFont(counterLabel, "Title")
+            applyLabelDefaults(counterLabel, counterFontApplied and nil or DEFAULTS.ENTRY_FONT)
+            applyLabelColor(counterLabel, GOLDEN_COLOR_ROLES.EntryName)
+            if counterLabel.SetHorizontalAlignment and rawget(_G, "TEXT_ALIGN_RIGHT") then
+                counterLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+            end
+            local completed = tonumber(entryData.completedObjectives or entryData.countCompleted)
+            local total = tonumber(entryData.maxRewardTier or entryData.countTotal)
+            if completed == nil then
+                completed = tonumber(entryData.count) or tonumber(entryData.progressDisplay)
+            end
+            if total == nil then
+                total = tonumber(entryData.max) or tonumber(entryData.maxDisplay)
+            end
+            local counterText = ""
+            if completed ~= nil and total ~= nil then
+                counterText = string.format("%d/%d", completed, total)
+            end
+            if counterLabel.SetText then
+                counterLabel:SetText(counterText)
             end
         end
+    end
 
     return control
 end
@@ -501,9 +508,9 @@ function Rows.CreateObjectiveRow(parent, objectiveData)
         local role = objectiveData and (objectiveData.isComplete == true or objectiveData.isCompleted == true)
             and GOLDEN_COLOR_ROLES.Completed
             or GOLDEN_COLOR_ROLES.Objective
-        local r, g, b, a = resolveGoldenColor(role)
         local appliedFont = applyConfiguredFont(label, "Objective")
-        applyLabelDefaults(label, appliedFont and nil or DEFAULTS.OBJECTIVE_FONT, { r, g, b, a })
+        applyLabelDefaults(label, appliedFont and nil or DEFAULTS.OBJECTIVE_FONT)
+        applyLabelColor(label, role)
 
         local text = ""
         if type(objectiveData) == "table" then
