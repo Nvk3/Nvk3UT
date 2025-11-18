@@ -512,27 +512,6 @@ function Rows.CreateCampaignRow(parent, entryData)
         local text = ""
         if type(entryData) == "table" then
             local display = entryData.campaignName or entryData.displayName or entryData.title or entryData.name
-            text = tostring(display or "")
-        end
-        if label.SetText then
-            label:SetText(text)
-        end
-    end
-
-    if type(entryData) == "table" then
-        local counterLabel = createLabel(control, "EntryCounter")
-        if counterLabel then
-            counterLabel:ClearAnchors()
-            if counterLabel.SetAnchor then
-                counterLabel:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
-                counterLabel:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
-            end
-            local counterFontApplied = applyConfiguredFont(counterLabel, "Title")
-            applyLabelDefaults(counterLabel, counterFontApplied and nil or DEFAULTS.ENTRY_FONT)
-            applyLabelColor(counterLabel, GOLDEN_COLOR_ROLES.EntryName)
-            if counterLabel.SetHorizontalAlignment and rawget(_G, "TEXT_ALIGN_RIGHT") then
-                counterLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
-            end
             local completed = tonumber(entryData.completedObjectives or entryData.countCompleted)
             local total = tonumber(entryData.maxRewardTier or entryData.countTotal)
             if completed == nil then
@@ -541,24 +520,24 @@ function Rows.CreateCampaignRow(parent, entryData)
             if total == nil then
                 total = tonumber(entryData.max) or tonumber(entryData.maxDisplay)
             end
-            local counterText = ""
+
             if completed ~= nil and total ~= nil then
-                counterText = string.format("%d/%d", completed, total)
+                text = string.format("%s (%d/%d)", tostring(display or ""), completed, total)
+            else
+                text = tostring(display or "")
             end
-            if counterLabel.SetText then
-                counterLabel:SetText(counterText)
-            end
+        end
+        if label.SetText then
+            label:SetText(text)
         end
     end
 
     if control and control.SetHandler then
-        local campaignKey = entryData and (entryData.campaignId or entryData.campaignKey or entryData.campaignName
-            or entryData.displayName or entryData.name)
         control:SetHandler("OnMouseUp", function(_, button, upInside)
             if button == MOUSE_BUTTON_LEFT and upInside then
                 local controller = rawget(Nvk3UT, "GoldenTrackerController")
                 if controller and type(controller.ToggleEntryExpanded) == "function" then
-                    controller:ToggleEntryExpanded(campaignKey)
+                    controller:ToggleEntryExpanded()
                 end
             end
         end)

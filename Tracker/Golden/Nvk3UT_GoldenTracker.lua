@@ -1065,18 +1065,25 @@ function GoldenTracker.Refresh(...)
         return
     end
 
-    local headerExpanded = true
-    if vm and vm.header ~= nil then
-        headerExpanded = vm.header.isExpanded ~= false
+    local categoryExpanded = true
+    if vm and vm.categoryExpanded ~= nil then
+        categoryExpanded = vm.categoryExpanded ~= false
+    elseif vm and vm.header ~= nil then
+        categoryExpanded = vm.header.isExpanded ~= false
     end
 
-    local entryExpanded = summary.isExpanded ~= false
+    local entryExpanded = true
+    if vm and vm.entryExpanded ~= nil then
+        entryExpanded = vm.entryExpanded ~= false
+    else
+        entryExpanded = summary.isExpanded ~= false
+    end
 
     if rowsModule then
         if summary.hasActiveCampaign == true then
             local categoryPayload = summary
             if type(categoryPayload) == "table" then
-                categoryPayload.isExpanded = headerExpanded
+                categoryPayload.isExpanded = categoryExpanded
             end
 
             local categoryRow = safeCreateRow(rowsModule.CreateCategoryRow, content, categoryPayload)
@@ -1084,7 +1091,7 @@ function GoldenTracker.Refresh(...)
                 table.insert(rows, categoryRow)
             end
 
-            if headerExpanded then
+            if categoryExpanded then
                 local campaignPayload = summary
                 if type(campaignPayload) == "table" then
                     campaignPayload.isExpanded = entryExpanded
@@ -1097,7 +1104,7 @@ function GoldenTracker.Refresh(...)
             end
         end
 
-        if headerExpanded and entryExpanded then
+        if categoryExpanded and entryExpanded then
             for objectiveIndex = 1, #objectives do
                 local objectiveData = objectives[objectiveIndex]
                 if type(objectiveData) == "table" then

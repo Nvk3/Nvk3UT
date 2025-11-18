@@ -19,7 +19,7 @@ local DEFAULT_STATUS = {
 local state = {
     dirty = true,
     viewModel = nil,
-    headerExpanded = true,
+    categoryExpanded = true,
     entryExpanded = true,
 }
 
@@ -284,33 +284,49 @@ local function resolveStateStatus(goldenState)
 end
 
 local function resolveExpansionFlags(goldenState)
-    local headerExpanded = true
+    local categoryExpanded = true
+    local entryExpanded = true
 
     if goldenState then
-        local header = callStateMethod(goldenState, "IsHeaderExpanded")
+        local header = callStateMethod(goldenState, "IsCategoryHeaderExpanded")
         if header ~= nil then
-            headerExpanded = header ~= false
+            categoryExpanded = header ~= false
         end
-    elseif state.headerExpanded ~= nil then
-        headerExpanded = state.headerExpanded ~= false
+
+        local entry = callStateMethod(goldenState, "IsEntryExpanded")
+        if entry ~= nil then
+            entryExpanded = entry ~= false
+        end
+    elseif state.categoryExpanded ~= nil then
+        categoryExpanded = state.categoryExpanded ~= false
+        entryExpanded = state.entryExpanded ~= false
     end
 
     return {
-        header = headerExpanded,
+        category = categoryExpanded,
+        entry = entryExpanded,
     }
 end
 
 local function newEmptyViewModel(status, expansionFlags)
     local viewStatus = copyStatus(status)
 
-    local headerExpanded = true
-    if type(expansionFlags) == "table" and expansionFlags.header ~= nil then
-        headerExpanded = expansionFlags.header ~= false
+    local categoryExpanded = true
+    local entryExpanded = true
+    if type(expansionFlags) == "table" then
+        if expansionFlags.category ~= nil then
+            categoryExpanded = expansionFlags.category ~= false
+        end
+        if expansionFlags.entry ~= nil then
+            entryExpanded = expansionFlags.entry ~= false
+        end
     end
 
     local viewModel = {
         status = viewStatus,
-        header = { isExpanded = headerExpanded },
+        header = { isExpanded = categoryExpanded },
+        categoryExpanded = categoryExpanded,
+        entryExpanded = entryExpanded,
         categories = {},
         summary = {
             totalEntries = 0,
@@ -660,11 +676,12 @@ function Controller:BuildViewModel(options)
         #rawObjectives
     )
 
-    local headerExpanded = expansionFlags.header ~= false
+    local categoryExpanded = expansionFlags.category ~= false
     if type(rawData) == "table" and rawData.headerExpanded ~= nil then
-        headerExpanded = rawData.headerExpanded ~= false
+        categoryExpanded = rawData.headerExpanded ~= false
     end
-    viewModel.header = { isExpanded = headerExpanded }
+    viewModel.header = { isExpanded = categoryExpanded }
+    viewModel.categoryExpanded = categoryExpanded
 
     local rawCategories = type(rawData.categories) == "table" and rawData.categories or {}
     local categories = {}
@@ -698,17 +715,10 @@ function Controller:BuildViewModel(options)
     if type(rawSummary.campaignKey) == "string" and rawSummary.campaignKey ~= "" then
         campaignKey = rawSummary.campaignKey
     end
-    local entryExpanded = true
-    if goldenState then
-        local expanded = callStateMethod(goldenState, "IsCategoryExpanded", campaignKey)
-        if expanded ~= nil then
-            entryExpanded = expanded ~= false
-        end
-    elseif state.entryExpanded ~= nil then
-        entryExpanded = state.entryExpanded ~= false
-    end
+    local entryExpanded = expansionFlags.entry ~= false
 
     summary.isExpanded = entryExpanded
+    viewModel.entryExpanded = entryExpanded
     summary.totalRemaining = math.max(0, summary.totalEntries - summary.totalCompleted)
 
     viewModel.summary = summary
@@ -749,43 +759,29 @@ function Controller:GetViewModel()
     return ensureViewModel()
 end
 
-local function toggleHeaderExpanded()
+local function toggleCategoryExpanded()
     local goldenState = getGoldenState()
-    if goldenState and type(goldenState.IsHeaderExpanded) == "function" then
-        local current = callStateMethod(goldenState, "IsHeaderExpanded")
+    if goldenState and type(goldenState.IsCategoryHeaderExpanded) == "function" then
+        local current = callStateMethod(goldenState, "IsCategoryHeaderExpanded")
         local nextState = current == false
-        if type(goldenState.SetHeaderExpanded) == "function" then
-            pcall(goldenState.SetHeaderExpanded, goldenState, nextState)
+        if type(goldenState.SetCategoryHeaderExpanded) == "function" then
+            pcall(goldenState.SetCategoryHeaderExpanded, goldenState, nextState)
         end
-        state.headerExpanded = nextState
+        state.categoryExpanded = nextState
         return nextState
     end
 
-    state.headerExpanded = not (state.headerExpanded == true)
-    return state.headerExpanded
+    state.categoryExpanded = not (state.categoryExpanded == false)
+    return state.categoryExpanded
 end
 
-local function resolveCampaignKey(key)
-    if key == nil or key == "" then
-        local vm = state.viewModel
-        local summary = vm and vm.summary
-        if type(summary) == "table" then
-            return summary.campaignId or summary.campaignKey or summary.campaignName or summary.title or "campaign"
-        end
-        return "campaign"
-    end
-
-    return tostring(key)
-end
-
-local function toggleEntryExpanded(key)
-    local campaignKey = resolveCampaignKey(key)
+local function toggleEntryExpanded()
     local goldenState = getGoldenState()
-    if goldenState and type(goldenState.IsCategoryExpanded) == "function" then
-        local current = callStateMethod(goldenState, "IsCategoryExpanded", campaignKey)
+    if goldenState and type(goldenState.IsEntryExpanded) == "function" then
+        local current = callStateMethod(goldenState, "IsEntryExpanded")
         local nextState = current == false
-        if type(goldenState.SetCategoryExpanded) == "function" then
-            pcall(goldenState.SetCategoryExpanded, goldenState, campaignKey, nextState)
+        if type(goldenState.SetEntryExpanded) == "function" then
+            pcall(goldenState.SetEntryExpanded, goldenState, nextState)
         end
         state.entryExpanded = nextState
         return nextState
@@ -796,12 +792,12 @@ local function toggleEntryExpanded(key)
 end
 
 function Controller:ToggleCategoryExpanded()
-    toggleHeaderExpanded()
+    toggleCategoryExpanded()
     self:MarkDirty("ToggleCategoryExpanded")
 end
 
-function Controller:ToggleEntryExpanded(campaignKey)
-    toggleEntryExpanded(campaignKey)
+function Controller:ToggleEntryExpanded()
+    toggleEntryExpanded()
     self:MarkDirty("ToggleEntryExpanded")
 end
 
