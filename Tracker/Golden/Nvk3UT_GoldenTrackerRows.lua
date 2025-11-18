@@ -7,26 +7,23 @@ Rows.__index = Rows
 
 local MODULE_TAG = addonName .. ".GoldenTrackerRows"
 
-local GOLDEN_COLOR_ROLES = {
-    CategoryTitleClosed = "categoryTitleClosed",
-    CategoryTitleOpen = "categoryTitleOpen",
-    EntryName = "entryTitle",
-    Objective = "objectiveText",
-    Active = "activeTitle",
-    Completed = "completed",
-}
+local EndeavorRows = rawget(Nvk3UT, "EndeavorTrackerRows")
 
-local ROLE_FALLBACKS = {
-    [GOLDEN_COLOR_ROLES.CategoryTitleClosed] = "categoryTitle",
-    [GOLDEN_COLOR_ROLES.CategoryTitleOpen] = "entryTitle",
-    [GOLDEN_COLOR_ROLES.EntryName] = "entryTitle",
-    [GOLDEN_COLOR_ROLES.Objective] = "objectiveText",
-    [GOLDEN_COLOR_ROLES.Active] = "activeTitle",
-    [GOLDEN_COLOR_ROLES.Completed] = "completed",
+local GOLDEN_COLOR_ROLES = {
+    CategoryCompleted = "categoryTitleClosed",
+    CategoryOpen = "categoryTitleOpen",
+    EntryName = "entryTitle",
+    TargetText = "objectiveText",
+    ActiveEntry = "activeTitle",
+    CompletedEntry = "completed",
 }
+GOLDEN_COLOR_ROLES.CategoryTitleClosed = GOLDEN_COLOR_ROLES.CategoryCompleted
+GOLDEN_COLOR_ROLES.CategoryTitleOpen = GOLDEN_COLOR_ROLES.CategoryOpen
+GOLDEN_COLOR_ROLES.Objective = GOLDEN_COLOR_ROLES.TargetText
+GOLDEN_COLOR_ROLES.Active = GOLDEN_COLOR_ROLES.ActiveEntry
+GOLDEN_COLOR_ROLES.Completed = GOLDEN_COLOR_ROLES.CompletedEntry
 
 local DEFAULT_COLOR_KIND = "goldenTracker"
-local DEFAULT_FALLBACK_COLOR_KIND = "endeavorTracker"
 
 local DEFAULTS = {
     CATEGORY_HEIGHT = 26,
@@ -66,7 +63,43 @@ local controlCounters = {
     objective = 0,
 }
 
+local function isDebugEnabled()
+    local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
+    if utils and type(utils.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(utils.IsDebugEnabled)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return diagnostics:IsDebugEnabled()
+        end)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    local addon = rawget(_G, addonName)
+    if type(addon) == "table" and type(addon.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return addon:IsDebugEnabled()
+        end)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    return false
+end
+
 local function safeDebug(message, ...)
+    if not isDebugEnabled() then
+        return
+    end
+
     local debugFn = Nvk3UT and Nvk3UT.Debug
     if type(debugFn) ~= "function" then
         return
@@ -284,91 +317,133 @@ Nvk3UT.GetGoldenCategoryFont = getGoldenCategoryFont
 Nvk3UT.GetGoldenTitleFont = getGoldenTitleFont
 Nvk3UT.GetGoldenRowFont = getGoldenObjectiveFont
 
-local function sanitizeColorNumber(value)
-    local numeric = tonumber(value)
-    if numeric == nil then
-        return nil
+local function resolveCategoryCounts(categoryData)
+    if type(categoryData) ~= "table" then
+        return nil, nil
     end
-    if numeric < 0 then
-        numeric = 0
-    elseif numeric > 1 then
-        numeric = 1
-    end
-    return numeric
+
+    local completed = tonumber(
+        categoryData.completedObjectives
+            or categoryData.countCompleted
+            or categoryData.completedCount
+            or categoryData.completedActivities
+    )
+
+    local capstoneCount = tonumber(
+        categoryData.capstoneCount
+            or categoryData.maxRewardTier
+            or categoryData.capstoneCompletionThreshold
+            or categoryData.capLimit
+            or categoryData.totalCount
+            or categoryData.countTotal
+    )
+
+    return completed, capstoneCount
 end
 
-local function extractColorComponents(color)
-    if type(color) ~= "table" then
-        return nil
+local function isEntryActive(entryData)
+    if type(entryData) ~= "table" then
+        return false
     end
 
-    local r = sanitizeColorNumber(color.r or color[1])
-    local g = sanitizeColorNumber(color.g or color[2])
-    local b = sanitizeColorNumber(color.b or color[3])
-    local a = sanitizeColorNumber(color.a or color[4] or 1)
-
-    if r == nil or g == nil or b == nil then
-        return nil
-    end
-
-    return r, g, b, a or 1
+    return entryData.isFocused == true or entryData.isActive == true or entryData.active == true
 end
 
-local function coerceFunctionColor(entry, context, role, colorKind)
-    if type(entry) ~= "function" then
-        return nil
+local function isObjectiveCompleted(objectiveData)
+    if type(objectiveData) ~= "table" then
+        return false
     end
 
-    local ok, value1, value2, value3, value4 = pcall(entry, context, role, colorKind)
-    if not ok then
-        safeDebug("resolveGoldenColor failed for role=%s: %s", tostring(role), tostring(value1))
-        return nil
+    local completed = objectiveData.isComplete == true or objectiveData.isCompleted == true or objectiveData.completed == true
+    if completed then
+        return true
     end
 
-    return extractColorComponents({ value1, value2, value3, value4 })
+    local progress = tonumber(objectiveData.progress or objectiveData.progressDisplay or objectiveData.current)
+    local maxProgress = tonumber(objectiveData.max or objectiveData.maxDisplay)
+    if progress ~= nil and maxProgress ~= nil then
+        return math.floor(progress + 0.5) >= math.floor(maxProgress + 0.5)
+    end
+
+    return false
 end
 
-local function resolveGoldenColor(role, overrideColors, colorKind)
-    local resolvedKind = colorKind
-    if type(resolvedKind) ~= "string" or resolvedKind == "" then
-        resolvedKind = DEFAULT_COLOR_KIND
+local function resolveCategoryColorRole(categoryData)
+    local completed, capstoneCount = resolveCategoryCounts(categoryData)
+    local capstoneReached = completed ~= nil and capstoneCount ~= nil and completed == capstoneCount
+
+    local categoryId = nil
+    if type(categoryData) == "table" then
+        categoryId = categoryData.categoryId or categoryData.id or categoryData.campaignId or categoryData.campaignKey
+    end
+    safeDebug("Golden[%s].capstoneReached = %s", tostring(categoryId or "category"), tostring(capstoneReached == true))
+
+    local role
+    if isEntryActive(categoryData) then
+        role = GOLDEN_COLOR_ROLES.ActiveEntry
+    elseif capstoneReached then
+        role = GOLDEN_COLOR_ROLES.CategoryCompleted
+    else
+        role = GOLDEN_COLOR_ROLES.CategoryOpen
     end
 
-    if type(overrideColors) == "table" then
-        local overrideEntry = overrideColors[role]
-        if type(overrideEntry) == "function" then
-            local r, g, b, a = coerceFunctionColor(overrideEntry, overrideColors, role, resolvedKind)
-            if r ~= nil then
-                return r, g, b, a
-            end
-        elseif type(overrideEntry) == "table" then
-            local r, g, b, a = extractColorComponents(overrideEntry)
-            if r ~= nil then
-                return r, g, b, a
-            end
-        end
+    safeDebug("Golden[%s].colorRole = %s", tostring(categoryId or "category"), tostring(role))
+
+    return role
+end
+
+local function getTrackerColor(role)
+    local addon = getAddon()
+    if type(addon) ~= "table" then
+        return 1, 1, 1, 1
     end
 
-    local host = Nvk3UT and Nvk3UT.TrackerHost
-    local function fetch(kind, requestedRole)
-        if host and host.GetTrackerColor then
-            return host.GetTrackerColor(kind, requestedRole or role)
-        end
-        return nil
+    local host = rawget(addon, "TrackerHost")
+    if type(host) ~= "table" then
+        return 1, 1, 1, 1
     end
 
-    local r, g, b, a = fetch(resolvedKind, role)
-    if r ~= nil and g ~= nil and b ~= nil then
-        return r, g, b, a
+    if type(host.EnsureAppearanceDefaults) == "function" then
+        pcall(host.EnsureAppearanceDefaults, host)
     end
 
-    local fallbackRole = ROLE_FALLBACKS[role] or role
-    r, g, b, a = fetch(DEFAULT_FALLBACK_COLOR_KIND, fallbackRole)
-    if r ~= nil and g ~= nil and b ~= nil then
-        return r, g, b, a
+    local getColor = host.GetTrackerColor
+    if type(getColor) ~= "function" then
+        return 1, 1, 1, 1
+    end
+
+    local ok, r, g, b, a = pcall(getColor, host, DEFAULT_COLOR_KIND, role)
+    if ok and type(r) == "number" then
+        return r or 1, g or 1, b or 1, a or 1
     end
 
     return 1, 1, 1, 1
+end
+
+local function applyTrackerColor(label, role, completedRole, useCompletedStyle)
+    if not (label and label.SetColor) then
+        return
+    end
+
+    local applied = false
+    if EndeavorRows and type(EndeavorRows.ApplyGroupLabelColor) == "function" then
+        local ok, result = pcall(EndeavorRows.ApplyGroupLabelColor, label, {
+            entryRole = role,
+            completedRole = completedRole or role,
+            colorKind = DEFAULT_COLOR_KIND,
+        }, useCompletedStyle)
+        if ok then
+            applied = result == true
+        end
+    end
+
+    if not applied then
+        local r, g, b, a = getTrackerColor(useCompletedStyle and (completedRole or role) or role)
+        label:SetColor(r or 1, g or 1, b or 1, a or 1)
+        if label.SetAlpha then
+            label:SetAlpha(1)
+        end
+    end
 end
 
 local function resolveCategoryColorRole(categoryData)
@@ -443,18 +518,6 @@ local function createLabel(parent, suffix)
     return label
 end
 
-local function applyLabelColor(label, role)
-    if not (label and label.SetColor) then
-        return
-    end
-
-    local r, g, b, a = resolveGoldenColor(role)
-    label:SetColor(r or 1, g or 1, b or 1, a or 1)
-    if label.SetAlpha then
-        label:SetAlpha(1)
-    end
-end
-
 function Rows.CreateCategoryRow(parent, categoryData)
     if parent == nil then
         return nil
@@ -504,9 +567,7 @@ function Rows.CreateCategoryRow(parent, categoryData)
             label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
         end
         applyLabelDefaults(label, getGoldenCategoryFont())
-
-        local expanded = categoryData and categoryData.isExpanded ~= false
-        applyLabelColor(label, expanded and GOLDEN_COLOR_ROLES.Active or GOLDEN_COLOR_ROLES.CategoryTitleClosed)
+        applyTrackerColor(label, resolveCategoryColorRole(categoryData), GOLDEN_COLOR_ROLES.CategoryCompleted)
 
         local text = ""
         if type(categoryData) == "table" then
@@ -564,7 +625,8 @@ function Rows.CreateCampaignRow(parent, entryData)
             label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
         end
         applyLabelDefaults(label, getGoldenTitleFont())
-        applyLabelColor(label, GOLDEN_COLOR_ROLES.EntryName)
+        local entryRole = isEntryActive(entryData) and GOLDEN_COLOR_ROLES.ActiveEntry or GOLDEN_COLOR_ROLES.EntryName
+        applyTrackerColor(label, entryRole, GOLDEN_COLOR_ROLES.CompletedEntry, entryRole == GOLDEN_COLOR_ROLES.CompletedEntry)
 
         local text = ""
         if type(entryData) == "table" then
@@ -625,11 +687,16 @@ function Rows.CreateObjectiveRow(parent, objectiveData)
             label:SetAnchor(TOPLEFT, control, TOPLEFT, DEFAULTS.OBJECTIVE_INDENT_X, 0)
             label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
         end
-        local role = objectiveData and (objectiveData.isComplete == true or objectiveData.isCompleted == true)
-            and GOLDEN_COLOR_ROLES.Completed
-            or GOLDEN_COLOR_ROLES.Objective
+        local objectiveCompleted = isObjectiveCompleted(objectiveData)
+        local objectiveActive = isEntryActive(objectiveData)
+        local role = GOLDEN_COLOR_ROLES.TargetText
+        if objectiveActive then
+            role = GOLDEN_COLOR_ROLES.ActiveEntry
+        elseif objectiveCompleted then
+            role = GOLDEN_COLOR_ROLES.CompletedEntry
+        end
         applyLabelDefaults(label, getGoldenObjectiveFont())
-        applyLabelColor(label, role)
+        applyTrackerColor(label, role, GOLDEN_COLOR_ROLES.CompletedEntry, objectiveCompleted)
 
         local text = ""
         if type(objectiveData) == "table" then
