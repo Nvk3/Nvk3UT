@@ -64,71 +64,6 @@ local function safeDebug(message, ...)
     pcall(debugFn, string.format("%s: %s", MODULE_TAG, tostring(payload)))
 end
 
-local function clearChildren(control)
-    if not control then
-        return
-    end
-
-    local getNumChildren = control.GetNumChildren
-    local getChild = control.GetChild
-    if type(getNumChildren) ~= "function" or type(getChild) ~= "function" then
-        return
-    end
-
-    local okCount, childCount = pcall(getNumChildren, control)
-    if not okCount or type(childCount) ~= "number" or childCount <= 0 then
-        return
-    end
-
-    for index = childCount - 1, 0, -1 do
-        local okChild, child = pcall(getChild, control, index)
-        if okChild and child then
-            if child.ClearAnchors then
-                child:ClearAnchors()
-            end
-            if child.SetParent then
-                child:SetParent(nil)
-            end
-            if child.SetHidden then
-                child:SetHidden(true)
-            end
-        end
-    end
-end
-
-local function getParentWidth(control)
-    if not control or type(control.GetWidth) ~= "function" then
-        return 0
-    end
-
-    local ok, width = pcall(control.GetWidth, control)
-    if ok and type(width) == "number" then
-        return width
-    end
-
-    return 0
-end
-
-local function applyDimensions(row, parentWidth)
-    if not row then
-        return
-    end
-
-    local height = tonumber(row and row.__height) or 0
-    if height < 0 then
-        height = 0
-    end
-
-    if row.SetDimensions then
-        row:SetDimensions(parentWidth, height)
-        return
-    end
-
-    if row.SetHeight then
-        row:SetHeight(height)
-    end
-end
-
 function Layout.ApplyLayout(parentControl, rows)
     if not parentControl then
         safeDebug("ApplyLayout abort: parent missing")
@@ -156,9 +91,19 @@ function Layout.ApplyLayout(parentControl, rows)
     local totalHeight = 0
     local previousRow = nil
     local previousKind = nil
-    local parentWidth = getParentWidth(parentControl)
     local visibleCount = 0
     local rowCount = 0
+
+    local function getControlHeight(control, fallback)
+        if control and type(control.GetHeight) == "function" then
+            local ok, height = pcall(control.GetHeight, control)
+            if ok and type(height) == "number" and height > 0 then
+                return height
+            end
+        end
+
+        return fallback or 0
+    end
 
     local function anchor(control, gap)
         if control == nil then
@@ -205,21 +150,8 @@ function Layout.ApplyLayout(parentControl, rows)
             end
 
             anchor(row, gap)
-            applyDimensions(row, parentWidth)
 
-            local height = tonumber(row.__height) or 0
-            if type(row.GetHeight) == "function" then
-                local ok, measured = pcall(row.GetHeight, row)
-                if ok and type(measured) == "number" then
-                    height = measured
-                end
-            end
-
-            if height ~= height or height < 0 then
-                height = fallbackHeight
-            elseif height == 0 then
-                height = fallbackHeight
-            end
+            local height = getControlHeight(row, fallbackHeight)
 
             if visibleCount > 0 then
                 totalHeight = totalHeight + (gap or 0)

@@ -193,66 +193,6 @@ local function getController()
     return nil
 end
 
-local function ClearChildren(control)
-    if not control then
-        return
-    end
-
-    local getNumChildren = control.GetNumChildren
-    local getChild = control.GetChild
-    if type(getNumChildren) ~= "function" or type(getChild) ~= "function" then
-        return
-    end
-
-    local okCount, childCount = pcall(getNumChildren, control)
-    if not okCount or type(childCount) ~= "number" or childCount <= 0 then
-        return
-    end
-
-    for index = childCount - 1, 0, -1 do
-        local okChild, child = pcall(getChild, control, index)
-        if okChild and child then
-            if child.SetHidden then
-                child:SetHidden(true)
-            end
-            if child.ClearAnchors then
-                child:ClearAnchors()
-            end
-            if child.SetParent then
-                child:SetParent(nil)
-            end
-        end
-    end
-end
-
-local function resetRows(tracker, content)
-    if type(tracker) ~= "table" then
-        return
-    end
-
-    local existingRows = type(tracker.rows) == "table" and tracker.rows or {}
-    for index = 1, #existingRows do
-        local row = existingRows[index]
-        if row ~= nil then
-            if row.SetHidden then
-                row:SetHidden(true)
-            end
-            if row.ClearAnchors then
-                row:ClearAnchors()
-            end
-            if row.SetParent then
-                row:SetParent(nil)
-            end
-        end
-    end
-
-    tracker.rows = {}
-
-    if content ~= nil then
-        ClearChildren(content)
-    end
-end
-
 local function resolveGoldenContainer(candidate)
     local fallback = nil
 
@@ -297,38 +237,6 @@ local function getParentBaseName(parentControl)
     end
 
     return "Nvk3UT_Golden"
-end
-
-local function cleanupOrphanedControls(parentControl)
-    local parentName = getParentBaseName(parentControl)
-    local targets = {
-        parentName .. "Root",
-        parentName .. "Content",
-    }
-
-    for _, controlName in ipairs(targets) do
-        local control = _G[controlName]
-        if control then
-            local parent = control.GetParent and control:GetParent()
-            if parent ~= parentControl then
-                local parentLabel = parent and parent.GetName and parent:GetName() or "<nil>"
-                safeDebug(
-                    "Init: orphaned control %s cleaned up (parent=%s)",
-                    tostring(controlName),
-                    tostring(parentLabel)
-                )
-                if control.ClearAnchors then
-                    control:ClearAnchors()
-                end
-                if control.SetHidden then
-                    control:SetHidden(true)
-                end
-                if control.SetParent then
-                    control:SetParent(nil)
-                end
-            end
-        end
-    end
 end
 
 local function createRootAndContent(parentControl)
@@ -509,8 +417,6 @@ function GoldenTracker.Init(...)
     state.root = nil
     state.content = nil
 
-    cleanupOrphanedControls(resolvedContainer or parentControl)
-
     local root, content = createRootAndContent(resolvedContainer or parentControl)
     tracker.root = root
     tracker.content = content
@@ -521,8 +427,6 @@ function GoldenTracker.Init(...)
         safeDebug("Init incomplete; root or content missing")
         return
     end
-
-    ClearChildren(content)
 
     tracker.height = 0
     state.height = 0
@@ -1057,8 +961,6 @@ function GoldenTracker.Refresh(...)
     local root = tracker.root or state.root
     local content = tracker.content or state.content
 
-    resetRows(tracker, content)
-
     if not container or not root or not content then
         tracker.height = 0
         state.height = 0
@@ -1117,8 +1019,13 @@ function GoldenTracker.Refresh(...)
         return
     end
 
-    tracker.rows = {}
+    tracker.rows = tracker.rows or {}
     local rows = tracker.rows
+    resetRows(rows)
+
+    if rowsModule and type(rowsModule.ResetPools) == "function" then
+        rowsModule.ResetPools()
+    end
 
     if not hasEntriesForTracker then
         tracker.height = 0
@@ -1145,7 +1052,7 @@ function GoldenTracker.Refresh(...)
                 end
             end
 
-            local categoryRow = safeCreateRow(rowsModule.CreateCategoryRow, content, {
+            local categoryRow = safeCreateRow(rowsModule.AcquireCategoryRow or rowsModule.CreateCategoryRow, content, {
                 title = summary.title or "Goldene Vorhaben",
                 remainingObjectivesToNextReward = summary.remainingObjectivesToNextReward,
                 expanded = categoryExpanded,
@@ -1156,7 +1063,7 @@ function GoldenTracker.Refresh(...)
             end
 
             if categoryExpanded then
-                local campaignRow = safeCreateRow(rowsModule.CreateCampaignRow, content, {
+                local campaignRow = safeCreateRow(rowsModule.AcquireCampaignRow or rowsModule.CreateCampaignRow, content, {
                     campaignName = summary.campaignName,
                     displayName = summary.campaignName,
                     title = summary.campaignName,
@@ -1178,7 +1085,7 @@ function GoldenTracker.Refresh(...)
             for objectiveIndex = 1, #objectives do
                 local objectiveData = objectives[objectiveIndex]
                 if type(objectiveData) == "table" then
-                    local objectiveRow = safeCreateRow(rowsModule.CreateObjectiveRow, content, objectiveData)
+                    local objectiveRow = safeCreateRow(rowsModule.AcquireObjectiveRow or rowsModule.CreateObjectiveRow, content, objectiveData)
                     if objectiveRow then
                         table.insert(rows, objectiveRow)
                     end
@@ -1204,65 +1111,6 @@ function GoldenTracker.Refresh(...)
     tracker.height = totalHeight
     state.height = totalHeight
     setContainerHeight(container, totalHeight)
-
-    if isDebugEnabled() and content and type(content.GetNumChildren) == "function" then
-        local trackedRows = {}
-        for _, row in ipairs(rows) do
-            local name = row and row.GetName and row:GetName()
-            if name then
-                trackedRows[name] = true
-                safeDebug(
-                    "Row '%s' parent=%s hidden=%s",
-                    name,
-                    row.GetParent and row:GetParent() and row:GetParent():GetName() or "<nil>",
-                    tostring(row.IsHidden and row:IsHidden())
-                )
-            end
-        end
-
-        local okCount, childCount = pcall(content.GetNumChildren, content)
-        if okCount and type(childCount) == "number" then
-            for index = 0, childCount - 1 do
-                local okChild, child = pcall(content.GetChild, content, index)
-                if okChild and child then
-                    local childName = child.GetName and child:GetName() or "<unnamed>"
-                    local parentName = child.GetParent and child:GetParent() and child:GetParent():GetName() or "<nil>"
-                    local isHidden = child.IsHidden and child:IsHidden() or false
-                    if not trackedRows[childName] then
-                        safeDebug(
-                            "GoldenTracker: detected orphan row '%s' (parent=%s hidden=%s)",
-                            childName,
-                            parentName,
-                            tostring(isHidden)
-                        )
-                    end
-                end
-            end
-        end
-
-        local parentContainer = container ~= content and container or content
-        if parentContainer and type(parentContainer.GetNumChildren) == "function" then
-            local okContainerCount, containerChildCount = pcall(parentContainer.GetNumChildren, parentContainer)
-            if okContainerCount and type(containerChildCount) == "number" then
-                for index = 0, containerChildCount - 1 do
-                    local okChild, child = pcall(parentContainer.GetChild, parentContainer, index)
-                    if okChild and child then
-                        local childName = child.GetName and child:GetName() or "<unnamed>"
-                        local parentName = child.GetParent and child:GetParent() and child:GetParent():GetName() or "<nil>"
-                        local isHidden = child.IsHidden and child:IsHidden() or false
-                        if string.find(childName or "", "Golden", 1, true) and not trackedRows[childName] then
-                            safeDebug(
-                                "GoldenTracker: orphan in container '%s' (parent=%s hidden=%s)",
-                                childName,
-                                parentName,
-                                tostring(isHidden)
-                            )
-                        end
-                    end
-                end
-            end
-        end
-    end
 
     safeDebug(
         "Refresh complete: rows=%d height=%d hasCampaign=%s remaining=%s",

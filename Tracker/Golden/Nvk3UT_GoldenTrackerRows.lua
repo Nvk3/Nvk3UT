@@ -341,7 +341,10 @@ local function resolveCategoryColorRole(categoryData)
 end
 
 local function createControl(parent, kind)
-    local wm = getWindowManager()
+local wm = getWindowManager()
+local categoryPool = { free = {}, used = {} }
+local entryPool = { free = {}, used = {} }
+local objectivePool = { free = {}, used = {} }
     if wm == nil then
         return nil
     end
@@ -391,66 +394,52 @@ local function applyLabelColor(label, role)
     end
 end
 
-function Rows.CreateCategoryRow(parent, categoryData)
-    if parent == nil then
-        return nil
+local function applyCategoryRow(control, categoryData)
+    if control == nil then
+        return
     end
 
-    local control = createControl(parent, "category")
-    if not control then
-        return nil
+    local label = control.label
+    local chevron = control.chevron
+
+    if label and label.ClearAnchors then
+        label:ClearAnchors()
+        label:SetAnchor(TOPLEFT, chevron, TOPRIGHT, CATEGORY_LABEL_OFFSET_X, 0)
+        label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
     end
 
-    control.__height = DEFAULTS.CATEGORY_HEIGHT
-    control.__rowKind = "header"
+    if chevron and chevron.ClearAnchors then
+        chevron:ClearAnchors()
+        chevron:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+    end
+
+    local expanded = type(categoryData) == "table" and categoryData.expanded ~= false
+
     if control.SetHeight then
         control:SetHeight(DEFAULTS.CATEGORY_HEIGHT)
     end
 
-    if control.SetResizeToFitDescendents then
-        control:SetResizeToFitDescendents(false)
-    end
-    if control.SetMouseEnabled then
-        control:SetMouseEnabled(true)
-    end
+    control._onToggle = type(categoryData) == "table" and categoryData.onToggle or nil
 
-    local wm = getWindowManager()
-    local chevron = wm and wm:CreateControl(resolveParentName(control) .. "CategoryChevron", control, CT_TEXTURE)
     if chevron then
         if chevron.SetDimensions then
             chevron:SetDimensions(CATEGORY_CHEVRON_SIZE, CATEGORY_CHEVRON_SIZE)
         end
-        if chevron.ClearAnchors then
-            chevron:ClearAnchors()
-        end
-        if chevron.SetAnchor then
-            chevron:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
-        end
-        if chevron.SetMouseEnabled then
-            chevron:SetMouseEnabled(false)
+        if chevron.SetTexture then
+            chevron:SetTexture(expanded and CHEVRON_TEXTURES.expanded or CHEVRON_TEXTURES.collapsed)
         end
     end
 
-    local label = createLabel(control, "Category")
     if label then
-        if label.SetAnchor then
-            label:ClearAnchors()
-            label:SetAnchor(TOPLEFT, chevron, TOPRIGHT, CATEGORY_LABEL_OFFSET_X, 0)
-            label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
-        end
         if label.SetHorizontalAlignment then
             label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
         end
         if label.SetVerticalAlignment then
             label:SetVerticalAlignment(TEXT_ALIGN_TOP)
         end
+
         local appliedFont = applyConfiguredFont(label, "Category")
         applyLabelDefaults(label, appliedFont and nil or DEFAULTS.CATEGORY_FONT)
-
-        local expanded = type(categoryData) == "table" and categoryData.expanded ~= false
-        if chevron and chevron.SetTexture then
-            chevron:SetTexture(expanded and CHEVRON_TEXTURES.expanded or CHEVRON_TEXTURES.collapsed)
-        end
 
         local role = expanded and GOLDEN_COLOR_ROLES.Active or GOLDEN_COLOR_ROLES.CategoryTitleClosed
         applyLabelColor(label, role)
@@ -469,60 +458,37 @@ function Rows.CreateCategoryRow(parent, categoryData)
             label:SetText(text)
         end
     end
-
-    if control.SetHandler then
-        control:SetHandler("OnMouseUp", function(_, button, upInside)
-            if button == MOUSE_BUTTON_LEFT and upInside and type(categoryData) == "table" then
-                local callback = categoryData.onToggle
-                if type(callback) == "function" then
-                    callback()
-                end
-            end
-        end)
-    end
-
-    return control
 end
 
-function Rows.CreateCampaignRow(parent, entryData)
-    if parent == nil then
-        return nil
+local function applyCampaignRow(control, entryData)
+    if control == nil then
+        return
     end
 
-    local control = createControl(parent, "entry")
-    if not control then
-        return nil
+    local label = control.label
+    if label and label.ClearAnchors then
+        label:ClearAnchors()
+        label:SetAnchor(TOPLEFT, control, TOPLEFT, DEFAULTS.OBJECTIVE_INDENT_X, 0)
+        label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
     end
 
-    control.__height = DEFAULTS.ENTRY_HEIGHT
-    control.__rowKind = "row"
     if control.SetHeight then
         control:SetHeight(DEFAULTS.ENTRY_HEIGHT)
     end
 
-    if control.SetResizeToFitDescendents then
-        control:SetResizeToFitDescendents(false)
-    end
-    if control.SetMouseEnabled then
-        control:SetMouseEnabled(true)
-    end
-
-    local label = createLabel(control, "EntryTitle")
     if label then
-        if label.SetAnchor then
-            label:ClearAnchors()
-            label:SetAnchor(TOPLEFT, control, TOPLEFT, DEFAULTS.OBJECTIVE_INDENT_X, 0)
-            label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
-        end
         if label.SetHorizontalAlignment then
             label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
         end
         if label.SetVerticalAlignment then
             label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
         end
+
         local appliedFont = applyConfiguredFont(label, "Title")
         applyLabelDefaults(label, appliedFont and nil or DEFAULTS.ENTRY_FONT)
         applyLabelColor(label, GOLDEN_COLOR_ROLES.EntryName)
+
+        control._onToggle = type(entryData) == "table" and entryData.onToggle or nil
 
         local text = ""
         if type(entryData) == "table" then
@@ -542,56 +508,38 @@ function Rows.CreateCampaignRow(parent, entryData)
             else
                 text = display
             end
-
         end
+
         if label.SetText then
             label:SetText(text)
         end
     end
-
-    if control.SetHandler then
-        control:SetHandler("OnMouseUp", function(_, button, upInside)
-            if button == MOUSE_BUTTON_LEFT and upInside and type(entryData) == "table" then
-                local callback = entryData.onToggle
-                if type(callback) == "function" then
-                    callback()
-                end
-            end
-        end)
-    end
-
-    return control
 end
 
-function Rows.CreateObjectiveRow(parent, objectiveData)
-    if parent == nil then
-        return nil
+local function applyObjectiveRow(control, objectiveData)
+    if control == nil then
+        return
     end
 
-    local control = createControl(parent, "objective")
-    if not control then
-        return nil
-    end
-
-    control.__height = DEFAULTS.OBJECTIVE_HEIGHT
-    control.__rowKind = "row"
     if control.SetHeight then
         control:SetHeight(DEFAULTS.OBJECTIVE_HEIGHT)
     end
 
-    local label = createLabel(control, "Objective")
+    local label = control.label
+    if label and label.ClearAnchors then
+        label:ClearAnchors()
+        label:SetAnchor(TOPLEFT, control, TOPLEFT, DEFAULTS.OBJECTIVE_INDENT_X, 0)
+        label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
+    end
+
     if label then
-        if label.SetAnchor then
-            label:ClearAnchors()
-            label:SetAnchor(TOPLEFT, control, TOPLEFT, DEFAULTS.OBJECTIVE_INDENT_X, 0)
-            label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
-        end
         if label.SetHorizontalAlignment then
             label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
         end
         if label.SetVerticalAlignment then
             label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
         end
+
         local role = objectiveData and (objectiveData.isComplete == true or objectiveData.isCompleted == true)
             and GOLDEN_COLOR_ROLES.Completed
             or GOLDEN_COLOR_ROLES.Objective
@@ -622,8 +570,183 @@ function Rows.CreateObjectiveRow(parent, objectiveData)
             label:SetText(text)
         end
     end
+end
+
+function Rows.CreateCategoryRow(parent, categoryData)
+    if parent == nil then
+        return nil
+    end
+
+    local control = createControl(parent, "category")
+    if not control then
+        return nil
+    end
+
+    control.__height = DEFAULTS.CATEGORY_HEIGHT
+    control.__rowKind = "header"
+
+    if control.SetResizeToFitDescendents then
+        control:SetResizeToFitDescendents(false)
+    end
+    if control.SetMouseEnabled then
+        control:SetMouseEnabled(true)
+    end
+
+    local wm = getWindowManager()
+    local chevron = wm and wm:CreateControl(resolveParentName(control) .. "CategoryChevron", control, CT_TEXTURE)
+    if chevron and chevron.SetMouseEnabled then
+        chevron:SetMouseEnabled(false)
+    end
+
+    control.chevron = chevron
+
+    local label = createLabel(control, "Category")
+    control.label = label
+
+    if control.SetHandler then
+        control:SetHandler("OnMouseUp", function(_, button, upInside)
+            if button == MOUSE_BUTTON_LEFT and upInside then
+                local callback = control._onToggle
+                if type(callback) == "function" then
+                    callback()
+                end
+            end
+        end)
+    end
+
+    applyCategoryRow(control, categoryData)
 
     return control
+end
+
+function Rows.CreateCampaignRow(parent, entryData)
+    if parent == nil then
+        return nil
+    end
+
+    local control = createControl(parent, "entry")
+    if not control then
+        return nil
+    end
+
+    control.__height = DEFAULTS.ENTRY_HEIGHT
+    control.__rowKind = "row"
+
+    if control.SetResizeToFitDescendents then
+        control:SetResizeToFitDescendents(false)
+    end
+    if control.SetMouseEnabled then
+        control:SetMouseEnabled(true)
+    end
+
+    control.label = createLabel(control, "EntryTitle")
+
+    if control.SetHandler then
+        control:SetHandler("OnMouseUp", function(_, button, upInside)
+            if button == MOUSE_BUTTON_LEFT and upInside then
+                local callback = control._onToggle
+                if type(callback) == "function" then
+                    callback()
+                end
+            end
+        end)
+    end
+
+    applyCampaignRow(control, entryData)
+
+    return control
+end
+
+function Rows.CreateObjectiveRow(parent, objectiveData)
+    if parent == nil then
+        return nil
+    end
+
+    local control = createControl(parent, "objective")
+    if not control then
+        return nil
+    end
+
+    control.__height = DEFAULTS.OBJECTIVE_HEIGHT
+    control.__rowKind = "row"
+
+    control.label = createLabel(control, "Objective")
+
+    applyObjectiveRow(control, objectiveData)
+
+    return control
+end
+
+local function resetPool(pool)
+    if type(pool) ~= "table" then
+        return
+    end
+
+    for index = #pool.used, 1, -1 do
+        local row = pool.used[index]
+        if row then
+            if row.SetHidden then
+                row:SetHidden(true)
+            end
+            if row.ClearAnchors then
+                row:ClearAnchors()
+            end
+            if row.SetParent then
+                row:SetParent(nil)
+            end
+        end
+        pool.used[index] = nil
+        pool.free[#pool.free + 1] = row
+    end
+end
+
+local function acquireFromPool(pool, createFn, parent, data)
+    if type(pool) ~= "table" or type(createFn) ~= "function" then
+        return nil
+    end
+
+    local row
+    if #pool.free > 0 then
+        row = table.remove(pool.free)
+    end
+
+    if not row then
+        row = createFn(parent, data)
+    else
+        if row.SetParent then
+            row:SetParent(parent)
+        end
+        if row.SetHidden then
+            row:SetHidden(false)
+        end
+    end
+
+    pool.used[#pool.used + 1] = row
+    return row
+end
+
+function Rows.ResetPools()
+    resetPool(categoryPool)
+    resetPool(entryPool)
+    resetPool(objectivePool)
+end
+
+function Rows.AcquireCategoryRow(parent, categoryData)
+    local row = acquireFromPool(categoryPool, Rows.CreateCategoryRow, parent, categoryData)
+    applyCategoryRow(row, categoryData)
+    return row
+end
+
+function Rows.AcquireCampaignRow(parent, entryData)
+    local row = acquireFromPool(entryPool, Rows.CreateCampaignRow, parent, entryData)
+    applyCampaignRow(row, entryData)
+    return row
+end
+
+function Rows.AcquireObjectiveRow(parent, objectiveData)
+    local row = acquireFromPool(objectivePool, Rows.CreateObjectiveRow, parent, objectiveData)
+    applyObjectiveRow(row, objectiveData)
+    return row
 end
 
 Nvk3UT.GoldenTrackerRows = Rows
