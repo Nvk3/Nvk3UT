@@ -523,6 +523,23 @@ local function buildCategory(rawCategory)
         completed = math.min(completed, total)
     end
 
+    if capTotal ~= nil and capTotal > 0 and rawCategory.completedActivities ~= nil and tonumber(rawCategory.completedActivities) ~= nil then
+        safeDebug(
+            "Category uses capstone: name=%s completed=%d total=%d",
+            displayName,
+            completed,
+            total
+        )
+    else
+        safeDebug(
+            "Category fallback: name=%s completed=%d total=%d entryCount=%d",
+            displayName,
+            completed,
+            total,
+            categoryVm.entryCount
+        )
+    end
+
     categoryVm.completedCount = clampNonNegative(completed)
     categoryVm.totalCount = clampNonNegative(total)
     categoryVm.capLimit = categoryVm.totalCount

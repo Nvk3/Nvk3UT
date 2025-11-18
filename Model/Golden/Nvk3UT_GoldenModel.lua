@@ -512,16 +512,31 @@ local function buildCounters(data)
             local entries = category.entries or {}
             local entryCount = #entries
 
-            local total = safeNonNegativeNumber(
-                category.capstoneCompletionThreshold,
-                category.countTotal,
-                entryCount
-            ) or 0
+            local capTotal = safeNonNegativeNumber(category.capstoneCompletionThreshold)
+            local totalFromCategory = safeNonNegativeNumber(category.countTotal)
+            local totalFromEntries = safeNonNegativeNumber(entryCount)
+            local total = capTotal or totalFromCategory or totalFromEntries or 0
 
-            local completed = safeNonNegativeNumber(
-                category.completedActivities,
-                category.countCompleted
-            ) or 0
+            local completedFromCap = safeNonNegativeNumber(category.completedActivities)
+            local completedFromCategory = safeNonNegativeNumber(category.countCompleted)
+            local completed = completedFromCap or completedFromCategory or 0
+
+            if capTotal ~= nil and capTotal > 0 and completedFromCap ~= nil then
+                debugLog(
+                    "Counters use capstone: category=%s completed=%d total=%d",
+                    ensureString(category.name or category.displayName or category.key or tostring(index)),
+                    completed,
+                    total
+                )
+            else
+                debugLog(
+                    "Counters fallback: category=%s completed=%d total=%d entries=%d",
+                    ensureString(category.name or category.displayName or category.key or tostring(index)),
+                    completed,
+                    total,
+                    entryCount
+                )
+            end
 
             if total > 0 then
                 totalActivities = totalActivities + total
@@ -803,6 +818,15 @@ do
                     numCompletedActivities = ensureNumber(completedActivities, 0),
                     isCapstoneRewardClaimed = isCapstoneRewardClaimed == true,
                 }
+
+                debugLog(
+                    "Campaign meta: id=%s name=%s objectives=%d completed=%d capstone=%d",
+                    tostring(campaignMeta.id),
+                    ensureString(campaignMeta.displayName),
+                    campaignMeta.numActivities or 0,
+                    campaignMeta.numCompletedActivities or 0,
+                    campaignMeta.capstoneCompletionThreshold or 0
+                )
 
                 local activities = self:CollectActivitiesForCampaign(campaignKey, index, campaignMeta)
                 if type(activities) == "table" and #activities > 0 then
