@@ -200,9 +200,14 @@ local function queueTrackerDirty()
         return
     end
 
-    local queueDirty = runtime.QueueDirty or runtime.MarkDirty or runtime.RequestRefresh
+    local queueDirty = runtime.QueueDirty or runtime.MarkDirty or runtime.RequestRefresh or runtime.MarkGoldenDirty
     if type(queueDirty) == "function" then
         pcall(queueDirty, runtime, "golden")
+        return
+    end
+
+    if runtime.goldenDirty ~= nil then
+        runtime.goldenDirty = true
     end
 end
 

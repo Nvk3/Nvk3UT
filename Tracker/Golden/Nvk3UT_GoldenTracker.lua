@@ -1036,8 +1036,6 @@ function GoldenTracker.Refresh(...)
         return
     end
 
-    ClearChildren(content)
-
     local rowsModule = getRowsModule()
     local layoutModule = getLayoutModule()
 
@@ -1089,9 +1087,10 @@ function GoldenTracker.Refresh(...)
         return
     end
 
-    local rows = tracker.rows or {}
-    resetRows(rows)
-    tracker.rows = rows
+    ClearChildren(content)
+
+    tracker.rows = {}
+    local rows = tracker.rows
 
     if not hasEntriesForTracker then
         tracker.height = 0
