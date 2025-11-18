@@ -21,6 +21,8 @@ local VALID_COMPLETED_HANDLING = {
 
 local DEFAULT_BEHAVIOR = {
     headerExpanded = true,
+    categoryExpanded = true,
+    entryExpanded = true,
     dailyExpanded = true,
     weeklyExpanded = true,
     completedHandling = "hide",
@@ -328,6 +330,18 @@ local function resolveBehaviorDefaults(self)
             hasValue = true
         end
 
+        local category = defaults.categoryExpanded or defaults.CategoryExpanded
+        if category ~= nil then
+            candidate.categoryExpanded = category
+            hasValue = true
+        end
+
+        local entry = defaults.entryExpanded or defaults.EntryExpanded
+        if entry ~= nil then
+            candidate.entryExpanded = entry
+            hasValue = true
+        end
+
         local daily = defaults.dailyExpanded or defaults.DailyExpanded
         if daily ~= nil then
             candidate.dailyExpanded = daily
@@ -394,7 +408,7 @@ local function resolveDefaultBoolean(self, key)
         value = behavior[altKey]
     end
 
-    if key == "headerExpanded" or key == "dailyExpanded" or key == "weeklyExpanded" then
+    if key == "headerExpanded" or key == "categoryExpanded" or key == "entryExpanded" or key == "dailyExpanded" or key == "weeklyExpanded" then
         return normalizeBoolean(value, true)
     end
 
@@ -439,6 +453,24 @@ local function resolveDefaultHandling(self)
     end
 
     return DEFAULT_BEHAVIOR.completedHandling
+end
+
+local function resolveDefaultCategoryExpanded(self)
+    local behavior = resolveBehaviorDefaults(self)
+    if type(behavior) == "table" and behavior.categoryExpanded ~= nil then
+        return behavior.categoryExpanded ~= false
+    end
+
+    return DEFAULT_BEHAVIOR.categoryExpanded
+end
+
+local function resolveDefaultEntryExpanded(self)
+    local behavior = resolveBehaviorDefaults(self)
+    if type(behavior) == "table" and behavior.entryExpanded ~= nil then
+        return behavior.entryExpanded ~= false
+    end
+
+    return DEFAULT_BEHAVIOR.entryExpanded
 end
 
 local function resolveEnabledDefault(self)
@@ -724,17 +756,17 @@ end
 
 function GoldenState:IsCategoryExpanded(key)
     if key == nil or key == "" then
-        return true
+        return getStateBoolean(self, "categoryExpanded")
     end
 
     local expansion = getCategoryExpansionMap(self, false)
     if type(expansion) ~= "table" then
-        return true
+        return resolveDefaultCategoryExpanded(self)
     end
 
     local value = expansion[key]
     if value == nil then
-        return true
+        return resolveDefaultCategoryExpanded(self)
     end
 
     return value ~= false
@@ -742,7 +774,7 @@ end
 
 function GoldenState:SetCategoryExpanded(key, expanded)
     if key == nil or key == "" then
-        return false
+        return setStateBoolean(self, "categoryExpanded", expanded)
     end
 
     local expansion = getCategoryExpansionMap(self, true)
@@ -756,6 +788,39 @@ function GoldenState:SetCategoryExpanded(key, expanded)
     debugLog("set categoryExpanded[%s]=%s", tostring(key), tostring(normalized))
 
     return normalized
+end
+
+function GoldenState:IsEntryExpanded(key)
+    if key ~= nil and key ~= "" then
+        local state = getStateTable(self, false)
+        if type(state) == "table" then
+            local expansion = state.entryExpansion
+            if type(expansion) == "table" and expansion[key] ~= nil then
+                return expansion[key] ~= false
+            end
+        end
+    end
+
+    return getStateBoolean(self, "entryExpanded")
+end
+
+function GoldenState:SetEntryExpanded(key, expanded)
+    if key ~= nil and key ~= "" then
+        local state = getStateTable(self, true)
+        if type(state) ~= "table" then
+            return false
+        end
+
+        if type(state.entryExpansion) ~= "table" then
+            state.entryExpansion = {}
+        end
+
+        state.entryExpansion[key] = expanded ~= false
+        debugLog("set entryExpanded[%s]=%s", tostring(key), tostring(expanded))
+        return true
+    end
+
+    return setStateBoolean(self, "entryExpanded", expanded)
 end
 
 function GoldenState:GetCompletedHandling()
@@ -814,10 +879,13 @@ function GoldenState:ResetToDefaults()
     end
 
     state.headerExpanded = resolveDefaultBoolean(self, "headerExpanded")
+    state.categoryExpanded = resolveDefaultCategoryExpanded(self)
+    state.entryExpanded = resolveDefaultEntryExpanded(self)
     state.dailyExpanded = resolveDefaultBoolean(self, "dailyExpanded")
     state.weeklyExpanded = resolveDefaultBoolean(self, "weeklyExpanded")
     state.completedHandling = resolveDefaultHandling(self)
     state.categoryExpansion = nil
+    state.entryExpansion = nil
 
     debugLog("reset to defaults")
 

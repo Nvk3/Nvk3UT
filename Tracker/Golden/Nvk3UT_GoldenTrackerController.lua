@@ -150,6 +150,25 @@ local function callStateMethod(goldenState, methodName)
     return nil
 end
 
+local function callStateMethodWithArgs(goldenState, methodName, ...)
+    if type(goldenState) ~= "table" or type(methodName) ~= "string" then
+        return nil
+    end
+
+    local method = goldenState[methodName]
+    if type(method) ~= "function" then
+        return nil
+    end
+
+    local ok, result = pcall(method, goldenState, ...)
+    if ok then
+        return result
+    end
+
+    safeDebug("Call to GoldenState:%s failed: %s", methodName, tostring(result))
+    return nil
+end
+
 local function callModelMethod(model, methodName, ...)
     if type(model) ~= "table" or type(methodName) ~= "string" then
         return nil
@@ -168,6 +187,23 @@ local function callModelMethod(model, methodName, ...)
 
     safeDebug("Call to GoldenModel:%s failed: %s", methodName, tostring(result))
     return nil
+end
+
+local function queueTrackerDirty()
+    local root = getAddonRoot()
+    if type(root) ~= "table" then
+        return
+    end
+
+    local runtime = rawget(root, "TrackerRuntime")
+    if type(runtime) ~= "table" then
+        return
+    end
+
+    local queueDirty = runtime.QueueDirty or runtime.MarkDirty or runtime.RequestRefresh
+    if type(queueDirty) == "function" then
+        pcall(queueDirty, runtime, "golden")
+    end
 end
 
 local function ensureString(value)
@@ -283,16 +319,30 @@ end
 
 local function resolveExpansionFlags(goldenState)
     local headerExpanded = true
+    local categoryExpanded = true
+    local entryExpanded = true
 
     if goldenState then
         local header = callStateMethod(goldenState, "IsHeaderExpanded")
         if header ~= nil then
             headerExpanded = header ~= false
         end
+
+        local category = callStateMethodWithArgs(goldenState, "IsCategoryExpanded", nil)
+        if category ~= nil then
+            categoryExpanded = category ~= false
+        end
+
+        local entry = callStateMethodWithArgs(goldenState, "IsEntryExpanded", nil)
+        if entry ~= nil then
+            entryExpanded = entry ~= false
+        end
     end
 
     return {
         header = headerExpanded,
+        category = categoryExpanded,
+        entry = entryExpanded,
     }
 end
 
@@ -362,6 +412,8 @@ local function normalizeEntry(rawCategory, rawEntry, index)
         description = tostring(description)
     end
 
+    local expanded = rawEntry.expanded ~= false
+
     local currentValue, maxValue = normalizeProgressPair(rawEntry.progress, rawEntry.maxProgress)
     local currentInt = math.floor(currentValue + 0.5)
     local maxInt = math.max(1, math.floor(maxValue + 0.5))
@@ -387,6 +439,9 @@ local function normalizeEntry(rawCategory, rawEntry, index)
         name = title,
         description = description,
         tooltip = description,
+        isExpanded = expanded,
+        isCollapsed = not expanded,
+        expanded = expanded,
         current = currentValue,
         progressCurrent = currentValue,
         count = currentInt,
@@ -557,6 +612,58 @@ function Controller:ClearDirty()
     state.dirty = false
 end
 
+function Controller:ToggleCategoryExpanded(categoryKey)
+    local goldenState = getGoldenState()
+    if type(goldenState) ~= "table" then
+        return false
+    end
+
+    local expanded = callStateMethodWithArgs(goldenState, "IsCategoryExpanded", categoryKey)
+    if expanded == nil then
+        expanded = true
+    end
+
+    local setter = goldenState.SetCategoryExpanded
+    if type(setter) ~= "function" then
+        return false
+    end
+
+    local ok = pcall(setter, goldenState, categoryKey, not (expanded == true))
+    if ok then
+        self:MarkDirty("categoryToggle")
+        queueTrackerDirty()
+        return true
+    end
+
+    return false
+end
+
+function Controller:ToggleEntryExpanded(entryKey)
+    local goldenState = getGoldenState()
+    if type(goldenState) ~= "table" then
+        return false
+    end
+
+    local expanded = callStateMethodWithArgs(goldenState, "IsEntryExpanded", entryKey)
+    if expanded == nil then
+        expanded = true
+    end
+
+    local setter = goldenState.SetEntryExpanded
+    if type(setter) ~= "function" then
+        return false
+    end
+
+    local ok = pcall(setter, goldenState, entryKey, not (expanded == true))
+    if ok then
+        self:MarkDirty("entryToggle")
+        queueTrackerDirty()
+        return true
+    end
+
+    return false
+end
+
 function Controller:BuildViewModel(options)
     local goldenState = getGoldenState()
     local expansionFlags = resolveExpansionFlags(goldenState)
@@ -662,21 +769,74 @@ function Controller:BuildViewModel(options)
     end
     viewModel.header = { isExpanded = headerExpanded }
 
+    local defaultCategoryExpanded = expansionFlags.category ~= false
+    local defaultEntryExpanded = expansionFlags.entry ~= false
+
     local rawCategories = type(rawData.categories) == "table" and rawData.categories or {}
     local categories = {}
     local totalEntries = 0
     local totalCompleted = 0
 
+    local primaryCategoryKey
+    local primaryEntryKey
+
     for index = 1, #rawCategories do
-        local categoryVm = buildCategory(rawCategories[index])
+        local rawCategory = rawCategories[index]
+        local categoryKey = ensureString(type(rawCategory) == "table" and (rawCategory.key or rawCategory.id) or "")
+        local categoryExpanded = defaultCategoryExpanded
+        if type(rawCategory) == "table" then
+            if rawCategory.expanded ~= nil then
+                categoryExpanded = rawCategory.expanded ~= false
+            end
+
+            local stateExpanded = goldenState and callStateMethodWithArgs(goldenState, "IsCategoryExpanded", categoryKey)
+            if stateExpanded ~= nil then
+                categoryExpanded = stateExpanded ~= false
+            end
+
+            rawCategory.expanded = categoryExpanded
+
+            local rawEntries = type(rawCategory.entries) == "table" and rawCategory.entries or {}
+            for entryIndex = 1, #rawEntries do
+                local rawEntry = rawEntries[entryIndex]
+                if type(rawEntry) == "table" then
+                    local entryKey = ensureString(rawEntry.id or string.format("%s:%d", categoryKey, entryIndex))
+                    if primaryEntryKey == nil then
+                        primaryEntryKey = entryKey
+                    end
+
+                    local entryExpanded = defaultEntryExpanded
+                    if rawEntry.expanded ~= nil then
+                        entryExpanded = rawEntry.expanded ~= false
+                    end
+
+                    local stateEntryExpanded = goldenState
+                            and callStateMethodWithArgs(goldenState, "IsEntryExpanded", entryKey)
+                    if stateEntryExpanded ~= nil then
+                        entryExpanded = stateEntryExpanded ~= false
+                    end
+
+                    rawEntry.expanded = entryExpanded
+                end
+            end
+        end
+
+        local categoryVm = buildCategory(rawCategory)
         if categoryVm then
             categories[#categories + 1] = categoryVm
             totalEntries = totalEntries + clampNonNegative(categoryVm.entryCount)
             totalCompleted = totalCompleted + clampNonNegative(categoryVm.completedCount)
+
+            if primaryCategoryKey == nil then
+                primaryCategoryKey = categoryVm.key
+            end
         end
     end
 
     viewModel.categories = categories
+
+    viewModel.categoryKey = primaryCategoryKey
+    viewModel.entryKey = primaryEntryKey
 
     local summary = {
         hasActiveCampaign = rawSummary.hasActiveCampaign == true,
@@ -692,6 +852,22 @@ function Controller:BuildViewModel(options)
 
     viewModel.summary = summary
     viewModel.objectives = rawObjectives
+
+    local resolvedCategoryExpanded = defaultCategoryExpanded
+    if categories[1] and categories[1].expanded ~= nil then
+        resolvedCategoryExpanded = categories[1].expanded ~= false
+    end
+
+    local resolvedEntryExpanded = defaultEntryExpanded
+    if categories[1] and type(categories[1].entries) == "table" and categories[1].entries[1] then
+        local entryVm = categories[1].entries[1]
+        if entryVm.expanded ~= nil then
+            resolvedEntryExpanded = entryVm.expanded ~= false
+        end
+    end
+
+    viewModel.categoryExpanded = resolvedCategoryExpanded
+    viewModel.entryExpanded = resolvedEntryExpanded
 
     viewModel.hasEntriesForTracker = (rawData and rawData.hasEntriesForTracker) == true
         or #categories > 0

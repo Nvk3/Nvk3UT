@@ -38,6 +38,16 @@ local DEFAULTS = {
     OBJECTIVE_INDENT_X = 60,
 }
 
+local CATEGORY_CHEVRON_SIZE = 20
+local CATEGORY_LABEL_OFFSET_X = 4
+
+local CHEVRON_TEXTURES = {
+    expanded = "EsoUI/Art/Buttons/tree_open_up.dds",
+    collapsed = "EsoUI/Art/Buttons/tree_closed_up.dds",
+}
+
+local MOUSE_BUTTON_LEFT = rawget(_G, "MOUSE_BUTTON_INDEX_LEFT") or 1
+
 local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
 local MIN_FONT_SIZE = 12
 local MAX_FONT_SIZE = 36
@@ -396,23 +406,72 @@ function Rows.CreateCategoryRow(parent, categoryData)
         control:SetHeight(DEFAULTS.CATEGORY_HEIGHT)
     end
 
+    if control.SetResizeToFitDescendents then
+        control:SetResizeToFitDescendents(false)
+    end
+    if control.SetMouseEnabled then
+        control:SetMouseEnabled(true)
+    end
+
+    local wm = getWindowManager()
+    local chevron = wm and wm:CreateControl(resolveParentName(control) .. "CategoryChevron", control, CT_TEXTURE)
+    if chevron then
+        if chevron.SetDimensions then
+            chevron:SetDimensions(CATEGORY_CHEVRON_SIZE, CATEGORY_CHEVRON_SIZE)
+        end
+        if chevron.ClearAnchors then
+            chevron:ClearAnchors()
+        end
+        if chevron.SetAnchor then
+            chevron:SetAnchor(LEFT, control, LEFT, 0, 0)
+        end
+        if chevron.SetMouseEnabled then
+            chevron:SetMouseEnabled(false)
+        end
+    end
+
     local label = createLabel(control, "Category")
     if label then
         if label.SetAnchor then
-            label:SetAnchor(LEFT, control, LEFT, 4, 0)
+            label:ClearAnchors()
+            label:SetAnchor(TOPLEFT, chevron or control, chevron and RIGHT or LEFT, CATEGORY_LABEL_OFFSET_X, 0)
+            label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
         end
         local appliedFont = applyConfiguredFont(label, "Category")
         applyLabelDefaults(label, appliedFont and nil or DEFAULTS.CATEGORY_FONT)
-        applyLabelColor(label, GOLDEN_COLOR_ROLES.Active)
 
-        local text = ""
-        if type(categoryData) == "table" then
-            local remaining = tonumber(categoryData.remainingObjectivesToNextReward) or 0
-            text = string.format("Goldene Vorhaben (%d)", remaining)
+        local expanded = type(categoryData) == "table" and categoryData.expanded ~= false
+        if chevron and chevron.SetTexture then
+            chevron:SetTexture(expanded and CHEVRON_TEXTURES.expanded or CHEVRON_TEXTURES.collapsed)
         end
+
+        local role = expanded and GOLDEN_COLOR_ROLES.Active or GOLDEN_COLOR_ROLES.CategoryTitleClosed
+        applyLabelColor(label, role)
+
+        local title = "Goldene Vorhaben"
+        local remaining = 0
+        if type(categoryData) == "table" then
+            remaining = tonumber(categoryData.remainingObjectivesToNextReward) or 0
+            if type(categoryData.title) == "string" and categoryData.title ~= "" then
+                title = categoryData.title
+            end
+        end
+
+        local text = string.format("%s (%d)", string.upper(title), remaining)
         if label.SetText then
             label:SetText(text)
         end
+    end
+
+    if control.SetHandler then
+        control:SetHandler("OnMouseUp", function(_, button, upInside)
+            if button == MOUSE_BUTTON_LEFT and upInside and type(categoryData) == "table" then
+                local callback = categoryData.onToggle
+                if type(callback) == "function" then
+                    callback()
+                end
+            end
+        end)
     end
 
     return control
@@ -433,10 +492,36 @@ function Rows.CreateCampaignRow(parent, entryData)
         control:SetHeight(DEFAULTS.ENTRY_HEIGHT)
     end
 
+    if control.SetResizeToFitDescendents then
+        control:SetResizeToFitDescendents(false)
+    end
+    if control.SetMouseEnabled then
+        control:SetMouseEnabled(true)
+    end
+
+    local wm = getWindowManager()
+    local chevron = wm and wm:CreateControl(resolveParentName(control) .. "EntryChevron", control, CT_TEXTURE)
+    if chevron then
+        if chevron.SetDimensions then
+            chevron:SetDimensions(CATEGORY_CHEVRON_SIZE, CATEGORY_CHEVRON_SIZE)
+        end
+        if chevron.ClearAnchors then
+            chevron:ClearAnchors()
+        end
+        if chevron.SetAnchor then
+            chevron:SetAnchor(LEFT, control, LEFT, 0, 0)
+        end
+        if chevron.SetMouseEnabled then
+            chevron:SetMouseEnabled(false)
+        end
+    end
+
     local label = createLabel(control, "EntryTitle")
     if label then
         if label.SetAnchor then
-            label:SetAnchor(LEFT, control, LEFT, 0, 0)
+            label:ClearAnchors()
+            label:SetAnchor(TOPLEFT, chevron or control, chevron and RIGHT or LEFT, CATEGORY_LABEL_OFFSET_X, 0)
+            label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
         end
         local appliedFont = applyConfiguredFont(label, "Title")
         applyLabelDefaults(label, appliedFont and nil or DEFAULTS.ENTRY_FONT)
@@ -445,25 +530,6 @@ function Rows.CreateCampaignRow(parent, entryData)
         local text = ""
         if type(entryData) == "table" then
             local display = entryData.campaignName or entryData.displayName or entryData.title or entryData.name
-            text = tostring(display or "")
-        end
-        if label.SetText then
-            label:SetText(text)
-        end
-    end
-
-    if type(entryData) == "table" then
-        local counterLabel = createLabel(control, "EntryCounter")
-        if counterLabel then
-            if counterLabel.SetAnchor then
-                counterLabel:SetAnchor(RIGHT, control, RIGHT, 0, 0)
-            end
-            local counterFontApplied = applyConfiguredFont(counterLabel, "Title")
-            applyLabelDefaults(counterLabel, counterFontApplied and nil or DEFAULTS.ENTRY_FONT)
-            applyLabelColor(counterLabel, GOLDEN_COLOR_ROLES.EntryName)
-            if counterLabel.SetHorizontalAlignment and rawget(_G, "TEXT_ALIGN_RIGHT") then
-                counterLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
-            end
             local completed = tonumber(entryData.completedObjectives or entryData.countCompleted)
             local total = tonumber(entryData.maxRewardTier or entryData.countTotal)
             if completed == nil then
@@ -472,14 +538,33 @@ function Rows.CreateCampaignRow(parent, entryData)
             if total == nil then
                 total = tonumber(entryData.max) or tonumber(entryData.maxDisplay)
             end
-            local counterText = ""
-            if completed ~= nil and total ~= nil then
-                counterText = string.format("%d/%d", completed, total)
+
+            display = tostring(display or "")
+            if completed and total then
+                text = string.format("%s (%d/%d)", display, completed, total)
+            else
+                text = display
             end
-            if counterLabel.SetText then
-                counterLabel:SetText(counterText)
+
+            local expanded = entryData.expanded ~= false
+            if chevron and chevron.SetTexture then
+                chevron:SetTexture(expanded and CHEVRON_TEXTURES.expanded or CHEVRON_TEXTURES.collapsed)
             end
         end
+        if label.SetText then
+            label:SetText(text)
+        end
+    end
+
+    if control.SetHandler then
+        control:SetHandler("OnMouseUp", function(_, button, upInside)
+            if button == MOUSE_BUTTON_LEFT and upInside and type(entryData) == "table" then
+                local callback = entryData.onToggle
+                if type(callback) == "function" then
+                    callback()
+                end
+            end
+        end)
     end
 
     return control

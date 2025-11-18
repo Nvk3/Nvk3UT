@@ -179,6 +179,20 @@ local function getLayoutModule()
     return nil
 end
 
+local function getController()
+    local root = getAddonRoot()
+    if type(root) ~= "table" then
+        return nil
+    end
+
+    local controller = rawget(root, "GoldenTrackerController")
+    if type(controller) == "table" then
+        return controller
+    end
+
+    return nil
+end
+
 local function ClearChildren(control)
     if not control then
         return
@@ -1032,6 +1046,30 @@ function GoldenTracker.Refresh(...)
     local summary = type(vm) == "table" and type(vm.summary) == "table" and vm.summary or {}
     local objectives = type(vm) == "table" and type(vm.objectives) == "table" and vm.objectives or {}
     local hasEntriesForTracker = type(vm) == "table" and vm.hasEntriesForTracker == true
+    local categories = type(vm) == "table" and type(vm.categories) == "table" and vm.categories or {}
+
+    local categoryExpanded = vm and vm.categoryExpanded ~= false
+    if categories[1] and categories[1].expanded ~= nil then
+        categoryExpanded = categories[1].expanded ~= false
+    end
+
+    local entryExpanded = vm and vm.entryExpanded ~= false
+    if categories[1] and type(categories[1].entries) == "table" and categories[1].entries[1] then
+        local entryVm = categories[1].entries[1]
+        if entryVm.expanded ~= nil then
+            entryExpanded = entryVm.expanded ~= false
+        end
+    end
+
+    local categoryKey = vm and vm.categoryKey
+    if categoryKey == nil and categories[1] then
+        categoryKey = categories[1].key or categories[1].categoryKey
+    end
+
+    local entryKey = vm and vm.entryKey
+    if entryKey == nil and categories[1] and type(categories[1].entries) == "table" and categories[1].entries[1] then
+        entryKey = categories[1].entries[1].id or categories[1].entries[1].categoryId
+    end
 
     safeDebug(
         "Refresh start: vmNil=%s hasEntriesForTracker=%s hasCampaign=%s objectives=%d",
@@ -1067,23 +1105,56 @@ function GoldenTracker.Refresh(...)
 
     if rowsModule then
         if summary.hasActiveCampaign == true then
-            local categoryRow = safeCreateRow(rowsModule.CreateCategoryRow, content, summary)
+            local controller = getController()
+            local toggleCategory = function()
+                if controller and type(controller.ToggleCategoryExpanded) == "function" then
+                    pcall(controller.ToggleCategoryExpanded, controller, categoryKey)
+                end
+            end
+
+            local toggleEntry = function()
+                if controller and type(controller.ToggleEntryExpanded) == "function" then
+                    pcall(controller.ToggleEntryExpanded, controller, entryKey)
+                end
+            end
+
+            local categoryRow = safeCreateRow(rowsModule.CreateCategoryRow, content, {
+                title = summary.title or "Goldene Vorhaben",
+                remainingObjectivesToNextReward = summary.remainingObjectivesToNextReward,
+                expanded = categoryExpanded,
+                onToggle = toggleCategory,
+            })
             if categoryRow then
                 table.insert(rows, categoryRow)
             end
 
-            local campaignRow = safeCreateRow(rowsModule.CreateCampaignRow, content, summary)
-            if campaignRow then
-                table.insert(rows, campaignRow)
+            if categoryExpanded then
+                local campaignRow = safeCreateRow(rowsModule.CreateCampaignRow, content, {
+                    campaignName = summary.campaignName,
+                    displayName = summary.campaignName,
+                    title = summary.campaignName,
+                    name = summary.campaignName,
+                    completedObjectives = summary.completedObjectives,
+                    maxRewardTier = summary.maxRewardTier,
+                    countCompleted = summary.completedObjectives,
+                    countTotal = summary.maxRewardTier,
+                    expanded = entryExpanded,
+                    onToggle = toggleEntry,
+                })
+                if campaignRow then
+                    table.insert(rows, campaignRow)
+                end
             end
         end
 
-        for objectiveIndex = 1, #objectives do
-            local objectiveData = objectives[objectiveIndex]
-            if type(objectiveData) == "table" then
-                local objectiveRow = safeCreateRow(rowsModule.CreateObjectiveRow, content, objectiveData)
-                if objectiveRow then
-                    table.insert(rows, objectiveRow)
+        if categoryExpanded and entryExpanded then
+            for objectiveIndex = 1, #objectives do
+                local objectiveData = objectives[objectiveIndex]
+                if type(objectiveData) == "table" then
+                    local objectiveRow = safeCreateRow(rowsModule.CreateObjectiveRow, content, objectiveData)
+                    if objectiveRow then
+                        table.insert(rows, objectiveRow)
+                    end
                 end
             end
         end
