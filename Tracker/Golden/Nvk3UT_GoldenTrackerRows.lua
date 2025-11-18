@@ -34,7 +34,7 @@ local DEFAULTS = {
     OBJECTIVE_HEIGHT = 20,
     CATEGORY_FONT = "$(BOLD_FONT)|20|soft-shadow-thick",
     ENTRY_FONT = "$(BOLD_FONT)|16|soft-shadow-thick",
-    OBJECTIVE_FONT = "$(BOLD_FONT)|16|soft-shadow-thick",
+    OBJECTIVE_FONT = "$(BOLD_FONT)|14|soft-shadow-thick",
     OBJECTIVE_INDENT_X = 60,
 }
 
@@ -50,8 +50,15 @@ local CATEGORY_CHEVRON_TEXTURES = {
 local MOUSE_BUTTON_LEFT = rawget(_G, "MOUSE_BUTTON_INDEX_LEFT") or 1
 
 local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
+local DEFAULT_FONT_FACE = "$(BOLD_FONT)"
 local MIN_FONT_SIZE = 12
 local MAX_FONT_SIZE = 36
+
+local GOLDEN_FONT_DEFAULTS = {
+    Category = { face = DEFAULT_FONT_FACE, size = 20, outline = DEFAULT_FONT_OUTLINE },
+    Title = { face = DEFAULT_FONT_FACE, size = 16, outline = DEFAULT_FONT_OUTLINE },
+    Objective = { face = DEFAULT_FONT_FACE, size = 14, outline = DEFAULT_FONT_OUTLINE },
+}
 
 local controlCounters = {
     category = 0,
@@ -229,29 +236,53 @@ local function selectFontGroup(fonts, key)
     return group
 end
 
-local function applyConfiguredFont(label, key)
-    if not (label and label.SetFont) then
-        return false
+local function resolveGoldenFont(key)
+    local defaults = GOLDEN_FONT_DEFAULTS[key]
+    if type(defaults) ~= "table" then
+        defaults = GOLDEN_FONT_DEFAULTS.Objective
     end
+
+    local face = defaults.face
+    local size = defaults.size
+    local outline = defaults.outline
 
     local fonts = getConfiguredFonts()
-    if type(fonts) ~= "table" then
-        return false
-    end
-
     local group = selectFontGroup(fonts, key)
-    if type(group) ~= "table" then
-        return false
+    if type(group) == "table" then
+        local candidateFace = group.Face or group.face
+        if type(candidateFace) == "string" and candidateFace ~= "" then
+            face = candidateFace
+        end
+
+        local candidateSize = clampFontSize(group.Size or group.size)
+        if candidateSize ~= nil then
+            size = candidateSize
+        end
+
+        local candidateOutline = group.Outline or group.outline
+        if type(candidateOutline) == "string" and candidateOutline ~= "" then
+            outline = candidateOutline
+        end
     end
 
-    local fontString = buildFontString(group.Face or group.face, group.Size or group.size, group.Outline or group.outline)
-    if fontString == nil then
-        return false
-    end
-
-    label:SetFont(fontString)
-    return true
+    return buildFontString(face, size, outline)
 end
+
+local function getGoldenCategoryFont()
+    return resolveGoldenFont("Category") or DEFAULTS.CATEGORY_FONT
+end
+
+local function getGoldenTitleFont()
+    return resolveGoldenFont("Title") or DEFAULTS.ENTRY_FONT
+end
+
+local function getGoldenObjectiveFont()
+    return resolveGoldenFont("Objective") or DEFAULTS.OBJECTIVE_FONT
+end
+
+Nvk3UT.GetGoldenCategoryFont = getGoldenCategoryFont
+Nvk3UT.GetGoldenTitleFont = getGoldenTitleFont
+Nvk3UT.GetGoldenRowFont = getGoldenObjectiveFont
 
 local function sanitizeColorNumber(value)
     local numeric = tonumber(value)
@@ -472,8 +503,7 @@ function Rows.CreateCategoryRow(parent, categoryData)
             label:SetAnchor(TOPLEFT, anchorTarget, TOPRIGHT, CATEGORY_LABEL_OFFSET_X, 0)
             label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
         end
-        local appliedFont = applyConfiguredFont(label, "Category")
-        applyLabelDefaults(label, appliedFont and nil or DEFAULTS.CATEGORY_FONT)
+        applyLabelDefaults(label, getGoldenCategoryFont())
 
         local expanded = categoryData and categoryData.isExpanded ~= false
         applyLabelColor(label, expanded and GOLDEN_COLOR_ROLES.Active or GOLDEN_COLOR_ROLES.CategoryTitleClosed)
@@ -533,8 +563,7 @@ function Rows.CreateCampaignRow(parent, entryData)
             label:SetAnchor(TOPLEFT, control, TOPLEFT, ENTRY_INDENT_X, 0)
             label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
         end
-        local appliedFont = applyConfiguredFont(label, "Title")
-        applyLabelDefaults(label, appliedFont and nil or DEFAULTS.ENTRY_FONT)
+        applyLabelDefaults(label, getGoldenTitleFont())
         applyLabelColor(label, GOLDEN_COLOR_ROLES.EntryName)
 
         local text = ""
@@ -599,8 +628,7 @@ function Rows.CreateObjectiveRow(parent, objectiveData)
         local role = objectiveData and (objectiveData.isComplete == true or objectiveData.isCompleted == true)
             and GOLDEN_COLOR_ROLES.Completed
             or GOLDEN_COLOR_ROLES.Objective
-        local appliedFont = applyConfiguredFont(label, "Objective")
-        applyLabelDefaults(label, appliedFont and nil or DEFAULTS.OBJECTIVE_FONT)
+        applyLabelDefaults(label, getGoldenObjectiveFont())
         applyLabelColor(label, role)
 
         local text = ""
