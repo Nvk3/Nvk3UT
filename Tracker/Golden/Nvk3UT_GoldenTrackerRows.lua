@@ -137,15 +137,14 @@ local function formatObjectiveCounter(current, max)
     local maxNum = tonumber(max)
     if maxNum ~= nil then
         maxNum = math.floor(maxNum + 0.5)
-        if maxNum < 0 then
-            maxNum = 0
+        if maxNum < 1 then
+            maxNum = 1
         end
-    end
 
-    if maxNum and maxNum > 1 then
         if currentNum > maxNum then
             currentNum = maxNum
         end
+
         return string.format("(%d/%d)", currentNum, maxNum)
     end
 
