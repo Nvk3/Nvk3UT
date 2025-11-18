@@ -500,30 +500,31 @@ local function buildCategory(rawCategory)
     local capTotal = tonumber(rawCategory.capstoneCompletionThreshold)
     local total = capTotal
     if not total or total <= 0 then
-        total = tonumber(rawCategory.countTotal) or categoryVm.entryCount or 0
+        total = tonumber(rawCategory.countTotal)
+    end
+    if not total or total <= 0 then
+        total = categoryVm.entryCount or 0
+    end
+    if total ~= nil and total < 0 then
+        total = 0
     end
 
-    local completed = tonumber(rawCategory.completedActivities)
+    local completedFromCap = tonumber(rawCategory.completedActivities)
+    local completed = completedFromCap
     if not completed or completed < 0 then
         completed = tonumber(rawCategory.countCompleted)
-        if completed == nil then
-            local completedEntries = 0
-            for index = 1, #entries do
-                if entries[index].isComplete then
-                    completedEntries = completedEntries + 1
-                end
-            end
-            completed = completedEntries
-        end
+    end
+    if not completed or completed < 0 then
+        completed = 0
     end
 
-    if total < 0 then total = 0 end
-    if completed < 0 then completed = 0 end
     if total > 0 then
         completed = math.min(completed, total)
+    else
+        completed = 0
     end
 
-    if capTotal ~= nil and capTotal > 0 and rawCategory.completedActivities ~= nil and tonumber(rawCategory.completedActivities) ~= nil then
+    if capTotal ~= nil and capTotal > 0 and completedFromCap ~= nil and completedFromCap >= 0 then
         safeDebug(
             "Category uses capstone: name=%s completed=%d total=%d",
             displayName,

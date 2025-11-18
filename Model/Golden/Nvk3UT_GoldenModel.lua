@@ -480,18 +480,6 @@ local function ensureGoldenList(self, svRoot)
     return self._list
 end
 
-local function safeNonNegativeNumber(...)
-    for index = 1, select("#", ...) do
-        local candidate = select(index, ...)
-        local numeric = tonumber(candidate)
-        if numeric ~= nil and numeric >= 0 then
-            return numeric
-        end
-    end
-
-    return nil
-end
-
 local function buildCounters(data)
     local counters = newEmptyCounters()
     if type(data) ~= "table" then
@@ -512,16 +500,34 @@ local function buildCounters(data)
             local entries = category.entries or {}
             local entryCount = #entries
 
-            local capTotal = safeNonNegativeNumber(category.capstoneCompletionThreshold)
-            local totalFromCategory = safeNonNegativeNumber(category.countTotal)
-            local totalFromEntries = safeNonNegativeNumber(entryCount)
-            local total = capTotal or totalFromCategory or totalFromEntries or 0
+            local capTotal = tonumber(category.capstoneCompletionThreshold)
+            local total = capTotal
+            if not total or total <= 0 then
+                total = tonumber(category.countTotal)
+            end
+            if not total or total <= 0 then
+                total = entryCount
+            end
+            if total == nil or total < 0 then
+                total = 0
+            end
 
-            local completedFromCap = safeNonNegativeNumber(category.completedActivities)
-            local completedFromCategory = safeNonNegativeNumber(category.countCompleted)
-            local completed = completedFromCap or completedFromCategory or 0
+            local completedFromCap = tonumber(category.completedActivities)
+            local completed = completedFromCap
+            if not completed or completed < 0 then
+                completed = tonumber(category.countCompleted)
+            end
+            if not completed or completed < 0 then
+                completed = 0
+            end
 
-            if capTotal ~= nil and capTotal > 0 and completedFromCap ~= nil then
+            if total > 0 then
+                completed = math.min(completed, total)
+            else
+                completed = 0
+            end
+
+            if capTotal ~= nil and capTotal > 0 and completedFromCap ~= nil and completedFromCap >= 0 then
                 debugLog(
                     "Counters use capstone: category=%s completed=%d total=%d",
                     ensureString(category.name or category.displayName or category.key or tostring(index)),
@@ -540,8 +546,7 @@ local function buildCounters(data)
 
             if total > 0 then
                 totalActivities = totalActivities + total
-                local clampedCompleted = math.min(completed, total)
-                completedActivities = completedActivities + clampedCompleted
+                completedActivities = completedActivities + completed
             end
         end
     end
@@ -951,7 +956,7 @@ do
             timeRemainingSec = minRemaining,
             remainingSeconds = minRemaining,
             capstoneCompletionThreshold = tonumber(campaign.capstoneCompletionThreshold) or nil,
-            completedActivities = tonumber(campaign.numCompleted or campaign.completedActivities) or nil,
+            completedActivities = tonumber(campaign.numCompleted or campaign.completedActivities or campaign.numCompletedActivities) or nil,
             campaignId = campaign.id,
             campaignKey = campaign.key,
             campaignIndex = campaign.index or index,
