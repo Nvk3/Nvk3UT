@@ -435,9 +435,8 @@ function Rows.CreateCategoryRow(parent, categoryData)
     if label then
         if label.SetAnchor then
             label:ClearAnchors()
-            label:SetAnchor(TOPLEFT, chevron or control, chevron and TOPRIGHT or TOPLEFT, CATEGORY_LABEL_OFFSET_X, 0)
+            label:SetAnchor(TOPLEFT, chevron, TOPRIGHT, CATEGORY_LABEL_OFFSET_X, 0)
             label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
-            label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
         end
         if label.SetHorizontalAlignment then
             label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
