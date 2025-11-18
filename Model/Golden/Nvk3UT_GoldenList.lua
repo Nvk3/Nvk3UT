@@ -381,6 +381,18 @@ local function normalizeEntry(rawEntry, categoryKey, fallbackRemaining, entryInd
     normalized.description = ensureString(rawEntry.description)
     normalized.progress = progress
     normalized.maxProgress = maxProgress
+    if normalized.progressDisplay == nil then
+        normalized.progressDisplay = progress
+    end
+    if normalized.current == nil then
+        normalized.current = progress
+    end
+    if normalized.maxDisplay == nil then
+        normalized.maxDisplay = maxProgress
+    end
+    if normalized.max == nil then
+        normalized.max = maxProgress
+    end
     normalized.isCompleted = ensureBoolean(rawEntry.isCompleted) or (maxProgress > 0 and progress >= maxProgress)
     normalized.type = rawEntry.type or categoryKey
     normalized.timeRemainingSec = remaining
