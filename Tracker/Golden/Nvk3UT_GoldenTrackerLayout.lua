@@ -7,7 +7,13 @@ Layout.__index = Layout
 
 local MODULE_TAG = addonName .. ".GoldenTrackerLayout"
 
+local CATEGORY_HEADER_HEIGHT = 26
+local ROW_HEIGHT = 24
+local HEADER_TO_ROWS_GAP = 3
 local ROW_GAP = 3
+local SECTION_BOTTOM_GAP = 3
+local SECTION_BOTTOM_GAP_COLLAPSED = 3
+local BOTTOM_PIXEL_NUDGE = 3
 
 local function safeDebug(message, ...)
     local debugFn = Nvk3UT and Nvk3UT.Debug
@@ -101,6 +107,13 @@ function Layout.ApplyLayout(parentControl, rows)
         rows = {}
     end
 
+    if parentControl.SetResizeToFitDescendents then
+        parentControl:SetResizeToFitDescendents(false)
+    end
+    if parentControl.SetInsets then
+        parentControl:SetInsets(0, 0, 0, 0)
+    end
+
     safeDebug(
         "ApplyLayout parent=%s parentParent=%s rows=%d",
         parentControl.GetName and parentControl:GetName() or "<nil>",
@@ -110,14 +123,37 @@ function Layout.ApplyLayout(parentControl, rows)
 
     local totalHeight = 0
     local previousRow = nil
+    local previousKind = nil
     local parentWidth = getParentWidth(parentControl)
+    local visibleCount = 0
+    local rowCount = 0
+
+    local function anchor(control, gap)
+        if control == nil then
+            return
+        end
+
+        if control.ClearAnchors then
+            control:ClearAnchors()
+        end
+
+        if previousRow then
+            local resolvedGap = gap or ROW_GAP
+            control:SetAnchor(TOPLEFT, previousRow, BOTTOMLEFT, 0, resolvedGap)
+            control:SetAnchor(TOPRIGHT, previousRow, BOTTOMRIGHT, 0, resolvedGap)
+        else
+            control:SetAnchor(TOPLEFT, parentControl, TOPLEFT, 0, 0)
+            control:SetAnchor(TOPRIGHT, parentControl, TOPRIGHT, 0, 0)
+        end
+
+        previousRow = control
+    end
 
     for index = 1, #rows do
         local row = rows[index]
         if row and (type(row) == "userdata" or type(row) == "table") then
-            if type(row.ClearAnchors) == "function" then
-                row:ClearAnchors()
-            end
+            local rowKind = row.__rowKind or (index == 1 and "header" or "row")
+            local fallbackHeight = rowKind == "header" and CATEGORY_HEADER_HEIGHT or ROW_HEIGHT
 
             if type(row.SetParent) == "function" then
                 row:SetParent(parentControl)
@@ -127,14 +163,16 @@ function Layout.ApplyLayout(parentControl, rows)
                 row:SetHidden(false)
             end
 
-            if type(row.SetAnchor) == "function" then
-                if previousRow and type(previousRow.SetAnchor) == "function" then
-                    row:SetAnchor(TOPLEFT, previousRow, BOTTOMLEFT, 0, ROW_GAP)
+            local gap
+            if visibleCount > 0 then
+                if previousKind == "header" then
+                    gap = HEADER_TO_ROWS_GAP
                 else
-                    row:SetAnchor(TOPLEFT, parentControl, TOPLEFT, 0, 0)
+                    gap = ROW_GAP
                 end
             end
 
+            anchor(row, gap)
             applyDimensions(row, parentWidth)
 
             local height = tonumber(row.__height) or 0
@@ -146,16 +184,33 @@ function Layout.ApplyLayout(parentControl, rows)
             end
 
             if height ~= height or height < 0 then
-                height = 0
+                height = fallbackHeight
+            elseif height == 0 then
+                height = fallbackHeight
             end
 
-            if previousRow ~= nil then
-                totalHeight = totalHeight + ROW_GAP
+            if visibleCount > 0 then
+                totalHeight = totalHeight + (gap or 0)
             end
 
             totalHeight = totalHeight + height
-            previousRow = row
+            visibleCount = visibleCount + 1
+            previousKind = rowKind
+            if rowKind ~= "header" then
+                rowCount = rowCount + 1
+            end
         end
+    end
+
+    local categoryExpanded = rowCount > 0
+    if categoryExpanded and rowCount > 0 then
+        totalHeight = totalHeight + SECTION_BOTTOM_GAP
+    elseif visibleCount > 0 then
+        totalHeight = totalHeight + SECTION_BOTTOM_GAP_COLLAPSED
+    end
+
+    if visibleCount > 0 then
+        totalHeight = totalHeight + BOTTOM_PIXEL_NUDGE
     end
 
     safeDebug("ApplyLayout rows=%d height=%d", #rows, totalHeight)

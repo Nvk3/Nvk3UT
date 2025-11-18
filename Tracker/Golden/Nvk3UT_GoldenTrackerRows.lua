@@ -30,7 +30,7 @@ local DEFAULT_FALLBACK_COLOR_KIND = "endeavorTracker"
 
 local DEFAULTS = {
     CATEGORY_HEIGHT = 26,
-    ENTRY_HEIGHT = 24,
+    ENTRY_HEIGHT = 20,
     OBJECTIVE_HEIGHT = 20,
     CATEGORY_FONT = "$(BOLD_FONT)|20|soft-shadow-thick",
     ENTRY_FONT = "$(BOLD_FONT)|16|soft-shadow-thick",
@@ -354,7 +354,7 @@ local function createControl(parent, kind)
     local controlName = nextControlName(parent, kind)
     local control = wm:CreateControl(controlName, parent, CT_CONTROL)
     if control and control.SetResizeToFitDescendents then
-        control:SetResizeToFitDescendents(true)
+        control:SetResizeToFitDescendents(false)
     end
     if control and control.SetHidden then
         control:SetHidden(false)
@@ -402,6 +402,7 @@ function Rows.CreateCategoryRow(parent, categoryData)
     end
 
     control.__height = DEFAULTS.CATEGORY_HEIGHT
+    control.__rowKind = "header"
     if control.SetHeight then
         control:SetHeight(DEFAULTS.CATEGORY_HEIGHT)
     end
@@ -423,7 +424,7 @@ function Rows.CreateCategoryRow(parent, categoryData)
             chevron:ClearAnchors()
         end
         if chevron.SetAnchor then
-            chevron:SetAnchor(LEFT, control, LEFT, 0, 0)
+            chevron:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
         end
         if chevron.SetMouseEnabled then
             chevron:SetMouseEnabled(false)
@@ -434,8 +435,15 @@ function Rows.CreateCategoryRow(parent, categoryData)
     if label then
         if label.SetAnchor then
             label:ClearAnchors()
-            label:SetAnchor(TOPLEFT, chevron or control, chevron and RIGHT or LEFT, CATEGORY_LABEL_OFFSET_X, 0)
+            label:SetAnchor(TOPLEFT, chevron or control, chevron and TOPRIGHT or TOPLEFT, CATEGORY_LABEL_OFFSET_X, 0)
+            label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
             label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
+        end
+        if label.SetHorizontalAlignment then
+            label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        end
+        if label.SetVerticalAlignment then
+            label:SetVerticalAlignment(TEXT_ALIGN_TOP)
         end
         local appliedFont = applyConfiguredFont(label, "Category")
         applyLabelDefaults(label, appliedFont and nil or DEFAULTS.CATEGORY_FONT)
@@ -488,6 +496,7 @@ function Rows.CreateCampaignRow(parent, entryData)
     end
 
     control.__height = DEFAULTS.ENTRY_HEIGHT
+    control.__rowKind = "row"
     if control.SetHeight then
         control:SetHeight(DEFAULTS.ENTRY_HEIGHT)
     end
@@ -499,29 +508,18 @@ function Rows.CreateCampaignRow(parent, entryData)
         control:SetMouseEnabled(true)
     end
 
-    local wm = getWindowManager()
-    local chevron = wm and wm:CreateControl(resolveParentName(control) .. "EntryChevron", control, CT_TEXTURE)
-    if chevron then
-        if chevron.SetDimensions then
-            chevron:SetDimensions(CATEGORY_CHEVRON_SIZE, CATEGORY_CHEVRON_SIZE)
-        end
-        if chevron.ClearAnchors then
-            chevron:ClearAnchors()
-        end
-        if chevron.SetAnchor then
-            chevron:SetAnchor(LEFT, control, LEFT, 0, 0)
-        end
-        if chevron.SetMouseEnabled then
-            chevron:SetMouseEnabled(false)
-        end
-    end
-
     local label = createLabel(control, "EntryTitle")
     if label then
         if label.SetAnchor then
             label:ClearAnchors()
-            label:SetAnchor(TOPLEFT, chevron or control, chevron and RIGHT or LEFT, CATEGORY_LABEL_OFFSET_X, 0)
+            label:SetAnchor(TOPLEFT, control, TOPLEFT, DEFAULTS.OBJECTIVE_INDENT_X, 0)
             label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
+        end
+        if label.SetHorizontalAlignment then
+            label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        end
+        if label.SetVerticalAlignment then
+            label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
         end
         local appliedFont = applyConfiguredFont(label, "Title")
         applyLabelDefaults(label, appliedFont and nil or DEFAULTS.ENTRY_FONT)
@@ -546,10 +544,6 @@ function Rows.CreateCampaignRow(parent, entryData)
                 text = display
             end
 
-            local expanded = entryData.expanded ~= false
-            if chevron and chevron.SetTexture then
-                chevron:SetTexture(expanded and CHEVRON_TEXTURES.expanded or CHEVRON_TEXTURES.collapsed)
-            end
         end
         if label.SetText then
             label:SetText(text)
@@ -581,6 +575,7 @@ function Rows.CreateObjectiveRow(parent, objectiveData)
     end
 
     control.__height = DEFAULTS.OBJECTIVE_HEIGHT
+    control.__rowKind = "row"
     if control.SetHeight then
         control:SetHeight(DEFAULTS.OBJECTIVE_HEIGHT)
     end
@@ -588,7 +583,15 @@ function Rows.CreateObjectiveRow(parent, objectiveData)
     local label = createLabel(control, "Objective")
     if label then
         if label.SetAnchor then
-            label:SetAnchor(LEFT, control, LEFT, DEFAULTS.OBJECTIVE_INDENT_X, 0)
+            label:ClearAnchors()
+            label:SetAnchor(TOPLEFT, control, TOPLEFT, DEFAULTS.OBJECTIVE_INDENT_X, 0)
+            label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
+        end
+        if label.SetHorizontalAlignment then
+            label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        end
+        if label.SetVerticalAlignment then
+            label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
         end
         local role = objectiveData and (objectiveData.isComplete == true or objectiveData.isCompleted == true)
             and GOLDEN_COLOR_ROLES.Completed
