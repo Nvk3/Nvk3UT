@@ -480,6 +480,18 @@ local function ensureGoldenList(self, svRoot)
     return self._list
 end
 
+local function safeNonNegativeNumber(...)
+    for index = 1, select("#", ...) do
+        local candidate = select(index, ...)
+        local numeric = tonumber(candidate)
+        if numeric ~= nil and numeric >= 0 then
+            return numeric
+        end
+    end
+
+    return nil
+end
+
 local function buildCounters(data)
     local counters = newEmptyCounters()
     if type(data) ~= "table" then
@@ -497,32 +509,28 @@ local function buildCounters(data)
     for index = 1, #categories do
         local category = categories[index]
         if type(category) == "table" then
-            local entries = category.entries
-            local total
-            local completed
+            local entries = category.entries or {}
+            local entryCount = #entries
 
-            local capTotal = tonumber(category.capstoneCompletionThreshold)
-            if capTotal ~= nil and capTotal > 0 then
-                total = capTotal
-            else
-                total = coerceCount(category.countTotal, entries)
+            local capTotal = safeNonNegativeNumber(category.capstoneCompletionThreshold)
+            local totalFromCategory = safeNonNegativeNumber(category.countTotal, entryCount)
+            local total = capTotal or totalFromCategory or 0
+
+            local completedFromCap = safeNonNegativeNumber(category.completedActivities)
+            local completedFromCategory = safeNonNegativeNumber(category.countCompleted)
+            local completed = completedFromCap or completedFromCategory or 0
+
+            if total > 0 then
+                totalActivities = totalActivities + total
+                local clampedCompleted = math.min(completed, total)
+                completedActivities = completedActivities + clampedCompleted
             end
-
-            local completedActivities = tonumber(category.completedActivities)
-            if completedActivities ~= nil and completedActivities >= 0 then
-                completed = completedActivities
-            else
-                completed = coerceCount(category.countCompleted, entries)
-            end
-
-            counters.campaignCount = counters.campaignCount + 1
-            totalActivities = totalActivities + total
-            completedActivities = completedActivities + math.min(completed, total)
         end
     end
 
     counters.totalActivities = totalActivities
     counters.completedActivities = completedActivities
+    counters.campaignCount = #categories
 
     return counters
 end
@@ -904,6 +912,9 @@ do
         end
         minRemaining = ensureNumber(minRemaining, 0)
 
+        local capstoneThreshold = tonumber(campaign.capstoneCompletionThreshold)
+        local completedActivities = tonumber(campaign.numCompleted or campaign.completedActivities)
+
         return {
             key = categoryKey,
             id = categoryKey,
@@ -915,8 +926,8 @@ do
             countTotal = #entries,
             timeRemainingSec = minRemaining,
             remainingSeconds = minRemaining,
-            capstoneCompletionThreshold = ensureNumber(campaign.capstoneCompletionThreshold, #entries),
-            completedActivities = ensureNumber(campaign.numCompleted, completed),
+            capstoneCompletionThreshold = capstoneThreshold or ensureNumber(campaign.capstoneCompletionThreshold, #entries),
+            completedActivities = completedActivities or ensureNumber(campaign.numCompleted, completed),
             campaignId = campaign.id,
             campaignKey = campaign.key,
             campaignIndex = campaign.index or index,

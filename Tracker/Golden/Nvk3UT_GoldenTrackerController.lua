@@ -497,36 +497,34 @@ local function buildCategory(rawCategory)
     categoryVm.entries = entries
     categoryVm.entryCount = #entries
 
-    local countCompleted
-    local completedActivities = tonumber(rawCategory.completedActivities or rawCategory.numCompleted)
-    if completedActivities ~= nil and completedActivities >= 0 then
-        countCompleted = completedActivities
-    else
-        countCompleted = tonumber(rawCategory.countCompleted)
-        if countCompleted == nil then
-            local completed = 0
+    local capTotal = tonumber(rawCategory.capstoneCompletionThreshold)
+    local total = capTotal
+    if not total or total <= 0 then
+        total = tonumber(rawCategory.countTotal) or categoryVm.entryCount or 0
+    end
+
+    local completed = tonumber(rawCategory.completedActivities or rawCategory.numCompleted)
+    if not completed or completed < 0 then
+        completed = tonumber(rawCategory.countCompleted)
+        if completed == nil then
+            local completedEntries = 0
             for index = 1, #entries do
                 if entries[index].isComplete then
-                    completed = completed + 1
+                    completedEntries = completedEntries + 1
                 end
             end
-            countCompleted = completed
+            completed = completedEntries
         end
     end
 
-    local countTotal
-    local capTotal = tonumber(rawCategory.capstoneCompletionThreshold)
-    if capTotal ~= nil and capTotal > 0 then
-        countTotal = capTotal
-    else
-        countTotal = tonumber(rawCategory.countTotal)
-        if countTotal == nil then
-            countTotal = categoryVm.entryCount
-        end
+    if total < 0 then total = 0 end
+    if completed < 0 then completed = 0 end
+    if total > 0 then
+        completed = math.min(completed, total)
     end
 
-    categoryVm.completedCount = clampNonNegative(countCompleted)
-    categoryVm.totalCount = clampNonNegative(countTotal)
+    categoryVm.completedCount = clampNonNegative(completed)
+    categoryVm.totalCount = clampNonNegative(total)
     categoryVm.capLimit = categoryVm.totalCount
     categoryVm.countCompleted = categoryVm.completedCount
     categoryVm.countTotal = categoryVm.totalCount
