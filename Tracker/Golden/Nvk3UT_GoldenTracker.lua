@@ -1065,25 +1065,46 @@ function GoldenTracker.Refresh(...)
         return
     end
 
+    local headerExpanded = true
+    if vm and vm.header ~= nil then
+        headerExpanded = vm.header.isExpanded ~= false
+    end
+
+    local entryExpanded = summary.isExpanded ~= false
+
     if rowsModule then
         if summary.hasActiveCampaign == true then
-            local categoryRow = safeCreateRow(rowsModule.CreateCategoryRow, content, summary)
+            local categoryPayload = summary
+            if type(categoryPayload) == "table" then
+                categoryPayload.isExpanded = headerExpanded
+            end
+
+            local categoryRow = safeCreateRow(rowsModule.CreateCategoryRow, content, categoryPayload)
             if categoryRow then
                 table.insert(rows, categoryRow)
             end
 
-            local campaignRow = safeCreateRow(rowsModule.CreateCampaignRow, content, summary)
-            if campaignRow then
-                table.insert(rows, campaignRow)
+            if headerExpanded then
+                local campaignPayload = summary
+                if type(campaignPayload) == "table" then
+                    campaignPayload.isExpanded = entryExpanded
+                end
+
+                local campaignRow = safeCreateRow(rowsModule.CreateCampaignRow, content, campaignPayload)
+                if campaignRow then
+                    table.insert(rows, campaignRow)
+                end
             end
         end
 
-        for objectiveIndex = 1, #objectives do
-            local objectiveData = objectives[objectiveIndex]
-            if type(objectiveData) == "table" then
-                local objectiveRow = safeCreateRow(rowsModule.CreateObjectiveRow, content, objectiveData)
-                if objectiveRow then
-                    table.insert(rows, objectiveRow)
+        if headerExpanded and entryExpanded then
+            for objectiveIndex = 1, #objectives do
+                local objectiveData = objectives[objectiveIndex]
+                if type(objectiveData) == "table" then
+                    local objectiveRow = safeCreateRow(rowsModule.CreateObjectiveRow, content, objectiveData)
+                    if objectiveRow then
+                        table.insert(rows, objectiveRow)
+                    end
                 end
             end
         end

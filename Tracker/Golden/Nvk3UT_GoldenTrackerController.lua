@@ -19,6 +19,8 @@ local DEFAULT_STATUS = {
 local state = {
     dirty = true,
     viewModel = nil,
+    headerExpanded = true,
+    entryExpanded = true,
 }
 
 local attachments = {
@@ -131,7 +133,7 @@ local function safeDebug(message, ...)
     pcall(debugFn, string.format("%s: %s", MODULE_TAG, tostring(payload)))
 end
 
-local function callStateMethod(goldenState, methodName)
+local function callStateMethod(goldenState, methodName, ...)
     if type(goldenState) ~= "table" or type(methodName) ~= "string" then
         return nil
     end
@@ -141,7 +143,7 @@ local function callStateMethod(goldenState, methodName)
         return nil
     end
 
-    local ok, result = pcall(method, goldenState)
+    local ok, result = pcall(method, goldenState, ...)
     if ok then
         return result
     end
@@ -289,6 +291,8 @@ local function resolveExpansionFlags(goldenState)
         if header ~= nil then
             headerExpanded = header ~= false
         end
+    elseif state.headerExpanded ~= nil then
+        headerExpanded = state.headerExpanded ~= false
     end
 
     return {
@@ -681,6 +685,8 @@ function Controller:BuildViewModel(options)
     local summary = {
         hasActiveCampaign = rawSummary.hasActiveCampaign == true,
         campaignName = ensureString(rawSummary.campaignName),
+        campaignId = ensureString(rawSummary.campaignId),
+        campaignKey = ensureString(rawSummary.campaignKey),
         completedObjectives = clampNonNegative(rawSummary.completedObjectives),
         maxRewardTier = clampNonNegative(rawSummary.maxRewardTier),
         remainingObjectivesToNextReward = clampNonNegative(rawSummary.remainingObjectivesToNextReward),
@@ -688,6 +694,21 @@ function Controller:BuildViewModel(options)
         totalCompleted = clampNonNegative(counters.completedActivities or totalCompleted),
         campaignCount = clampNonNegative(rawSummary.campaignCount or counters.campaignCount or #categories),
     }
+    local campaignKey = summary.campaignId or summary.campaignName or summary.campaignKey or summary.title or "campaign"
+    if type(rawSummary.campaignKey) == "string" and rawSummary.campaignKey ~= "" then
+        campaignKey = rawSummary.campaignKey
+    end
+    local entryExpanded = true
+    if goldenState then
+        local expanded = callStateMethod(goldenState, "IsCategoryExpanded", campaignKey)
+        if expanded ~= nil then
+            entryExpanded = expanded ~= false
+        end
+    elseif state.entryExpanded ~= nil then
+        entryExpanded = state.entryExpanded ~= false
+    end
+
+    summary.isExpanded = entryExpanded
     summary.totalRemaining = math.max(0, summary.totalEntries - summary.totalCompleted)
 
     viewModel.summary = summary
@@ -726,6 +747,62 @@ end
 
 function Controller:GetViewModel()
     return ensureViewModel()
+end
+
+local function toggleHeaderExpanded()
+    local goldenState = getGoldenState()
+    if goldenState and type(goldenState.IsHeaderExpanded) == "function" then
+        local current = callStateMethod(goldenState, "IsHeaderExpanded")
+        local nextState = current == false
+        if type(goldenState.SetHeaderExpanded) == "function" then
+            pcall(goldenState.SetHeaderExpanded, goldenState, nextState)
+        end
+        state.headerExpanded = nextState
+        return nextState
+    end
+
+    state.headerExpanded = not (state.headerExpanded == true)
+    return state.headerExpanded
+end
+
+local function resolveCampaignKey(key)
+    if key == nil or key == "" then
+        local vm = state.viewModel
+        local summary = vm and vm.summary
+        if type(summary) == "table" then
+            return summary.campaignId or summary.campaignKey or summary.campaignName or summary.title or "campaign"
+        end
+        return "campaign"
+    end
+
+    return tostring(key)
+end
+
+local function toggleEntryExpanded(key)
+    local campaignKey = resolveCampaignKey(key)
+    local goldenState = getGoldenState()
+    if goldenState and type(goldenState.IsCategoryExpanded) == "function" then
+        local current = callStateMethod(goldenState, "IsCategoryExpanded", campaignKey)
+        local nextState = current == false
+        if type(goldenState.SetCategoryExpanded) == "function" then
+            pcall(goldenState.SetCategoryExpanded, goldenState, campaignKey, nextState)
+        end
+        state.entryExpanded = nextState
+        return nextState
+    end
+
+    state.entryExpanded = not (state.entryExpanded == false)
+    return state.entryExpanded
+end
+
+function Controller:ToggleCategoryExpanded()
+    toggleHeaderExpanded()
+    self:MarkDirty("ToggleCategoryExpanded")
+end
+
+function Controller:ToggleEntryExpanded(campaignKey)
+    toggleEntryExpanded(campaignKey)
+    self:MarkDirty("ToggleEntryExpanded")
 end
 
 return Controller

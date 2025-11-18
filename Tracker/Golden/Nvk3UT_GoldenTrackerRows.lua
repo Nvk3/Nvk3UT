@@ -38,6 +38,17 @@ local DEFAULTS = {
     OBJECTIVE_INDENT_X = 60,
 }
 
+local CATEGORY_CHEVRON_SIZE = 20
+local CATEGORY_LABEL_OFFSET_X = 4
+local ENTRY_INDENT_X = 32
+
+local CATEGORY_CHEVRON_TEXTURES = {
+    expanded = "EsoUI/Art/Buttons/tree_open_up.dds",
+    collapsed = "EsoUI/Art/Buttons/tree_closed_up.dds",
+}
+
+local MOUSE_BUTTON_LEFT = rawget(_G, "MOUSE_BUTTON_INDEX_LEFT") or 1
+
 local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
 local MIN_FONT_SIZE = 12
 local MAX_FONT_SIZE = 36
@@ -350,6 +361,10 @@ local function createControl(parent, kind)
         control:SetHidden(false)
     end
 
+    if control and control.SetMouseEnabled then
+        control:SetMouseEnabled(true)
+    end
+
     return control
 end
 
@@ -386,6 +401,11 @@ function Rows.CreateCategoryRow(parent, categoryData)
         return nil
     end
 
+    local wm = getWindowManager()
+    if wm == nil then
+        return nil
+    end
+
     local control = createControl(parent, "category")
     if not control then
         return nil
@@ -396,14 +416,39 @@ function Rows.CreateCategoryRow(parent, categoryData)
         control:SetHeight(DEFAULTS.CATEGORY_HEIGHT)
     end
 
+    local chevron = nil
+    local controlName = control.GetName and control:GetName() or resolveParentName(control)
+    if controlName then
+        local chevronName = string.format("%s_CategoryChevron", controlName)
+        chevron = wm:CreateControl(chevronName, control, CT_TEXTURE)
+        if chevron.SetMouseEnabled then
+            chevron:SetMouseEnabled(false)
+        end
+        if chevron.SetHidden then
+            chevron:SetHidden(false)
+        end
+        if chevron.SetDimensions then
+            chevron:SetDimensions(CATEGORY_CHEVRON_SIZE, CATEGORY_CHEVRON_SIZE)
+        end
+        if chevron.ClearAnchors then
+            chevron:ClearAnchors()
+            chevron:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+        end
+    end
+
     local label = createLabel(control, "Category")
     if label then
+        label:ClearAnchors()
         if label.SetAnchor then
-            label:SetAnchor(LEFT, control, LEFT, 4, 0)
+            local anchorTarget = chevron or control
+            label:SetAnchor(TOPLEFT, anchorTarget, TOPRIGHT, CATEGORY_LABEL_OFFSET_X, 0)
+            label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
         end
         local appliedFont = applyConfiguredFont(label, "Category")
         applyLabelDefaults(label, appliedFont and nil or DEFAULTS.CATEGORY_FONT)
-        applyLabelColor(label, GOLDEN_COLOR_ROLES.Active)
+
+        local expanded = categoryData and categoryData.isExpanded ~= false
+        applyLabelColor(label, expanded and GOLDEN_COLOR_ROLES.Active or GOLDEN_COLOR_ROLES.CategoryTitleClosed)
 
         local text = ""
         if type(categoryData) == "table" then
@@ -413,6 +458,26 @@ function Rows.CreateCategoryRow(parent, categoryData)
         if label.SetText then
             label:SetText(text)
         end
+    end
+
+    if chevron and chevron.SetTexture then
+        local expanded = categoryData and categoryData.isExpanded ~= false
+        local textures = categoryData and categoryData.textures or CATEGORY_CHEVRON_TEXTURES
+        local fallback = expanded and CATEGORY_CHEVRON_TEXTURES.expanded or CATEGORY_CHEVRON_TEXTURES.collapsed
+        chevron:SetTexture(
+            (expanded and textures.expanded) or (not expanded and textures.collapsed) or fallback
+        )
+    end
+
+    if control and control.SetHandler then
+        control:SetHandler("OnMouseUp", function(_, button, upInside)
+            if button == MOUSE_BUTTON_LEFT and upInside then
+                local controller = rawget(Nvk3UT, "GoldenTrackerController")
+                if controller and type(controller.ToggleCategoryExpanded) == "function" then
+                    controller:ToggleCategoryExpanded()
+                end
+            end
+        end)
     end
 
     return control
@@ -435,8 +500,10 @@ function Rows.CreateCampaignRow(parent, entryData)
 
     local label = createLabel(control, "EntryTitle")
     if label then
+        label:ClearAnchors()
         if label.SetAnchor then
-            label:SetAnchor(LEFT, control, LEFT, 0, 0)
+            label:SetAnchor(TOPLEFT, control, TOPLEFT, ENTRY_INDENT_X, 0)
+            label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
         end
         local appliedFont = applyConfiguredFont(label, "Title")
         applyLabelDefaults(label, appliedFont and nil or DEFAULTS.ENTRY_FONT)
@@ -455,8 +522,10 @@ function Rows.CreateCampaignRow(parent, entryData)
     if type(entryData) == "table" then
         local counterLabel = createLabel(control, "EntryCounter")
         if counterLabel then
+            counterLabel:ClearAnchors()
             if counterLabel.SetAnchor then
-                counterLabel:SetAnchor(RIGHT, control, RIGHT, 0, 0)
+                counterLabel:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+                counterLabel:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
             end
             local counterFontApplied = applyConfiguredFont(counterLabel, "Title")
             applyLabelDefaults(counterLabel, counterFontApplied and nil or DEFAULTS.ENTRY_FONT)
@@ -482,6 +551,19 @@ function Rows.CreateCampaignRow(parent, entryData)
         end
     end
 
+    if control and control.SetHandler then
+        local campaignKey = entryData and (entryData.campaignId or entryData.campaignKey or entryData.campaignName
+            or entryData.displayName or entryData.name)
+        control:SetHandler("OnMouseUp", function(_, button, upInside)
+            if button == MOUSE_BUTTON_LEFT and upInside then
+                local controller = rawget(Nvk3UT, "GoldenTrackerController")
+                if controller and type(controller.ToggleEntryExpanded) == "function" then
+                    controller:ToggleEntryExpanded(campaignKey)
+                end
+            end
+        end)
+    end
+
     return control
 end
 
@@ -502,8 +584,10 @@ function Rows.CreateObjectiveRow(parent, objectiveData)
 
     local label = createLabel(control, "Objective")
     if label then
+        label:ClearAnchors()
         if label.SetAnchor then
-            label:SetAnchor(LEFT, control, LEFT, DEFAULTS.OBJECTIVE_INDENT_X, 0)
+            label:SetAnchor(TOPLEFT, control, TOPLEFT, DEFAULTS.OBJECTIVE_INDENT_X, 0)
+            label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
         end
         local role = objectiveData and (objectiveData.isComplete == true or objectiveData.isCompleted == true)
             and GOLDEN_COLOR_ROLES.Completed
