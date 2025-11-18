@@ -92,9 +92,21 @@ local function applyDimensions(row, parentWidth)
 end
 
 function Layout.ApplyLayout(parentControl, rows)
-    if not parentControl or type(rows) ~= "table" then
+    if not parentControl then
+        safeDebug("ApplyLayout abort: parent missing")
         return 0
     end
+
+    if type(rows) ~= "table" then
+        rows = {}
+    end
+
+    safeDebug(
+        "ApplyLayout parent=%s parentParent=%s rows=%d",
+        parentControl.GetName and parentControl:GetName() or "<nil>",
+        parentControl.GetParent and parentControl:GetParent() and parentControl:GetParent():GetName() or "<nil>",
+        #rows
+    )
 
     local totalHeight = 0
     local previousRow = nil

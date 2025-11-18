@@ -4053,6 +4053,26 @@ local function initTrackers()
         local safeInvoke = Nvk3UT and Nvk3UT.SafeCall
         local function initGolden()
             local goldenOpts = cloneTable(sv.GoldenTracker or {})
+            if goldenContainer then
+                local parentName = goldenContainer.GetParent and goldenContainer:GetParent() and goldenContainer:GetParent():GetName() or "<nil>"
+                local isHidden = goldenContainer.IsHidden and goldenContainer:IsHidden() or false
+                if Nvk3UT and Nvk3UT.Diagnostics and type(Nvk3UT.Diagnostics.DebugIfEnabled) == "function" then
+                    Nvk3UT.Diagnostics:DebugIfEnabled(
+                        "TrackerHost",
+                        "initGolden: container=%s parent=%s hidden=%s",
+                        goldenContainer.GetName and goldenContainer:GetName() or "<nil>",
+                        parentName,
+                        tostring(isHidden)
+                    )
+                elseif type(debugLog) == "function" then
+                    debugLog(
+                        "TrackerHost: initGolden container=%s parent=%s hidden=%s",
+                        goldenContainer.GetName and goldenContainer:GetName() or "<nil>",
+                        parentName,
+                        tostring(isHidden)
+                    )
+                end
+            end
             goldenTracker.Init(goldenContainer, goldenOpts)
             if Nvk3UT and type(Nvk3UT.Debug) == "function" then
                 Nvk3UT.Debug("TrackerHost: GoldenTracker Init shim complete")

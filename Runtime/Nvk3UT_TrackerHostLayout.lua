@@ -936,6 +936,15 @@ function Layout.ApplyLayout(host, sizes)
                 applyAnchors(container, anchors)
             end
 
+            if sectionId == "golden" then
+                local anchorTargetName = anchorTarget and anchorTarget.GetName and anchorTarget:GetName() or "<nil>"
+                debugLog(
+                    "HostLayout: goldenSection anchored under %s (height=%d)",
+                    anchorTargetName,
+                    height
+                )
+            end
+
             if placedCount > 0 then
                 totalHeight = totalHeight + gap
             end
