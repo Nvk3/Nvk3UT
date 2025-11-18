@@ -225,6 +225,34 @@ local function ClearChildren(control)
     end
 end
 
+local function resetRows(tracker, content)
+    if type(tracker) ~= "table" then
+        return
+    end
+
+    local existingRows = type(tracker.rows) == "table" and tracker.rows or {}
+    for index = 1, #existingRows do
+        local row = existingRows[index]
+        if row ~= nil then
+            if row.SetHidden then
+                row:SetHidden(true)
+            end
+            if row.ClearAnchors then
+                row:ClearAnchors()
+            end
+            if row.SetParent then
+                row:SetParent(nil)
+            end
+        end
+    end
+
+    tracker.rows = {}
+
+    if content ~= nil then
+        ClearChildren(content)
+    end
+end
+
 local function resolveGoldenContainer(candidate)
     local fallback = nil
 
@@ -1029,6 +1057,8 @@ function GoldenTracker.Refresh(...)
     local root = tracker.root or state.root
     local content = tracker.content or state.content
 
+    resetRows(tracker, content)
+
     if not container or not root or not content then
         tracker.height = 0
         state.height = 0
@@ -1086,8 +1116,6 @@ function GoldenTracker.Refresh(...)
         safeDebug("Refresh aborted: view model missing")
         return
     end
-
-    ClearChildren(content)
 
     tracker.rows = {}
     local rows = tracker.rows
@@ -1176,6 +1204,65 @@ function GoldenTracker.Refresh(...)
     tracker.height = totalHeight
     state.height = totalHeight
     setContainerHeight(container, totalHeight)
+
+    if isDebugEnabled() and content and type(content.GetNumChildren) == "function" then
+        local trackedRows = {}
+        for _, row in ipairs(rows) do
+            local name = row and row.GetName and row:GetName()
+            if name then
+                trackedRows[name] = true
+                safeDebug(
+                    "Row '%s' parent=%s hidden=%s",
+                    name,
+                    row.GetParent and row:GetParent() and row:GetParent():GetName() or "<nil>",
+                    tostring(row.IsHidden and row:IsHidden())
+                )
+            end
+        end
+
+        local okCount, childCount = pcall(content.GetNumChildren, content)
+        if okCount and type(childCount) == "number" then
+            for index = 0, childCount - 1 do
+                local okChild, child = pcall(content.GetChild, content, index)
+                if okChild and child then
+                    local childName = child.GetName and child:GetName() or "<unnamed>"
+                    local parentName = child.GetParent and child:GetParent() and child:GetParent():GetName() or "<nil>"
+                    local isHidden = child.IsHidden and child:IsHidden() or false
+                    if not trackedRows[childName] then
+                        safeDebug(
+                            "GoldenTracker: detected orphan row '%s' (parent=%s hidden=%s)",
+                            childName,
+                            parentName,
+                            tostring(isHidden)
+                        )
+                    end
+                end
+            end
+        end
+
+        local parentContainer = container ~= content and container or content
+        if parentContainer and type(parentContainer.GetNumChildren) == "function" then
+            local okContainerCount, containerChildCount = pcall(parentContainer.GetNumChildren, parentContainer)
+            if okContainerCount and type(containerChildCount) == "number" then
+                for index = 0, containerChildCount - 1 do
+                    local okChild, child = pcall(parentContainer.GetChild, parentContainer, index)
+                    if okChild and child then
+                        local childName = child.GetName and child:GetName() or "<unnamed>"
+                        local parentName = child.GetParent and child:GetParent() and child:GetParent():GetName() or "<nil>"
+                        local isHidden = child.IsHidden and child:IsHidden() or false
+                        if string.find(childName or "", "Golden", 1, true) and not trackedRows[childName] then
+                            safeDebug(
+                                "GoldenTracker: orphan in container '%s' (parent=%s hidden=%s)",
+                                childName,
+                                parentName,
+                                tostring(isHidden)
+                            )
+                        end
+                    end
+                end
+            end
+        end
+    end
 
     safeDebug(
         "Refresh complete: rows=%d height=%d hasCampaign=%s remaining=%s",

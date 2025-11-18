@@ -15,7 +15,39 @@ local SECTION_BOTTOM_GAP = 3
 local SECTION_BOTTOM_GAP_COLLAPSED = 3
 local BOTTOM_PIXEL_NUDGE = 3
 
+local function isDebugEnabled()
+    local root = rawget(_G, addonName)
+    if type(root) ~= "table" then
+        return false
+    end
+
+    if type(root.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return root:IsDebugEnabled()
+        end)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    local diagnostics = rawget(root, "Diagnostics")
+    if type(diagnostics) == "table" and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return diagnostics:IsDebugEnabled()
+        end)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    return false
+end
+
 local function safeDebug(message, ...)
+    if not isDebugEnabled() then
+        return
+    end
+
     local debugFn = Nvk3UT and Nvk3UT.Debug
     if type(debugFn) ~= "function" then
         return
@@ -194,6 +226,14 @@ function Layout.ApplyLayout(parentControl, rows)
             end
 
             totalHeight = totalHeight + height
+            safeDebug(
+                "Row %d '%s' parent=%s hidden=%s height=%s",
+                index,
+                row.GetName and row:GetName() or "<unnamed>",
+                row.GetParent and row:GetParent() and row:GetParent():GetName() or "<nil>",
+                tostring(row.IsHidden and row:IsHidden()),
+                tostring(height)
+            )
             visibleCount = visibleCount + 1
             previousKind = rowKind
             if rowKind ~= "header" then
