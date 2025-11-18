@@ -453,7 +453,7 @@ function Rows.CreateCategoryRow(parent, categoryData)
         local text = ""
         if type(categoryData) == "table" then
             local remaining = tonumber(categoryData.remainingObjectivesToNextReward) or 0
-            text = string.format("Goldene Vorhaben (%d)", remaining)
+            text = string.format("GOLDENE VORHABEN (%d)", remaining)
         end
         if label.SetText then
             label:SetText(text)
@@ -473,8 +473,8 @@ function Rows.CreateCategoryRow(parent, categoryData)
         control:SetHandler("OnMouseUp", function(rowControl, button, upInside)
             if button == MOUSE_BUTTON_LEFT and upInside then
                 local controller = rawget(Nvk3UT, "GoldenTrackerController")
-                if controller and type(controller.ToggleCategoryExpanded) == "function" then
-                    controller:ToggleCategoryExpanded()
+                if controller and type(controller.ToggleHeaderExpanded) == "function" then
+                    controller:ToggleHeaderExpanded()
                 end
             end
         end)

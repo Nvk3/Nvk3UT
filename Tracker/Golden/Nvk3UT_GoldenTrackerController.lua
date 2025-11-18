@@ -288,10 +288,9 @@ local function resolveExpansionFlags(goldenState)
     local entryExpanded = true
 
     if goldenState then
-        local header = callStateMethod(goldenState, "IsCategoryHeaderExpanded")
-        if header ~= nil then
-            categoryExpanded = header ~= false
-        end
+        local header = callStateMethod(goldenState, "IsHeaderExpanded")
+            or callStateMethod(goldenState, "IsCategoryHeaderExpanded")
+        categoryExpanded = header ~= false
 
         local entry = callStateMethod(goldenState, "IsEntryExpanded")
         if entry ~= nil then
@@ -766,10 +765,14 @@ end
 
 local function toggleCategoryExpanded()
     local goldenState = getGoldenState()
-    if goldenState and type(goldenState.IsCategoryHeaderExpanded) == "function" then
-        local current = callStateMethod(goldenState, "IsCategoryHeaderExpanded")
+    if goldenState and (type(goldenState.IsHeaderExpanded) == "function"
+        or type(goldenState.IsCategoryHeaderExpanded) == "function") then
+        local current = callStateMethod(goldenState, "IsHeaderExpanded")
+            or callStateMethod(goldenState, "IsCategoryHeaderExpanded")
         local nextState = current == false
-        if type(goldenState.SetCategoryHeaderExpanded) == "function" then
+        if type(goldenState.SetHeaderExpanded) == "function" then
+            pcall(goldenState.SetHeaderExpanded, goldenState, nextState)
+        elseif type(goldenState.SetCategoryHeaderExpanded) == "function" then
             pcall(goldenState.SetCategoryHeaderExpanded, goldenState, nextState)
         end
         state.categoryExpanded = nextState
@@ -796,9 +799,13 @@ local function toggleEntryExpanded()
     return state.entryExpanded
 end
 
-function Controller:ToggleCategoryExpanded()
+function Controller:ToggleHeaderExpanded()
     toggleCategoryExpanded()
-    self:MarkDirty("ToggleCategoryExpanded")
+    self:MarkDirty("ToggleHeaderExpanded")
+end
+
+function Controller:ToggleCategoryExpanded()
+    self:ToggleHeaderExpanded()
 end
 
 function Controller:ToggleEntryExpanded()
