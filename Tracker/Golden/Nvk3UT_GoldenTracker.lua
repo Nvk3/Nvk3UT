@@ -1065,25 +1065,53 @@ function GoldenTracker.Refresh(...)
         return
     end
 
+    local categoryExpanded = true
+    if vm and vm.categoryExpanded ~= nil then
+        categoryExpanded = vm.categoryExpanded ~= false
+    elseif vm and vm.header ~= nil then
+        categoryExpanded = vm.header.isExpanded ~= false
+    end
+
+    local entryExpanded = true
+    if vm and vm.entryExpanded ~= nil then
+        entryExpanded = vm.entryExpanded ~= false
+    else
+        entryExpanded = summary.isExpanded ~= false
+    end
+
     if rowsModule then
         if summary.hasActiveCampaign == true then
-            local categoryRow = safeCreateRow(rowsModule.CreateCategoryRow, content, summary)
+            local categoryPayload = summary
+            if type(categoryPayload) == "table" then
+                categoryPayload.isExpanded = categoryExpanded
+            end
+
+            local categoryRow = safeCreateRow(rowsModule.CreateCategoryRow, content, categoryPayload)
             if categoryRow then
                 table.insert(rows, categoryRow)
             end
 
-            local campaignRow = safeCreateRow(rowsModule.CreateCampaignRow, content, summary)
-            if campaignRow then
-                table.insert(rows, campaignRow)
+            if categoryExpanded then
+                local campaignPayload = summary
+                if type(campaignPayload) == "table" then
+                    campaignPayload.isExpanded = entryExpanded
+                end
+
+                local campaignRow = safeCreateRow(rowsModule.CreateCampaignRow, content, campaignPayload)
+                if campaignRow then
+                    table.insert(rows, campaignRow)
+                end
             end
         end
 
-        for objectiveIndex = 1, #objectives do
-            local objectiveData = objectives[objectiveIndex]
-            if type(objectiveData) == "table" then
-                local objectiveRow = safeCreateRow(rowsModule.CreateObjectiveRow, content, objectiveData)
-                if objectiveRow then
-                    table.insert(rows, objectiveRow)
+        if categoryExpanded and entryExpanded then
+            for objectiveIndex = 1, #objectives do
+                local objectiveData = objectives[objectiveIndex]
+                if type(objectiveData) == "table" then
+                    local objectiveRow = safeCreateRow(rowsModule.CreateObjectiveRow, content, objectiveData)
+                    if objectiveRow then
+                        table.insert(rows, objectiveRow)
+                    end
                 end
             end
         end

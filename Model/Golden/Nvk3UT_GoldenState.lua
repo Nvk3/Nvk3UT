@@ -21,6 +21,8 @@ local VALID_COMPLETED_HANDLING = {
 
 local DEFAULT_BEHAVIOR = {
     headerExpanded = true,
+    categoryExpanded = true,
+    entryExpanded = true,
     dailyExpanded = true,
     weeklyExpanded = true,
     completedHandling = "hide",
@@ -334,6 +336,18 @@ local function resolveBehaviorDefaults(self)
             hasValue = true
         end
 
+        local categoryExpanded = defaults.categoryExpanded or defaults.CategoryExpanded
+        if categoryExpanded ~= nil then
+            candidate.categoryExpanded = categoryExpanded
+            hasValue = true
+        end
+
+        local entryExpanded = defaults.entryExpanded or defaults.EntryExpanded
+        if entryExpanded ~= nil then
+            candidate.entryExpanded = entryExpanded
+            hasValue = true
+        end
+
         local weekly = defaults.weeklyExpanded or defaults.WeeklyExpanded
         if weekly ~= nil then
             candidate.weeklyExpanded = weekly
@@ -394,7 +408,8 @@ local function resolveDefaultBoolean(self, key)
         value = behavior[altKey]
     end
 
-    if key == "headerExpanded" or key == "dailyExpanded" or key == "weeklyExpanded" then
+    if key == "headerExpanded" or key == "dailyExpanded" or key == "weeklyExpanded"
+        or key == "categoryExpanded" or key == "entryExpanded" then
         return normalizeBoolean(value, true)
     end
 
@@ -699,11 +714,45 @@ function GoldenState:ResetSystemStatus()
 end
 
 function GoldenState:IsHeaderExpanded()
-    return getStateBoolean(self, "headerExpanded")
+    local expanded = getStateBoolean(self, "headerExpanded")
+    return expanded ~= false
 end
 
 function GoldenState:SetHeaderExpanded(expanded)
-    return setStateBoolean(self, "headerExpanded", expanded)
+    if expanded == nil then
+        return false
+    end
+
+    local state = getStateTable(self, true)
+    if type(state) ~= "table" then
+        return false
+    end
+
+    local previous = state.headerExpanded
+    local normalized = expanded and true or false
+    local changed = previous ~= normalized
+
+    state.headerExpanded = normalized
+
+    debugLog("set headerExpanded: %s -> %s", tostring(previous), tostring(normalized))
+
+    return changed
+end
+
+function GoldenState:IsCategoryHeaderExpanded()
+    return getStateBoolean(self, "categoryExpanded")
+end
+
+function GoldenState:SetCategoryHeaderExpanded(expanded)
+    return setStateBoolean(self, "categoryExpanded", expanded)
+end
+
+function GoldenState:IsEntryExpanded()
+    return getStateBoolean(self, "entryExpanded")
+end
+
+function GoldenState:SetEntryExpanded(expanded)
+    return setStateBoolean(self, "entryExpanded", expanded)
 end
 
 function GoldenState:IsDailyExpanded()
@@ -814,6 +863,8 @@ function GoldenState:ResetToDefaults()
     end
 
     state.headerExpanded = resolveDefaultBoolean(self, "headerExpanded")
+    state.categoryExpanded = resolveDefaultBoolean(self, "categoryExpanded")
+    state.entryExpanded = resolveDefaultBoolean(self, "entryExpanded")
     state.dailyExpanded = resolveDefaultBoolean(self, "dailyExpanded")
     state.weeklyExpanded = resolveDefaultBoolean(self, "weeklyExpanded")
     state.completedHandling = resolveDefaultHandling(self)
