@@ -498,8 +498,22 @@ local function buildCounters(data)
         local category = categories[index]
         if type(category) == "table" then
             local entries = category.entries
-            local completed = coerceCount(category.countCompleted, entries)
-            local total = coerceCount(category.countTotal, entries)
+            local total
+            local completed
+
+            local capTotal = tonumber(category.capstoneCompletionThreshold)
+            if capTotal ~= nil and capTotal > 0 then
+                total = capTotal
+            else
+                total = coerceCount(category.countTotal, entries)
+            end
+
+            local completedActivities = tonumber(category.completedActivities)
+            if completedActivities ~= nil and completedActivities >= 0 then
+                completed = completedActivities
+            else
+                completed = coerceCount(category.countCompleted, entries)
+            end
 
             counters.campaignCount = counters.campaignCount + 1
             totalActivities = totalActivities + total

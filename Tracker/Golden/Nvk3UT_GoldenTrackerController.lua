@@ -497,20 +497,32 @@ local function buildCategory(rawCategory)
     categoryVm.entries = entries
     categoryVm.entryCount = #entries
 
-    local countCompleted = tonumber(rawCategory.countCompleted)
-    if countCompleted == nil then
-        local completed = 0
-        for index = 1, #entries do
-            if entries[index].isComplete then
-                completed = completed + 1
+    local countCompleted
+    local completedActivities = tonumber(rawCategory.completedActivities or rawCategory.numCompleted)
+    if completedActivities ~= nil and completedActivities >= 0 then
+        countCompleted = completedActivities
+    else
+        countCompleted = tonumber(rawCategory.countCompleted)
+        if countCompleted == nil then
+            local completed = 0
+            for index = 1, #entries do
+                if entries[index].isComplete then
+                    completed = completed + 1
+                end
             end
+            countCompleted = completed
         end
-        countCompleted = completed
     end
 
-    local countTotal = tonumber(rawCategory.countTotal)
-    if countTotal == nil then
-        countTotal = categoryVm.entryCount
+    local countTotal
+    local capTotal = tonumber(rawCategory.capstoneCompletionThreshold)
+    if capTotal ~= nil and capTotal > 0 then
+        countTotal = capTotal
+    else
+        countTotal = tonumber(rawCategory.countTotal)
+        if countTotal == nil then
+            countTotal = categoryVm.entryCount
+        end
     end
 
     categoryVm.completedCount = clampNonNegative(countCompleted)
