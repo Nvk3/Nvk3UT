@@ -498,48 +498,29 @@ local function buildCategory(rawCategory)
     categoryVm.entryCount = #entries
 
     local capTotal = tonumber(rawCategory.capstoneCompletionThreshold)
-    local total = capTotal
-    if not total or total <= 0 then
-        total = tonumber(rawCategory.countTotal)
-    end
-    if not total or total <= 0 then
-        total = categoryVm.entryCount or 0
-    end
-    if total ~= nil and total < 0 then
-        total = 0
-    end
-
     local completedFromCap = tonumber(rawCategory.completedActivities)
-    local completed = completedFromCap
-    if not completed or completed < 0 then
-        completed = tonumber(rawCategory.countCompleted)
-    end
-    if not completed or completed < 0 then
-        completed = 0
+
+    if capTotal == nil or capTotal <= 0 or completedFromCap == nil then
+        safeDebug("Category gated (capstone missing): name=%s", displayName)
+        return nil
     end
 
-    if total > 0 then
-        completed = math.min(completed, total)
-    else
-        completed = 0
+    local total = math.max(capTotal, 0)
+    local completed = math.max(completedFromCap, 0)
+
+    if total <= 0 then
+        safeDebug("Category gated (non-positive capstone): name=%s", displayName)
+        return nil
     end
 
-    if capTotal ~= nil and capTotal > 0 and completedFromCap ~= nil and completedFromCap >= 0 then
-        safeDebug(
-            "Category uses capstone: name=%s completed=%d total=%d",
-            displayName,
-            completed,
-            total
-        )
-    else
-        safeDebug(
-            "Category fallback: name=%s completed=%d total=%d entryCount=%d",
-            displayName,
-            completed,
-            total,
-            categoryVm.entryCount
-        )
-    end
+    completed = math.min(completed, total)
+
+    safeDebug(
+        "Category uses capstone: name=%s completed=%d total=%d",
+        displayName,
+        completed,
+        total
+    )
 
     categoryVm.completedCount = clampNonNegative(completed)
     categoryVm.totalCount = clampNonNegative(total)
@@ -713,6 +694,16 @@ function Controller:BuildViewModel(options)
         #rawObjectives
     )
 
+    if rawData == nil or rawData.hasEntriesForTracker ~= true then
+        viewModel.status.hasEntries = false
+        viewModel.status.hasEntriesForTracker = false
+        viewModel.hasEntriesForTracker = false
+        state.viewModel = viewModel
+        state.dirty = false
+        safeDebug("BuildViewModel gated: capstone not ready")
+        return viewModel
+    end
+
     local categoryExpanded = expansionFlags.category ~= false
     if type(rawData) == "table" and rawData.headerExpanded ~= nil then
         categoryExpanded = rawData.headerExpanded ~= false
@@ -722,16 +713,23 @@ function Controller:BuildViewModel(options)
 
     local rawCategories = type(rawData.categories) == "table" and rawData.categories or {}
     local categories = {}
-    local totalEntries = 0
-    local totalCompleted = 0
 
     for index = 1, #rawCategories do
         local categoryVm = buildCategory(rawCategories[index])
         if categoryVm then
             categories[#categories + 1] = categoryVm
-            totalEntries = totalEntries + clampNonNegative(categoryVm.entryCount)
-            totalCompleted = totalCompleted + clampNonNegative(categoryVm.completedCount)
         end
+    end
+
+    if #categories == 0 then
+        viewModel.categories = categories
+        viewModel.hasEntriesForTracker = false
+        viewModel.status.hasEntries = false
+        viewModel.status.hasEntriesForTracker = false
+        state.viewModel = viewModel
+        state.dirty = false
+        safeDebug("BuildViewModel gated: no capstone categories")
+        return viewModel
     end
 
     viewModel.categories = categories
@@ -744,8 +742,8 @@ function Controller:BuildViewModel(options)
         completedObjectives = clampNonNegative(rawSummary.completedObjectives),
         maxRewardTier = clampNonNegative(rawSummary.maxRewardTier),
         remainingObjectivesToNextReward = clampNonNegative(rawSummary.remainingObjectivesToNextReward),
-        totalEntries = clampNonNegative(counters.totalActivities or totalEntries),
-        totalCompleted = clampNonNegative(counters.completedActivities or totalCompleted),
+        totalEntries = clampNonNegative(counters.totalActivities),
+        totalCompleted = clampNonNegative(counters.completedActivities),
         campaignCount = clampNonNegative(rawSummary.campaignCount or counters.campaignCount or #categories),
     }
     local campaignKey = summary.campaignId or summary.campaignName or summary.campaignKey or summary.title or "campaign"
@@ -761,9 +759,7 @@ function Controller:BuildViewModel(options)
     viewModel.summary = summary
     viewModel.objectives = rawObjectives
 
-    viewModel.hasEntriesForTracker = (rawData and rawData.hasEntriesForTracker) == true
-        or #categories > 0
-        or #rawObjectives > 0
+    viewModel.hasEntriesForTracker = rawData.hasEntriesForTracker == true and #categories > 0
 
     if viewModel.hasEntriesForTracker then
         viewModel.status.isAvailable = true

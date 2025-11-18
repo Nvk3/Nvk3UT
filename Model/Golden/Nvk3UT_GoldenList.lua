@@ -82,31 +82,6 @@ local function safeCall(fn, ...)
     return nil
 end
 
-local function resolveDeepCopyFunction()
-    local root = resolveRoot()
-    if type(root) == "table" then
-        local candidate = root.DeepCopyTable or root.DeepCopy or root.CopyTable
-        if type(candidate) == "function" then
-            return candidate
-        end
-    end
-
-    local utils = resolveUtils()
-    if type(utils) == "table" then
-        local candidate = utils.DeepCopyTable or utils.DeepCopy or utils.CopyTable
-        if type(candidate) == "function" then
-            return candidate
-        end
-    end
-
-    local globalCandidate = rawget(_G, "deepCopyTable")
-    if type(globalCandidate) == "function" then
-        return globalCandidate
-    end
-
-    return nil
-end
-
 local function fallbackDeepCopyTable(source)
     if type(source) ~= "table" then
         return nil
@@ -486,6 +461,11 @@ local function normalizeCategoryPayload(payload, index)
     local name = ensureString(payload.name or payload.displayName or key)
     local displayName = ensureString(payload.displayName or name)
     local description = ensureString(payload.description)
+    local capstoneCompletionThreshold = tonumber(payload.capstoneCompletionThreshold)
+    local completedActivities = payload.completedActivities or payload.numCompleted or payload.numCompletedActivities
+    if completedActivities ~= nil then
+        completedActivities = tonumber(completedActivities)
+    end
 
     return {
         key = key,
@@ -501,6 +481,8 @@ local function normalizeCategoryPayload(payload, index)
         campaignId = payload.campaignId,
         campaignKey = payload.campaignKey,
         campaignIndex = payload.campaignIndex or index,
+        capstoneCompletionThreshold = capstoneCompletionThreshold,
+        completedActivities = completedActivities,
     }
 end
 
@@ -586,14 +568,13 @@ function GoldenList:RefreshFromGame(providerFn)
     )
 end
 
-local function cloneSnapshotWithFallback(source)
-    local fallback = fallbackDeepCopyTable(source)
-    if type(fallback) == "table" then
-        return normalizeRawSnapshot(fallback)
+local function cloneSnapshot(source)
+    local copy = fallbackDeepCopyTable(source)
+    if type(copy) ~= "table" then
+        return newEmptyData()
     end
 
-    debugLog("GetRawData: fallback clone failed; returning empty data")
-    return newEmptyData()
+    return normalizeRawSnapshot(copy)
 end
 
 function GoldenList:GetRawData()
@@ -604,25 +585,7 @@ function GoldenList:GetRawData()
         counters = data.counters,
     })
 
-    local copyFn = resolveDeepCopyFunction()
-    if type(copyFn) ~= "function" then
-        debugLog("GetRawData: deep copy function missing; using fallback data")
-        return cloneSnapshotWithFallback(source)
-    end
-
-    local ok, result = pcall(copyFn, source)
-    if not ok or type(result) ~= "table" then
-        debugLog("GetRawData: deep copy function failed; using fallback data")
-        return cloneSnapshotWithFallback(source)
-    end
-
-    local copy = normalizeRawSnapshot(result)
-    if type(copy) ~= "table" then
-        debugLog("GetRawData: normalized copy invalid; using fallback data")
-        return cloneSnapshotWithFallback(source)
-    end
-
-    return copy
+    return cloneSnapshot(source)
 end
 
 function GoldenList:IsEmpty()
