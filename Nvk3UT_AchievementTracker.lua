@@ -78,6 +78,13 @@ local VERTICAL_PADDING = 3
 
 local CATEGORY_KEY = "achievements"
 
+local function ScheduleToggleFollowup(reason)
+    local rebuild = (Nvk3UT and Nvk3UT.Rebuild) or _G.Nvk3UT_Rebuild
+    if rebuild and type(rebuild.ScheduleToggleFollowup) == "function" then
+        rebuild.ScheduleToggleFollowup(reason)
+    end
+end
+
 local CATEGORY_MIN_HEIGHT = 26
 local ACHIEVEMENT_MIN_HEIGHT = 24
 local OBJECTIVE_MIN_HEIGHT = 20
@@ -1316,6 +1323,7 @@ local function AcquireCategoryControl()
                 source = "AchievementTracker:OnCategoryClick",
             })
             AchievementTracker.Refresh()
+            ScheduleToggleFollowup("achievementCategoryToggle")
         end)
         control:SetHandler("OnMouseEnter", function(ctrl)
             if ctrl.label then
@@ -1388,6 +1396,7 @@ local function AcquireAchievementControl()
                 local expanded = not IsEntryExpanded(achievementId)
                 SetEntryExpanded(achievementId, expanded, "AchievementTracker:ToggleAchievementObjectives")
                 AchievementTracker.Refresh()
+                ScheduleToggleFollowup("achievementEntryToggle")
             elseif button == RIGHT_MOUSE_BUTTON then
                 if not ctrl.data or not ctrl.data.achievementId then
                     return

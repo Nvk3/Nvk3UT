@@ -118,6 +118,13 @@ local CATEGORY_COLOR_ROLE_EXPANDED = "activeTitle"
 local CATEGORY_COLOR_ROLE_COLLAPSED = "categoryTitle"
 local ENTRY_COLOR_ROLE_DEFAULT = "entryTitle"
 
+local function scheduleToggleFollowup(reason)
+    local rebuild = (Nvk3UT and Nvk3UT.Rebuild) or _G.Nvk3UT_Rebuild
+    if rebuild and type(rebuild.ScheduleToggleFollowup) == "function" then
+        rebuild.ScheduleToggleFollowup(reason)
+    end
+end
+
 local ENDEAVOR_TRACKER_COLOR_KIND = "endeavorTracker"
 
 local function coerceHeight(value)
@@ -400,6 +407,7 @@ local function toggleRootExpanded()
     local okSet = CallIfFunction(stateModule.SetExpanded, stateModule, not expanded)
     if okSet then
         queueTrackerDirty()
+        scheduleToggleFollowup("endeavorRootToggle")
     end
 end
 
@@ -422,6 +430,7 @@ local function toggleCategoryExpanded(key)
     local okSet = CallIfFunction(stateModule.SetCategoryExpanded, stateModule, key, not expanded)
     if okSet then
         queueTrackerDirty()
+        scheduleToggleFollowup("endeavorCategoryToggle")
     end
 end
 
