@@ -6,6 +6,7 @@ local Rows = {}
 Rows.__index = Rows
 
 local MODULE_TAG = addonName .. ".GoldenTrackerRows"
+local GOLDEN_COLOR_DEBUG_TAG = "GoldenColor"
 
 local GOLDEN_COLOR_ROLES = {
     CategoryTitleClosed = "categoryTitleClosed",
@@ -73,6 +74,54 @@ local controlCounters = {
     entry = 0,
     objective = 0,
 }
+
+local function getAddon()
+    return rawget(_G, addonName)
+end
+
+local function isGoldenColorDebugEnabled()
+    local root = getAddon()
+
+    local utils = (root and root.Utils) or rawget(_G, "Nvk3UT_Utils")
+    if type(utils) == "table" and type(utils.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(utils.IsDebugEnabled)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    local diagnostics = (root and root.Diagnostics) or rawget(_G, "Nvk3UT_Diagnostics")
+    if type(diagnostics) == "table" and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return diagnostics:IsDebugEnabled()
+        end)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    if type(root) == "table" and type(root.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return root:IsDebugEnabled()
+        end)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    local sv = root and (root.sv or root.SV)
+    if type(sv) == "table" then
+        local flag = sv.debug
+        if flag == nil then
+            flag = sv.debugEnabled
+        end
+        if flag ~= nil then
+            return flag == true
+        end
+    end
+
+    return false
+end
 
 local function safeDebug(message, ...)
     local debugFn = Nvk3UT and Nvk3UT.Debug
@@ -164,10 +213,6 @@ local function formatObjectiveCounter(current, max)
     end
 
     return string.format("(%d)", currentNum)
-end
-
-local function getAddon()
-    return rawget(_G, addonName)
 end
 
 local function clampFontSize(value)
@@ -305,7 +350,45 @@ local function sanitizeColorNumber(value)
     return numeric
 end
 
-local function buildColorTable(r, g, b, a)
+local function formatColorForLog(color)
+    if type(color) ~= "table" then
+        return "n/a"
+    end
+
+    local r = sanitizeColorNumber(color.r or color[1]) or 0
+    local g = sanitizeColorNumber(color.g or color[2]) or 0
+    local b = sanitizeColorNumber(color.b or color[3]) or 0
+    local a = sanitizeColorNumber(color.a or color[4]) or 0
+
+    return string.format("%.3f,%.3f,%.3f,%.3f", r, g, b, a)
+end
+
+local function logGoldenColorDecision(context, state, source, colorComponents, reason)
+    local root = getAddon()
+    local diagnostics = (root and root.Diagnostics) or rawget(_G, "Nvk3UT_Diagnostics")
+    local colorText = formatColorForLog(colorComponents)
+    local message = string.format(
+        "[%s] ctx=%s state=%s source=%s color=%s reason=%s",
+        GOLDEN_COLOR_DEBUG_TAG,
+        tostring(context or "?"),
+        tostring(state or "?"),
+        tostring(source or "?"),
+        colorText,
+        tostring(reason or "")
+    )
+
+    if diagnostics and type(diagnostics.DebugIfEnabled) == "function" then
+        diagnostics:DebugIfEnabled(GOLDEN_COLOR_DEBUG_TAG, message)
+        return
+    end
+
+    local debugFn = root and root.Debug
+    if type(debugFn) == "function" then
+        debugFn(message)
+    end
+end
+
+local function buildColorTable(r, g, b, a, source, sourceReason)
     local color = {
         r = sanitizeColorNumber(r) or 1,
         g = sanitizeColorNumber(g) or 1,
@@ -313,6 +396,8 @@ local function buildColorTable(r, g, b, a)
         a = sanitizeColorNumber(a or 1) or 1,
     }
     color[1], color[2], color[3], color[4] = color.r, color.g, color.b, color.a
+    color.__source = source
+    color.__sourceReason = sourceReason
     return color
 end
 
@@ -330,6 +415,8 @@ end
 
 local function fetchTrackerColor(host, role)
     local r, g, b, a
+    local source
+    local sourceReason
     if type(host) == "table" then
         if type(host.EnsureAppearanceDefaults) == "function" then
             pcall(host.EnsureAppearanceDefaults, host)
@@ -341,6 +428,8 @@ local function fetchTrackerColor(host, role)
                 g = colorG or 1
                 b = colorB or 1
                 a = colorA or 1
+                source = string.format("savedvars.%s.%s", DEFAULT_COLOR_KIND, tostring(role))
+                sourceReason = "Tracker host returned configured color"
             end
         end
     end
@@ -352,12 +441,16 @@ local function fetchTrackerColor(host, role)
             g = fallback.g or fallback[2] or 1
             b = fallback.b or fallback[3] or 1
             a = fallback.a or fallback[4] or 1
+            source = string.format("defaults.golden.%s", tostring(role))
+            sourceReason = "Tracker host missing color; using Golden defaults"
         else
             r, g, b, a = 1, 1, 1, 1
+            source = string.format("defaults.golden.%s", tostring(role))
+            sourceReason = "No defaults available; using white fallback"
         end
     end
 
-    return buildColorTable(r, g, b, a)
+    return buildColorTable(r, g, b, a, source, sourceReason)
 end
 
 local function getGoldenTrackerColors()
@@ -480,12 +573,12 @@ local function resolveGoldenColor(role, overrideColors, colorKind, palette)
         if type(overrideEntry) == "function" then
             local r, g, b, a = coerceFunctionColor(overrideEntry, overrideColors, role, colorKind)
             if r ~= nil then
-                return r, g, b, a
+                return r, g, b, a, string.format("override.function.%s", tostring(role)), "Override function provided color"
             end
         elseif type(overrideEntry) == "table" then
             local r, g, b, a = extractColorComponents(overrideEntry)
             if r ~= nil then
-                return r, g, b, a
+                return r, g, b, a, string.format("override.table.%s", tostring(role)), "Override table provided color"
             end
         end
     end
@@ -497,7 +590,9 @@ local function resolveGoldenColor(role, overrideColors, colorKind, palette)
         local g = entry.g or entry[2] or 1
         local b = entry.b or entry[3] or 1
         local a = entry.a or entry[4] or 1
-        return r, g, b, a
+        local source = entry.__source or string.format("palette.%s", tostring(role))
+        local sourceReason = entry.__sourceReason or "Palette entry"
+        return r, g, b, a, source, sourceReason
     end
 
     local fallback = DEFAULT_GOLDEN_COLOR_VALUES[role] or DEFAULT_GOLDEN_COLOR_VALUES[GOLDEN_COLOR_ROLES.EntryName]
@@ -505,7 +600,7 @@ local function resolveGoldenColor(role, overrideColors, colorKind, palette)
     local g = fallback.g or fallback[2] or 1
     local b = fallback.b or fallback[3] or 1
     local a = fallback.a or fallback[4] or 1
-    return r, g, b, a
+    return r, g, b, a, string.format("fallback.default.%s", tostring(role)), "Palette missing entry; using Golden defaults"
 end
 
 local function createControl(parent, kind)
@@ -553,14 +648,16 @@ end
 
 local function applyLabelColor(label, role, palette, overrideColors, colorKind)
     if not (label and label.SetColor) then
-        return
+        return nil
     end
 
-    local r, g, b, a = resolveGoldenColor(role, overrideColors, colorKind, palette)
+    local r, g, b, a, source, sourceReason = resolveGoldenColor(role, overrideColors, colorKind, palette)
     label:SetColor(r or 1, g or 1, b or 1, a or 1)
     if label.SetAlpha then
         label:SetAlpha(1)
     end
+
+    return r, g, b, a, source, sourceReason
 end
 
 function Rows.CreateCategoryRow(parent, categoryData)
@@ -632,7 +729,32 @@ function Rows.CreateCategoryRow(parent, categoryData)
         else
             role = GOLDEN_COLOR_ROLES.CategoryTitleOpen
         end
-        applyLabelColor(label, role, palette)
+        local colorR, colorG, colorB, colorA, colorSource, colorSourceReason = applyLabelColor(label, role, palette)
+        if colorR ~= nil and isGoldenColorDebugEnabled() then
+            local stateTokens = {
+                expanded and "active" or "inactive",
+                categoryComplete and "capstoneComplete" or "capstoneOpen",
+            }
+            local reason
+            if expanded then
+                reason = "Category active; using focused color"
+            elseif categoryComplete then
+                reason = "Capstone reached; using completed category color"
+            else
+                reason = "Capstone open; using open category color"
+            end
+            if colorSourceReason and colorSourceReason ~= "" then
+                reason = string.format("%s (%s)", reason, colorSourceReason)
+            end
+
+            logGoldenColorDecision(
+                "golden.categoryHeader",
+                table.concat(stateTokens, "+"),
+                colorSource or string.format("role.%s", tostring(role)),
+                { colorR, colorG, colorB, colorA },
+                reason
+            )
+        end
 
         local text = ""
         if type(categoryData) == "table" then
@@ -708,7 +830,32 @@ function Rows.CreateCampaignRow(parent, entryData)
         else
             entryRole = GOLDEN_COLOR_ROLES.EntryName
         end
-        applyLabelColor(label, entryRole, palette)
+        local colorR, colorG, colorB, colorA, colorSource, colorSourceReason = applyLabelColor(label, entryRole, palette)
+        if colorR ~= nil and isGoldenColorDebugEnabled() then
+            local stateTokens = {
+                entryExpanded and "active" or "inactive",
+                entryComplete and "capstoneComplete" or "capstoneOpen",
+            }
+            local reason
+            if entryExpanded then
+                reason = "Campaign active; using focused color"
+            elseif entryComplete then
+                reason = "Campaign complete; using completed entry color"
+            else
+                reason = "Campaign open; using entry name color"
+            end
+            if colorSourceReason and colorSourceReason ~= "" then
+                reason = string.format("%s (%s)", reason, colorSourceReason)
+            end
+
+            logGoldenColorDecision(
+                "golden.campaignEntry",
+                table.concat(stateTokens, "+"),
+                colorSource or string.format("role.%s", tostring(entryRole)),
+                { colorR, colorG, colorB, colorA },
+                reason
+            )
+        end
 
         local text = ""
         if type(entryData) == "table" then
@@ -772,7 +919,30 @@ function Rows.CreateObjectiveRow(parent, objectiveData)
         end
         local role = isObjectiveCompleted(objectiveData) and GOLDEN_COLOR_ROLES.Completed or GOLDEN_COLOR_ROLES.Objective
         applyLabelDefaults(label, getGoldenObjectiveFont())
-        applyLabelColor(label, role, palette)
+        local colorR, colorG, colorB, colorA, colorSource, colorSourceReason = applyLabelColor(label, role, palette)
+        if colorR ~= nil and isGoldenColorDebugEnabled() then
+            local isCompleted = role == GOLDEN_COLOR_ROLES.Completed
+            local stateTokens = {
+                isCompleted and "completed" or "open",
+            }
+            local reason
+            if isCompleted then
+                reason = "Objective complete; using completed color"
+            else
+                reason = "Objective in progress; using target color"
+            end
+            if colorSourceReason and colorSourceReason ~= "" then
+                reason = string.format("%s (%s)", reason, colorSourceReason)
+            end
+
+            logGoldenColorDecision(
+                "golden.objectiveText",
+                table.concat(stateTokens, "+"),
+                colorSource or string.format("role.%s", tostring(role)),
+                { colorR, colorG, colorB, colorA },
+                reason
+            )
+        end
 
         local text = ""
         if type(objectiveData) == "table" then
