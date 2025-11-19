@@ -23,6 +23,13 @@ local state = {
     entryExpanded = true,
 }
 
+local function scheduleToggleFollowup(reason)
+    local rebuild = (Nvk3UT and Nvk3UT.Rebuild) or _G.Nvk3UT_Rebuild
+    if rebuild and type(rebuild.ScheduleToggleFollowup) == "function" then
+        rebuild.ScheduleToggleFollowup(reason)
+    end
+end
+
 local attachments = {
     model = nil,
     tracker = nil,
@@ -831,6 +838,7 @@ function Controller:ToggleHeaderExpanded()
 
     if changed then
         self:MarkDirty("ToggleHeaderExpanded")
+        scheduleToggleFollowup("goldenCategoryToggle")
     end
 end
 
@@ -841,6 +849,7 @@ end
 function Controller:ToggleEntryExpanded()
     toggleEntryExpanded()
     self:MarkDirty("ToggleEntryExpanded")
+    scheduleToggleFollowup("goldenEntryToggle")
 end
 
 return Controller

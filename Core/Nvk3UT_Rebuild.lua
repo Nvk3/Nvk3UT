@@ -10,8 +10,11 @@ Rebuild._root = type(Rebuild._root) == "table" and Rebuild._root or nil
 
 local ATTACH_RETRY_MS = 100
 local ATTACH_MAX_ATTEMPTS = 10
+local TOGGLE_FOLLOWUP_DELAY_MS = 1
 
 local attachToRoot
+local pendingToggleFollowup = false
+local pendingToggleReason
 
 local function formatMessage(prefix, fmt, ...)
     if fmt == nil then
@@ -181,6 +184,14 @@ local function debugLog(fmt, ...)
     if d then
         d(message)
     end
+end
+
+local function formatToggleReason(reason)
+    if type(reason) ~= "string" or reason == "" then
+        return "toggleDelayed"
+    end
+
+    return string.format("toggleDelayed:%s", reason)
 end
 
 local TRACKER_SECTION_ORDER = { "quest", "endeavor", "achievement", "golden" }
@@ -676,6 +687,40 @@ function Rebuild.ForceLayout(context)
 
     local flags = { layout = true }
     return queueSectionsInternal(flags, context)
+end
+
+function Rebuild.ScheduleToggleFollowup(reason)
+    if pendingToggleFollowup then
+        debugLog("[Rebuild.ToggleFollowup] skip, already pending (reason=%s)", tostring(reason))
+        return false
+    end
+
+    if type(zo_callLater) ~= "function" then
+        debugLog("[Rebuild.ToggleFollowup] unable to schedule (zo_callLater missing, reason=%s)", tostring(reason))
+        return false
+    end
+
+    pendingToggleFollowup = true
+    pendingToggleReason = reason
+
+    local delayMs = TOGGLE_FOLLOWUP_DELAY_MS
+    debugLog("[Rebuild.ToggleFollowup] scheduled (reason=%s, delay=%dms)", tostring(reason), delayMs)
+
+    local scheduledReason = reason
+    zo_callLater(function()
+        pendingToggleFollowup = false
+        pendingToggleReason = nil
+
+        local rebuildReason = formatToggleReason(scheduledReason)
+        debugLog("[Rebuild.ToggleFollowup] executing delayed rebuild (reason=%s)", rebuildReason)
+
+        local rebuildAll = Rebuild and Rebuild.All
+        if type(rebuildAll) == "function" then
+            rebuildAll(rebuildReason)
+        end
+    end, delayMs)
+
+    return true
 end
 
 attachToRoot = function(root)

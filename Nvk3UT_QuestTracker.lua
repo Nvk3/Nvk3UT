@@ -65,6 +65,13 @@ local REFRESH_DEBOUNCE_MS = 80
 
 local COLOR_ROW_HOVER = { 1, 1, 0.6, 1 }
 
+local function ScheduleToggleFollowup(reason)
+    local rebuild = (Nvk3UT and Nvk3UT.Rebuild) or _G.Nvk3UT_Rebuild
+    if rebuild and type(rebuild.ScheduleToggleFollowup) == "function" then
+        rebuild.ScheduleToggleFollowup(reason)
+    end
+end
+
 local RequestRefresh -- forward declaration for functions that trigger refreshes
 local SetCategoryExpanded -- forward declaration for expansion helpers used before assignment
 local SetQuestExpanded
@@ -2975,6 +2982,7 @@ local function ToggleQuestExpansion(journalIndex, context)
     local changed = SetQuestExpanded(journalIndex, not expanded, toggleContext)
     if changed then
         QuestTracker.Refresh()
+        ScheduleToggleFollowup("questEntryToggle")
     end
 
     return changed
@@ -3025,6 +3033,7 @@ local function AcquireCategoryControl()
             })
             if changed then
                 QuestTracker.Refresh()
+                ScheduleToggleFollowup("questCategoryToggle")
             end
         end)
         control:SetHandler("OnMouseEnter", function(ctrl)
