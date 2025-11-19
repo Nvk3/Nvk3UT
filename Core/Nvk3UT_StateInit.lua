@@ -200,6 +200,16 @@ local DEFAULT_TRACKER_APPEARANCE = {
             completed = CopyColor(COLOR_COMPLETED),
         },
     },
+    goldenTracker = {
+        colors = {
+            categoryTitleClosed = CopyColor(COLOR_CATEGORY),
+            categoryTitleOpen = CopyColor(COLOR_ENTRY),
+            entryTitle = CopyColor(COLOR_ENTRY),
+            objectiveText = CopyColor(COLOR_CATEGORY),
+            activeTitle = CopyColor(COLOR_ACTIVE),
+            completed = CopyColor(COLOR_COMPLETED),
+        },
+    },
 }
 
 local DEFAULT_ENDEAVOR_SETTINGS = {
