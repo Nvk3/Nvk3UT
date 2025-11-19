@@ -126,6 +126,16 @@ local DEFAULT_TRACKER_COLORS = {
 }
 
 local DEFAULT_COLOR_FALLBACK = { r = 1, g = 1, b = 1, a = 1 }
+local GOLDEN_TRACKER_TYPE = "goldenTracker"
+local GOLDEN_COLOR_INIT_TAG = "GoldenColorInit"
+local GOLDEN_COLOR_INIT_ROLES = {
+    "categoryTitleClosed",
+    "categoryTitleOpen",
+    "entryTitle",
+    "objectiveText",
+    "activeTitle",
+    "completed",
+}
 
 local DEFAULT_HOST_SETTINGS = {
     HideInCombat = false,
@@ -417,6 +427,64 @@ local function ensureColorComponents(color, defaults)
     return target
 end
 
+local function sanitizeGoldenSnapshotComponent(value)
+    local numeric = tonumber(value)
+    if numeric == nil then
+        return nil
+    end
+    if numeric < 0 then
+        numeric = 0
+    elseif numeric > 1 then
+        numeric = 1
+    end
+    return numeric
+end
+
+local function formatGoldenSnapshotColor(color)
+    if type(color) ~= "table" then
+        return "nil"
+    end
+
+    local r = sanitizeGoldenSnapshotComponent(color.r or color[1])
+    local g = sanitizeGoldenSnapshotComponent(color.g or color[2])
+    local b = sanitizeGoldenSnapshotComponent(color.b or color[3])
+    local a = sanitizeGoldenSnapshotComponent(color.a or color[4] or 1)
+
+    if r == nil and g == nil and b == nil and a == nil then
+        return "nil"
+    end
+
+    return string.format("%.3f,%.3f,%.3f,%.3f", r or 0, g or 0, b or 0, a or 1)
+end
+
+local function logGoldenColorSnapshot(phase, trackerColors)
+    local diagnostics = Nvk3UT and Nvk3UT.Diagnostics
+    if not (diagnostics and type(diagnostics.DebugIfEnabled) == "function") then
+        return
+    end
+
+    local entries = {}
+    for index = 1, #GOLDEN_COLOR_INIT_ROLES do
+        local role = GOLDEN_COLOR_INIT_ROLES[index]
+        entries[#entries + 1] = string.format(
+            "%s=%s",
+            role,
+            formatGoldenSnapshotColor(trackerColors and trackerColors[role])
+        )
+    end
+
+    diagnostics:DebugIfEnabled(
+        GOLDEN_COLOR_INIT_TAG,
+        string.format(
+            "[%s] phase=%s tracker=%s %s",
+            GOLDEN_COLOR_INIT_TAG,
+            tostring(phase or "raw"),
+            GOLDEN_TRACKER_TYPE,
+            table.concat(entries, " ")
+        )
+    )
+end
+
 local function ensureTrackerColorConfig(sv, trackerType)
     if not (sv and trackerType) then
         return nil
@@ -430,12 +498,20 @@ local function ensureTrackerColorConfig(sv, trackerType)
     end
 
     tracker.colors = tracker.colors or {}
+    local logGoldenColors = trackerType == GOLDEN_TRACKER_TYPE
+    if logGoldenColors then
+        logGoldenColorSnapshot("rawSV", tracker.colors)
+    end
 
     local defaults = DEFAULT_TRACKER_COLORS[trackerType]
     if defaults and defaults.colors then
         for role, defaultColor in pairs(defaults.colors) do
             tracker.colors[role] = ensureColorComponents(tracker.colors[role], defaultColor)
         end
+    end
+
+    if logGoldenColors then
+        logGoldenColorSnapshot("normalized", tracker.colors)
     end
 
     return tracker

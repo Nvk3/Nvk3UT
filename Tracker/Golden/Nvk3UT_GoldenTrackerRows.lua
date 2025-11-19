@@ -363,16 +363,21 @@ local function formatColorForLog(color)
     return string.format("%.3f,%.3f,%.3f,%.3f", r, g, b, a)
 end
 
-local function logGoldenColorDecision(context, state, source, colorComponents, reason)
+local function logGoldenColorDecision(context, state, source, colorComponents, reason, metadata)
     local root = getAddon()
     local diagnostics = (root and root.Diagnostics) or rawget(_G, "Nvk3UT_Diagnostics")
     local colorText = formatColorForLog(colorComponents)
+    local paletteEntry = metadata and metadata.palette
+    local paletteText = formatColorForLog(paletteEntry)
+    local roleKey = metadata and metadata.role or "?"
     local message = string.format(
-        "[%s] ctx=%s state=%s source=%s color=%s reason=%s",
+        "[%s] ctx=%s state=%s key=%s source=%s raw=%s color=%s reason=%s",
         GOLDEN_COLOR_DEBUG_TAG,
         tostring(context or "?"),
         tostring(state or "?"),
+        tostring(roleKey or "?"),
         tostring(source or "?"),
+        paletteText,
         colorText,
         tostring(reason or "")
     )
@@ -422,7 +427,7 @@ local function fetchTrackerColor(host, role)
             pcall(host.EnsureAppearanceDefaults, host)
         end
         if type(host.GetTrackerColor) == "function" then
-            local ok, colorR, colorG, colorB, colorA = pcall(host.GetTrackerColor, host, DEFAULT_COLOR_KIND, role)
+            local ok, colorR, colorG, colorB, colorA = pcall(host.GetTrackerColor, DEFAULT_COLOR_KIND, role)
             if ok and type(colorR) == "number" then
                 r = colorR
                 g = colorG or 1
@@ -752,7 +757,8 @@ function Rows.CreateCategoryRow(parent, categoryData)
                 table.concat(stateTokens, "+"),
                 colorSource or string.format("role.%s", tostring(role)),
                 { colorR, colorG, colorB, colorA },
-                reason
+                reason,
+                { role = role, palette = palette and palette[role] }
             )
         end
 
@@ -853,7 +859,8 @@ function Rows.CreateCampaignRow(parent, entryData)
                 table.concat(stateTokens, "+"),
                 colorSource or string.format("role.%s", tostring(entryRole)),
                 { colorR, colorG, colorB, colorA },
-                reason
+                reason,
+                { role = entryRole, palette = palette and palette[entryRole] }
             )
         end
 
@@ -940,7 +947,8 @@ function Rows.CreateObjectiveRow(parent, objectiveData)
                 table.concat(stateTokens, "+"),
                 colorSource or string.format("role.%s", tostring(role)),
                 { colorR, colorG, colorB, colorA },
-                reason
+                reason,
+                { role = role, palette = palette and palette[role] }
             )
         end
 
