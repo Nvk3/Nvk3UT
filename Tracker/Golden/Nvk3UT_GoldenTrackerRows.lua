@@ -47,6 +47,8 @@ local DEFAULTS = {
     OBJECTIVE_INDENT_X = 60,
 }
 
+local GOLDEN_HEADER_TITLE = "GOLDENE VORHABEN"
+
 local CATEGORY_CHEVRON_SIZE = 20
 local CATEGORY_LABEL_OFFSET_X = 4
 local ENTRY_INDENT_X = 32
@@ -249,13 +251,22 @@ local function buildFontString(face, size, outline)
     return string.format("%s|%d|%s", face, resolvedSize, resolvedOutline)
 end
 
-local function getConfiguredFonts()
+local function getSavedVars()
     local addon = getAddon()
     if type(addon) ~= "table" then
         return nil
     end
 
     local sv = addon.SV or addon.sv
+    if type(sv) ~= "table" then
+        return nil
+    end
+
+    return sv
+end
+
+local function getConfiguredFonts()
+    local sv = getSavedVars()
     if type(sv) ~= "table" then
         return nil
     end
@@ -271,6 +282,40 @@ local function getConfiguredFonts()
     end
 
     return tracker.Fonts
+end
+
+local function shouldShowGoldenHeaderCounter()
+    local sv = getSavedVars()
+    if type(sv) ~= "table" then
+        return true
+    end
+
+    local config = sv.Golden
+    if type(config) == "table" then
+        local flag = config.ShowCountsInHeaders
+        if flag == nil then
+            flag = config.showCountsInHeaders
+        end
+        if flag ~= nil then
+            return flag ~= false
+        end
+    end
+
+    local trackerDefaults = sv.TrackerDefaults
+    if type(trackerDefaults) == "table" then
+        local goldenDefaults = trackerDefaults.GoldenDefaults
+        if type(goldenDefaults) == "table" then
+            local flag = goldenDefaults.ShowCountsInHeaders
+            if flag == nil then
+                flag = goldenDefaults.showCountsInHeaders
+            end
+            if flag ~= nil then
+                return flag ~= false
+            end
+        end
+    end
+
+    return true
 end
 
 local function selectFontGroup(fonts, key)
@@ -762,10 +807,28 @@ function Rows.CreateCategoryRow(parent, categoryData)
             )
         end
 
-        local text = ""
+        local text = GOLDEN_HEADER_TITLE
+        local showCounter = shouldShowGoldenHeaderCounter()
+        local remaining = nil
         if type(categoryData) == "table" then
-            local remaining = tonumber(categoryData.remainingObjectivesToNextReward) or 0
-            text = string.format("GOLDENE VORHABEN (%d)", remaining)
+            remaining = tonumber(categoryData.remainingObjectivesToNextReward) or 0
+        end
+
+        if showCounter and remaining ~= nil then
+            text = string.format("%s (%d)", GOLDEN_HEADER_TITLE, remaining)
+        end
+
+        if not showCounter then
+            text = GOLDEN_HEADER_TITLE
+        end
+
+        if isGoldenColorDebugEnabled() then
+            safeDebug(
+                "[GoldenHeader] title='%s' count=%s showCounter=%s",
+                text,
+                tostring(remaining),
+                tostring(showCounter)
+            )
         end
         if label.SetText then
             label:SetText(text)
