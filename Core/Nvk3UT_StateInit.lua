@@ -274,6 +274,7 @@ local function CreateTrackerDefaults(fontDefaultsCopier)
         Enabled = true,
         ShowCountsInHeaders = true,
         CompletedHandling = "hide",
+        CompletedHandlingObjectives = "hide",
         Colors = {
             CategoryTitle = CopyColor(COLOR_CATEGORY),
             EntryName = CopyColor(COLOR_ENTRY),

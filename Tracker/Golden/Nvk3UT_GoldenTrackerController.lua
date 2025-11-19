@@ -76,6 +76,29 @@ local function getGoldenModel()
     return nil
 end
 
+local function getSavedVars()
+    local root = getAddonRoot()
+    if type(root) ~= "table" then
+        return nil
+    end
+
+    return rawget(root, "sv")
+end
+
+local function getGoldenConfig()
+    local saved = getSavedVars()
+    if type(saved) ~= "table" then
+        return nil
+    end
+
+    local config = saved.Golden
+    if type(config) ~= "table" then
+        return nil
+    end
+
+    return config
+end
+
 local function isDebugEnabled()
     local root = getAddonRoot()
 
@@ -197,6 +220,63 @@ local function coerceNumber(value, fallback)
     end
 
     return numeric
+end
+
+local function selectFirstNumber(...)
+    local argumentCount = select("#", ...)
+    for index = 1, argumentCount do
+        local candidate = select(index, ...)
+        local numeric = tonumber(candidate)
+        if numeric ~= nil and numeric == numeric then
+            return numeric
+        end
+    end
+
+    return nil
+end
+
+local function isObjectiveCompleted(objectiveData)
+    if type(objectiveData) ~= "table" then
+        return false
+    end
+
+    if objectiveData.isCompleted == true or objectiveData.isComplete == true or objectiveData.completed == true then
+        return true
+    end
+
+    local progress = selectFirstNumber(objectiveData.progress, objectiveData.current, objectiveData.progressDisplay)
+    local maxValue = selectFirstNumber(objectiveData.max, objectiveData.maxDisplay)
+    if progress ~= nil and maxValue ~= nil and maxValue > 0 and progress >= maxValue then
+        return true
+    end
+
+    return false
+end
+
+local function normalizeObjectiveHandling(value)
+    if value == "recolor" then
+        return "recolor"
+    end
+    if value == "hide" then
+        return "hide"
+    end
+    return nil
+end
+
+local function resolveObjectiveHandling(config)
+    local handling
+    if type(config) == "table" then
+        handling = normalizeObjectiveHandling(config.CompletedHandlingObjectives)
+        if handling == nil then
+            handling = normalizeObjectiveHandling(config.CompletedHandlingGeneral)
+        end
+    end
+
+    if handling == nil then
+        handling = "hide"
+    end
+
+    return handling
 end
 
 local function clampNonNegative(value, fallback)
@@ -764,7 +844,21 @@ function Controller:BuildViewModel(options)
     summary.totalRemaining = math.max(0, summary.totalEntries - summary.totalCompleted)
 
     viewModel.summary = summary
-    viewModel.objectives = rawObjectives
+
+    local goldenConfig = getGoldenConfig()
+    local objectiveHandling = resolveObjectiveHandling(goldenConfig)
+    local trackerObjectives = rawObjectives
+    if objectiveHandling ~= "recolor" and #rawObjectives > 0 then
+        trackerObjectives = {}
+        for index = 1, #rawObjectives do
+            local objectiveData = rawObjectives[index]
+            if not isObjectiveCompleted(objectiveData) then
+                trackerObjectives[#trackerObjectives + 1] = objectiveData
+            end
+        end
+    end
+
+    viewModel.objectives = trackerObjectives
 
     viewModel.hasEntriesForTracker = rawData.hasEntriesForTracker == true and #categories > 0
 
@@ -780,6 +874,8 @@ function Controller:BuildViewModel(options)
     state.viewModel = viewModel
     state.dirty = false
 
+    local trackerObjectiveCount = #trackerObjectives
+
     safeDebug(
         "BuildViewModel populated: avail=%s locked=%s hasEntries=%s hasEntriesForTracker=%s campaigns=%d activities=%d/%d objectives=%d",
         tostring(viewModel.status.isAvailable),
@@ -789,7 +885,14 @@ function Controller:BuildViewModel(options)
         summary.campaignCount,
         summary.totalCompleted,
         summary.totalEntries,
-        #rawObjectives
+        trackerObjectiveCount
+    )
+
+    safeDebug(
+        "[GoldenController] completedHandling=%s objectivesInModel=%d objectivesInTracker=%d",
+        tostring(objectiveHandling),
+        #rawObjectives,
+        trackerObjectiveCount
     )
 
     return viewModel
