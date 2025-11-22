@@ -90,6 +90,11 @@ registerString(
 registerString("SI_NVK3UT_LAM_GOLDEN_SECTION_FUNCTIONS", "GOLDENE VORHABEN TRACKER – FUNKTIONEN")
 registerString("SI_NVK3UT_LAM_GOLDEN_ENABLE", "Aktivieren")
 registerString("SI_NVK3UT_LAM_GOLDEN_ENABLE_TOOLTIP", "Schaltet den Golden-Tracker ein oder aus.")
+registerString("SI_NVK3UT_LAM_GOLDEN_HIDE_BASEGAME_TRACKING", "Basegame-Tracking ausblenden")
+registerString(
+    "SI_NVK3UT_LAM_GOLDEN_HIDE_BASEGAME_TRACKING_TOOLTIP",
+    "Blendet den Golden-Vorhaben-Tracker des Grundspiels im HUD aus. Andere getrackte Inhalte bleiben sichtbar."
+)
 registerString("SI_NVK3UT_LAM_GOLDEN_SHOW_COUNTS", "Zähler in Abschnittsüberschriften anzeigen")
 registerString(
     "SI_NVK3UT_LAM_GOLDEN_SHOW_COUNTS_TOOLTIP",
@@ -2525,6 +2530,41 @@ local function registerPanel(displayTitle)
                     local defaults = getGoldenDefaults()
                     if defaults.Enabled ~= nil then
                         return defaults.Enabled ~= false
+                    end
+                    return true
+                end)(),
+            }
+
+            controls[#controls + 1] = {
+                type = "checkbox",
+                name = GetString(SI_NVK3UT_LAM_GOLDEN_HIDE_BASEGAME_TRACKING),
+                tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_HIDE_BASEGAME_TRACKING_TOOLTIP),
+                getFunc = function()
+                    local config = getGoldenConfig()
+                    if config and config.hideBaseGameTracking ~= nil then
+                        return config.hideBaseGameTracking ~= false
+                    end
+
+                    local defaults = getGoldenDefaults()
+                    if defaults and defaults.hideBaseGameTracking ~= nil then
+                        return defaults.hideBaseGameTracking ~= false
+                    end
+
+                    return true
+                end,
+                setFunc = function(value)
+                    local config = getGoldenConfig()
+                    config.hideBaseGameTracking = value ~= false
+
+                    local controller = Nvk3UT and Nvk3UT.GoldenTrackerController
+                    if type(controller) == "table" and type(controller.ApplyBaseGameTrackerVisibility) == "function" then
+                        controller.ApplyBaseGameTrackerVisibility(value ~= false)
+                    end
+                end,
+                default = (function()
+                    local defaults = getGoldenDefaults()
+                    if defaults and defaults.hideBaseGameTracking ~= nil then
+                        return defaults.hideBaseGameTracking ~= false
                     end
                     return true
                 end)(),

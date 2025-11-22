@@ -99,6 +99,88 @@ local function getGoldenConfig()
     return config
 end
 
+local function getGoldenDefaults()
+    local saved = getSavedVars()
+    if type(saved) == "table" then
+        local trackerDefaults = saved.TrackerDefaults
+        if type(trackerDefaults) == "table" then
+            local goldenDefaults = trackerDefaults.GoldenDefaults
+            if type(goldenDefaults) == "table" then
+                return goldenDefaults
+            end
+        end
+    end
+
+    local stateInit = rawget(_G, "Nvk3UT_StateInit")
+    local defaultSV = stateInit and stateInit.defaultSV
+    if type(defaultSV) == "table" then
+        local trackerDefaults = defaultSV.TrackerDefaults
+        if type(trackerDefaults) == "table" then
+            local goldenDefaults = trackerDefaults.GoldenDefaults
+            if type(goldenDefaults) == "table" then
+                return goldenDefaults
+            end
+        end
+    end
+
+    return nil
+end
+
+local function shouldHideBaseGameTracking()
+    local config = getGoldenConfig()
+    if type(config) == "table" and config.hideBaseGameTracking ~= nil then
+        return config.hideBaseGameTracking ~= false
+    end
+
+    local defaults = getGoldenDefaults()
+    if type(defaults) == "table" and defaults.hideBaseGameTracking ~= nil then
+        return defaults.hideBaseGameTracking ~= false
+    end
+
+    return true
+end
+
+local BASE_GAME_TRACKER_REASON = "Nvk3UT_GoldenBaseSuppressed"
+
+local function getBaseGameGoldenTracker()
+    return rawget(_G, "PROMOTIONAL_EVENT_TRACKER") or rawget(_G, "ZO_PromotionalEventTracker")
+end
+
+local function applyBaseGameTrackerHidden(isHidden)
+    local tracker = getBaseGameGoldenTracker()
+    if type(tracker) ~= "table" then
+        safeDebug("Base game Golden tracker missing; hidden=%s", tostring(isHidden))
+        return false
+    end
+
+    local hidden = isHidden == true
+    local setHiddenForReason = tracker.SetHiddenForReason
+    if type(setHiddenForReason) == "function" then
+        local ok = pcall(setHiddenForReason, tracker, BASE_GAME_TRACKER_REASON, hidden)
+        if ok then
+            safeDebug("Applied base tracker visibility via reason: hidden=%s", tostring(hidden))
+            return true
+        end
+    end
+
+    local control = tracker.control
+    if control == nil and type(tracker.GetControl) == "function" then
+        local ok, resolved = pcall(tracker.GetControl, tracker)
+        if ok then
+            control = resolved
+        end
+    end
+
+    if control and type(control.SetHidden) == "function" then
+        pcall(control.SetHidden, control, hidden)
+        safeDebug("Applied base tracker visibility via control: hidden=%s", tostring(hidden))
+        return true
+    end
+
+    safeDebug("Base game Golden tracker control unavailable; hidden=%s", tostring(hidden))
+    return false
+end
+
 local function isDebugEnabled()
     local root = getAddonRoot()
 
@@ -748,6 +830,18 @@ function Controller:MarkDirty(reason)
     if type(runtime) == "table" and type(runtime.QueueDirty) == "function" then
         runtime:QueueDirty("golden")
     end
+end
+
+function Controller.ApplyBaseGameTrackerVisibility(isHidden)
+    return applyBaseGameTrackerHidden(isHidden)
+end
+
+function Controller.ApplyBaseGameTrackerVisibilityFromSettings()
+    return applyBaseGameTrackerHidden(shouldHideBaseGameTracking())
+end
+
+function Controller.ShouldHideBaseGameTracking()
+    return shouldHideBaseGameTracking()
 end
 
 function Controller:IsDirty()
