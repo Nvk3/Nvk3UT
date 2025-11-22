@@ -283,7 +283,7 @@ local function ShowEndeavorContextMenu(control, rowData)
         return
     end
 
-    if not (ClearMenu and AddCustomMenuItem and ShowMenu) then
+    if not (ClearMenu and AddMenuItem and ShowMenu) then
         return
     end
 
@@ -293,13 +293,13 @@ local function ShowEndeavorContextMenu(control, rowData)
     local isWeekly = activityKind == "weekly"
     local label = isWeekly and "Wöchentliche Bestrebungen öffnen" or "Tägliche Bestrebungen öffnen"
 
-    AddCustomMenuItem(label, function()
+    AddMenuItem(label, function()
         if isDebugEnabled() then
             local _, activityIndex = resolveActivityIdentity(rowData)
             safeDebug(
-                "EndeavorTracker: Right-click menu → open base menu id=%s kind=%s",
-                tostring(activityIndex),
-                tostring(activityKind or (isWeekly and "weekly" or "daily"))
+                "Open basegame UI for %s id=%s",
+                tostring(activityKind or (isWeekly and "weekly" or "daily")),
+                tostring(activityIndex)
             )
         end
         OpenBasegameEndeavorFromRow(rowData)
@@ -966,11 +966,17 @@ local function createEntryRow(parent)
             local rowData = control.data
             if rowData then
                 if isDebugEnabled() then
-                    local _, activityIndex, activityKind = resolveActivityIdentity(rowData)
+                    local activityType, activityIndex, activityKind = resolveActivityIdentity(rowData)
+                    local kind = activityKind
+                    if kind == nil and TIMED_ACTIVITY_TYPE_WEEKLY and activityType == TIMED_ACTIVITY_TYPE_WEEKLY then
+                        kind = "weekly"
+                    elseif kind == nil and TIMED_ACTIVITY_TYPE_DAILY and activityType == TIMED_ACTIVITY_TYPE_DAILY then
+                        kind = "daily"
+                    end
                     safeDebug(
-                        "EndeavorTracker: Right-click on row: id=%s kind=%s",
-                        tostring(activityIndex),
-                        tostring(activityKind)
+                        "Right-Click Entry: type=%s id=%s",
+                        tostring(kind or ""),
+                        tostring(activityIndex)
                     )
                 end
                 ShowEndeavorContextMenu(control, rowData)

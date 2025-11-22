@@ -296,19 +296,18 @@ local function ShowGoldenContextMenu(control, rowData)
         return
     end
 
-    if not (ClearMenu and AddCustomMenuItem and ShowMenu) then
+    if not (ClearMenu and AddMenuItem and ShowMenu) then
         return
     end
 
     ClearMenu()
 
-    AddCustomMenuItem("Goldene Vorhaben öffnen", function()
+    AddMenuItem("Goldene Vorhaben öffnen", function()
         if isGoldenColorDebugEnabled() then
             local _, activityIndex, activityId = resolvePromotionalIdentity(rowData)
             safeDebug(
-                "GoldenTracker: Right-click menu → open base menu activity=%s id=%s",
-                tostring(activityIndex),
-                tostring(activityId)
+                "Open basegame UI for golden id=%s",
+                tostring(activityId or activityIndex)
             )
         end
         OpenBasegameGoldenFromRow(rowData)
@@ -1424,10 +1423,8 @@ local function createEntryRow(parent)
                     if isGoldenColorDebugEnabled() then
                         local campaignKey, activityIndex, activityId = resolvePromotionalIdentity(row.data)
                         safeDebug(
-                            "GoldenTracker: Right-click on row: campaign=%s activity=%s id=%s",
-                            tostring(campaignKey),
-                            tostring(activityIndex),
-                            tostring(activityId)
+                            "Right-Click Entry: type=golden id=%s",
+                            tostring(activityId or activityIndex)
                         )
                     end
                     ShowGoldenContextMenu(control, row.data)
