@@ -513,6 +513,7 @@ function Controller:BuildViewModel()
     local generalHandling = resolveCompletedHandling(config)
     local objectiveHandling = resolveObjectiveHandling(config)
     local hideObjectivesForRecolorMode = generalHandling == "recolor" and objectiveHandling == "hide"
+    local hideCompletedObjectivesForRecolorMode = generalHandling == "recolor"
     local DAILY_LIMIT = 3
     local WEEKLY_LIMIT = 1
 
@@ -658,6 +659,17 @@ function Controller:BuildViewModel()
         end
 
         for _, item in ipairs(list) do
+            if hideCompletedObjectivesForRecolorMode and item.completed then
+                if isDebugEnabled() then
+                    DBG(
+                        "objective suppressed for completed entry in recolor mode (%s): %s",
+                        tostring(kind),
+                        tostring(item.name)
+                    )
+                end
+                goto continue
+            end
+
             local objective, aggregated = mapObjective(item)
             if objective then
                 if aggregated then
@@ -675,6 +687,8 @@ function Controller:BuildViewModel()
                     )
                 end
             end
+
+            ::continue::
         end
     end
 
