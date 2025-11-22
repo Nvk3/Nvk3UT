@@ -306,6 +306,15 @@ local function acquireSubrowControl(row, container, index)
         if existing.SetParent then
             existing:SetParent(container)
         end
+        if existing.SetMouseEnabled then
+            existing:SetMouseEnabled(true)
+        end
+        if existing.SetHidden then
+            existing:SetHidden(true)
+        end
+        if existing.SetHandler then
+            existing:SetHandler("OnMouseUp", ignoreObjectiveMouseUp)
+        end
         return existing
     end
 
@@ -318,8 +327,11 @@ local function acquireSubrowControl(row, container, index)
     end
 
     control:SetResizeToFitDescendents(false)
-    control:SetMouseEnabled(false)
+    control:SetMouseEnabled(true)
     control:SetHidden(true)
+    if control.SetHandler then
+        control:SetHandler("OnMouseUp", ignoreObjectiveMouseUp)
+    end
     control._subrowOwner = row
 
     row._subrowControls[index] = control
@@ -348,6 +360,10 @@ local function hideUnusedSubrows(row, startIndex)
             end
         end
     end
+end
+
+local function ignoreObjectiveMouseUp()
+    -- Intentionally ignore clicks on Endeavor objective subrows; only entry rows should react.
 end
 
 local function ensureSubrowLeftLabel(control)
