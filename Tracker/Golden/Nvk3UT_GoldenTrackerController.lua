@@ -1049,35 +1049,37 @@ function Controller:BuildViewModel(options)
 
     local goldenConfig = getGoldenConfig()
     local generalHandling = resolveGeneralHandling(goldenConfig)
+    local objectiveHandling = resolveObjectiveHandling(goldenConfig)
     local capstoneReached = isCapstoneComplete(summary)
     local hideCategoryWhenCompleted = capstoneReached and generalHandling == "hide"
-    local hideObjectivesWhenCompleted = capstoneReached and (generalHandling == "recolor" or generalHandling == "showOpen")
     local showOpenMode = capstoneReached and generalHandling == "showOpen"
 
     summary.capstoneReached = capstoneReached
     summary.generalCompletedMode = generalHandling
     summary.hideCategoryWhenCompleted = hideCategoryWhenCompleted
-    summary.hideObjectivesWhenCompleted = hideObjectivesWhenCompleted
-
-    local objectiveHandling = resolveObjectiveHandling(goldenConfig)
-    local trackerObjectives = rawObjectives
-    if capstoneReached and generalHandling == "recolor" then
-        trackerObjectives = {}
-    elseif capstoneReached and generalHandling == "showOpen" then
-        trackerObjectives = {}
-        for index = 1, #rawObjectives do
-            local objectiveData = rawObjectives[index]
-            if not isObjectiveCompleted(objectiveData) then
-                trackerObjectives[#trackerObjectives + 1] = objectiveData
+    summary.hideObjectivesWhenCompleted = false
+    summary.objectiveHandling = objectiveHandling
+    local trackerObjectives = {}
+    for index = 1, #rawObjectives do
+        local objectiveData = rawObjectives[index]
+        local objectiveCompleted = isObjectiveCompleted(objectiveData)
+        local includeObjective = objectiveHandling == "recolor" or not objectiveCompleted
+        if includeObjective then
+            trackerObjectives[#trackerObjectives + 1] = objectiveData
+            if isDebugEnabled() then
+                safeDebug(
+                    "[GoldenController] objective kept (%s): general=%s objectiveHandling=%s name=%s",
+                    objectiveCompleted and "completed" or "open",
+                    tostring(generalHandling),
+                    tostring(objectiveHandling),
+                    tostring(objectiveData and (objectiveData.displayName or objectiveData.name))
+                )
             end
-        end
-    elseif objectiveHandling ~= "recolor" and #rawObjectives > 0 then
-        trackerObjectives = {}
-        for index = 1, #rawObjectives do
-            local objectiveData = rawObjectives[index]
-            if not isObjectiveCompleted(objectiveData) then
-                trackerObjectives[#trackerObjectives + 1] = objectiveData
-            end
+        elseif isDebugEnabled() then
+            safeDebug(
+                "[GoldenController] objective filtered by objective handling: name=%s",
+                tostring(objectiveData and (objectiveData.displayName or objectiveData.name))
+            )
         end
     end
 
@@ -1114,9 +1116,9 @@ function Controller:BuildViewModel(options)
     viewModel.objectives = orderedObjectives
 
     viewModel.generalCompletedMode = generalHandling
+    viewModel.objectiveHandling = objectiveHandling
     viewModel.capstoneReached = capstoneReached
     viewModel.hideCategoryWhenCompleted = hideCategoryWhenCompleted
-    viewModel.hideObjectivesWhenCompleted = hideObjectivesWhenCompleted
     viewModel.showOpenMode = showOpenMode
     viewModel.totalObjectives = totalObjectives
     viewModel.totalCompletedOverall = totalCompletedOverall
@@ -1156,12 +1158,11 @@ function Controller:BuildViewModel(options)
     )
 
     safeDebug(
-        "[GoldenController] completedHandling=%s generalCompletedMode=%s capstoneReached=%s hideCategory=%s hideObjectives=%s objectivesInModel=%d objectivesInTracker=%d",
+        "[GoldenController] objectiveHandling=%s generalCompletedMode=%s capstoneReached=%s hideCategory=%s objectivesInModel=%d objectivesInTracker=%d",
         tostring(objectiveHandling),
         tostring(generalHandling),
         tostring(capstoneReached),
         tostring(hideCategoryWhenCompleted),
-        tostring(hideObjectivesWhenCompleted),
         #rawObjectives,
         trackerObjectiveCount
     )

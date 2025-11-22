@@ -1064,9 +1064,13 @@ function GoldenTracker.Refresh(...)
     local hasEntriesForTracker = type(vm) == "table" and vm.hasEntriesForTracker == true
     local capstoneReached = vm and (vm.capstoneReached == true or summary.capstoneReached == true)
     local generalMode = vm and (vm.generalCompletedMode or summary.generalCompletedMode)
+    local objectiveHandling = vm and (vm.objectiveHandling or summary.objectiveHandling)
     local hideCategoryWhenCompleted = vm and (vm.hideCategoryWhenCompleted == true or summary.hideCategoryWhenCompleted == true)
-    local hideObjectivesWhenCompleted = vm and (vm.hideObjectivesWhenCompleted == true or summary.hideObjectivesWhenCompleted == true)
     local showOpenMode = vm and (vm.showOpenMode == true or (capstoneReached and generalMode == "showOpen"))
+
+    if objectiveHandling == nil then
+        objectiveHandling = "hide"
+    end
 
     if hideCategoryWhenCompleted then
         hasEntriesForTracker = false
@@ -1089,11 +1093,11 @@ function GoldenTracker.Refresh(...)
 
     if capstoneReached ~= nil or generalMode ~= nil then
         safeDebug(
-            "[GoldenTracker] generalMode=%s capstoneReached=%s hideCategory=%s hideObjectives=%s",
+            "[GoldenTracker] generalMode=%s capstoneReached=%s hideCategory=%s objectiveHandling=%s",
             tostring(generalMode),
             tostring(capstoneReached),
             tostring(hideCategoryWhenCompleted),
-            tostring(hideObjectivesWhenCompleted)
+            tostring(objectiveHandling)
         )
     end
 
@@ -1176,9 +1180,7 @@ function GoldenTracker.Refresh(...)
 
         if categoryExpanded and entryExpanded then
             local objectivesForRows = objectives
-            if capstoneReached and generalMode == "recolor" then
-                objectivesForRows = {}
-            elseif showOpenMode then
+            if objectiveHandling ~= "recolor" then
                 objectivesForRows = {}
                 for index = 1, #objectives do
                     local objectiveData = objectives[index]
@@ -1186,8 +1188,15 @@ function GoldenTracker.Refresh(...)
                         objectivesForRows[#objectivesForRows + 1] = objectiveData
                     end
                 end
-            elseif hideObjectivesWhenCompleted then
-                objectivesForRows = {}
+            end
+
+            if isDebugEnabled() then
+                safeDebug(
+                    "[GoldenTracker] rendering objectives: incoming=%d filtered=%d handling=%s",
+                    #objectives,
+                    #objectivesForRows,
+                    tostring(objectiveHandling)
+                )
             end
             for objectiveIndex = 1, #objectivesForRows do
                 local objectiveData = objectivesForRows[objectiveIndex]

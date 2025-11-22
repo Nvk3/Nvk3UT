@@ -76,6 +76,19 @@ local function resolveCompletedHandling(config)
     return "hide"
 end
 
+local function resolveObjectiveHandling(config)
+    if type(config) == "table" then
+        if config.CompletedHandlingObjectives == "recolor" then
+            return "recolor"
+        end
+        if config.CompletedHandlingObjectives == "hide" then
+            return "hide"
+        end
+    end
+
+    return resolveCompletedHandling(config)
+end
+
 local DEFAULT_COLOR_CATEGORY = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 }
 local DEFAULT_COLOR_ENTRY = { r = 1, g = 1, b = 0, a = 1 }
 local DEFAULT_COLOR_ACTIVE = { r = 1, g = 1, b = 1, a = 1 }
@@ -497,7 +510,8 @@ function Controller:BuildViewModel()
     local config = getConfig()
     local enabled = resolveEnabled(config)
     local showCounts = resolveShowCounts(config)
-    local completedHandling = resolveCompletedHandling(config)
+    local generalHandling = resolveCompletedHandling(config)
+    local objectiveHandling = resolveObjectiveHandling(config)
     local DAILY_LIMIT = 3
     local WEEKLY_LIMIT = 1
 
@@ -537,7 +551,7 @@ function Controller:BuildViewModel()
     local fonts = buildFontStrings(config)
     local trackerConfig = type(config) == "table" and config.Tracker or nil
     local fontConfig = trackerConfig and trackerConfig.Fonts or nil
-    local rowsOptions = buildRowsOptions(colors, fonts, completedHandling, fontConfig)
+    local rowsOptions = buildRowsOptions(colors, fonts, objectiveHandling, fontConfig)
 
     if not enabled then
         local stateModule = getStateModule()
@@ -570,7 +584,7 @@ function Controller:BuildViewModel()
             settings = {
                 enabled = false,
                 showCounts = showCounts,
-                completedHandling = completedHandling,
+                completedHandling = objectiveHandling,
                 colors = colors,
                 fonts = fonts,
                 rowsOptions = rowsOptions,
@@ -620,7 +634,7 @@ function Controller:BuildViewModel()
         return objective, aggregated
     end
 
-    local includeCompleted = completedHandling == "recolor"
+    local includeCompleted = objectiveHandling == "recolor"
 
     local function buildObjectives(bucket, target, kind)
         if type(bucket) ~= "table" or type(target) ~= "table" then
@@ -642,6 +656,12 @@ function Controller:BuildViewModel()
 
                 if includeCompleted or objective.completed ~= true then
                     target[#target + 1] = objective
+                elseif isDebugEnabled() then
+                    DBG(
+                        "objective filtered by objective handling (%s): %s",
+                        tostring(kind),
+                        tostring(objective.text)
+                    )
                 end
             end
         end
@@ -655,13 +675,24 @@ function Controller:BuildViewModel()
     local remainingTotal = remainingDaily + remainingWeekly
 
     local stateModule = getStateModule()
-    local dailyHideRow = completedHandling == "hide" and isDailyCapped
-    local weeklyHideRow = completedHandling == "hide" and isWeeklyCapped
-    local dailyHideObjectives = isDailyCapped
-    local weeklyHideObjectives = isWeeklyCapped
-    local dailyUseCompletedStyle = completedHandling == "recolor" and isDailyCapped
-    local weeklyUseCompletedStyle = completedHandling == "recolor" and isWeeklyCapped
-    local hideEntireSection = completedHandling == "hide" and dailyHideRow and weeklyHideRow
+    local dailyHideRow = generalHandling == "hide" and isDailyCapped
+    local weeklyHideRow = generalHandling == "hide" and isWeeklyCapped
+    local dailyHideObjectives = isDailyCapped and objectiveHandling == "hide"
+    local weeklyHideObjectives = isWeeklyCapped and objectiveHandling == "hide"
+    local dailyUseCompletedStyle = objectiveHandling == "recolor" and isDailyCapped
+    local weeklyUseCompletedStyle = objectiveHandling == "recolor" and isWeeklyCapped
+    local hideEntireSection = generalHandling == "hide" and dailyHideRow and weeklyHideRow
+
+    DBG(
+        "handling: general=%s objective=%s includeCompleted=%s dailyHideRow=%s dailyHideObjectives=%s weeklyHideRow=%s weeklyHideObjectives=%s",
+        tostring(generalHandling),
+        tostring(objectiveHandling),
+        tostring(includeCompleted),
+        tostring(dailyHideRow),
+        tostring(dailyHideObjectives),
+        tostring(weeklyHideRow),
+        tostring(weeklyHideObjectives)
+    )
 
     local vm = {
         category = {
@@ -719,7 +750,8 @@ function Controller:BuildViewModel()
     vm.settings = {
         enabled = true,
         showCounts = showCounts,
-        completedHandling = completedHandling,
+        completedHandling = objectiveHandling,
+        generalCompletedHandling = generalHandling,
         colors = colors,
         fonts = fonts,
         rowsOptions = rowsOptions,
