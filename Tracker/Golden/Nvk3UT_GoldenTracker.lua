@@ -509,34 +509,10 @@ local function isGoldenRowCandidateName(name, baseName)
 end
 
 local function cleanupOrphanedGoldenRows(content)
-    local baseName = getParentBaseName(content)
-    local root = content and content.GetParent and content:GetParent()
-    local container = root and root.GetParent and root:GetParent()
-
-    for controlName, control in pairs(_G) do
-        if isGoldenRowCandidateName(controlName, baseName) and isControl(control) then
-            local parent = control.GetParent and control:GetParent()
-            if parent ~= content and parent ~= root and parent ~= container then
-                local parentName = parent and parent.GetName and parent:GetName() or "<nil>"
-                if control.SetHidden then
-                    control:SetHidden(true)
-                end
-                if control.ClearAnchors then
-                    control:ClearAnchors()
-                end
-                if control.SetParent then
-                    control:SetParent(nil)
-                end
-                if isGoldenGhostDebugEnabled() then
-                    safeDebug(
-                        "[GoldenGhost] cleaned orphan '%s' (parent=%s)",
-                        tostring(controlName),
-                        tostring(parentName)
-                    )
-                end
-            end
-        end
-    end
+    -- TEMP: disabled for safety. The previous implementation tried to
+    -- iterate over _G and detach controls, which caused ESO security
+    -- errors when touching protected UI like "Disconnect". We'll
+    -- reintroduce a scoped cleanup later if needed.
 end
 
 local function debugDumpGoldenHierarchy(tag, content)
