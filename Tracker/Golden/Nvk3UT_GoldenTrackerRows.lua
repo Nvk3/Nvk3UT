@@ -1271,13 +1271,13 @@ local function applyCategoryRow(row, categoryData)
             tostring(showCounter)
         )
     end
-    if label.SetText then
-        label:SetText(text)
-    end
-
     local availableWidth = computeAvailableWidth(targetRow, CATEGORY_CHEVRON_SIZE + CATEGORY_LABEL_OFFSET_X, 0)
     if label.SetWidth then
         label:SetWidth(availableWidth)
+    end
+
+    if label.SetText then
+        label:SetText(text)
     end
     local textHeight = label.GetTextHeight and label:GetTextHeight() or 0
     local targetHeight = math.max(getCategoryRowHeight(), textHeight + ROW_TEXT_PADDING_Y)

@@ -1579,13 +1579,13 @@ local function applyCategoryRow(row, data)
         end
     end
 
-    if label.SetText then
-        label:SetText(formattedText)
-    end
-
     local availableWidth, containerWidth = computeAvailableWidth(control, CATEGORY_CHEVRON_SIZE + CATEGORY_LABEL_OFFSET_X, 0)
     if label.SetWidth then
         label:SetWidth(availableWidth)
+    end
+
+    if label.SetText then
+        label:SetText(formattedText)
     end
 
     local colorRoles = type(info.colorRoles) == "table" and info.colorRoles or {}
