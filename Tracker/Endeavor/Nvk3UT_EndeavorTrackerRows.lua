@@ -461,7 +461,7 @@ local function ensureSubrowLeftLabel(control)
         label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
     end
     if label.SetMaxLineCount then
-        label:SetMaxLineCount(0)
+        label:SetMaxLineCount(2)
     end
 
     control.Label = label
@@ -502,7 +502,7 @@ local function ensureSubrowRightLabel(control)
         label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
     end
     if label.SetMaxLineCount then
-        label:SetMaxLineCount(0)
+        label:SetMaxLineCount(2)
     end
 
     control.RightLabel = label
@@ -1227,7 +1227,7 @@ local function createCategoryRow(parent)
             label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
         end
         if label.SetMaxLineCount then
-            label:SetMaxLineCount(0)
+            label:SetMaxLineCount(2)
         end
         if label.ClearAnchors then
             label:ClearAnchors()
@@ -1889,7 +1889,7 @@ local function applyEntryRow(row, objective, options)
         title:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
     end
     if title.SetMaxLineCount then
-        title:SetMaxLineCount(0)
+        title:SetMaxLineCount(2)
     end
     title:ClearAnchors()
     title:SetAnchor(TOPLEFT, row, TOPLEFT, ENTRY_INDENT_X, ENTRY_TOP_PAD)

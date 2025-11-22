@@ -281,7 +281,7 @@ local function applyLabelDefaults(label, font, color)
         label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
     end
     if label.SetMaxLineCount then
-        label:SetMaxLineCount(0)
+        label:SetMaxLineCount(2)
     end
 end
 
