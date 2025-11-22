@@ -48,6 +48,8 @@ local DEFAULTS = {
     OBJECTIVE_PIN_MARKER_OFFSET_X = 10,
 }
 
+local ROW_TEXT_PADDING_Y = 8
+
 local GOLDEN_HEADER_TITLE = "GOLDENE VORHABEN"
 
 local CATEGORY_CHEVRON_SIZE = 20
@@ -202,6 +204,14 @@ local function applyLabelDefaults(label, font, color)
         label:SetFont(font)
     end
 
+    if label.SetHorizontalAlignment then
+        label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+    end
+
+    if label.SetVerticalAlignment then
+        label:SetVerticalAlignment(TEXT_ALIGN_TOP)
+    end
+
     if label.SetColor and type(color) == "table" then
         local r = color[1] or color.r or 1
         local g = color[2] or color.g or 1
@@ -212,6 +222,10 @@ local function applyLabelDefaults(label, font, color)
 
     if label.SetWrapMode and rawget(_G, "TEXT_WRAP_MODE_ELLIPSIS") then
         label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
+    end
+
+    if label.SetMaxLineCount then
+        label:SetMaxLineCount(0)
     end
 end
 
@@ -434,6 +448,68 @@ local resolvedRowHeights = {
     [ROW_KINDS.entry] = DEFAULTS.ENTRY_HEIGHT,
     [ROW_KINDS.objective] = DEFAULTS.OBJECTIVE_HEIGHT,
 }
+
+local function getRowContainerWidth(control)
+    local parent = control and control.GetParent and control:GetParent()
+    local width = 0
+
+    if parent and parent.GetWidth then
+        local ok, measured = pcall(parent.GetWidth, parent)
+        if ok and type(measured) == "number" then
+            width = measured
+        end
+    end
+
+    if (not width or width <= 0) and control and control.GetWidth then
+        local ok, measured = pcall(control.GetWidth, control)
+        if ok and type(measured) == "number" then
+            width = measured
+        end
+    end
+
+    if not width or width < 0 then
+        width = 0
+    end
+
+    return width
+end
+
+local function computeAvailableWidth(control, indent, leftPadding, rightPadding)
+    indent = indent or 0
+    leftPadding = leftPadding or 0
+    rightPadding = rightPadding or 0
+
+    local containerWidth = getRowContainerWidth(control)
+    local availableWidth = containerWidth - indent - leftPadding - rightPadding
+    if availableWidth < 0 then
+        availableWidth = 0
+    end
+
+    return availableWidth
+end
+
+local function applyGoldenRowMetrics(control, label, availableWidth, minHeight, paddingTop, paddingBottom)
+    if not (control and label) then
+        return nil
+    end
+
+    availableWidth = math.max(0, availableWidth or 0)
+    if label.SetWidth then
+        label:SetWidth(availableWidth)
+    end
+
+    local textHeight = (label.GetTextHeight and label:GetTextHeight()) or 0
+    local paddingY = (paddingTop or 0) + (paddingBottom or 0)
+    local targetHeight = math.max(minHeight or 0, textHeight + ROW_TEXT_PADDING_Y + paddingY)
+
+    if control.SetHeight then
+        control:SetHeight(targetHeight)
+    end
+
+    control.__height = targetHeight
+
+    return targetHeight
+end
 
 local function measureFontHeight(font)
     if type(font) ~= "string" or font == "" then
@@ -1162,8 +1238,18 @@ local function applyCategoryRow(row, categoryData)
             tostring(showCounter)
         )
     end
+
+    local availableWidth = computeAvailableWidth(targetRow, CATEGORY_CHEVRON_SIZE + CATEGORY_LABEL_OFFSET_X, 0, 0)
+    if label.SetWidth then
+        label:SetWidth(availableWidth)
+    end
     if label.SetText then
         label:SetText(text)
+    end
+
+    local targetHeight = applyGoldenRowMetrics(targetRow, label, availableWidth, getCategoryRowHeight())
+    if targetHeight then
+        row.__height = targetHeight
     end
 
     if chevron and chevron.SetTexture then
@@ -1779,8 +1865,18 @@ local function applyEntryRow(row, entryData)
             text = tostring(display or "")
         end
     end
+
+    local availableWidth = computeAvailableWidth(targetRow, ENTRY_INDENT_X, 0, 0)
+    if label.SetWidth then
+        label:SetWidth(availableWidth)
+    end
     if label.SetText then
         label:SetText(text)
+    end
+
+    local targetHeight = applyGoldenRowMetrics(targetRow, label, availableWidth, getEntryRowHeight())
+    if targetHeight then
+        row.__height = targetHeight
     end
 
     return targetRow
@@ -1855,8 +1951,17 @@ local function applyObjectiveRow(row, objectiveData)
         text = text:gsub("%s+", " "):gsub("%s+%)", ")")
     end
 
+    local availableWidth = computeAvailableWidth(control, DEFAULTS.OBJECTIVE_INDENT_X, 0, 0)
+    if label.SetWidth then
+        label:SetWidth(availableWidth)
+    end
     if label.SetText then
         label:SetText(text)
+    end
+
+    local targetHeight = applyGoldenRowMetrics(control, label, availableWidth, getObjectiveRowHeight())
+    if targetHeight then
+        row.__height = targetHeight
     end
 
     local isPinned = type(objectiveData) == "table" and objectiveData.isPinned == true
