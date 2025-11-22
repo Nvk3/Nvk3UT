@@ -45,6 +45,7 @@ local DEFAULTS = {
     ENTRY_FONT = "$(BOLD_FONT)|16|soft-shadow-thick",
     OBJECTIVE_FONT = "$(BOLD_FONT)|14|soft-shadow-thick",
     OBJECTIVE_INDENT_X = 60,
+    OBJECTIVE_PIN_MARKER_OFFSET_X = 10,
 }
 
 local GOLDEN_HEADER_TITLE = "GOLDENE VORHABEN"
@@ -995,11 +996,36 @@ function Rows.CreateObjectiveRow(parent, objectiveData)
 
     local palette = getGoldenTrackerColors()
     local label = createLabel(control, "Objective")
+    local pinLabel = control.__pinnedLabel
     if label then
         label:ClearAnchors()
         if label.SetAnchor then
             label:SetAnchor(TOPLEFT, control, TOPLEFT, DEFAULTS.OBJECTIVE_INDENT_X, 0)
             label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
+        end
+
+        if pinLabel == nil then
+            pinLabel = createLabel(control, "ObjectivePin")
+            control.__pinnedLabel = pinLabel
+            if pinLabel then
+                pinLabel:ClearAnchors()
+                if pinLabel.SetAnchor then
+                    pinLabel:SetAnchor(
+                        LEFT,
+                        control,
+                        LEFT,
+                        DEFAULTS.OBJECTIVE_INDENT_X - DEFAULTS.OBJECTIVE_PIN_MARKER_OFFSET_X,
+                        0
+                    )
+                end
+                applyLabelDefaults(pinLabel, getGoldenObjectiveFont())
+                if pinLabel.SetText then
+                    pinLabel:SetText("*")
+                end
+                if pinLabel.SetHidden then
+                    pinLabel:SetHidden(true)
+                end
+            end
         end
         local role = isObjectiveCompleted(objectiveData) and GOLDEN_COLOR_ROLES.Completed or GOLDEN_COLOR_ROLES.Objective
         applyLabelDefaults(label, getGoldenObjectiveFont())
@@ -1059,6 +1085,11 @@ function Rows.CreateObjectiveRow(parent, objectiveData)
         if label.SetText then
             label:SetText(text)
         end
+    end
+
+    local isPinned = type(objectiveData) == "table" and objectiveData.isPinned == true
+    if pinLabel and pinLabel.SetHidden then
+        pinLabel:SetHidden(not isPinned)
     end
 
     return control

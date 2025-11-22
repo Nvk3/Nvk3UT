@@ -375,6 +375,7 @@ local function normalizeEntry(rawEntry, categoryKey, fallbackRemaining, entryInd
     normalized.campaignId = rawEntry.campaignId
     normalized.campaignKey = rawEntry.campaignKey
     normalized.campaignIndex = rawEntry.campaignIndex
+    normalized.activityIndex = rawEntry.activityIndex or entryIndex
     normalized.rewardId = rawEntry.rewardId
     normalized.rewardQuantity = rawEntry.rewardQuantity
     normalized.isRewardClaimed = rawEntry.isRewardClaimed == true

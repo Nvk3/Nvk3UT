@@ -857,6 +857,14 @@ function Controller:BuildViewModel(options)
         #rawObjectives
     )
 
+    local trackedCampaignKey, trackedActivityIndex
+    if type(GetTrackedPromotionalEventActivityInfo) == "function" then
+        trackedCampaignKey, trackedActivityIndex = GetTrackedPromotionalEventActivityInfo()
+        if trackedCampaignKey == nil or trackedCampaignKey == 0 then
+            trackedCampaignKey, trackedActivityIndex = nil, nil
+        end
+    end
+
     if rawData == nil or rawData.hasEntriesForTracker ~= true then
         viewModel.status.hasEntries = false
         viewModel.status.hasEntriesForTracker = false
@@ -923,10 +931,41 @@ function Controller:BuildViewModel(options)
 
     local totalObjectives = #rawObjectives
     local totalCompletedOverall = 0
+    local pinnedObjectiveId
+    local pinnedObjectiveName
     for index = 1, #rawObjectives do
-        if isObjectiveCompleted(rawObjectives[index]) then
+        local objectiveData = rawObjectives[index]
+
+        if trackedCampaignKey ~= nil and trackedActivityIndex ~= nil and objectiveData ~= nil then
+            local sameCampaign = objectiveData.campaignKey == trackedCampaignKey
+            local sameActivity = tonumber(objectiveData.activityIndex) == tonumber(trackedActivityIndex)
+
+            if sameCampaign and sameActivity then
+                objectiveData.isPinned = true
+                pinnedObjectiveId = pinnedObjectiveId or objectiveData.id or objectiveData.name
+                pinnedObjectiveName = pinnedObjectiveName or objectiveData.name or objectiveData.displayName
+            else
+                if objectiveData.isPinned ~= nil then
+                    objectiveData.isPinned = false
+                end
+            end
+        else
+            if objectiveData and objectiveData.isPinned ~= nil then
+                objectiveData.isPinned = false
+            end
+        end
+
+        if isObjectiveCompleted(objectiveData) then
             totalCompletedOverall = totalCompletedOverall + 1
         end
+    end
+
+    if pinnedObjectiveId ~= nil then
+        safeDebug(
+            "Pinned objective resolved: id=%s name=%s",
+            tostring(pinnedObjectiveId),
+            tostring(pinnedObjectiveName)
+        )
     end
 
     local capstoneGoal = summary.maxRewardTier
