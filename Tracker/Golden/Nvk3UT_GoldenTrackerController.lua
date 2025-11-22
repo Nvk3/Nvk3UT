@@ -1061,6 +1061,7 @@ function Controller:BuildViewModel(options)
 
     local objectiveHandling = resolveObjectiveHandling(goldenConfig)
     local trackerObjectives = rawObjectives
+    local hideObjectivesForRecolorMode = generalHandling == "recolor" and objectiveHandling == "hide"
     if capstoneReached and generalHandling == "recolor" then
         trackerObjectives = {}
     elseif capstoneReached and generalHandling == "showOpen" then
@@ -1071,6 +1072,8 @@ function Controller:BuildViewModel(options)
                 trackerObjectives[#trackerObjectives + 1] = objectiveData
             end
         end
+    elseif hideObjectivesForRecolorMode then
+        trackerObjectives = {}
     elseif objectiveHandling ~= "recolor" and #rawObjectives > 0 then
         trackerObjectives = {}
         for index = 1, #rawObjectives do
