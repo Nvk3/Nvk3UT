@@ -659,7 +659,9 @@ function Controller:BuildViewModel()
         end
 
         for _, item in ipairs(list) do
-            if hideCompletedObjectivesForRecolorMode and item.completed then
+            local skipObjective = hideCompletedObjectivesForRecolorMode and item.completed
+
+            if skipObjective then
                 if isDebugEnabled() then
                     DBG(
                         "objective suppressed for completed entry in recolor mode (%s): %s",
@@ -667,28 +669,25 @@ function Controller:BuildViewModel()
                         tostring(item.name)
                     )
                 end
-                goto continue
-            end
+            else
+                local objective, aggregated = mapObjective(item)
+                if objective then
+                    if aggregated then
+                        aggregated.type = kind
+                        aggregatedItems[#aggregatedItems + 1] = aggregated
+                    end
 
-            local objective, aggregated = mapObjective(item)
-            if objective then
-                if aggregated then
-                    aggregated.type = kind
-                    aggregatedItems[#aggregatedItems + 1] = aggregated
+                    if includeCompleted or objective.completed ~= true then
+                        target[#target + 1] = objective
+                    elseif isDebugEnabled() then
+                        DBG(
+                            "objective filtered by objective handling (%s): %s",
+                            tostring(kind),
+                            tostring(objective.text)
+                        )
+                    end
                 end
-
-                if includeCompleted or objective.completed ~= true then
-                    target[#target + 1] = objective
-                elseif isDebugEnabled() then
-                    DBG(
-                        "objective filtered by objective handling (%s): %s",
-                        tostring(kind),
-                        tostring(objective.text)
-                    )
-                end
             end
-
-            ::continue::
         end
     end
 
