@@ -142,6 +142,23 @@ local function safeDebug(message, ...)
     pcall(debugFn, string.format("%s: %s", MODULE_TAG, tostring(payload)))
 end
 
+local function isGoldenGhostDebugEnabled()
+    local getter = rawget(_G, "Nvk3UT_IsGoldenGhostDebugEnabled")
+    if type(getter) == "function" then
+        local ok, enabled = pcall(getter)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    local flag = rawget(_G, "Nvk3UT_GoldenGhostDebug")
+    if flag ~= nil then
+        return flag == true
+    end
+
+    return false
+end
+
 local function getWindowManager()
     local wm = rawget(_G, "WINDOW_MANAGER")
     if wm == nil then
@@ -675,6 +692,16 @@ local function createControl(parent, kind)
 
     if control and control.SetMouseEnabled then
         control:SetMouseEnabled(true)
+    end
+
+    if control and isGoldenGhostDebugEnabled() then
+        local parentName = parent and parent.GetName and parent:GetName() or "<nil>"
+        safeDebug(
+            "[GoldenGhost] createControl name=%s parent=%s kind=%s",
+            tostring(controlName),
+            tostring(parentName),
+            tostring(kind)
+        )
     end
 
     return control

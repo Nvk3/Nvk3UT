@@ -17,6 +17,7 @@ GoldenTracker.content = nil
 GoldenTracker.options = nil
 
 local MODULE_TAG = addonName .. ".GoldenTracker"
+local GOLDEN_GHOST_DEBUG = false
 
 local state = {
     container = nil,
@@ -95,6 +96,21 @@ local function safeDebug(message, ...)
 
     pcall(debugFn, string.format("%s: %s", MODULE_TAG, tostring(payload)))
 end
+
+local function isGoldenGhostDebugEnabled()
+    if GOLDEN_GHOST_DEBUG == true then
+        return true
+    end
+
+    local override = rawget(_G, "Nvk3UT_GoldenGhostDebug")
+    if override ~= nil then
+        return override == true
+    end
+
+    return false
+end
+
+rawset(_G, "Nvk3UT_IsGoldenGhostDebugEnabled", isGoldenGhostDebugEnabled)
 
 local function isObjectiveCompleted(objectiveData)
     if type(objectiveData) ~= "table" then
@@ -452,6 +468,150 @@ local function isControl(control)
     end
 
     return false
+end
+
+local function isTrackedRow(rows, control)
+    if type(rows) ~= "table" or control == nil then
+        return false
+    end
+
+    for index = 1, #rows do
+        if rows[index] == control then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function isGoldenRowCandidateName(name, baseName)
+    if type(name) ~= "string" or name == "" then
+        return false
+    end
+
+    if baseName and string.find(name, baseName, 1, true) then
+        return true
+    end
+
+    if string.find(name, "Golden", 1, true) == nil then
+        return false
+    end
+
+    local tokens = { "GoldenContent_", "Category", "Entry", "Objective", "Row", "Label" }
+    for index = 1, #tokens do
+        local token = tokens[index]
+        if token and string.find(name, token, 1, true) then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function cleanupOrphanedGoldenRows(content)
+    local baseName = getParentBaseName(content)
+    local root = content and content.GetParent and content:GetParent()
+    local container = root and root.GetParent and root:GetParent()
+
+    for controlName, control in pairs(_G) do
+        if isGoldenRowCandidateName(controlName, baseName) and isControl(control) then
+            local parent = control.GetParent and control:GetParent()
+            if parent ~= content and parent ~= root and parent ~= container then
+                local parentName = parent and parent.GetName and parent:GetName() or "<nil>"
+                if control.SetHidden then
+                    control:SetHidden(true)
+                end
+                if control.ClearAnchors then
+                    control:ClearAnchors()
+                end
+                if control.SetParent then
+                    control:SetParent(nil)
+                end
+                if isGoldenGhostDebugEnabled() then
+                    safeDebug(
+                        "[GoldenGhost] cleaned orphan '%s' (parent=%s)",
+                        tostring(controlName),
+                        tostring(parentName)
+                    )
+                end
+            end
+        end
+    end
+end
+
+local function debugDumpGoldenHierarchy(tag, content)
+    if not isGoldenGhostDebugEnabled() then
+        return
+    end
+
+    local rows = GoldenTracker.rows or {}
+    local root = content and content.GetParent and content:GetParent()
+    local container = root and root.GetParent and root:GetParent()
+
+    local function getControlName(control)
+        if control and control.GetName then
+            local ok, name = pcall(control.GetName, control)
+            if ok and type(name) == "string" and name ~= "" then
+                return name
+            end
+        end
+        return "<nil>"
+    end
+
+    local function getControlType(control)
+        local getType = control and control.GetType
+        if type(getType) == "function" then
+            local ok, objectType = pcall(getType, control)
+            if ok then
+                return tostring(objectType)
+            end
+        end
+        return type(control)
+    end
+
+    safeDebug(
+        "[GoldenGhost] dump %s container=%s root=%s content=%s rows=%d",
+        tostring(tag or "<nil>"),
+        getControlName(container),
+        getControlName(root),
+        getControlName(content),
+        #rows
+    )
+
+    if content and content.GetNumChildren and content.GetChild then
+        local okCount, childCount = pcall(content.GetNumChildren, content)
+        if okCount and type(childCount) == "number" and childCount > 0 then
+            for index = 0, childCount - 1 do
+                local okChild, child = pcall(content.GetChild, content, index)
+                if okChild and child then
+                    local parent = child.GetParent and child:GetParent()
+                    safeDebug(
+                        "[GoldenGhost] content child[%d] name=%s parent=%s type=%s tracked=%s",
+                        index,
+                        getControlName(child),
+                        getControlName(parent),
+                        getControlType(child),
+                        tostring(isTrackedRow(rows, child))
+                    )
+                end
+            end
+        end
+    end
+
+    for controlName, control in pairs(_G) do
+        if isControl(control) and string.find(tostring(controlName), "Golden", 1, true) then
+            local parent = control.GetParent and control:GetParent()
+            safeDebug(
+                "[GoldenGhost] global %s parent=%s inContent=%s inRoot=%s inContainer=%s tracked=%s",
+                tostring(controlName),
+                getControlName(parent),
+                tostring(parent == content),
+                tostring(parent == root),
+                tostring(parent == container),
+                tostring(isTrackedRow(rows, control))
+            )
+        end
+    end
 end
 
 function GoldenTracker.Init(...)
@@ -1040,6 +1200,8 @@ function GoldenTracker.Refresh(...)
         return
     end
 
+    cleanupOrphanedGoldenRows(content)
+
     ClearChildren(content)
 
     local rowsModule = getRowsModule()
@@ -1200,6 +1362,8 @@ function GoldenTracker.Refresh(...)
         tostring(summary.hasActiveCampaign),
         tostring(summary.remainingObjectivesToNextReward)
     )
+
+    debugDumpGoldenHierarchy("after-refresh", content)
 end
 
 function GoldenTracker:GetHeight()
