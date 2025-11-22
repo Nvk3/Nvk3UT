@@ -1823,6 +1823,8 @@ local function applyEntryRow(row, entryData)
         return nil
     end
 
+    targetRow._measuredHeight = nil
+
     if targetRow.SetHidden then
         targetRow:SetHidden(false)
     end
@@ -1911,14 +1913,15 @@ local function applyEntryRow(row, entryData)
             text = tostring(display or "")
         end
     end
-    if label.SetText then
-        label:SetText(text)
-    end
-
     local availableWidth = computeAvailableWidth(targetRow, ENTRY_INDENT_X, 0)
     if label.SetWidth then
         label:SetWidth(availableWidth)
     end
+
+    if label.SetText then
+        label:SetText(text)
+    end
+
     local textHeight = label.GetTextHeight and label:GetTextHeight() or 0
     local targetHeight = math.max(getEntryRowHeight(), textHeight + ROW_TEXT_PADDING_Y)
     if targetRow.SetHeight then
@@ -1948,6 +1951,8 @@ local function applyObjectiveRow(row, objectiveData)
     if not (control and label) then
         return nil
     end
+
+    control._measuredHeight = nil
 
     if control.SetHidden then
         control:SetHidden(false)
@@ -2010,14 +2015,15 @@ local function applyObjectiveRow(row, objectiveData)
         text = text:gsub("%s+", " "):gsub("%s+%)", ")")
     end
 
-    if label.SetText then
-        label:SetText(text)
-    end
-
     local availableWidth = computeAvailableWidth(control, DEFAULTS.OBJECTIVE_INDENT_X, 0)
     if label.SetWidth then
         label:SetWidth(availableWidth)
     end
+
+    if label.SetText then
+        label:SetText(text)
+    end
+
     local textHeight = label.GetTextHeight and label:GetTextHeight() or 0
     local targetHeight = math.max(getObjectiveRowHeight(), textHeight + ROW_TEXT_PADDING_Y)
     if control.SetHeight then

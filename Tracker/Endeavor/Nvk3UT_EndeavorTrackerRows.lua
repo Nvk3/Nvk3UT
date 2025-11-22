@@ -564,6 +564,7 @@ function Rows.ApplySubrow(control, kind, data, options)
     if control.SetHeight then
         control:SetHeight(height)
     end
+    control._measuredHeight = nil
 
     local icon = ensureSubrowIcon(control)
     local iconTexture = type(source.icon) == "string" and source.icon or nil
@@ -609,9 +610,6 @@ function Rows.ApplySubrow(control, kind, data, options)
             if rightLabel.SetHidden then
                 rightLabel:SetHidden(false)
             end
-            if rightLabel.SetText then
-                rightLabel:SetText(rightText)
-            end
             rightLabel:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
             rightLabel:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
             if leftLabel then
@@ -637,10 +635,6 @@ function Rows.ApplySubrow(control, kind, data, options)
         text = source.text or source.label or source.description or ""
     end
     text = tostring(text or "")
-    if leftLabel and leftLabel.SetText then
-        leftLabel:SetText(text)
-    end
-
     local font = type(source) == "table" and source.font or nil
     local fallbackFont = options and options.font or DEFAULT_OBJECTIVE_FONT
     if leftLabel then
@@ -686,8 +680,13 @@ function Rows.ApplySubrow(control, kind, data, options)
     if rightLabel and rightLabel.IsHidden then
         rightVisible = not rightLabel:IsHidden()
     end
-    if rightLabel and rightLabel.GetTextWidth and rightVisible then
-        rightWidth = coerceWidth(rightLabel:GetTextWidth())
+    if rightLabel then
+        if rightText ~= "" and rightLabel.SetText then
+            rightLabel:SetText(rightText)
+        end
+        if rightVisible and rightLabel.GetTextWidth then
+            rightWidth = coerceWidth(rightLabel:GetTextWidth())
+        end
         if rightLabel.SetWidth then
             rightLabel:SetWidth(rightWidth)
         end
@@ -703,6 +702,10 @@ function Rows.ApplySubrow(control, kind, data, options)
         leftLabel:SetWidth(leftWidth)
     end
 
+    if leftLabel and leftLabel.SetText then
+        leftLabel:SetText(text)
+    end
+
     local leftHeight = (leftLabel and leftLabel.GetTextHeight and leftLabel:GetTextHeight()) or 0
     local rightHeight = 0
     if rightLabel and rightVisible and rightLabel.GetTextHeight then
@@ -710,7 +713,7 @@ function Rows.ApplySubrow(control, kind, data, options)
     end
 
     local baseHeight = getBaseSubrowHeight(resolvedKind)
-    local targetHeight = math.max(baseHeight, math.max(leftHeight, rightHeight) + math.floor(ROW_TEXT_PADDING_Y * 0.5))
+    local targetHeight = math.max(baseHeight, math.max(leftHeight, rightHeight) + ROW_TEXT_PADDING_Y)
 
     if control.SetHeight then
         control:SetHeight(targetHeight)
@@ -1871,6 +1874,8 @@ local function applyEntryRow(row, objective, options)
     local entryHeight = resolveEntryHeight(options)
     local minHeight = entryHeight
 
+    row._measuredHeight = nil
+
     local title = ensureEntryChild(row, titleName, CT_LABEL)
     title:SetParent(row)
     local rowKind = type(objective) == "table" and objective.kind or nil
@@ -1893,10 +1898,11 @@ local function applyEntryRow(row, objective, options)
     if title.SetWidth then
         title:SetWidth(availableWidth)
     end
-    title:SetText(combinedText)
     row.Label = title
 
-    local textHeight = title.GetTextHeight and title:GetTextHeight() or 0
+    title:SetText(combinedText)
+
+    local textHeight = (title.GetTextHeight and title:GetTextHeight()) or 0
     local targetHeight = math.max(minHeight, textHeight + ENTRY_TOP_PAD + ENTRY_BOTTOM_PAD + ROW_TEXT_PADDING_Y)
     if row.SetHeight then
         row:SetHeight(targetHeight)
