@@ -189,11 +189,23 @@ local function safeDebug(fmt, ...)
 end
 
 local function onEntryMouseUp(control, button, upInside)
-    if not (upInside and button == MOUSE_BUTTON_RIGHT) then
+    if control == nil or upInside ~= true then
         return
     end
 
-    local context = control and control._entryContext
+    if button == MOUSE_BUTTON_LEFT then
+        local onLeftClick = control._entryOnLeftClick
+        if type(onLeftClick) == "function" then
+            onLeftClick(control)
+        end
+        return
+    end
+
+    if button ~= MOUSE_BUTTON_RIGHT then
+        return
+    end
+
+    local context = control._entryContext
     if type(context) ~= "table" then
         return
     end
@@ -1005,6 +1017,7 @@ local function resetEntryRowContent(row)
     row._subrows = nil
     row._subrowCount = 0
     row._subrowsVisibleCount = 0
+    row._entryOnLeftClick = nil
     row._entryContext = nil
 end
 
@@ -1742,6 +1755,9 @@ local function applyEntryRow(row, objective, options)
     end
     title:SetText(combinedText)
     row.Label = title
+
+    local leftClickHandler = type(objective) == "table" and objective.onLeftClick or nil
+    row._entryOnLeftClick = type(leftClickHandler) == "function" and leftClickHandler or nil
 
     row._entryContext = {
         kind = rowKind,
