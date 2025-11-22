@@ -304,6 +304,8 @@ local defaultSV = {
     },
 }
 
+defaultSV.TrackerDefaults.GoldenDefaults.hideBaseGameTracking = true
+
 local DEFAULT_HOST_SETTINGS = {
     HideInCombat = false,
 }

@@ -99,6 +99,65 @@ local function getGoldenConfig()
     return config
 end
 
+local function getGoldenDefaults()
+    local saved = getSavedVars()
+    if type(saved) == "table" then
+        local trackerDefaults = saved.TrackerDefaults
+        if type(trackerDefaults) == "table" then
+            local goldenDefaults = trackerDefaults.GoldenDefaults
+            if type(goldenDefaults) == "table" then
+                return goldenDefaults
+            end
+        end
+    end
+
+    local stateInit = rawget(_G, "Nvk3UT_StateInit")
+    local defaultSV = stateInit and stateInit.defaultSV
+    if type(defaultSV) == "table" then
+        local trackerDefaults = defaultSV.TrackerDefaults
+        if type(trackerDefaults) == "table" then
+            local goldenDefaults = trackerDefaults.GoldenDefaults
+            if type(goldenDefaults) == "table" then
+                return goldenDefaults
+            end
+        end
+    end
+
+    return nil
+end
+
+local function shouldHideBaseGameTracking()
+    local config = getGoldenConfig()
+    if type(config) == "table" and config.hideBaseGameTracking ~= nil then
+        return config.hideBaseGameTracking ~= false
+    end
+
+    local defaults = getGoldenDefaults()
+    if type(defaults) == "table" and defaults.hideBaseGameTracking ~= nil then
+        return defaults.hideBaseGameTracking ~= false
+    end
+
+    return true
+end
+
+local function applyBaseGameTrackerHidden(isHidden)
+    local tracker = _G.PROMOTIONAL_EVENT_TRACKER or _G.ZO_PromotionalEventTracker
+    if not tracker then
+        return
+    end
+
+    local control = tracker.control or tracker
+    if not control then
+        return
+    end
+
+    if type(tracker.SetHiddenForReason) == "function" then
+        tracker:SetHiddenForReason("Nvk3UT_GoldenBaseSuppressed", isHidden == true)
+    elseif type(control.SetHidden) == "function" then
+        control:SetHidden(isHidden == true)
+    end
+end
+
 local function isDebugEnabled()
     local root = getAddonRoot()
 
@@ -748,6 +807,18 @@ function Controller:MarkDirty(reason)
     if type(runtime) == "table" and type(runtime.QueueDirty) == "function" then
         runtime:QueueDirty("golden")
     end
+end
+
+function Controller.ApplyBaseGameTrackerVisibility(isHidden)
+    return applyBaseGameTrackerHidden(isHidden)
+end
+
+function Controller.ApplyBaseGameTrackerVisibilityFromSettings()
+    return applyBaseGameTrackerHidden(shouldHideBaseGameTracking())
+end
+
+function Controller.ShouldHideBaseGameTracking()
+    return shouldHideBaseGameTracking()
 end
 
 function Controller:IsDirty()

@@ -4246,6 +4246,24 @@ function TrackerHost.Init()
     applyWindowSettings()
 
     initModels()
+
+    local goldenController = Nvk3UT and Nvk3UT.GoldenTrackerController
+    if type(goldenController) == "table" then
+        local applyFromSettings = goldenController.ApplyBaseGameTrackerVisibilityFromSettings
+        if type(applyFromSettings) == "function" then
+            pcall(applyFromSettings)
+        elseif type(goldenController.ApplyBaseGameTrackerVisibility) == "function" then
+            local shouldHide = true
+            if type(goldenController.ShouldHideBaseGameTracking) == "function" then
+                local ok, result = pcall(goldenController.ShouldHideBaseGameTracking)
+                if ok and result ~= nil then
+                    shouldHide = result ~= false
+                end
+            end
+            pcall(goldenController.ApplyBaseGameTrackerVisibility, shouldHide)
+        end
+    end
+
     initTrackers()
 
     TrackerHost.ApplySettings()
