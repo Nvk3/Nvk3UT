@@ -760,18 +760,21 @@ local GOLDEN_TEMP_EVENT_HANDLES = {
     updated = GOLDEN_TEMP_EVENT_NAMESPACE .. ".PursuitsUpdated",
     progress = GOLDEN_TEMP_EVENT_NAMESPACE .. ".ProgressUpdated",
     status = GOLDEN_TEMP_EVENT_NAMESPACE .. ".StatusUpdated",
+    tracking = GOLDEN_TEMP_EVENT_NAMESPACE .. ".TrackingUpdated",
 }
 
 local GOLDEN_TEMP_EVENT_REASONS = {
     updated = "EVENT_GOLDEN_PURSUITS_UPDATED",
     progress = "EVENT_GOLDEN_PURSUITS_PROGRESS_UPDATED",
     status = "EVENT_GOLDEN_PURSUITS_STATUS_UPDATED",
+    tracking = "EVENT_PROMOTIONAL_EVENTS_ACTIVITY_TRACKING_UPDATED",
 }
 
 local GOLDEN_TEMP_EVENT_IDS = {
     updated = rawget(_G, "EVENT_GOLDEN_PURSUITS_UPDATED"),
     progress = rawget(_G, "EVENT_GOLDEN_PURSUITS_PROGRESS_UPDATED"),
     status = rawget(_G, "EVENT_GOLDEN_PURSUITS_STATUS_UPDATED"),
+    tracking = rawget(_G, "EVENT_PROMOTIONAL_EVENTS_ACTIVITY_TRACKING_UPDATED"),
 }
 
 local goldenTempEventsState = {
@@ -930,6 +933,12 @@ local function onGoldenPursuitsStatusUpdated(...)
     scheduleGoldenProgressFallback(reason)
 end
 
+local function onGoldenPursuitsTrackingUpdated(...)
+    local reason = GOLDEN_TEMP_EVENT_REASONS.tracking
+    safeDebug("[GoldenTracker.TempEvents] %s", reason)
+    queueGoldenTempEventRefreshSafe(reason)
+end
+
 local function registerGoldenTempEvents()
     if goldenTempEventsState.registered then
         return
@@ -978,6 +987,15 @@ local function registerGoldenTempEvents()
         registeredCount = registeredCount + 1
     end
 
+    if GOLDEN_TEMP_EVENT_IDS.tracking ~= nil then
+        eventManager:RegisterForEvent(
+            GOLDEN_TEMP_EVENT_HANDLES.tracking,
+            GOLDEN_TEMP_EVENT_IDS.tracking,
+            onGoldenPursuitsTrackingUpdated
+        )
+        registeredCount = registeredCount + 1
+    end
+
     if registeredCount > 0 then
         goldenTempEventsState.registered = true
         safeDebug("[GoldenTracker.TempEvents] register (%d handlers)", registeredCount)
@@ -1006,6 +1024,7 @@ local function unregisterGoldenTempEvents()
     unregisterMethod(eventManager, GOLDEN_TEMP_EVENT_HANDLES.updated)
     unregisterMethod(eventManager, GOLDEN_TEMP_EVENT_HANDLES.progress)
     unregisterMethod(eventManager, GOLDEN_TEMP_EVENT_HANDLES.status)
+    unregisterMethod(eventManager, GOLDEN_TEMP_EVENT_HANDLES.tracking)
 
     goldenTempEventsState.registered = false
     safeDebug("[GoldenTracker.TempEvents] unregister")
