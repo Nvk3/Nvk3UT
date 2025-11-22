@@ -1032,6 +1032,21 @@ function GoldenTracker.Refresh(...)
     local summary = type(vm) == "table" and type(vm.summary) == "table" and vm.summary or {}
     local objectives = type(vm) == "table" and type(vm.objectives) == "table" and vm.objectives or {}
     local hasEntriesForTracker = type(vm) == "table" and vm.hasEntriesForTracker == true
+    local capstoneReached = vm and (vm.capstoneReached == true or summary.capstoneReached == true)
+    local generalMode = vm and (vm.generalCompletedMode or summary.generalCompletedMode)
+    local hideCategoryWhenCompleted = vm and (vm.hideCategoryWhenCompleted == true or summary.hideCategoryWhenCompleted == true)
+    local hideObjectivesWhenCompleted = vm and (vm.hideObjectivesWhenCompleted == true or summary.hideObjectivesWhenCompleted == true)
+
+    if hideCategoryWhenCompleted then
+        hasEntriesForTracker = false
+        if vm then
+            vm.hasEntriesForTracker = false
+            if type(vm.status) == "table" then
+                vm.status.hasEntriesForTracker = false
+                vm.status.hasEntries = false
+            end
+        end
+    end
 
     safeDebug(
         "Refresh start: vmNil=%s hasEntriesForTracker=%s hasCampaign=%s objectives=%d",
@@ -1040,6 +1055,16 @@ function GoldenTracker.Refresh(...)
         tostring(summary.hasActiveCampaign),
         #objectives
     )
+
+    if capstoneReached ~= nil or generalMode ~= nil then
+        safeDebug(
+            "[GoldenTracker] generalMode=%s capstoneReached=%s hideCategory=%s hideObjectives=%s",
+            tostring(generalMode),
+            tostring(capstoneReached),
+            tostring(hideCategoryWhenCompleted),
+            tostring(hideObjectivesWhenCompleted)
+        )
+    end
 
     if vm == nil then
         tracker.height = 0
@@ -1105,6 +1130,9 @@ function GoldenTracker.Refresh(...)
         end
 
         if categoryExpanded and entryExpanded then
+            if hideObjectivesWhenCompleted then
+                objectives = {}
+            end
             for objectiveIndex = 1, #objectives do
                 local objectiveData = objectives[objectiveIndex]
                 if type(objectiveData) == "table" then

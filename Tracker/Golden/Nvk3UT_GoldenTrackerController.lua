@@ -263,10 +263,42 @@ local function normalizeObjectiveHandling(value)
     return nil
 end
 
+local function normalizeGeneralHandling(value)
+    if value == "recolor" then
+        return "recolor"
+    end
+    if value == "hide" then
+        return "hide"
+    end
+    return nil
+end
+
+local function resolveGeneralHandling(config)
+    local handling
+    if type(config) == "table" then
+        handling = normalizeGeneralHandling(config.generalCompletedHandling)
+        if handling == nil then
+            handling = normalizeGeneralHandling(config.CompletedHandlingGeneral)
+        end
+        if handling == nil then
+            handling = normalizeGeneralHandling(config.CompletedHandling)
+        end
+    end
+
+    if handling == nil then
+        handling = "hide"
+    end
+
+    return handling
+end
+
 local function resolveObjectiveHandling(config)
     local handling
     if type(config) == "table" then
         handling = normalizeObjectiveHandling(config.CompletedHandlingObjectives)
+        if handling == nil then
+            handling = normalizeObjectiveHandling(config.generalCompletedHandling)
+        end
         if handling == nil then
             handling = normalizeObjectiveHandling(config.CompletedHandlingGeneral)
         end
@@ -311,6 +343,47 @@ local function normalizeProgressPair(progressValue, maxValue)
     local currentNumeric = clampProgress(progressValue, maxNumeric)
 
     return currentNumeric, maxNumeric
+end
+
+local function isCapstoneComplete(payload)
+    if type(payload) ~= "table" then
+        return false
+    end
+
+    if payload.isComplete == true or payload.isCompleted == true or payload.completed == true then
+        return true
+    end
+
+    local completed = selectFirstNumber(
+        payload.completedObjectives,
+        payload.completedActivities,
+        payload.countCompleted,
+        payload.totalCompleted
+    )
+    local total = selectFirstNumber(
+        payload.maxRewardTier,
+        payload.capstoneCompletionThreshold,
+        payload.capLimit,
+        payload.totalEntries,
+        payload.totalCount,
+        payload.countTotal
+    )
+
+    if total and total > 0 and completed and completed >= total then
+        return true
+    end
+
+    local remaining = selectFirstNumber(
+        payload.remainingObjectivesToNextReward,
+        payload.remainingObjectives,
+        payload.totalRemaining,
+        payload.remaining
+    )
+    if remaining ~= nil and remaining <= 0 then
+        return true
+    end
+
+    return false
 end
 
 local function buildObjectiveFromEntry(entryVm)
@@ -846,9 +919,21 @@ function Controller:BuildViewModel(options)
     viewModel.summary = summary
 
     local goldenConfig = getGoldenConfig()
+    local generalHandling = resolveGeneralHandling(goldenConfig)
+    local capstoneReached = isCapstoneComplete(summary)
+    local hideCategoryWhenCompleted = capstoneReached and generalHandling == "hide"
+    local hideObjectivesWhenCompleted = capstoneReached and generalHandling == "recolor"
+
+    summary.capstoneReached = capstoneReached
+    summary.generalCompletedMode = generalHandling
+    summary.hideCategoryWhenCompleted = hideCategoryWhenCompleted
+    summary.hideObjectivesWhenCompleted = hideObjectivesWhenCompleted
+
     local objectiveHandling = resolveObjectiveHandling(goldenConfig)
     local trackerObjectives = rawObjectives
-    if objectiveHandling ~= "recolor" and #rawObjectives > 0 then
+    if hideObjectivesWhenCompleted then
+        trackerObjectives = {}
+    elseif objectiveHandling ~= "recolor" and #rawObjectives > 0 then
         trackerObjectives = {}
         for index = 1, #rawObjectives do
             local objectiveData = rawObjectives[index]
@@ -860,7 +945,16 @@ function Controller:BuildViewModel(options)
 
     viewModel.objectives = trackerObjectives
 
+    viewModel.generalCompletedMode = generalHandling
+    viewModel.capstoneReached = capstoneReached
+    viewModel.hideCategoryWhenCompleted = hideCategoryWhenCompleted
+    viewModel.hideObjectivesWhenCompleted = hideObjectivesWhenCompleted
+
     viewModel.hasEntriesForTracker = rawData.hasEntriesForTracker == true and #categories > 0
+
+    if hideCategoryWhenCompleted and viewModel.hasEntriesForTracker then
+        viewModel.hasEntriesForTracker = false
+    end
 
     if viewModel.hasEntriesForTracker then
         viewModel.status.isAvailable = true
@@ -889,8 +983,12 @@ function Controller:BuildViewModel(options)
     )
 
     safeDebug(
-        "[GoldenController] completedHandling=%s objectivesInModel=%d objectivesInTracker=%d",
+        "[GoldenController] completedHandling=%s generalCompletedMode=%s capstoneReached=%s hideCategory=%s hideObjectives=%s objectivesInModel=%d objectivesInTracker=%d",
         tostring(objectiveHandling),
+        tostring(generalHandling),
+        tostring(capstoneReached),
+        tostring(hideCategoryWhenCompleted),
+        tostring(hideObjectivesWhenCompleted),
         #rawObjectives,
         trackerObjectiveCount
     )
