@@ -91,6 +91,14 @@ local function applyDimensions(row, parentWidth)
     end
 end
 
+local function resolveControl(row)
+    if type(row) == "table" and row.control then
+        return row.control, row
+    end
+
+    return row, row
+end
+
 function Layout.ApplyLayout(parentControl, rows)
     if not parentControl then
         safeDebug("ApplyLayout abort: parent missing")
@@ -114,7 +122,7 @@ function Layout.ApplyLayout(parentControl, rows)
 
     for index = 1, #rows do
         local row = rows[index]
-        local control = (type(row) == "table" and row.control) or row
+        local control, rowData = resolveControl(row)
         if control and (type(control) == "userdata" or type(control) == "table") then
             if type(control.ClearAnchors) == "function" then
                 control:ClearAnchors()
@@ -138,7 +146,7 @@ function Layout.ApplyLayout(parentControl, rows)
 
             applyDimensions(control, parentWidth)
 
-            local height = tonumber(control.__height) or tonumber(row and row.__height) or 0
+            local height = tonumber(control.__height) or tonumber(rowData and rowData.__height) or 0
             if type(control.GetHeight) == "function" then
                 local ok, measured = pcall(control.GetHeight, control)
                 if ok and type(measured) == "number" then
