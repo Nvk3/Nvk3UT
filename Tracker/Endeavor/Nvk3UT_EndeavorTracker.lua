@@ -434,6 +434,49 @@ local function toggleCategoryExpanded(key)
     end
 end
 
+local function openTimedActivities(kind)
+    local showTimedActivities = rawget(_G, "ZO_ShowTimedActivities") or ZO_ShowTimedActivities
+    if type(showTimedActivities) ~= "function" then
+        return
+    end
+
+    showTimedActivities()
+
+    local isGamepadPreferred = false
+    local getGamepadPreferredMode = rawget(_G, "IsInGamepadPreferredMode") or IsInGamepadPreferredMode
+    if type(getGamepadPreferredMode) == "function" then
+        local ok, preferred = pcall(getGamepadPreferredMode)
+        if ok and preferred == true then
+            isGamepadPreferred = true
+        end
+    end
+
+    if isGamepadPreferred then
+        return
+    end
+
+    local timedActivitiesKeyboard = rawget(_G, "TIMED_ACTIVITIES_KEYBOARD") or TIMED_ACTIVITIES_KEYBOARD
+    if type(timedActivitiesKeyboard) ~= "table" then
+        return
+    end
+
+    local setCurrentActivityType = timedActivitiesKeyboard.SetCurrentActivityType
+    if type(setCurrentActivityType) ~= "function" then
+        return
+    end
+
+    local activityType = nil
+    if kind == "daily" then
+        activityType = rawget(_G, "TIMED_ACTIVITY_TYPE_DAILY") or TIMED_ACTIVITY_TYPE_DAILY
+    elseif kind == "weekly" then
+        activityType = rawget(_G, "TIMED_ACTIVITY_TYPE_WEEKLY") or TIMED_ACTIVITY_TYPE_WEEKLY
+    end
+
+    if activityType ~= nil then
+        setCurrentActivityType(timedActivitiesKeyboard, activityType)
+    end
+end
+
 local function getFrameTime()
     local getter = rawget(_G, "GetFrameTimeMilliseconds")
     if type(getter) ~= "function" then
@@ -1353,7 +1396,8 @@ local function ensureUi(container)
                 AddCustomMenuItem(
                     "Tägliche Bestrebungen öffnen",
                     function()
-                        safeDebug("[EndeavorTracker.UI] Context: Tägliche Bestrebungen öffnen angeklickt")
+                        openTimedActivities("daily")
+                        safeDebug("[EndeavorTracker.UI] Context: open daily timed activities base UI")
                     end,
                     optionType
                 )
@@ -1422,7 +1466,8 @@ local function ensureUi(container)
                 AddCustomMenuItem(
                     "Wöchentliche Bestrebungen öffnen",
                     function()
-                        safeDebug("[EndeavorTracker.UI] Context: Wöchentliche Bestrebungen öffnen angeklickt")
+                        openTimedActivities("weekly")
+                        safeDebug("[EndeavorTracker.UI] Context: open weekly timed activities base UI")
                     end,
                     optionType
                 )

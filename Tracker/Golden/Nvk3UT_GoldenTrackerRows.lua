@@ -1200,6 +1200,27 @@ local function detachEntryFromUsed(row)
     end
 end
 
+local function openGoldenPromotionalEvent(control)
+    local context = control and control._goldenContext
+    local manager = rawget(_G, "PROMOTIONAL_EVENT_MANAGER") or PROMOTIONAL_EVENT_MANAGER
+
+    if type(manager) == "table" and type(manager.ShowPromotionalEventScene) == "function" then
+        local campaignData = nil
+        if type(context) == "table" and context.kind == "campaign" then
+            campaignData = context.campaignData
+        end
+
+        manager:ShowPromotionalEventScene(false, campaignData)
+    end
+
+    local campaignLabel = "root"
+    if type(context) == "table" and context.kind == "campaign" then
+        campaignLabel = context.campaign or context.id or "root"
+    end
+
+    safeDebug("[GoldenTracker.UI] Context: open golden promotional event base UI (campaign=%s)", campaignLabel)
+end
+
 local function showGoldenEntryContextMenu(control)
     local context = control and control._goldenContext
     if type(context) ~= "table" or context.kind ~= "campaign" then
@@ -1216,7 +1237,7 @@ local function showGoldenEntryContextMenu(control)
     AddCustomMenuItem(
         "Goldene Vorhaben öffnen",
         function()
-            safeDebug("[GoldenTracker.UI] Context: Goldene Vorhaben öffnen angeklickt")
+            openGoldenPromotionalEvent(control)
         end,
         optionType
     )
