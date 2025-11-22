@@ -2554,11 +2554,18 @@ local function registerPanel(displayTitle)
                 end,
                 setFunc = function(value)
                     local config = getGoldenConfig()
-                    config.hideBaseGameTracking = value ~= false
+                    if config then
+                        config.hideBaseGameTracking = value ~= false
+                    end
 
                     local controller = Nvk3UT and Nvk3UT.GoldenTrackerController
-                    if type(controller) == "table" and type(controller.ApplyBaseGameTrackerVisibility) == "function" then
-                        controller.ApplyBaseGameTrackerVisibility(value ~= false)
+                    local applyFn = controller and controller.applyBaseGameTrackerHidden
+                    if type(applyFn) ~= "function" then
+                        applyFn = controller and controller.ApplyBaseGameTrackerVisibility
+                    end
+
+                    if type(applyFn) == "function" then
+                        applyFn(value)
                     end
                 end,
                 default = (function()

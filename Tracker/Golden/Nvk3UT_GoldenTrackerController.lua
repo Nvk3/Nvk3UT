@@ -140,45 +140,22 @@ local function shouldHideBaseGameTracking()
     return true
 end
 
-local BASE_GAME_TRACKER_REASON = "Nvk3UT_GoldenBaseSuppressed"
-
-local function getBaseGameGoldenTracker()
-    return rawget(_G, "PROMOTIONAL_EVENT_TRACKER") or rawget(_G, "ZO_PromotionalEventTracker")
-end
-
 local function applyBaseGameTrackerHidden(isHidden)
-    local tracker = getBaseGameGoldenTracker()
-    if type(tracker) ~= "table" then
-        safeDebug("Base game Golden tracker missing; hidden=%s", tostring(isHidden))
-        return false
+    local tracker = _G.PROMOTIONAL_EVENT_TRACKER or _G.ZO_PromotionalEventTracker
+    if not tracker then
+        return
     end
 
-    local hidden = isHidden == true
-    local setHiddenForReason = tracker.SetHiddenForReason
-    if type(setHiddenForReason) == "function" then
-        local ok = pcall(setHiddenForReason, tracker, BASE_GAME_TRACKER_REASON, hidden)
-        if ok then
-            safeDebug("Applied base tracker visibility via reason: hidden=%s", tostring(hidden))
-            return true
-        end
+    local control = tracker.control or tracker
+    if not control then
+        return
     end
 
-    local control = tracker.control
-    if control == nil and type(tracker.GetControl) == "function" then
-        local ok, resolved = pcall(tracker.GetControl, tracker)
-        if ok then
-            control = resolved
-        end
+    if type(tracker.SetHiddenForReason) == "function" then
+        tracker:SetHiddenForReason("Nvk3UT_GoldenBaseSuppressed", isHidden == true)
+    elseif type(control.SetHidden) == "function" then
+        control:SetHidden(isHidden == true)
     end
-
-    if control and type(control.SetHidden) == "function" then
-        pcall(control.SetHidden, control, hidden)
-        safeDebug("Applied base tracker visibility via control: hidden=%s", tostring(hidden))
-        return true
-    end
-
-    safeDebug("Base game Golden tracker control unavailable; hidden=%s", tostring(hidden))
-    return false
 end
 
 local function isDebugEnabled()
