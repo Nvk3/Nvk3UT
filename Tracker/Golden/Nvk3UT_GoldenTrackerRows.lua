@@ -72,6 +72,12 @@ local GOLDEN_FONT_DEFAULTS = {
     Objective = { face = DEFAULT_FONT_FACE, size = 14, outline = DEFAULT_FONT_OUTLINE },
 }
 
+local ROW_KINDS = {
+    category = "category",
+    entry = "entry",
+    objective = "objective",
+}
+
 local controlCounters = {
     category = 0,
     entry = 0,
@@ -395,6 +401,90 @@ Nvk3UT.GetGoldenCategoryFont = getGoldenCategoryFont
 Nvk3UT.GetGoldenTitleFont = getGoldenTitleFont
 Nvk3UT.GetGoldenRowFont = getGoldenObjectiveFont
 
+local ROW_HEIGHT_METRICS = {
+    [ROW_KINDS.category] = {
+        fontKey = "Category",
+        minHeight = DEFAULTS.CATEGORY_HEIGHT,
+        paddingTop = 0,
+        paddingBottom = 0,
+    },
+    [ROW_KINDS.entry] = {
+        fontKey = "Title",
+        minHeight = DEFAULTS.ENTRY_HEIGHT,
+        paddingTop = 0,
+        paddingBottom = 0,
+    },
+    [ROW_KINDS.objective] = {
+        fontKey = "Objective",
+        minHeight = DEFAULTS.OBJECTIVE_HEIGHT,
+        paddingTop = 0,
+        paddingBottom = 0,
+    },
+}
+
+local resolvedRowHeights = {
+    [ROW_KINDS.category] = DEFAULTS.CATEGORY_HEIGHT,
+    [ROW_KINDS.entry] = DEFAULTS.ENTRY_HEIGHT,
+    [ROW_KINDS.objective] = DEFAULTS.OBJECTIVE_HEIGHT,
+}
+
+local function measureFontHeight(font)
+    if type(font) ~= "string" or font == "" then
+        return nil
+    end
+
+    if type(GetStringHeight) == "function" then
+        local ok, measured = pcall(GetStringHeight, font, "X", 1024)
+        if ok and type(measured) == "number" and measured > 0 then
+            return measured
+        end
+    end
+
+    return nil
+end
+
+local function resolveMetricsFont(fontKey)
+    if fontKey == "Category" then
+        return getGoldenCategoryFont()
+    elseif fontKey == "Title" then
+        return getGoldenTitleFont()
+    elseif fontKey == "Objective" then
+        return getGoldenObjectiveFont()
+    end
+
+    return nil
+end
+
+local function resolveRowHeight(kind)
+    local metrics = ROW_HEIGHT_METRICS[kind] or {}
+    local font = resolveMetricsFont(metrics.fontKey)
+    local measured = measureFontHeight(font) or 0
+    local paddingTop = metrics.paddingTop or 0
+    local paddingBottom = metrics.paddingBottom or 0
+    local computed = measured + paddingTop + paddingBottom
+    local minHeight = metrics.minHeight or 0
+    local resolved = minHeight
+
+    if computed > 0 then
+        resolved = math.max(minHeight, math.floor(computed + 0.5))
+    end
+
+    resolvedRowHeights[kind] = resolved
+    return resolved
+end
+
+local function getCategoryRowHeight()
+    return resolveRowHeight(ROW_KINDS.category)
+end
+
+local function getEntryRowHeight()
+    return resolveRowHeight(ROW_KINDS.entry)
+end
+
+local function getObjectiveRowHeight()
+    return resolveRowHeight(ROW_KINDS.objective)
+end
+
 local function sanitizeColorNumber(value)
     local numeric = tonumber(value)
     if numeric == nil then
@@ -690,6 +780,10 @@ local function createControl(parent, kind)
         control:SetMouseEnabled(true)
     end
 
+    if control then
+        control.__rowKind = kind
+    end
+
     return control
 end
 
@@ -756,9 +850,10 @@ local function createCategoryRow(parent)
     if control.SetMouseEnabled then
         control:SetMouseEnabled(true)
     end
-    control.__height = DEFAULTS.CATEGORY_HEIGHT
+    control.__rowKind = ROW_KINDS.category
+    control.__height = getCategoryRowHeight()
     if control.SetHeight then
-        control:SetHeight(DEFAULTS.CATEGORY_HEIGHT)
+        control:SetHeight(control.__height)
     end
 
     local chevronName = string.format("%s_CategoryChevron", controlName)
@@ -792,6 +887,8 @@ local function createCategoryRow(parent)
         label = label,
         chevron = chevron,
         name = controlName,
+        __height = getCategoryRowHeight(),
+        __rowKind = ROW_KINDS.category,
         _poolState = "fresh",
     }
 
@@ -834,10 +931,13 @@ local function resetCategoryRowVisuals(row, parent)
             control:SetResizeToFitDescendents(true)
         end
         if control.SetHeight then
-            control:SetHeight(DEFAULTS.CATEGORY_HEIGHT)
+            control:SetHeight(getCategoryRowHeight())
         end
-        control.__height = DEFAULTS.CATEGORY_HEIGHT
+        control.__rowKind = ROW_KINDS.category
+        control.__height = getCategoryRowHeight()
     end
+
+    row.__height = getCategoryRowHeight()
 
     local palette = getGoldenTrackerColors()
     local label = row.label
@@ -1116,9 +1216,10 @@ local function createEntryRow(parent)
     if control.SetScale then
         control:SetScale(1)
     end
-    control.__height = DEFAULTS.ENTRY_HEIGHT
+    control.__rowKind = ROW_KINDS.entry
+    control.__height = getEntryRowHeight()
     if control.SetHeight then
-        control:SetHeight(DEFAULTS.ENTRY_HEIGHT)
+        control:SetHeight(control.__height)
     end
 
     local label = createLabel(control, "EntryTitle")
@@ -1144,7 +1245,8 @@ local function createEntryRow(parent)
         control = control,
         label = label,
         name = controlName,
-        __height = DEFAULTS.ENTRY_HEIGHT,
+        __height = getEntryRowHeight(),
+        __rowKind = ROW_KINDS.entry,
         _poolState = "fresh",
     }
 
@@ -1192,9 +1294,10 @@ local function resetEntryRowVisuals(row, parent)
         if control.SetScale then
             control:SetScale(1)
         end
-        control.__height = DEFAULTS.ENTRY_HEIGHT
+        control.__rowKind = ROW_KINDS.entry
+        control.__height = getEntryRowHeight()
         if control.SetHeight then
-            control:SetHeight(DEFAULTS.ENTRY_HEIGHT)
+            control:SetHeight(control.__height)
         end
     end
 
@@ -1218,7 +1321,7 @@ local function resetEntryRowVisuals(row, parent)
         end
     end
 
-    row.__height = DEFAULTS.ENTRY_HEIGHT
+    row.__height = getEntryRowHeight()
     row._poolParent = parent
     row._poolState = "used"
 
@@ -1448,9 +1551,10 @@ function Rows.CreateObjectiveRow(parent, objectiveData)
         return nil
     end
 
-    control.__height = DEFAULTS.OBJECTIVE_HEIGHT
+    local objectiveHeight = getObjectiveRowHeight()
+    control.__height = objectiveHeight
     if control.SetHeight then
-        control:SetHeight(DEFAULTS.OBJECTIVE_HEIGHT)
+        control:SetHeight(objectiveHeight)
     end
 
     local palette = getGoldenTrackerColors()
@@ -1552,6 +1656,18 @@ function Rows.CreateObjectiveRow(parent, objectiveData)
     end
 
     return control
+end
+
+function Rows.GetCategoryRowHeight()
+    return getCategoryRowHeight()
+end
+
+function Rows.GetEntryRowHeight()
+    return getEntryRowHeight()
+end
+
+function Rows.GetObjectiveRowHeight()
+    return getObjectiveRowHeight()
 end
 
 Nvk3UT.GoldenTrackerRows = Rows
