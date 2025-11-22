@@ -509,10 +509,57 @@ local function isGoldenRowCandidateName(name, baseName)
 end
 
 local function cleanupOrphanedGoldenRows(content)
-    -- TEMP: disabled for safety. The previous implementation tried to
-    -- iterate over _G and detach controls, which caused ESO security
-    -- errors when touching protected UI like "Disconnect". We'll
-    -- reintroduce a scoped cleanup later if needed.
+    if not isControl(content) then
+        return
+    end
+
+    local baseName = getParentBaseName(content)
+    local root = content and content.GetParent and content:GetParent()
+    local container = root and root.GetParent and root:GetParent()
+    local logCleanup = isGoldenGhostDebugEnabled()
+
+    if logCleanup then
+        safeDebug("[GoldenGhost] cleanup start baseName=%s", tostring(baseName))
+    end
+
+    for controlName, control in pairs(_G) do
+        if isControl(control) then
+            local name = type(controlName) == "string" and controlName or tostring(controlName)
+            if type(name) == "string" and name ~= "" and isGoldenRowCandidateName(name, baseName) then
+                local parent = control.GetParent and control:GetParent()
+                if parent ~= content and parent ~= root and parent ~= container and parent ~= nil then
+                    if logCleanup then
+                        local parentName = "<nil>"
+                        if parent and parent.GetName then
+                            local ok, resolvedName = pcall(parent.GetName, parent)
+                            if ok and type(resolvedName) == "string" and resolvedName ~= "" then
+                                parentName = resolvedName
+                            end
+                        end
+
+                        safeDebug(
+                            "[GoldenGhost] cleaned orphan name=%s parent=%s content=%s root=%s container=%s",
+                            tostring(name),
+                            tostring(parentName),
+                            tostring(parent == content),
+                            tostring(parent == root),
+                            tostring(parent == container)
+                        )
+                    end
+
+                    if control.SetHidden then
+                        control:SetHidden(true)
+                    end
+                    if control.ClearAnchors then
+                        control:ClearAnchors()
+                    end
+                    if control.SetParent then
+                        control:SetParent(nil)
+                    end
+                end
+            end
+        end
+    end
 end
 
 local function debugDumpGoldenHierarchy(tag, content)
