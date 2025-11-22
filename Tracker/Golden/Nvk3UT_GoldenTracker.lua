@@ -1059,10 +1059,14 @@ function GoldenTracker.Refresh(...)
         return
     end
 
-    ClearChildren(content)
-
     local rowsModule = getRowsModule()
     local layoutModule = getLayoutModule()
+
+    if rowsModule and type(rowsModule.ReleaseAllCategoryRows) == "function" then
+        rowsModule.ReleaseAllCategoryRows()
+    end
+
+    ClearChildren(content)
 
     tracker.viewModel = type(viewModel) == "table" and viewModel or nil
     local vm = tracker.viewModel
@@ -1149,9 +1153,20 @@ function GoldenTracker.Refresh(...)
                 categoryPayload.isExpanded = categoryExpanded
             end
 
-            local categoryRow = safeCreateRow(rowsModule.CreateCategoryRow, content, categoryPayload)
+            local categoryRow = nil
+            if type(rowsModule.AcquireCategoryRow) == "function" then
+                categoryRow = rowsModule.AcquireCategoryRow(content)
+                if categoryRow and type(rowsModule.ApplyCategoryRow) == "function" then
+                    rowsModule.ApplyCategoryRow(categoryRow, categoryPayload)
+                end
+            end
+
+            if categoryRow == nil then
+                categoryRow = safeCreateRow(rowsModule.CreateCategoryRow, content, categoryPayload)
+            end
+
             if categoryRow then
-                table.insert(rows, categoryRow)
+                table.insert(rows, categoryRow.control or categoryRow)
             end
 
             if categoryExpanded then
