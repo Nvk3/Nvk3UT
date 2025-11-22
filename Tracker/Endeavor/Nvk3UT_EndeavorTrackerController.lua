@@ -659,19 +659,20 @@ function Controller:BuildViewModel()
         end
 
         for _, item in ipairs(list) do
-            local skipObjective = hideCompletedObjectivesForRecolorMode and item.completed
+            local objective, aggregated = mapObjective(item)
+            if objective then
+                local objectiveCompleted = objective.completed == true
+                local skipObjective = hideCompletedObjectivesForRecolorMode and objectiveCompleted
 
-            if skipObjective then
-                if isDebugEnabled() then
-                    DBG(
-                        "objective suppressed for completed entry in recolor mode (%s): %s",
-                        tostring(kind),
-                        tostring(item.name)
-                    )
-                end
-            else
-                local objective, aggregated = mapObjective(item)
-                if objective then
+                if skipObjective then
+                    if isDebugEnabled() then
+                        DBG(
+                            "objective suppressed for completed entry in recolor mode (%s): %s",
+                            tostring(kind),
+                            tostring(objective.text)
+                        )
+                    end
+                else
                     if aggregated then
                         aggregated.type = kind
                         aggregatedItems[#aggregatedItems + 1] = aggregated
