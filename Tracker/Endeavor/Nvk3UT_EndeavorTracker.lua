@@ -434,6 +434,49 @@ local function toggleCategoryExpanded(key)
     end
 end
 
+local function openTimedActivities(kind)
+    local showTimedActivities = rawget(_G, "ZO_ShowTimedActivities") or ZO_ShowTimedActivities
+    if type(showTimedActivities) ~= "function" then
+        return
+    end
+
+    showTimedActivities()
+
+    local isGamepadPreferred = false
+    local getGamepadPreferredMode = rawget(_G, "IsInGamepadPreferredMode") or IsInGamepadPreferredMode
+    if type(getGamepadPreferredMode) == "function" then
+        local ok, preferred = pcall(getGamepadPreferredMode)
+        if ok and preferred == true then
+            isGamepadPreferred = true
+        end
+    end
+
+    if isGamepadPreferred then
+        return
+    end
+
+    local timedActivitiesKeyboard = rawget(_G, "TIMED_ACTIVITIES_KEYBOARD") or TIMED_ACTIVITIES_KEYBOARD
+    if type(timedActivitiesKeyboard) ~= "table" then
+        return
+    end
+
+    local setCurrentActivityType = timedActivitiesKeyboard.SetCurrentActivityType
+    if type(setCurrentActivityType) ~= "function" then
+        return
+    end
+
+    local activityType = nil
+    if kind == "daily" then
+        activityType = rawget(_G, "TIMED_ACTIVITY_TYPE_DAILY") or TIMED_ACTIVITY_TYPE_DAILY
+    elseif kind == "weekly" then
+        activityType = rawget(_G, "TIMED_ACTIVITY_TYPE_WEEKLY") or TIMED_ACTIVITY_TYPE_WEEKLY
+    end
+
+    if activityType ~= nil then
+        setCurrentActivityType(timedActivitiesKeyboard, activityType)
+    end
+end
+
 local function getFrameTime()
     local getter = rawget(_G, "GetFrameTimeMilliseconds")
     if type(getter) ~= "function" then
@@ -1334,8 +1377,31 @@ local function ensureUi(container)
         control:SetMouseEnabled(true)
         control:SetHidden(false)
         control:SetHandler("OnMouseUp", function(_, button, upInside)
-            if button == MOUSE_BUTTON_INDEX_LEFT and upInside then
+            if upInside ~= true then
+                return
+            end
+
+            if button == MOUSE_BUTTON_INDEX_LEFT then
                 toggleCategoryExpanded("daily")
+                return
+            end
+
+            if button == MOUSE_BUTTON_INDEX_RIGHT then
+                if not (ClearMenu and AddCustomMenuItem and ShowMenu) then
+                    return
+                end
+
+                ClearMenu()
+                local optionType = (_G and _G.MENU_ADD_OPTION_LABEL) or MENU_ADD_OPTION_LABEL or 1
+                AddCustomMenuItem(
+                    "Tägliche Bestrebungen öffnen",
+                    function()
+                        openTimedActivities("daily")
+                        safeDebug("[EndeavorTracker.UI] Context: open daily timed activities base UI")
+                    end,
+                    optionType
+                )
+                ShowMenu(control)
             end
         end)
 
@@ -1381,8 +1447,31 @@ local function ensureUi(container)
         control:SetMouseEnabled(true)
         control:SetHidden(false)
         control:SetHandler("OnMouseUp", function(_, button, upInside)
-            if button == MOUSE_BUTTON_INDEX_LEFT and upInside then
+            if upInside ~= true then
+                return
+            end
+
+            if button == MOUSE_BUTTON_INDEX_LEFT then
                 toggleCategoryExpanded("weekly")
+                return
+            end
+
+            if button == MOUSE_BUTTON_INDEX_RIGHT then
+                if not (ClearMenu and AddCustomMenuItem and ShowMenu) then
+                    return
+                end
+
+                ClearMenu()
+                local optionType = (_G and _G.MENU_ADD_OPTION_LABEL) or MENU_ADD_OPTION_LABEL or 1
+                AddCustomMenuItem(
+                    "Wöchentliche Bestrebungen öffnen",
+                    function()
+                        openTimedActivities("weekly")
+                        safeDebug("[EndeavorTracker.UI] Context: open weekly timed activities base UI")
+                    end,
+                    optionType
+                )
+                ShowMenu(control)
             end
         end)
 

@@ -590,7 +590,7 @@ function Controller:BuildViewModel()
     dailyDisplayCompleted = dailyDoneCapped
     weeklyDisplayCompleted = weeklyDoneCapped
 
-    local function mapObjective(item)
+    local function mapObjective(item, kind)
         if type(item) ~= "table" then
             return nil, nil
         end
@@ -605,6 +605,8 @@ function Controller:BuildViewModel()
             max = maxValue,
             completed = completed,
             remainingSeconds = clampNonNegative(item.remainingSeconds, 0),
+            id = item.id,
+            kind = kind,
         }
 
         local aggregated = {
@@ -615,6 +617,8 @@ function Controller:BuildViewModel()
             type = nil,
             remainingSeconds = objective.remainingSeconds,
             completed = completed,
+            id = item.id,
+            kind = kind,
         }
 
         return objective, aggregated
@@ -633,7 +637,7 @@ function Controller:BuildViewModel()
         end
 
         for _, item in ipairs(list) do
-            local objective, aggregated = mapObjective(item)
+            local objective, aggregated = mapObjective(item, kind)
             if objective then
                 if aggregated then
                     aggregated.type = kind

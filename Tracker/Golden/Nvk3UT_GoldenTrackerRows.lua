@@ -60,6 +60,7 @@ local CATEGORY_CHEVRON_TEXTURES = {
 }
 
 local MOUSE_BUTTON_LEFT = rawget(_G, "MOUSE_BUTTON_INDEX_LEFT") or 1
+local MOUSE_BUTTON_RIGHT = rawget(_G, "MOUSE_BUTTON_INDEX_RIGHT") or 2
 
 local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
 local DEFAULT_FONT_FACE = "$(BOLD_FONT)"
@@ -1199,6 +1200,51 @@ local function detachEntryFromUsed(row)
     end
 end
 
+local function openGoldenPromotionalEvent(control)
+    local context = control and control._goldenContext
+    local manager = rawget(_G, "PROMOTIONAL_EVENT_MANAGER") or PROMOTIONAL_EVENT_MANAGER
+
+    if type(manager) == "table" and type(manager.ShowPromotionalEventScene) == "function" then
+        local campaignData = nil
+        if type(context) == "table" and context.kind == "campaign" then
+            campaignData = context.campaignData
+        end
+
+        manager:ShowPromotionalEventScene(false, campaignData)
+    end
+
+    local campaignLabel = "root"
+    if type(context) == "table" and context.kind == "campaign" then
+        campaignLabel = context.campaign or context.id or "root"
+    end
+
+    safeDebug("[GoldenTracker.UI] Context: open golden promotional event base UI (campaign=%s)", campaignLabel)
+end
+
+local function showGoldenEntryContextMenu(control)
+    local context = control and control._goldenContext
+    if type(context) ~= "table" or context.kind ~= "campaign" then
+        return
+    end
+
+    if not (ClearMenu and AddCustomMenuItem and ShowMenu) then
+        return
+    end
+
+    ClearMenu()
+
+    local optionType = (_G and _G.MENU_ADD_OPTION_LABEL) or MENU_ADD_OPTION_LABEL or 1
+    AddCustomMenuItem(
+        "Goldene Vorhaben öffnen",
+        function()
+            openGoldenPromotionalEvent(control)
+        end,
+        optionType
+    )
+
+    ShowMenu(control)
+end
+
 local function createEntryRow(parent)
     local wm = getWindowManager()
     if wm == nil or parent == nil then
@@ -1257,12 +1303,18 @@ local function createEntryRow(parent)
     }
 
     if control and control.SetHandler then
-        control:SetHandler("OnMouseUp", function(_, button, upInside)
-            if button == MOUSE_BUTTON_LEFT and upInside then
+        control:SetHandler("OnMouseUp", function(self, button, upInside)
+            if not upInside then
+                return
+            end
+
+            if button == MOUSE_BUTTON_LEFT then
                 local controller = rawget(Nvk3UT, "GoldenTrackerController")
                 if controller and type(controller.ToggleEntryExpanded) == "function" then
                     controller:ToggleEntryExpanded()
                 end
+            elseif button == MOUSE_BUTTON_RIGHT then
+                showGoldenEntryContextMenu(self)
             end
         end)
     end
@@ -1300,6 +1352,7 @@ local function resetEntryRowVisuals(row, parent)
         if control.SetScale then
             control:SetScale(1)
         end
+        control._goldenContext = nil
         control.__rowKind = ROW_KINDS.entry
         control.__height = getEntryRowHeight()
         if control.SetHeight then
@@ -1385,6 +1438,8 @@ local function releaseEntryRow(row)
             label:SetHidden(true)
         end
     end
+
+    row._goldenContext = nil
 
     row._poolParent = nil
     row._poolState = "free"
@@ -1641,6 +1696,16 @@ local function applyEntryRow(row, entryData)
     end
 
     applyLabelDefaults(label, getGoldenTitleFont())
+
+    if type(entryData) == "table" then
+        targetRow._goldenContext = {
+            kind = "campaign",
+            campaign = entryData.campaignId or entryData.campaignKey or entryData.campaignName,
+            id = entryData.entryId or entryData.id,
+        }
+    else
+        targetRow._goldenContext = nil
+    end
 
     local palette = getGoldenTrackerColors()
     local entryExpanded = true

@@ -187,6 +187,19 @@ local function safeDebug(fmt, ...)
     end
 end
 
+local function onEntryMouseUp(control, button, upInside)
+    if control == nil or upInside ~= true then
+        return
+    end
+
+    if button == MOUSE_BUTTON_LEFT then
+        local onLeftClick = control._entryOnLeftClick
+        if type(onLeftClick) == "function" then
+            onLeftClick(control)
+        end
+    end
+end
+
 local function normalizeSubrowKind(kind)
     local key = kind
     if type(key) ~= "string" then
@@ -283,6 +296,15 @@ local function acquireSubrowControl(row, container, index)
         if existing.SetParent then
             existing:SetParent(container)
         end
+        if existing.SetMouseEnabled then
+            existing:SetMouseEnabled(true)
+        end
+        if existing.SetHidden then
+            existing:SetHidden(true)
+        end
+        if existing.SetHandler then
+            existing:SetHandler("OnMouseUp", ignoreObjectiveMouseUp)
+        end
         return existing
     end
 
@@ -295,8 +317,11 @@ local function acquireSubrowControl(row, container, index)
     end
 
     control:SetResizeToFitDescendents(false)
-    control:SetMouseEnabled(false)
+    control:SetMouseEnabled(true)
     control:SetHidden(true)
+    if control.SetHandler then
+        control:SetHandler("OnMouseUp", ignoreObjectiveMouseUp)
+    end
     control._subrowOwner = row
 
     row._subrowControls[index] = control
@@ -325,6 +350,10 @@ local function hideUnusedSubrows(row, startIndex)
             end
         end
     end
+end
+
+local function ignoreObjectiveMouseUp()
+    -- Intentionally ignore clicks on Endeavor objective subrows; only entry rows should react.
 end
 
 local function ensureSubrowLeftLabel(control)
@@ -884,7 +913,7 @@ local function acquireEntryRow(parent)
         row:SetResizeToFitDescendents(false)
     end
     if row.SetMouseEnabled then
-        row:SetMouseEnabled(false)
+        row:SetMouseEnabled(true)
     end
 
     markEntryUsed(row, parent)
@@ -966,6 +995,8 @@ local function resetEntryRowContent(row)
     row._subrows = nil
     row._subrowCount = 0
     row._subrowsVisibleCount = 0
+    row._entryOnLeftClick = nil
+    row._entryContext = nil
 end
 
 local function releaseEntryRow(row)
@@ -1702,6 +1733,17 @@ local function applyEntryRow(row, objective, options)
     end
     title:SetText(combinedText)
     row.Label = title
+
+    local leftClickHandler = type(objective) == "table" and objective.onLeftClick or nil
+    row._entryOnLeftClick = type(leftClickHandler) == "function" and leftClickHandler or nil
+
+    if row.SetMouseEnabled then
+        row:SetMouseEnabled(true)
+    end
+
+    if row.SetHandler then
+        row:SetHandler("OnMouseUp", onEntryMouseUp)
+    end
 
     local progress = ensureEntryChild(row, progressName, CT_LABEL)
     progress:SetParent(row)
