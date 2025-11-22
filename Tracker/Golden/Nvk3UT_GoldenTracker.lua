@@ -1066,7 +1066,8 @@ function GoldenTracker.Refresh(...)
     local generalMode = vm and (vm.generalCompletedMode or summary.generalCompletedMode)
     local hideCategoryWhenCompleted = vm and (vm.hideCategoryWhenCompleted == true or summary.hideCategoryWhenCompleted == true)
     local hideObjectivesWhenCompleted = vm and (vm.hideObjectivesWhenCompleted == true or summary.hideObjectivesWhenCompleted == true)
-    local showOpenMode = vm and (vm.showOpenMode == true or (capstoneReached and generalMode == "showOpen"))
+    local showOpenObjectiveRecolorMode = vm and vm.showOpenObjectiveRecolorMode == true
+    local showOpenMode = vm and not showOpenObjectiveRecolorMode and (vm.showOpenMode == true or (capstoneReached and generalMode == "showOpen"))
 
     if hideCategoryWhenCompleted then
         hasEntriesForTracker = false

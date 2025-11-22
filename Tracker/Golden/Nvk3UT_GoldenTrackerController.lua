@@ -1050,9 +1050,10 @@ function Controller:BuildViewModel(options)
     local goldenConfig = getGoldenConfig()
     local generalHandling = resolveGeneralHandling(goldenConfig)
     local capstoneReached = isCapstoneComplete(summary)
+    local showOpenObjectiveRecolorMode = generalHandling == "showOpen" and objectiveHandling == "recolor"
     local hideCategoryWhenCompleted = capstoneReached and generalHandling == "hide"
-    local hideObjectivesWhenCompleted = capstoneReached and (generalHandling == "recolor" or generalHandling == "showOpen")
-    local showOpenMode = capstoneReached and generalHandling == "showOpen"
+    local hideObjectivesWhenCompleted = capstoneReached and (generalHandling == "recolor" or (generalHandling == "showOpen" and not showOpenObjectiveRecolorMode))
+    local showOpenMode = capstoneReached and generalHandling == "showOpen" and not showOpenObjectiveRecolorMode
 
     summary.capstoneReached = capstoneReached
     summary.generalCompletedMode = generalHandling
@@ -1064,7 +1065,7 @@ function Controller:BuildViewModel(options)
     local hideObjectivesForRecolorMode = generalHandling == "recolor" and objectiveHandling == "hide"
     if capstoneReached and generalHandling == "recolor" then
         trackerObjectives = {}
-    elseif capstoneReached and generalHandling == "showOpen" then
+    elseif capstoneReached and generalHandling == "showOpen" and not showOpenObjectiveRecolorMode then
         trackerObjectives = {}
         for index = 1, #rawObjectives do
             local objectiveData = rawObjectives[index]
@@ -1121,6 +1122,7 @@ function Controller:BuildViewModel(options)
     viewModel.hideCategoryWhenCompleted = hideCategoryWhenCompleted
     viewModel.hideObjectivesWhenCompleted = hideObjectivesWhenCompleted
     viewModel.showOpenMode = showOpenMode
+    viewModel.showOpenObjectiveRecolorMode = showOpenObjectiveRecolorMode
     viewModel.totalObjectives = totalObjectives
     viewModel.totalCompletedOverall = totalCompletedOverall
     viewModel.capstoneGoal = capstoneGoal
