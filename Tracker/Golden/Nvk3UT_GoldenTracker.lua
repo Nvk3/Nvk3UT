@@ -455,14 +455,22 @@ local function isControl(control)
         return false
     end
 
-    if type(control) == "userdata" then
-        return true
+    if type(control) ~= "userdata" then
+        return false
     end
 
     local getType = control and control.GetType
     if type(getType) == "function" then
         local ok, objectType = pcall(getType, control)
         if ok and type(objectType) == "number" then
+            return true
+        end
+    end
+
+    local getName = control and control.GetName
+    if type(getName) == "function" then
+        local ok, name = pcall(getName, control)
+        if ok and type(name) == "string" then
             return true
         end
     end
@@ -523,39 +531,37 @@ local function cleanupOrphanedGoldenRows(content)
     end
 
     for controlName, control in pairs(_G) do
-        if isControl(control) then
-            local name = type(controlName) == "string" and controlName or tostring(controlName)
-            if type(name) == "string" and name ~= "" and isGoldenRowCandidateName(name, baseName) then
-                local parent = control.GetParent and control:GetParent()
-                if parent ~= content and parent ~= root and parent ~= container and parent ~= nil then
-                    if logCleanup then
-                        local parentName = "<nil>"
-                        if parent and parent.GetName then
-                            local ok, resolvedName = pcall(parent.GetName, parent)
-                            if ok and type(resolvedName) == "string" and resolvedName ~= "" then
-                                parentName = resolvedName
-                            end
+        if type(controlName) == "string" and controlName ~= "" and isGoldenRowCandidateName(controlName, baseName) and
+            isControl(control) then
+            local parent = control.GetParent and control:GetParent()
+            if parent ~= content and parent ~= root and parent ~= container and parent ~= nil then
+                if logCleanup then
+                    local parentName = "<nil>"
+                    if parent and parent.GetName then
+                        local ok, resolvedName = pcall(parent.GetName, parent)
+                        if ok and type(resolvedName) == "string" and resolvedName ~= "" then
+                            parentName = resolvedName
                         end
-
-                        safeDebug(
-                            "[GoldenGhost] cleaned orphan name=%s parent=%s content=%s root=%s container=%s",
-                            tostring(name),
-                            tostring(parentName),
-                            tostring(parent == content),
-                            tostring(parent == root),
-                            tostring(parent == container)
-                        )
                     end
 
-                    if control.SetHidden then
-                        control:SetHidden(true)
-                    end
-                    if control.ClearAnchors then
-                        control:ClearAnchors()
-                    end
-                    if control.SetParent then
-                        control:SetParent(nil)
-                    end
+                    safeDebug(
+                        "[GoldenGhost] cleaned orphan name=%s parent=%s content=%s root=%s container=%s",
+                        tostring(controlName),
+                        tostring(parentName),
+                        tostring(parent == content),
+                        tostring(parent == root),
+                        tostring(parent == container)
+                    )
+                end
+
+                if control.SetHidden then
+                    control:SetHidden(true)
+                end
+                if control.ClearAnchors then
+                    control:ClearAnchors()
+                end
+                if control.SetParent then
+                    control:SetParent(nil)
                 end
             end
         end
