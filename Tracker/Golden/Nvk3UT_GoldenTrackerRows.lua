@@ -59,8 +59,8 @@ local CATEGORY_CHEVRON_TEXTURES = {
     collapsed = "EsoUI/Art/Buttons/tree_closed_up.dds",
 }
 
-local MOUSE_BUTTON_LEFT = rawget(_G, "MOUSE_BUTTON_INDEX_LEFT") or 1
-local MOUSE_BUTTON_RIGHT = rawget(_G, "MOUSE_BUTTON_INDEX_RIGHT") or 2
+local LEFT_MOUSE_BUTTON = MOUSE_BUTTON_INDEX_LEFT or 1
+local RIGHT_MOUSE_BUTTON = MOUSE_BUTTON_INDEX_RIGHT or 2
 
 local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
 local DEFAULT_FONT_FACE = "$(BOLD_FONT)"
@@ -1050,7 +1050,7 @@ local function createCategoryRow(parent)
 
     if control and control.SetHandler then
         control:SetHandler("OnMouseUp", function(_, button, upInside)
-            if button == MOUSE_BUTTON_LEFT and upInside then
+            if button == LEFT_MOUSE_BUTTON and upInside then
                 local callback = row._onToggle
                 if type(callback) == "function" then
                     callback()
@@ -1410,7 +1410,7 @@ local function createEntryRow(parent)
 
     if control and control.SetHandler then
         control:SetHandler("OnMouseUp", function(_, button, upInside)
-            if button == MOUSE_BUTTON_LEFT and upInside then
+            if button == LEFT_MOUSE_BUTTON and upInside then
                 local controller = rawget(Nvk3UT, "GoldenTrackerController")
                 if controller and type(controller.ToggleEntryExpanded) == "function" then
                     controller:ToggleEntryExpanded()
@@ -1634,7 +1634,7 @@ local function createObjectiveRow(parent)
 
     if control and control.SetHandler then
         control:SetHandler("OnMouseUp", function(_, button, upInside)
-            if not upInside or button ~= MOUSE_BUTTON_RIGHT then
+            if not upInside or button ~= RIGHT_MOUSE_BUTTON then
                 return
             end
 

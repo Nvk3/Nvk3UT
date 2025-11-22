@@ -99,8 +99,8 @@ local DEFAULT_CATEGORY_CHEVRON_TEXTURES = {
     collapsed = "EsoUI/Art/Buttons/tree_closed_up.dds",
 }
 
-local MOUSE_BUTTON_LEFT = rawget(_G, "MOUSE_BUTTON_INDEX_LEFT") or 1
-local MOUSE_BUTTON_RIGHT = rawget(_G, "MOUSE_BUTTON_INDEX_RIGHT") or 2
+local LEFT_MOUSE_BUTTON = MOUSE_BUTTON_INDEX_LEFT or 1
+local RIGHT_MOUSE_BUTTON = MOUSE_BUTTON_INDEX_RIGHT or 2
 local TIMED_ACTIVITY_TYPE_DAILY = _G.TIMED_ACTIVITY_TYPE_DAILY
 local TIMED_ACTIVITY_TYPE_WEEKLY = _G.TIMED_ACTIVITY_TYPE_WEEKLY
 
@@ -1231,12 +1231,12 @@ local function createCategoryRow(parent)
                 return
             end
 
-            if button == MOUSE_BUTTON_LEFT then
+            if button == LEFT_MOUSE_BUTTON then
                 local callback = row._onToggle
                 if type(callback) == "function" then
                     callback()
                 end
-            elseif button == MOUSE_BUTTON_RIGHT then
+            elseif button == RIGHT_MOUSE_BUTTON then
                 if row.data then
                     if isDebugEnabled() then
                         local _, activityIndex, activityKind = resolveActivityIdentity(row.data)
