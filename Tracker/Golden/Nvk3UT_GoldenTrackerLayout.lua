@@ -114,32 +114,33 @@ function Layout.ApplyLayout(parentControl, rows)
 
     for index = 1, #rows do
         local row = rows[index]
-        if row and (type(row) == "userdata" or type(row) == "table") then
-            if type(row.ClearAnchors) == "function" then
-                row:ClearAnchors()
+        local control = (type(row) == "table" and row.control) or row
+        if control and (type(control) == "userdata" or type(control) == "table") then
+            if type(control.ClearAnchors) == "function" then
+                control:ClearAnchors()
             end
 
-            if type(row.SetParent) == "function" then
-                row:SetParent(parentControl)
+            if type(control.SetParent) == "function" then
+                control:SetParent(parentControl)
             end
 
-            if type(row.SetHidden) == "function" then
-                row:SetHidden(false)
+            if type(control.SetHidden) == "function" then
+                control:SetHidden(false)
             end
 
-            if type(row.SetAnchor) == "function" then
+            if type(control.SetAnchor) == "function" then
                 if previousRow and type(previousRow.SetAnchor) == "function" then
-                    row:SetAnchor(TOPLEFT, previousRow, BOTTOMLEFT, 0, ROW_GAP)
+                    control:SetAnchor(TOPLEFT, previousRow, BOTTOMLEFT, 0, ROW_GAP)
                 else
-                    row:SetAnchor(TOPLEFT, parentControl, TOPLEFT, 0, 0)
+                    control:SetAnchor(TOPLEFT, parentControl, TOPLEFT, 0, 0)
                 end
             end
 
-            applyDimensions(row, parentWidth)
+            applyDimensions(control, parentWidth)
 
-            local height = tonumber(row.__height) or 0
-            if type(row.GetHeight) == "function" then
-                local ok, measured = pcall(row.GetHeight, row)
+            local height = tonumber(control.__height) or tonumber(row and row.__height) or 0
+            if type(control.GetHeight) == "function" then
+                local ok, measured = pcall(control.GetHeight, control)
                 if ok and type(measured) == "number" then
                     height = measured
                 end
@@ -154,7 +155,7 @@ function Layout.ApplyLayout(parentControl, rows)
             end
 
             totalHeight = totalHeight + height
-            previousRow = row
+            previousRow = control
         end
     end
 

@@ -78,6 +78,12 @@ local controlCounters = {
     objective = 0,
 }
 
+local categoryPool = {
+    free = {},
+    used = {},
+    nextId = 1,
+}
+
 local function getAddon()
     return rawget(_G, addonName)
 end
@@ -711,37 +717,142 @@ local function applyLabelColor(label, role, palette, overrideColors, colorKind)
     return r, g, b, a, source, sourceReason
 end
 
-function Rows.CreateCategoryRow(parent, categoryData)
-    if parent == nil then
-        return nil
-    end
+local function buildCategoryControlName(parent)
+    local parentName = resolveParentName(parent)
+    local index = categoryPool.nextId or 1
+    categoryPool.nextId = index + 1
+    return string.format("%s_categoryRow%d", parentName, index)
+end
 
+local function detachCategoryFromUsed(row)
+    for index = #categoryPool.used, 1, -1 do
+        if categoryPool.used[index] == row then
+            table.remove(categoryPool.used, index)
+            return
+        end
+    end
+end
+
+local function createCategoryRow(parent)
     local wm = getWindowManager()
-    if wm == nil then
+    if wm == nil or parent == nil then
         return nil
     end
 
-    local palette = getGoldenTrackerColors()
-    local control = createControl(parent, "category")
-    if not control then
-        return nil
+    local controlName = buildCategoryControlName(parent)
+    local control = wm:CreateControl(controlName, parent, CT_CONTROL)
+    if control.SetResizeToFitDescendents then
+        control:SetResizeToFitDescendents(true)
     end
-
+    if control.SetHidden then
+        control:SetHidden(false)
+    end
+    if control.SetMouseEnabled then
+        control:SetMouseEnabled(true)
+    end
     control.__height = DEFAULTS.CATEGORY_HEIGHT
     if control.SetHeight then
         control:SetHeight(DEFAULTS.CATEGORY_HEIGHT)
     end
 
-    local chevron = nil
-    local controlName = control.GetName and control:GetName() or resolveParentName(control)
-    if controlName then
-        local chevronName = string.format("%s_CategoryChevron", controlName)
-        chevron = wm:CreateControl(chevronName, control, CT_TEXTURE)
-        if chevron.SetMouseEnabled then
-            chevron:SetMouseEnabled(false)
+    local chevronName = string.format("%s_CategoryChevron", controlName)
+    local chevron = wm:CreateControl(chevronName, control, CT_TEXTURE)
+    if chevron.SetMouseEnabled then
+        chevron:SetMouseEnabled(false)
+    end
+    if chevron.SetHidden then
+        chevron:SetHidden(false)
+    end
+    if chevron.SetDimensions then
+        chevron:SetDimensions(CATEGORY_CHEVRON_SIZE, CATEGORY_CHEVRON_SIZE)
+    end
+    if chevron.ClearAnchors then
+        chevron:ClearAnchors()
+        chevron:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+    end
+
+    local label = createLabel(control, "Category")
+    if label then
+        label:ClearAnchors()
+        if label.SetAnchor then
+            label:SetAnchor(TOPLEFT, chevron, TOPRIGHT, CATEGORY_LABEL_OFFSET_X, 0)
+            label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
         end
+        applyLabelDefaults(label, getGoldenCategoryFont())
+    end
+
+    local row = {
+        control = control,
+        label = label,
+        chevron = chevron,
+        name = controlName,
+        _poolState = "fresh",
+    }
+
+    if control and control.SetHandler then
+        control:SetHandler("OnMouseUp", function(_, button, upInside)
+            if button == MOUSE_BUTTON_LEFT and upInside then
+                local callback = row._onToggle
+                if type(callback) == "function" then
+                    callback()
+                end
+            end
+        end)
+    end
+
+    safeDebug("[CategoryPool] create %s", tostring(controlName))
+
+    return row
+end
+
+local function resetCategoryRowVisuals(row, parent)
+    if not row then
+        return
+    end
+
+    local control = row.control
+    if control then
+        if control.SetParent then
+            control:SetParent(parent)
+        end
+        if control.SetHidden then
+            control:SetHidden(false)
+        end
+        if control.SetAlpha then
+            control:SetAlpha(1)
+        end
+        if control.ClearAnchors then
+            control:ClearAnchors()
+        end
+        if control.SetResizeToFitDescendents then
+            control:SetResizeToFitDescendents(true)
+        end
+        if control.SetHeight then
+            control:SetHeight(DEFAULTS.CATEGORY_HEIGHT)
+        end
+        control.__height = DEFAULTS.CATEGORY_HEIGHT
+    end
+
+    local palette = getGoldenTrackerColors()
+    local label = row.label
+    if label then
+        if label.SetHidden then
+            label:SetHidden(false)
+        end
+        if label.SetText then
+            label:SetText("")
+        end
+        applyLabelDefaults(label, getGoldenCategoryFont())
+        applyLabelColor(label, GOLDEN_COLOR_ROLES.CategoryTitleOpen, palette, nil, DEFAULT_COLOR_KIND)
+    end
+
+    local chevron = row.chevron
+    if chevron then
         if chevron.SetHidden then
             chevron:SetHidden(false)
+        end
+        if chevron.SetTexture then
+            chevron:SetTexture(CATEGORY_CHEVRON_TEXTURES.collapsed)
         end
         if chevron.SetDimensions then
             chevron:SetDimensions(CATEGORY_CHEVRON_SIZE, CATEGORY_CHEVRON_SIZE)
@@ -752,98 +863,197 @@ function Rows.CreateCategoryRow(parent, categoryData)
         end
     end
 
-    local label = createLabel(control, "Category")
-    if label then
-        label:ClearAnchors()
-        if label.SetAnchor then
-            local anchorTarget = chevron or control
-            label:SetAnchor(TOPLEFT, anchorTarget, TOPRIGHT, CATEGORY_LABEL_OFFSET_X, 0)
-            label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
-        end
-        applyLabelDefaults(label, getGoldenCategoryFont())
+    row._poolParent = parent
+    row._poolState = "used"
+    row._onToggle = nil
 
-        local expanded = true
-        if type(categoryData) == "table" then
-            if categoryData.isExpanded ~= nil then
-                expanded = categoryData.isExpanded ~= false
-            elseif categoryData.expanded ~= nil then
-                expanded = categoryData.expanded ~= false
-            end
-        end
+    categoryPool.used[#categoryPool.used + 1] = row
 
-        local categoryComplete = isCapstoneComplete(categoryData)
-        local role
-        if expanded then
-            role = GOLDEN_COLOR_ROLES.Active
-        elseif categoryComplete then
-            role = GOLDEN_COLOR_ROLES.CategoryTitleClosed
-        else
-            role = GOLDEN_COLOR_ROLES.CategoryTitleOpen
-        end
-        local colorR, colorG, colorB, colorA, colorSource, colorSourceReason = applyLabelColor(label, role, palette)
-        if colorR ~= nil and isGoldenColorDebugEnabled() then
-            local stateTokens = {
-                expanded and "active" or "inactive",
-                categoryComplete and "capstoneComplete" or "capstoneOpen",
-            }
-            local reason
-            if expanded then
-                reason = "Category active; using focused color"
-            elseif categoryComplete then
-                reason = "Capstone reached; using completed category color"
-            else
-                reason = "Capstone open; using open category color"
-            end
-            if colorSourceReason and colorSourceReason ~= "" then
-                reason = string.format("%s (%s)", reason, colorSourceReason)
-            end
+    safeDebug(
+        "[CategoryPool] acquire %s (used=%d free=%d)",
+        tostring(row.name),
+        #categoryPool.used,
+        #categoryPool.free
+    )
+end
 
-            logGoldenColorDecision(
-                "golden.categoryHeader",
-                table.concat(stateTokens, "+"),
-                colorSource or string.format("role.%s", tostring(role)),
-                { colorR, colorG, colorB, colorA },
-                reason,
-                { role = role, palette = palette and palette[role] }
-            )
-        end
+local function acquireCategoryRow(parent)
+    local row
+    if #categoryPool.free > 0 then
+        row = table.remove(categoryPool.free)
+    end
 
-        local text = GOLDEN_HEADER_TITLE
-        local showCounter = shouldShowGoldenHeaderCounter()
-        local remaining = nil
-        local generalMode = type(categoryData) == "table" and categoryData.generalCompletedMode
-        local capstoneReached = categoryData and categoryData.capstoneReached == true
-        if type(categoryData) == "table" then
-            if showCounter and capstoneReached and generalMode == "showOpen" then
-                remaining = tonumber(categoryData.remainingAllObjectives) or 0
-            else
-                remaining = tonumber(categoryData.remainingObjectivesToNextReward) or 0
-            end
-        end
+    if not row then
+        row = createCategoryRow(parent)
+    end
 
-        if showCounter and remaining ~= nil then
-            text = string.format("%s (%d)", GOLDEN_HEADER_TITLE, remaining)
-        end
+    if not row then
+        return nil
+    end
 
-        if not showCounter then
-            text = GOLDEN_HEADER_TITLE
-        end
+    resetCategoryRowVisuals(row, parent)
 
-        if isGoldenColorDebugEnabled() then
-            safeDebug(
-                "[GoldenHeader] title='%s' count=%s showCounter=%s",
-                text,
-                tostring(remaining),
-                tostring(showCounter)
-            )
+    return row
+end
+
+local function releaseCategoryRow(row)
+    if not row then
+        return
+    end
+
+    detachCategoryFromUsed(row)
+
+    local control = row.control
+    if control then
+        if control.SetHidden then
+            control:SetHidden(true)
         end
-        if label.SetText then
-            label:SetText(text)
+        if control.ClearAnchors then
+            control:ClearAnchors()
         end
     end
 
+    local label = row.label
+    if label then
+        if label.SetText then
+            label:SetText("")
+        end
+        if label.SetHidden then
+            label:SetHidden(true)
+        end
+    end
+
+    local chevron = row.chevron
+    if chevron then
+        if chevron.SetTexture then
+            chevron:SetTexture(nil)
+        end
+        if chevron.SetHidden then
+            chevron:SetHidden(true)
+        end
+    end
+
+    row._poolParent = nil
+    row._poolState = "free"
+    row._onToggle = nil
+
+    categoryPool.free[#categoryPool.free + 1] = row
+
+    safeDebug(
+        "[CategoryPool] release %s (used=%d free=%d)",
+        tostring(row.name),
+        #categoryPool.used,
+        #categoryPool.free
+    )
+end
+
+local function releaseAllCategoryRows()
+    for index = #categoryPool.used, 1, -1 do
+        local row = categoryPool.used[index]
+        categoryPool.used[index] = nil
+        releaseCategoryRow(row)
+    end
+
+    safeDebug("[CategoryPool] reset (used=%d free=%d)", #categoryPool.used, #categoryPool.free)
+end
+
+local function applyCategoryRow(row, categoryData)
+    local targetRow = row and row.control or row
+    local label = row and row.label
+    local chevron = row and row.chevron
+    if not (targetRow and label and chevron) then
+        return nil
+    end
+
+    if targetRow.SetHidden then
+        targetRow:SetHidden(false)
+    end
+
+    applyLabelDefaults(label, getGoldenCategoryFont())
+
+    local palette = getGoldenTrackerColors()
+
+    local expanded = true
+    if type(categoryData) == "table" then
+        if categoryData.isExpanded ~= nil then
+            expanded = categoryData.isExpanded ~= false
+        elseif categoryData.expanded ~= nil then
+            expanded = categoryData.expanded ~= false
+        end
+    end
+
+    local categoryComplete = isCapstoneComplete(categoryData)
+    local role
+    if expanded then
+        role = GOLDEN_COLOR_ROLES.Active
+    elseif categoryComplete then
+        role = GOLDEN_COLOR_ROLES.CategoryTitleClosed
+    else
+        role = GOLDEN_COLOR_ROLES.CategoryTitleOpen
+    end
+    local colorR, colorG, colorB, colorA, colorSource, colorSourceReason =
+        applyLabelColor(label, role, palette, nil, DEFAULT_COLOR_KIND)
+    if colorR ~= nil and isGoldenColorDebugEnabled() then
+        local stateTokens = {
+            expanded and "active" or "inactive",
+            categoryComplete and "capstoneComplete" or "capstoneOpen",
+        }
+        local reason
+        if expanded then
+            reason = "Category active; using focused color"
+        elseif categoryComplete then
+            reason = "Capstone reached; using completed category color"
+        else
+            reason = "Capstone open; using open category color"
+        end
+        if colorSourceReason and colorSourceReason ~= "" then
+            reason = string.format("%s (%s)", reason, colorSourceReason)
+        end
+
+        logGoldenColorDecision(
+            "golden.categoryHeader",
+            table.concat(stateTokens, "+"),
+            colorSource or string.format("role.%s", tostring(role)),
+            { colorR, colorG, colorB, colorA },
+            reason,
+            { role = role, palette = palette and palette[role] }
+        )
+    end
+
+    local text = GOLDEN_HEADER_TITLE
+    local showCounter = shouldShowGoldenHeaderCounter()
+    local remaining = nil
+    local generalMode = type(categoryData) == "table" and categoryData.generalCompletedMode
+    local capstoneReached = categoryData and categoryData.capstoneReached == true
+    if type(categoryData) == "table" then
+        if showCounter and capstoneReached and generalMode == "showOpen" then
+            remaining = tonumber(categoryData.remainingAllObjectives) or 0
+        else
+            remaining = tonumber(categoryData.remainingObjectivesToNextReward) or 0
+        end
+    end
+
+    if showCounter and remaining ~= nil then
+        text = string.format("%s (%d)", GOLDEN_HEADER_TITLE, remaining)
+    end
+
+    if not showCounter then
+        text = GOLDEN_HEADER_TITLE
+    end
+
+    if isGoldenColorDebugEnabled() then
+        safeDebug(
+            "[GoldenHeader] title='%s' count=%s showCounter=%s",
+            text,
+            tostring(remaining),
+            tostring(showCounter)
+        )
+    end
+    if label.SetText then
+        label:SetText(text)
+    end
+
     if chevron and chevron.SetTexture then
-        local expanded = categoryData and categoryData.isExpanded ~= false
         local textures = categoryData and categoryData.textures or CATEGORY_CHEVRON_TEXTURES
         local fallback = expanded and CATEGORY_CHEVRON_TEXTURES.expanded or CATEGORY_CHEVRON_TEXTURES.collapsed
         chevron:SetTexture(
@@ -851,18 +1061,37 @@ function Rows.CreateCategoryRow(parent, categoryData)
         )
     end
 
-    if control and control.SetHandler then
-        control:SetHandler("OnMouseUp", function(rowControl, button, upInside)
-            if button == MOUSE_BUTTON_LEFT and upInside then
-                local controller = rawget(Nvk3UT, "GoldenTrackerController")
-                if controller and type(controller.ToggleHeaderExpanded) == "function" then
-                    controller:ToggleHeaderExpanded()
-                end
-            end
-        end)
+    row._onToggle = function()
+        local controller = rawget(Nvk3UT, "GoldenTrackerController")
+        if controller and type(controller.ToggleHeaderExpanded) == "function" then
+            controller:ToggleHeaderExpanded()
+        end
     end
 
-    return control
+    return targetRow
+end
+
+function Rows.AcquireCategoryRow(parent)
+    return acquireCategoryRow(parent)
+end
+
+function Rows.ReleaseAllCategoryRows()
+    releaseAllCategoryRows()
+end
+
+function Rows.ApplyCategoryRow(row, categoryData)
+    return applyCategoryRow(row, categoryData)
+end
+
+function Rows.CreateCategoryRow(parent, categoryData)
+    local row = Rows.AcquireCategoryRow(parent)
+    if not row then
+        return nil
+    end
+
+    Rows.ApplyCategoryRow(row, categoryData)
+
+    return row.control
 end
 
 function Rows.CreateCampaignRow(parent, entryData)
