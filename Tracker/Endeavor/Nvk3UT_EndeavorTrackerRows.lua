@@ -957,6 +957,27 @@ local function createEntryRow(parent)
     control._poolParent = parent
     control._subrowPrefix = controlName .. "Subrow"
 
+    if control.SetHandler then
+        control:SetHandler("OnMouseUp", function(_, button, upInside)
+            if not upInside or button ~= RIGHT_MOUSE_BUTTON then
+                return
+            end
+
+            local rowData = control.data
+            if rowData then
+                if isDebugEnabled() then
+                    local _, activityIndex, activityKind = resolveActivityIdentity(rowData)
+                    safeDebug(
+                        "EndeavorTracker: Right-click on row: id=%s kind=%s",
+                        tostring(activityIndex),
+                        tostring(activityKind)
+                    )
+                end
+                ShowEndeavorContextMenu(control, rowData)
+            end
+        end)
+    end
+
     safeDebug("[EntryPool] create %s", controlName)
 
     return control
@@ -1235,18 +1256,6 @@ local function createCategoryRow(parent)
                 local callback = row._onToggle
                 if type(callback) == "function" then
                     callback()
-                end
-            elseif button == RIGHT_MOUSE_BUTTON then
-                if row.data then
-                    if isDebugEnabled() then
-                        local _, activityIndex, activityKind = resolveActivityIdentity(row.data)
-                        safeDebug(
-                            "EndeavorTracker: Right-click on row: id=%s kind=%s",
-                            tostring(activityIndex),
-                            tostring(activityKind)
-                        )
-                    end
-                    ShowEndeavorContextMenu(control, row.data)
                 end
             end
         end

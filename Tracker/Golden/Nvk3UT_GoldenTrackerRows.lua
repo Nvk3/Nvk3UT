@@ -1410,10 +1410,27 @@ local function createEntryRow(parent)
 
     if control and control.SetHandler then
         control:SetHandler("OnMouseUp", function(_, button, upInside)
-            if button == LEFT_MOUSE_BUTTON and upInside then
+            if not upInside then
+                return
+            end
+
+            if button == LEFT_MOUSE_BUTTON then
                 local controller = rawget(Nvk3UT, "GoldenTrackerController")
                 if controller and type(controller.ToggleEntryExpanded) == "function" then
                     controller:ToggleEntryExpanded()
+                end
+            elseif button == RIGHT_MOUSE_BUTTON then
+                if row.data then
+                    if isGoldenColorDebugEnabled() then
+                        local campaignKey, activityIndex, activityId = resolvePromotionalIdentity(row.data)
+                        safeDebug(
+                            "GoldenTracker: Right-click on row: campaign=%s activity=%s id=%s",
+                            tostring(campaignKey),
+                            tostring(activityIndex),
+                            tostring(activityId)
+                        )
+                    end
+                    ShowGoldenContextMenu(control, row.data)
                 end
             end
         end)
@@ -1631,27 +1648,6 @@ local function createObjectiveRow(parent)
         __rowKind = ROW_KINDS.objective,
         _poolState = "fresh",
     }
-
-    if control and control.SetHandler then
-        control:SetHandler("OnMouseUp", function(_, button, upInside)
-            if not upInside or button ~= RIGHT_MOUSE_BUTTON then
-                return
-            end
-
-            if row.data then
-                if isGoldenColorDebugEnabled() then
-                    local campaignKey, activityIndex, activityId = resolvePromotionalIdentity(row.data)
-                    safeDebug(
-                        "GoldenTracker: Right-click on row: campaign=%s activity=%s id=%s",
-                        tostring(campaignKey),
-                        tostring(activityIndex),
-                        tostring(activityId)
-                    )
-                end
-                ShowGoldenContextMenu(control, row.data)
-            end
-        end)
-    end
 
     return row
 end
