@@ -517,55 +517,9 @@ local function isGoldenRowCandidateName(name, baseName)
 end
 
 local function cleanupOrphanedGoldenRows(content)
-    if not isControl(content) then
-        return
-    end
-
-    local baseName = getParentBaseName(content)
-    local root = content and content.GetParent and content:GetParent()
-    local container = root and root.GetParent and root:GetParent()
-    local logCleanup = isGoldenGhostDebugEnabled()
-
-    if logCleanup then
-        safeDebug("[GoldenGhost] cleanup start baseName=%s", tostring(baseName))
-    end
-
-    for controlName, control in pairs(_G) do
-        if type(controlName) == "string" and controlName ~= "" and isGoldenRowCandidateName(controlName, baseName) and
-            isControl(control) then
-            local parent = control.GetParent and control:GetParent()
-            if parent ~= content and parent ~= root and parent ~= container and parent ~= nil then
-                if logCleanup then
-                    local parentName = "<nil>"
-                    if parent and parent.GetName then
-                        local ok, resolvedName = pcall(parent.GetName, parent)
-                        if ok and type(resolvedName) == "string" and resolvedName ~= "" then
-                            parentName = resolvedName
-                        end
-                    end
-
-                    safeDebug(
-                        "[GoldenGhost] cleaned orphan name=%s parent=%s content=%s root=%s container=%s",
-                        tostring(controlName),
-                        tostring(parentName),
-                        tostring(parent == content),
-                        tostring(parent == root),
-                        tostring(parent == container)
-                    )
-                end
-
-                if control.SetHidden then
-                    control:SetHidden(true)
-                end
-                if control.ClearAnchors then
-                    control:ClearAnchors()
-                end
-                if control.SetParent then
-                    control:SetParent(nil)
-                end
-            end
-        end
-    end
+    -- Golden ghost: global orphan cleanup DISABLED for now.
+    -- Do not inspect or modify `_G` here.
+    -- Any cleanup must only ever operate on children of our own content container.
 end
 
 local function debugDumpGoldenHierarchy(tag, content)

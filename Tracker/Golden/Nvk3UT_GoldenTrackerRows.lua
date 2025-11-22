@@ -682,7 +682,12 @@ local function createControl(parent, kind)
     end
 
     local controlName = nextControlName(parent, kind)
-    local control = wm:CreateControl(controlName, parent, CT_CONTROL)
+    local control = GetControl(controlName)
+    if not control then
+        control = wm:CreateControl(controlName, parent, CT_CONTROL)
+    else
+        control:SetParent(parent)
+    end
     if control and control.SetResizeToFitDescendents then
         control:SetResizeToFitDescendents(true)
     end
@@ -715,7 +720,12 @@ local function createLabel(parent, suffix)
 
     local baseName = resolveParentName(parent)
     local labelName = string.format("%s_%sLabel", baseName, suffix)
-    local label = wm:CreateControl(labelName, parent, CT_LABEL)
+    local label = GetControl(labelName)
+    if not label then
+        label = wm:CreateControl(labelName, parent, CT_LABEL)
+    else
+        label:SetParent(parent)
+    end
     if label and label.SetHidden then
         label:SetHidden(false)
     end
@@ -762,7 +772,12 @@ function Rows.CreateCategoryRow(parent, categoryData)
     local controlName = control.GetName and control:GetName() or resolveParentName(control)
     if controlName then
         local chevronName = string.format("%s_CategoryChevron", controlName)
-        chevron = wm:CreateControl(chevronName, control, CT_TEXTURE)
+        chevron = GetControl(chevronName)
+        if not chevron then
+            chevron = wm:CreateControl(chevronName, control, CT_TEXTURE)
+        else
+            chevron:SetParent(control)
+        end
         if chevron.SetMouseEnabled then
             chevron:SetMouseEnabled(false)
         end
