@@ -389,23 +389,6 @@ local function applyVisibility(control, hidden)
     end
 end
 
-local function safeCreateRow(rowFn, parent, data)
-    if type(rowFn) ~= "function" or parent == nil then
-        return nil
-    end
-
-    local ok, row = pcall(rowFn, parent, data)
-    if ok and row then
-        return row
-    end
-
-    if not ok then
-        safeDebug("Row creation failed: %s", tostring(row))
-    end
-
-    return nil
-end
-
 local function resolveInitArguments(...)
     local first = ...
     if first == GoldenTracker or (type(first) == "table" and first.__index == GoldenTracker) then
@@ -1070,7 +1053,9 @@ function GoldenTracker.Refresh(...)
         rowsModule.ReleaseAllEntryRows()
     end
 
-    ClearChildren(content)
+    if rowsModule and type(rowsModule.ReleaseAllObjectiveRows) == "function" then
+        rowsModule.ReleaseAllObjectiveRows()
+    end
 
     tracker.viewModel = type(viewModel) == "table" and viewModel or nil
     local vm = tracker.viewModel
@@ -1165,10 +1150,6 @@ function GoldenTracker.Refresh(...)
                 end
             end
 
-            if categoryRow == nil then
-                categoryRow = safeCreateRow(rowsModule.CreateCategoryRow, content, categoryPayload)
-            end
-
             if categoryRow then
                 table.insert(rows, categoryRow.control or categoryRow)
             end
@@ -1185,10 +1166,6 @@ function GoldenTracker.Refresh(...)
                     if campaignRow and type(rowsModule.ApplyEntryRow) == "function" then
                         rowsModule.ApplyEntryRow(campaignRow, campaignPayload)
                     end
-                end
-
-                if campaignRow == nil then
-                    campaignRow = safeCreateRow(rowsModule.CreateCampaignRow, content, campaignPayload)
                 end
 
                 if campaignRow then
@@ -1215,9 +1192,16 @@ function GoldenTracker.Refresh(...)
             for objectiveIndex = 1, #objectivesForRows do
                 local objectiveData = objectivesForRows[objectiveIndex]
                 if type(objectiveData) == "table" then
-                    local objectiveRow = safeCreateRow(rowsModule.CreateObjectiveRow, content, objectiveData)
+                    local objectiveRow = nil
+                    if type(rowsModule.AcquireObjectiveRow) == "function" then
+                        objectiveRow = rowsModule.AcquireObjectiveRow(content)
+                        if objectiveRow and type(rowsModule.ApplyObjectiveRow) == "function" then
+                            rowsModule.ApplyObjectiveRow(objectiveRow, objectiveData)
+                        end
+                    end
+
                     if objectiveRow then
-                        table.insert(rows, objectiveRow)
+                        table.insert(rows, objectiveRow.control or objectiveRow)
                     end
                 end
             end

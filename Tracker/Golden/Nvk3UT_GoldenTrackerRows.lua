@@ -96,6 +96,12 @@ local entryPool = {
     nextId = 1,
 }
 
+local objectivePool = {
+    free = {},
+    used = {},
+    nextId = 1,
+}
+
 local function getAddon()
     return rawget(_G, addonName)
 end
@@ -1403,6 +1409,226 @@ local function releaseAllEntryRows()
     safeDebug("[GoldenEntryPool] reset (used=%d free=%d)", #entryPool.used, #entryPool.free)
 end
 
+local function buildObjectiveControlName(parent)
+    local parentName = resolveParentName(parent)
+    local index = objectivePool.nextId or 1
+    objectivePool.nextId = index + 1
+    return string.format("%s_objectiveRow%d", parentName, index)
+end
+
+local function detachObjectiveFromUsed(row)
+    for index = #objectivePool.used, 1, -1 do
+        if objectivePool.used[index] == row then
+            table.remove(objectivePool.used, index)
+            return
+        end
+    end
+end
+
+local function createObjectiveRow(parent)
+    local wm = getWindowManager()
+    if wm == nil or parent == nil then
+        return nil
+    end
+
+    local controlName = buildObjectiveControlName(parent)
+    local control = wm:CreateControl(controlName, parent, CT_CONTROL)
+    if control.SetHidden then
+        control:SetHidden(false)
+    end
+    if control.SetMouseEnabled then
+        control:SetMouseEnabled(true)
+    end
+    control.__rowKind = ROW_KINDS.objective
+
+    local label = createLabel(control, "Objective")
+    if label then
+        label:ClearAnchors()
+        if label.SetAnchor then
+            label:SetAnchor(TOPLEFT, control, TOPLEFT, DEFAULTS.OBJECTIVE_INDENT_X, 0)
+            label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
+        end
+    end
+
+    local pinLabel = createLabel(control, "ObjectivePin")
+    if pinLabel then
+        pinLabel:ClearAnchors()
+        if pinLabel.SetAnchor then
+            pinLabel:SetAnchor(
+                LEFT,
+                control,
+                LEFT,
+                DEFAULTS.OBJECTIVE_INDENT_X - DEFAULTS.OBJECTIVE_PIN_MARKER_OFFSET_X,
+                0
+            )
+        end
+        applyLabelDefaults(pinLabel, getGoldenObjectiveFont())
+        if pinLabel.SetText then
+            pinLabel:SetText("*")
+        end
+    end
+
+    local row = {
+        control = control,
+        label = label,
+        pinLabel = pinLabel,
+        name = controlName,
+        __height = getObjectiveRowHeight(),
+        __rowKind = ROW_KINDS.objective,
+        _poolState = "fresh",
+    }
+
+    return row
+end
+
+local function resetObjectiveRowVisuals(row, parent)
+    if not row then
+        return
+    end
+
+    local control = row.control
+    if control then
+        if control.SetParent then
+            control:SetParent(parent)
+        end
+        if control.SetHidden then
+            control:SetHidden(false)
+        end
+        if control.ClearAnchors then
+            control:ClearAnchors()
+        end
+
+        local objectiveHeight = getObjectiveRowHeight()
+        control.__height = objectiveHeight
+        if control.SetHeight then
+            control:SetHeight(objectiveHeight)
+        end
+    end
+
+    local label = row.label
+    if label then
+        if label.SetHidden then
+            label:SetHidden(false)
+        end
+        label:ClearAnchors()
+        if label.SetAnchor then
+            label:SetAnchor(TOPLEFT, control, TOPLEFT, DEFAULTS.OBJECTIVE_INDENT_X, 0)
+            label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
+        end
+        if label.SetText then
+            label:SetText("")
+        end
+    end
+
+    local pinLabel = row.pinLabel
+    if pinLabel then
+        if pinLabel.SetHidden then
+            pinLabel:SetHidden(true)
+        end
+        pinLabel:ClearAnchors()
+        if pinLabel.SetAnchor then
+            pinLabel:SetAnchor(
+                LEFT,
+                control,
+                LEFT,
+                DEFAULTS.OBJECTIVE_INDENT_X - DEFAULTS.OBJECTIVE_PIN_MARKER_OFFSET_X,
+                0
+            )
+        end
+    end
+
+    row._poolParent = parent
+    row._poolState = "used"
+
+    objectivePool.used[#objectivePool.used + 1] = row
+
+    safeDebug(
+        "[GoldenObjectivePool] acquire %s (used=%d free=%d)",
+        tostring(row.name),
+        #objectivePool.used,
+        #objectivePool.free
+    )
+end
+
+local function acquireObjectiveRow(parent)
+    local row
+    if #objectivePool.free > 0 then
+        row = table.remove(objectivePool.free)
+    end
+
+    if not row then
+        row = createObjectiveRow(parent)
+    end
+
+    if not row then
+        return nil
+    end
+
+    resetObjectiveRowVisuals(row, parent)
+
+    return row
+end
+
+local function releaseObjectiveRow(row)
+    if not row then
+        return
+    end
+
+    detachObjectiveFromUsed(row)
+
+    local control = row.control
+    if control then
+        if control.SetHidden then
+            control:SetHidden(true)
+        end
+        if control.ClearAnchors then
+            control:ClearAnchors()
+        end
+    end
+
+    local label = row.label
+    if label then
+        if label.SetText then
+            label:SetText("")
+        end
+        if label.SetHidden then
+            label:SetHidden(true)
+        end
+    end
+
+    local pinLabel = row.pinLabel
+    if pinLabel then
+        if pinLabel.SetHidden then
+            pinLabel:SetHidden(true)
+        end
+        if pinLabel.ClearAnchors then
+            pinLabel:ClearAnchors()
+        end
+    end
+
+    row._poolParent = nil
+    row._poolState = "free"
+
+    objectivePool.free[#objectivePool.free + 1] = row
+
+    safeDebug(
+        "[GoldenObjectivePool] release %s (used=%d free=%d)",
+        tostring(row.name),
+        #objectivePool.used,
+        #objectivePool.free
+    )
+end
+
+local function releaseAllObjectiveRows()
+    for index = #objectivePool.used, 1, -1 do
+        local row = objectivePool.used[index]
+        objectivePool.used[index] = nil
+        releaseObjectiveRow(row)
+    end
+
+    safeDebug("[GoldenObjectivePool] reset (used=%d free=%d)", #objectivePool.used, #objectivePool.free)
+end
+
 local function applyEntryRow(row, entryData)
     local targetRow = row and row.control or row
     local label = row and row.label
@@ -1495,6 +1721,90 @@ local function applyEntryRow(row, entryData)
     return targetRow
 end
 
+local function applyObjectiveRow(row, objectiveData)
+    local control = row and row.control or row
+    local label = row and row.label
+    local pinLabel = row and row.pinLabel
+    if not (control and label) then
+        return nil
+    end
+
+    if control.SetHidden then
+        control:SetHidden(false)
+    end
+
+    local palette = getGoldenTrackerColors()
+    local role = isObjectiveCompleted(objectiveData) and GOLDEN_COLOR_ROLES.Completed or GOLDEN_COLOR_ROLES.Objective
+
+    applyLabelDefaults(label, getGoldenObjectiveFont())
+    local colorR, colorG, colorB, colorA, colorSource, colorSourceReason = applyLabelColor(label, role, palette)
+    if colorR ~= nil and isGoldenColorDebugEnabled() then
+        local isCompleted = role == GOLDEN_COLOR_ROLES.Completed
+        local stateTokens = {
+            isCompleted and "completed" or "open",
+        }
+        local reason
+        if isCompleted then
+            reason = "Objective complete; using completed color"
+        else
+            reason = "Objective in progress; using target color"
+        end
+        if colorSourceReason and colorSourceReason ~= "" then
+            reason = string.format("%s (%s)", reason, colorSourceReason)
+        end
+
+        logGoldenColorDecision(
+            "golden.objectiveText",
+            table.concat(stateTokens, "+"),
+            colorSource or string.format("role.%s", tostring(role)),
+            { colorR, colorG, colorB, colorA },
+            reason,
+            { role = role, palette = palette and palette[role] }
+        )
+    end
+
+    local text = ""
+    if type(objectiveData) == "table" then
+        local display = objectiveData.displayName or objectiveData.title or objectiveData.name or objectiveData.text
+        if display == nil or display == "" then
+            display = "Objective"
+        end
+
+        local baseText = tostring(display or "")
+        local counterText = formatObjectiveCounter(
+            objectiveData.progressDisplay or objectiveData.progress or objectiveData.current,
+            objectiveData.maxDisplay or objectiveData.max
+        )
+        if counterText == nil then
+            local fallbackCounter = objectiveData.counterText
+            if type(fallbackCounter) == "string" and fallbackCounter ~= "" then
+                counterText = string.format("(%s)", fallbackCounter)
+            end
+        end
+
+        text = baseText
+        if counterText and counterText ~= "" then
+            text = string.format("%s %s", baseText, counterText)
+        end
+
+        text = text:gsub("%s+", " "):gsub("%s+%)", ")")
+    end
+
+    if label.SetText then
+        label:SetText(text)
+    end
+
+    local isPinned = type(objectiveData) == "table" and objectiveData.isPinned == true
+    if pinLabel then
+        applyLabelDefaults(pinLabel, getGoldenObjectiveFont())
+        if pinLabel.SetHidden then
+            pinLabel:SetHidden(not isPinned)
+        end
+    end
+
+    return control
+end
+
 function Rows.AcquireCategoryRow(parent)
     return acquireCategoryRow(parent)
 end
@@ -1505,17 +1815,6 @@ end
 
 function Rows.ApplyCategoryRow(row, categoryData)
     return applyCategoryRow(row, categoryData)
-end
-
-function Rows.CreateCategoryRow(parent, categoryData)
-    local row = Rows.AcquireCategoryRow(parent)
-    if not row then
-        return nil
-    end
-
-    Rows.ApplyCategoryRow(row, categoryData)
-
-    return row.control
 end
 
 function Rows.AcquireEntryRow(parent)
@@ -1530,132 +1829,16 @@ function Rows.ApplyEntryRow(row, entryData)
     return applyEntryRow(row, entryData)
 end
 
-function Rows.CreateCampaignRow(parent, entryData)
-    local row = Rows.AcquireEntryRow(parent)
-    if not row then
-        return nil
-    end
-
-    Rows.ApplyEntryRow(row, entryData)
-
-    return row.control
+function Rows.AcquireObjectiveRow(parent)
+    return acquireObjectiveRow(parent)
 end
 
-function Rows.CreateObjectiveRow(parent, objectiveData)
-    if parent == nil then
-        return nil
-    end
+function Rows.ReleaseAllObjectiveRows()
+    releaseAllObjectiveRows()
+end
 
-    local control = createControl(parent, "objective")
-    if not control then
-        return nil
-    end
-
-    local objectiveHeight = getObjectiveRowHeight()
-    control.__height = objectiveHeight
-    if control.SetHeight then
-        control:SetHeight(objectiveHeight)
-    end
-
-    local palette = getGoldenTrackerColors()
-    local label = createLabel(control, "Objective")
-    local pinLabel = control.__pinnedLabel
-    if label then
-        label:ClearAnchors()
-        if label.SetAnchor then
-            label:SetAnchor(TOPLEFT, control, TOPLEFT, DEFAULTS.OBJECTIVE_INDENT_X, 0)
-            label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
-        end
-
-        if pinLabel == nil then
-            pinLabel = createLabel(control, "ObjectivePin")
-            control.__pinnedLabel = pinLabel
-            if pinLabel then
-                pinLabel:ClearAnchors()
-                if pinLabel.SetAnchor then
-                    pinLabel:SetAnchor(
-                        LEFT,
-                        control,
-                        LEFT,
-                        DEFAULTS.OBJECTIVE_INDENT_X - DEFAULTS.OBJECTIVE_PIN_MARKER_OFFSET_X,
-                        0
-                    )
-                end
-                applyLabelDefaults(pinLabel, getGoldenObjectiveFont())
-                if pinLabel.SetText then
-                    pinLabel:SetText("*")
-                end
-                if pinLabel.SetHidden then
-                    pinLabel:SetHidden(true)
-                end
-            end
-        end
-        local role = isObjectiveCompleted(objectiveData) and GOLDEN_COLOR_ROLES.Completed or GOLDEN_COLOR_ROLES.Objective
-        applyLabelDefaults(label, getGoldenObjectiveFont())
-        local colorR, colorG, colorB, colorA, colorSource, colorSourceReason = applyLabelColor(label, role, palette)
-        if colorR ~= nil and isGoldenColorDebugEnabled() then
-            local isCompleted = role == GOLDEN_COLOR_ROLES.Completed
-            local stateTokens = {
-                isCompleted and "completed" or "open",
-            }
-            local reason
-            if isCompleted then
-                reason = "Objective complete; using completed color"
-            else
-                reason = "Objective in progress; using target color"
-            end
-            if colorSourceReason and colorSourceReason ~= "" then
-                reason = string.format("%s (%s)", reason, colorSourceReason)
-            end
-
-            logGoldenColorDecision(
-                "golden.objectiveText",
-                table.concat(stateTokens, "+"),
-                colorSource or string.format("role.%s", tostring(role)),
-                { colorR, colorG, colorB, colorA },
-                reason,
-                { role = role, palette = palette and palette[role] }
-            )
-        end
-
-        local text = ""
-        if type(objectiveData) == "table" then
-            local display = objectiveData.displayName or objectiveData.title or objectiveData.name or objectiveData.text
-            if display == nil or display == "" then
-                display = "Objective"
-            end
-
-            local baseText = tostring(display or "")
-            local counterText = formatObjectiveCounter(
-                objectiveData.progressDisplay or objectiveData.progress or objectiveData.current,
-                objectiveData.maxDisplay or objectiveData.max
-            )
-            if counterText == nil then
-                local fallbackCounter = objectiveData.counterText
-                if type(fallbackCounter) == "string" and fallbackCounter ~= "" then
-                    counterText = string.format("(%s)", fallbackCounter)
-                end
-            end
-
-            text = baseText
-            if counterText and counterText ~= "" then
-                text = string.format("%s %s", baseText, counterText)
-            end
-
-            text = text:gsub("%s+", " "):gsub("%s+%)", ")")
-        end
-
-        if label.SetText then
-            label:SetText(text)
-        end
-    end
-
-    local isPinned = type(objectiveData) == "table" and objectiveData.isPinned == true
-    if pinLabel and pinLabel.SetHidden then
-        pinLabel:SetHidden(not isPinned)
-    end
-
-    return control
+function Rows.ApplyObjectiveRow(row, objectiveData)
+    return applyObjectiveRow(row, objectiveData)
 end
 
 function Rows.GetCategoryRowHeight()
