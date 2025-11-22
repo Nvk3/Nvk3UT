@@ -2567,12 +2567,14 @@ local function registerPanel(displayTitle)
                 choices = {
                     GetString(SI_NVK3UT_LAM_GOLDEN_COMPLETED_HIDE),
                     GetString(SI_NVK3UT_LAM_GOLDEN_COMPLETED_RECOLOR),
-                    GetString(SI_NVK3UT_LAM_GOLDEN_COMPLETED_SHOW_OPEN_OBJECTIVES),
                 },
-                choicesValues = { "hide", "recolor", "openObjectives" },
+                choicesValues = { "hide", "recolor" },
                 getFunc = function()
                     local config = getGoldenConfig()
-                    local value = config.CompletedHandlingGeneral
+                    local value = config.generalCompletedHandling
+                    if value == nil then
+                        value = config.CompletedHandlingGeneral
+                    end
                     if value == nil then
                         local legacy = config.CompletedHandling
                         if legacy == "recolor" then
@@ -2582,19 +2584,13 @@ local function registerPanel(displayTitle)
                     end
                     if value == "recolor" then
                         return "recolor"
-                    elseif value == "openObjectives" then
-                        return "openObjectives"
                     end
                     return "hide"
                 end,
                 setFunc = function(value)
                     local config = getGoldenConfig()
-                    local resolved = "hide"
-                    if value == "recolor" then
-                        resolved = "recolor"
-                    elseif value == "openObjectives" then
-                        resolved = "openObjectives"
-                    end
+                    local resolved = value == "recolor" and "recolor" or "hide"
+                    config.generalCompletedHandling = resolved
                     config.CompletedHandlingGeneral = resolved
                     if config.CompletedHandling ~= nil then
                         if resolved == "recolor" then
@@ -2636,7 +2632,7 @@ local function registerPanel(displayTitle)
                         return "hide"
                     end
 
-                    local general = config.CompletedHandlingGeneral
+                    local general = config.generalCompletedHandling or config.CompletedHandlingGeneral
                     if general == "recolor" or general == "hide" then
                         return general
                     end

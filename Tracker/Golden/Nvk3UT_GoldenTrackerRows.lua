@@ -891,16 +891,24 @@ function Rows.CreateCampaignRow(parent, entryData)
             end
         end
         local entryComplete = isCapstoneComplete(entryData)
-        local entryRole = GOLDEN_COLOR_ROLES.EntryName
+        local generalMode = type(entryData) == "table" and entryData.generalCompletedMode
+        local useCompletedColor = entryComplete and generalMode == "recolor"
+        local entryRole = useCompletedColor and GOLDEN_COLOR_ROLES.Completed or GOLDEN_COLOR_ROLES.EntryName
         local colorR, colorG, colorB, colorA, colorSource, colorSourceReason = applyLabelColor(label, entryRole, palette)
         if colorR ~= nil and isGoldenColorDebugEnabled() then
             local stateTokens = {
                 entryExpanded and "active" or "inactive",
                 entryComplete and "capstoneComplete" or "capstoneOpen",
+                generalMode,
             }
-            local reason = "Campaign entry always uses entry title color"
-            if entryExpanded or entryComplete then
-                reason = string.format("%s (active/completed state ignored for color)", reason)
+            local reason
+            if useCompletedColor then
+                reason = "Capstone reached with general recolor; using completed color"
+            else
+                reason = "Campaign entry always uses entry title color"
+                if entryExpanded or entryComplete then
+                    reason = string.format("%s (active/completed state ignored for color)", reason)
+                end
             end
             if colorSourceReason and colorSourceReason ~= "" then
                 reason = string.format("%s (%s)", reason, colorSourceReason)
