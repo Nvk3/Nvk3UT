@@ -414,11 +414,18 @@ local ROW_HEIGHT_METRICS = {
         paddingTop = 0,
         paddingBottom = 0,
     },
+    [ROW_KINDS.objective] = {
+        fontKey = "Objective",
+        minHeight = DEFAULTS.OBJECTIVE_HEIGHT,
+        paddingTop = 0,
+        paddingBottom = 0,
+    },
 }
 
 local resolvedRowHeights = {
     [ROW_KINDS.category] = DEFAULTS.CATEGORY_HEIGHT,
     [ROW_KINDS.entry] = DEFAULTS.ENTRY_HEIGHT,
+    [ROW_KINDS.objective] = DEFAULTS.OBJECTIVE_HEIGHT,
 }
 
 local function measureFontHeight(font)
@@ -441,6 +448,8 @@ local function resolveMetricsFont(fontKey)
         return getGoldenCategoryFont()
     elseif fontKey == "Title" then
         return getGoldenTitleFont()
+    elseif fontKey == "Objective" then
+        return getGoldenObjectiveFont()
     end
 
     return nil
@@ -470,6 +479,10 @@ end
 
 local function getEntryRowHeight()
     return resolveRowHeight(ROW_KINDS.entry)
+end
+
+local function getObjectiveRowHeight()
+    return resolveRowHeight(ROW_KINDS.objective)
 end
 
 local function sanitizeColorNumber(value)
@@ -1538,9 +1551,10 @@ function Rows.CreateObjectiveRow(parent, objectiveData)
         return nil
     end
 
-    control.__height = DEFAULTS.OBJECTIVE_HEIGHT
+    local objectiveHeight = getObjectiveRowHeight()
+    control.__height = objectiveHeight
     if control.SetHeight then
-        control:SetHeight(DEFAULTS.OBJECTIVE_HEIGHT)
+        control:SetHeight(objectiveHeight)
     end
 
     local palette = getGoldenTrackerColors()
@@ -1650,6 +1664,10 @@ end
 
 function Rows.GetEntryRowHeight()
     return getEntryRowHeight()
+end
+
+function Rows.GetObjectiveRowHeight()
+    return getObjectiveRowHeight()
 end
 
 Nvk3UT.GoldenTrackerRows = Rows

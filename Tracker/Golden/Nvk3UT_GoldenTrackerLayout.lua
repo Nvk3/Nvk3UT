@@ -138,6 +138,8 @@ local function resolveRowHeight(control, rowData)
             fallback = rowsModule.GetCategoryRowHeight()
         elseif kind == "entry" and type(rowsModule.GetEntryRowHeight) == "function" then
             fallback = rowsModule.GetEntryRowHeight()
+        elseif kind == "objective" and type(rowsModule.GetObjectiveRowHeight) == "function" then
+            fallback = rowsModule.GetObjectiveRowHeight()
         end
     end
 
@@ -196,10 +198,15 @@ function Layout.ApplyLayout(parentControl, rows)
 
     local rowsModule = getRowsModule()
     if rowsModule and type(rowsModule.GetCategoryRowHeight) == "function" and type(rowsModule.GetEntryRowHeight) == "function" then
+        local objectiveHeight
+        if type(rowsModule.GetObjectiveRowHeight) == "function" then
+            objectiveHeight = rowsModule.GetObjectiveRowHeight()
+        end
         safeDebug(
-            "ApplyLayout heights category=%s entry=%s",
+            "ApplyLayout heights category=%s entry=%s objective=%s",
             tostring(rowsModule.GetCategoryRowHeight()),
-            tostring(rowsModule.GetEntryRowHeight())
+            tostring(rowsModule.GetEntryRowHeight()),
+            tostring(objectiveHeight)
         )
     end
 
