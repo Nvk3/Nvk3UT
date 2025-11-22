@@ -60,6 +60,7 @@ local CATEGORY_CHEVRON_TEXTURES = {
 }
 
 local MOUSE_BUTTON_LEFT = rawget(_G, "MOUSE_BUTTON_INDEX_LEFT") or 1
+local MOUSE_BUTTON_RIGHT = rawget(_G, "MOUSE_BUTTON_INDEX_RIGHT") or 2
 
 local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
 local DEFAULT_FONT_FACE = "$(BOLD_FONT)"
@@ -165,6 +166,155 @@ local function safeDebug(message, ...)
     end
 
     pcall(debugFn, string.format("%s: %s", MODULE_TAG, tostring(payload)))
+end
+
+local function resolvePromotionalIdentity(rowData)
+    if type(rowData) ~= "table" then
+        return nil, nil, nil
+    end
+
+    local campaignKey = rowData.campaignKey or rowData.categoryKey or rowData.campaignId
+    local activityIndex = tonumber(rowData.entryId or rowData.id or rowData.index)
+    local activityId = rowData.entryId or rowData.id
+
+    return campaignKey, activityIndex, activityId
+end
+
+local function focusPromotionalActivity(campaignKey, activityIndex)
+    local focused = false
+
+    local setter = rawget(_G, "SetTrackedPromotionalEventActivityInfo")
+        or rawget(_G, "SetTrackedPromotionalEventActivityIndices")
+        or rawget(_G, "SetTrackedPromotionalEventActivity")
+
+    if type(setter) == "function" and campaignKey ~= nil and activityIndex ~= nil then
+        pcall(setter, campaignKey, activityIndex)
+        focused = true
+    end
+
+    local dataManager = _G.PROMOTIONAL_EVENT_MANAGER
+        or _G.PROMOTIONAL_EVENTS_MANAGER
+        or _G.PROMOTIONAL_EVENT_DATA_MANAGER
+        or _G.PROMOTIONAL_EVENTS_DATA_MANAGER
+
+    if type(dataManager) == "table" then
+        local methodNames = {
+            "SetSelectedActivityIndices",
+            "SetSelectedActivity",
+            "SelectActivity",
+            "SetTrackedActivity",
+            "SetFocusedActivity",
+        }
+        for index = 1, #methodNames do
+            local method = dataManager[methodNames[index]]
+            if type(method) == "function" then
+                pcall(method, dataManager, campaignKey, activityIndex)
+                focused = true
+                break
+            end
+        end
+    end
+
+    local book = _G.PROMOTIONAL_EVENT_BOOK_KEYBOARD
+        or _G.PROMOTIONAL_EVENTS_BOOK_KEYBOARD
+        or _G.PROMOTIONAL_EVENT_KEYBOARD
+
+    if type(book) == "table" then
+        local bookMethods = {
+            "SelectActivity",
+            "SelectCampaignActivity",
+            "SelectCampaignByKey",
+            "FocusActivity",
+        }
+        for index = 1, #bookMethods do
+            local method = book[bookMethods[index]]
+            if type(method) == "function" then
+                pcall(method, book, campaignKey, activityIndex)
+                focused = true
+                break
+            end
+        end
+    end
+
+    return focused
+end
+
+local function showPromotionalScene()
+    if not (SCENE_MANAGER and type(SCENE_MANAGER.Show) == "function") then
+        return false
+    end
+
+    local sceneNames = { "promotionalEventsBook", "promotionalEvents", "collectionsBook" }
+    for index = 1, #sceneNames do
+        local sceneName = sceneNames[index]
+        local ok, scene = pcall(function()
+            if type(SCENE_MANAGER.GetScene) == "function" then
+                return SCENE_MANAGER:GetScene(sceneName)
+            end
+            return nil
+        end)
+        if ok and scene ~= nil then
+            SCENE_MANAGER:Show(sceneName)
+            return true
+        end
+    end
+
+    SCENE_MANAGER:Show(sceneNames[1])
+    return true
+end
+
+local function OpenBasegameGoldenFromRow(rowData)
+    local campaignKey, activityIndex, activityId = resolvePromotionalIdentity(rowData)
+
+    if isGoldenColorDebugEnabled() then
+        safeDebug(
+            "GoldenTracker: OpenBasegameMenu campaign=%s activity=%s id=%s",
+            tostring(campaignKey),
+            tostring(activityIndex),
+            tostring(activityId)
+        )
+    end
+
+    local function focus()
+        focusPromotionalActivity(campaignKey, activityIndex)
+    end
+
+    local sceneShown = showPromotionalScene()
+    if type(zo_callLater) == "function" then
+        zo_callLater(focus, 30)
+    else
+        focus()
+    end
+
+    if not sceneShown then
+        focus()
+    end
+end
+
+local function ShowGoldenContextMenu(control, rowData)
+    if not (control and rowData) then
+        return
+    end
+
+    if not (ClearMenu and AddCustomMenuItem and ShowMenu) then
+        return
+    end
+
+    ClearMenu()
+
+    AddCustomMenuItem("Goldene Vorhaben öffnen", function()
+        if isGoldenColorDebugEnabled() then
+            local _, activityIndex, activityId = resolvePromotionalIdentity(rowData)
+            safeDebug(
+                "GoldenTracker: Right-click menu → open base menu activity=%s id=%s",
+                tostring(activityIndex),
+                tostring(activityId)
+            )
+        end
+        OpenBasegameGoldenFromRow(rowData)
+    end, (_G and _G.MENU_ADD_OPTION_LABEL) or 1)
+
+    ShowMenu(control)
 end
 
 local function getWindowManager()
@@ -1025,6 +1175,8 @@ local function releaseCategoryRow(row)
         end
     end
 
+    row.data = nil
+
     local label = row.label
     if label then
         if label.SetText then
@@ -1376,6 +1528,8 @@ local function releaseEntryRow(row)
         end
     end
 
+    row.data = nil
+
     local label = row.label
     if label then
         if label.SetText then
@@ -1477,6 +1631,27 @@ local function createObjectiveRow(parent)
         __rowKind = ROW_KINDS.objective,
         _poolState = "fresh",
     }
+
+    if control and control.SetHandler then
+        control:SetHandler("OnMouseUp", function(_, button, upInside)
+            if not upInside or button ~= MOUSE_BUTTON_RIGHT then
+                return
+            end
+
+            if row.data then
+                if isGoldenColorDebugEnabled() then
+                    local campaignKey, activityIndex, activityId = resolvePromotionalIdentity(row.data)
+                    safeDebug(
+                        "GoldenTracker: Right-click on row: campaign=%s activity=%s id=%s",
+                        tostring(campaignKey),
+                        tostring(activityIndex),
+                        tostring(activityId)
+                    )
+                end
+                ShowGoldenContextMenu(control, row.data)
+            end
+        end)
+    end
 
     return row
 end
@@ -1727,6 +1902,10 @@ local function applyObjectiveRow(row, objectiveData)
     local pinLabel = row and row.pinLabel
     if not (control and label) then
         return nil
+    end
+
+    if type(row) == "table" then
+        row.data = objectiveData
     end
 
     if control.SetHidden then

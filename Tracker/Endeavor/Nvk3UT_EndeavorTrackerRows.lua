@@ -100,6 +100,9 @@ local DEFAULT_CATEGORY_CHEVRON_TEXTURES = {
 }
 
 local MOUSE_BUTTON_LEFT = rawget(_G, "MOUSE_BUTTON_INDEX_LEFT") or 1
+local MOUSE_BUTTON_RIGHT = rawget(_G, "MOUSE_BUTTON_INDEX_RIGHT") or 2
+local TIMED_ACTIVITY_TYPE_DAILY = _G.TIMED_ACTIVITY_TYPE_DAILY
+local TIMED_ACTIVITY_TYPE_WEEKLY = _G.TIMED_ACTIVITY_TYPE_WEEKLY
 
 local resolvedEntryHeight = ROWS_HEIGHTS.entry
 
@@ -155,6 +158,155 @@ local entryPool = {
 }
 
 local loggedSubrowsOnce = false
+
+local function resolveActivityIdentity(rowData)
+    if type(rowData) ~= "table" then
+        return nil, nil, nil
+    end
+
+    local activityType = tonumber(rowData.activityType)
+        or (type(rowData.type) == "number" and rowData.type)
+    local activityId = tonumber(rowData.activityId or rowData.id or rowData.index)
+    local activityKind = rowData.activityKind or (type(rowData.type) == "string" and rowData.type)
+
+    if activityKind == nil and type(activityType) == "number" then
+        if TIMED_ACTIVITY_TYPE_DAILY and activityType == TIMED_ACTIVITY_TYPE_DAILY then
+            activityKind = "daily"
+        elseif TIMED_ACTIVITY_TYPE_WEEKLY and activityType == TIMED_ACTIVITY_TYPE_WEEKLY then
+            activityKind = "weekly"
+        end
+    end
+
+    return activityType, activityId, activityKind
+end
+
+local function focusTimedActivity(activityType, activityIndex)
+    if type(activityType) ~= "number" or type(activityIndex) ~= "number" then
+        return false
+    end
+
+    local focused = false
+
+    local dataManager = _G.TIMED_ACTIVITIES_DATA_MANAGER
+    if type(dataManager) == "table" then
+        if type(dataManager.SetSelectedActivityIndices) == "function" then
+            pcall(dataManager.SetSelectedActivityIndices, dataManager, activityType, activityIndex)
+            focused = true
+        end
+        if type(dataManager.SetFocusedActivityIndices) == "function" then
+            pcall(dataManager.SetFocusedActivityIndices, dataManager, activityType, activityIndex)
+            focused = true
+        end
+    end
+
+    local book = _G.TIMED_ACTIVITIES_BOOK_KEYBOARD or _G.TIMED_ACTIVITIES_BOOK
+    if type(book) == "table" then
+        if type(book.SetSelectedActivityIndices) == "function" then
+            pcall(book.SetSelectedActivityIndices, book, activityType, activityIndex)
+            focused = true
+        end
+        if type(book.FocusActivity) == "function" then
+            pcall(book.FocusActivity, book, activityType, activityIndex)
+            focused = true
+        end
+        if type(book.SelectTimedActivity) == "function" then
+            pcall(book.SelectTimedActivity, book, activityType, activityIndex)
+            focused = true
+        end
+        if type(book.SelectActivity) == "function" then
+            pcall(book.SelectActivity, book, activityType, activityIndex)
+            focused = true
+        end
+    end
+
+    if type(SetTrackedTimedActivityIndices) == "function" then
+        pcall(SetTrackedTimedActivityIndices, activityType, activityIndex)
+    end
+
+    return focused
+end
+
+local function showTimedActivitiesScene()
+    if not (SCENE_MANAGER and type(SCENE_MANAGER.Show) == "function") then
+        return false
+    end
+
+    local sceneNames = { "timedActivitiesBook", "timedActivities", "collectionsBook" }
+    for index = 1, #sceneNames do
+        local name = sceneNames[index]
+        local ok, scene = pcall(function()
+            if type(SCENE_MANAGER.GetScene) == "function" then
+                return SCENE_MANAGER:GetScene(name)
+            end
+            return nil
+        end)
+        if ok and scene ~= nil then
+            SCENE_MANAGER:Show(name)
+            return true
+        end
+    end
+
+    SCENE_MANAGER:Show(sceneNames[1])
+    return true
+end
+
+local function OpenBasegameEndeavorFromRow(rowData)
+    local activityType, activityIndex, activityKind = resolveActivityIdentity(rowData)
+
+    if isDebugEnabled() then
+        safeDebug(
+            "EndeavorTracker: OpenBasegameMenu for %s activity id=%s type=%s",
+            tostring(activityKind or "unknown"),
+            tostring(activityIndex),
+            tostring(activityType)
+        )
+    end
+
+    local function focus()
+        focusTimedActivity(activityType, activityIndex)
+    end
+
+    local sceneShown = showTimedActivitiesScene()
+    if type(zo_callLater) == "function" then
+        zo_callLater(focus, 30)
+    else
+        focus()
+    end
+
+    if not sceneShown then
+        focus()
+    end
+end
+
+local function ShowEndeavorContextMenu(control, rowData)
+    if not (control and rowData) then
+        return
+    end
+
+    if not (ClearMenu and AddCustomMenuItem and ShowMenu) then
+        return
+    end
+
+    ClearMenu()
+
+    local _, _, activityKind = resolveActivityIdentity(rowData)
+    local isWeekly = activityKind == "weekly"
+    local label = isWeekly and "Wöchentliche Bestrebungen öffnen" or "Tägliche Bestrebungen öffnen"
+
+    AddCustomMenuItem(label, function()
+        if isDebugEnabled() then
+            local _, activityIndex = resolveActivityIdentity(rowData)
+            safeDebug(
+                "EndeavorTracker: Right-click menu → open base menu id=%s kind=%s",
+                tostring(activityIndex),
+                tostring(activityKind or (isWeekly and "weekly" or "daily"))
+            )
+        end
+        OpenBasegameEndeavorFromRow(rowData)
+    end, (_G and _G.MENU_ADD_OPTION_LABEL) or 1)
+
+    ShowMenu(control)
+end
 
 local function safeDebug(fmt, ...)
     if not isDebugEnabled() then
@@ -799,7 +951,7 @@ local function createEntryRow(parent)
     end
 
     control:SetResizeToFitDescendents(false)
-    control:SetMouseEnabled(false)
+    control:SetMouseEnabled(true)
     control:SetHidden(false)
     control._poolState = "fresh"
     control._poolParent = parent
@@ -884,7 +1036,7 @@ local function acquireEntryRow(parent)
         row:SetResizeToFitDescendents(false)
     end
     if row.SetMouseEnabled then
-        row:SetMouseEnabled(false)
+        row:SetMouseEnabled(true)
     end
 
     markEntryUsed(row, parent)
@@ -1075,10 +1227,26 @@ local function createCategoryRow(parent)
 
     if control and control.SetHandler then
         local function onMouseUp(_, button, upInside)
-            if button == MOUSE_BUTTON_LEFT and upInside then
+            if not upInside then
+                return
+            end
+
+            if button == MOUSE_BUTTON_LEFT then
                 local callback = row._onToggle
                 if type(callback) == "function" then
                     callback()
+                end
+            elseif button == MOUSE_BUTTON_RIGHT then
+                if row.data then
+                    if isDebugEnabled() then
+                        local _, activityIndex, activityKind = resolveActivityIdentity(row.data)
+                        safeDebug(
+                            "EndeavorTracker: Right-click on row: id=%s kind=%s",
+                            tostring(activityIndex),
+                            tostring(activityKind)
+                        )
+                    end
+                    ShowEndeavorContextMenu(control, row.data)
                 end
             end
         end
@@ -1673,6 +1841,8 @@ local function applyEntryRow(row, objective, options)
         end
     end
 
+    row.data = nil
+
     local entryHeight = resolveEntryHeight(options)
     if row.SetHeight then
         row:SetHeight(entryHeight)
@@ -1720,6 +1890,7 @@ local function applyEntryRow(row, objective, options)
     row._subrows = sanitizedSubrows
     row._subrowCount = #sanitizedSubrows
     row._subrowsVisibleCount = visibleSubrows
+    row.data = data
 
     if not loggedSubrowsOnce and visibleSubrows > 0 then
         local blockHeight = Rows.GetSubrowsBlockHeight(sanitizedSubrows)

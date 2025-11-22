@@ -590,7 +590,7 @@ function Controller:BuildViewModel()
     dailyDisplayCompleted = dailyDoneCapped
     weeklyDisplayCompleted = weeklyDoneCapped
 
-    local function mapObjective(item)
+    local function mapObjective(item, kind)
         if type(item) ~= "table" then
             return nil, nil
         end
@@ -598,6 +598,8 @@ function Controller:BuildViewModel()
         local maxValue = clampMax(item.maxProgress)
         local progressValue = clampProgress(item.progress, maxValue)
         local completed = item.completed == true or progressValue >= maxValue
+        local activityType = item.type
+        local activityId = item.id
 
         local objective = {
             text = tostring(item.name or ""),
@@ -605,6 +607,9 @@ function Controller:BuildViewModel()
             max = maxValue,
             completed = completed,
             remainingSeconds = clampNonNegative(item.remainingSeconds, 0),
+            activityType = activityType,
+            activityId = activityId,
+            activityKind = kind,
         }
 
         local aggregated = {
@@ -613,6 +618,8 @@ function Controller:BuildViewModel()
             progress = progressValue,
             maxProgress = maxValue,
             type = nil,
+            activityType = activityType,
+            activityId = activityId,
             remainingSeconds = objective.remainingSeconds,
             completed = completed,
         }
@@ -633,7 +640,7 @@ function Controller:BuildViewModel()
         end
 
         for _, item in ipairs(list) do
-            local objective, aggregated = mapObjective(item)
+            local objective, aggregated = mapObjective(item, kind)
             if objective then
                 if aggregated then
                     aggregated.type = kind
