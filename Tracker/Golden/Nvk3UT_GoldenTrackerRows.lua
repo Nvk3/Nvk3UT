@@ -84,6 +84,12 @@ local categoryPool = {
     nextId = 1,
 }
 
+local entryPool = {
+    free = {},
+    used = {},
+    nextId = 1,
+}
+
 local function getAddon()
     return rawget(_G, addonName)
 end
@@ -1071,6 +1077,321 @@ local function applyCategoryRow(row, categoryData)
     return targetRow
 end
 
+local function buildEntryControlName(parent)
+    local parentName = resolveParentName(parent)
+    local index = entryPool.nextId or 1
+    entryPool.nextId = index + 1
+    return string.format("%s_entryRow%d", parentName, index)
+end
+
+local function detachEntryFromUsed(row)
+    for index = #entryPool.used, 1, -1 do
+        if entryPool.used[index] == row then
+            table.remove(entryPool.used, index)
+            return
+        end
+    end
+end
+
+local function createEntryRow(parent)
+    local wm = getWindowManager()
+    if wm == nil or parent == nil then
+        return nil
+    end
+
+    local controlName = buildEntryControlName(parent)
+    local control = wm:CreateControl(controlName, parent, CT_CONTROL)
+    if control.SetResizeToFitDescendents then
+        control:SetResizeToFitDescendents(true)
+    end
+    if control.SetHidden then
+        control:SetHidden(false)
+    end
+    if control.SetMouseEnabled then
+        control:SetMouseEnabled(true)
+    end
+    if control.SetAlpha then
+        control:SetAlpha(1)
+    end
+    if control.SetScale then
+        control:SetScale(1)
+    end
+    control.__height = DEFAULTS.ENTRY_HEIGHT
+    if control.SetHeight then
+        control:SetHeight(DEFAULTS.ENTRY_HEIGHT)
+    end
+
+    local label = createLabel(control, "EntryTitle")
+    if label then
+        label:ClearAnchors()
+        if label.SetAnchor then
+            label:SetAnchor(TOPLEFT, control, TOPLEFT, ENTRY_INDENT_X, 0)
+            label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
+        end
+        applyLabelDefaults(label, getGoldenTitleFont())
+        if label.SetAlpha then
+            label:SetAlpha(1)
+        end
+        if label.SetHidden then
+            label:SetHidden(false)
+        end
+        if label.SetText then
+            label:SetText("")
+        end
+    end
+
+    local row = {
+        control = control,
+        label = label,
+        name = controlName,
+        __height = DEFAULTS.ENTRY_HEIGHT,
+        _poolState = "fresh",
+    }
+
+    if control and control.SetHandler then
+        control:SetHandler("OnMouseUp", function(_, button, upInside)
+            if button == MOUSE_BUTTON_LEFT and upInside then
+                local controller = rawget(Nvk3UT, "GoldenTrackerController")
+                if controller and type(controller.ToggleEntryExpanded) == "function" then
+                    controller:ToggleEntryExpanded()
+                end
+            end
+        end)
+    end
+
+    safeDebug("[GoldenEntryPool] create %s", tostring(controlName))
+
+    return row
+end
+
+local function resetEntryRowVisuals(row, parent)
+    if not row then
+        return
+    end
+
+    local control = row.control
+    if control then
+        if control.SetParent then
+            control:SetParent(parent)
+        end
+        if control.ClearAnchors then
+            control:ClearAnchors()
+        end
+        if control.SetHidden then
+            control:SetHidden(false)
+        end
+        if control.SetResizeToFitDescendents then
+            control:SetResizeToFitDescendents(true)
+        end
+        if control.SetMouseEnabled then
+            control:SetMouseEnabled(true)
+        end
+        if control.SetAlpha then
+            control:SetAlpha(1)
+        end
+        if control.SetScale then
+            control:SetScale(1)
+        end
+        control.__height = DEFAULTS.ENTRY_HEIGHT
+        if control.SetHeight then
+            control:SetHeight(DEFAULTS.ENTRY_HEIGHT)
+        end
+    end
+
+    local label = row.label
+    if label then
+        label:ClearAnchors()
+        if label.SetAnchor and control then
+            label:SetAnchor(TOPLEFT, control, TOPLEFT, ENTRY_INDENT_X, 0)
+            label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
+        end
+        applyLabelDefaults(label, getGoldenTitleFont())
+        applyLabelColor(label, GOLDEN_COLOR_ROLES.EntryName, getGoldenTrackerColors())
+        if label.SetAlpha then
+            label:SetAlpha(1)
+        end
+        if label.SetHidden then
+            label:SetHidden(false)
+        end
+        if label.SetText then
+            label:SetText("")
+        end
+    end
+
+    row.__height = DEFAULTS.ENTRY_HEIGHT
+    row._poolParent = parent
+    row._poolState = "used"
+
+    entryPool.used[#entryPool.used + 1] = row
+end
+
+local function acquireEntryRow(parent)
+    local row
+    if #entryPool.free > 0 then
+        row = table.remove(entryPool.free)
+        safeDebug(
+            "[GoldenEntryPool] reuse %s (used=%d free=%d)",
+            tostring(row and row.name),
+            #entryPool.used,
+            #entryPool.free
+        )
+    end
+
+    if not row then
+        row = createEntryRow(parent)
+    end
+
+    if not row then
+        return nil
+    end
+
+    resetEntryRowVisuals(row, parent)
+
+    return row
+end
+
+local function releaseEntryRow(row)
+    if not row then
+        return
+    end
+
+    detachEntryFromUsed(row)
+
+    local control = row.control
+    if control then
+        if control.SetHidden then
+            control:SetHidden(true)
+        end
+        if control.ClearAnchors then
+            control:ClearAnchors()
+        end
+    end
+
+    local label = row.label
+    if label then
+        if label.SetText then
+            label:SetText("")
+        end
+        if label.SetHidden then
+            label:SetHidden(true)
+        end
+    end
+
+    row._poolParent = nil
+    row._poolState = "free"
+
+    entryPool.free[#entryPool.free + 1] = row
+
+    safeDebug(
+        "[GoldenEntryPool] release %s (used=%d free=%d)",
+        tostring(row.name),
+        #entryPool.used,
+        #entryPool.free
+    )
+end
+
+local function releaseAllEntryRows()
+    for index = #entryPool.used, 1, -1 do
+        local row = entryPool.used[index]
+        entryPool.used[index] = nil
+        releaseEntryRow(row)
+    end
+
+    safeDebug("[GoldenEntryPool] reset (used=%d free=%d)", #entryPool.used, #entryPool.free)
+end
+
+local function applyEntryRow(row, entryData)
+    local targetRow = row and row.control or row
+    local label = row and row.label
+    if not (targetRow and label) then
+        return nil
+    end
+
+    if targetRow.SetHidden then
+        targetRow:SetHidden(false)
+    end
+
+    applyLabelDefaults(label, getGoldenTitleFont())
+
+    local palette = getGoldenTrackerColors()
+    local entryExpanded = true
+    if type(entryData) == "table" then
+        if entryData.isExpanded ~= nil then
+            entryExpanded = entryData.isExpanded ~= false
+        elseif entryData.expanded ~= nil then
+            entryExpanded = entryData.expanded ~= false
+        end
+    end
+    local entryComplete = isCapstoneComplete(entryData)
+    local generalMode = type(entryData) == "table" and entryData.generalCompletedMode
+    local useCompletedColor = entryComplete and generalMode == "recolor"
+    local entryRole = useCompletedColor and GOLDEN_COLOR_ROLES.Completed or GOLDEN_COLOR_ROLES.EntryName
+    local colorR, colorG, colorB, colorA, colorSource, colorSourceReason = applyLabelColor(label, entryRole, palette)
+    if colorR ~= nil and isGoldenColorDebugEnabled() then
+        local stateTokens = {
+            entryExpanded and "active" or "inactive",
+            entryComplete and "capstoneComplete" or "capstoneOpen",
+            generalMode,
+        }
+        local reason
+        if useCompletedColor then
+            reason = "Capstone reached with general recolor; using completed color"
+        else
+            reason = "Campaign entry always uses entry title color"
+            if entryExpanded or entryComplete then
+                reason = string.format("%s (active/completed state ignored for color)", reason)
+            end
+        end
+        if colorSourceReason and colorSourceReason ~= "" then
+            reason = string.format("%s (%s)", reason, colorSourceReason)
+        end
+
+        logGoldenColorDecision(
+            "golden.campaignEntry",
+            table.concat(stateTokens, "+"),
+            colorSource or string.format("role.%s", tostring(entryRole)),
+            { colorR, colorG, colorB, colorA },
+            reason,
+            { role = entryRole, palette = palette and palette[entryRole] }
+        )
+    end
+
+    local text = ""
+    if type(entryData) == "table" then
+        local display = entryData.campaignName or entryData.displayName or entryData.title or entryData.name
+        local completed = tonumber(entryData.completedObjectives or entryData.countCompleted)
+        local total = tonumber(entryData.maxRewardTier or entryData.countTotal)
+        if completed == nil then
+            completed = tonumber(entryData.count) or tonumber(entryData.progressDisplay)
+        end
+        if total == nil then
+            total = tonumber(entryData.max) or tonumber(entryData.maxDisplay)
+        end
+
+        local overallCompleted = tonumber(entryData.totalCompletedOverall)
+        local capstoneGoal = tonumber(entryData.capstoneGoal or entryData.maxRewardTier or entryData.countTotal)
+        if entryComplete and generalMode == "showOpen" then
+            if overallCompleted ~= nil then
+                completed = overallCompleted
+            end
+            if capstoneGoal ~= nil then
+                total = capstoneGoal
+            end
+        end
+
+        if completed ~= nil and total ~= nil then
+            text = string.format("%s (%d/%d)", tostring(display or ""), completed, total)
+        else
+            text = tostring(display or "")
+        end
+    end
+    if label.SetText then
+        label:SetText(text)
+    end
+
+    return targetRow
+end
+
 function Rows.AcquireCategoryRow(parent)
     return acquireCategoryRow(parent)
 end
@@ -1094,118 +1415,27 @@ function Rows.CreateCategoryRow(parent, categoryData)
     return row.control
 end
 
+function Rows.AcquireEntryRow(parent)
+    return acquireEntryRow(parent)
+end
+
+function Rows.ReleaseAllEntryRows()
+    releaseAllEntryRows()
+end
+
+function Rows.ApplyEntryRow(row, entryData)
+    return applyEntryRow(row, entryData)
+end
+
 function Rows.CreateCampaignRow(parent, entryData)
-    if parent == nil then
+    local row = Rows.AcquireEntryRow(parent)
+    if not row then
         return nil
     end
 
-    local control = createControl(parent, "entry")
-    if not control then
-        return nil
-    end
+    Rows.ApplyEntryRow(row, entryData)
 
-    control.__height = DEFAULTS.ENTRY_HEIGHT
-    if control.SetHeight then
-        control:SetHeight(DEFAULTS.ENTRY_HEIGHT)
-    end
-
-    local palette = getGoldenTrackerColors()
-    local label = createLabel(control, "EntryTitle")
-    if label then
-        label:ClearAnchors()
-        if label.SetAnchor then
-            label:SetAnchor(TOPLEFT, control, TOPLEFT, ENTRY_INDENT_X, 0)
-            label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
-        end
-        applyLabelDefaults(label, getGoldenTitleFont())
-        local entryExpanded = true
-        if type(entryData) == "table" then
-            if entryData.isExpanded ~= nil then
-                entryExpanded = entryData.isExpanded ~= false
-            elseif entryData.expanded ~= nil then
-                entryExpanded = entryData.expanded ~= false
-            end
-        end
-        local entryComplete = isCapstoneComplete(entryData)
-        local generalMode = type(entryData) == "table" and entryData.generalCompletedMode
-        local useCompletedColor = entryComplete and generalMode == "recolor"
-        local entryRole = useCompletedColor and GOLDEN_COLOR_ROLES.Completed or GOLDEN_COLOR_ROLES.EntryName
-        local colorR, colorG, colorB, colorA, colorSource, colorSourceReason = applyLabelColor(label, entryRole, palette)
-        if colorR ~= nil and isGoldenColorDebugEnabled() then
-            local stateTokens = {
-                entryExpanded and "active" or "inactive",
-                entryComplete and "capstoneComplete" or "capstoneOpen",
-                generalMode,
-            }
-            local reason
-            if useCompletedColor then
-                reason = "Capstone reached with general recolor; using completed color"
-            else
-                reason = "Campaign entry always uses entry title color"
-                if entryExpanded or entryComplete then
-                    reason = string.format("%s (active/completed state ignored for color)", reason)
-                end
-            end
-            if colorSourceReason and colorSourceReason ~= "" then
-                reason = string.format("%s (%s)", reason, colorSourceReason)
-            end
-
-            logGoldenColorDecision(
-                "golden.campaignEntry",
-                table.concat(stateTokens, "+"),
-                colorSource or string.format("role.%s", tostring(entryRole)),
-                { colorR, colorG, colorB, colorA },
-                reason,
-                { role = entryRole, palette = palette and palette[entryRole] }
-            )
-        end
-
-        local text = ""
-        if type(entryData) == "table" then
-            local display = entryData.campaignName or entryData.displayName or entryData.title or entryData.name
-            local completed = tonumber(entryData.completedObjectives or entryData.countCompleted)
-            local total = tonumber(entryData.maxRewardTier or entryData.countTotal)
-            if completed == nil then
-                completed = tonumber(entryData.count) or tonumber(entryData.progressDisplay)
-            end
-            if total == nil then
-                total = tonumber(entryData.max) or tonumber(entryData.maxDisplay)
-            end
-
-            local overallCompleted = tonumber(entryData.totalCompletedOverall)
-            local capstoneGoal = tonumber(entryData.capstoneGoal or entryData.maxRewardTier or entryData.countTotal)
-            if entryComplete and generalMode == "showOpen" then
-                if overallCompleted ~= nil then
-                    completed = overallCompleted
-                end
-                if capstoneGoal ~= nil then
-                    total = capstoneGoal
-                end
-            end
-
-            if completed ~= nil and total ~= nil then
-                text = string.format("%s (%d/%d)", tostring(display or ""), completed, total)
-            else
-                text = tostring(display or "")
-            end
-        end
-        if label.SetText then
-            label:SetText(text)
-        end
-    end
-
-    if control and control.SetHandler then
-        control:SetHandler("OnMouseUp", function(_, button, upInside)
-            if button == MOUSE_BUTTON_LEFT and upInside then
-                local controller = rawget(Nvk3UT, "GoldenTrackerController")
-                if controller and type(controller.ToggleEntryExpanded) == "function" then
-                    controller:ToggleEntryExpanded()
-                end
-            end
-        end)
-    end
-
-    return control
+    return row.control
 end
 
 function Rows.CreateObjectiveRow(parent, objectiveData)
