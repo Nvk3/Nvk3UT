@@ -1344,7 +1344,20 @@ local function ensureUi(container)
             end
 
             if button == MOUSE_BUTTON_INDEX_RIGHT then
-                safeDebug("[EndeavorTracker.UI] Right-click on daily header entry")
+                if not (ClearMenu and AddCustomMenuItem and ShowMenu) then
+                    return
+                end
+
+                ClearMenu()
+                local optionType = (_G and _G.MENU_ADD_OPTION_LABEL) or MENU_ADD_OPTION_LABEL or 1
+                AddCustomMenuItem(
+                    "Tägliche Bestrebungen öffnen",
+                    function()
+                        safeDebug("[EndeavorTracker.UI] Context: Tägliche Bestrebungen öffnen angeklickt")
+                    end,
+                    optionType
+                )
+                ShowMenu(control)
             end
         end)
 
@@ -1400,7 +1413,20 @@ local function ensureUi(container)
             end
 
             if button == MOUSE_BUTTON_INDEX_RIGHT then
-                safeDebug("[EndeavorTracker.UI] Right-click on weekly header entry")
+                if not (ClearMenu and AddCustomMenuItem and ShowMenu) then
+                    return
+                end
+
+                ClearMenu()
+                local optionType = (_G and _G.MENU_ADD_OPTION_LABEL) or MENU_ADD_OPTION_LABEL or 1
+                AddCustomMenuItem(
+                    "Wöchentliche Bestrebungen öffnen",
+                    function()
+                        safeDebug("[EndeavorTracker.UI] Context: Wöchentliche Bestrebungen öffnen angeklickt")
+                    end,
+                    optionType
+                )
+                ShowMenu(control)
             end
         end)
 

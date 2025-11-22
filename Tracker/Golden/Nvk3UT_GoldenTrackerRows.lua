@@ -1200,17 +1200,28 @@ local function detachEntryFromUsed(row)
     end
 end
 
-local function logGoldenEntryRightClick(control)
+local function showGoldenEntryContextMenu(control)
     local context = control and control._goldenContext
     if type(context) ~= "table" or context.kind ~= "campaign" then
         return
     end
 
-    safeDebug(
-        "[ContextTest] Right-click on Golden entry: campaign=%s id=%s",
-        tostring(context.campaign),
-        tostring(context.id)
+    if not (ClearMenu and AddCustomMenuItem and ShowMenu) then
+        return
+    end
+
+    ClearMenu()
+
+    local optionType = (_G and _G.MENU_ADD_OPTION_LABEL) or MENU_ADD_OPTION_LABEL or 1
+    AddCustomMenuItem(
+        "Goldene Vorhaben öffnen",
+        function()
+            safeDebug("[GoldenTracker.UI] Context: Goldene Vorhaben öffnen angeklickt")
+        end,
+        optionType
     )
+
+    ShowMenu(control)
 end
 
 local function createEntryRow(parent)
@@ -1282,7 +1293,7 @@ local function createEntryRow(parent)
                     controller:ToggleEntryExpanded()
                 end
             elseif button == MOUSE_BUTTON_RIGHT then
-                logGoldenEntryRightClick(self)
+                showGoldenEntryContextMenu(self)
             end
         end)
     end
