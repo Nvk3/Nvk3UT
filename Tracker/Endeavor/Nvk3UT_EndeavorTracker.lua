@@ -1334,8 +1334,17 @@ local function ensureUi(container)
         control:SetMouseEnabled(true)
         control:SetHidden(false)
         control:SetHandler("OnMouseUp", function(_, button, upInside)
-            if button == MOUSE_BUTTON_INDEX_LEFT and upInside then
+            if upInside ~= true then
+                return
+            end
+
+            if button == MOUSE_BUTTON_INDEX_LEFT then
                 toggleCategoryExpanded("daily")
+                return
+            end
+
+            if button == MOUSE_BUTTON_INDEX_RIGHT then
+                safeDebug("[EndeavorTracker.UI] Right-click on daily header entry")
             end
         end)
 
@@ -1381,8 +1390,17 @@ local function ensureUi(container)
         control:SetMouseEnabled(true)
         control:SetHidden(false)
         control:SetHandler("OnMouseUp", function(_, button, upInside)
-            if button == MOUSE_BUTTON_INDEX_LEFT and upInside then
+            if upInside ~= true then
+                return
+            end
+
+            if button == MOUSE_BUTTON_INDEX_LEFT then
                 toggleCategoryExpanded("weekly")
+                return
+            end
+
+            if button == MOUSE_BUTTON_INDEX_RIGHT then
+                safeDebug("[EndeavorTracker.UI] Right-click on weekly header entry")
             end
         end)
 

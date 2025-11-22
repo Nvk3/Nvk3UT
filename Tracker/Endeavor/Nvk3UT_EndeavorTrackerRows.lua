@@ -100,7 +100,6 @@ local DEFAULT_CATEGORY_CHEVRON_TEXTURES = {
 }
 
 local MOUSE_BUTTON_LEFT = rawget(_G, "MOUSE_BUTTON_INDEX_LEFT") or 1
-local MOUSE_BUTTON_RIGHT = rawget(_G, "MOUSE_BUTTON_INDEX_RIGHT") or 2
 
 local resolvedEntryHeight = ROWS_HEIGHTS.entry
 
@@ -198,28 +197,7 @@ local function onEntryMouseUp(control, button, upInside)
         if type(onLeftClick) == "function" then
             onLeftClick(control)
         end
-        return
     end
-
-    if button ~= MOUSE_BUTTON_RIGHT then
-        return
-    end
-
-    local context = control._entryContext
-    if type(context) ~= "table" then
-        return
-    end
-
-    local kind = context.kind
-    if kind ~= "daily" and kind ~= "weekly" then
-        return
-    end
-
-    safeDebug(
-        "[ContextTest] Right-click on Endeavor entry: kind=%s id=%s",
-        tostring(kind),
-        tostring(context.id)
-    )
 end
 
 local function normalizeSubrowKind(kind)
@@ -1758,11 +1736,6 @@ local function applyEntryRow(row, objective, options)
 
     local leftClickHandler = type(objective) == "table" and objective.onLeftClick or nil
     row._entryOnLeftClick = type(leftClickHandler) == "function" and leftClickHandler or nil
-
-    row._entryContext = {
-        kind = rowKind,
-        id = data.id,
-    }
 
     if row.SetMouseEnabled then
         row:SetMouseEnabled(true)
