@@ -118,7 +118,7 @@ local function getContainerWidth(control)
         return 0
     end
 
-    local parent = control:GetParent and control:GetParent()
+    local parent = control.GetParent and control:GetParent()
     if parent and parent.GetWidth then
         local ok, width = pcall(parent.GetWidth, parent)
         if ok then

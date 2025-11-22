@@ -28,6 +28,7 @@ local CATEGORY_ENTRY_SPACING = 3
 local ENTRY_TOP_PAD = 0
 local ENTRY_BOTTOM_PAD = 0
 local ENTRY_ROW_SPACING = 3
+local ENTRY_INDENT_X = 32
 
 local function isDebugEnabled()
     local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
@@ -381,6 +382,7 @@ local function hideUnusedSubrows(row, startIndex)
             if control.ClearAnchors then
                 control:ClearAnchors()
             end
+            control._measuredHeight = nil
         end
     end
 end
@@ -672,7 +674,13 @@ function Rows.ApplySubrow(control, kind, data, options)
         rightLabel:SetColor(r, g, b, a)
     end
 
-    local availableWidth = computeAvailableWidth(control, OBJECTIVE_INDENT_X, 0)
+    local iconVisible = icon and icon.IsHidden and not icon:IsHidden()
+    local leftPadding = OBJECTIVE_INDENT_X
+    if iconVisible then
+        leftPadding = leftPadding + SUBROW_ICON_SIZE + SUBROW_ICON_GAP
+    end
+
+    local availableWidth, containerWidth = computeAvailableWidth(control, leftPadding, 0)
     local rightWidth = 0
     local rightVisible = true
     if rightLabel and rightLabel.IsHidden then
@@ -710,8 +718,10 @@ function Rows.ApplySubrow(control, kind, data, options)
 
     control._measuredHeight = targetHeight
     safeDebug(
-        "[Subrow] kind=%s width=%d textHeight=%d rightHeight=%d height=%d",
+        "[Subrow] kind=%s containerWidth=%d leftPadding=%d width=%d textHeight=%d rightHeight=%d height=%d",
         tostring(resolvedKind),
+        containerWidth,
+        leftPadding,
         leftWidth,
         leftHeight,
         rightHeight,
@@ -1119,6 +1129,11 @@ local function resetEntryRowContent(row)
     row._subrowsVisibleCount = 0
     row._entryOnLeftClick = nil
     row._entryContext = nil
+
+    if row.SetHeight then
+        row:SetHeight(resolvedEntryHeight)
+    end
+    row._measuredHeight = nil
 end
 
 local function releaseEntryRow(row)
@@ -1495,6 +1510,11 @@ local function releaseCategoryRow(row)
         end
     end
 
+    if control and control.SetHeight then
+        control:SetHeight(getCategoryHeight(false))
+    end
+
+    row._measuredHeight = nil
     row._onToggle = nil
     row._poolState = "free"
 
@@ -1560,7 +1580,7 @@ local function applyCategoryRow(row, data)
         label:SetText(formattedText)
     end
 
-    local availableWidth = computeAvailableWidth(control, CATEGORY_CHEVRON_SIZE + CATEGORY_LABEL_OFFSET_X, 0)
+    local availableWidth, containerWidth = computeAvailableWidth(control, CATEGORY_CHEVRON_SIZE + CATEGORY_LABEL_OFFSET_X, 0)
     if label.SetWidth then
         label:SetWidth(availableWidth)
     end
@@ -1634,7 +1654,8 @@ local function applyCategoryRow(row, data)
         end
         control._measuredHeight = targetHeight
         safeDebug(
-            "[CategoryRow] width=%d textHeight=%d height=%d expanded=%s",
+            "[CategoryRow] containerWidth=%d width=%d textHeight=%d height=%d expanded=%s",
+            containerWidth,
             availableWidth,
             textHeight,
             targetHeight,
@@ -1866,9 +1887,9 @@ local function applyEntryRow(row, objective, options)
         title:SetMaxLineCount(0)
     end
     title:ClearAnchors()
-    title:SetAnchor(TOPLEFT, row, TOPLEFT, OBJECTIVE_INDENT_X, ENTRY_TOP_PAD)
+    title:SetAnchor(TOPLEFT, row, TOPLEFT, ENTRY_INDENT_X, ENTRY_TOP_PAD)
     title:SetAnchor(BOTTOMRIGHT, row, BOTTOMRIGHT, 0, -ENTRY_BOTTOM_PAD)
-    local availableWidth = computeAvailableWidth(row, OBJECTIVE_INDENT_X, 0)
+    local availableWidth, containerWidth = computeAvailableWidth(row, ENTRY_INDENT_X, 0)
     if title.SetWidth then
         title:SetWidth(availableWidth)
     end
@@ -1885,7 +1906,8 @@ local function applyEntryRow(row, objective, options)
     end
     row._measuredHeight = targetHeight
     safeDebug(
-        "[EntryRow] width=%d textHeight=%d height=%d",
+        "[EntryRow] containerWidth=%d width=%d textHeight=%d height=%d",
+        containerWidth,
         availableWidth,
         textHeight,
         targetHeight
