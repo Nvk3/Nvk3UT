@@ -17,6 +17,7 @@ local unpack = _G.unpack or (table and table.unpack)
 local VALID_COMPLETED_HANDLING = {
     hide = true,
     recolor = true,
+    showOpen = true,
 }
 
 local DEFAULT_BEHAVIOR = {

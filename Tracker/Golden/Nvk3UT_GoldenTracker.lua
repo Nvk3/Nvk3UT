@@ -96,6 +96,24 @@ local function safeDebug(message, ...)
     pcall(debugFn, string.format("%s: %s", MODULE_TAG, tostring(payload)))
 end
 
+local function isObjectiveCompleted(objectiveData)
+    if type(objectiveData) ~= "table" then
+        return false
+    end
+
+    if objectiveData.isCompleted == true or objectiveData.isComplete == true or objectiveData.completed == true then
+        return true
+    end
+
+    local progress = tonumber(objectiveData.progress or objectiveData.current or objectiveData.progressDisplay)
+    local maxValue = tonumber(objectiveData.max or objectiveData.maxDisplay)
+    if progress ~= nil and maxValue ~= nil and maxValue > 0 and progress >= maxValue then
+        return true
+    end
+
+    return false
+end
+
 local function logTrackerError(message, ...)
     local payload = tostring(message)
     if select("#", ...) > 0 then
@@ -1036,6 +1054,7 @@ function GoldenTracker.Refresh(...)
     local generalMode = vm and (vm.generalCompletedMode or summary.generalCompletedMode)
     local hideCategoryWhenCompleted = vm and (vm.hideCategoryWhenCompleted == true or summary.hideCategoryWhenCompleted == true)
     local hideObjectivesWhenCompleted = vm and (vm.hideObjectivesWhenCompleted == true or summary.hideObjectivesWhenCompleted == true)
+    local showOpenMode = vm and (vm.showOpenMode == true or (capstoneReached and generalMode == "showOpen"))
 
     if hideCategoryWhenCompleted then
         hasEntriesForTracker = false
@@ -1130,11 +1149,22 @@ function GoldenTracker.Refresh(...)
         end
 
         if categoryExpanded and entryExpanded then
-            if hideObjectivesWhenCompleted then
-                objectives = {}
+            local objectivesForRows = objectives
+            if capstoneReached and generalMode == "recolor" then
+                objectivesForRows = {}
+            elseif showOpenMode then
+                objectivesForRows = {}
+                for index = 1, #objectives do
+                    local objectiveData = objectives[index]
+                    if not isObjectiveCompleted(objectiveData) then
+                        objectivesForRows[#objectivesForRows + 1] = objectiveData
+                    end
+                end
+            elseif hideObjectivesWhenCompleted then
+                objectivesForRows = {}
             end
-            for objectiveIndex = 1, #objectives do
-                local objectiveData = objectives[objectiveIndex]
+            for objectiveIndex = 1, #objectivesForRows do
+                local objectiveData = objectivesForRows[objectiveIndex]
                 if type(objectiveData) == "table" then
                     local objectiveRow = safeCreateRow(rowsModule.CreateObjectiveRow, content, objectiveData)
                     if objectiveRow then

@@ -270,6 +270,9 @@ local function normalizeGeneralHandling(value)
     if value == "hide" then
         return "hide"
     end
+    if value == "showOpen" then
+        return "showOpen"
+    end
     return nil
 end
 
@@ -918,11 +921,28 @@ function Controller:BuildViewModel(options)
 
     viewModel.summary = summary
 
+    local totalObjectives = #rawObjectives
+    local totalCompletedOverall = 0
+    for index = 1, #rawObjectives do
+        if isObjectiveCompleted(rawObjectives[index]) then
+            totalCompletedOverall = totalCompletedOverall + 1
+        end
+    end
+
+    local capstoneGoal = summary.maxRewardTier
+    local remainingAllObjectives = math.max(0, totalObjectives - totalCompletedOverall)
+
+    summary.totalObjectives = totalObjectives
+    summary.totalCompletedOverall = totalCompletedOverall
+    summary.capstoneGoal = capstoneGoal
+    summary.remainingAllObjectives = remainingAllObjectives
+
     local goldenConfig = getGoldenConfig()
     local generalHandling = resolveGeneralHandling(goldenConfig)
     local capstoneReached = isCapstoneComplete(summary)
     local hideCategoryWhenCompleted = capstoneReached and generalHandling == "hide"
-    local hideObjectivesWhenCompleted = capstoneReached and generalHandling == "recolor"
+    local hideObjectivesWhenCompleted = capstoneReached and (generalHandling == "recolor" or generalHandling == "showOpen")
+    local showOpenMode = capstoneReached and generalHandling == "showOpen"
 
     summary.capstoneReached = capstoneReached
     summary.generalCompletedMode = generalHandling
@@ -931,8 +951,16 @@ function Controller:BuildViewModel(options)
 
     local objectiveHandling = resolveObjectiveHandling(goldenConfig)
     local trackerObjectives = rawObjectives
-    if hideObjectivesWhenCompleted then
+    if capstoneReached and generalHandling == "recolor" then
         trackerObjectives = {}
+    elseif capstoneReached and generalHandling == "showOpen" then
+        trackerObjectives = {}
+        for index = 1, #rawObjectives do
+            local objectiveData = rawObjectives[index]
+            if not isObjectiveCompleted(objectiveData) then
+                trackerObjectives[#trackerObjectives + 1] = objectiveData
+            end
+        end
     elseif objectiveHandling ~= "recolor" and #rawObjectives > 0 then
         trackerObjectives = {}
         for index = 1, #rawObjectives do
@@ -949,6 +977,11 @@ function Controller:BuildViewModel(options)
     viewModel.capstoneReached = capstoneReached
     viewModel.hideCategoryWhenCompleted = hideCategoryWhenCompleted
     viewModel.hideObjectivesWhenCompleted = hideObjectivesWhenCompleted
+    viewModel.showOpenMode = showOpenMode
+    viewModel.totalObjectives = totalObjectives
+    viewModel.totalCompletedOverall = totalCompletedOverall
+    viewModel.capstoneGoal = capstoneGoal
+    viewModel.remainingAllObjectives = remainingAllObjectives
 
     viewModel.hasEntriesForTracker = rawData.hasEntriesForTracker == true and #categories > 0
 

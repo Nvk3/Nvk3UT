@@ -810,8 +810,14 @@ function Rows.CreateCategoryRow(parent, categoryData)
         local text = GOLDEN_HEADER_TITLE
         local showCounter = shouldShowGoldenHeaderCounter()
         local remaining = nil
+        local generalMode = type(categoryData) == "table" and categoryData.generalCompletedMode
+        local capstoneReached = categoryData and categoryData.capstoneReached == true
         if type(categoryData) == "table" then
-            remaining = tonumber(categoryData.remainingObjectivesToNextReward) or 0
+            if showCounter and capstoneReached and generalMode == "showOpen" then
+                remaining = tonumber(categoryData.remainingAllObjectives) or 0
+            else
+                remaining = tonumber(categoryData.remainingObjectivesToNextReward) or 0
+            end
         end
 
         if showCounter and remaining ~= nil then
@@ -934,6 +940,17 @@ function Rows.CreateCampaignRow(parent, entryData)
             end
             if total == nil then
                 total = tonumber(entryData.max) or tonumber(entryData.maxDisplay)
+            end
+
+            local overallCompleted = tonumber(entryData.totalCompletedOverall)
+            local capstoneGoal = tonumber(entryData.capstoneGoal or entryData.maxRewardTier or entryData.countTotal)
+            if entryComplete and generalMode == "showOpen" then
+                if overallCompleted ~= nil then
+                    completed = overallCompleted
+                end
+                if capstoneGoal ~= nil then
+                    total = capstoneGoal
+                end
             end
 
             if completed ~= nil and total ~= nil then

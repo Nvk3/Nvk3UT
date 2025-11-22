@@ -2567,8 +2567,9 @@ local function registerPanel(displayTitle)
                 choices = {
                     GetString(SI_NVK3UT_LAM_GOLDEN_COMPLETED_HIDE),
                     GetString(SI_NVK3UT_LAM_GOLDEN_COMPLETED_RECOLOR),
+                    GetString(SI_NVK3UT_LAM_GOLDEN_COMPLETED_SHOW_OPEN_OBJECTIVES),
                 },
-                choicesValues = { "hide", "recolor" },
+                choicesValues = { "hide", "recolor", "showOpen" },
                 getFunc = function()
                     local config = getGoldenConfig()
                     local value = config.generalCompletedHandling
@@ -2582,6 +2583,9 @@ local function registerPanel(displayTitle)
                         end
                         return "hide"
                     end
+                    if value == "showOpen" then
+                        return "showOpen"
+                    end
                     if value == "recolor" then
                         return "recolor"
                     end
@@ -2589,25 +2593,22 @@ local function registerPanel(displayTitle)
                 end,
                 setFunc = function(value)
                     local config = getGoldenConfig()
-                    local resolved = value == "recolor" and "recolor" or "hide"
+                    local resolved = "hide"
+                    if value == "recolor" then
+                        resolved = "recolor"
+                    elseif value == "showOpen" then
+                        resolved = "showOpen"
+                    end
                     config.generalCompletedHandling = resolved
                     config.CompletedHandlingGeneral = resolved
                     if config.CompletedHandling ~= nil then
-                        if resolved == "recolor" then
-                            config.CompletedHandling = "recolor"
-                        else
-                            config.CompletedHandling = "hide"
-                        end
+                        config.CompletedHandling = resolved == "recolor" and "recolor" or "hide"
                     end
                     refreshGoldenModel()
                     if LamQueueFullRebuild("goldenCompletedHandlingGeneral") then
                         return
                     end
-                    if resolved == "hide" then
-                        markGoldenDirty("filter")
-                    else
-                        markGoldenDirty("appearance")
-                    end
+                    markGoldenDirty(resolved == "hide" and "filter" or "appearance")
                     queueGoldenDirty()
                 end,
                 default = "hide",
