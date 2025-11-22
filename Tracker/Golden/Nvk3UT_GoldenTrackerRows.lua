@@ -60,6 +60,7 @@ local CATEGORY_CHEVRON_TEXTURES = {
 }
 
 local MOUSE_BUTTON_LEFT = rawget(_G, "MOUSE_BUTTON_INDEX_LEFT") or 1
+local MOUSE_BUTTON_RIGHT = rawget(_G, "MOUSE_BUTTON_INDEX_RIGHT") or 2
 
 local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
 local DEFAULT_FONT_FACE = "$(BOLD_FONT)"
@@ -1199,6 +1200,19 @@ local function detachEntryFromUsed(row)
     end
 end
 
+local function logGoldenEntryRightClick(control)
+    local context = control and control._goldenContext
+    if type(context) ~= "table" or context.kind ~= "campaign" then
+        return
+    end
+
+    safeDebug(
+        "[ContextTest] Right-click on Golden entry: campaign=%s id=%s",
+        tostring(context.campaign),
+        tostring(context.id)
+    )
+end
+
 local function createEntryRow(parent)
     local wm = getWindowManager()
     if wm == nil or parent == nil then
@@ -1257,12 +1271,18 @@ local function createEntryRow(parent)
     }
 
     if control and control.SetHandler then
-        control:SetHandler("OnMouseUp", function(_, button, upInside)
-            if button == MOUSE_BUTTON_LEFT and upInside then
+        control:SetHandler("OnMouseUp", function(self, button, upInside)
+            if not upInside then
+                return
+            end
+
+            if button == MOUSE_BUTTON_LEFT then
                 local controller = rawget(Nvk3UT, "GoldenTrackerController")
                 if controller and type(controller.ToggleEntryExpanded) == "function" then
                     controller:ToggleEntryExpanded()
                 end
+            elseif button == MOUSE_BUTTON_RIGHT then
+                logGoldenEntryRightClick(self)
             end
         end)
     end
@@ -1300,6 +1320,7 @@ local function resetEntryRowVisuals(row, parent)
         if control.SetScale then
             control:SetScale(1)
         end
+        control._goldenContext = nil
         control.__rowKind = ROW_KINDS.entry
         control.__height = getEntryRowHeight()
         if control.SetHeight then
@@ -1385,6 +1406,8 @@ local function releaseEntryRow(row)
             label:SetHidden(true)
         end
     end
+
+    row._goldenContext = nil
 
     row._poolParent = nil
     row._poolState = "free"
@@ -1641,6 +1664,16 @@ local function applyEntryRow(row, entryData)
     end
 
     applyLabelDefaults(label, getGoldenTitleFont())
+
+    if type(entryData) == "table" then
+        targetRow._goldenContext = {
+            kind = "campaign",
+            campaign = entryData.campaignId or entryData.campaignKey or entryData.campaignName,
+            id = entryData.entryId or entryData.id,
+        }
+    else
+        targetRow._goldenContext = nil
+    end
 
     local palette = getGoldenTrackerColors()
     local entryExpanded = true

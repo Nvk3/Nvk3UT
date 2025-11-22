@@ -605,6 +605,8 @@ function Controller:BuildViewModel()
             max = maxValue,
             completed = completed,
             remainingSeconds = clampNonNegative(item.remainingSeconds, 0),
+            id = item.id,
+            kind = kind,
         }
 
         local aggregated = {
@@ -615,6 +617,8 @@ function Controller:BuildViewModel()
             type = nil,
             remainingSeconds = objective.remainingSeconds,
             completed = completed,
+            id = item.id,
+            kind = kind,
         }
 
         return objective, aggregated
