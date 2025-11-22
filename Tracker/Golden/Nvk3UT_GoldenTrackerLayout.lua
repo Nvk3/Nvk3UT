@@ -8,6 +8,7 @@ Layout.__index = Layout
 local MODULE_TAG = addonName .. ".GoldenTrackerLayout"
 
 local ROW_GAP = 3
+local Rows = Nvk3UT and Nvk3UT.GoldenTrackerRows
 
 local function safeDebug(message, ...)
     local debugFn = Nvk3UT and Nvk3UT.Debug
@@ -24,6 +25,19 @@ local function safeDebug(message, ...)
     end
 
     pcall(debugFn, string.format("%s: %s", MODULE_TAG, tostring(payload)))
+end
+
+local function getRowsModule()
+    if type(Rows) == "table" then
+        return Rows
+    end
+
+    Rows = Nvk3UT and Nvk3UT.GoldenTrackerRows
+    if type(Rows) == "table" then
+        return Rows
+    end
+
+    return nil
 end
 
 local function clearChildren(control)
@@ -71,15 +85,75 @@ local function getParentWidth(control)
     return 0
 end
 
-local function applyDimensions(row, parentWidth)
+local function coerceHeight(value)
+    local numeric = tonumber(value)
+    if numeric == nil or numeric ~= numeric then
+        return 0
+    end
+
+    if numeric < 0 then
+        numeric = 0
+    end
+
+    return numeric
+end
+
+local function getControlHeight(control, fallback)
+    if control and type(control.GetHeight) == "function" then
+        local ok, height = pcall(control.GetHeight, control)
+        if ok then
+            local measured = coerceHeight(height)
+            if measured > 0 then
+                return measured
+            end
+        end
+    end
+
+    return coerceHeight(fallback)
+end
+
+local function resolveRowKind(control, rowData)
+    if type(rowData) == "table" and rowData.__rowKind then
+        return rowData.__rowKind
+    end
+
+    if type(rowData) == "table" and rowData.control and rowData.control.__rowKind then
+        return rowData.control.__rowKind
+    end
+
+    if control and control.__rowKind then
+        return control.__rowKind
+    end
+
+    return nil
+end
+
+local function resolveRowHeight(control, rowData)
+    local rowsModule = getRowsModule()
+    local kind = resolveRowKind(control, rowData)
+    local fallback
+
+    if rowsModule then
+        if kind == "category" and type(rowsModule.GetCategoryRowHeight) == "function" then
+            fallback = rowsModule.GetCategoryRowHeight()
+        elseif kind == "entry" and type(rowsModule.GetEntryRowHeight) == "function" then
+            fallback = rowsModule.GetEntryRowHeight()
+        end
+    end
+
+    if fallback == nil then
+        fallback = (rowData and rowData.__height) or (control and control.__height) or 0
+    end
+
+    return getControlHeight(control, fallback)
+end
+
+local function applyDimensions(row, parentWidth, resolvedHeight)
     if not row then
         return
     end
 
-    local height = tonumber(row and row.__height) or 0
-    if height < 0 then
-        height = 0
-    end
+    local height = coerceHeight(resolvedHeight or (row and row.__height))
 
     if row.SetDimensions then
         row:SetDimensions(parentWidth, height)
@@ -120,6 +194,15 @@ function Layout.ApplyLayout(parentControl, rows)
     local previousRow = nil
     local parentWidth = getParentWidth(parentControl)
 
+    local rowsModule = getRowsModule()
+    if rowsModule and type(rowsModule.GetCategoryRowHeight) == "function" and type(rowsModule.GetEntryRowHeight) == "function" then
+        safeDebug(
+            "ApplyLayout heights category=%s entry=%s",
+            tostring(rowsModule.GetCategoryRowHeight()),
+            tostring(rowsModule.GetEntryRowHeight())
+        )
+    end
+
     for index = 1, #rows do
         local row = rows[index]
         local control, rowData = resolveControl(row)
@@ -144,19 +227,12 @@ function Layout.ApplyLayout(parentControl, rows)
                 end
             end
 
-            applyDimensions(control, parentWidth)
-
-            local height = tonumber(control.__height) or tonumber(rowData and rowData.__height) or 0
-            if type(control.GetHeight) == "function" then
-                local ok, measured = pcall(control.GetHeight, control)
-                if ok and type(measured) == "number" then
-                    height = measured
-                end
+            local height = resolveRowHeight(control, rowData)
+            if control then
+                control.__height = height
             end
 
-            if height ~= height or height < 0 then
-                height = 0
-            end
+            applyDimensions(control, parentWidth, height)
 
             if previousRow ~= nil then
                 totalHeight = totalHeight + ROW_GAP
