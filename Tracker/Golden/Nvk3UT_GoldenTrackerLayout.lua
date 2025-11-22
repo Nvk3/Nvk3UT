@@ -40,38 +40,6 @@ local function getRowsModule()
     return nil
 end
 
-local function clearChildren(control)
-    if not control then
-        return
-    end
-
-    local getNumChildren = control.GetNumChildren
-    local getChild = control.GetChild
-    if type(getNumChildren) ~= "function" or type(getChild) ~= "function" then
-        return
-    end
-
-    local okCount, childCount = pcall(getNumChildren, control)
-    if not okCount or type(childCount) ~= "number" or childCount <= 0 then
-        return
-    end
-
-    for index = childCount - 1, 0, -1 do
-        local okChild, child = pcall(getChild, control, index)
-        if okChild and child then
-            if child.ClearAnchors then
-                child:ClearAnchors()
-            end
-            if child.SetParent then
-                child:SetParent(nil)
-            end
-            if child.SetHidden then
-                child:SetHidden(true)
-            end
-        end
-    end
-end
-
 local function getParentWidth(control)
     if not control or type(control.GetWidth) ~= "function" then
         return 0
