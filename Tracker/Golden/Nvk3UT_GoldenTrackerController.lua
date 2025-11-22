@@ -1010,7 +1010,37 @@ function Controller:BuildViewModel(options)
         end
     end
 
-    viewModel.objectives = trackerObjectives
+    local pinnedObjectives = {}
+    local normalObjectives = {}
+
+    for index = 1, #trackerObjectives do
+        local objectiveData = trackerObjectives[index]
+        if objectiveData and objectiveData.isPinned == true then
+            pinnedObjectives[#pinnedObjectives + 1] = objectiveData
+        else
+            normalObjectives[#normalObjectives + 1] = objectiveData
+        end
+    end
+
+    local orderedObjectives = {}
+    for index = 1, #pinnedObjectives do
+        orderedObjectives[#orderedObjectives + 1] = pinnedObjectives[index]
+    end
+    for index = 1, #normalObjectives do
+        orderedObjectives[#orderedObjectives + 1] = normalObjectives[index]
+    end
+
+    if isDebugEnabled() then
+        local firstPinnedIndex = #pinnedObjectives > 0 and 1 or "n/a"
+        safeDebug(
+            "[GoldenController] pinned ordering: pinned=%d normal=%d firstPinnedIndex=%s",
+            #pinnedObjectives,
+            #normalObjectives,
+            tostring(firstPinnedIndex)
+        )
+    end
+
+    viewModel.objectives = orderedObjectives
 
     viewModel.generalCompletedMode = generalHandling
     viewModel.capstoneReached = capstoneReached
@@ -1040,7 +1070,7 @@ function Controller:BuildViewModel(options)
     state.viewModel = viewModel
     state.dirty = false
 
-    local trackerObjectiveCount = #trackerObjectives
+    local trackerObjectiveCount = #viewModel.objectives
 
     safeDebug(
         "BuildViewModel populated: avail=%s locked=%s hasEntries=%s hasEntriesForTracker=%s campaigns=%d activities=%d/%d objectives=%d",
