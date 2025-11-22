@@ -48,6 +48,8 @@ local DEFAULTS = {
     OBJECTIVE_PIN_MARKER_OFFSET_X = 10,
 }
 
+local ROW_TEXT_PADDING_Y = 8
+
 local GOLDEN_HEADER_TITLE = "GOLDENE VORHABEN"
 
 local CATEGORY_CHEVRON_SIZE = 20
@@ -84,6 +86,65 @@ local controlCounters = {
     entry = 0,
     objective = 0,
 }
+
+local function coerceHeight(value)
+    local numeric = tonumber(value)
+    if numeric == nil or numeric ~= numeric then
+        return 0
+    end
+
+    if numeric < 0 then
+        return 0
+    end
+
+    return numeric
+end
+
+local function coerceWidth(value)
+    local numeric = tonumber(value)
+    if numeric == nil or numeric ~= numeric then
+        return 0
+    end
+
+    if numeric < 0 then
+        return 0
+    end
+
+    return numeric
+end
+
+local function getContainerWidth(control)
+    if control == nil then
+        return 0
+    end
+
+    local parent = control:GetParent and control:GetParent()
+    if parent and parent.GetWidth then
+        local ok, width = pcall(parent.GetWidth, parent)
+        if ok then
+            return coerceWidth(width)
+        end
+    end
+
+    if control.GetWidth then
+        local ok, width = pcall(control.GetWidth, control)
+        if ok then
+            return coerceWidth(width)
+        end
+    end
+
+    return 0
+end
+
+local function computeAvailableWidth(control, leftPadding, rightPadding)
+    local containerWidth = getContainerWidth(control)
+    local availableWidth = containerWidth - (leftPadding or 0) - (rightPadding or 0)
+    if availableWidth < 0 then
+        availableWidth = 0
+    end
+
+    return availableWidth, containerWidth
+end
 
 local categoryPool = {
     free = {},
@@ -202,6 +263,12 @@ local function applyLabelDefaults(label, font, color)
         label:SetFont(font)
     end
 
+    if label.SetHorizontalAlignment then
+        label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+    end
+    if label.SetVerticalAlignment then
+        label:SetVerticalAlignment(TEXT_ALIGN_TOP)
+    end
     if label.SetColor and type(color) == "table" then
         local r = color[1] or color.r or 1
         local g = color[2] or color.g or 1
@@ -212,6 +279,9 @@ local function applyLabelDefaults(label, font, color)
 
     if label.SetWrapMode and rawget(_G, "TEXT_WRAP_MODE_ELLIPSIS") then
         label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
+    end
+    if label.SetMaxLineCount then
+        label:SetMaxLineCount(0)
     end
 end
 
@@ -480,15 +550,54 @@ local function resolveRowHeight(kind)
     return resolved
 end
 
-local function getCategoryRowHeight()
+local function getCategoryRowHeight(row)
+    local control = row and row.control or row
+    if control and type(control._measuredHeight) == "number" then
+        local measured = coerceHeight(control._measuredHeight)
+        if measured > 0 then
+            return measured
+        end
+    end
+
+    local measured = coerceHeight(resolvedRowHeights[ROW_KINDS.category])
+    if measured > 0 then
+        return measured
+    end
+
     return resolveRowHeight(ROW_KINDS.category)
 end
 
-local function getEntryRowHeight()
+local function getEntryRowHeight(row)
+    local control = row and row.control or row
+    if control and type(control._measuredHeight) == "number" then
+        local measured = coerceHeight(control._measuredHeight)
+        if measured > 0 then
+            return measured
+        end
+    end
+
+    local measured = coerceHeight(resolvedRowHeights[ROW_KINDS.entry])
+    if measured > 0 then
+        return measured
+    end
+
     return resolveRowHeight(ROW_KINDS.entry)
 end
 
-local function getObjectiveRowHeight()
+local function getObjectiveRowHeight(row)
+    local control = row and row.control or row
+    if control and type(control._measuredHeight) == "number" then
+        local measured = coerceHeight(control._measuredHeight)
+        if measured > 0 then
+            return measured
+        end
+    end
+
+    local measured = coerceHeight(resolvedRowHeights[ROW_KINDS.objective])
+    if measured > 0 then
+        return measured
+    end
+
     return resolveRowHeight(ROW_KINDS.objective)
 end
 
@@ -1166,6 +1275,29 @@ local function applyCategoryRow(row, categoryData)
         label:SetText(text)
     end
 
+    local availableWidth = computeAvailableWidth(targetRow, CATEGORY_CHEVRON_SIZE + CATEGORY_LABEL_OFFSET_X, 0)
+    if label.SetWidth then
+        label:SetWidth(availableWidth)
+    end
+    local textHeight = label.GetTextHeight and label:GetTextHeight() or 0
+    local targetHeight = math.max(getCategoryRowHeight(), textHeight + ROW_TEXT_PADDING_Y)
+    if targetRow.SetHeight then
+        targetRow:SetHeight(targetHeight)
+    end
+    if label.SetHeight then
+        label:SetHeight(math.max(0, targetHeight - ROW_TEXT_PADDING_Y))
+    end
+    targetRow.__height = targetHeight
+    row.__height = targetHeight
+    targetRow._measuredHeight = targetHeight
+    resolvedRowHeights[ROW_KINDS.category] = targetHeight
+    safeDebug(
+        "[GoldenHeader] width=%d textHeight=%d height=%d",
+        availableWidth,
+        textHeight,
+        targetHeight
+    )
+
     if chevron and chevron.SetTexture then
         local textures = categoryData and categoryData.textures or CATEGORY_CHEVRON_TEXTURES
         local fallback = expanded and CATEGORY_CHEVRON_TEXTURES.expanded or CATEGORY_CHEVRON_TEXTURES.collapsed
@@ -1783,6 +1915,29 @@ local function applyEntryRow(row, entryData)
         label:SetText(text)
     end
 
+    local availableWidth = computeAvailableWidth(targetRow, ENTRY_INDENT_X, 0)
+    if label.SetWidth then
+        label:SetWidth(availableWidth)
+    end
+    local textHeight = label.GetTextHeight and label:GetTextHeight() or 0
+    local targetHeight = math.max(getEntryRowHeight(), textHeight + ROW_TEXT_PADDING_Y)
+    if targetRow.SetHeight then
+        targetRow:SetHeight(targetHeight)
+    end
+    if label.SetHeight then
+        label:SetHeight(math.max(0, targetHeight - ROW_TEXT_PADDING_Y))
+    end
+    targetRow.__height = targetHeight
+    row.__height = targetHeight
+    targetRow._measuredHeight = targetHeight
+    resolvedRowHeights[ROW_KINDS.entry] = targetHeight
+    safeDebug(
+        "[GoldenEntry] width=%d textHeight=%d height=%d",
+        availableWidth,
+        textHeight,
+        targetHeight
+    )
+
     return targetRow
 end
 
@@ -1858,6 +2013,29 @@ local function applyObjectiveRow(row, objectiveData)
     if label.SetText then
         label:SetText(text)
     end
+
+    local availableWidth = computeAvailableWidth(control, DEFAULTS.OBJECTIVE_INDENT_X, 0)
+    if label.SetWidth then
+        label:SetWidth(availableWidth)
+    end
+    local textHeight = label.GetTextHeight and label:GetTextHeight() or 0
+    local targetHeight = math.max(getObjectiveRowHeight(), textHeight + ROW_TEXT_PADDING_Y)
+    if control.SetHeight then
+        control:SetHeight(targetHeight)
+    end
+    if label.SetHeight then
+        label:SetHeight(math.max(0, targetHeight - ROW_TEXT_PADDING_Y))
+    end
+    control.__height = targetHeight
+    row.__height = targetHeight
+    control._measuredHeight = targetHeight
+    resolvedRowHeights[ROW_KINDS.objective] = targetHeight
+    safeDebug(
+        "[GoldenObjective] width=%d textHeight=%d height=%d",
+        availableWidth,
+        textHeight,
+        targetHeight
+    )
 
     local isPinned = type(objectiveData) == "table" and objectiveData.isPinned == true
     if pinLabel then

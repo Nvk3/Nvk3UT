@@ -1051,7 +1051,7 @@ local function buildObjectiveRows(rows, container, objectivesList, rowsOptions)
 
                 local entryHeight = 0
                 if module and type(module.GetEntryRowHeight) == "function" then
-                    entryHeight = coerceHeight(module.GetEntryRowHeight())
+                    entryHeight = coerceHeight(module.GetEntryRowHeight(row))
                 end
                 if entryHeight <= 0 then
                     entryHeight = measureControlHeight(row, entryHeight)

@@ -102,6 +102,29 @@ local DEFAULT_CATEGORY_CHEVRON_TEXTURES = {
 local MOUSE_BUTTON_LEFT = rawget(_G, "MOUSE_BUTTON_INDEX_LEFT") or 1
 
 local resolvedEntryHeight = ROWS_HEIGHTS.entry
+local ROW_TEXT_PADDING_Y = 8
+
+local function coerceHeight(value)
+    local numeric = tonumber(value)
+    if numeric == nil or numeric ~= numeric then
+        return 0
+    end
+
+    return numeric
+end
+
+local function coerceWidth(value)
+    local numeric = tonumber(value)
+    if numeric == nil or numeric ~= numeric then
+        return 0
+    end
+
+    if numeric < 0 then
+        return 0
+    end
+
+    return numeric
+end
 
 local function getCategoryHeight(expanded)
     if expanded and type(ROWS_HEIGHTS.categoryExpanded) == "number" then
@@ -236,6 +259,16 @@ local function resolveSubrowSpacing(key)
     return value
 end
 
+local function getBaseSubrowHeight(kind)
+    local resolvedKind = normalizeSubrowKind(kind)
+    local height = ROWS_HEIGHTS[resolvedKind] or ROWS_HEIGHTS[kind]
+    if type(height) ~= "number" or height ~= height or height < 0 then
+        return 0
+    end
+
+    return height
+end
+
 local function sanitizeSubrows(source)
     local sanitized = {}
     local visibleCount = 0
@@ -356,6 +389,43 @@ local function ignoreObjectiveMouseUp()
     -- Intentionally ignore clicks on Endeavor objective subrows; only entry rows should react.
 end
 
+local function getContainerWidthFromControl(control)
+    if not control then
+        return 0
+    end
+
+    local parent = control._poolParent
+    if not parent and control.GetParent then
+        parent = control:GetParent()
+    end
+
+    if parent and parent.GetWidth then
+        local ok, width = pcall(parent.GetWidth, parent)
+        if ok then
+            return coerceWidth(width)
+        end
+    end
+
+    if control.GetWidth then
+        local ok, width = pcall(control.GetWidth, control)
+        if ok then
+            return coerceWidth(width)
+        end
+    end
+
+    return 0
+end
+
+local function computeAvailableWidth(container, leftPadding, rightPadding)
+    local containerWidth = getContainerWidthFromControl(container)
+    local availableWidth = containerWidth - (leftPadding or 0) - (rightPadding or 0)
+    if availableWidth < 0 then
+        availableWidth = 0
+    end
+
+    return availableWidth, containerWidth
+end
+
 local function ensureSubrowLeftLabel(control)
     if control == nil then
         return nil
@@ -387,6 +457,9 @@ local function ensureSubrowLeftLabel(control)
     label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
     if label.SetWrapMode then
         label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
+    end
+    if label.SetMaxLineCount then
+        label:SetMaxLineCount(0)
     end
 
     control.Label = label
@@ -425,6 +498,9 @@ local function ensureSubrowRightLabel(control)
     label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
     if label.SetWrapMode then
         label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
+    end
+    if label.SetMaxLineCount then
+        label:SetMaxLineCount(0)
     end
 
     control.RightLabel = label
@@ -595,6 +671,52 @@ function Rows.ApplySubrow(control, kind, data, options)
     if rightLabel and rightLabel.SetColor then
         rightLabel:SetColor(r, g, b, a)
     end
+
+    local availableWidth = computeAvailableWidth(control, OBJECTIVE_INDENT_X, 0)
+    local rightWidth = 0
+    local rightVisible = true
+    if rightLabel and rightLabel.IsHidden then
+        rightVisible = not rightLabel:IsHidden()
+    end
+    if rightLabel and rightLabel.GetTextWidth and rightVisible then
+        rightWidth = coerceWidth(rightLabel:GetTextWidth())
+        if rightLabel.SetWidth then
+            rightLabel:SetWidth(rightWidth)
+        end
+    end
+
+    local leftWidth = availableWidth - rightWidth
+    if rightWidth > 0 then
+        leftWidth = leftWidth - SUBROW_RIGHT_COLUMN_GAP
+    end
+    leftWidth = math.max(0, leftWidth)
+
+    if leftLabel and leftLabel.SetWidth then
+        leftLabel:SetWidth(leftWidth)
+    end
+
+    local leftHeight = (leftLabel and leftLabel.GetTextHeight and leftLabel:GetTextHeight()) or 0
+    local rightHeight = 0
+    if rightLabel and rightVisible and rightLabel.GetTextHeight then
+        rightHeight = rightLabel:GetTextHeight()
+    end
+
+    local baseHeight = getBaseSubrowHeight(resolvedKind)
+    local targetHeight = math.max(baseHeight, math.max(leftHeight, rightHeight) + math.floor(ROW_TEXT_PADDING_Y * 0.5))
+
+    if control.SetHeight then
+        control:SetHeight(targetHeight)
+    end
+
+    control._measuredHeight = targetHeight
+    safeDebug(
+        "[Subrow] kind=%s width=%d textHeight=%d rightHeight=%d height=%d",
+        tostring(resolvedKind),
+        leftWidth,
+        leftHeight,
+        rightHeight,
+        targetHeight
+    )
 
     if control.SetAlpha then
         control:SetAlpha(1)
@@ -1086,6 +1208,9 @@ local function createCategoryRow(parent)
         if label.SetWrapMode then
             label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
         end
+        if label.SetMaxLineCount then
+            label:SetMaxLineCount(0)
+        end
         if label.ClearAnchors then
             label:ClearAnchors()
         end
@@ -1435,6 +1560,11 @@ local function applyCategoryRow(row, data)
         label:SetText(formattedText)
     end
 
+    local availableWidth = computeAvailableWidth(control, CATEGORY_CHEVRON_SIZE + CATEGORY_LABEL_OFFSET_X, 0)
+    if label.SetWidth then
+        label:SetWidth(availableWidth)
+    end
+
     local colorRoles = type(info.colorRoles) == "table" and info.colorRoles or {}
     local expanded = info.expanded == true
     local role
@@ -1495,8 +1625,21 @@ local function applyCategoryRow(row, data)
     )
 
     if control and control.SetHeight then
-        local categoryHeight = getCategoryHeight(expanded)
-        control:SetHeight(categoryHeight)
+        local textHeight = label.GetTextHeight and label:GetTextHeight() or 0
+        local paddingBottom = expanded and CATEGORY_BOTTOM_PAD_EXPANDED or CATEGORY_BOTTOM_PAD_COLLAPSED
+        local targetHeight = math.max(getCategoryHeight(expanded), textHeight + CATEGORY_TOP_PAD + paddingBottom)
+        control:SetHeight(targetHeight)
+        if label.SetHeight then
+            label:SetHeight(math.max(0, targetHeight - CATEGORY_TOP_PAD - paddingBottom))
+        end
+        control._measuredHeight = targetHeight
+        safeDebug(
+            "[CategoryRow] width=%d textHeight=%d height=%d expanded=%s",
+            availableWidth,
+            textHeight,
+            targetHeight,
+            tostring(expanded)
+        )
     end
 end
 
@@ -1705,9 +1848,7 @@ local function applyEntryRow(row, objective, options)
     end
 
     local entryHeight = resolveEntryHeight(options)
-    if row.SetHeight then
-        row:SetHeight(entryHeight)
-    end
+    local minHeight = entryHeight
 
     local title = ensureEntryChild(row, titleName, CT_LABEL)
     title:SetParent(row)
@@ -1721,18 +1862,34 @@ local function applyEntryRow(row, objective, options)
     if title.SetWrapMode then
         title:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
     end
+    if title.SetMaxLineCount then
+        title:SetMaxLineCount(0)
+    end
     title:ClearAnchors()
     title:SetAnchor(TOPLEFT, row, TOPLEFT, OBJECTIVE_INDENT_X, ENTRY_TOP_PAD)
     title:SetAnchor(BOTTOMRIGHT, row, BOTTOMRIGHT, 0, -ENTRY_BOTTOM_PAD)
-    if title.SetHeight then
-        local titleHeight = entryHeight - (ENTRY_TOP_PAD + ENTRY_BOTTOM_PAD)
-        if titleHeight < 0 then
-            titleHeight = 0
-        end
-        title:SetHeight(titleHeight)
+    local availableWidth = computeAvailableWidth(row, OBJECTIVE_INDENT_X, 0)
+    if title.SetWidth then
+        title:SetWidth(availableWidth)
     end
     title:SetText(combinedText)
     row.Label = title
+
+    local textHeight = title.GetTextHeight and title:GetTextHeight() or 0
+    local targetHeight = math.max(minHeight, textHeight + ENTRY_TOP_PAD + ENTRY_BOTTOM_PAD + ROW_TEXT_PADDING_Y)
+    if row.SetHeight then
+        row:SetHeight(targetHeight)
+    end
+    if title.SetHeight then
+        title:SetHeight(math.max(0, targetHeight - ENTRY_TOP_PAD - ENTRY_BOTTOM_PAD))
+    end
+    row._measuredHeight = targetHeight
+    safeDebug(
+        "[EntryRow] width=%d textHeight=%d height=%d",
+        availableWidth,
+        textHeight,
+        targetHeight
+    )
 
     local leftClickHandler = type(objective) == "table" and objective.onLeftClick or nil
     row._entryOnLeftClick = type(leftClickHandler) == "function" and leftClickHandler or nil
@@ -1824,18 +1981,33 @@ function Rows.Init()
 end
 
 function Rows.GetSubrowHeight(kind)
-    local resolvedKind = normalizeSubrowKind(kind)
-    local height = ROWS_HEIGHTS[resolvedKind] or ROWS_HEIGHTS[kind]
-    if type(height) ~= "number" then
-        return 0
+    if type(kind) == "table" then
+        local control = kind.control or kind
+        if control and type(control._measuredHeight) == "number" then
+            local measured = coerceHeight(control._measuredHeight)
+            if measured > 0 then
+                return measured
+            end
+        end
+        kind = kind.kind or (kind.source and kind.source.kind) or kind
     end
-    if height ~= height then
-        return 0
+
+    local height = getBaseSubrowHeight(kind)
+    if height > 0 then
+        return height
     end
-    if height < 0 then
-        return 0
+
+    if type(kind) == "table" and type(kind.GetHeight) == "function" then
+        local ok, measured = pcall(kind.GetHeight, kind)
+        if ok then
+            measured = coerceHeight(measured)
+            if measured > 0 then
+                return measured
+            end
+        end
     end
-    return height
+
+    return 0
 end
 
 function Rows.GetSubrowsBlockHeight(subrows)
@@ -1878,7 +2050,7 @@ function Rows.GetSubrowsBlockHeight(subrows)
                 else
                     total = total + betweenSpacing
                 end
-                total = total + Rows.GetSubrowHeight(entry.kind or (entry.source and entry.source.kind))
+                total = total + Rows.GetSubrowHeight(entry)
             end
         end
     end
@@ -1894,7 +2066,25 @@ function Rows.GetCategoryRowHeight(expanded)
     return getCategoryHeight(expanded)
 end
 
-function Rows.GetEntryRowHeight()
+function Rows.GetEntryRowHeight(row)
+    local control = row and row.control or row
+    if control and type(control._measuredHeight) == "number" then
+        local measured = coerceHeight(control._measuredHeight)
+        if measured > 0 then
+            return measured
+        end
+    end
+
+    if control and type(control.GetHeight) == "function" then
+        local ok, height = pcall(control.GetHeight, control)
+        if ok then
+            local coerced = coerceHeight(height)
+            if coerced > 0 then
+                return coerced
+            end
+        end
+    end
+
     return resolvedEntryHeight
 end
 
