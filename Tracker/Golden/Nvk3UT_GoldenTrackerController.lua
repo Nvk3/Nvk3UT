@@ -1050,6 +1050,7 @@ function Controller:BuildViewModel(options)
     local goldenConfig = getGoldenConfig()
     local generalHandling = resolveGeneralHandling(goldenConfig)
     local objectiveHandling = resolveObjectiveHandling(goldenConfig)
+    local suppressObjectivesForRecolorMode = generalHandling == "recolor" and objectiveHandling == "hide"
     local capstoneReached = isCapstoneComplete(summary)
     local hideCategoryWhenCompleted = capstoneReached and generalHandling == "hide"
     local showOpenMode = capstoneReached and generalHandling == "showOpen"
@@ -1063,7 +1064,8 @@ function Controller:BuildViewModel(options)
     for index = 1, #rawObjectives do
         local objectiveData = rawObjectives[index]
         local objectiveCompleted = isObjectiveCompleted(objectiveData)
-        local includeObjective = objectiveHandling == "recolor" or not objectiveCompleted
+        local includeObjective = not suppressObjectivesForRecolorMode
+            and (objectiveHandling == "recolor" or not objectiveCompleted)
         if includeObjective then
             trackerObjectives[#trackerObjectives + 1] = objectiveData
             if isDebugEnabled() then

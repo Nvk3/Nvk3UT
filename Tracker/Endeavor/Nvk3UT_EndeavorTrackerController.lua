@@ -512,6 +512,7 @@ function Controller:BuildViewModel()
     local showCounts = resolveShowCounts(config)
     local generalHandling = resolveCompletedHandling(config)
     local objectiveHandling = resolveObjectiveHandling(config)
+    local hideObjectivesForRecolorMode = generalHandling == "recolor" and objectiveHandling == "hide"
     local DAILY_LIMIT = 3
     local WEEKLY_LIMIT = 1
 
@@ -646,6 +647,16 @@ function Controller:BuildViewModel()
             return
         end
 
+        if hideObjectivesForRecolorMode then
+            if isDebugEnabled() then
+                DBG(
+                    "objectives suppressed by recolor+hide handling (%s)",
+                    tostring(kind)
+                )
+            end
+            return
+        end
+
         for _, item in ipairs(list) do
             local objective, aggregated = mapObjective(item)
             if objective then
@@ -677,8 +688,8 @@ function Controller:BuildViewModel()
     local stateModule = getStateModule()
     local dailyHideRow = generalHandling == "hide" and isDailyCapped
     local weeklyHideRow = generalHandling == "hide" and isWeeklyCapped
-    local dailyHideObjectives = isDailyCapped and objectiveHandling == "hide"
-    local weeklyHideObjectives = isWeeklyCapped and objectiveHandling == "hide"
+    local dailyHideObjectives = hideObjectivesForRecolorMode or (isDailyCapped and objectiveHandling == "hide")
+    local weeklyHideObjectives = hideObjectivesForRecolorMode or (isWeeklyCapped and objectiveHandling == "hide")
     local dailyUseCompletedStyle = objectiveHandling == "recolor" and isDailyCapped
     local weeklyUseCompletedStyle = objectiveHandling == "recolor" and isWeeklyCapped
     local hideEntireSection = generalHandling == "hide" and dailyHideRow and weeklyHideRow
