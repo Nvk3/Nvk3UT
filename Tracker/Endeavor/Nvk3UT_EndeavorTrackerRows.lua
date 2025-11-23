@@ -180,19 +180,31 @@ local function applyEndeavorRowMetrics(control, label, availableWidth, minHeight
 end
 
 local function isEndeavorWrapDebugEnabled()
+    if type(isGoldenColorDebugEnabled) == "function" then
+        return isGoldenColorDebugEnabled() == true
+    end
+
     return isDebugEnabled()
 end
 
 local function debugEndeavorWrap(label, rowKind, availableWidth, minHeight, control, text)
-    if not isEndeavorWrapDebugEnabled() then
+    if not (label and control) then
+        return
+    end
+
+    if type(isEndeavorWrapDebugEnabled) ~= "function" or not isEndeavorWrapDebugEnabled() then
+        return
+    end
+
+    if type(safeDebug) ~= "function" then
         return
     end
 
     local width = label.GetWidth and label:GetWidth() or nil
     local textHeight = label.GetTextHeight and label:GetTextHeight() or nil
     local numLines = label.GetNumLines and label:GetNumLines() or nil
-    local controlHeight = control and control.GetHeight and control:GetHeight() or nil
-    local storedHeight = control and control.__height or nil
+    local controlHeight = control.GetHeight and control:GetHeight() or nil
+    local storedHeight = control.__height
 
     safeDebug(
         "[EndeavorWrap] %s: avail=%.1f labelWidth=%.1f textHeight=%.1f lines=%s minHeight=%.1f controlHeight=%.1f storedHeight=%.1f text='%s'",
