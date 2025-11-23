@@ -1008,8 +1008,9 @@ function Runtime:ProcessFrame(nowMs)
         end
 
         local questGeometryChanged = false
+        local refreshedQuest = false
         if questDirty or questVmBuilt then
-            local refreshedQuest = refreshQuestTracker(questViewModel)
+            refreshedQuest = refreshQuestTracker(questViewModel)
             if refreshedQuest then
                 questGeometryChanged = updateTrackerGeometry("quest")
                 if questGeometryChanged then
@@ -1019,8 +1020,9 @@ function Runtime:ProcessFrame(nowMs)
         end
 
         local endeavorGeometryChanged = false
+        local refreshedEndeavor = false
         if endeavorDirty or endeavorVmBuilt or endeavorRebuilt then
-            local refreshedEndeavor = refreshEndeavorTracker(endeavorViewModel)
+            refreshedEndeavor = refreshEndeavorTracker(endeavorViewModel)
             local endeavorHeight = getEndeavorHeight()
             debug("Runtime.Refresh.Endeavor: height=%s", tostring(endeavorHeight))
             if refreshedEndeavor then
@@ -1032,8 +1034,9 @@ function Runtime:ProcessFrame(nowMs)
         end
 
         local achievementGeometryChanged = false
+        local refreshedAchievement = false
         if achievementDirty or achievementVmBuilt then
-            local refreshedAchievement = refreshAchievementTracker(achievementViewModel)
+            refreshedAchievement = refreshAchievementTracker(achievementViewModel)
             if refreshedAchievement then
                 if not achievementVmBuilt then
                     debug("Runtime: deferred achievement geometry update (view model not built)")
@@ -1088,10 +1091,44 @@ function Runtime:ProcessFrame(nowMs)
             end
         end
 
-        if layoutDirty or questGeometryChanged or endeavorGeometryChanged or achievementGeometryChanged or goldenGeometryChanged then
-            if applyTrackerHostLayout() then
-                debugVisibility("Runtime: applied tracker host layout")
-            end
+        local layoutRequired = layoutDirty
+            or questGeometryChanged
+            or endeavorGeometryChanged
+            or achievementGeometryChanged
+            or goldenGeometryChanged
+            or refreshedQuest
+            or refreshedEndeavor
+            or refreshedAchievement
+
+        if layoutRequired then
+            debugVisibility(
+                "Runtime: layout request (dirty q=%s e=%s a=%s layout=%s golden=%s | geom q=%s e=%s a=%s g=%s)",
+                tostring(questDirty),
+                tostring(endeavorDirty),
+                tostring(achievementDirty),
+                tostring(layoutDirty),
+                tostring(goldenDirty),
+                tostring(questGeometryChanged),
+                tostring(endeavorGeometryChanged),
+                tostring(achievementGeometryChanged),
+                tostring(goldenGeometryChanged)
+            )
+
+            local applied = applyTrackerHostLayout()
+
+            debugVisibility(
+                "Runtime: applyTrackerHostLayout() -> %s (dirty q=%s e=%s a=%s layout=%s golden=%s | geom q=%s e=%s a=%s g=%s)",
+                tostring(applied),
+                tostring(questDirty),
+                tostring(endeavorDirty),
+                tostring(achievementDirty),
+                tostring(layoutDirty),
+                tostring(goldenDirty),
+                tostring(questGeometryChanged),
+                tostring(endeavorGeometryChanged),
+                tostring(achievementGeometryChanged),
+                tostring(goldenGeometryChanged)
+            )
         end
 
         if interactivityDirty then
