@@ -48,7 +48,7 @@ local DEFAULTS = {
     OBJECTIVE_PIN_MARKER_OFFSET_X = 10,
 }
 
-local ROW_TEXT_PADDING_Y = 8
+local ROW_TEXT_PADDING_Y = 4
 local OBJECTIVE_VERTICAL_PADDING_Y = 2
 
 local GOLDEN_HEADER_TITLE = "GOLDENE VORHABEN"
@@ -1983,15 +1983,10 @@ local function applyObjectiveRow(row, objectiveData)
         label:SetText(text)
     end
 
-    local textHeight = (label.GetTextHeight and label:GetTextHeight()) or 0
-    local targetHeight = math.max(getObjectiveRowHeight(), textHeight + OBJECTIVE_VERTICAL_PADDING_Y)
-    if control.SetHeight then
-        control:SetHeight(targetHeight)
+    local targetHeight = applyGoldenRowMetrics(control, label, availableWidth, getObjectiveRowHeight())
+    if targetHeight then
+        row.__height = targetHeight
     end
-    if label.SetHeight then
-        label:SetHeight(math.max(0, targetHeight - OBJECTIVE_VERTICAL_PADDING_Y))
-    end
-    row.__height = targetHeight
 
     debugGoldenWrap(label, "objective", availableWidth, getObjectiveRowHeight(), control, text)
 
