@@ -20,17 +20,18 @@ Addon.initialized  = Addon.initialized or false
 Addon.playerActivated = Addon.playerActivated or false
 
 function Addon:RefreshAddonVersionFromManifest()
-    Addon.Debug("Version refresh: start (current addonVersion=%s, versionString=%s)", tostring(self.addonVersion), tostring(self.versionString))
+    Addon.Debug("Version refresh: start (current addonVersion=%s, versionString=%s)",
+        tostring(self.addonVersion), tostring(self.versionString))
 
+    -- API unavailable
     if not GetNumAddOns or not GetAddOnInfo then
-        Addon.Debug("Version fallback: GetNumAddOns/GetAddOnInfo not available, using fallback version %s", tostring(self.addonVersion))
-        if not self.versionString then
-            self.versionString = self.addonVersion
-        end
+        Addon.Debug("Version fallback: ESO API GetAddOnInfo not available → using fallback %s",
+            tostring(self.addonVersion))
+        if not self.versionString then self.versionString = self.addonVersion end
         return
     end
 
-    -- Find addon by name
+    -- find addon index
     local index
     for i = 1, GetNumAddOns() do
         local name = GetAddOnInfo(i)
@@ -41,23 +42,24 @@ function Addon:RefreshAddonVersionFromManifest()
     end
 
     if not index then
-        Addon.Debug("Version fallback: addon '%s' not found in GetAddOnInfo list, using fallback version %s", tostring(self.addonName), tostring(self.addonVersion))
-        if not self.versionString then
-            self.versionString = self.addonVersion
-        end
+        Addon.Debug("Version fallback: Addon '%s' not found in addon list → using fallback %s",
+            tostring(self.addonName), tostring(self.addonVersion))
+        if not self.versionString then self.versionString = self.addonVersion end
         return
     end
 
+    -- get version string (11th return value)
     local versionString = select(11, GetAddOnInfo(index))
+
     if type(versionString) == "string" and versionString ~= "" then
         self.addonVersion = versionString
         self.versionString = versionString
-        Addon.Debug("Version from manifest: '%s' (addonName=%s)", tostring(versionString), tostring(self.addonName))
+        Addon.Debug("Version from manifest: '%s' (addonName=%s)",
+            tostring(versionString), tostring(self.addonName))
     else
-        Addon.Debug("Version fallback: empty or invalid manifest Version '%s' for addon '%s', using fallback version %s", tostring(versionString), tostring(self.addonName), tostring(self.addonVersion))
-        if not self.versionString then
-            self.versionString = self.addonVersion
-        end
+        Addon.Debug("Version fallback: manifest returned invalid version '%s' → using fallback %s",
+            tostring(versionString), tostring(self.addonVersion))
+        if not self.versionString then self.versionString = self.addonVersion end
     end
 end
 
@@ -323,6 +325,7 @@ function Addon:OnAddonLoaded(actualAddonName)
         return
     end
 
+    -- VERSION FIRST, BEFORE ANYTHING ELSE
     self:RefreshAddonVersionFromManifest()
 
     -- SavedVariables bootstrap lives in Core/Nvk3UT_StateInit.lua.
