@@ -48,20 +48,13 @@ function Addon:RefreshAddonVersionFromManifest()
         return
     end
 
-    -- Extract AddOnVersion integer
-    local _, _, _, _, _, _, _, _, _, _, addOnVersion = GetAddOnInfo(index)
-    if type(addOnVersion) == "number" and addOnVersion > 0 then
-        local major = math.floor(addOnVersion / 10000)
-        local minor = math.floor((addOnVersion % 10000) / 100)
-        local patch = addOnVersion % 100
-        local version = string.format("%d.%d.%d", major, minor, patch)
-
-        self.addonVersion = version
-        self.versionString = version
-
-        Addon.Debug("Version from manifest: AddOnVersion=%d -> %s", addOnVersion, version)
+    local versionString = select(11, GetAddOnInfo(index))
+    if type(versionString) == "string" and versionString ~= "" then
+        self.addonVersion = versionString
+        self.versionString = versionString
+        Addon.Debug("Version from manifest: '%s' (addonName=%s)", tostring(versionString), tostring(self.addonName))
     else
-        Addon.Debug("Version fallback: invalid AddOnVersion '%s' for addon '%s', using fallback version %s", tostring(addOnVersion), tostring(self.addonName), tostring(self.addonVersion))
+        Addon.Debug("Version fallback: empty or invalid manifest Version '%s' for addon '%s', using fallback version %s", tostring(versionString), tostring(self.addonName), tostring(self.addonVersion))
         if not self.versionString then
             self.versionString = self.addonVersion
         end
