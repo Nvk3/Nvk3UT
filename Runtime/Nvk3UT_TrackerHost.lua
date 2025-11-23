@@ -1428,6 +1428,19 @@ local function triggerDeferredFullRebuildOnVisible()
     end
 end
 
+local function requestHostFullRebuild(context)
+    local addonRoot = type(Nvk3UT) == "table" and Nvk3UT or nil
+    if addonRoot and addonRoot._rebuild_lock then
+        return
+    end
+
+    local rebuild = (addonRoot and addonRoot.Rebuild) or _G.Nvk3UT_Rebuild
+    local rebuildAll = rebuild and rebuild.All
+    if type(rebuildAll) == "function" then
+        safeCall(rebuildAll, context or "hostVisible")
+    end
+end
+
 ensureVisibilityGates = function()
     if not state.visibilityGates then
         state.visibilityGates = {
@@ -3849,6 +3862,7 @@ function TrackerHost.ApplyVisibilityRules()
     if not previousVisible and nowVisible then
         requestPendingFullRebuild()
         triggerDeferredFullRebuildOnVisible()
+        requestHostFullRebuild("sceneVisible:ApplyVisibilityRules")
     end
 
     return changed
