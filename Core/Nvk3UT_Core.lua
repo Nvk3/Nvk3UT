@@ -2,7 +2,7 @@
 -- Central addon root. Owns global table, SafeCall, module registry, SavedVariables bootstrap, lifecycle entry points.
 
 local ADDON_NAME    = ADDON_NAME    or "Nvk3UT"
-local ADDON_VERSION = ADDON_VERSION or "0.11.17" -- Fallback; replaced by manifest version in OnAddonLoaded
+local ADDON_VERSION = ADDON_VERSION or "0.99.99" -- Fallback version; should be overridden from manifest on load
 local unpack = unpack or table.unpack
 
 Nvk3UT = Nvk3UT or {}
@@ -47,12 +47,17 @@ function Addon:RefreshAddonVersionFromManifest()
         return
     end
 
-    local _, _, _, _, _, _, _, _, _, _, manifestVersion = GetAddOnInfo(addOnIndex)
-    if type(manifestVersion) == "string" and manifestVersion ~= "" then
-        self.addonVersion = manifestVersion
-        self.versionString = manifestVersion
+    local _, _, _, _, _, _, _, _, _, _, addOnVersion = GetAddOnInfo(addOnIndex)
+    if type(addOnVersion) == "number" and addOnVersion > 0 then
+        local major = math.floor(addOnVersion / 10000)
+        local minor = math.floor((addOnVersion % 10000) / 100)
+        local patch = addOnVersion % 100
+        local semver = string.format("%d.%d.%d", major, minor, patch)
+
+        self.addonVersion = semver
+        self.versionString = semver
     else
-        -- No valid manifest version string; keep fallback
+        -- No valid AddOnVersion integer; keep fallback
         if not self.versionString then
             self.versionString = self.addonVersion
         end
