@@ -2,7 +2,7 @@
 -- Central addon root. Owns global table, SafeCall, module registry, SavedVariables bootstrap, lifecycle entry points.
 
 local ADDON_NAME    = ADDON_NAME    or "Nvk3UT"
-local ADDON_VERSION = ADDON_VERSION or "0.11.17" -- TODO: keep in sync with manifest when version updates
+local ADDON_VERSION = ADDON_VERSION or "0.11.17" -- Fallback; replaced by manifest version in OnAddonLoaded
 local unpack = unpack or table.unpack
 
 Nvk3UT = Nvk3UT or {}
@@ -18,6 +18,46 @@ Addon.debugEnabled = Addon.debugEnabled or false
 Addon._rebuild_lock = Addon._rebuild_lock or false
 Addon.initialized  = Addon.initialized or false
 Addon.playerActivated = Addon.playerActivated or false
+
+function Addon:RefreshAddonVersionFromManifest()
+    if not GetNumAddOns or not GetAddOnInfo then
+        -- API unavailable (should always be present in live client)
+        if not self.versionString then
+            self.versionString = self.addonVersion
+        end
+        return
+    end
+
+    local addOnIndex = nil
+    local name
+
+    for i = 1, GetNumAddOns() do
+        name = GetAddOnInfo(i)
+        if name == self.addonName then
+            addOnIndex = i
+            break
+        end
+    end
+
+    if not addOnIndex then
+        -- Fallback: addon not found; keep fallback version
+        if not self.versionString then
+            self.versionString = self.addonVersion
+        end
+        return
+    end
+
+    local _, _, _, _, _, _, _, _, _, _, manifestVersion = GetAddOnInfo(addOnIndex)
+    if type(manifestVersion) == "string" and manifestVersion ~= "" then
+        self.addonVersion = manifestVersion
+        self.versionString = manifestVersion
+    else
+        -- No valid manifest version string; keep fallback
+        if not self.versionString then
+            self.versionString = self.addonVersion
+        end
+    end
+end
 
 if Nvk3UT_Utils and type(Nvk3UT_Utils.AttachToRoot) == "function" then
     Nvk3UT_Utils.AttachToRoot(Addon)
@@ -280,6 +320,8 @@ function Addon:OnAddonLoaded(actualAddonName)
     if actualAddonName ~= self.addonName then
         return
     end
+
+    self:RefreshAddonVersionFromManifest()
 
     -- SavedVariables bootstrap lives in Core/Nvk3UT_StateInit.lua.
     self:InitSavedVariables()
