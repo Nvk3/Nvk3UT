@@ -8,6 +8,8 @@ Rows.__index = Rows
 
 local MODULE_TAG = addonName .. ".EndeavorTrackerRows"
 
+local ROW_TEXT_PADDING_Y = 4
+
 local ROWS_HEIGHTS = {
     category = 26,
     entry = 20,
@@ -20,6 +22,28 @@ local ROWS_HEIGHTS = {
     spacing_after_last_sub = 2,
 }
 
+local function applyEndeavorLabelDefaults(label)
+    if not label then
+        return
+    end
+
+    if label.SetHorizontalAlignment then
+        label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+    end
+
+    if label.SetVerticalAlignment then
+        label:SetVerticalAlignment(TEXT_ALIGN_TOP)
+    end
+
+    if label.SetWrapMode then
+        label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
+    end
+
+    if label.SetMaxLineCount then
+        label:SetMaxLineCount(0)
+    end
+end
+
 local CATEGORY_TOP_PAD = 0
 local CATEGORY_BOTTOM_PAD_EXPANDED = 6
 local CATEGORY_BOTTOM_PAD_COLLAPSED = 6
@@ -28,6 +52,18 @@ local CATEGORY_ENTRY_SPACING = 3
 local ENTRY_TOP_PAD = 0
 local ENTRY_BOTTOM_PAD = 0
 local ENTRY_ROW_SPACING = 3
+
+local resolvedCategoryHeights = {
+    expanded = ROWS_HEIGHTS.category,
+    collapsed = ROWS_HEIGHTS.category,
+}
+
+local resolvedSubrowHeights = {
+    sub_info = ROWS_HEIGHTS.sub_info,
+    sub_counter = ROWS_HEIGHTS.sub_counter,
+    sub_progress = ROWS_HEIGHTS.sub_progress,
+    sub_warning = ROWS_HEIGHTS.sub_warning,
+}
 
 local function isDebugEnabled()
     local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
@@ -102,6 +138,108 @@ local DEFAULT_CATEGORY_CHEVRON_TEXTURES = {
 local MOUSE_BUTTON_LEFT = rawget(_G, "MOUSE_BUTTON_INDEX_LEFT") or 1
 
 local resolvedEntryHeight = ROWS_HEIGHTS.entry
+
+local function getEndeavorRowContainerWidth(control)
+    local parent = control and control.GetParent and control:GetParent()
+    local width = 0
+
+    if parent and parent.GetWidth then
+        local ok, measured = pcall(parent.GetWidth, parent)
+        if ok and type(measured) == "number" then
+            width = measured
+        end
+    end
+
+    if (not width or width <= 0) and control and control.GetWidth then
+        local ok, measured = pcall(control.GetWidth, control)
+        if ok and type(measured) == "number" then
+            width = measured
+        end
+    end
+
+    if not width or width < 0 then
+        width = 0
+    end
+
+    return width
+end
+
+local function computeEndeavorAvailableWidth(control, indent, leftPadding, rightPadding)
+    indent = indent or 0
+    leftPadding = leftPadding or 0
+    rightPadding = rightPadding or 0
+
+    local containerWidth = getEndeavorRowContainerWidth(control)
+    local availableWidth = containerWidth - indent - leftPadding - rightPadding
+    if availableWidth < 0 then
+        availableWidth = 0
+    end
+
+    return availableWidth
+end
+
+local function applyEndeavorRowMetrics(control, label, availableWidth, minHeight)
+    if not (control and label) then
+        return nil
+    end
+
+    availableWidth = math.max(0, availableWidth or 0)
+    if label.SetWidth then
+        label:SetWidth(availableWidth)
+    end
+
+    local textHeight = (label.GetTextHeight and label:GetTextHeight()) or 0
+    local targetHeight = math.max(minHeight or 0, textHeight + ROW_TEXT_PADDING_Y)
+
+    if control.SetHeight then
+        control:SetHeight(targetHeight)
+    end
+
+    control.__height = targetHeight
+
+    return targetHeight
+end
+
+local function isEndeavorWrapDebugEnabled()
+    if type(isGoldenColorDebugEnabled) == "function" then
+        return isGoldenColorDebugEnabled() == true
+    end
+
+    return isDebugEnabled()
+end
+
+local function debugEndeavorWrap(label, rowKind, availableWidth, minHeight, control, text)
+    if not (label and control) then
+        return
+    end
+
+    if type(isEndeavorWrapDebugEnabled) ~= "function" or not isEndeavorWrapDebugEnabled() then
+        return
+    end
+
+    if type(safeDebug) ~= "function" then
+        return
+    end
+
+    local width = label.GetWidth and label:GetWidth() or nil
+    local textHeight = label.GetTextHeight and label:GetTextHeight() or nil
+    local numLines = label.GetNumLines and label:GetNumLines() or nil
+    local controlHeight = control.GetHeight and control:GetHeight() or nil
+    local storedHeight = control.__height
+
+    safeDebug(
+        "[EndeavorWrap] %s: avail=%.1f labelWidth=%.1f textHeight=%.1f lines=%s minHeight=%.1f controlHeight=%.1f storedHeight=%.1f text='%s'",
+        tostring(rowKind),
+        tonumber(availableWidth) or -1,
+        tonumber(width) or -1,
+        tonumber(textHeight) or -1,
+        numLines ~= nil and tostring(numLines) or "n/a",
+        tonumber(minHeight) or -1,
+        tonumber(controlHeight) or -1,
+        tonumber(storedHeight) or -1,
+        tostring(text or "")
+    )
+end
 
 local function getCategoryHeight(expanded)
     if expanded and type(ROWS_HEIGHTS.categoryExpanded) == "number" then
@@ -482,11 +620,6 @@ function Rows.ApplySubrow(control, kind, data, options)
     local resolvedKind = normalizeSubrowKind(kind)
     local source = type(data) == "table" and data or {}
 
-    local height = Rows.GetSubrowHeight(resolvedKind)
-    if control.SetHeight then
-        control:SetHeight(height)
-    end
-
     local icon = ensureSubrowIcon(control)
     local iconTexture = type(source.icon) == "string" and source.icon or nil
     if icon then
@@ -535,10 +668,6 @@ function Rows.ApplySubrow(control, kind, data, options)
                 rightLabel:SetText(rightText)
             end
             rightLabel:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
-            rightLabel:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
-            if leftLabel then
-                leftLabel:SetAnchor(BOTTOMRIGHT, rightLabel, BOTTOMLEFT, -SUBROW_RIGHT_COLUMN_GAP, 0)
-            end
         else
             if rightLabel.SetHidden then
                 rightLabel:SetHidden(true)
@@ -546,12 +675,7 @@ function Rows.ApplySubrow(control, kind, data, options)
             if rightLabel.SetText then
                 rightLabel:SetText("")
             end
-            if leftLabel then
-                leftLabel:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
-            end
         end
-    elseif leftLabel then
-        leftLabel:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
     end
 
     local text = ""
@@ -565,13 +689,19 @@ function Rows.ApplySubrow(control, kind, data, options)
 
     local font = type(source) == "table" and source.font or nil
     local fallbackFont = options and options.font or DEFAULT_OBJECTIVE_FONT
+    local resolvedFont = font or fallbackFont
     if leftLabel then
-        applyFontString(leftLabel, font, fallbackFont)
+        applyEndeavorLabelDefaults(leftLabel)
+        applyFontString(leftLabel, resolvedFont, nil)
     end
 
     if rightLabel then
         local rightFont = type(source) == "table" and (source.rightFont or source.font) or nil
-        applyFontString(rightLabel, rightFont, fallbackFont)
+        applyEndeavorLabelDefaults(rightLabel)
+        applyFontString(rightLabel, rightFont or fallbackFont, nil)
+        if rightLabel.SetHorizontalAlignment then
+            rightLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+        end
     end
 
     local r, g, b, a
@@ -594,6 +724,21 @@ function Rows.ApplySubrow(control, kind, data, options)
     end
     if rightLabel and rightLabel.SetColor then
         rightLabel:SetColor(r, g, b, a)
+    end
+
+    local availableWidth = computeEndeavorAvailableWidth(control, OBJECTIVE_INDENT_X, 0, 0)
+    if leftLabel and leftLabel.SetWidth then
+        leftLabel:SetWidth(availableWidth)
+    end
+
+    local minHeight = ROWS_HEIGHTS[resolvedKind] or 0
+    local targetHeight = applyEndeavorRowMetrics(control, leftLabel, availableWidth, minHeight)
+    if targetHeight then
+        resolvedSubrowHeights[resolvedKind] = targetHeight
+    end
+
+    if leftLabel then
+        debugEndeavorWrap(leftLabel, resolvedKind, availableWidth, minHeight, control, text)
     end
 
     if control.SetAlpha then
@@ -1090,7 +1235,6 @@ local function createCategoryRow(parent)
             label:ClearAnchors()
         end
         label:SetAnchor(TOPLEFT, chevron, TOPRIGHT, CATEGORY_LABEL_OFFSET_X, 0)
-        label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
         if label.SetHidden then
             label:SetHidden(false)
         end
@@ -1434,6 +1578,7 @@ local function applyCategoryRow(row, data)
     if label.SetText then
         label:SetText(formattedText)
     end
+    applyEndeavorLabelDefaults(label)
 
     local colorRoles = type(info.colorRoles) == "table" and info.colorRoles or {}
     local expanded = info.expanded == true
@@ -1480,6 +1625,19 @@ local function applyCategoryRow(row, data)
         end
     end
 
+    local availableWidth = computeEndeavorAvailableWidth(control, CATEGORY_CHEVRON_SIZE + CATEGORY_LABEL_OFFSET_X, 0, 0)
+    if label.SetWidth then
+        label:SetWidth(availableWidth)
+    end
+
+    local minHeight = getCategoryHeight(expanded)
+    local targetHeight = applyEndeavorRowMetrics(control, label, availableWidth, minHeight)
+    if targetHeight then
+        resolvedCategoryHeights[expanded and "expanded" or "collapsed"] = targetHeight
+    end
+
+    debugEndeavorWrap(label, "category", availableWidth, minHeight, control, formattedText)
+
     if control.SetMouseEnabled then
         control:SetMouseEnabled(true)
     end
@@ -1493,11 +1651,6 @@ local function applyCategoryRow(row, data)
         remaining,
         tostring(showCounts)
     )
-
-    if control and control.SetHeight then
-        local categoryHeight = getCategoryHeight(expanded)
-        control:SetHeight(categoryHeight)
-    end
 end
 
 function Rows.AcquireCategoryRow(parent)
@@ -1704,33 +1857,20 @@ local function applyEntryRow(row, objective, options)
         end
     end
 
-    local entryHeight = resolveEntryHeight(options)
-    if row.SetHeight then
-        row:SetHeight(entryHeight)
-    end
-
     local title = ensureEntryChild(row, titleName, CT_LABEL)
     title:SetParent(row)
     local rowKind = type(objective) == "table" and objective.kind or nil
     local appliedConfiguredFont = applyConfiguredFontForKind and applyConfiguredFontForKind(title, rowKind, options)
+    local resolvedFont = nil
     if not appliedConfiguredFont then
-        applyFontString(title, options and options.font, DEFAULT_OBJECTIVE_FONT)
+        resolvedFont = options and options.font or DEFAULT_OBJECTIVE_FONT
     end
-    title:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
-    title:SetVerticalAlignment(TEXT_ALIGN_CENTER)
-    if title.SetWrapMode then
-        title:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
+    applyEndeavorLabelDefaults(title)
+    if not appliedConfiguredFont then
+        applyFontString(title, resolvedFont, DEFAULT_OBJECTIVE_FONT)
     end
     title:ClearAnchors()
     title:SetAnchor(TOPLEFT, row, TOPLEFT, OBJECTIVE_INDENT_X, ENTRY_TOP_PAD)
-    title:SetAnchor(BOTTOMRIGHT, row, BOTTOMRIGHT, 0, -ENTRY_BOTTOM_PAD)
-    if title.SetHeight then
-        local titleHeight = entryHeight - (ENTRY_TOP_PAD + ENTRY_BOTTOM_PAD)
-        if titleHeight < 0 then
-            titleHeight = 0
-        end
-        title:SetHeight(titleHeight)
-    end
     title:SetText(combinedText)
     row.Label = title
 
@@ -1756,6 +1896,19 @@ local function applyEntryRow(row, objective, options)
     row.Progress = progress
 
     applyObjectiveColor(title, options, data)
+
+    local availableWidth = computeEndeavorAvailableWidth(row, OBJECTIVE_INDENT_X, 0, 0)
+    if title.SetWidth then
+        title:SetWidth(availableWidth)
+    end
+
+    local minHeight = resolveEntryHeight(options)
+    local targetHeight = applyEndeavorRowMetrics(row, title, availableWidth, minHeight)
+    if targetHeight then
+        resolvedEntryHeight = targetHeight
+    end
+
+    debugEndeavorWrap(title, "entry", availableWidth, minHeight, row, combinedText)
 
     local subrowsSource = type(data) == "table" and data.subrows or nil
     local sanitizedSubrows, visibleSubrows = sanitizeSubrows(subrowsSource)
@@ -1825,7 +1978,7 @@ end
 
 function Rows.GetSubrowHeight(kind)
     local resolvedKind = normalizeSubrowKind(kind)
-    local height = ROWS_HEIGHTS[resolvedKind] or ROWS_HEIGHTS[kind]
+    local height = resolvedSubrowHeights[resolvedKind] or ROWS_HEIGHTS[resolvedKind] or ROWS_HEIGHTS[kind]
     if type(height) ~= "number" then
         return 0
     end
@@ -1891,7 +2044,8 @@ function Rows.GetSubrowsBlockHeight(subrows)
 end
 
 function Rows.GetCategoryRowHeight(expanded)
-    return getCategoryHeight(expanded)
+    local key = expanded and "expanded" or "collapsed"
+    return resolvedCategoryHeights[key] or getCategoryHeight(expanded)
 end
 
 function Rows.GetEntryRowHeight()
