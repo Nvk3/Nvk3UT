@@ -141,71 +141,6 @@ local function restoreBaseColorFromLabel(label)
     label:SetColor(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
 end
 
-local function getMouseoverHighlightColor()
-    local root = getAddon()
-    local host = type(root) == "table" and root.TrackerHost or nil
-    if type(host) == "table" then
-        if type(host.EnsureAppearanceDefaults) == "function" then
-            pcall(host.EnsureAppearanceDefaults, host)
-        end
-
-        if type(host.GetMouseoverHighlightColor) == "function" then
-            local ok, r, g, b, a = pcall(host.GetMouseoverHighlightColor, host, "goldenTracker")
-            if ok and r and g and b and a then
-                return r, g, b, a
-            end
-        end
-    end
-
-    return unpack(DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR)
-end
-
-local function applyMouseoverHighlight(control)
-    local label = control and (control.label or control.Label)
-    if not (label and label.SetColor) then
-        return
-    end
-
-    local r, g, b, a = getMouseoverHighlightColor()
-    label:SetColor(r, g, b, a)
-
-    safeDebug(
-        "Golden hover: applying mouseover highlight color r=%.3f g=%.3f b=%.3f a=%.3f",
-        r or 0,
-        g or 0,
-        b or 0,
-        a or 0
-    )
-end
-
-local function restoreMouseoverHighlight(control)
-    local resetFn = control and control.__nvk3RestoreHoverColor
-    if type(resetFn) == "function" then
-        resetFn(control)
-        return
-    end
-
-    local label = control and (control.label or control.Label)
-    if not label then
-        return
-    end
-
-    restoreBaseColorFromLabel(label)
-
-    local color = label._baseColor or {}
-    safeDebug(
-        "Golden hover: restored base color r=%.3f g=%.3f b=%.3f a=%.3f",
-        color[1] or 0,
-        color[2] or 0,
-        color[3] or 0,
-        color[4] or 0
-    )
-
-    if resetFn ~= nil then
-        safeDebug("Golden hover: missing restore callback, applied base color fallback")
-    end
-end
-
 local function isGoldenColorDebugEnabled()
     local root = getAddon()
 
@@ -269,6 +204,71 @@ local function safeDebug(message, ...)
     end
 
     pcall(debugFn, string.format("%s: %s", MODULE_TAG, tostring(payload)))
+end
+
+local function getMouseoverHighlightColor()
+    local root = getAddon()
+    local host = type(root) == "table" and root.TrackerHost or nil
+    if type(host) == "table" then
+        if type(host.EnsureAppearanceDefaults) == "function" then
+            pcall(host.EnsureAppearanceDefaults, host)
+        end
+
+        if type(host.GetMouseoverHighlightColor) == "function" then
+            local ok, r, g, b, a = pcall(host.GetMouseoverHighlightColor, host, "goldenTracker")
+            if ok and r and g and b and a then
+                return r, g, b, a
+            end
+        end
+    end
+
+    return unpack(DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR)
+end
+
+local function applyMouseoverHighlight(control)
+    local label = control and (control.label or control.Label)
+    if not (label and label.SetColor) then
+        return
+    end
+
+    local r, g, b, a = getMouseoverHighlightColor()
+    label:SetColor(r, g, b, a)
+
+    safeDebug(
+        "Golden hover: applying mouseover highlight color r=%.3f g=%.3f b=%.3f a=%.3f",
+        r or 0,
+        g or 0,
+        b or 0,
+        a or 0
+    )
+end
+
+local function restoreMouseoverHighlight(control)
+    local resetFn = control and control.__nvk3RestoreHoverColor
+    if type(resetFn) == "function" then
+        resetFn(control)
+        return
+    end
+
+    local label = control and (control.label or control.Label)
+    if not label then
+        return
+    end
+
+    restoreBaseColorFromLabel(label)
+
+    local color = label._baseColor or {}
+    safeDebug(
+        "Golden hover: restored base color r=%.3f g=%.3f b=%.3f a=%.3f",
+        color[1] or 0,
+        color[2] or 0,
+        color[3] or 0,
+        color[4] or 0
+    )
+
+    if resetFn ~= nil then
+        safeDebug("Golden hover: missing restore callback, applied base color fallback")
+    end
 end
 
 local function debugGoldenWrap(label, rowKind, availableWidth, minHeight, control, text)

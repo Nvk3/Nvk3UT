@@ -108,6 +108,34 @@ local REFRESH_DEBOUNCE_MS = 80
 
 local DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR = { 1, 1, 0.6, 1 }
 
+local function IsDebugLoggingEnabled()
+    local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
+    if utils and type(utils.IsDebugEnabled) == "function" then
+        return utils:IsDebugEnabled()
+    end
+    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        return diagnostics:IsDebugEnabled()
+    end
+    local addon = Nvk3UT
+    if addon and type(addon.IsDebugEnabled) == "function" then
+        return addon:IsDebugEnabled()
+    end
+    return false
+end
+
+local function DebugLog(...)
+    if not IsDebugLoggingEnabled() then
+        return
+    end
+
+    if d then
+        d(string.format("[%s]", MODULE_NAME), ...)
+    elseif print then
+        print("[" .. MODULE_NAME .. "]", ...)
+    end
+end
+
 local FAVORITES_LOOKUP_KEY = "NVK3UT_FAVORITES_ROOT"
 local FAVORITES_CATEGORY_ID = "Nvk3UT_Favorites"
 
@@ -354,34 +382,6 @@ local function RefreshControlMetrics(control)
         )
     elseif rowType == "objective" then
         ApplyRowMetrics(control, indent, 0, 0, 0, OBJECTIVE_MIN_HEIGHT)
-    end
-end
-
-local function IsDebugLoggingEnabled()
-    local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
-    if utils and type(utils.IsDebugEnabled) == "function" then
-        return utils:IsDebugEnabled()
-    end
-    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
-    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
-        return diagnostics:IsDebugEnabled()
-    end
-    local addon = Nvk3UT
-    if addon and type(addon.IsDebugEnabled) == "function" then
-        return addon:IsDebugEnabled()
-    end
-    return false
-end
-
-local function DebugLog(...)
-    if not IsDebugLoggingEnabled() then
-        return
-    end
-
-    if d then
-        d(string.format("[%s]", MODULE_NAME), ...)
-    elseif print then
-        print("[" .. MODULE_NAME .. "]", ...)
     end
 end
 
