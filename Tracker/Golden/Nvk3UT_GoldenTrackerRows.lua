@@ -170,6 +170,35 @@ local function safeDebug(message, ...)
     pcall(debugFn, string.format("%s: %s", MODULE_TAG, tostring(payload)))
 end
 
+local function isGoldenWrapDebugEnabled()
+    return isGoldenColorDebugEnabled()
+end
+
+local function debugGoldenWrap(label, rowKind, availableWidth, minHeight, control, text)
+    if not isGoldenWrapDebugEnabled() then
+        return
+    end
+
+    local width = label.GetWidth and label:GetWidth() or nil
+    local textHeight = label.GetTextHeight and label:GetTextHeight() or nil
+    local numLines = label.GetNumLines and label:GetNumLines() or nil
+    local controlHeight = control and control.GetHeight and control:GetHeight() or nil
+    local storedHeight = control and control.__height or nil
+
+    safeDebug(
+        "[Wrap] %s: avail=%.1f labelWidth=%.1f textHeight=%.1f lines=%s minHeight=%.1f controlHeight=%.1f storedHeight=%.1f text='%s'",
+        tostring(rowKind),
+        tonumber(availableWidth) or -1,
+        tonumber(width) or -1,
+        tonumber(textHeight) or -1,
+        numLines ~= nil and tostring(numLines) or "n/a",
+        tonumber(minHeight) or -1,
+        tonumber(controlHeight) or -1,
+        tonumber(storedHeight) or -1,
+        tostring(text or "")
+    )
+end
+
 local function getWindowManager()
     local wm = rawget(_G, "WINDOW_MANAGER")
     if wm == nil then
@@ -1879,6 +1908,8 @@ local function applyEntryRow(row, entryData)
         row.__height = targetHeight
     end
 
+    debugGoldenWrap(label, "entry", availableWidth, getEntryRowHeight(), targetRow, text)
+
     return targetRow
 end
 
@@ -1963,6 +1994,8 @@ local function applyObjectiveRow(row, objectiveData)
     if targetHeight then
         row.__height = targetHeight
     end
+
+    debugGoldenWrap(label, "objective", availableWidth, getObjectiveRowHeight(), control, text)
 
     local isPinned = type(objectiveData) == "table" and objectiveData.isPinned == true
     if pinLabel then
