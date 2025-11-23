@@ -2016,19 +2016,29 @@ updateScrollContentAnchors = function()
     )
 end
 
-measureTrackerContent = function(container, trackerModule)
+measureTrackerContent = function(container, trackerModule, sectionId)
     if not container or (container.IsHidden and container:IsHidden()) then
         return 0, 0
     end
 
     local width = 0
     local height = 0
+    local source
 
     if trackerModule and trackerModule.GetContentSize then
         local ok, trackerWidth, trackerHeight = pcall(trackerModule.GetContentSize)
         if ok then
             width = tonumber(trackerWidth) or 0
             height = tonumber(trackerHeight) or 0
+            source = "contentSize"
+        end
+    end
+
+    if trackerModule and not (width > 0 and height > 0) and trackerModule.GetHeight then
+        local ok, trackerHeight = pcall(trackerModule.GetHeight, trackerModule)
+        if ok then
+            height = tonumber(trackerHeight) or height or 0
+            source = source or "heightOnly"
         end
     end
 
@@ -2041,6 +2051,10 @@ measureTrackerContent = function(container, trackerModule)
             width = math.max(width, container.GetWidth and container:GetWidth() or 0)
             height = math.max(height, container.GetHeight and container:GetHeight() or 0)
         end
+
+        if not source then
+            source = "container"
+        end
     end
 
     if width < 0 then
@@ -2048,6 +2062,28 @@ measureTrackerContent = function(container, trackerModule)
     end
     if height < 0 then
         height = 0
+    end
+
+    if isDebugEnabled() then
+        local isTrackedSection = sectionId == "endeavor" or sectionId == "achievement"
+        if isTrackedSection then
+            local containerHeight
+            if container and type(container.GetHeight) == "function" then
+                local ok, measured = pcall(container.GetHeight, container)
+                if ok then
+                    containerHeight = measured
+                end
+            end
+
+            debugLog(
+                "TrackerHost: measureTrackerContent section=%s source=%s width=%s height=%s containerHeight=%s",
+                tostring(sectionId or "<nil>"),
+                tostring(source),
+                tostring(width),
+                tostring(height),
+                tostring(containerHeight)
+            )
+        end
     end
 
     return width, height
@@ -2096,7 +2132,7 @@ end
 function TrackerHost.GetSectionMeasurements(sectionId)
     local container = TrackerHost.GetSectionContainer(sectionId)
     local tracker = TrackerHost.GetSectionTracker(sectionId)
-    return measureTrackerContent(container, tracker)
+    return measureTrackerContent(container, tracker, sectionId)
 end
 
 function TrackerHost.GetLayoutSettings()
@@ -2345,18 +2381,21 @@ local function measureContentSize()
         end
     end
 
-    local questWidth, questHeight = measureTrackerContent(state.questContainer, Nvk3UT and Nvk3UT.QuestTracker)
+    local questWidth, questHeight = measureTrackerContent(state.questContainer, Nvk3UT and Nvk3UT.QuestTracker, "quest")
     local endeavorWidth, endeavorHeight = measureTrackerContent(
         state.endeavorContainer,
-        getEndeavorModule()
+        getEndeavorModule(),
+        "endeavor"
     )
     local achievementWidth, achievementHeight = measureTrackerContent(
         state.achievementContainer,
-        Nvk3UT and Nvk3UT.AchievementTracker
+        Nvk3UT and Nvk3UT.AchievementTracker,
+        "achievement"
     )
     local goldenWidth, goldenHeight = measureTrackerContent(
         state.goldenContainer,
-        Nvk3UT and Nvk3UT.GoldenTracker
+        Nvk3UT and Nvk3UT.GoldenTracker,
+        "golden"
     )
 
     questWidth = Num0(questWidth)
@@ -2681,18 +2720,21 @@ refreshScroll = function(targetOffset)
         previousDesired = state.desiredScrollOffset or previousActual or 0
     end
 
-    local _, questHeight = measureTrackerContent(state.questContainer, Nvk3UT and Nvk3UT.QuestTracker)
+    local _, questHeight = measureTrackerContent(state.questContainer, Nvk3UT and Nvk3UT.QuestTracker, "quest")
     local _, endeavorHeight = measureTrackerContent(
         state.endeavorContainer,
-        getEndeavorModule()
+        getEndeavorModule(),
+        "endeavor"
     )
     local _, achievementHeight = measureTrackerContent(
         state.achievementContainer,
-        Nvk3UT and Nvk3UT.AchievementTracker
+        Nvk3UT and Nvk3UT.AchievementTracker,
+        "achievement"
     )
     local _, goldenHeight = measureTrackerContent(
         state.goldenContainer,
-        Nvk3UT and Nvk3UT.GoldenTracker
+        Nvk3UT and Nvk3UT.GoldenTracker,
+        "golden"
     )
 
     questHeight = math.max(0, Num0(questHeight))
