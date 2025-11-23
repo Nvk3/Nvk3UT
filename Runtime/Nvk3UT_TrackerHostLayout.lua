@@ -51,6 +51,12 @@ local function debugLog(fmt, ...)
         end
     end
 end
+
+-- Local debug helper for TrackerHostLayout
+local function isDebug()
+    return Addon and Addon.Diagnostics and type(Addon.Diagnostics.IsEnabled) == "function"
+           and Addon.Diagnostics:IsEnabled()
+end
 local ANCHOR_TOLERANCE = 0.01
 
 local function normalizeSectionOrder(orderTable)
@@ -397,7 +403,7 @@ local function measureSection(host, sectionId, container)
         height = 0
     end
 
-    if isDebugEnabled() then
+    if isDebug() then
         if sectionId == "endeavor" or sectionId == "achievement" then
             debugLog(
                 "HostLayout: measureSection section=%s host=(%s,%s) fallback=(%s,%s) final=(%s,%s)",
@@ -915,7 +921,7 @@ function Layout.ApplyLayout(host, sizes)
         local isEndeavorSection = sectionId == "endeavor"
         local isAchievementSection = sectionId == "achievement"
 
-        if (isEndeavorSection or isAchievementSection) and isDebugEnabled() then
+        if (isEndeavorSection or isAchievementSection) and isDebug() then
             debugLog(
                 "HostLayout: %s measured height=%s currentTop=%s",
                 tostring(sectionId),
