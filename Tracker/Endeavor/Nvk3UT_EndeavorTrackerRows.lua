@@ -1369,6 +1369,14 @@ local function createCategoryRow(parent)
         control:SetHandler("OnMouseUp", onMouseUp)
         row._mouseHandler = onMouseUp
 
+        control:SetHandler("OnMouseEnter", function(ctrl)
+            applyMouseoverHighlight(ctrl)
+        end)
+
+        control:SetHandler("OnMouseExit", function(ctrl)
+            restoreMouseoverHighlight(ctrl)
+        end)
+
     end
 
     safeDebug("[CategoryPool] create %s", controlName)
