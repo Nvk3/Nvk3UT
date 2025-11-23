@@ -31,6 +31,14 @@ function Addon:RefreshAddonVersionFromManifest()
         return
     end
 
+    local addOnManager = GetAddOnManager and GetAddOnManager() or nil
+    if not addOnManager or not addOnManager.GetAddOnVersion then
+        Addon.Debug("Version fallback: ESO API GetAddOnVersion not available → using fallback %s",
+            tostring(self.addonVersion))
+        if not self.versionString then self.versionString = self.addonVersion end
+        return
+    end
+
     -- find addon index
     local index
     for i = 1, GetNumAddOns() do
@@ -48,19 +56,23 @@ function Addon:RefreshAddonVersionFromManifest()
         return
     end
 
-    -- get version string (11th return value)
-    local versionString = select(11, GetAddOnInfo(index))
-
-    if type(versionString) == "string" and versionString ~= "" then
-        self.addonVersion = versionString
-        self.versionString = versionString
-        Addon.Debug("Version from manifest: '%s' (addonName=%s)",
-            tostring(versionString), tostring(self.addonName))
-    else
-        Addon.Debug("Version fallback: manifest returned invalid version '%s' → using fallback %s",
-            tostring(versionString), tostring(self.addonVersion))
+    local versionInt = addOnManager:GetAddOnVersion(index)
+    if type(versionInt) ~= "number" or versionInt <= 0 then
+        Addon.Debug("Version fallback: AddOnVersion returned invalid value '%s' → using fallback %s",
+            tostring(versionInt), tostring(self.addonVersion))
         if not self.versionString then self.versionString = self.addonVersion end
+        return
     end
+
+    local major = math.floor(versionInt / 10000)
+    local minor = math.floor((versionInt % 10000) / 100)
+    local patch = versionInt % 100
+    local versionString = string.format("%d.%d.%d", major, minor, patch)
+
+    self.addonVersion = versionString
+    self.versionString = versionString
+    Addon.Debug("Version from AddOnVersion: '%s' (addonName=%s, raw=%s)",
+        tostring(versionString), tostring(self.addonName), tostring(versionInt))
 end
 
 if Nvk3UT_Utils and type(Nvk3UT_Utils.AttachToRoot) == "function" then
