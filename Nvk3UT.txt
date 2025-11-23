@@ -1,8 +1,8 @@
 ## Title: Nvk3's Ultimate Tracker
 ## Description: Favorites category + context menu; 'Kürzlich' as its own category with same icon; Status + LAM.
 ## Author: Nvk3
-## Version: 0.11.26
-## AddOnVersion: 1126
+## Version: 0.12.1
+## AddOnVersion: 001201
 ## APIVersion: 101041 101042 101043
 ## DependsOn: LibAddonMenu-2.0
 ## OptionalDependsOn: LibCustomMenu-2.0

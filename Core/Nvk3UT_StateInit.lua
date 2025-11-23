@@ -330,7 +330,7 @@ local defaults = {
     version = 4,
     debug = false,
     General = {
-        showStatus = true,
+        showStatus = false,
         favScope = "account",
         recentWindow = 0,
         recentMax = 100,
@@ -781,7 +781,7 @@ local function AdoptLegacySettings(saved)
     saved.General = MergeDefaults(saved.General, defaults.General)
 
     if type(saved.ui) == "table" then
-        saved.General.showStatus = (saved.ui.showStatus ~= false)
+        saved.General.showStatus = (saved.ui.showStatus == true)
         saved.General.favScope = saved.ui.favScope or saved.General.favScope
         saved.General.recentWindow = saved.ui.recentWindow or saved.General.recentWindow
         saved.General.recentMax = saved.ui.recentMax or saved.General.recentMax
