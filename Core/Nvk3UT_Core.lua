@@ -401,6 +401,15 @@ function Addon:OnPlayerActivated()
     end
     self.playerActivated = true
 
+    if not self._versionInitialized then
+        self:RefreshAddonVersionFromManifest()
+        self._versionInitialized = true
+    end
+
+    if Nvk3UT.RefreshLamVersionLabel then
+        Nvk3UT.RefreshLamVersionLabel()
+    end
+
     -- TODO Controller: move integration gating into Controller layer once available.
     self:EnableIntegrations()
 

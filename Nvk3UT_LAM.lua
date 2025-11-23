@@ -1314,6 +1314,7 @@ local function registerLamCallbacks(LAM, panelName, panel)
             local name = control:GetName()
             if name and name == L._panelName then
                 L._panelControl = control
+                Nvk3UT.lamPanel = control
                 return true
             end
         end
@@ -1321,11 +1322,13 @@ local function registerLamCallbacks(LAM, panelName, panel)
         local expected = L._panelName and _G[L._panelName]
         if expected and control == expected then
             L._panelControl = expected
+            Nvk3UT.lamPanel = expected
             return true
         end
 
         if control.data and L._panelDefinition and control.data == L._panelDefinition then
             L._panelControl = control
+            Nvk3UT.lamPanel = control
             return true
         end
 
@@ -1351,6 +1354,44 @@ local function registerLamCallbacks(LAM, panelName, panel)
             pcall(Nvk3UT.TrackerHost.OnLamPanelClosed, control)
         end
     end)
+end
+
+function Nvk3UT.RefreshLamVersionLabel()
+    local addon = Nvk3UT
+    if type(addon) ~= "table" then
+        return
+    end
+
+    local versionString = addon.versionString or addon.addonVersion
+    if type(versionString) ~= "string" or versionString == "" then
+        return
+    end
+
+    local panel = addon.lamPanel or L._panelControl
+    if not panel then
+        return
+    end
+
+    local versionLabel = panel.version or panel.labelVersion or panel.versionLabel
+    if not versionLabel and panel.GetNamedChild then
+        versionLabel = panel:GetNamedChild("Version") or panel:GetNamedChild("version")
+    end
+
+    if not versionLabel then
+        local panelName = panel.GetName and panel:GetName()
+        if panelName then
+            versionLabel = _G[panelName .. "Version"] or _G[panelName .. "_Version"]
+        end
+    end
+
+    if not versionLabel or type(versionLabel.SetText) ~= "function" then
+        return
+    end
+
+    versionLabel:SetText(versionString)
+    if panel.data then
+        panel.data.version = versionString
+    end
 end
 
 local function registerPanel(displayTitle)
@@ -3136,7 +3177,11 @@ local function registerPanel(displayTitle)
         end)(),
     }
 
-    LAM:RegisterAddonPanel(panelName, panel)
+    local panelControl = LAM:RegisterAddonPanel(panelName, panel)
+    if panelControl then
+        Nvk3UT.lamPanel = panelControl
+        L._panelControl = L._panelControl or panelControl
+    end
     LAM:RegisterOptionControls(panelName, options)
 
     registerLamCallbacks(LAM, panelName, panel)
