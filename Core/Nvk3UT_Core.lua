@@ -21,43 +21,40 @@ Addon.playerActivated = Addon.playerActivated or false
 
 function Addon:RefreshAddonVersionFromManifest()
     if not GetNumAddOns or not GetAddOnInfo then
-        -- API unavailable (should always be present in live client)
         if not self.versionString then
             self.versionString = self.addonVersion
         end
         return
     end
 
-    local addOnIndex = nil
-    local name
-
+    -- Find addon by name
+    local index
     for i = 1, GetNumAddOns() do
-        name = GetAddOnInfo(i)
+        local name = GetAddOnInfo(i)
         if name == self.addonName then
-            addOnIndex = i
+            index = i
             break
         end
     end
 
-    if not addOnIndex then
-        -- Fallback: addon not found; keep fallback version
+    if not index then
         if not self.versionString then
             self.versionString = self.addonVersion
         end
         return
     end
 
-    local _, _, _, _, _, _, _, _, _, _, addOnVersion = GetAddOnInfo(addOnIndex)
+    -- Extract AddOnVersion integer
+    local _, _, _, _, _, _, _, _, _, _, addOnVersion = GetAddOnInfo(index)
     if type(addOnVersion) == "number" and addOnVersion > 0 then
         local major = math.floor(addOnVersion / 10000)
         local minor = math.floor((addOnVersion % 10000) / 100)
         local patch = addOnVersion % 100
-        local semver = string.format("%d.%d.%d", major, minor, patch)
+        local version = string.format("%d.%d.%d", major, minor, patch)
 
-        self.addonVersion = semver
-        self.versionString = semver
+        self.addonVersion = version
+        self.versionString = version
     else
-        -- No valid AddOnVersion integer; keep fallback
         if not self.versionString then
             self.versionString = self.addonVersion
         end
