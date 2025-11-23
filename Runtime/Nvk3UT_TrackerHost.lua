@@ -232,6 +232,12 @@ local state = {
         achievementMissing = false,
         goldenMissing = false,
     },
+    sectionHidden = {
+        quest = nil,
+        endeavor = nil,
+        achievement = nil,
+        golden = nil,
+    },
     dragLayer = nil,
     previousDefaultQuestTrackerHidden = nil,
     initializing = false,
@@ -1436,6 +1442,160 @@ refreshVisibilityGates = function(hostSettings)
     gates.lam = state.isLAMOpen == true
 
     return gates
+end
+
+local function resolveQuestTrackerEnabled()
+    local tracker = Nvk3UT and Nvk3UT.QuestTracker
+    if tracker and tracker.IsActive then
+        local ok, active = pcall(tracker.IsActive)
+        if ok and active ~= nil then
+            return active ~= false
+        end
+    end
+
+    local saved = getSavedVars()
+    local quest = saved and saved.QuestTracker
+    if type(quest) == "table" and quest.active ~= nil then
+        return quest.active ~= false
+    end
+
+    return true
+end
+
+local function resolveAchievementTrackerEnabled()
+    local tracker = Nvk3UT and Nvk3UT.AchievementTracker
+    if tracker and tracker.IsActive then
+        local ok, active = pcall(tracker.IsActive)
+        if ok and active ~= nil then
+            return active ~= false
+        end
+    end
+
+    local saved = getSavedVars()
+    local achievement = saved and saved.AchievementTracker
+    if type(achievement) == "table" and achievement.active ~= nil then
+        return achievement.active ~= false
+    end
+
+    return true
+end
+
+local function resolveEndeavorTrackerEnabled()
+    local saved = getSavedVars()
+    local endeavorConfig = saved and saved.Endeavor
+    if type(endeavorConfig) == "table" and endeavorConfig.Enabled ~= nil then
+        return endeavorConfig.Enabled ~= false
+    end
+
+    local achievement = saved and saved.AchievementTracker
+    if type(achievement) == "table" and achievement.active ~= nil then
+        return achievement.active ~= false
+    end
+
+    return true
+end
+
+local function resolveGoldenTrackerEnabled()
+    local saved = getSavedVars()
+    local goldenConfig = saved and saved.Golden
+    if type(goldenConfig) == "table" and goldenConfig.Enabled ~= nil then
+        return goldenConfig.Enabled ~= false
+    end
+
+    local defaultsRoot = saved and saved.TrackerDefaults
+    local goldenDefaults = defaultsRoot and defaultsRoot.GoldenDefaults
+    if type(goldenDefaults) == "table" and goldenDefaults.Enabled ~= nil then
+        return goldenDefaults.Enabled ~= false
+    end
+
+    return true
+end
+
+local function resolveTrackerEnabledStates()
+    return {
+        quest = resolveQuestTrackerEnabled(),
+        endeavor = resolveEndeavorTrackerEnabled(),
+        achievement = resolveAchievementTrackerEnabled(),
+        golden = resolveGoldenTrackerEnabled(),
+    }
+end
+
+local function applyTrackerSectionVisibility()
+    local containers = {
+        quest = state.questContainer,
+        endeavor = state.endeavorContainer,
+        achievement = state.achievementContainer,
+        golden = state.goldenContainer,
+    }
+
+    local enabledStates = resolveTrackerEnabledStates()
+    local changed = false
+    local visibilityCache = state.sectionHidden or {}
+    state.sectionHidden = visibilityCache
+
+    if isDebugEnabled() then
+        visibilityDebug(
+            "TrackerVisibility flags: quest=%s endeavor=%s achievement=%s golden=%s",
+            tostring(enabledStates.quest),
+            tostring(enabledStates.endeavor),
+            tostring(enabledStates.achievement),
+            tostring(enabledStates.golden)
+        )
+    end
+
+    local function apply(sectionId)
+        local container = containers[sectionId]
+        local enabled = enabledStates[sectionId] ~= false
+        local hidden = not enabled
+
+        if not (container and container.SetHidden) then
+            if isDebugEnabled() then
+                visibilityDebug("TrackerVisibility: %s container missing", sectionId)
+            end
+            visibilityCache[sectionId] = hidden
+            return
+        end
+
+        local current = safeCall(function()
+            if container.IsHidden then
+                return container:IsHidden()
+            end
+            return nil
+        end)
+
+        if current ~= hidden then
+            container:SetHidden(hidden)
+            changed = true
+        end
+
+        visibilityCache[sectionId] = hidden
+
+        if isDebugEnabled() then
+            local effectiveHidden = hidden
+            local probe = safeCall(function()
+                if container.IsHidden then
+                    return container:IsHidden()
+                end
+                return nil
+            end)
+            if probe ~= nil then
+                effectiveHidden = probe
+            end
+            visibilityDebug(
+                "TrackerVisibility: %s hidden=%s (enabled=%s)",
+                sectionId,
+                tostring(effectiveHidden),
+                tostring(enabled)
+            )
+        end
+    end
+
+    apply("quest")
+    apply("endeavor")
+    apply("achievement")
+    apply("golden")
+
+    return changed
 end
 
 function TrackerHost.SetCombatState(selfOrFlag, maybeFlag)
@@ -3603,7 +3763,10 @@ function TrackerHost.ApplyVisibilityRules()
 
     applyWindowVisibility()
 
+    local sectionVisibilityChanged = applyTrackerSectionVisibility()
+
     local changed = previousSceneHidden ~= (state.sceneHidden == true)
+        or sectionVisibilityChanged
     if changed then
         visibilityDebug(
             "Host visibility -> %s (%s)",

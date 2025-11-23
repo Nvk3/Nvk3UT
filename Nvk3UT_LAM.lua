@@ -1954,6 +1954,10 @@ local function registerPanel(displayTitle)
                     if Nvk3UT and Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then
                         Nvk3UT.UI.UpdateStatus()
                     end
+                    local host = Nvk3UT and Nvk3UT.TrackerHost
+                    if host and host.ApplyVisibilityRules then
+                        host:ApplyVisibilityRules()
+                    end
                 end,
                 default = true,
             }
@@ -2423,6 +2427,10 @@ local function registerPanel(displayTitle)
                     end
                     if Nvk3UT and Nvk3UT.AchievementTracker and Nvk3UT.AchievementTracker.SetActive then
                         Nvk3UT.AchievementTracker.SetActive(value)
+                    end
+                    local host = Nvk3UT and Nvk3UT.TrackerHost
+                    if host and host.ApplyVisibilityRules then
+                        host:ApplyVisibilityRules()
                     end
                 end,
                 default = true,
