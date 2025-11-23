@@ -22,6 +22,28 @@ local ROWS_HEIGHTS = {
     spacing_after_last_sub = 2,
 }
 
+local function applyEndeavorLabelDefaults(label)
+    if not label then
+        return
+    end
+
+    if label.SetHorizontalAlignment then
+        label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+    end
+
+    if label.SetVerticalAlignment then
+        label:SetVerticalAlignment(TEXT_ALIGN_TOP)
+    end
+
+    if label.SetWrapMode then
+        label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
+    end
+
+    if label.SetMaxLineCount then
+        label:SetMaxLineCount(0)
+    end
+end
+
 local CATEGORY_TOP_PAD = 0
 local CATEGORY_BOTTOM_PAD_EXPANDED = 6
 local CATEGORY_BOTTOM_PAD_COLLAPSED = 6
@@ -156,7 +178,7 @@ local function computeEndeavorAvailableWidth(control, indent, leftPadding, right
     return availableWidth
 end
 
-local function applyEndeavorRowMetrics(control, label, availableWidth, minHeight, paddingTop, paddingBottom)
+local function applyEndeavorRowMetrics(control, label, availableWidth, minHeight)
     if not (control and label) then
         return nil
     end
@@ -167,8 +189,7 @@ local function applyEndeavorRowMetrics(control, label, availableWidth, minHeight
     end
 
     local textHeight = (label.GetTextHeight and label:GetTextHeight()) or 0
-    local paddingY = (paddingTop or 0) + (paddingBottom or 0)
-    local targetHeight = math.max(minHeight or 0, textHeight + ROW_TEXT_PADDING_Y + paddingY)
+    local targetHeight = math.max(minHeight or 0, textHeight + ROW_TEXT_PADDING_Y)
 
     if control.SetHeight then
         control:SetHeight(targetHeight)
@@ -218,40 +239,6 @@ local function debugEndeavorWrap(label, rowKind, availableWidth, minHeight, cont
         tonumber(storedHeight) or -1,
         tostring(text or "")
     )
-end
-
-local function applyEndeavorLabelDefaults(label, font, color)
-    if not label then
-        return
-    end
-
-    if label.SetFont and font then
-        label:SetFont(font)
-    end
-
-    if label.SetHorizontalAlignment then
-        label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
-    end
-
-    if label.SetVerticalAlignment then
-        label:SetVerticalAlignment(TEXT_ALIGN_TOP)
-    end
-
-    if label.SetColor and type(color) == "table" then
-        local r = color[1] or color.r or 1
-        local g = color[2] or color.g or 1
-        local b = color[3] or color.b or 1
-        local a = color[4] or color.a or 1
-        label:SetColor(r, g, b, a)
-    end
-
-    if label.SetWrapMode and rawget(_G, "TEXT_WRAP_MODE_ELLIPSIS") then
-        label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
-    end
-
-    if label.SetMaxLineCount then
-        label:SetMaxLineCount(0)
-    end
 end
 
 local function getCategoryHeight(expanded)
@@ -681,10 +668,6 @@ function Rows.ApplySubrow(control, kind, data, options)
                 rightLabel:SetText(rightText)
             end
             rightLabel:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
-            rightLabel:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
-            if leftLabel then
-                leftLabel:SetAnchor(BOTTOMRIGHT, rightLabel, BOTTOMLEFT, -SUBROW_RIGHT_COLUMN_GAP, 0)
-            end
         else
             if rightLabel.SetHidden then
                 rightLabel:SetHidden(true)
@@ -692,12 +675,7 @@ function Rows.ApplySubrow(control, kind, data, options)
             if rightLabel.SetText then
                 rightLabel:SetText("")
             end
-            if leftLabel then
-                leftLabel:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
-            end
         end
-    elseif leftLabel then
-        leftLabel:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
     end
 
     local text = ""
@@ -713,12 +691,14 @@ function Rows.ApplySubrow(control, kind, data, options)
     local fallbackFont = options and options.font or DEFAULT_OBJECTIVE_FONT
     local resolvedFont = font or fallbackFont
     if leftLabel then
-        applyEndeavorLabelDefaults(leftLabel, resolvedFont)
+        applyEndeavorLabelDefaults(leftLabel)
+        applyFontString(leftLabel, resolvedFont, nil)
     end
 
     if rightLabel then
         local rightFont = type(source) == "table" and (source.rightFont or source.font) or nil
-        applyEndeavorLabelDefaults(rightLabel, rightFont or fallbackFont)
+        applyEndeavorLabelDefaults(rightLabel)
+        applyFontString(rightLabel, rightFont or fallbackFont, nil)
         if rightLabel.SetHorizontalAlignment then
             rightLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
         end
@@ -752,7 +732,7 @@ function Rows.ApplySubrow(control, kind, data, options)
     end
 
     local minHeight = ROWS_HEIGHTS[resolvedKind] or 0
-    local targetHeight = applyEndeavorRowMetrics(control, leftLabel, availableWidth, minHeight, 0, 0)
+    local targetHeight = applyEndeavorRowMetrics(control, leftLabel, availableWidth, minHeight)
     if targetHeight then
         resolvedSubrowHeights[resolvedKind] = targetHeight
     end
@@ -1255,7 +1235,6 @@ local function createCategoryRow(parent)
             label:ClearAnchors()
         end
         label:SetAnchor(TOPLEFT, chevron, TOPRIGHT, CATEGORY_LABEL_OFFSET_X, 0)
-        label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
         if label.SetHidden then
             label:SetHidden(false)
         end
@@ -1652,8 +1631,7 @@ local function applyCategoryRow(row, data)
     end
 
     local minHeight = getCategoryHeight(expanded)
-    local paddingBottom = expanded and CATEGORY_BOTTOM_PAD_EXPANDED or CATEGORY_BOTTOM_PAD_COLLAPSED
-    local targetHeight = applyEndeavorRowMetrics(control, label, availableWidth, minHeight, CATEGORY_TOP_PAD, paddingBottom)
+    local targetHeight = applyEndeavorRowMetrics(control, label, availableWidth, minHeight)
     if targetHeight then
         resolvedCategoryHeights[expanded and "expanded" or "collapsed"] = targetHeight
     end
@@ -1887,10 +1865,12 @@ local function applyEntryRow(row, objective, options)
     if not appliedConfiguredFont then
         resolvedFont = options and options.font or DEFAULT_OBJECTIVE_FONT
     end
-    applyEndeavorLabelDefaults(title, resolvedFont)
+    applyEndeavorLabelDefaults(title)
+    if not appliedConfiguredFont then
+        applyFontString(title, resolvedFont, DEFAULT_OBJECTIVE_FONT)
+    end
     title:ClearAnchors()
     title:SetAnchor(TOPLEFT, row, TOPLEFT, OBJECTIVE_INDENT_X, ENTRY_TOP_PAD)
-    title:SetAnchor(BOTTOMRIGHT, row, BOTTOMRIGHT, 0, -ENTRY_BOTTOM_PAD)
     title:SetText(combinedText)
     row.Label = title
 
@@ -1923,7 +1903,7 @@ local function applyEntryRow(row, objective, options)
     end
 
     local minHeight = resolveEntryHeight(options)
-    local targetHeight = applyEndeavorRowMetrics(row, title, availableWidth, minHeight, ENTRY_TOP_PAD, ENTRY_BOTTOM_PAD)
+    local targetHeight = applyEndeavorRowMetrics(row, title, availableWidth, minHeight)
     if targetHeight then
         resolvedEntryHeight = targetHeight
     end
