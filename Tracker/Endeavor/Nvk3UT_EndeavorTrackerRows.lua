@@ -837,6 +837,11 @@ local function getMouseoverHighlightColor()
 end
 
 local function applyMouseoverHighlight(control)
+    if control ~= nil and control._subrowOwner ~= nil then
+        -- Subrows/objectives should not receive hover highlight; only header entry rows are eligible.
+        return
+    end
+
     local label = control and (control.label or control.Label)
     if not (label and label.SetColor) then
         return
@@ -855,6 +860,10 @@ local function applyMouseoverHighlight(control)
 end
 
 local function restoreMouseoverHighlight(control)
+    if control ~= nil and control._subrowOwner ~= nil then
+        return
+    end
+
     local resetFn = control and control.__nvk3RestoreHoverColor
     if type(resetFn) == "function" then
         resetFn(control)
@@ -1074,16 +1083,6 @@ local function createEntryRow(parent)
     control._poolState = "fresh"
     control._poolParent = parent
     control._subrowPrefix = controlName .. "Subrow"
-
-    if control.SetHandler then
-        control:SetHandler("OnMouseEnter", function(ctrl)
-            applyMouseoverHighlight(ctrl)
-        end)
-
-        control:SetHandler("OnMouseExit", function(ctrl)
-            restoreMouseoverHighlight(ctrl)
-        end)
-    end
 
     safeDebug("[EntryPool] create %s", controlName)
 
@@ -2002,6 +2001,14 @@ local function applyEntryRow(row, objective, options)
 
     if row.SetHandler then
         row:SetHandler("OnMouseUp", onEntryMouseUp)
+
+        row:SetHandler("OnMouseEnter", function(ctrl)
+            applyMouseoverHighlight(ctrl)
+        end)
+
+        row:SetHandler("OnMouseExit", function(ctrl)
+            restoreMouseoverHighlight(ctrl)
+        end)
     end
 
     local progress = ensureEntryChild(row, progressName, CT_LABEL)
