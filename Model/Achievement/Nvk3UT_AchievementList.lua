@@ -320,8 +320,9 @@ local function DetermineCategoryInfo(categoryIndex, subCategoryIndex, achievemen
     }
 end
 
-local function BuildAchievementEntry(achievementId)
-    if not achievementId then
+local function BuildAchievementEntry(baseAchievementId, stageInfo)
+    local targetAchievementId = stageInfo and stageInfo.displayId or baseAchievementId
+    if not targetAchievementId then
         return nil
     end
 
@@ -335,7 +336,7 @@ local function BuildAchievementEntry(achievementId)
     if GetAchievementInfo then
         local ok, infoName, infoDescription, infoPoints, infoIcon, infoCompleted, infoDate, infoTimeStamp = pcall(
             GetAchievementInfo,
-            achievementId
+            targetAchievementId
         )
         if ok then
             name = infoName
@@ -351,14 +352,14 @@ local function BuildAchievementEntry(achievementId)
     if Completed then
         local meta
         if type(Completed.GetCompletedMeta) == "function" then
-            local ok, result = pcall(Completed.GetCompletedMeta, achievementId)
+            local ok, result = pcall(Completed.GetCompletedMeta, targetAchievementId)
             if ok and type(result) == "table" then
                 meta = result
             end
         end
 
         if (not meta) and type(Completed.IsCompleted) == "function" then
-            local ok, completed = pcall(Completed.IsCompleted, achievementId)
+            local ok, completed = pcall(Completed.IsCompleted, targetAchievementId)
             if ok and completed ~= nil then
                 meta = meta or {}
                 meta.isComplete = completed and true or false
@@ -372,7 +373,7 @@ local function BuildAchievementEntry(achievementId)
         if meta and meta.timestamp ~= nil then
             completedTimestamp = meta.timestamp
         elseif type(Completed.GetCompletedTimestamp) == "function" then
-            local ok, ts = pcall(Completed.GetCompletedTimestamp, achievementId)
+            local ok, ts = pcall(Completed.GetCompletedTimestamp, targetAchievementId)
             if ok and ts ~= nil then
                 completedTimestamp = ts
             end
@@ -391,7 +392,7 @@ local function BuildAchievementEntry(achievementId)
     local progressPercent
 
     if GetAchievementProgress then
-        local ok, completed, total = pcall(GetAchievementProgress, achievementId)
+        local ok, completed, total = pcall(GetAchievementProgress, targetAchievementId)
         if ok then
             current = completed
             maximum = total
@@ -406,25 +407,23 @@ local function BuildAchievementEntry(achievementId)
         end
     end
 
-    local objectives = BuildObjectiveData(achievementId)
+    local objectives = BuildObjectiveData(targetAchievementId)
 
-    local timestamp = completedTimestamp or SafeCall(GetAchievementTimestamp, achievementId)
+    local timestamp = completedTimestamp or SafeCall(GetAchievementTimestamp, targetAchievementId)
 
     local categoryIndex
     local subCategoryIndex
     local achievementIndex
 
     if GetCategoryInfoFromAchievementId then
-        categoryIndex, subCategoryIndex, achievementIndex = SafeCallMulti(GetCategoryInfoFromAchievementId, achievementId)
+        categoryIndex, subCategoryIndex, achievementIndex = SafeCallMulti(GetCategoryInfoFromAchievementId, targetAchievementId)
     end
 
     local categoryInfo = DetermineCategoryInfo(categoryIndex, subCategoryIndex, achievementIndex)
 
     if (not categoryInfo or not categoryInfo.categoryName) and GetAchievementCategoryInfoFromAchievementId then
-        local ok, fallbackCategoryIndex, fallbackSubCategoryIndex = pcall(
-            GetAchievementCategoryInfoFromAchievementId,
-            achievementId
-        )
+        local ok, fallbackCategoryIndex, fallbackSubCategoryIndex =
+            pcall(GetAchievementCategoryInfoFromAchievementId, targetAchievementId)
         if ok then
             categoryInfo = DetermineCategoryInfo(
                 fallbackCategoryIndex,
@@ -435,8 +434,9 @@ local function BuildAchievementEntry(achievementId)
     end
 
     local entry = {
-        id = achievementId,
-        name = (name and name ~= "" and name) or string.format("Achievement %d", achievementId),
+        id = baseAchievementId,
+        displayAchievementId = targetAchievementId ~= baseAchievementId and targetAchievementId or nil,
+        name = (name and name ~= "" and name) or string.format("Achievement %d", targetAchievementId),
         description = description,
         icon = icon,
         points = points,
@@ -453,6 +453,7 @@ local function BuildAchievementEntry(achievementId)
             isFavorite = true,
         },
         category = categoryInfo,
+        stage = stageInfo,
     }
 
     return entry
@@ -504,6 +505,20 @@ local function SortAchievements(entries)
     end)
 end
 
+local function ResolveStageInfo(achievementId)
+    local Fav = Nvk3UT and Nvk3UT.FavoritesData
+    if not (Fav and Fav.GetStageDisplayInfo) then
+        return nil
+    end
+
+    local ok, info = pcall(Fav.GetStageDisplayInfo, achievementId)
+    if ok then
+        return info
+    end
+
+    return nil
+end
+
 local function BuildRawData()
     local favoriteIds = CollectFavoriteIds()
     local recentIds = CollectRecentIds()
@@ -513,7 +528,8 @@ local function BuildRawData()
 
     for index = 1, #favoriteIds do
         local achievementId = favoriteIds[index]
-        local entry = BuildAchievementEntry(achievementId)
+        local stageInfo = ResolveStageInfo(achievementId)
+        local entry = BuildAchievementEntry(achievementId, stageInfo)
         if entry then
             entries[#entries + 1] = entry
             if entry.flags.isComplete then

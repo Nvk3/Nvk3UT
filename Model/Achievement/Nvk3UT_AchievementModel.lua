@@ -286,10 +286,26 @@ local function onAchievementChanged(eventCode, ...)
         return
     end
 
+    local achievementId
     if eventCode == EVENT_ACHIEVEMENT_AWARDED then
-        local _, _, achievementId = ...
+        local _, _, awardedId = ...
+        achievementId = awardedId
+    elseif eventCode == EVENT_ACHIEVEMENT_UPDATED then
+        achievementId = select(1, ...)
+    end
+
+    local handledFavorite = false
+    if achievementId then
         local Fav = Nvk3UT and Nvk3UT.FavoritesData
-        if Fav and type(Fav.RemoveIfCompleted) == "function" then
+        if Fav and type(Fav.HandleAchievementUpdate) == "function" then
+            local ok, changed = pcall(Fav.HandleAchievementUpdate, achievementId, eventCode)
+            handledFavorite = ok and changed or false
+        end
+    end
+
+    if eventCode == EVENT_ACHIEVEMENT_AWARDED then
+        local Fav = Nvk3UT and Nvk3UT.FavoritesData
+        if (not handledFavorite) and Fav and type(Fav.RemoveIfCompleted) == "function" then
             -- TODO(Events-Migration): Move this call into Events/Nvk3UT_AchievementEventHandler.lua during SWITCH token.
             local ok, removed = pcall(Fav.RemoveIfCompleted, achievementId)
             if ok and removed then

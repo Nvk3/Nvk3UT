@@ -23,6 +23,7 @@ Model/Endeavor/Nvk3UT_EndeavorState.lua
 Model/Endeavor/Nvk3UT_EndeavorModel.lua
 ## Model — Achievement
 Model/Achievement/Nvk3UT_AchievementState.lua
+Model/Achievement/Nvk3UT_AchievementStages.lua
 Model/Achievement/Nvk3UT_FavoritesData.lua
 Model/Achievement/Nvk3UT_RecentData.lua
 Model/Achievement/Nvk3UT_TodoData.lua
