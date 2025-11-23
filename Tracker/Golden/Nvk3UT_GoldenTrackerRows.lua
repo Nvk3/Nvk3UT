@@ -252,10 +252,6 @@ local function applyLabelDefaults(label, font, color)
     if label.SetWrapMode and rawget(_G, "TEXT_WRAP_MODE_ELLIPSIS") then
         label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
     end
-
-    if label.SetMaxLineCount then
-        label:SetMaxLineCount(0)
-    end
 end
 
 local function formatObjectiveCounter(current, max)
@@ -1394,7 +1390,6 @@ local function createEntryRow(parent)
         label:ClearAnchors()
         if label.SetAnchor then
             label:SetAnchor(TOPLEFT, control, TOPLEFT, ENTRY_INDENT_X, 0)
-            label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
         end
         applyLabelDefaults(label, getGoldenTitleFont())
         if label.SetAlpha then
@@ -1480,7 +1475,6 @@ local function resetEntryRowVisuals(row, parent)
         label:ClearAnchors()
         if label.SetAnchor and control then
             label:SetAnchor(TOPLEFT, control, TOPLEFT, ENTRY_INDENT_X, 0)
-            label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
         end
         applyLabelDefaults(label, getGoldenTitleFont())
         applyLabelColor(label, GOLDEN_COLOR_ROLES.EntryName, getGoldenTrackerColors())
@@ -1616,7 +1610,6 @@ local function createObjectiveRow(parent)
         label:ClearAnchors()
         if label.SetAnchor then
             label:SetAnchor(TOPLEFT, control, TOPLEFT, DEFAULTS.OBJECTIVE_INDENT_X, 0)
-            label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
         end
     end
 
@@ -1683,7 +1676,6 @@ local function resetObjectiveRowVisuals(row, parent)
         label:ClearAnchors()
         if label.SetAnchor then
             label:SetAnchor(TOPLEFT, control, TOPLEFT, DEFAULTS.OBJECTIVE_INDENT_X, 0)
-            label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
         end
         if label.SetText then
             label:SetText("")
