@@ -212,6 +212,42 @@ local OUTLINE_CHOICES = {
     { name = "Kontur", value = "outline" },
 }
 
+local function isDebugEnabled()
+    local addon = Nvk3UT
+    if addon and type(addon.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return addon:IsDebugEnabled()
+        end)
+        if ok and enabled ~= nil then
+            return enabled == true
+        end
+    end
+
+    return false
+end
+
+local function debugLog(fmt, ...)
+    if not isDebugEnabled() then
+        return
+    end
+
+    local prefix = "[Nvk3UT LAM] "
+    local message = prefix .. tostring(fmt)
+
+    if type(fmt) == "string" then
+        local ok, formatted = pcall(string.format, prefix .. fmt, ...)
+        if ok then
+            message = formatted
+        end
+    end
+
+    if Nvk3UT and type(Nvk3UT.Debug) == "function" then
+        Nvk3UT.Debug(message)
+    elseif d then
+        d(message)
+    end
+end
+
 local OUTLINE_NAMES, OUTLINE_VALUES = (function()
     local names, values = {}, {}
     for index = 1, #OUTLINE_CHOICES do
@@ -1944,20 +1980,30 @@ local function registerPanel(displayTitle)
                 end,
                 setFunc = function(value)
                     local settings = getQuestSettings()
-                    settings.active = value
-                    if LamQueueFullRebuild("questActive") then
-                        return
-                    end
+                    local normalized = value ~= false
+                    settings.active = normalized
+
+                    debugLog("LAM: QuestTracker enabled=%s", tostring(normalized))
+
                     if Nvk3UT and Nvk3UT.QuestTracker and Nvk3UT.QuestTracker.SetActive then
-                        Nvk3UT.QuestTracker.SetActive(value)
+                        Nvk3UT.QuestTracker.SetActive(normalized)
                     end
+
+                    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+                    if runtime and runtime.QueueDirty then
+                        runtime:QueueDirty("quest")
+                    end
+
                     if Nvk3UT and Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then
                         Nvk3UT.UI.UpdateStatus()
                     end
+
                     local host = Nvk3UT and Nvk3UT.TrackerHost
                     if host and host.ApplyVisibilityRules then
                         host:ApplyVisibilityRules()
                     end
+
+                    LamQueueFullRebuild("questActive")
                 end,
                 default = true,
             }
@@ -2421,17 +2467,26 @@ local function registerPanel(displayTitle)
                 end,
                 setFunc = function(value)
                     local settings = getAchievementSettings()
-                    settings.active = value
-                    if LamQueueFullRebuild("achievementActive") then
-                        return
-                    end
+                    local normalized = value ~= false
+                    settings.active = normalized
+
+                    debugLog("LAM: AchievementTracker enabled=%s", tostring(normalized))
+
                     if Nvk3UT and Nvk3UT.AchievementTracker and Nvk3UT.AchievementTracker.SetActive then
-                        Nvk3UT.AchievementTracker.SetActive(value)
+                        Nvk3UT.AchievementTracker.SetActive(normalized)
                     end
+
+                    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+                    if runtime and runtime.QueueDirty then
+                        runtime:QueueDirty("achievement")
+                    end
+
                     local host = Nvk3UT and Nvk3UT.TrackerHost
                     if host and host.ApplyVisibilityRules then
                         host:ApplyVisibilityRules()
                     end
+
+                    LamQueueFullRebuild("achievementActive")
                 end,
                 default = true,
             }
