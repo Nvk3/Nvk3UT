@@ -51,6 +51,12 @@ local function debugLog(fmt, ...)
         end
     end
 end
+
+-- Local debug helper for TrackerHostLayout
+local function isDebug()
+    return Addon and Addon.Diagnostics and type(Addon.Diagnostics.IsEnabled) == "function"
+           and Addon.Diagnostics:IsEnabled()
+end
 local ANCHOR_TOLERANCE = 0.01
 
 local function normalizeSectionOrder(orderTable)
@@ -357,18 +363,26 @@ end
 local function measureSection(host, sectionId, container)
     local width = 0
     local height = 0
+    local hostWidth
+    local hostHeight
 
     if host and type(host.GetSectionMeasurements) == "function" then
         local measuredWidth, measuredHeight = host.GetSectionMeasurements(sectionId)
         width = tonumber(measuredWidth) or 0
         height = tonumber(measuredHeight) or 0
+        hostWidth = width
+        hostHeight = height
     end
 
+    local fallbackWidth
+    local fallbackHeight
     if (width <= 0 or height <= 0) and container then
         local holder = container.holder
         if holder and holder.GetWidth and holder.GetHeight then
             width = math.max(width, tonumber(holder:GetWidth()) or 0)
             height = math.max(height, tonumber(holder:GetHeight()) or 0)
+            fallbackWidth = width
+            fallbackHeight = height
         else
             if container.GetWidth then
                 width = math.max(width, tonumber(container:GetWidth()) or 0)
@@ -376,6 +390,8 @@ local function measureSection(host, sectionId, container)
             if container.GetHeight then
                 height = math.max(height, tonumber(container:GetHeight()) or 0)
             end
+            fallbackWidth = fallbackWidth or width
+            fallbackHeight = fallbackHeight or height
         end
     end
 
@@ -385,6 +401,21 @@ local function measureSection(host, sectionId, container)
 
     if height < 0 then
         height = 0
+    end
+
+    if isDebug() then
+        if sectionId == "endeavor" or sectionId == "achievement" then
+            debugLog(
+                "HostLayout: measureSection section=%s host=(%s,%s) fallback=(%s,%s) final=(%s,%s)",
+                tostring(sectionId),
+                tostring(hostWidth),
+                tostring(hostHeight),
+                tostring(fallbackWidth),
+                tostring(fallbackHeight),
+                tostring(width),
+                tostring(height)
+            )
+        end
     end
 
     return width, height
@@ -888,37 +919,70 @@ function Layout.ApplyLayout(host, sizes)
 
         local _, height = measureSection(host, sectionId, container)
         local isEndeavorSection = sectionId == "endeavor"
-        local collapsed = isEndeavorSection and height <= 0
+        local isAchievementSection = sectionId == "achievement"
 
-        if isEndeavorSection and container then
-            if collapsed then
-                if container.SetHeight then
-                    container:SetHeight(0)
-                end
-                if container.SetHidden then
-                    container:SetHidden(true)
-                end
-                container._nvk3utAutoHidden = true
-            elseif container._nvk3utAutoHidden then
-                if container.SetHidden then
-                    container:SetHidden(false)
-                end
-                container._nvk3utAutoHidden = nil
-            end
+        if (isEndeavorSection or isAchievementSection) and isDebug() then
+            debugLog(
+                "HostLayout: %s measured height=%s currentTop=%s",
+                tostring(sectionId),
+                tostring(height),
+                tostring(currentTop)
+            )
         end
 
-        local sectionVisible = not isControlHidden(container)
-        if collapsed then
-            sectionVisible = false
+        -- Endeavor visibility is driven by the tracker layout via hideEntireSection, which sets
+        -- _nvk3utAutoHidden and collapses the measured height. This avoids host-side height <= 0
+        -- heuristics permanently hiding the section when content briefly measures to zero.
+        local autoHiddenBefore = container and container._nvk3utAutoHidden == true
+        local sectionVisibleBefore = not isControlHidden(container)
+        local collapsed = isEndeavorSection and autoHiddenBefore
+
+        if container and type(container.ClearAnchors) == "function" then
+            container:ClearAnchors()
+        end
+
+        local sectionVisible = sectionVisibleBefore and not collapsed
+        local predictedBottom = currentTop + height
+        local blockedByLimit = sectionVisible
+            and limitBottom
+            and predictedBottom > (limitBottom + ANCHOR_TOLERANCE)
+
+        if isEndeavorSection then
+            local autoHiddenAfter = container and container._nvk3utAutoHidden == true
+            debugLog(
+                "HostLayout: Endeavor section height=%s collapsed=%s visibleBefore=%s visibleAfter=%s autoHidden(before=%s after=%s) limitBottom=%s predictedBottom=%s blockedByLimit=%s",
+                tostring(height),
+                tostring(collapsed),
+                tostring(sectionVisibleBefore),
+                tostring(sectionVisible),
+                tostring(autoHiddenBefore),
+                tostring(autoHiddenAfter),
+                tostring(limitBottom),
+                tostring(predictedBottom),
+                tostring(blockedByLimit)
+            )
         end
 
         if sectionVisible then
-            local predictedBottom = currentTop + height
-            if limitBottom and predictedBottom > (limitBottom + ANCHOR_TOLERANCE) then
-                break
-            end
             local anchorTarget = previousVisible or parent
             local anchors
+            local anchorTargetName = anchorTarget and anchorTarget.GetName and anchorTarget:GetName() or "<nil>"
+            local topOffset = previousVisible and gap or startOffset
+
+            if isAchievementSection then
+                debugLog(
+                    "HostLayout: Achievement section visible=%s height=%s anchorTarget=%s offsetY=%s predictedBottom=%s",
+                    tostring(sectionVisible),
+                    tostring(height),
+                    tostring(anchorTargetName),
+                    tostring(topOffset),
+                    tostring(predictedBottom)
+                )
+            end
+
+            if blockedByLimit then
+                break
+            end
 
             if previousVisible then
                 anchors = {
@@ -927,8 +991,8 @@ function Layout.ApplyLayout(host, sizes)
                 }
             else
                 anchors = {
-                    { point = TOPLEFT, relativeTo = anchorTarget, relativePoint = TOPLEFT, offsetX = 0, offsetY = startOffset },
-                    { point = TOPRIGHT, relativeTo = anchorTarget, relativePoint = TOPRIGHT, offsetX = 0, offsetY = startOffset },
+                    { point = TOPLEFT, relativeTo = anchorTarget, relativePoint = TOPLEFT, offsetX = 0, offsetY = topOffset },
+                    { point = TOPRIGHT, relativeTo = anchorTarget, relativePoint = TOPRIGHT, offsetX = 0, offsetY = topOffset },
                 }
             end
 
@@ -959,6 +1023,18 @@ function Layout.ApplyLayout(host, sizes)
             end
         elseif sectionId == "golden" then
             goldenAccounted = goldenAccounted or height > 0
+        else
+            if container and type(container.SetHeight) == "function" then
+                container:SetHeight(height)
+            end
+            if isAchievementSection then
+                debugLog(
+                    "HostLayout: Achievement section hidden height=%s limitBottom=%s predictedBottom=%s",
+                    tostring(height),
+                    tostring(limitBottom),
+                    tostring(predictedBottom)
+                )
+            end
         end
 
         reportAnchored(host, sectionId)

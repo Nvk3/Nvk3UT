@@ -158,6 +158,7 @@ function Layout.Apply(container, context)
             if container.SetHidden then
                 container:SetHidden(true)
             end
+            container._nvk3utAutoHidden = true
             if container.SetHeight then
                 container:SetHeight(0)
             end
@@ -178,6 +179,10 @@ function Layout.Apply(container, context)
         lastHeight = 0
         safeDebug("EndeavorTrackerLayout.Apply: hidden section (height=0)")
         return 0
+    end
+
+    if container then
+        container._nvk3utAutoHidden = nil
     end
 
     local categoryEntry = type(data.category) == "table" and data.category or {}
