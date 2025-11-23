@@ -1369,13 +1369,6 @@ local function createCategoryRow(parent)
         control:SetHandler("OnMouseUp", onMouseUp)
         row._mouseHandler = onMouseUp
 
-        control:SetHandler("OnMouseEnter", function(ctrl)
-            applyMouseoverHighlight(ctrl)
-        end)
-
-        control:SetHandler("OnMouseExit", function(ctrl)
-            restoreMouseoverHighlight(ctrl)
-        end)
     end
 
     safeDebug("[CategoryPool] create %s", controlName)
@@ -2002,13 +1995,6 @@ local function applyEntryRow(row, objective, options)
     if row.SetHandler then
         row:SetHandler("OnMouseUp", onEntryMouseUp)
 
-        row:SetHandler("OnMouseEnter", function(ctrl)
-            applyMouseoverHighlight(ctrl)
-        end)
-
-        row:SetHandler("OnMouseExit", function(ctrl)
-            restoreMouseoverHighlight(ctrl)
-        end)
     end
 
     local progress = ensureEntryChild(row, progressName, CT_LABEL)
