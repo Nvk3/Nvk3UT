@@ -1400,6 +1400,34 @@ local function requestPendingFullRebuild()
     end)
 end
 
+local function triggerDeferredFullRebuildOnVisible()
+    local runtime = getRuntime()
+    if not runtime or runtime.needsFullRebuildOnVisible ~= true then
+        return
+    end
+
+    runtime.needsFullRebuildOnVisible = false
+
+    local function markDirty(controller)
+        if controller and controller.MarkDirty then
+            safeCall(controller.MarkDirty, controller)
+        end
+    end
+
+    markDirty(Nvk3UT and Nvk3UT.QuestTrackerController)
+    markDirty(Nvk3UT and Nvk3UT.EndeavorTrackerController)
+    markDirty(Nvk3UT and Nvk3UT.AchievementTrackerController)
+    if Nvk3UT and Nvk3UT.GoldenTrackerController then
+        markDirty(Nvk3UT.GoldenTrackerController)
+    end
+
+    if runtime.QueueDirty then
+        safeCall(function()
+            runtime:QueueDirty("layout")
+        end)
+    end
+end
+
 ensureVisibilityGates = function()
     if not state.visibilityGates then
         state.visibilityGates = {
@@ -3820,6 +3848,7 @@ function TrackerHost.ApplyVisibilityRules()
     local nowVisible = TrackerHost.IsVisible()
     if not previousVisible and nowVisible then
         requestPendingFullRebuild()
+        triggerDeferredFullRebuildOnVisible()
     end
 
     return changed
@@ -4577,6 +4606,7 @@ function TrackerHost.SetVisible(isVisible)
     local newVisible = TrackerHost.IsVisible()
     if not previousVisible and newVisible then
         requestPendingFullRebuild()
+        triggerDeferredFullRebuildOnVisible()
     end
     if changed or previousVisible ~= newVisible then
         queueRuntimeLayout()
