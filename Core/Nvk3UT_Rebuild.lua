@@ -606,7 +606,9 @@ end
 function Rebuild.All(context)
     describeContext("All", context)
 
-    if not isHostVisible() then
+    local hostVisible = isHostVisible()
+
+    if not hostVisible then
         local runtime = getRuntime()
         local setPending = runtime and (runtime.SetPendingFullRebuild or runtime.setPendingFullRebuild)
         if type(setPending) == "function" then
@@ -626,7 +628,17 @@ function Rebuild.All(context)
 
     debugLog("Rebuild.All queue order: %s", table.concat(TRACKER_SECTION_ORDER, " → "))
 
-    return queueSectionsInternal(flags, context)
+    local triggered = queueSectionsInternal(flags, context)
+
+    if triggered and isHostVisible() then
+        local runtime = getRuntime()
+        local processFrame = runtime and (runtime.ProcessFrame or runtime.processFrame)
+        if type(processFrame) == "function" then
+            safeInvoke("TrackerRuntime.ProcessFrame", processFrame, runtime)
+        end
+    end
+
+    return triggered
 end
 
 ---Queue specified tracker sections to rebuild.

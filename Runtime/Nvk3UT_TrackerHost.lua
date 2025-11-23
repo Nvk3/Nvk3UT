@@ -1426,6 +1426,14 @@ local function triggerDeferredFullRebuildOnVisible()
             runtime:QueueDirty("layout")
         end)
     end
+
+    local rebuild = (Nvk3UT and Nvk3UT.Rebuild) or _G.Nvk3UT_Rebuild
+    local rebuildAll = rebuild and (rebuild.All or rebuild.all)
+    if type(rebuildAll) == "function" and TrackerHost.IsVisible() then
+        safeCall(function()
+            rebuildAll("sceneVisible:needsFullRebuild")
+        end)
+    end
 end
 
 local function requestHostFullRebuild(context)
