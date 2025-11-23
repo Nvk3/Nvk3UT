@@ -104,6 +104,9 @@ local DEFAULT_TRACKER_COLOR_KIND = "endeavorTracker"
 local COMPLETED_COLOR_ROLE = "completed"
 local ENTRY_COLOR_ROLE = "entryTitle"
 local OBJECTIVE_INDENT_X = 60
+local DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR = { 1, 1, 0.6, 1 }
+
+local unpack = table.unpack or unpack
 
 local SUBROW_ICON_SIZE = 16
 local SUBROW_ICON_GAP = 4
@@ -786,6 +789,108 @@ local function getTrackerColor(role, colorKind)
     return 1, 1, 1, 1
 end
 
+local function applyBaseColor(label, r, g, b, a)
+    if not (label and label.SetColor) then
+        return
+    end
+
+    local color = label._baseColor
+    if type(color) ~= "table" then
+        color = {}
+        label._baseColor = color
+    end
+
+    color[1] = r or 1
+    color[2] = g or 1
+    color[3] = b or 1
+    color[4] = a or 1
+
+    label:SetColor(color[1], color[2], color[3], color[4])
+end
+
+local function restoreBaseColorFromLabel(label)
+    local color = label and label._baseColor
+    if not (label and label.SetColor and type(color) == "table") then
+        return
+    end
+
+    label:SetColor(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
+end
+
+local function getMouseoverHighlightColor()
+    local addon = getAddon()
+    local host = type(addon) == "table" and addon.TrackerHost or nil
+    if type(host) == "table" then
+        if type(host.EnsureAppearanceDefaults) == "function" then
+            pcall(host.EnsureAppearanceDefaults, host)
+        end
+
+        if type(host.GetMouseoverHighlightColor) == "function" then
+            local ok, r, g, b, a = pcall(host.GetMouseoverHighlightColor, host, "endeavorTracker")
+            if ok and r and g and b and a then
+                return r, g, b, a
+            end
+        end
+    end
+
+    return unpack(DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR)
+end
+
+local function applyMouseoverHighlight(control)
+    if control ~= nil and control._subrowOwner ~= nil then
+        -- Subrows/objectives should not receive hover highlight; only header entry rows are eligible.
+        return
+    end
+
+    local label = control and (control.label or control.Label)
+    if not (label and label.SetColor) then
+        return
+    end
+
+    local r, g, b, a = getMouseoverHighlightColor()
+    label:SetColor(r, g, b, a)
+
+    safeDebug(
+        "Endeavor hover: applying mouseover highlight color r=%.3f g=%.3f b=%.3f a=%.3f",
+        r or 0,
+        g or 0,
+        b or 0,
+        a or 0
+    )
+end
+
+local function restoreMouseoverHighlight(control)
+    if control ~= nil and control._subrowOwner ~= nil then
+        return
+    end
+
+    local resetFn = control and control.__nvk3RestoreHoverColor
+    if type(resetFn) == "function" then
+        resetFn(control)
+        return
+    end
+
+    local label = control and (control.label or control.Label)
+    if not label then
+        return
+    end
+
+    restoreBaseColorFromLabel(label)
+
+    local color = label._baseColor or {}
+    safeDebug(
+        "Endeavor hover: restored base color r=%.3f g=%.3f b=%.3f a=%.3f",
+        color[1] or 0,
+        color[2] or 0,
+        color[3] or 0,
+        color[4] or 0
+    )
+
+    if resetFn ~= nil then
+        safeDebug("Endeavor hover: missing restore callback, applied base color fallback")
+    end
+end
+
 local function applyFontString(label, font, fallback)
     if not (label and label.SetFont) then
         return
@@ -1248,6 +1353,10 @@ local function createCategoryRow(parent)
         _poolState = "fresh",
     }
 
+    if control then
+        control.label = label
+    end
+
     if control and control.SetHandler then
         local function onMouseUp(_, button, upInside)
             if button == MOUSE_BUTTON_LEFT and upInside then
@@ -1259,6 +1368,7 @@ local function createCategoryRow(parent)
         end
         control:SetHandler("OnMouseUp", onMouseUp)
         row._mouseHandler = onMouseUp
+
     end
 
     safeDebug("[CategoryPool] create %s", controlName)
@@ -1409,7 +1519,7 @@ local function applyCategoryColor(label, role, overrideColors, colorKind)
     end
 
     local r, g, b, a = resolveColor(role, overrideColors, colorKind)
-    label:SetColor(r, g, b, a)
+    applyBaseColor(label, r, g, b, a)
 
     if label.SetAlpha then
         label:SetAlpha(1)
@@ -1776,7 +1886,7 @@ local function applyObjectiveColor(label, options, objective)
         r, g, b, a = getTrackerColor(role, opts.colorKind or DEFAULT_TRACKER_COLOR_KIND)
     end
 
-    label:SetColor(r or 1, g or 1, b or 1, a or 1)
+    applyBaseColor(label, r or 1, g or 1, b or 1, a or 1)
 
     if label and label.SetAlpha then
         label:SetAlpha(1)
@@ -1807,7 +1917,7 @@ local function applyGroupLabelColor(label, options, useCompletedStyle)
         r, g, b, a = getTrackerColor(role, opts.colorKind or DEFAULT_TRACKER_COLOR_KIND)
     end
 
-    label:SetColor(r or 1, g or 1, b or 1, a or 1)
+    applyBaseColor(label, r or 1, g or 1, b or 1, a or 1)
     if label.SetAlpha then
         label:SetAlpha(1)
     end
@@ -1873,6 +1983,7 @@ local function applyEntryRow(row, objective, options)
     title:SetAnchor(TOPLEFT, row, TOPLEFT, OBJECTIVE_INDENT_X, ENTRY_TOP_PAD)
     title:SetText(combinedText)
     row.Label = title
+    row.label = title
 
     local leftClickHandler = type(objective) == "table" and objective.onLeftClick or nil
     row._entryOnLeftClick = type(leftClickHandler) == "function" and leftClickHandler or nil
@@ -1883,6 +1994,7 @@ local function applyEntryRow(row, objective, options)
 
     if row.SetHandler then
         row:SetHandler("OnMouseUp", onEntryMouseUp)
+
     end
 
     local progress = ensureEntryChild(row, progressName, CT_LABEL)

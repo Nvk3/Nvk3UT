@@ -173,9 +173,11 @@ local COLOR_CATEGORY = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 }
 local COLOR_ENTRY = { r = 1, g = 1, b = 0, a = 1 }
 local COLOR_ACTIVE = { r = 1, g = 1, b = 1, a = 1 }
 local COLOR_COMPLETED = { r = 0.6, g = 0.6, b = 0.6, a = 1 }
+local COLOR_MOUSEOVER_HIGHLIGHT = { r = 1, g = 1, b = 0.6, a = 1 }
 
 local DEFAULT_TRACKER_APPEARANCE = {
     questTracker = {
+        mouseoverHighlightColor = CopyColor(COLOR_MOUSEOVER_HIGHLIGHT),
         colors = {
             categoryTitle = CopyColor(COLOR_CATEGORY),
             objectiveText = CopyColor(COLOR_CATEGORY),
@@ -184,6 +186,7 @@ local DEFAULT_TRACKER_APPEARANCE = {
         },
     },
     achievementTracker = {
+        mouseoverHighlightColor = CopyColor(COLOR_MOUSEOVER_HIGHLIGHT),
         colors = {
             categoryTitle = CopyColor(COLOR_CATEGORY),
             objectiveText = CopyColor(COLOR_CATEGORY),
@@ -192,6 +195,7 @@ local DEFAULT_TRACKER_APPEARANCE = {
         },
     },
     endeavorTracker = {
+        mouseoverHighlightColor = CopyColor(COLOR_MOUSEOVER_HIGHLIGHT),
         colors = {
             categoryTitle = CopyColor(COLOR_CATEGORY),
             objectiveText = CopyColor(COLOR_CATEGORY),
@@ -201,6 +205,7 @@ local DEFAULT_TRACKER_APPEARANCE = {
         },
     },
     goldenTracker = {
+        mouseoverHighlightColor = CopyColor(COLOR_MOUSEOVER_HIGHLIGHT),
         colors = {
             categoryTitleClosed = CopyColor(COLOR_CATEGORY),
             categoryTitleOpen = CopyColor(COLOR_ENTRY),

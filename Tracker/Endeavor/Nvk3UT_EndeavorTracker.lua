@@ -108,6 +108,7 @@ local SUBROW_TRAILING_SPACING = 2
 
 local DEFAULT_CATEGORY_FONT = "$(BOLD_FONT)|20|soft-shadow-thick"
 local DEFAULT_SECTION_FONT = "$(BOLD_FONT)|16|soft-shadow-thick"
+local DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR = { 1, 1, 0.6, 1 }
 
 local CHEVRON_TEXTURES = {
     expanded = "EsoUI/Art/Buttons/tree_open_up.dds",
@@ -266,6 +267,33 @@ local function getTrackerColorFromHost(role)
     end
 
     return 1, 1, 1, 1
+end
+
+local function getMouseoverHighlightColor()
+    local addon = getAddon()
+    if type(addon) ~= "table" then
+        return unpack(DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR)
+    end
+
+    local host = rawget(addon, "TrackerHost")
+    if type(host) ~= "table" then
+        return unpack(DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR)
+    end
+
+    local ensureDefaults = host.EnsureAppearanceDefaults
+    if type(ensureDefaults) == "function" then
+        pcall(ensureDefaults, host)
+    end
+
+    local getColor = host.GetMouseoverHighlightColor
+    if type(getColor) == "function" then
+        local ok, r, g, b, a = pcall(getColor, host, ENDEAVOR_TRACKER_COLOR_KIND)
+        if ok and r and g and b and a then
+            return r, g, b, a
+        end
+    end
+
+    return unpack(DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR)
 end
 
 local function applyLabelFont(label, font, fallback)
@@ -948,6 +976,72 @@ safeDebug = function(fmt, ...)
     end
 end
 
+local function storeHeaderBaseColor(label)
+    if type(label) ~= "userdata" then
+        return
+    end
+
+    local base = label._nvk3HeaderBaseColor
+    if type(base) ~= "table" then
+        base = {}
+        label._nvk3HeaderBaseColor = base
+    end
+
+    local source = label._baseColor
+    if type(source) == "table" then
+        base[1], base[2], base[3], base[4] = source[1] or 1, source[2] or 1, source[3] or 1, source[4] or 1
+        return
+    end
+
+    if label.GetColor then
+        local r, g, b, a = label:GetColor()
+        base[1], base[2], base[3], base[4] = r or 1, g or 1, b or 1, a or 1
+        return
+    end
+
+    base[1], base[2], base[3], base[4] = 1, 1, 1, 1
+end
+
+local function applyHeaderMouseover(control, label)
+    if not (control and label and label.SetColor) then
+        return
+    end
+
+    storeHeaderBaseColor(label)
+
+    local r, g, b, a = getMouseoverHighlightColor()
+    label:SetColor(r, g, b, a)
+
+    safeDebug(
+        "Endeavor header hover: applying mouseover highlight color r=%.3f g=%.3f b=%.3f a=%.3f",
+        r or 0,
+        g or 0,
+        b or 0,
+        a or 0
+    )
+end
+
+local function restoreHeaderMouseover(control, label)
+    if not (control and label and label.SetColor) then
+        return
+    end
+
+    local base = label._nvk3HeaderBaseColor or label._baseColor
+    if type(base) ~= "table" then
+        return
+    end
+
+    label:SetColor(base[1] or 1, base[2] or 1, base[3] or 1, base[4] or 1)
+
+    safeDebug(
+        "Endeavor header hover: restored base color r=%.3f g=%.3f b=%.3f a=%.3f",
+        base[1] or 0,
+        base[2] or 0,
+        base[3] or 0,
+        base[4] or 0
+    )
+end
+
 local function measureControlHeight(control, fallback)
     if control and control.GetHeight then
         local ok, height = pcall(control.GetHeight, control)
@@ -1419,6 +1513,14 @@ local function ensureUi(container)
         label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
         applyLabelFont(label, DEFAULT_SECTION_FONT, DEFAULT_SECTION_FONT)
 
+        control:SetHandler("OnMouseEnter", function(ctrl)
+            applyHeaderMouseover(ctrl, label)
+        end)
+
+        control:SetHandler("OnMouseExit", function(ctrl)
+            restoreHeaderMouseover(ctrl, label)
+        end)
+
         ui.daily = {
             control = control,
             label = label,
@@ -1488,6 +1590,14 @@ local function ensureUi(container)
         label:SetAnchor(TOPLEFT, control, TOPLEFT, SUBHEADER_INDENT_X + TITLE_INDENT_DELTA_PX, 0)
         label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
         applyLabelFont(label, DEFAULT_SECTION_FONT, DEFAULT_SECTION_FONT)
+
+        control:SetHandler("OnMouseEnter", function(ctrl)
+            applyHeaderMouseover(ctrl, label)
+        end)
+
+        control:SetHandler("OnMouseExit", function(ctrl)
+            restoreHeaderMouseover(ctrl, label)
+        end)
 
         ui.weekly = {
             control = control,

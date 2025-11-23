@@ -106,7 +106,35 @@ local RIGHT_MOUSE_BUTTON = MOUSE_BUTTON_INDEX_RIGHT or 2
 local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
 local REFRESH_DEBOUNCE_MS = 80
 
-local COLOR_ROW_HOVER = { 1, 1, 0.6, 1 }
+local DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR = { 1, 1, 0.6, 1 }
+
+local function IsDebugLoggingEnabled()
+    local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
+    if utils and type(utils.IsDebugEnabled) == "function" then
+        return utils:IsDebugEnabled()
+    end
+    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        return diagnostics:IsDebugEnabled()
+    end
+    local addon = Nvk3UT
+    if addon and type(addon.IsDebugEnabled) == "function" then
+        return addon:IsDebugEnabled()
+    end
+    return false
+end
+
+local function DebugLog(...)
+    if not IsDebugLoggingEnabled() then
+        return
+    end
+
+    if d then
+        d(string.format("[%s]", MODULE_NAME), ...)
+    elseif print then
+        print("[" .. MODULE_NAME .. "]", ...)
+    end
+end
 
 local FAVORITES_LOOKUP_KEY = "NVK3UT_FAVORITES_ROOT"
 local FAVORITES_CATEGORY_ID = "Nvk3UT_Favorites"
@@ -183,6 +211,23 @@ local function GetAchievementTrackerColor(role)
     return 1, 1, 1, 1
 end
 
+local function GetMouseoverHighlightColor()
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if host then
+        if host.EnsureAppearanceDefaults then
+            host.EnsureAppearanceDefaults()
+        end
+        if host.GetMouseoverHighlightColor then
+            local r, g, b, a = host.GetMouseoverHighlightColor("achievementTracker")
+            if r and g and b and a then
+                return r, g, b, a
+            end
+        end
+    end
+
+    return unpack(DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR)
+end
+
 local function ApplyBaseColor(control, r, g, b, a)
     if not control then
         return
@@ -201,6 +246,54 @@ local function ApplyBaseColor(control, r, g, b, a)
 
     if control.label and control.label.SetColor then
         control.label:SetColor(color[1], color[2], color[3], color[4])
+    end
+end
+
+local function ApplyMouseoverHighlight(ctrl)
+    if not (ctrl and ctrl.label) then
+        return
+    end
+
+    local r, g, b, a = GetMouseoverHighlightColor()
+    ctrl.label:SetColor(r, g, b, a)
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format(
+            "Achievement hover: applying mouseover highlight color r=%.3f g=%.3f b=%.3f a=%.3f",
+            r or 0,
+            g or 0,
+            b or 0,
+            a or 0
+        ))
+    end
+end
+
+local function RestoreBaseColor(ctrl)
+    local resetFn = ctrl and ctrl.__nvk3RestoreHoverColor
+    if type(resetFn) == "function" then
+        resetFn(ctrl)
+        return
+    end
+
+    if not (ctrl and ctrl.label and ctrl.baseColor) then
+        return
+    end
+
+    ctrl.label:SetColor(unpack(ctrl.baseColor))
+
+    if IsDebugLoggingEnabled() then
+        local r, g, b, a = unpack(ctrl.baseColor)
+        DebugLog(string.format(
+            "Achievement hover: restored base color r=%.3f g=%.3f b=%.3f a=%.3f",
+            r or 0,
+            g or 0,
+            b or 0,
+            a or 0
+        ))
+
+        if resetFn ~= nil then
+            DebugLog("Achievement hover: missing restore callback, applied base color fallback")
+        end
     end
 end
 
@@ -289,34 +382,6 @@ local function RefreshControlMetrics(control)
         )
     elseif rowType == "objective" then
         ApplyRowMetrics(control, indent, 0, 0, 0, OBJECTIVE_MIN_HEIGHT)
-    end
-end
-
-local function IsDebugLoggingEnabled()
-    local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
-    if utils and type(utils.IsDebugEnabled) == "function" then
-        return utils:IsDebugEnabled()
-    end
-    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
-    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
-        return diagnostics:IsDebugEnabled()
-    end
-    local addon = Nvk3UT
-    if addon and type(addon.IsDebugEnabled) == "function" then
-        return addon:IsDebugEnabled()
-    end
-    return false
-end
-
-local function DebugLog(...)
-    if not IsDebugLoggingEnabled() then
-        return
-    end
-
-    if d then
-        d(string.format("[%s]", MODULE_NAME), ...)
-    elseif print then
-        print("[" .. MODULE_NAME .. "]", ...)
     end
 end
 
@@ -1326,9 +1391,7 @@ local function AcquireCategoryControl()
             ScheduleToggleFollowup("achievementCategoryToggle")
         end)
         control:SetHandler("OnMouseEnter", function(ctrl)
-            if ctrl.label then
-                ctrl.label:SetColor(unpack(COLOR_ROW_HOVER))
-            end
+            ApplyMouseoverHighlight(ctrl)
             local expanded = ctrl.isExpanded
             if expanded == nil then
                 expanded = IsCategoryExpanded()
@@ -1336,9 +1399,7 @@ local function AcquireCategoryControl()
             UpdateCategoryToggle(ctrl, expanded)
         end)
         control:SetHandler("OnMouseExit", function(ctrl)
-            if ctrl.label and ctrl.baseColor then
-                ctrl.label:SetColor(unpack(ctrl.baseColor))
-            end
+            RestoreBaseColor(ctrl)
             local expanded = ctrl.isExpanded
             if expanded == nil then
                 expanded = IsCategoryExpanded()
@@ -1403,6 +1464,12 @@ local function AcquireAchievementControl()
                 end
                 ShowAchievementContextMenu(ctrl, ctrl.data)
             end
+        end)
+        control:SetHandler("OnMouseEnter", function(ctrl)
+            ApplyMouseoverHighlight(ctrl)
+        end)
+        control:SetHandler("OnMouseExit", function(ctrl)
+            RestoreBaseColor(ctrl)
         end)
         control.initialized = true
     end

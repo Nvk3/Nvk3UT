@@ -87,8 +87,11 @@ local DEFAULT_WINDOW_BARS = {
     footerHeightPx = 100,
 }
 
+local DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR = { r = 1, g = 1, b = 0.6, a = 1 }
+
 local DEFAULT_TRACKER_COLORS = {
     questTracker = {
+        mouseoverHighlightColor = DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR,
         colors = {
             categoryTitle = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
             objectiveText = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
@@ -97,6 +100,7 @@ local DEFAULT_TRACKER_COLORS = {
         },
     },
     achievementTracker = {
+        mouseoverHighlightColor = DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR,
         colors = {
             categoryTitle = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
             objectiveText = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
@@ -105,6 +109,7 @@ local DEFAULT_TRACKER_COLORS = {
         },
     },
     endeavorTracker = {
+        mouseoverHighlightColor = DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR,
         colors = {
             categoryTitle = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
             objectiveText = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
@@ -114,6 +119,7 @@ local DEFAULT_TRACKER_COLORS = {
         },
     },
     goldenTracker = {
+        mouseoverHighlightColor = DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR,
         colors = {
             categoryTitleClosed = { r = 0.7725, g = 0.7608, b = 0.6196, a = 1 },
             categoryTitleOpen = { r = 1, g = 1, b = 0, a = 1 },
@@ -427,6 +433,17 @@ local function ensureColorComponents(color, defaults)
     return target
 end
 
+local function getDefaultMouseoverHighlightColor(trackerType)
+    local defaults = DEFAULT_TRACKER_COLORS[trackerType]
+    local color = defaults and defaults.mouseoverHighlightColor or DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR
+    return {
+        r = color.r or DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR.r,
+        g = color.g or DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR.g,
+        b = color.b or DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR.b,
+        a = color.a or DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR.a,
+    }
+end
+
 local function sanitizeGoldenSnapshotComponent(value)
     local numeric = tonumber(value)
     if numeric == nil then
@@ -514,6 +531,11 @@ local function ensureTrackerColorConfig(sv, trackerType)
         logGoldenColorSnapshot("normalized", tracker.colors)
     end
 
+    tracker.mouseoverHighlightColor = ensureColorComponents(
+        tracker.mouseoverHighlightColor,
+        getDefaultMouseoverHighlightColor(trackerType)
+    )
+
     return tracker
 end
 
@@ -566,6 +588,19 @@ local function getDefaultColor(trackerType, role)
     local b = color.b or DEFAULT_COLOR_FALLBACK.b
     local a = color.a or DEFAULT_COLOR_FALLBACK.a
     return r, g, b, a
+end
+
+local function getMouseoverHighlightColor(trackerType)
+    local defaultColor = getDefaultMouseoverHighlightColor(trackerType)
+    local appearance = ensureAppearanceColorDefaults()
+    local tracker = appearance and appearance[trackerType]
+    local color = tracker and tracker.mouseoverHighlightColor
+    color = ensureColorComponents(color, defaultColor)
+    if tracker then
+        tracker.mouseoverHighlightColor = color
+    end
+
+    return color.r, color.g, color.b, color.a
 end
 
 local function isWindowOptionEnabled()
@@ -4499,6 +4534,41 @@ function TrackerHost.SetTrackerColor(trackerType, role, r, g, b, a)
     color.b = normalizeColorComponent(b, defaultB)
     color.a = normalizeColorComponent(a, defaultA)
     tracker.colors[role] = color
+end
+
+function TrackerHost.GetDefaultMouseoverHighlightColor(trackerType)
+    local defaults = getDefaultMouseoverHighlightColor(trackerType)
+    return defaults.r, defaults.g, defaults.b, defaults.a
+end
+
+function TrackerHost.GetMouseoverHighlightColor(trackerType)
+    return getMouseoverHighlightColor(trackerType)
+end
+
+function TrackerHost.SetMouseoverHighlightColor(trackerType, r, g, b, a)
+    if type(trackerType) ~= "string" then
+        return
+    end
+
+    local sv = getSavedVars()
+    if not sv then
+        return
+    end
+
+    local tracker = ensureTrackerColorConfig(sv, trackerType)
+    if not tracker then
+        return
+    end
+
+    tracker.mouseoverHighlightColor = ensureColorComponents(
+        {
+            r = r,
+            g = g,
+            b = b,
+            a = a,
+        },
+        getDefaultMouseoverHighlightColor(trackerType)
+    )
 end
 
 function TrackerHost.OnLamPanelOpened()
