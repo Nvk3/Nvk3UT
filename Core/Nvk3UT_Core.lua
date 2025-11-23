@@ -20,7 +20,10 @@ Addon.initialized  = Addon.initialized or false
 Addon.playerActivated = Addon.playerActivated or false
 
 function Addon:RefreshAddonVersionFromManifest()
+    Addon.Debug("Version refresh: start (current addonVersion=%s, versionString=%s)", tostring(self.addonVersion), tostring(self.versionString))
+
     if not GetNumAddOns or not GetAddOnInfo then
+        Addon.Debug("Version fallback: GetNumAddOns/GetAddOnInfo not available, using fallback version %s", tostring(self.addonVersion))
         if not self.versionString then
             self.versionString = self.addonVersion
         end
@@ -38,6 +41,7 @@ function Addon:RefreshAddonVersionFromManifest()
     end
 
     if not index then
+        Addon.Debug("Version fallback: addon '%s' not found in GetAddOnInfo list, using fallback version %s", tostring(self.addonName), tostring(self.addonVersion))
         if not self.versionString then
             self.versionString = self.addonVersion
         end
@@ -54,7 +58,10 @@ function Addon:RefreshAddonVersionFromManifest()
 
         self.addonVersion = version
         self.versionString = version
+
+        Addon.Debug("Version from manifest: AddOnVersion=%d -> %s", addOnVersion, version)
     else
+        Addon.Debug("Version fallback: invalid AddOnVersion '%s' for addon '%s', using fallback version %s", tostring(addOnVersion), tostring(self.addonName), tostring(self.addonVersion))
         if not self.versionString then
             self.versionString = self.addonVersion
         end
