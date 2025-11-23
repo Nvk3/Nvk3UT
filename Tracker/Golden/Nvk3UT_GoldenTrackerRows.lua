@@ -179,6 +179,12 @@ local function applyMouseoverHighlight(control)
 end
 
 local function restoreMouseoverHighlight(control)
+    local resetFn = control and control.__nvk3RestoreHoverColor
+    if type(resetFn) == "function" then
+        resetFn(control)
+        return
+    end
+
     local label = control and (control.label or control.Label)
     if not label then
         return
@@ -194,6 +200,10 @@ local function restoreMouseoverHighlight(control)
         color[3] or 0,
         color[4] or 0
     )
+
+    if resetFn ~= nil then
+        safeDebug("Golden hover: missing restore callback, applied base color fallback")
+    end
 end
 
 local function isGoldenColorDebugEnabled()

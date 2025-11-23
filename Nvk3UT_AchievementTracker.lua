@@ -241,6 +241,12 @@ local function ApplyMouseoverHighlight(ctrl)
 end
 
 local function RestoreBaseColor(ctrl)
+    local resetFn = ctrl and ctrl.__nvk3RestoreHoverColor
+    if type(resetFn) == "function" then
+        resetFn(ctrl)
+        return
+    end
+
     if not (ctrl and ctrl.label and ctrl.baseColor) then
         return
     end
@@ -256,6 +262,10 @@ local function RestoreBaseColor(ctrl)
             b or 0,
             a or 0
         ))
+
+        if resetFn ~= nil then
+            DebugLog("Achievement hover: missing restore callback, applied base color fallback")
+        end
     end
 end
 
