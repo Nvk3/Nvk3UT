@@ -153,6 +153,10 @@ local function isGoldenColorDebugEnabled()
     return false
 end
 
+local function isGoldenWrapDebugEnabled()
+    return isGoldenColorDebugEnabled()
+end
+
 local function safeDebug(message, ...)
     local debugFn = Nvk3UT and Nvk3UT.Debug
     if type(debugFn) ~= "function" then
@@ -168,10 +172,6 @@ local function safeDebug(message, ...)
     end
 
     pcall(debugFn, string.format("%s: %s", MODULE_TAG, tostring(payload)))
-end
-
-local function isGoldenWrapDebugEnabled()
-    return isGoldenColorDebugEnabled()
 end
 
 local function debugGoldenWrap(label, rowKind, availableWidth, minHeight, control, text)
