@@ -10,6 +10,7 @@ local ACCOUNT_VERSION = 1
 local CHARACTER_VERSION = 1
 
 local EMPTY_SET = {}
+local stageDataInitialized = false
 
 local function isDebugEnabled()
     local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
@@ -42,6 +43,103 @@ local function emitDebugMessage(fmt, ...)
         Utils.d("[Nvk3UT][FavoritesData] %s", message)
     elseif d then
         d(string.format("[Nvk3UT][FavoritesData] %s", message))
+    end
+end
+
+local function getStageHelper()
+    local root = rawget(_G, "Nvk3UT") or Nvk3UT
+    if type(root) ~= "table" then
+        return nil
+    end
+
+    return rawget(root, "AchievementStages")
+end
+
+local function ensureEntryTable(entry)
+    if entry == nil or entry == false then
+        return nil
+    end
+
+    if type(entry) == "table" then
+        if entry.isFavorite == nil then
+            entry.isFavorite = true
+        end
+        return entry
+    end
+
+    return { isFavorite = true }
+end
+
+local function applyStageState(entry, stageInfo)
+    if type(entry) ~= "table" then
+        return entry
+    end
+
+    if type(stageInfo) == "table" and stageInfo.finalStageIndex and stageInfo.finalStageIndex > 1 then
+        entry.currentStageIndex = stageInfo.currentStageIndex
+        entry.currentStageAchievementId = stageInfo.currentStageAchievementId
+        entry.finalStageIndex = stageInfo.finalStageIndex
+    else
+        entry.currentStageIndex = nil
+        entry.currentStageAchievementId = nil
+        entry.finalStageIndex = nil
+    end
+
+    return entry
+end
+
+local function updateStageStateForId(set, rawKey, normalized)
+    local Stage = getStageHelper()
+    if not (Stage and Stage.GetCurrentStageInfo) then
+        return false
+    end
+
+    local stageInfo = Stage.GetCurrentStageInfo(normalized)
+    local finalIndex = stageInfo and stageInfo.finalStageIndex
+    if not (finalIndex and finalIndex > 1) then
+        return false
+    end
+
+    local entry = ensureEntryTable(set[rawKey])
+    entry = applyStageState(entry, stageInfo)
+    set[normalized] = entry
+    if tostring(normalized) ~= rawKey then
+        set[rawKey] = entry
+    end
+
+    emitDebugMessage(
+        "hydrate stage id=%d current=%s final=%s", normalized, tostring(stageInfo.currentStageIndex), tostring(finalIndex)
+    )
+
+    return true
+end
+
+local function ensureStageDataInitialized()
+    if stageDataInitialized then
+        return
+    end
+
+    stageDataInitialized = true
+
+    local Stage = getStageHelper()
+    if not (Stage and Stage.GetCurrentStageInfo) then
+        return
+    end
+
+    local scopes = { ACCOUNT_SCOPE, CHARACTER_SCOPE }
+    for index = 1, #scopes do
+        local scope = scopes[index]
+        local set = ensureSet(scope, false)
+        if type(set) == "table" then
+            for rawId, flagged in pairs(set) do
+                if flagged then
+                    local normalized = FavoritesData.NormalizeId(rawId)
+                    if normalized then
+                        updateStageStateForId(set, rawId, normalized)
+                    end
+                end
+            end
+        end
     end
 end
 
@@ -133,7 +231,19 @@ local function isFavoritedInScope(id, scope)
         return false
     end
 
-    return set[id] and true or false
+    local entry = set[id]
+    if entry == nil then
+        entry = set[tostring(id)]
+    end
+
+    if type(entry) == "table" then
+        if entry.isFavorite ~= nil then
+            return entry.isFavorite ~= false
+        end
+        return true
+    end
+
+    return entry and true or false
 end
 
 local function buildScopeOrder(scopeOverride)
@@ -213,6 +323,106 @@ local function removeFavoritedIdWithTimestamp(normalized, scopeOverride)
     return removedCount
 end
 
+local function forEachFavoritedEntry(normalized, callback)
+    if type(callback) ~= "function" then
+        return
+    end
+
+    local scopes = { ACCOUNT_SCOPE, CHARACTER_SCOPE }
+    for index = 1, #scopes do
+        local scope = scopes[index]
+        local set = ensureSet(scope, false)
+        if type(set) == "table" then
+            local entry = set[normalized]
+            if entry == nil then
+                entry = set[tostring(normalized)]
+            end
+
+            if entry ~= nil then
+                callback(set, scope, normalized, entry)
+            end
+        end
+    end
+end
+
+local function buildStageAwareEntry(normalized)
+    local Stage = getStageHelper()
+    if not (Stage and Stage.GetCurrentStageInfo) then
+        return nil
+    end
+
+    local stageInfo = Stage.GetCurrentStageInfo(normalized)
+    local finalIndex = stageInfo and stageInfo.finalStageIndex
+    if not (finalIndex and finalIndex > 1) then
+        return nil
+    end
+
+    local entry = ensureEntryTable(true)
+    applyStageState(entry, stageInfo)
+
+    emitDebugMessage(
+        "create stage-aware favorite id=%d current=%s final=%s",
+        normalized,
+        tostring(stageInfo.currentStageIndex),
+        tostring(finalIndex)
+    )
+
+    return entry
+end
+
+local function refreshStageState(normalized)
+    local Stage = getStageHelper()
+    if not (Stage and Stage.GetCurrentStageInfo) then
+        return false
+    end
+
+    local stageInfo = Stage.GetCurrentStageInfo(normalized)
+    local finalIndex = stageInfo and stageInfo.finalStageIndex
+    if not (finalIndex and finalIndex > 1) then
+        return false
+    end
+
+    local changed = false
+
+    forEachFavoritedEntry(normalized, function(set, rawScope, _, rawEntry)
+        local entry = ensureEntryTable(rawEntry)
+        local beforeIndex = entry and entry.currentStageIndex
+        local beforeStageId = entry and entry.currentStageAchievementId
+        local beforeFinal = entry and entry.finalStageIndex
+        entry = applyStageState(entry, stageInfo)
+        set[normalized] = entry
+        set[tostring(normalized)] = entry
+        if beforeIndex ~= entry.currentStageIndex or beforeStageId ~= entry.currentStageAchievementId
+            or beforeFinal ~= entry.finalStageIndex
+        then
+            emitDebugMessage(
+                "stage advance id=%d scope=%s %s -> %s",
+                normalized,
+                tostring(rawScope),
+                tostring(beforeIndex),
+                tostring(entry.currentStageIndex)
+            )
+            changed = true
+        end
+    end)
+
+    return changed
+end
+
+local function isFinalStageComplete(normalized)
+    local Stage = getStageHelper()
+    if not Stage then
+        return FavoritesData.IsCompleted(normalized)
+    end
+
+    local stageInfo = Stage.GetCurrentStageInfo and Stage.GetCurrentStageInfo(normalized)
+    if stageInfo and stageInfo.finalStageIndex and stageInfo.finalStageIndex > 1 then
+        return stageInfo.isChainComplete == true
+    end
+
+    return FavoritesData.IsCompleted(normalized)
+end
+
 local function NotifyFavoritesChanged()
     local Model = Nvk3UT and Nvk3UT.AchievementModel
     if Model and Model.OnFavoritesChanged then
@@ -279,6 +489,8 @@ function FavoritesData.IsFavorited(id, scopeOverride)
         return false
     end
 
+    ensureStageDataInitialized()
+
     local scopes = buildScopeOrder(scopeOverride)
     for index = 1, #scopes do
         local scope = scopes[index]
@@ -296,6 +508,8 @@ function FavoritesData.SetFavorited(id, shouldFavorite, source, scopeOverride)
         return false
     end
 
+    ensureStageDataInitialized()
+
     local scope = resolveScope(scopeOverride)
     local set = ensureSet(scope, true)
     if not set then
@@ -303,15 +517,19 @@ function FavoritesData.SetFavorited(id, shouldFavorite, source, scopeOverride)
     end
 
     local desired = shouldFavorite and true or false
-    local current = set[normalized] and true or false
+    local existing = set[normalized] or set[tostring(normalized)]
+    local current = existing and true or false
     if current == desired then
         return false
     end
 
     if desired then
-        set[normalized] = true
+        local entry = buildStageAwareEntry(normalized) or ensureEntryTable(true)
+        set[normalized] = entry
+        set[tostring(normalized)] = entry
     else
         set[normalized] = nil
+        set[tostring(normalized)] = nil
     end
 
     emitDebugMessage(
@@ -368,6 +586,8 @@ function FavoritesData.ToggleFavorited(id, source, scopeOverride)
 end
 
 function FavoritesData.GetAllFavorites(scopeOverride)
+    ensureStageDataInitialized()
+
     local scope = resolveScope(scopeOverride)
     local set = getSet(scope)
 
@@ -423,7 +643,9 @@ function FavoritesData.RemoveIfCompleted(achievementId)
         return false
     end
 
-    if not FavoritesData.IsCompleted(normalized) then
+    ensureStageDataInitialized()
+
+    if not isFinalStageComplete(normalized) then
         return false
     end
 
@@ -431,6 +653,8 @@ function FavoritesData.RemoveIfCompleted(achievementId)
 end
 
 function FavoritesData.PruneCompletedFavorites()
+    ensureStageDataInitialized()
+
     local candidates = {}
     local scopes = { ACCOUNT_SCOPE, CHARACTER_SCOPE }
 
@@ -441,7 +665,7 @@ function FavoritesData.PruneCompletedFavorites()
             for rawId, flagged in pairs(set) do
                 if flagged then
                     local normalized = FavoritesData.NormalizeId(rawId)
-                    if normalized and FavoritesData.IsCompleted(normalized) then
+                    if normalized and isFinalStageComplete(normalized) then
                         candidates[normalized] = true
                     end
                 end
@@ -466,6 +690,93 @@ function FavoritesData.PruneCompletedFavorites()
     end
 
     return removedEntries
+end
+
+function FavoritesData.GetStageDisplayInfo(baseAchievementId)
+    local normalized = FavoritesData.NormalizeId(baseAchievementId)
+    if not normalized then
+        return nil
+    end
+
+    ensureStageDataInitialized()
+
+    local Stage = getStageHelper()
+    local info = { displayId = normalized, finalStageIndex = 1 }
+
+    if not (Stage and Stage.GetCurrentStageInfo) then
+        return info
+    end
+
+    local stageInfo = Stage.GetCurrentStageInfo(normalized)
+    local chain = Stage.GetStageChain and Stage.GetStageChain(normalized)
+    local finalIndex = (chain and chain.finalStageIndex) or (stageInfo and stageInfo.finalStageIndex)
+
+    if stageInfo and finalIndex and finalIndex > 1 then
+        info.displayId = stageInfo.currentStageAchievementId or normalized
+        info.currentStageIndex = stageInfo.currentStageIndex
+        info.nextStageIndex = stageInfo.nextStageIndex
+        info.nextStageAchievementId = stageInfo.nextStageAchievementId
+        info.finalStageIndex = finalIndex
+        refreshStageState(normalized)
+    else
+        info.finalStageIndex = finalIndex or 1
+    end
+
+    return info
+end
+
+function FavoritesData.HandleAchievementUpdate(achievementId, source)
+    ensureStageDataInitialized()
+
+    local Stage = getStageHelper()
+    local normalized = FavoritesData.NormalizeId(achievementId)
+    if not normalized then
+        return false
+    end
+
+    local baseId = normalized
+    if Stage and Stage.ResolveBaseId then
+        local resolved = Stage.ResolveBaseId(normalized)
+        if resolved then
+            baseId = resolved
+        end
+    end
+
+    if not FavoritesData.IsFavorited(baseId) then
+        return false
+    end
+
+    if not (Stage and Stage.GetCurrentStageInfo) then
+        if FavoritesData.IsCompleted(baseId) then
+            return FavoritesData.RemoveFavorite(baseId)
+        end
+        return false
+    end
+
+    local stageInfo = Stage.GetCurrentStageInfo(baseId)
+    if not stageInfo then
+        return false
+    end
+
+    if stageInfo.finalStageIndex and stageInfo.finalStageIndex > 1 then
+        if stageInfo.isChainComplete then
+            emitDebugMessage("auto-remove final stage base=%d source=%s", baseId, tostring(source or "event"))
+            return FavoritesData.RemoveFavorite(baseId)
+        end
+
+        local advanced = refreshStageState(baseId)
+        if advanced then
+            touchFavoriteTimestamp(baseId)
+            NotifyFavoritesChanged()
+        end
+        return advanced
+    end
+
+    if FavoritesData.IsCompleted(baseId) then
+        return FavoritesData.RemoveFavorite(baseId)
+    end
+
+    return false
 end
 
 function FavoritesData.MigrateScope(fromScope, toScope)
