@@ -1490,7 +1490,7 @@ local function registerPanel(displayTitle)
                     general.showStatus = value
                     updateStatus()
                 end,
-                default = true,
+                default = false,
             }
 
             return controls
