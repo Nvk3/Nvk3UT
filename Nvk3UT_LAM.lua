@@ -786,6 +786,8 @@ local function queueGoldenDirty()
     end
 end
 
+local DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR = { r = 1, g = 1, b = 0.6, a = 1 }
+
 local function ensureTrackerAppearance()
     local host = Nvk3UT and Nvk3UT.TrackerHost
     if host and host.EnsureAppearanceDefaults then
@@ -841,6 +843,53 @@ local function setTrackerColor(trackerType, role, r, g, b, a)
         g = g or 1,
         b = b or 1,
         a = a or 1,
+    }
+end
+
+local function getMouseoverHighlightColor(trackerType)
+    ensureTrackerAppearance()
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if host and host.GetMouseoverHighlightColor then
+        return host.GetMouseoverHighlightColor(trackerType)
+    end
+
+    local color = DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR
+    return color.r, color.g, color.b, color.a
+end
+
+local function getMouseoverHighlightDefaultTable(trackerType)
+    ensureTrackerAppearance()
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if host and host.GetDefaultMouseoverHighlightColor then
+        local r, g, b, a = host.GetDefaultMouseoverHighlightColor(trackerType)
+        return { r = r, g = g, b = b, a = a }
+    end
+
+    local color = DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR
+    return { r = color.r, g = color.g, b = color.b, a = color.a }
+end
+
+local function setMouseoverHighlightColor(trackerType, r, g, b, a)
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if host and host.SetMouseoverHighlightColor then
+        host.SetMouseoverHighlightColor(trackerType, r, g, b, a)
+        ensureTrackerAppearance()
+        return
+    end
+
+    local sv = getSavedVars()
+    if not sv then
+        return
+    end
+
+    sv.appearance = sv.appearance or {}
+    sv.appearance[trackerType] = sv.appearance[trackerType] or {}
+    local tracker = sv.appearance[trackerType]
+    tracker.mouseoverHighlightColor = {
+        r = r or DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR.r,
+        g = g or DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR.g,
+        b = b or DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR.b,
+        a = a or DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR.a,
     }
 end
 
@@ -2014,6 +2063,19 @@ local function registerPanel(displayTitle)
                 default = getTrackerColorDefaultTable("questTracker", "activeTitle"),
             }
 
+            controls[#controls + 1] = {
+                type = "colorpicker",
+                name = "Mouseover-Highlight",
+                tooltip = "Farbe der Zeilenhervorhebung beim Überfahren mit der Maus.",
+                getFunc = function()
+                    return getMouseoverHighlightColor("questTracker")
+                end,
+                setFunc = function(r, g, b, a)
+                    setMouseoverHighlightColor("questTracker", r, g, b, a or 1)
+                end,
+                default = getMouseoverHighlightDefaultTable("questTracker"),
+            }
+
             controls[#controls + 1] = { type = "header", name = "Quest-Tracker Schriftarten" }
 
             local fontGroups = {
@@ -2259,6 +2321,19 @@ local function registerPanel(displayTitle)
                 }
             end
 
+            controls[#controls + 1] = {
+                type = "colorpicker",
+                name = "Mouseover-Highlight",
+                tooltip = "Farbe der Zeilenhervorhebung beim Überfahren mit der Maus.",
+                getFunc = function()
+                    return getMouseoverHighlightColor("endeavorTracker")
+                end,
+                setFunc = function(r, g, b, a)
+                    setMouseoverHighlightColor("endeavorTracker", r, g, b, a or 1)
+                end,
+                default = getMouseoverHighlightDefaultTable("endeavorTracker"),
+            }
+
             controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_ENDEAVOR_SECTION_FONTS) }
 
             local fontGroups = {
@@ -2455,6 +2530,19 @@ local function registerPanel(displayTitle)
                     refreshAchievementTracker()
                 end,
                 default = getTrackerColorDefaultTable("achievementTracker", "activeTitle"),
+            }
+
+            controls[#controls + 1] = {
+                type = "colorpicker",
+                name = "Mouseover-Highlight",
+                tooltip = "Farbe der Zeilenhervorhebung beim Überfahren mit der Maus.",
+                getFunc = function()
+                    return getMouseoverHighlightColor("achievementTracker")
+                end,
+                setFunc = function(r, g, b, a)
+                    setMouseoverHighlightColor("achievementTracker", r, g, b, a or 1)
+                end,
+                default = getMouseoverHighlightDefaultTable("achievementTracker"),
             }
 
             controls[#controls + 1] = { type = "header", name = "Erfolgstracker Schriftarten" }
@@ -2821,6 +2909,19 @@ local function registerPanel(displayTitle)
                     end,
                 }
             end
+
+            controls[#controls + 1] = {
+                type = "colorpicker",
+                name = "Mouseover-Highlight",
+                tooltip = "Farbe der Zeilenhervorhebung beim Überfahren mit der Maus.",
+                getFunc = function()
+                    return getMouseoverHighlightColor("goldenTracker")
+                end,
+                setFunc = function(r, g, b, a)
+                    setMouseoverHighlightColor("goldenTracker", r, g, b, a or 1)
+                end,
+                default = getMouseoverHighlightDefaultTable("goldenTracker"),
+            }
 
             controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_GOLDEN_SECTION_FONTS) }
 
