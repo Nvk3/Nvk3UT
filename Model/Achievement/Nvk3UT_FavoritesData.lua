@@ -100,11 +100,12 @@ local function updateStageStateForId(set, rawKey, normalized)
         return false
     end
 
-    local entry = ensureEntryTable(set[rawKey])
+    local existing = set[normalized] or set[rawKey]
+    local entry = ensureEntryTable(existing)
     entry = applyStageState(entry, stageInfo)
     set[normalized] = entry
-    if tostring(normalized) ~= rawKey then
-        set[rawKey] = entry
+    if rawKey ~= normalized and rawKey ~= tostring(normalized) then
+        set[rawKey] = nil
     end
 
     emitDebugMessage(
@@ -122,23 +123,25 @@ local function ensureStageDataInitialized()
     stageDataInitialized = true
 
     local Stage = getStageHelper()
-    if not (Stage and Stage.GetCurrentStageInfo) then
-        return
-    end
+    local hasStageInfo = Stage and Stage.GetCurrentStageInfo
 
     local scopes = { ACCOUNT_SCOPE, CHARACTER_SCOPE }
     for index = 1, #scopes do
         local scope = scopes[index]
         local set = ensureSet(scope, false)
         if type(set) == "table" then
-            for rawId, flagged in pairs(set) do
-                if flagged then
-                    local normalized = FavoritesData.NormalizeId(rawId)
-                    if normalized then
-                        updateStageStateForId(set, rawId, normalized)
+            if hasStageInfo then
+                for rawId, flagged in pairs(set) do
+                    if flagged then
+                        local normalized = FavoritesData.NormalizeId(rawId)
+                        if normalized then
+                            updateStageStateForId(set, rawId, normalized)
+                        end
                     end
                 end
             end
+
+            ensureUniqueBaseEntries(set, scope)
         end
     end
 end
@@ -370,6 +373,47 @@ local function buildStageAwareEntry(normalized)
     return entry
 end
 
+local function ensureUniqueBaseEntries(set, scope)
+    if type(set) ~= "table" then
+        return
+    end
+
+    local aggregated = {}
+    local removedAliases = 0
+
+    for key, value in pairs(set) do
+        local normalized = FavoritesData.NormalizeId(key)
+        if normalized then
+            local bucket = aggregated[normalized]
+            local isBaseKey = key == normalized
+            if not bucket then
+                aggregated[normalized] = { entry = value, preferBase = isBaseKey }
+                if not isBaseKey then
+                    removedAliases = removedAliases + 1
+                end
+            else
+                removedAliases = removedAliases + 1
+                if not bucket.preferBase and isBaseKey then
+                    bucket.entry = value
+                    bucket.preferBase = true
+                end
+            end
+        end
+    end
+
+    for key in pairs(set) do
+        set[key] = nil
+    end
+
+    for normalized, data in pairs(aggregated) do
+        set[normalized] = ensureEntryTable(data.entry)
+    end
+
+    if isDebugEnabled() and removedAliases > 0 then
+        emitDebugMessage("dedup favorites scope=%s removed=%d", tostring(scope), removedAliases)
+    end
+end
+
 local function refreshStageState(normalized)
     local Stage = getStageHelper()
     if not (Stage and Stage.GetCurrentStageInfo) then
@@ -383,6 +427,7 @@ local function refreshStageState(normalized)
     end
 
     local changed = false
+    local stringKey = tostring(normalized)
 
     forEachFavoritedEntry(normalized, function(set, rawScope, _, rawEntry)
         local entry = ensureEntryTable(rawEntry)
@@ -391,7 +436,9 @@ local function refreshStageState(normalized)
         local beforeFinal = entry and entry.finalStageIndex
         entry = applyStageState(entry, stageInfo)
         set[normalized] = entry
-        set[tostring(normalized)] = entry
+        if stringKey ~= normalized then
+            set[stringKey] = nil
+        end
         if beforeIndex ~= entry.currentStageIndex or beforeStageId ~= entry.currentStageAchievementId
             or beforeFinal ~= entry.finalStageIndex
         then
@@ -517,7 +564,8 @@ function FavoritesData.SetFavorited(id, shouldFavorite, source, scopeOverride)
     end
 
     local desired = shouldFavorite and true or false
-    local existing = set[normalized] or set[tostring(normalized)]
+    local stringKey = tostring(normalized)
+    local existing = set[normalized] or set[stringKey]
     local current = existing and true or false
     if current == desired then
         return false
@@ -526,10 +574,12 @@ function FavoritesData.SetFavorited(id, shouldFavorite, source, scopeOverride)
     if desired then
         local entry = buildStageAwareEntry(normalized) or ensureEntryTable(true)
         set[normalized] = entry
-        set[tostring(normalized)] = entry
+        if stringKey ~= normalized then
+            set[stringKey] = nil
+        end
     else
         set[normalized] = nil
-        set[tostring(normalized)] = nil
+        set[stringKey] = nil
     end
 
     emitDebugMessage(
@@ -595,7 +645,23 @@ function FavoritesData.GetAllFavorites(scopeOverride)
         return next, EMPTY_SET, nil
     end
 
-    return next, set, nil
+    local function iterateBaseFavorites(tbl, lastKey)
+        while true do
+            local key, value = next(tbl, lastKey)
+            if key == nil then
+                return nil
+            end
+
+            local normalized = FavoritesData.NormalizeId(key)
+            if normalized and normalized == key then
+                return key, value
+            end
+
+            lastKey = key
+        end
+    end
+
+    return iterateBaseFavorites, set, nil
 end
 
 function FavoritesData.Iterate(scopeOverride)
