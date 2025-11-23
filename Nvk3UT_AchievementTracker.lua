@@ -106,7 +106,7 @@ local RIGHT_MOUSE_BUTTON = MOUSE_BUTTON_INDEX_RIGHT or 2
 local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
 local REFRESH_DEBOUNCE_MS = 80
 
-local COLOR_ROW_HOVER = { 1, 1, 0.6, 1 }
+local DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR = { 1, 1, 0.6, 1 }
 
 local FAVORITES_LOOKUP_KEY = "NVK3UT_FAVORITES_ROOT"
 local FAVORITES_CATEGORY_ID = "Nvk3UT_Favorites"
@@ -183,6 +183,23 @@ local function GetAchievementTrackerColor(role)
     return 1, 1, 1, 1
 end
 
+local function GetMouseoverHighlightColor()
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if host then
+        if host.EnsureAppearanceDefaults then
+            host.EnsureAppearanceDefaults()
+        end
+        if host.GetMouseoverHighlightColor then
+            local r, g, b, a = host.GetMouseoverHighlightColor("achievementTracker")
+            if r and g and b and a then
+                return r, g, b, a
+            end
+        end
+    end
+
+    return unpack(DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR)
+end
+
 local function ApplyBaseColor(control, r, g, b, a)
     if not control then
         return
@@ -201,6 +218,44 @@ local function ApplyBaseColor(control, r, g, b, a)
 
     if control.label and control.label.SetColor then
         control.label:SetColor(color[1], color[2], color[3], color[4])
+    end
+end
+
+local function ApplyMouseoverHighlight(ctrl)
+    if not (ctrl and ctrl.label) then
+        return
+    end
+
+    local r, g, b, a = GetMouseoverHighlightColor()
+    ctrl.label:SetColor(r, g, b, a)
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format(
+            "Achievement hover: applying mouseover highlight color r=%.3f g=%.3f b=%.3f a=%.3f",
+            r or 0,
+            g or 0,
+            b or 0,
+            a or 0
+        ))
+    end
+end
+
+local function RestoreBaseColor(ctrl)
+    if not (ctrl and ctrl.label and ctrl.baseColor) then
+        return
+    end
+
+    ctrl.label:SetColor(unpack(ctrl.baseColor))
+
+    if IsDebugLoggingEnabled() then
+        local r, g, b, a = unpack(ctrl.baseColor)
+        DebugLog(string.format(
+            "Achievement hover: restored base color r=%.3f g=%.3f b=%.3f a=%.3f",
+            r or 0,
+            g or 0,
+            b or 0,
+            a or 0
+        ))
     end
 end
 
@@ -1326,9 +1381,7 @@ local function AcquireCategoryControl()
             ScheduleToggleFollowup("achievementCategoryToggle")
         end)
         control:SetHandler("OnMouseEnter", function(ctrl)
-            if ctrl.label then
-                ctrl.label:SetColor(unpack(COLOR_ROW_HOVER))
-            end
+            ApplyMouseoverHighlight(ctrl)
             local expanded = ctrl.isExpanded
             if expanded == nil then
                 expanded = IsCategoryExpanded()
@@ -1336,9 +1389,7 @@ local function AcquireCategoryControl()
             UpdateCategoryToggle(ctrl, expanded)
         end)
         control:SetHandler("OnMouseExit", function(ctrl)
-            if ctrl.label and ctrl.baseColor then
-                ctrl.label:SetColor(unpack(ctrl.baseColor))
-            end
+            RestoreBaseColor(ctrl)
             local expanded = ctrl.isExpanded
             if expanded == nil then
                 expanded = IsCategoryExpanded()
@@ -1403,6 +1454,12 @@ local function AcquireAchievementControl()
                 end
                 ShowAchievementContextMenu(ctrl, ctrl.data)
             end
+        end)
+        control:SetHandler("OnMouseEnter", function(ctrl)
+            ApplyMouseoverHighlight(ctrl)
+        end)
+        control:SetHandler("OnMouseExit", function(ctrl)
+            RestoreBaseColor(ctrl)
         end)
         control.initialized = true
     end
