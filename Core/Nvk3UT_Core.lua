@@ -25,7 +25,7 @@ function Addon:RefreshAddonVersionFromManifest()
 
     -- API unavailable
     if not GetNumAddOns or not GetAddOnInfo then
-        Addon.Debug("Version fallback: ESO API GetAddOnInfo not available → using fallback %s",
+        Addon.Debug("Version fallback: ESO API GetAddOnInfo not available → using fallback %s (reason=NO_API)",
             tostring(self.addonVersion))
         if not self.versionString then self.versionString = self.addonVersion end
         return
@@ -33,7 +33,7 @@ function Addon:RefreshAddonVersionFromManifest()
 
     local addOnManager = GetAddOnManager and GetAddOnManager() or nil
     if not addOnManager or not addOnManager.GetAddOnVersion then
-        Addon.Debug("Version fallback: ESO API GetAddOnVersion not available → using fallback %s",
+        Addon.Debug("Version fallback: ESO API GetAddOnManager/GetAddOnVersion not available → using fallback %s",
             tostring(self.addonVersion))
         if not self.versionString then self.versionString = self.addonVersion end
         return
@@ -57,6 +57,7 @@ function Addon:RefreshAddonVersionFromManifest()
     end
 
     local versionInt = addOnManager:GetAddOnVersion(index)
+    Addon.Debug("Version check: AddOnVersion raw value = %s", tostring(versionInt))
     if type(versionInt) ~= "number" or versionInt <= 0 then
         Addon.Debug("Version fallback: AddOnVersion returned invalid value '%s' → using fallback %s",
             tostring(versionInt), tostring(self.addonVersion))
