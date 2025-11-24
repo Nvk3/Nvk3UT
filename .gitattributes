@@ -1,0 +1,4 @@
+# Dev/Editor-Zeug nicht in Release-Archiven
+.vscode/**      export-ignore
+.editorconfig   export-ignore
+agents.md       export-ignore
