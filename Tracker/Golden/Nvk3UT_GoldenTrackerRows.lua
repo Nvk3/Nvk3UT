@@ -49,6 +49,8 @@ local DEFAULTS = {
     OBJECTIVE_PIN_MARKER_OFFSET_X = 10,
 }
 
+local SCROLLBAR_WIDTH_RESERVE = 18
+
 local ROW_TEXT_PADDING_Y = 4
 local OBJECTIVE_VERTICAL_PADDING_Y = 2
 
@@ -571,14 +573,34 @@ local resolvedRowHeights = {
     [ROW_KINDS.objective] = DEFAULTS.OBJECTIVE_HEIGHT,
 }
 
-local function getRowContainerWidth(control)
-    local parent = control and control.GetParent and control:GetParent()
-    local width = 0
+local function getTrackerHostScrollContentWidth()
+    local root = getAddon()
+    local host = type(root) == "table" and root.TrackerHost or nil
+    if type(host) == "table" then
+        local getScrollContent = host.GetScrollContent
+        if type(getScrollContent) == "function" then
+            local ok, scrollContent = pcall(getScrollContent, host)
+            if ok and scrollContent and scrollContent.GetWidth then
+                local okWidth, measured = pcall(scrollContent.GetWidth, scrollContent)
+                if okWidth and type(measured) == "number" and measured > 0 then
+                    return measured
+                end
+            end
+        end
+    end
 
-    if parent and parent.GetWidth then
-        local ok, measured = pcall(parent.GetWidth, parent)
-        if ok and type(measured) == "number" then
-            width = measured
+    return nil
+end
+
+local function getRowContainerWidth(control)
+    local width = getTrackerHostScrollContentWidth()
+    local parent = control and control.GetParent and control:GetParent()
+    if not width or width <= 0 then
+        if parent and parent.GetWidth then
+            local ok, measured = pcall(parent.GetWidth, parent)
+            if ok and type(measured) == "number" then
+                width = measured
+            end
         end
     end
 
@@ -602,7 +624,7 @@ local function computeAvailableWidth(control, indent, leftPadding, rightPadding)
     rightPadding = rightPadding or 0
 
     local containerWidth = getRowContainerWidth(control)
-    local availableWidth = containerWidth - indent - leftPadding - rightPadding
+    local availableWidth = containerWidth - indent - leftPadding - rightPadding - SCROLLBAR_WIDTH_RESERVE
     if availableWidth < 0 then
         availableWidth = 0
     end

@@ -44,6 +44,10 @@ local function applyEndeavorLabelDefaults(label)
     end
 end
 
+local function getAddon()
+    return rawget(_G, addonName)
+end
+
 local CATEGORY_TOP_PAD = 0
 local CATEGORY_BOTTOM_PAD_EXPANDED = 6
 local CATEGORY_BOTTOM_PAD_COLLAPSED = 6
@@ -104,6 +108,7 @@ local DEFAULT_TRACKER_COLOR_KIND = "endeavorTracker"
 local COMPLETED_COLOR_ROLE = "completed"
 local ENTRY_COLOR_ROLE = "entryTitle"
 local OBJECTIVE_INDENT_X = 60
+local SCROLLBAR_WIDTH_RESERVE = 18
 local DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR = { 1, 1, 0.6, 1 }
 
 local unpack = table.unpack or unpack
@@ -142,14 +147,35 @@ local MOUSE_BUTTON_LEFT = rawget(_G, "MOUSE_BUTTON_INDEX_LEFT") or 1
 
 local resolvedEntryHeight = ROWS_HEIGHTS.entry
 
-local function getEndeavorRowContainerWidth(control)
-    local parent = control and control.GetParent and control:GetParent()
-    local width = 0
+local function getTrackerHostScrollContentWidth()
+    local addon = getAddon()
+    local host = type(addon) == "table" and addon.TrackerHost or nil
+    if type(host) == "table" then
+        local getScrollContent = host.GetScrollContent
+        if type(getScrollContent) == "function" then
+            local ok, scrollContent = pcall(getScrollContent, host)
+            if ok and scrollContent and scrollContent.GetWidth then
+                local okWidth, measured = pcall(scrollContent.GetWidth, scrollContent)
+                if okWidth and type(measured) == "number" and measured > 0 then
+                    return measured
+                end
+            end
+        end
+    end
 
-    if parent and parent.GetWidth then
-        local ok, measured = pcall(parent.GetWidth, parent)
-        if ok and type(measured) == "number" then
-            width = measured
+    return nil
+end
+
+local function getEndeavorRowContainerWidth(control)
+    local width = getTrackerHostScrollContentWidth()
+    local parent = control and control.GetParent and control:GetParent()
+
+    if not width or width <= 0 then
+        if parent and parent.GetWidth then
+            local ok, measured = pcall(parent.GetWidth, parent)
+            if ok and type(measured) == "number" then
+                width = measured
+            end
         end
     end
 
@@ -173,7 +199,7 @@ local function computeEndeavorAvailableWidth(control, indent, leftPadding, right
     rightPadding = rightPadding or 0
 
     local containerWidth = getEndeavorRowContainerWidth(control)
-    local availableWidth = containerWidth - indent - leftPadding - rightPadding
+    local availableWidth = containerWidth - indent - leftPadding - rightPadding - SCROLLBAR_WIDTH_RESERVE
     if availableWidth < 0 then
         availableWidth = 0
     end
@@ -755,10 +781,6 @@ function Rows.ApplySubrow(control, kind, data, options)
     control._subrowSource = source
 
     return control
-end
-
-local function getAddon()
-    return rawget(_G, addonName)
 end
 
 local function getTrackerColor(role, colorKind)
