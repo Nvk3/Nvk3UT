@@ -205,7 +205,7 @@ local function __nvk3_BuildQuestStatusPart()
   end
 
   local count = __nvk3_GetQuestCountForTracker()
-  return ("Quests %d/%d"):format(count, QUEST_LOG_LIMIT)
+  return zo_strformat(GetString(SI_NVK3UT_STATUS_TEXT_QUEST_PROGRESS), count, QUEST_LOG_LIMIT)
 end
 
 local function __nvk3_BuildStatusParts()
@@ -220,23 +220,23 @@ local function __nvk3_BuildStatusParts()
   if __nvk3_IsOn("completed") then
     if Nvk3UT_UI_ComputeCounts then
       local done, total = Nvk3UT_UI_ComputeCounts()
-      parts[#parts + 1] = ("Abgeschlossen %d/%d"):format(done or 0, total or 0)
+      parts[#parts + 1] = zo_strformat(GetString(SI_NVK3UT_STATUS_TEXT_COMPLETED_PROGRESS), done or 0, total or 0)
     end
   end
 
   if __nvk3_IsOn("favorites") then
     local n = __nvk3_CountFavorites()
-    parts[#parts + 1] = ("Favoriten %d"):format(n)
+    parts[#parts + 1] = zo_strformat(GetString(SI_NVK3UT_STATUS_TEXT_FAVORITES_COUNT), n)
   end
 
   if __nvk3_IsOn("recent") then
     local n = __nvk3_CountRecent()
-    parts[#parts + 1] = ("Kürzlich %d"):format(n)
+    parts[#parts + 1] = zo_strformat(GetString(SI_NVK3UT_STATUS_TEXT_RECENT_COUNT), n)
   end
 
   if __nvk3_IsOn("todo") then
     local n = __nvk3_CountTodo()
-    parts[#parts + 1] = ("To-Do-Liste %d"):format(n)
+    parts[#parts + 1] = zo_strformat(GetString(SI_NVK3UT_STATUS_TEXT_TODO_COUNT), n)
   end
 
   return parts
@@ -266,7 +266,8 @@ do
       return
     end
 
-    local header = (TITLE and ("|c66CCFF" .. TITLE .. "|r  –  ") or "")
+    local headerText = GetString(SI_NVK3UT_STATUS_TEXT_HEADER)
+    local header = (headerText and headerText ~= "" and ("|c66CCFF" .. headerText .. "|r  –  ")) or ""
     local txt = header .. table.concat(parts, "  •  ")
     if ctl._nvk3_last ~= txt then
       ctl:SetText(txt)

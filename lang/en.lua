@@ -23,6 +23,14 @@ local strings = {
     SI_NVK3UT_LAM_STATUS_HEADER_DISPLAY = "Display",
     SI_NVK3UT_LAM_OPTION_STATUS_SHOW_COMPASS = "Show status above the compass",
 
+    -- Status text overlay
+    SI_NVK3UT_STATUS_TEXT_HEADER = "Nvk3's Ultimate Tracker",
+    SI_NVK3UT_STATUS_TEXT_QUEST_PROGRESS = "Quests <<1>>/<<2>>",
+    SI_NVK3UT_STATUS_TEXT_COMPLETED_PROGRESS = "Completed <<1>>/<<2>>",
+    SI_NVK3UT_STATUS_TEXT_FAVORITES_COUNT = "Favorites <<1>>",
+    SI_NVK3UT_STATUS_TEXT_RECENT_COUNT = "Recent <<1>>",
+    SI_NVK3UT_STATUS_TEXT_TODO_COUNT = "To-Do list <<1>>",
+
     -- Tracker Host
     SI_NVK3UT_LAM_TRACKER_HOST_HEADER_WINDOW = "Window & appearance",
     SI_NVK3UT_LAM_OPTION_TRACKER_HOST_SHOW = "Show window",
