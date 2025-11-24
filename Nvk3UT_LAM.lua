@@ -1378,16 +1378,19 @@ local function registerPanel(displayTitle)
     local options = {}
     options[#options + 1] = {
         type = "submenu",
-        name = "Journal Erweiterungen",
+        name = GetString(SI_NVK3UT_LAM_SECTION_JOURNAL),
         controls = (function()
             local controls = {}
 
-            controls[#controls + 1] = { type = "header", name = "Favoriten & Daten" }
+            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_JOURNAL_HEADER_STORAGE) }
 
             controls[#controls + 1] = {
                 type = "dropdown",
-                name = "Favoritenspeicherung:",
-                choices = { "Account-Weit", "Charakter-Weit" },
+                name = GetString(SI_NVK3UT_LAM_OPTION_JOURNAL_FAVORITE_SCOPE),
+                choices = {
+                    GetString(SI_NVK3UT_LAM_OPTION_JOURNAL_SCOPE_ACCOUNT),
+                    GetString(SI_NVK3UT_LAM_OPTION_JOURNAL_SCOPE_CHARACTER),
+                },
                 choicesValues = { "account", "character" },
                 getFunc = function()
                     local general = getGeneral()
@@ -1409,13 +1412,13 @@ local function registerPanel(displayTitle)
                     end
                     updateStatus()
                 end,
-                tooltip = "Bestimmt, ob Favoriten global (Account) oder je Charakter gespeichert werden.",
+                tooltip = GetString(SI_NVK3UT_LAM_OPTION_JOURNAL_FAVORITE_SCOPE_DESC),
                 default = "account",
             }
 
             controls[#controls + 1] = {
                 type = "slider",
-                name = "Kürzlich-History (max. Einträge)",
+                name = GetString(SI_NVK3UT_LAM_OPTION_JOURNAL_RECENT_LIMIT),
                 min = 25,
                 max = 200,
                 step = 5,
@@ -1432,16 +1435,16 @@ local function registerPanel(displayTitle)
                     end
                     updateStatus()
                 end,
-                tooltip = "Hardcap für die Anzahl der Kürzlich-Einträge.",
+                tooltip = GetString(SI_NVK3UT_LAM_OPTION_JOURNAL_RECENT_LIMIT_DESC),
             }
 
-            controls[#controls + 1] = { type = "header", name = "Funktionen" }
+            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_JOURNAL_HEADER_FEATURES) }
 
             local featureControls = {
-                { key = "completed", label = "Abgeschlossen aktiv" },
-                { key = "favorites", label = "Favoriten aktiv" },
-                { key = "recent", label = "Kürzlich aktiv" },
-                { key = "todo", label = "To-Do-Liste aktiv" },
+                { key = "completed", label = GetString(SI_NVK3UT_LAM_OPTION_JOURNAL_FEATURE_COMPLETED) },
+                { key = "favorites", label = GetString(SI_NVK3UT_LAM_OPTION_JOURNAL_FEATURE_FAVORITES) },
+                { key = "recent", label = GetString(SI_NVK3UT_LAM_OPTION_JOURNAL_FEATURE_RECENT) },
+                { key = "todo", label = GetString(SI_NVK3UT_LAM_OPTION_JOURNAL_FEATURE_TODO) },
             }
 
             for index = 1, #featureControls do
@@ -1472,15 +1475,15 @@ local function registerPanel(displayTitle)
 
     options[#options + 1] = {
         type = "submenu",
-        name = "Status Text",
+        name = GetString(SI_NVK3UT_LAM_SECTION_STATUS_TEXT),
         controls = (function()
             local controls = {}
 
-            controls[#controls + 1] = { type = "header", name = "Anzeige" }
+            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_STATUS_HEADER_DISPLAY) }
 
             controls[#controls + 1] = {
                 type = "checkbox",
-                name = "Status über dem Kompass anzeigen",
+                name = GetString(SI_NVK3UT_LAM_OPTION_STATUS_SHOW_COMPASS),
                 getFunc = function()
                     local general = getGeneral()
                     return general.showStatus ~= false
@@ -1499,11 +1502,11 @@ local function registerPanel(displayTitle)
 
     options[#options + 1] = {
         type = "submenu",
-        name = "Tracker Host",
+        name = GetString(SI_NVK3UT_LAM_SECTION_TRACKER_HOST),
         controls = (function()
             local controls = {}
 
-            controls[#controls + 1] = { type = "header", name = "Fenster & Darstellung" }
+            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_TRACKER_HOST_HEADER_WINDOW) }
 
             local function addControl(control)
                 controls[#controls + 1] = control
@@ -1511,7 +1514,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "checkbox",
-                name = "Fenster anzeigen",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_SHOW),
                 getFunc = function()
                     local general = getGeneral()
                     return general.window.visible ~= false
@@ -1528,7 +1531,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "checkbox",
-                name = "Fenster sperren",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_LOCK),
                 getFunc = function()
                     local general = getGeneral()
                     return general.window.locked == true
@@ -1545,7 +1548,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "checkbox",
-                name = "Immer im Vordergrund",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_ON_TOP),
                 getFunc = function()
                     local general = getGeneral()
                     return general.window.onTop == true
@@ -1562,7 +1565,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "slider",
-                name = "Fensterbreite",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_WIDTH),
                 min = 260,
                 max = 1200,
                 step = 10,
@@ -1588,7 +1591,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "slider",
-                name = "Fensterhöhe",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_HEIGHT),
                 min = 240,
                 max = 1200,
                 step = 10,
@@ -1614,7 +1617,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "slider",
-                name = "Header-Höhe",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_HEADER_HEIGHT),
                 min = 0,
                 max = MAX_BAR_HEIGHT,
                 step = 1,
@@ -1630,13 +1633,13 @@ local function registerPanel(displayTitle)
                         Nvk3UT.TrackerHost.ApplyWindowBars()
                     end
                 end,
-                tooltip = "0 px blendet den Bereich aus.",
+                tooltip = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_HEADER_HEIGHT_DESC),
                 default = DEFAULT_WINDOW_BARS.headerHeightPx,
             })
 
             addControl({
                 type = "slider",
-                name = "Footer-Höhe",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_FOOTER_HEIGHT),
                 min = 0,
                 max = MAX_BAR_HEIGHT,
                 step = 1,
@@ -1652,13 +1655,13 @@ local function registerPanel(displayTitle)
                         Nvk3UT.TrackerHost.ApplyWindowBars()
                     end
                 end,
-                tooltip = "0 px blendet den Bereich aus.",
+                tooltip = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_FOOTER_HEIGHT_DESC),
                 default = DEFAULT_WINDOW_BARS.footerHeightPx,
             })
 
             addControl({
                 type = "button",
-                name = "Position zurücksetzen",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_RESET_POSITION),
                 func = function()
                     local general = getGeneral()
                     general.window.left = DEFAULT_WINDOW.left
@@ -1678,12 +1681,12 @@ local function registerPanel(displayTitle)
                         Nvk3UT.TrackerHost.ApplyWindowBars()
                     end
                 end,
-                tooltip = "Setzt Größe, Position und Verhalten des Tracker-Fensters zurück.",
+                tooltip = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_RESET_POSITION_DESC),
             })
 
             addControl({
                 type = "checkbox",
-                name = "Standard-Quest-Tracker verstecken",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_HIDE_DEFAULT),
                 getFunc = function()
                     local features = getFeatures()
                     return features.hideDefaultQuestTracker == true
@@ -1700,7 +1703,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "checkbox",
-                name = "Hintergrund anzeigen",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_BACKGROUND),
                 getFunc = function()
                     local appearance = getAppearanceSettings()
                     return appearance.enabled ~= false
@@ -1715,7 +1718,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "slider",
-                name = "Hintergrund-Transparenz (%)",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_BACKGROUND_ALPHA),
                 min = 0,
                 max = 100,
                 step = 5,
@@ -1736,7 +1739,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "checkbox",
-                name = "Rahmen anzeigen",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_EDGE),
                 getFunc = function()
                     local appearance = getAppearanceSettings()
                     return appearance.edgeEnabled ~= false
@@ -1751,7 +1754,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "slider",
-                name = "Rahmen-Transparenz (%)",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_EDGE_ALPHA),
                 min = 0,
                 max = 100,
                 step = 5,
@@ -1773,7 +1776,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "slider",
-                name = "Rahmenbreite",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_EDGE_THICKNESS),
                 min = 1,
                 max = 12,
                 step = 1,
@@ -1795,7 +1798,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "slider",
-                name = "Innenabstand",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_PADDING),
                 min = 0,
                 max = 48,
                 step = 1,
@@ -1811,11 +1814,11 @@ local function registerPanel(displayTitle)
                 default = DEFAULT_APPEARANCE.padding,
             })
 
-            controls[#controls + 1] = { type = "header", name = "Auto-Resize & Layout" }
+            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_TRACKER_HOST_HEADER_LAYOUT) }
 
             addControl({
                 type = "checkbox",
-                name = "Automatisch vertikal anpassen",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_AUTOGROW_V),
                 getFunc = function()
                     local layout = getLayoutSettings()
                     return layout.autoGrowV == true
@@ -1832,7 +1835,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "checkbox",
-                name = "Automatisch horizontal anpassen",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_AUTOGROW_H),
                 getFunc = function()
                     local layout = getLayoutSettings()
                     return layout.autoGrowH == true
@@ -1849,7 +1852,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "slider",
-                name = "Mindestbreite",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_MIN_WIDTH),
                 min = 260,
                 max = 800,
                 step = 10,
@@ -1873,7 +1876,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "slider",
-                name = "Maximalbreite",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_MAX_WIDTH),
                 min = 260,
                 max = 1200,
                 step = 10,
@@ -1894,7 +1897,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "slider",
-                name = "Mindesthöhe",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_MIN_HEIGHT),
                 min = 240,
                 max = 800,
                 step = 10,
@@ -1918,7 +1921,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "slider",
-                name = "Maximalhöhe",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_MAX_HEIGHT),
                 min = 240,
                 max = 1200,
                 step = 10,
@@ -1937,12 +1940,12 @@ local function registerPanel(displayTitle)
                 default = DEFAULT_LAYOUT.maxHeight,
             })
 
-            controls[#controls + 1] = { type = "header", name = "Verhalten" }
+            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_TRACKER_HOST_HEADER_BEHAVIOR) }
 
             addControl({
                 type = "checkbox",
-                name = "Hide tracker during combat",
-                tooltip = "When enabled, the entire tracker host hides while you are in combat. The tracker remains visible while the AddOn Settings (LAM) are open.",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_HIDE_IN_COMBAT),
+                tooltip = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_HIDE_IN_COMBAT_DESC),
                 getFunc = function()
                     local settings = getHostSettings()
                     return settings.HideInCombat == true
@@ -3059,12 +3062,12 @@ local function registerPanel(displayTitle)
     }
     options[#options + 1] = {
         type = "submenu",
-        name = "Debug & Support",
+        name = GetString(SI_NVK3UT_LAM_SECTION_DEBUG),
         controls = (function()
             local controls = {}
             controls[#controls + 1] = {
                 type = "checkbox",
-                name = "Debug aktivieren",
+                name = GetString(SI_NVK3UT_LAM_OPTION_DEBUG_ENABLE),
                 getFunc = function()
                     local sv = getSavedVars()
                     return sv.debug == true
@@ -3087,7 +3090,7 @@ local function registerPanel(displayTitle)
 
             controls[#controls + 1] = {
                 type = "button",
-                name = "Self-Test ausführen",
+                name = GetString(SI_NVK3UT_LAM_OPTION_SELF_TEST),
                 func = function()
                     local module = nil
                     if Nvk3UT and Nvk3UT.SelfTest then
@@ -3121,12 +3124,12 @@ local function registerPanel(displayTitle)
                         end
                     end
                 end,
-                tooltip = "Führt einen kompakten Integritäts-Check aus. Bei aktiviertem Debug erscheinen ausführliche Chat-Logs.",
+                tooltip = GetString(SI_NVK3UT_LAM_OPTION_SELF_TEST_DESC),
             }
 
             controls[#controls + 1] = {
                 type = "button",
-                name = "UI neu laden",
+                name = GetString(SI_NVK3UT_LAM_OPTION_RELOAD_UI),
                 func = function()
                     ReloadUI()
                 end,
