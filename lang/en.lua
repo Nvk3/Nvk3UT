@@ -204,11 +204,11 @@ local strings = {
     SI_NVK3UT_TRACKER_QUEST_CONTEXT_SHOW_ON_MAP = "Show on map",
     SI_NVK3UT_TRACKER_QUEST_CONTEXT_ABANDON = "Abandon quest",
 
-    SI_NVK3UT_TRACKER_ACHIEVEMENT_CONTEXT_LINK_CHAT = "Insert into chat",
+    SI_NVK3UT_TRACKER_ACHIEVEMENT_CONTEXT_LINK_CHAT = "Link in Chat",
     SI_NVK3UT_TRACKER_ACHIEVEMENT_CONTEXT_SHOW_IN_ACHIEVEMENTS = "Show in Achievements",
     SI_NVK3UT_TRACKER_ACHIEVEMENT_CONTEXT_REMOVE_FAVORITE = "Remove from favorites",
 
-    SI_NVK3UT_TRACKER_GOLDEN_CONTEXT_OPEN_SOURCE_WINDOW = "Open Golden Endeavors",
+    SI_NVK3UT_TRACKER_GOLDEN_CONTEXT_OPEN_SOURCE_WINDOW = "Open Golden Pursuit",
 
     -- Journal extensions – categories, tooltips, and context menus
     SI_NVK3UT_JOURNAL_CATEGORY_COMPLETED = "Completed",
