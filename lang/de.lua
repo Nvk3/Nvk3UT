@@ -189,6 +189,23 @@ local strings = {
     SI_NVK3UT_LAM_GOLDEN_FONT_TITLE_LABEL = "Titel",
     SI_NVK3UT_LAM_GOLDEN_FONT_LINE_LABEL = "Zeilen",
 
+    -- Tracker UI – Kategorien und Kontextmenüs
+    SI_NVK3UT_TRACKER_ENDEAVOR_CATEGORY_ROOT = "Bestrebungen",
+    SI_NVK3UT_TRACKER_ENDEAVOR_CATEGORY_DAILY = "Tägliche Bestrebungen",
+    SI_NVK3UT_TRACKER_ENDEAVOR_CATEGORY_WEEKLY = "Wöchentliche Bestrebungen",
+    SI_NVK3UT_TRACKER_ENDEAVOR_CONTEXT_OPEN_DAILY = "Tägliche Bestrebungen öffnen",
+    SI_NVK3UT_TRACKER_ENDEAVOR_CONTEXT_OPEN_WEEKLY = "Wöchentliche Bestrebungen öffnen",
+
+    SI_NVK3UT_TRACKER_QUEST_CONTEXT_SHARE = "Quest teilen",
+    SI_NVK3UT_TRACKER_QUEST_CONTEXT_SHOW_ON_MAP = "Auf der Karte anzeigen",
+    SI_NVK3UT_TRACKER_QUEST_CONTEXT_ABANDON = "Quest aufgeben",
+
+    SI_NVK3UT_TRACKER_ACHIEVEMENT_CONTEXT_LINK_CHAT = "In Chat einfügen",
+    SI_NVK3UT_TRACKER_ACHIEVEMENT_CONTEXT_SHOW_IN_ACHIEVEMENTS = "In den Errungenschaften anzeigen",
+    SI_NVK3UT_TRACKER_ACHIEVEMENT_CONTEXT_REMOVE_FAVORITE = "Aus Favoriten entfernen",
+
+    SI_NVK3UT_TRACKER_GOLDEN_CONTEXT_OPEN_SOURCE_WINDOW = "Goldene Vorhaben öffnen",
+
     -- Shared formatting
     SI_NVK3UT_LAM_FONT_FACE_FORMAT = "%s - Schriftart",
     SI_NVK3UT_LAM_FONT_SIZE_FORMAT = "%s - Größe",

@@ -1477,7 +1477,7 @@ local function showGoldenEntryContextMenu(control)
 
     local optionType = (_G and _G.MENU_ADD_OPTION_LABEL) or MENU_ADD_OPTION_LABEL or 1
     AddCustomMenuItem(
-        "Goldene Vorhaben öffnen",
+        GetString(SI_NVK3UT_TRACKER_GOLDEN_CONTEXT_OPEN_SOURCE_WINDOW),
         function()
             openGoldenPromotionalEvent(control)
         end,

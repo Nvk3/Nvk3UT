@@ -1397,7 +1397,7 @@ local function BuildQuestContextMenuEntries(journalIndex)
     local entries = {}
 
     entries[#entries + 1] = {
-        label = "Quest teilen",
+        label = GetString(SI_NVK3UT_TRACKER_QUEST_CONTEXT_SHARE),
         enabled = function()
             return CanQuestBeShared(journalIndex)
         end,
@@ -1409,7 +1409,7 @@ local function BuildQuestContextMenuEntries(journalIndex)
     }
 
     entries[#entries + 1] = {
-        label = "Auf der Karte anzeigen",
+        label = GetString(SI_NVK3UT_TRACKER_QUEST_CONTEXT_SHOW_ON_MAP),
         enabled = function()
             return CanQuestBeShownOnMap(journalIndex)
         end,
@@ -1419,7 +1419,7 @@ local function BuildQuestContextMenuEntries(journalIndex)
     }
 
     entries[#entries + 1] = {
-        label = "Quest aufgeben",
+        label = GetString(SI_NVK3UT_TRACKER_QUEST_CONTEXT_ABANDON),
         enabled = function()
             return CanQuestBeAbandoned(journalIndex)
         end,

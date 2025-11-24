@@ -873,7 +873,7 @@ local function BuildAchievementContextMenuEntries(data)
     local achievementId = data and data.achievementId
 
     entries[#entries + 1] = {
-        label = "In Chat einfügen",
+        label = GetString(SI_NVK3UT_TRACKER_ACHIEVEMENT_CONTEXT_LINK_CHAT),
         enabled = function()
             return type(achievementId) == "number"
                 and achievementId > 0
@@ -902,7 +902,7 @@ local function BuildAchievementContextMenuEntries(data)
     }
 
     entries[#entries + 1] = {
-        label = "In den Errungenschaften anzeigen",
+        label = GetString(SI_NVK3UT_TRACKER_ACHIEVEMENT_CONTEXT_SHOW_IN_ACHIEVEMENTS),
         enabled = function()
             return CanShowInAchievements(achievementId)
         end,
@@ -914,7 +914,7 @@ local function BuildAchievementContextMenuEntries(data)
     }
 
     entries[#entries + 1] = {
-        label = "Aus Favoriten entfernen",
+        label = GetString(SI_NVK3UT_TRACKER_ACHIEVEMENT_CONTEXT_REMOVE_FAVORITE),
         enabled = function()
             return IsFavoriteAchievement(achievementId)
         end,
