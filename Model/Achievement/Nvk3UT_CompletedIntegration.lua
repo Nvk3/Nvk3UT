@@ -264,8 +264,20 @@ local function AddCompletedCategory(AchClass)
         local nodeTemplate = "ZO_IconHeader"
         local subTemplate = "ZO_TreeLabelSubCategory"
 
-        local parentNode =
-            self:AddCategory(lookup, tree, nodeTemplate, nil, NVK3_DONE, "Abgeschlossen", false, nil, nil, nil, true, true)
+        local parentNode = self:AddCategory(
+            lookup,
+            tree,
+            nodeTemplate,
+            nil,
+            NVK3_DONE,
+            (GetString and GetString(SI_NVK3UT_JOURNAL_CATEGORY_COMPLETED)) or "Abgeschlossen",
+            false,
+            nil,
+            nil,
+            nil,
+            true,
+            true
+        )
         if not parentNode then
             return result
         end
@@ -278,7 +290,10 @@ local function AddCompletedCategory(AchClass)
         if parentData then
             parentData.isNvkCompleted = true
             parentData.nvkSummaryTooltipText = nil
-            local plainParent = parentData.name or parentData.text or "Abgeschlossen"
+            local plainParent = parentData.name
+                or parentData.text
+                or (GetString and GetString(SI_NVK3UT_JOURNAL_CATEGORY_COMPLETED))
+                or "Abgeschlossen"
             parentData.nvkPlainName = parentData.nvkPlainName or sanitizePlainName(plainParent)
         end
 

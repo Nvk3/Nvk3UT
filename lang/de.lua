@@ -206,6 +206,18 @@ local strings = {
 
     SI_NVK3UT_TRACKER_GOLDEN_CONTEXT_OPEN_SOURCE_WINDOW = "Goldene Vorhaben öffnen",
 
+    -- Journal-Erweiterungen – Kategorien, Tooltips und Kontextmenüs
+    SI_NVK3UT_JOURNAL_CATEGORY_COMPLETED = "Abgeschlossen",
+    SI_NVK3UT_JOURNAL_CATEGORY_FAVORITES = "Favoriten",
+    SI_NVK3UT_JOURNAL_CATEGORY_RECENT = "Kürzlich",
+    SI_NVK3UT_JOURNAL_CATEGORY_TODO = "To-Do-Liste",
+    SI_NVK3UT_JOURNAL_SUBCATEGORY_COMPLETED_LAST50 = "Letzte 50",
+
+    SI_NVK3UT_JOURNAL_CONTEXT_OPEN = "Öffnen",
+    SI_NVK3UT_JOURNAL_CONTEXT_OPEN_ACHIEVEMENT = "In Errungenschaften öffnen",
+    SI_NVK3UT_JOURNAL_CONTEXT_ADD_FAVORITE = "Zu Favoriten hinzufügen",
+    SI_NVK3UT_JOURNAL_CONTEXT_REMOVE_FAVORITE = "Von Favoriten entfernen",
+
     -- Shared formatting
     SI_NVK3UT_LAM_FONT_FACE_FORMAT = "%s - Schriftart",
     SI_NVK3UT_LAM_FONT_SIZE_FORMAT = "%s - Größe",

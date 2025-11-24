@@ -13,22 +13,6 @@ local function debug(fmt, ...)
     end
 end
 
-local function registerString(id, text)
-    if type(id) ~= "string" or id == "" then
-        return
-    end
-    if _G[id] == nil then
-        ZO_CreateStringId(id, text)
-    end
-    SafeAddString(_G[id], text, 1)
-end
-
-local function ensureStringIds()
-    registerString("SI_NVK3UT_CTX_OPEN_ACHIEVEMENT", "In Errungenschaften öffnen")
-    registerString("SI_NVK3UT_CTX_FAVORITE_ADD", "Zu Favoriten hinzufügen")
-    registerString("SI_NVK3UT_CTX_FAVORITE_REMOVE", "Von Favoriten entfernen")
-end
-
 local function getAchievementsSystem()
     if SYSTEMS and type(SYSTEMS.GetObject) == "function" then
         local ok, result = pcall(SYSTEMS.GetObject, SYSTEMS, "achievements")
@@ -295,14 +279,15 @@ local function appendMenuEntries(achievementId)
 
     local addedAny = false
 
-    if addMenuEntry(GetString(SI_NVK3UT_CTX_OPEN_ACHIEVEMENT), function()
+    if addMenuEntry(GetString(SI_NVK3UT_JOURNAL_CONTEXT_OPEN_ACHIEVEMENT), function()
         openAchievement(achievementId)
     end) then
         addedAny = true
     end
 
     local favoriteNow = isFavorite(achievementId)
-    local toggleLabelId = favoriteNow and SI_NVK3UT_CTX_FAVORITE_REMOVE or SI_NVK3UT_CTX_FAVORITE_ADD
+    local toggleLabelId =
+        favoriteNow and SI_NVK3UT_JOURNAL_CONTEXT_REMOVE_FAVORITE or SI_NVK3UT_JOURNAL_CONTEXT_ADD_FAVORITE
     if addMenuEntry(GetString(toggleLabelId), function()
         local desired = not favoriteNow
         local changed = setFavorite(achievementId, desired)
@@ -348,8 +333,6 @@ function ChatContext.Init()
         return
     end
     ChatContext._initialized = true
-
-    ensureStringIds()
 
     if not hasLibCustomMenu() then
         return

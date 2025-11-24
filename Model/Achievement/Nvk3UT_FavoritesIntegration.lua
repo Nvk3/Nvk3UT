@@ -336,7 +336,11 @@ local function _updateFavoritesTooltip(ach)
     end
 
     local count = _countFavorites()
-    local name = data.name or data.text or (data.categoryData and data.categoryData.name) or "Favoriten"
+    local name = data.name
+        or data.text
+        or (data.categoryData and data.categoryData.name)
+        or (GetString and GetString(SI_NVK3UT_JOURNAL_CATEGORY_FAVORITES))
+        or "Favoriten"
     local label = zo_strformat("<<1>>", name)
     local iconTag = (U and U.GetIconTagForTexture and U.GetIconTagForTexture(ICON_PATH_FAVORITES)) or ""
     local displayLabel = (iconTag ~= "" and (iconTag .. label)) or label
@@ -368,7 +372,20 @@ local function AddFavoritesTopCategory(AchievementsClass)
         end
 
         local parentNode =
-            self:AddCategory(lookup, tree, "ZO_IconChildlessHeader", nil, NVK3_FAVORITES_KEY, "Favoriten", false, nil, nil, nil, true, true)
+            self:AddCategory(
+                lookup,
+                tree,
+                "ZO_IconChildlessHeader",
+                nil,
+                NVK3_FAVORITES_KEY,
+                (GetString and GetString(SI_NVK3UT_JOURNAL_CATEGORY_FAVORITES)) or "Favoriten",
+                false,
+                nil,
+                nil,
+                nil,
+                true,
+                true
+            )
         if not parentNode then
             return result
         end
@@ -380,7 +397,10 @@ local function AddFavoritesTopCategory(AchievementsClass)
             row.isNvkFavorites = true
             row.nvkSummaryTooltipText = nil
             row.isNvk3Fav = true
-            local plain = row.name or row.text or "Favoriten"
+            local plain = row.name
+                or row.text
+                or (GetString and GetString(SI_NVK3UT_JOURNAL_CATEGORY_FAVORITES))
+                or "Favoriten"
             row.nvkPlainName = row.nvkPlainName or sanitizePlainName(plain)
             self._nvkFavoritesData = row
         end
@@ -613,7 +633,10 @@ local function HookAchievementContext()
                         end
                         debugLog("[Nvk3UT][Favorites][Menu] open data={id:%d, isFav:%s}", id, tostring(isFav))
                         if isFav then
-                            AddCustomMenuItem("Von Favoriten entfernen", function()
+                            AddCustomMenuItem(
+                                (GetString and GetString(SI_NVK3UT_JOURNAL_CONTEXT_REMOVE_FAVORITE))
+                                    or "Von Favoriten entfernen",
+                                function()
                                 -- remove entire line of series
                                 local chainId = id
                                 while chainId ~= 0 do
@@ -642,7 +665,9 @@ local function HookAchievementContext()
                                 if Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then Nvk3UT.UI.UpdateStatus() end
                             end)
                         else
-                            AddCustomMenuItem("Zu Favoriten hinzufügen", function()
+                            AddCustomMenuItem(
+                                (GetString and GetString(SI_NVK3UT_JOURNAL_CONTEXT_ADD_FAVORITE)) or "Zu Favoriten hinzufügen",
+                                function()
                                 local state = getAchievementState()
                                 if state and state.SetFavorited then
                                     local ok = pcall(state.SetFavorited, id, true, "FavoritesIntegration:ContextAdd")

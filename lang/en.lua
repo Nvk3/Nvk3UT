@@ -202,6 +202,18 @@ local strings = {
 
     SI_NVK3UT_TRACKER_GOLDEN_CONTEXT_OPEN_SOURCE_WINDOW = "Open Golden Endeavors",
 
+    -- Journal extensions – categories, tooltips, and context menus
+    SI_NVK3UT_JOURNAL_CATEGORY_COMPLETED = "Completed",
+    SI_NVK3UT_JOURNAL_CATEGORY_FAVORITES = "Favorites",
+    SI_NVK3UT_JOURNAL_CATEGORY_RECENT = "Recent",
+    SI_NVK3UT_JOURNAL_CATEGORY_TODO = "To-Do List",
+    SI_NVK3UT_JOURNAL_SUBCATEGORY_COMPLETED_LAST50 = "Last 50",
+
+    SI_NVK3UT_JOURNAL_CONTEXT_OPEN = "Open",
+    SI_NVK3UT_JOURNAL_CONTEXT_OPEN_ACHIEVEMENT = "Open in Achievements",
+    SI_NVK3UT_JOURNAL_CONTEXT_ADD_FAVORITE = "Add to favorites",
+    SI_NVK3UT_JOURNAL_CONTEXT_REMOVE_FAVORITE = "Remove from favorites",
+
     -- Shared formatting
     SI_NVK3UT_LAM_FONT_FACE_FORMAT = "%s - Font",
     SI_NVK3UT_LAM_FONT_SIZE_FORMAT = "%s - Size",
