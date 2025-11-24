@@ -201,7 +201,7 @@ local function AddTodoCategory(AchClass)
 
     local nodeTemplate = "ZO_IconHeader"
     local subTemplate = "ZO_TreeLabelSubCategory"
-    local label = "To-Do-Liste"
+    local label = (GetString and GetString(SI_NVK3UT_JOURNAL_CATEGORY_TODO)) or "To-Do-Liste"
 
     local parentNode = self:AddCategory(
       lookup,

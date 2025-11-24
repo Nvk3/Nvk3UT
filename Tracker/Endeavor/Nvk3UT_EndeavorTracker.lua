@@ -1488,7 +1488,7 @@ local function ensureUi(container)
                 ClearMenu()
                 local optionType = (_G and _G.MENU_ADD_OPTION_LABEL) or MENU_ADD_OPTION_LABEL or 1
                 AddCustomMenuItem(
-                    "Tägliche Bestrebungen öffnen",
+                    GetString(SI_NVK3UT_TRACKER_ENDEAVOR_CONTEXT_OPEN_DAILY),
                     function()
                         openTimedActivities("daily")
                         safeDebug("[EndeavorTracker.UI] Context: open daily timed activities base UI")
@@ -1566,7 +1566,7 @@ local function ensureUi(container)
                 ClearMenu()
                 local optionType = (_G and _G.MENU_ADD_OPTION_LABEL) or MENU_ADD_OPTION_LABEL or 1
                 AddCustomMenuItem(
-                    "Wöchentliche Bestrebungen öffnen",
+                    GetString(SI_NVK3UT_TRACKER_ENDEAVOR_CONTEXT_OPEN_WEEKLY),
                     function()
                         openTimedActivities("weekly")
                         safeDebug("[EndeavorTracker.UI] Context: open weekly timed activities base UI")
@@ -1910,7 +1910,7 @@ function EndeavorTracker.Refresh(viewModel)
             applyLabelFont(weeklyLabel, sectionFont, DEFAULT_SECTION_FONT)
 
             local formatCategoryHeader = Utils and Utils.FormatCategoryHeaderText
-            local categoryTitle = resolveTitle(categoryVm.title, "Bestrebungen")
+            local categoryTitle = resolveTitle(categoryVm.title, GetString(SI_NVK3UT_TRACKER_ENDEAVOR_CATEGORY_ROOT))
             local categoryRemaining = tonumber(categoryVm.remaining) or 0
             categoryRemaining = math.max(0, math.floor(categoryRemaining + 0.5))
             local categoryExpanded = categoryVm.expanded == true
@@ -1960,11 +1960,17 @@ function EndeavorTracker.Refresh(viewModel)
 
             if not enabled then
                 if dailyLabel and dailyLabel.SetText then
-                    local dailyTitle = resolveTitle(dailyVm.title or "Tägliche Bestrebungen", "Tägliche Bestrebungen")
+                    local dailyTitle = resolveTitle(
+                        dailyVm.title or GetString(SI_NVK3UT_TRACKER_ENDEAVOR_CATEGORY_DAILY),
+                        GetString(SI_NVK3UT_TRACKER_ENDEAVOR_CATEGORY_DAILY)
+                    )
                     dailyLabel:SetText(dailyTitle)
                 end
                 if weeklyLabel and weeklyLabel.SetText then
-                    local weeklyTitle = resolveTitle(weeklyVm.title or "Wöchentliche Bestrebungen", "Wöchentliche Bestrebungen")
+                    local weeklyTitle = resolveTitle(
+                        weeklyVm.title or GetString(SI_NVK3UT_TRACKER_ENDEAVOR_CATEGORY_WEEKLY),
+                        GetString(SI_NVK3UT_TRACKER_ENDEAVOR_CATEGORY_WEEKLY)
+                    )
                     weeklyLabel:SetText(weeklyTitle)
                 end
 
@@ -1998,7 +2004,10 @@ function EndeavorTracker.Refresh(viewModel)
             end
 
             if dailyLabel and dailyLabel.SetText then
-                local dailyTitle = resolveTitle(dailyVm.title or "Tägliche Bestrebungen", "Tägliche Bestrebungen")
+                local dailyTitle = resolveTitle(
+                    dailyVm.title or GetString(SI_NVK3UT_TRACKER_ENDEAVOR_CATEGORY_DAILY),
+                    GetString(SI_NVK3UT_TRACKER_ENDEAVOR_CATEGORY_DAILY)
+                )
                 local dailyShowCounts = shouldShowCountsFor(dailyVm)
                 if dailyShowCounts then
                     local completed = dailyVm.displayCompleted or dailyVm.completed
@@ -2010,7 +2019,10 @@ function EndeavorTracker.Refresh(viewModel)
             end
 
             if weeklyLabel and weeklyLabel.SetText then
-                local weeklyTitle = resolveTitle(weeklyVm.title or "Wöchentliche Bestrebungen", "Wöchentliche Bestrebungen")
+                local weeklyTitle = resolveTitle(
+                    weeklyVm.title or GetString(SI_NVK3UT_TRACKER_ENDEAVOR_CATEGORY_WEEKLY),
+                    GetString(SI_NVK3UT_TRACKER_ENDEAVOR_CATEGORY_WEEKLY)
+                )
                 local weeklyShowCounts = shouldShowCountsFor(weeklyVm)
                 if weeklyShowCounts then
                     local completed = weeklyVm.displayCompleted or weeklyVm.completed

@@ -543,12 +543,12 @@ function Controller:BuildViewModel()
         local stateModule = getStateModule()
         return {
             category = {
-                title = "Bestrebungen",
+                title = GetString(SI_NVK3UT_TRACKER_ENDEAVOR_CATEGORY_ROOT),
                 expanded = isStateExpanded(stateModule),
                 remaining = 0,
             },
             daily = {
-                title = "Tägliche Bestrebungen",
+                title = GetString(SI_NVK3UT_TRACKER_ENDEAVOR_CATEGORY_DAILY),
                 completed = 0,
                 total = 0,
                 displayCompleted = 0,
@@ -557,7 +557,7 @@ function Controller:BuildViewModel()
                 objectives = {},
             },
             weekly = {
-                title = "Wöchentliche Bestrebungen",
+                title = GetString(SI_NVK3UT_TRACKER_ENDEAVOR_CATEGORY_WEEKLY),
                 completed = 0,
                 total = 0,
                 displayCompleted = 0,
@@ -670,13 +670,13 @@ function Controller:BuildViewModel()
     local vm = {
         category = {
             kind = "endeavorCategoryHeader",
-            title = "Bestrebungen",
+            title = GetString(SI_NVK3UT_TRACKER_ENDEAVOR_CATEGORY_ROOT),
             expanded = isStateExpanded(stateModule),
             remaining = remainingTotal,
         },
         daily = {
             kind = "dailyHeader",
-            title = "Tägliche Bestrebungen",
+            title = GetString(SI_NVK3UT_TRACKER_ENDEAVOR_CATEGORY_DAILY),
             completed = dailyCompleted,
             total = dailyTotal,
             displayCompleted = dailyDisplayCompleted,
@@ -690,7 +690,7 @@ function Controller:BuildViewModel()
         },
         weekly = {
             kind = "weeklyHeader",
-            title = "Wöchentliche Bestrebungen",
+            title = GetString(SI_NVK3UT_TRACKER_ENDEAVOR_CATEGORY_WEEKLY),
             completed = weeklyCompleted,
             total = weeklyTotal,
             displayCompleted = weeklyDisplayCompleted,

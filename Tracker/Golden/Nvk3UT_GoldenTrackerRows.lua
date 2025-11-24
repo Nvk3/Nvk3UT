@@ -54,7 +54,7 @@ local SCROLLBAR_WIDTH_RESERVE = 18
 local ROW_TEXT_PADDING_Y = 4
 local OBJECTIVE_VERTICAL_PADDING_Y = 2
 
-local GOLDEN_HEADER_TITLE = "GOLDENE VORHABEN"
+local GOLDEN_HEADER_TITLE = GetString(SI_NVK3UT_TRACKER_GOLDEN_CATEGORY_MAIN)
 
 local CATEGORY_CHEVRON_SIZE = 20
 local CATEGORY_LABEL_OFFSET_X = 4
@@ -1477,7 +1477,7 @@ local function showGoldenEntryContextMenu(control)
 
     local optionType = (_G and _G.MENU_ADD_OPTION_LABEL) or MENU_ADD_OPTION_LABEL or 1
     AddCustomMenuItem(
-        "Goldene Vorhaben öffnen",
+        GetString(SI_NVK3UT_TRACKER_GOLDEN_CONTEXT_OPEN_SOURCE_WINDOW),
         function()
             openGoldenPromotionalEvent(control)
         end,

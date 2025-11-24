@@ -6,161 +6,6 @@ local DEFAULT_PANEL_TITLE = "Nvk3's Ultimate Tracker"
 local L = {}
 Nvk3UT.LAM = L
 
-local function registerString(id, text)
-    if type(id) ~= "string" or id == "" then
-        return
-    end
-
-    if type(text) ~= "string" then
-        text = tostring(text or "")
-    end
-
-    local stringId = _G[id]
-    if type(stringId) == "number" then
-        if type(SafeAddString) == "function" then
-            SafeAddString(stringId, text, 1)
-        end
-        return
-    end
-
-    if type(ZO_CreateStringId) == "function" then
-        ZO_CreateStringId(id, text)
-    else
-        _G[id] = text
-    end
-end
-
-registerString("SI_NVK3UT_LAM_ENDEAVOR_SECTION_FUNCTIONS", "FUNKTIONEN")
-registerString("SI_NVK3UT_LAM_ENDEAVOR_ENABLE", "Aktivieren")
-registerString("SI_NVK3UT_LAM_ENDEAVOR_ENABLE_TOOLTIP", "Schaltet den Bestrebungen-Tracker ein oder aus.")
-registerString("SI_NVK3UT_LAM_ENDEAVOR_SHOW_COUNTS", "Zähler in Abschnittsüberschriften anzeigen")
-registerString(
-    "SI_NVK3UT_LAM_ENDEAVOR_SHOW_COUNTS_TOOLTIP",
-    "Zeigt die verbleibende Anzahl direkt hinter den Überschriften an.\nWirkt nur auf die Hauptkategorie. Täglich und Wöchentlich zeigen Zähler immer."
-)
-registerString("SI_NVK3UT_LAM_ENDEAVOR_COMPLETED_HEADER", "Abgeschlossen-Handling")
-registerString(
-    "SI_NVK3UT_LAM_ENDEAVOR_COMPLETED_TOOLTIP",
-    "Legt fest, wie abgeschlossene Ziele dargestellt werden."
-)
-registerString("SI_NVK3UT_LAM_ENDEAVOR_COMPLETED_HIDE", "Ausblenden")
-registerString("SI_NVK3UT_LAM_ENDEAVOR_COMPLETED_RECOLOR", "Umfärben")
-registerString("SI_NVK3UT_LAM_ENDEAVOR_SECTION_COLORS", "ERSCHEINUNG – FARBEN")
-registerString("SI_NVK3UT_LAM_ENDEAVOR_COLOR_CATEGORY", "Kategorie- / Abschnittstitel")
-registerString(
-    "SI_NVK3UT_LAM_ENDEAVOR_COLOR_CATEGORY_TOOLTIP",
-    "Farbe für den oberen Bestrebungen-Block."
-)
-registerString("SI_NVK3UT_LAM_ENDEAVOR_COLOR_ENTRY", "Eintragsname")
-registerString(
-    "SI_NVK3UT_LAM_ENDEAVOR_COLOR_ENTRY_TOOLTIP",
-    "Farbe für tägliche und wöchentliche Bestrebungen."
-)
-registerString("SI_NVK3UT_LAM_ENDEAVOR_COLOR_OBJECTIVE", "Zieltext")
-registerString(
-    "SI_NVK3UT_LAM_ENDEAVOR_COLOR_OBJECTIVE_TOOLTIP",
-    "Farbe für die Fortschrittszeilen der einzelnen Ziele."
-)
-registerString("SI_NVK3UT_LAM_ENDEAVOR_COLOR_ACTIVE", "Aktiver / fokussierter Eintrag")
-registerString(
-    "SI_NVK3UT_LAM_ENDEAVOR_COLOR_ACTIVE_TOOLTIP",
-    "Farbe, wenn ein Abschnitt geöffnet oder fokussiert ist."
-)
-registerString("SI_NVK3UT_LAM_ENDEAVOR_COLOR_COMPLETED", "Abgeschlossener Eintrag")
-registerString(
-    "SI_NVK3UT_LAM_ENDEAVOR_COLOR_COMPLETED_TOOLTIP",
-    "Farbe für abgeschlossene Ziele, wenn \"Umfärben\" aktiv ist."
-)
-registerString("SI_NVK3UT_LAM_ENDEAVOR_SECTION_FONTS", "ERSCHEINUNG – SCHRIFTARTEN")
-registerString("SI_NVK3UT_LAM_ENDEAVOR_FONT_FAMILY", "Schriftart")
-registerString(
-    "SI_NVK3UT_LAM_ENDEAVOR_FONT_FAMILY_TOOLTIP",
-    "Wählt die Schriftart für Kategorien, Abschnitte und Ziele."
-)
-registerString("SI_NVK3UT_LAM_ENDEAVOR_FONT_SIZE", "Größe")
-registerString(
-    "SI_NVK3UT_LAM_ENDEAVOR_FONT_SIZE_TOOLTIP",
-    "Legt die Basisschriftgröße des Trackers fest."
-)
-registerString("SI_NVK3UT_LAM_ENDEAVOR_FONT_OUTLINE", "Kontur")
-registerString(
-    "SI_NVK3UT_LAM_ENDEAVOR_FONT_OUTLINE_TOOLTIP",
-    "Bestimmt die Kontur bzw. den Schatten der Schrift."
-)
-registerString("SI_NVK3UT_LAM_GOLDEN_SECTION_FUNCTIONS", "GOLDENE VORHABEN TRACKER – FUNKTIONEN")
-registerString("SI_NVK3UT_LAM_GOLDEN_ENABLE", "Aktivieren")
-registerString("SI_NVK3UT_LAM_GOLDEN_ENABLE_TOOLTIP", "Schaltet den Golden-Tracker ein oder aus.")
-registerString("SI_NVK3UT_LAM_GOLDEN_HIDE_BASEGAME_TRACKING", "Basegame-Tracking ausblenden")
-registerString(
-    "SI_NVK3UT_LAM_GOLDEN_HIDE_BASEGAME_TRACKING_TOOLTIP",
-    "Blendet den Golden-Vorhaben-Tracker des Grundspiels im HUD aus. Andere getrackte Inhalte bleiben sichtbar."
-)
-registerString("SI_NVK3UT_LAM_GOLDEN_SHOW_COUNTS", "Zähler in Abschnittsüberschriften anzeigen")
-registerString(
-    "SI_NVK3UT_LAM_GOLDEN_SHOW_COUNTS_TOOLTIP",
-    "Zeigt die verbleibende Anzahl direkt hinter den Überschriften an."
-)
-registerString("SI_NVK3UT_LAM_GOLDEN_COMPLETED_HEADER_GENERAL", "Abgeschlossen-Handling (Allgemein)")
-registerString(
-    "SI_NVK3UT_LAM_GOLDEN_COMPLETED_GENERAL_TOOLTIP",
-    "Legt fest, wie das Vorhaben nach Abschluss behandelt wird."
-)
-registerString("SI_NVK3UT_LAM_GOLDEN_COMPLETED_HEADER_OBJECTIVES", "Abgeschlossen-Handling (Ziele)")
-registerString(
-    "SI_NVK3UT_LAM_GOLDEN_COMPLETED_OBJECTIVES_TOOLTIP",
-    "Legt fest, wie einzelne Ziele nach Abschluss behandelt werden."
-)
-registerString("SI_NVK3UT_LAM_GOLDEN_COMPLETED_HIDE", "Ausblenden")
-registerString("SI_NVK3UT_LAM_GOLDEN_COMPLETED_RECOLOR", "Umfärben")
-registerString("SI_NVK3UT_LAM_GOLDEN_COMPLETED_SHOW_OPEN_OBJECTIVES", "Offene weiter anzeigen")
-registerString("SI_NVK3UT_LAM_GOLDEN_SECTION_COLORS", "ERSCHEINUNG – FARBEN (GOLDENE VORHABEN TRACKER)")
-registerString("SI_NVK3UT_LAM_GOLDEN_COLOR_CATEGORY_CLOSED", "Kategorie- / Abschnittstitel (abgeschlossen)")
-registerString(
-    "SI_NVK3UT_LAM_GOLDEN_COLOR_CATEGORY_CLOSED_TOOLTIP",
-    "Farbe für den Abschnittstitel, wenn die Kategorie geschlossen oder abgeschlossen ist."
-)
-registerString("SI_NVK3UT_LAM_GOLDEN_COLOR_CATEGORY_OPEN", "Kategorie- / Abschnittstitel (offen)")
-registerString(
-    "SI_NVK3UT_LAM_GOLDEN_COLOR_CATEGORY_OPEN_TOOLTIP",
-    "Wird verwendet, wenn die Kampagne noch nicht voll abgeschlossen ist und die Kategorie zugeklappt ist."
-)
-registerString("SI_NVK3UT_LAM_GOLDEN_COLOR_ENTRY", "Eintragsname")
-registerString(
-    "SI_NVK3UT_LAM_GOLDEN_COLOR_ENTRY_TOOLTIP",
-    "Farbe für Golden-Vorhaben-Einträge."
-)
-registerString("SI_NVK3UT_LAM_GOLDEN_COLOR_OBJECTIVE", "Zieltext")
-registerString(
-    "SI_NVK3UT_LAM_GOLDEN_COLOR_OBJECTIVE_TOOLTIP",
-    "Farbe für die Fortschrittszeilen der einzelnen Ziele."
-)
-registerString("SI_NVK3UT_LAM_GOLDEN_COLOR_ACTIVE", "Aktiver / fokussierter Eintrag")
-registerString(
-    "SI_NVK3UT_LAM_GOLDEN_COLOR_ACTIVE_TOOLTIP",
-    "Farbe, wenn ein Abschnitt geöffnet oder fokussiert ist."
-)
-registerString("SI_NVK3UT_LAM_GOLDEN_COLOR_COMPLETED", "Abgeschlossener Eintrag")
-registerString(
-    "SI_NVK3UT_LAM_GOLDEN_COLOR_COMPLETED_TOOLTIP",
-    "Farbe für abgeschlossene Ziele, wenn \"Umfärben\" aktiv ist."
-)
-registerString("SI_NVK3UT_LAM_GOLDEN_SECTION_FONTS", "ERSCHEINUNG – SCHRIFTARTEN (GOLDENE VORHABEN TRACKER)")
-registerString("SI_NVK3UT_LAM_GOLDEN_FONT_FAMILY", "Schriftart")
-registerString(
-    "SI_NVK3UT_LAM_GOLDEN_FONT_FAMILY_TOOLTIP",
-    "Wählt die Schriftart für Kategorien, Abschnitte und Ziele."
-)
-registerString("SI_NVK3UT_LAM_GOLDEN_FONT_SIZE", "Größe")
-registerString(
-    "SI_NVK3UT_LAM_GOLDEN_FONT_SIZE_TOOLTIP",
-    "Legt die Basisschriftgröße des Golden-Trackers fest."
-)
-registerString("SI_NVK3UT_LAM_GOLDEN_FONT_OUTLINE", "Kontur")
-registerString(
-    "SI_NVK3UT_LAM_GOLDEN_FONT_OUTLINE_TOOLTIP",
-    "Bestimmt die Kontur bzw. den Schatten der Schrift."
-)
-
 local function getAddonVersionString()
     local addon = Nvk3UT
     if type(addon) ~= "table" then
@@ -1205,7 +1050,7 @@ local function buildFontControls(label, settings, key, defaults, onChanged, adap
     return {
         {
             type = "dropdown",
-            name = label .. " - Schriftart",
+            name = string.format(GetString(SI_NVK3UT_LAM_FONT_FACE_FORMAT), label),
             choices = (function()
                 local names = {}
                 for index = 1, #FONT_FACE_CHOICES do
@@ -1232,7 +1077,7 @@ local function buildFontControls(label, settings, key, defaults, onChanged, adap
         },
         {
             type = "slider",
-            name = label .. " - Größe",
+            name = string.format(GetString(SI_NVK3UT_LAM_FONT_SIZE_FORMAT), label),
             min = 12,
             max = 36,
             step = 1,
@@ -1248,7 +1093,7 @@ local function buildFontControls(label, settings, key, defaults, onChanged, adap
         },
         {
             type = "dropdown",
-            name = label .. " - Kontur",
+            name = string.format(GetString(SI_NVK3UT_LAM_FONT_OUTLINE_FORMAT), label),
             choices = (function()
                 local names = {}
                 for index = 1, #OUTLINE_CHOICES do
@@ -1378,16 +1223,19 @@ local function registerPanel(displayTitle)
     local options = {}
     options[#options + 1] = {
         type = "submenu",
-        name = "Journal Erweiterungen",
+        name = GetString(SI_NVK3UT_LAM_SECTION_JOURNAL),
         controls = (function()
             local controls = {}
 
-            controls[#controls + 1] = { type = "header", name = "Favoriten & Daten" }
+            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_JOURNAL_HEADER_STORAGE) }
 
             controls[#controls + 1] = {
                 type = "dropdown",
-                name = "Favoritenspeicherung:",
-                choices = { "Account-Weit", "Charakter-Weit" },
+                name = GetString(SI_NVK3UT_LAM_OPTION_JOURNAL_FAVORITE_SCOPE),
+                choices = {
+                    GetString(SI_NVK3UT_LAM_OPTION_JOURNAL_SCOPE_ACCOUNT),
+                    GetString(SI_NVK3UT_LAM_OPTION_JOURNAL_SCOPE_CHARACTER),
+                },
                 choicesValues = { "account", "character" },
                 getFunc = function()
                     local general = getGeneral()
@@ -1409,13 +1257,13 @@ local function registerPanel(displayTitle)
                     end
                     updateStatus()
                 end,
-                tooltip = "Bestimmt, ob Favoriten global (Account) oder je Charakter gespeichert werden.",
+                tooltip = GetString(SI_NVK3UT_LAM_OPTION_JOURNAL_FAVORITE_SCOPE_DESC),
                 default = "account",
             }
 
             controls[#controls + 1] = {
                 type = "slider",
-                name = "Kürzlich-History (max. Einträge)",
+                name = GetString(SI_NVK3UT_LAM_OPTION_JOURNAL_RECENT_LIMIT),
                 min = 25,
                 max = 200,
                 step = 5,
@@ -1432,16 +1280,16 @@ local function registerPanel(displayTitle)
                     end
                     updateStatus()
                 end,
-                tooltip = "Hardcap für die Anzahl der Kürzlich-Einträge.",
+                tooltip = GetString(SI_NVK3UT_LAM_OPTION_JOURNAL_RECENT_LIMIT_DESC),
             }
 
-            controls[#controls + 1] = { type = "header", name = "Funktionen" }
+            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_JOURNAL_HEADER_FEATURES) }
 
             local featureControls = {
-                { key = "completed", label = "Abgeschlossen aktiv" },
-                { key = "favorites", label = "Favoriten aktiv" },
-                { key = "recent", label = "Kürzlich aktiv" },
-                { key = "todo", label = "To-Do-Liste aktiv" },
+                { key = "completed", label = GetString(SI_NVK3UT_LAM_OPTION_JOURNAL_FEATURE_COMPLETED) },
+                { key = "favorites", label = GetString(SI_NVK3UT_LAM_OPTION_JOURNAL_FEATURE_FAVORITES) },
+                { key = "recent", label = GetString(SI_NVK3UT_LAM_OPTION_JOURNAL_FEATURE_RECENT) },
+                { key = "todo", label = GetString(SI_NVK3UT_LAM_OPTION_JOURNAL_FEATURE_TODO) },
             }
 
             for index = 1, #featureControls do
@@ -1472,15 +1320,15 @@ local function registerPanel(displayTitle)
 
     options[#options + 1] = {
         type = "submenu",
-        name = "Status Text",
+        name = GetString(SI_NVK3UT_LAM_SECTION_STATUS_TEXT),
         controls = (function()
             local controls = {}
 
-            controls[#controls + 1] = { type = "header", name = "Anzeige" }
+            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_STATUS_HEADER_DISPLAY) }
 
             controls[#controls + 1] = {
                 type = "checkbox",
-                name = "Status über dem Kompass anzeigen",
+                name = GetString(SI_NVK3UT_LAM_OPTION_STATUS_SHOW_COMPASS),
                 getFunc = function()
                     local general = getGeneral()
                     return general.showStatus ~= false
@@ -1499,11 +1347,11 @@ local function registerPanel(displayTitle)
 
     options[#options + 1] = {
         type = "submenu",
-        name = "Tracker Host",
+        name = GetString(SI_NVK3UT_LAM_SECTION_TRACKER_HOST),
         controls = (function()
             local controls = {}
 
-            controls[#controls + 1] = { type = "header", name = "Fenster & Darstellung" }
+            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_TRACKER_HOST_HEADER_WINDOW) }
 
             local function addControl(control)
                 controls[#controls + 1] = control
@@ -1511,7 +1359,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "checkbox",
-                name = "Fenster anzeigen",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_SHOW),
                 getFunc = function()
                     local general = getGeneral()
                     return general.window.visible ~= false
@@ -1528,7 +1376,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "checkbox",
-                name = "Fenster sperren",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_LOCK),
                 getFunc = function()
                     local general = getGeneral()
                     return general.window.locked == true
@@ -1545,7 +1393,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "checkbox",
-                name = "Immer im Vordergrund",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_ON_TOP),
                 getFunc = function()
                     local general = getGeneral()
                     return general.window.onTop == true
@@ -1562,7 +1410,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "slider",
-                name = "Fensterbreite",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_WIDTH),
                 min = 260,
                 max = 1200,
                 step = 10,
@@ -1588,7 +1436,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "slider",
-                name = "Fensterhöhe",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_HEIGHT),
                 min = 240,
                 max = 1200,
                 step = 10,
@@ -1614,7 +1462,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "slider",
-                name = "Header-Höhe",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_HEADER_HEIGHT),
                 min = 0,
                 max = MAX_BAR_HEIGHT,
                 step = 1,
@@ -1630,13 +1478,13 @@ local function registerPanel(displayTitle)
                         Nvk3UT.TrackerHost.ApplyWindowBars()
                     end
                 end,
-                tooltip = "0 px blendet den Bereich aus.",
+                tooltip = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_HEADER_HEIGHT_DESC),
                 default = DEFAULT_WINDOW_BARS.headerHeightPx,
             })
 
             addControl({
                 type = "slider",
-                name = "Footer-Höhe",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_FOOTER_HEIGHT),
                 min = 0,
                 max = MAX_BAR_HEIGHT,
                 step = 1,
@@ -1652,13 +1500,13 @@ local function registerPanel(displayTitle)
                         Nvk3UT.TrackerHost.ApplyWindowBars()
                     end
                 end,
-                tooltip = "0 px blendet den Bereich aus.",
+                tooltip = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_FOOTER_HEIGHT_DESC),
                 default = DEFAULT_WINDOW_BARS.footerHeightPx,
             })
 
             addControl({
                 type = "button",
-                name = "Position zurücksetzen",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_RESET_POSITION),
                 func = function()
                     local general = getGeneral()
                     general.window.left = DEFAULT_WINDOW.left
@@ -1678,12 +1526,12 @@ local function registerPanel(displayTitle)
                         Nvk3UT.TrackerHost.ApplyWindowBars()
                     end
                 end,
-                tooltip = "Setzt Größe, Position und Verhalten des Tracker-Fensters zurück.",
+                tooltip = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_RESET_POSITION_DESC),
             })
 
             addControl({
                 type = "checkbox",
-                name = "Standard-Quest-Tracker verstecken",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_HIDE_DEFAULT),
                 getFunc = function()
                     local features = getFeatures()
                     return features.hideDefaultQuestTracker == true
@@ -1700,7 +1548,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "checkbox",
-                name = "Hintergrund anzeigen",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_BACKGROUND),
                 getFunc = function()
                     local appearance = getAppearanceSettings()
                     return appearance.enabled ~= false
@@ -1715,7 +1563,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "slider",
-                name = "Hintergrund-Transparenz (%)",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_BACKGROUND_ALPHA),
                 min = 0,
                 max = 100,
                 step = 5,
@@ -1736,7 +1584,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "checkbox",
-                name = "Rahmen anzeigen",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_EDGE),
                 getFunc = function()
                     local appearance = getAppearanceSettings()
                     return appearance.edgeEnabled ~= false
@@ -1751,7 +1599,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "slider",
-                name = "Rahmen-Transparenz (%)",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_EDGE_ALPHA),
                 min = 0,
                 max = 100,
                 step = 5,
@@ -1773,7 +1621,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "slider",
-                name = "Rahmenbreite",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_EDGE_THICKNESS),
                 min = 1,
                 max = 12,
                 step = 1,
@@ -1795,7 +1643,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "slider",
-                name = "Innenabstand",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_PADDING),
                 min = 0,
                 max = 48,
                 step = 1,
@@ -1811,11 +1659,11 @@ local function registerPanel(displayTitle)
                 default = DEFAULT_APPEARANCE.padding,
             })
 
-            controls[#controls + 1] = { type = "header", name = "Auto-Resize & Layout" }
+            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_TRACKER_HOST_HEADER_LAYOUT) }
 
             addControl({
                 type = "checkbox",
-                name = "Automatisch vertikal anpassen",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_AUTOGROW_V),
                 getFunc = function()
                     local layout = getLayoutSettings()
                     return layout.autoGrowV == true
@@ -1832,7 +1680,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "checkbox",
-                name = "Automatisch horizontal anpassen",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_AUTOGROW_H),
                 getFunc = function()
                     local layout = getLayoutSettings()
                     return layout.autoGrowH == true
@@ -1849,7 +1697,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "slider",
-                name = "Mindestbreite",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_MIN_WIDTH),
                 min = 260,
                 max = 800,
                 step = 10,
@@ -1873,7 +1721,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "slider",
-                name = "Maximalbreite",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_MAX_WIDTH),
                 min = 260,
                 max = 1200,
                 step = 10,
@@ -1894,7 +1742,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "slider",
-                name = "Mindesthöhe",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_MIN_HEIGHT),
                 min = 240,
                 max = 800,
                 step = 10,
@@ -1918,7 +1766,7 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "slider",
-                name = "Maximalhöhe",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_MAX_HEIGHT),
                 min = 240,
                 max = 1200,
                 step = 10,
@@ -1937,12 +1785,12 @@ local function registerPanel(displayTitle)
                 default = DEFAULT_LAYOUT.maxHeight,
             })
 
-            controls[#controls + 1] = { type = "header", name = "Verhalten" }
+            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_TRACKER_HOST_HEADER_BEHAVIOR) }
 
             addControl({
                 type = "checkbox",
-                name = "Hide tracker during combat",
-                tooltip = "When enabled, the entire tracker host hides while you are in combat. The tracker remains visible while the AddOn Settings (LAM) are open.",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_HIDE_IN_COMBAT),
+                tooltip = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_HIDE_IN_COMBAT_DESC),
                 getFunc = function()
                     local settings = getHostSettings()
                     return settings.HideInCombat == true
@@ -1966,14 +1814,15 @@ local function registerPanel(displayTitle)
 
     options[#options + 1] = {
         type = "submenu",
-        name = "Quest Tracker",
+        name = GetString(SI_NVK3UT_LAM_QUEST_SECTION),
         controls = (function()
             local controls = {}
-            controls[#controls + 1] = { type = "header", name = "Quest-Tracker" }
+            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_QUEST_HEADER) }
 
             controls[#controls + 1] = {
                 type = "checkbox",
-                name = "Quest-Tracker aktiv",
+                name = GetString(SI_NVK3UT_LAM_QUEST_ENABLE),
+                tooltip = GetString(SI_NVK3UT_LAM_QUEST_ENABLE_DESC),
                 getFunc = function()
                     local settings = getQuestSettings()
                     return settings.active ~= false
@@ -2010,7 +1859,8 @@ local function registerPanel(displayTitle)
 
             controls[#controls + 1] = {
                 type = "checkbox",
-                name = "Neue Quests automatisch aufklappen",
+                name = GetString(SI_NVK3UT_LAM_QUEST_AUTO_EXPAND),
+                tooltip = GetString(SI_NVK3UT_LAM_QUEST_AUTO_EXPAND_DESC),
                 getFunc = function()
                     local settings = getQuestSettings()
                     return settings.autoExpand ~= false
@@ -2025,8 +1875,8 @@ local function registerPanel(displayTitle)
 
             controls[#controls + 1] = {
                 type = "checkbox",
-                name = "Quests beim Anklicken verfolgen",
-                tooltip = "Aktiviert die automatische Verfolgung im Questjournal, wenn ein Eintrag im Tracker angeklickt wird. Deaktiviert lässt das Klicken lediglich die Anzeige im Tracker beeinflussen.",
+                name = GetString(SI_NVK3UT_LAM_QUEST_AUTO_TRACK),
+                tooltip = GetString(SI_NVK3UT_LAM_QUEST_AUTO_TRACK_DESC),
                 getFunc = function()
                     local settings = getQuestSettings()
                     return settings.autoTrack ~= false
@@ -2041,8 +1891,8 @@ local function registerPanel(displayTitle)
 
             controls[#controls + 1] = {
                 type = "checkbox",
-                name = "Show counts in category headers",
-                tooltip = "If enabled, category headers display the number of contained entries, e.g., 'Repeatable (12)'. Disable to hide the counts.",
+                name = GetString(SI_NVK3UT_LAM_QUEST_SHOW_COUNTS),
+                tooltip = GetString(SI_NVK3UT_LAM_QUEST_SHOW_COUNTS_DESC),
                 getFunc = function()
                     local general = getGeneral()
                     return general.showQuestCategoryCounts ~= false
@@ -2055,12 +1905,12 @@ local function registerPanel(displayTitle)
                 default = true,
             }
 
-            controls[#controls + 1] = { type = "header", name = "Quest Tracker Colors" }
+            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_QUEST_HEADER_COLORS) }
 
             controls[#controls + 1] = {
                 type = "colorpicker",
-                name = "Category / Section Title Color",
-                tooltip = "Adjusts the color of zone headers and category titles in the quest tracker.",
+                name = GetString(SI_NVK3UT_LAM_QUEST_COLOR_CATEGORY),
+                tooltip = GetString(SI_NVK3UT_LAM_QUEST_COLOR_CATEGORY_DESC),
                 getFunc = function()
                     return getTrackerColor("questTracker", "categoryTitle")
                 end,
@@ -2073,8 +1923,8 @@ local function registerPanel(displayTitle)
 
             controls[#controls + 1] = {
                 type = "colorpicker",
-                name = "Quest / Achievement Name Color",
-                tooltip = "Sets the color used for quest titles within the quest tracker.",
+                name = GetString(SI_NVK3UT_LAM_QUEST_COLOR_ENTRY),
+                tooltip = GetString(SI_NVK3UT_LAM_QUEST_COLOR_ENTRY_DESC),
                 getFunc = function()
                     return getTrackerColor("questTracker", "entryTitle")
                 end,
@@ -2087,8 +1937,8 @@ local function registerPanel(displayTitle)
 
             controls[#controls + 1] = {
                 type = "colorpicker",
-                name = "Objective / Step Text Color",
-                tooltip = "Controls the color for objective and step lines beneath each quest.",
+                name = GetString(SI_NVK3UT_LAM_QUEST_COLOR_OBJECTIVE),
+                tooltip = GetString(SI_NVK3UT_LAM_QUEST_COLOR_OBJECTIVE_DESC),
                 getFunc = function()
                     return getTrackerColor("questTracker", "objectiveText")
                 end,
@@ -2101,8 +1951,8 @@ local function registerPanel(displayTitle)
 
             controls[#controls + 1] = {
                 type = "colorpicker",
-                name = "Active / Focused Entry Color",
-                tooltip = "Defines the color for the currently assisted quest entry.",
+                name = GetString(SI_NVK3UT_LAM_QUEST_COLOR_ACTIVE),
+                tooltip = GetString(SI_NVK3UT_LAM_QUEST_COLOR_ACTIVE_DESC),
                 getFunc = function()
                     return getTrackerColor("questTracker", "activeTitle")
                 end,
@@ -2115,8 +1965,8 @@ local function registerPanel(displayTitle)
 
             controls[#controls + 1] = {
                 type = "colorpicker",
-                name = "Mouseover-Highlight",
-                tooltip = "Farbe der Zeilenhervorhebung beim Überfahren mit der Maus.",
+                name = GetString(SI_NVK3UT_LAM_QUEST_COLOR_HIGHLIGHT),
+                tooltip = GetString(SI_NVK3UT_LAM_QUEST_COLOR_HIGHLIGHT_DESC),
                 getFunc = function()
                     return getMouseoverHighlightColor("questTracker")
                 end,
@@ -2126,12 +1976,12 @@ local function registerPanel(displayTitle)
                 default = getMouseoverHighlightDefaultTable("questTracker"),
             }
 
-            controls[#controls + 1] = { type = "header", name = "Quest-Tracker Schriftarten" }
+            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_QUEST_HEADER_FONTS) }
 
             local fontGroups = {
-                { key = "category", label = "Kategorie-Header" },
-                { key = "title", label = "Questtitel" },
-                { key = "line", label = "Questzeilen" },
+                { key = "category", label = GetString(SI_NVK3UT_LAM_QUEST_FONT_CATEGORY_LABEL) },
+                { key = "title", label = GetString(SI_NVK3UT_LAM_QUEST_FONT_TITLE_LABEL) },
+                { key = "line", label = GetString(SI_NVK3UT_LAM_QUEST_FONT_LINE_LABEL) },
             }
 
             for index = 1, #fontGroups do
@@ -2156,15 +2006,15 @@ local function registerPanel(displayTitle)
     }
     options[#options + 1] = {
         type = "submenu",
-        name = "Bestrebungen Tracker",
+        name = GetString(SI_NVK3UT_LAM_ENDEAVOR_SECTION),
         controls = (function()
             local controls = {}
-            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_ENDEAVOR_SECTION_FUNCTIONS) }
+            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_ENDEAVOR_HEADER_FUNCTIONS) }
 
             controls[#controls + 1] = {
                 type = "checkbox",
                 name = GetString(SI_NVK3UT_LAM_ENDEAVOR_ENABLE),
-                tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_ENABLE_TOOLTIP),
+                tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_ENABLE_DESC),
                 getFunc = function()
                     local config = getEndeavorConfig()
                     if config.Enabled == nil then
@@ -2192,7 +2042,7 @@ local function registerPanel(displayTitle)
             controls[#controls + 1] = {
                 type = "checkbox",
                 name = GetString(SI_NVK3UT_LAM_ENDEAVOR_SHOW_COUNTS),
-                tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_SHOW_COUNTS_TOOLTIP),
+                tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_SHOW_COUNTS_DESC),
                 getFunc = function()
                     local config = getEndeavorConfig()
                     if config.ShowCountsInHeaders == nil then
@@ -2216,7 +2066,7 @@ local function registerPanel(displayTitle)
             controls[#controls + 1] = {
                 type = "dropdown",
                 name = GetString(SI_NVK3UT_LAM_ENDEAVOR_COMPLETED_HEADER),
-                tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_COMPLETED_TOOLTIP),
+                tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_COMPLETED_HEADER_DESC),
                 choices = {
                     GetString(SI_NVK3UT_LAM_ENDEAVOR_COMPLETED_HIDE),
                     GetString(SI_NVK3UT_LAM_ENDEAVOR_COMPLETED_RECOLOR),
@@ -2254,31 +2104,31 @@ local function registerPanel(displayTitle)
                     key = "CategoryTitle",
                     role = ENDEAVOR_COLOR_ROLES.CategoryTitle,
                     name = SI_NVK3UT_LAM_ENDEAVOR_COLOR_CATEGORY,
-                    tooltip = SI_NVK3UT_LAM_ENDEAVOR_COLOR_CATEGORY_TOOLTIP,
+                    tooltip = SI_NVK3UT_LAM_ENDEAVOR_COLOR_CATEGORY_DESC,
                 },
                 {
                     key = "EntryName",
                     role = ENDEAVOR_COLOR_ROLES.EntryName,
                     name = SI_NVK3UT_LAM_ENDEAVOR_COLOR_ENTRY,
-                    tooltip = SI_NVK3UT_LAM_ENDEAVOR_COLOR_ENTRY_TOOLTIP,
+                    tooltip = SI_NVK3UT_LAM_ENDEAVOR_COLOR_ENTRY_DESC,
                 },
                 {
                     key = "Objective",
                     role = ENDEAVOR_COLOR_ROLES.Objective,
                     name = SI_NVK3UT_LAM_ENDEAVOR_COLOR_OBJECTIVE,
-                    tooltip = SI_NVK3UT_LAM_ENDEAVOR_COLOR_OBJECTIVE_TOOLTIP,
+                    tooltip = SI_NVK3UT_LAM_ENDEAVOR_COLOR_OBJECTIVE_DESC,
                 },
                 {
                     key = "Active",
                     role = ENDEAVOR_COLOR_ROLES.Active,
                     name = SI_NVK3UT_LAM_ENDEAVOR_COLOR_ACTIVE,
-                    tooltip = SI_NVK3UT_LAM_ENDEAVOR_COLOR_ACTIVE_TOOLTIP,
+                    tooltip = SI_NVK3UT_LAM_ENDEAVOR_COLOR_ACTIVE_DESC,
                 },
                 {
                     key = "Completed",
                     role = ENDEAVOR_COLOR_ROLES.Completed,
                     name = SI_NVK3UT_LAM_ENDEAVOR_COLOR_COMPLETED,
-                    tooltip = SI_NVK3UT_LAM_ENDEAVOR_COLOR_COMPLETED_TOOLTIP,
+                    tooltip = SI_NVK3UT_LAM_ENDEAVOR_COLOR_COMPLETED_DESC,
                 },
             }
 
@@ -2373,8 +2223,8 @@ local function registerPanel(displayTitle)
 
             controls[#controls + 1] = {
                 type = "colorpicker",
-                name = "Mouseover-Highlight",
-                tooltip = "Farbe der Zeilenhervorhebung beim Überfahren mit der Maus.",
+                name = GetString(SI_NVK3UT_LAM_ENDEAVOR_COLOR_HIGHLIGHT),
+                tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_COLOR_HIGHLIGHT_DESC),
                 getFunc = function()
                     return getMouseoverHighlightColor("endeavorTracker")
                 end,
@@ -2387,9 +2237,9 @@ local function registerPanel(displayTitle)
             controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_ENDEAVOR_SECTION_FONTS) }
 
             local fontGroups = {
-                { key = "Category", label = "Kategorie-Header" },
-                { key = "Title", label = "Titel" },
-                { key = "Objective", label = "Zeilen" },
+                { key = "Category", label = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_CATEGORY_LABEL) },
+                { key = "Title", label = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_TITLE_LABEL) },
+                { key = "Objective", label = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_LINE_LABEL) },
             }
 
             local config = getEndeavorConfig()
@@ -2435,13 +2285,13 @@ local function registerPanel(displayTitle)
                 for i = 1, #fontControls do
                     local control = fontControls[i]
                     if i == 1 then
-                        control.tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_FAMILY_TOOLTIP)
+                        control.tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_FAMILY_DESC)
                         control.default = defaultsValue.Face
                     elseif i == 2 then
-                        control.tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_SIZE_TOOLTIP)
+                        control.tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_SIZE_DESC)
                         control.default = defaultsValue.Size
                     else
-                        control.tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_OUTLINE_TOOLTIP)
+                        control.tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_OUTLINE_DESC)
                         control.default = defaultsValue.Outline
                     end
                     controls[#controls + 1] = control
@@ -2453,14 +2303,15 @@ local function registerPanel(displayTitle)
 
     options[#options + 1] = {
         type = "submenu",
-        name = "Achievement Tracker",
+        name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_SECTION),
         controls = (function()
             local controls = {}
-            controls[#controls + 1] = { type = "header", name = "Erfolgstracker" }
+            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_HEADER) }
 
             controls[#controls + 1] = {
                 type = "checkbox",
-                name = "Erfolgstracker aktiv",
+                name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_ENABLE),
+                tooltip = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_ENABLE_DESC),
                 getFunc = function()
                     local settings = getAchievementSettings()
                     return settings.active ~= false
@@ -2493,8 +2344,8 @@ local function registerPanel(displayTitle)
 
             controls[#controls + 1] = {
                 type = "checkbox",
-                name = "Show counts in category headers",
-                tooltip = "If enabled, category headers display the number of contained entries, e.g., 'Repeatable (12)'. Disable to hide the counts.",
+                name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_SHOW_COUNTS),
+                tooltip = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_SHOW_COUNTS_DESC),
                 getFunc = function()
                     local general = getGeneral()
                     return general.showAchievementCategoryCounts ~= false
@@ -2509,7 +2360,8 @@ local function registerPanel(displayTitle)
 
             controls[#controls + 1] = {
                 type = "checkbox",
-                name = "Tracker-Tooltips aktiv",
+                name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_TRACKER_TOOLTIPS),
+                tooltip = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_TRACKER_TOOLTIPS_DESC),
                 getFunc = function()
                     local settings = getAchievementSettings()
                     return settings.tooltips ~= false
@@ -2524,7 +2376,8 @@ local function registerPanel(displayTitle)
 
             controls[#controls + 1] = {
                 type = "checkbox",
-                name = "Errungenschafts-Tooltips ein",
+                name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_ACHIEVEMENT_TOOLTIPS),
+                tooltip = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_ACHIEVEMENT_TOOLTIPS_DESC),
                 getFunc = function()
                     local general = getGeneral()
                     return general.features.tooltips ~= false
@@ -2537,12 +2390,12 @@ local function registerPanel(displayTitle)
                 default = true,
             }
 
-            controls[#controls + 1] = { type = "header", name = "Achievement Tracker Colors" }
+            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_HEADER_COLORS) }
 
             controls[#controls + 1] = {
                 type = "colorpicker",
-                name = "Category / Section Title Color",
-                tooltip = "Adjusts the color of section headers in the achievement tracker.",
+                name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_COLOR_CATEGORY),
+                tooltip = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_COLOR_CATEGORY_DESC),
                 getFunc = function()
                     return getTrackerColor("achievementTracker", "categoryTitle")
                 end,
@@ -2555,8 +2408,8 @@ local function registerPanel(displayTitle)
 
             controls[#controls + 1] = {
                 type = "colorpicker",
-                name = "Quest / Achievement Name Color",
-                tooltip = "Sets the color used for achievement titles in the tracker.",
+                name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_COLOR_ENTRY),
+                tooltip = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_COLOR_ENTRY_DESC),
                 getFunc = function()
                     return getTrackerColor("achievementTracker", "entryTitle")
                 end,
@@ -2569,8 +2422,8 @@ local function registerPanel(displayTitle)
 
             controls[#controls + 1] = {
                 type = "colorpicker",
-                name = "Objective / Step Text Color",
-                tooltip = "Controls the color of objective lines shown beneath tracked achievements.",
+                name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_COLOR_OBJECTIVE),
+                tooltip = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_COLOR_OBJECTIVE_DESC),
                 getFunc = function()
                     return getTrackerColor("achievementTracker", "objectiveText")
                 end,
@@ -2583,8 +2436,8 @@ local function registerPanel(displayTitle)
 
             controls[#controls + 1] = {
                 type = "colorpicker",
-                name = "Active / Focused Entry Color",
-                tooltip = "Reserved for future use. Defines the color for a focused achievement entry when applicable.",
+                name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_COLOR_ACTIVE),
+                tooltip = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_COLOR_ACTIVE_DESC),
                 getFunc = function()
                     return getTrackerColor("achievementTracker", "activeTitle")
                 end,
@@ -2597,8 +2450,8 @@ local function registerPanel(displayTitle)
 
             controls[#controls + 1] = {
                 type = "colorpicker",
-                name = "Mouseover-Highlight",
-                tooltip = "Farbe der Zeilenhervorhebung beim Überfahren mit der Maus.",
+                name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_COLOR_HIGHLIGHT),
+                tooltip = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_COLOR_HIGHLIGHT_DESC),
                 getFunc = function()
                     return getMouseoverHighlightColor("achievementTracker")
                 end,
@@ -2608,12 +2461,12 @@ local function registerPanel(displayTitle)
                 default = getMouseoverHighlightDefaultTable("achievementTracker"),
             }
 
-            controls[#controls + 1] = { type = "header", name = "Erfolgstracker Schriftarten" }
+            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_HEADER_FONTS) }
 
             local fontGroups = {
-                { key = "category", label = "Kategorie-Header" },
-                { key = "title", label = "Titel" },
-                { key = "line", label = "Zeilen" },
+                { key = "category", label = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_FONT_CATEGORY_LABEL) },
+                { key = "title", label = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_FONT_TITLE_LABEL) },
+                { key = "line", label = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_FONT_LINE_LABEL) },
             }
 
             for index = 1, #fontGroups do
@@ -2640,7 +2493,7 @@ local function registerPanel(displayTitle)
 
     options[#options + 1] = {
         type = "submenu",
-        name = "Goldene Vorhaben Tracker",
+        name = GetString(SI_NVK3UT_LAM_GOLDEN_SECTION),
         controls = (function()
             local controls = {}
 
@@ -2650,12 +2503,12 @@ local function registerPanel(displayTitle)
                 return trackerDefaults and trackerDefaults.GoldenDefaults or {}
             end
 
-            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_GOLDEN_SECTION_FUNCTIONS) }
+            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_GOLDEN_HEADER_FUNCTIONS) }
 
             controls[#controls + 1] = {
                 type = "checkbox",
                 name = GetString(SI_NVK3UT_LAM_GOLDEN_ENABLE),
-                tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_ENABLE_TOOLTIP),
+                tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_ENABLE_DESC),
                 getFunc = function()
                     local config = getGoldenConfig()
                     if config.Enabled == nil then
@@ -2689,7 +2542,7 @@ local function registerPanel(displayTitle)
             controls[#controls + 1] = {
                 type = "checkbox",
                 name = GetString(SI_NVK3UT_LAM_GOLDEN_HIDE_BASEGAME_TRACKING),
-                tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_HIDE_BASEGAME_TRACKING_TOOLTIP),
+                tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_HIDE_BASEGAME_TRACKING_DESC),
                 getFunc = function()
                     local config = getGoldenConfig()
                     if config and config.hideBaseGameTracking ~= nil then
@@ -2731,7 +2584,7 @@ local function registerPanel(displayTitle)
             controls[#controls + 1] = {
                 type = "checkbox",
                 name = GetString(SI_NVK3UT_LAM_GOLDEN_SHOW_COUNTS),
-                tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_SHOW_COUNTS_TOOLTIP),
+                tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_SHOW_COUNTS_DESC),
                 getFunc = function()
                     local config = getGoldenConfig()
                     if config.ShowCountsInHeaders == nil then
@@ -2761,7 +2614,7 @@ local function registerPanel(displayTitle)
             controls[#controls + 1] = {
                 type = "dropdown",
                 name = GetString(SI_NVK3UT_LAM_GOLDEN_COMPLETED_HEADER_GENERAL),
-                tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_COMPLETED_GENERAL_TOOLTIP),
+                tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_COMPLETED_HEADER_GENERAL_DESC),
                 choices = {
                     GetString(SI_NVK3UT_LAM_GOLDEN_COMPLETED_HIDE),
                     GetString(SI_NVK3UT_LAM_GOLDEN_COMPLETED_RECOLOR),
@@ -2815,7 +2668,7 @@ local function registerPanel(displayTitle)
             controls[#controls + 1] = {
                 type = "dropdown",
                 name = GetString(SI_NVK3UT_LAM_GOLDEN_COMPLETED_HEADER_OBJECTIVES),
-                tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_COMPLETED_OBJECTIVES_TOOLTIP),
+                tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_COMPLETED_HEADER_OBJECTIVES_DESC),
                 choices = {
                     GetString(SI_NVK3UT_LAM_GOLDEN_COMPLETED_HIDE),
                     GetString(SI_NVK3UT_LAM_GOLDEN_COMPLETED_RECOLOR),
@@ -2862,37 +2715,37 @@ local function registerPanel(displayTitle)
                     key = "CategoryTitleClosed",
                     role = GOLDEN_COLOR_ROLES.CategoryTitleClosed,
                     name = SI_NVK3UT_LAM_GOLDEN_COLOR_CATEGORY_CLOSED,
-                    tooltip = SI_NVK3UT_LAM_GOLDEN_COLOR_CATEGORY_CLOSED_TOOLTIP,
+                    tooltip = SI_NVK3UT_LAM_GOLDEN_COLOR_CATEGORY_CLOSED_DESC,
                 },
                 {
                     key = "CategoryTitleOpen",
                     role = GOLDEN_COLOR_ROLES.CategoryTitleOpen,
                     name = SI_NVK3UT_LAM_GOLDEN_COLOR_CATEGORY_OPEN,
-                    tooltip = SI_NVK3UT_LAM_GOLDEN_COLOR_CATEGORY_OPEN_TOOLTIP,
+                    tooltip = SI_NVK3UT_LAM_GOLDEN_COLOR_CATEGORY_OPEN_DESC,
                 },
                 {
                     key = "EntryName",
                     role = GOLDEN_COLOR_ROLES.EntryName,
                     name = SI_NVK3UT_LAM_GOLDEN_COLOR_ENTRY,
-                    tooltip = SI_NVK3UT_LAM_GOLDEN_COLOR_ENTRY_TOOLTIP,
+                    tooltip = SI_NVK3UT_LAM_GOLDEN_COLOR_ENTRY_DESC,
                 },
                 {
                     key = "Objective",
                     role = GOLDEN_COLOR_ROLES.Objective,
                     name = SI_NVK3UT_LAM_GOLDEN_COLOR_OBJECTIVE,
-                    tooltip = SI_NVK3UT_LAM_GOLDEN_COLOR_OBJECTIVE_TOOLTIP,
+                    tooltip = SI_NVK3UT_LAM_GOLDEN_COLOR_OBJECTIVE_DESC,
                 },
                 {
                     key = "Active",
                     role = GOLDEN_COLOR_ROLES.Active,
                     name = SI_NVK3UT_LAM_GOLDEN_COLOR_ACTIVE,
-                    tooltip = SI_NVK3UT_LAM_GOLDEN_COLOR_ACTIVE_TOOLTIP,
+                    tooltip = SI_NVK3UT_LAM_GOLDEN_COLOR_ACTIVE_DESC,
                 },
                 {
                     key = "Completed",
                     role = GOLDEN_COLOR_ROLES.Completed,
                     name = SI_NVK3UT_LAM_GOLDEN_COLOR_COMPLETED,
-                    tooltip = SI_NVK3UT_LAM_GOLDEN_COLOR_COMPLETED_TOOLTIP,
+                    tooltip = SI_NVK3UT_LAM_GOLDEN_COLOR_COMPLETED_DESC,
                 },
             }
 
@@ -2975,8 +2828,8 @@ local function registerPanel(displayTitle)
 
             controls[#controls + 1] = {
                 type = "colorpicker",
-                name = "Mouseover-Highlight",
-                tooltip = "Farbe der Zeilenhervorhebung beim Überfahren mit der Maus.",
+                name = GetString(SI_NVK3UT_LAM_GOLDEN_COLOR_HIGHLIGHT),
+                tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_COLOR_HIGHLIGHT_DESC),
                 getFunc = function()
                     return getMouseoverHighlightColor("goldenTracker")
                 end,
@@ -2989,9 +2842,9 @@ local function registerPanel(displayTitle)
             controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_GOLDEN_SECTION_FONTS) }
 
             local fontGroups = {
-                { key = "Category", label = "Kategorie-Header" },
-                { key = "Title", label = "Titel" },
-                { key = "Objective", label = "Zeilen" },
+                { key = "Category", label = GetString(SI_NVK3UT_LAM_GOLDEN_FONT_CATEGORY_LABEL) },
+                { key = "Title", label = GetString(SI_NVK3UT_LAM_GOLDEN_FONT_TITLE_LABEL) },
+                { key = "Objective", label = GetString(SI_NVK3UT_LAM_GOLDEN_FONT_LINE_LABEL) },
             }
 
             local config = getGoldenConfig()
@@ -3041,13 +2894,13 @@ local function registerPanel(displayTitle)
                 for i = 1, #fontControls do
                     local control = fontControls[i]
                     if i == 1 then
-                        control.tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_FONT_FAMILY_TOOLTIP)
+                        control.tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_FONT_FAMILY_DESC)
                         control.default = defaultsValue.face or defaultsValue.Face
                     elseif i == 2 then
-                        control.tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_FONT_SIZE_TOOLTIP)
+                        control.tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_FONT_SIZE_DESC)
                         control.default = defaultsValue.size or defaultsValue.Size
                     else
-                        control.tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_FONT_OUTLINE_TOOLTIP)
+                        control.tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_FONT_OUTLINE_DESC)
                         control.default = defaultsValue.outline or defaultsValue.Outline
                     end
                     controls[#controls + 1] = control
@@ -3059,12 +2912,12 @@ local function registerPanel(displayTitle)
     }
     options[#options + 1] = {
         type = "submenu",
-        name = "Debug & Support",
+        name = GetString(SI_NVK3UT_LAM_SECTION_DEBUG),
         controls = (function()
             local controls = {}
             controls[#controls + 1] = {
                 type = "checkbox",
-                name = "Debug aktivieren",
+                name = GetString(SI_NVK3UT_LAM_OPTION_DEBUG_ENABLE),
                 getFunc = function()
                     local sv = getSavedVars()
                     return sv.debug == true
@@ -3087,7 +2940,7 @@ local function registerPanel(displayTitle)
 
             controls[#controls + 1] = {
                 type = "button",
-                name = "Self-Test ausführen",
+                name = GetString(SI_NVK3UT_LAM_OPTION_SELF_TEST),
                 func = function()
                     local module = nil
                     if Nvk3UT and Nvk3UT.SelfTest then
@@ -3121,12 +2974,12 @@ local function registerPanel(displayTitle)
                         end
                     end
                 end,
-                tooltip = "Führt einen kompakten Integritäts-Check aus. Bei aktiviertem Debug erscheinen ausführliche Chat-Logs.",
+                tooltip = GetString(SI_NVK3UT_LAM_OPTION_SELF_TEST_DESC),
             }
 
             controls[#controls + 1] = {
                 type = "button",
-                name = "UI neu laden",
+                name = GetString(SI_NVK3UT_LAM_OPTION_RELOAD_UI),
                 func = function()
                     ReloadUI()
                 end,

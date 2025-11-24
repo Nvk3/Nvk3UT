@@ -60,7 +60,11 @@ local function _updateRecentTooltip(ach)
     end
 
     local count = _countRecent()
-    local name = data.name or data.text or (data.categoryData and data.categoryData.name) or "Kürzlich"
+    local name = data.name
+        or data.text
+        or (data.categoryData and data.categoryData.name)
+        or (GetString and GetString(SI_NVK3UT_JOURNAL_CATEGORY_RECENT))
+        or "Kürzlich"
     local label = zo_strformat("<<1>>", name)
     local iconTag = (Utils and Utils.GetIconTagForTexture and Utils.GetIconTagForTexture(ICON_PATH_RECENT)) or ""
     local displayLabel = (iconTag ~= "" and (iconTag .. label)) or label
@@ -91,7 +95,7 @@ local function AddRecentCategory(AchClass)
             return result
         end
 
-        local label = "Kürzlich"
+        local label = (GetString and GetString(SI_NVK3UT_JOURNAL_CATEGORY_RECENT)) or "Kürzlich"
         local parentNode =
             self:AddCategory(lookup, tree, "ZO_IconChildlessHeader", nil, NVK3_RECENT, label, false, nil, nil, nil, true, true)
         if not parentNode then

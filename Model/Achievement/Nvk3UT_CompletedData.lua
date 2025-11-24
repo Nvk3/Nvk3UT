@@ -326,7 +326,7 @@ function CompletedData.GetSubcategoryList()
     local names = {}
     local ids = {}
 
-    push(names, "Letzte 50")
+    push(names, (GetString and GetString(SI_NVK3UT_JOURNAL_SUBCATEGORY_COMPLETED_LAST50)) or "Letzte 50")
     push(ids, LAST50_KEY)
 
     for index = 1, #monthKeys do

@@ -1685,9 +1685,9 @@ local function applyCategoryRow(row, data)
     end
 
     local info = type(data) == "table" and data or {}
-    local title = tostring(info.title or "Bestrebungen")
+    local title = tostring(info.title or GetString(SI_NVK3UT_TRACKER_ENDEAVOR_CATEGORY_ROOT))
     if title == "" then
-        title = "Bestrebungen"
+        title = GetString(SI_NVK3UT_TRACKER_ENDEAVOR_CATEGORY_ROOT)
     end
 
     local remaining = tonumber(info.remaining)
