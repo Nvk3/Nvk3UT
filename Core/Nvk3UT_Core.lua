@@ -2,7 +2,7 @@
 -- Central addon root. Owns global table, SafeCall, module registry, SavedVariables bootstrap, lifecycle entry points.
 
 local ADDON_NAME    = ADDON_NAME    or "Nvk3UT"
-local ADDON_VERSION = "0.12.3"
+local ADDON_VERSION = "0.13.1"
 local unpack = unpack or table.unpack
 
 Nvk3UT = Nvk3UT or {}
