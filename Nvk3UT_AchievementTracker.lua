@@ -1677,7 +1677,7 @@ local function LayoutCategory()
 
     local control = AcquireCategoryControl()
     control.data = { categoryKey = CATEGORY_KEY }
-    control.label:SetText(FormatCategoryHeaderText("Errungenschaften", total or 0, "achievement"))
+    control.label:SetText(FormatCategoryHeaderText(GetString(SI_NVK3UT_TRACKER_ACHIEVEMENT_CATEGORY_MAIN), total or 0, "achievement"))
 
     local expanded = IsCategoryExpanded()
     local colorRole = expanded and "activeTitle" or "categoryTitle"

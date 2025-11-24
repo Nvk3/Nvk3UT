@@ -201,6 +201,8 @@ local strings = {
     SI_NVK3UT_TRACKER_ENDEAVOR_CATEGORY_ROOT = "Bestrebungen",
     SI_NVK3UT_TRACKER_ENDEAVOR_CATEGORY_DAILY = "Tägliche Bestrebungen",
     SI_NVK3UT_TRACKER_ENDEAVOR_CATEGORY_WEEKLY = "Wöchentliche Bestrebungen",
+    SI_NVK3UT_TRACKER_ACHIEVEMENT_CATEGORY_MAIN = "Errungenschaften",
+    SI_NVK3UT_TRACKER_GOLDEN_CATEGORY_MAIN = "Goldene Vorhaben",
     SI_NVK3UT_TRACKER_ENDEAVOR_CONTEXT_OPEN_DAILY = "Tägliche Bestrebungen öffnen",
     SI_NVK3UT_TRACKER_ENDEAVOR_CONTEXT_OPEN_WEEKLY = "Wöchentliche Bestrebungen öffnen",
 
