@@ -4,7 +4,7 @@
 ## Version: 0.13.1
 ## AddOnVersion: 1301
 ## APIVersion: 101048
-## DependsOn: LibAddonMenu-2.0>=40 LibCustomMenu>=722
+## DependsOn: LibAddonMenu-2.0>=41 LibCustomMenu>=730
 ## OptionalDependsOn:
 ## SavedVariables: Nvk3UT_SV Nvk3UT_Data_Favorites Nvk3UT_Data_Recent Nvk3UT_Data_Quests
 Core/Nvk3UT_Utils.lua
