@@ -201,17 +201,6 @@ local function evaluateMenuGate(flag, anchorControl)
     return true
 end
 
-local function safeGetMenuItemCount()
-    if type(ZO_Menu_GetNumMenuItems) == "function" then
-        local ok, count = pcall(ZO_Menu_GetNumMenuItems)
-        if ok and type(count) == "number" then
-            return count
-        end
-    end
-
-    return nil
-end
-
 local function safeSetMenuItemEnabled(index, enabled)
     if type(SetMenuItemEnabled) ~= "function" or type(index) ~= "number" then
         return false
@@ -262,7 +251,7 @@ function Utils.ShowContextMenu(anchorControl, entries)
                     local itemType = entry.itemType or MENU_OPTION_LABEL
                     local itemId = entry.itemId
                     local icon = entry.icon
-                    local beforeCount = safeGetMenuItemCount() or 0
+                    local beforeCount = ZO_Menu_GetNumMenuItems() or 0
                     AddCustomMenuItem(
                         label,
                         wrapMenuCallback(callback),
@@ -270,7 +259,7 @@ function Utils.ShowContextMenu(anchorControl, entries)
                         itemId,
                         icon
                     )
-                    local afterCount = safeGetMenuItemCount()
+                    local afterCount = ZO_Menu_GetNumMenuItems()
                     local itemIndex = afterCount or (beforeCount + 1)
                     if itemIndex then
                         safeSetMenuItemEnabled(itemIndex, not disabled)
