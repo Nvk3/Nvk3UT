@@ -3768,11 +3768,15 @@ local function applyWindowVisibility()
     local userHidden = state.window and state.window.visible == false
     local suppressed = state.initializing == true
     local gates = ensureVisibilityGates()
-    local lamOverrideActive = gates.lam == true
+    local lamOverrideActive = gates.lam == true and not userHidden
     local hideForSceneGate = gates.scene == true
     local hideForCombatGate = gates.combat == true
     local previewActive = state.lamPreviewForceVisible == true and not userHidden
-    local shouldHideForSettings = (suppressed or userHidden) and not (previewActive or lamOverrideActive)
+    local shouldHideForSettings = suppressed or userHidden
+
+    if (previewActive or lamOverrideActive) and not userHidden then
+        shouldHideForSettings = false
+    end
 
     local fragment = state.fragment
     local fragmentSupportsReason = fragment and fragment.SetHiddenForReason
@@ -3816,9 +3820,30 @@ local function applyWindowVisibility()
 end
 
 function TrackerHost.ApplyVisibilityRules()
+    local windowSettings = state.window or ensureWindowSettings()
     local hostSettings = getHostSettings()
     local previousSceneHidden = state.sceneHidden == true
     local previousVisible = TrackerHost.IsVisible()
+
+    local userVisible = not (windowSettings and windowSettings.visible == false)
+    if not userVisible then
+        state.sceneHidden = true
+
+        local fragment = state.fragment
+        if fragment and fragment.SetHiddenForReason then
+            fragment:SetHiddenForReason(FRAGMENT_REASON_SUPPRESSED, false)
+            fragment:SetHiddenForReason(FRAGMENT_REASON_USER, true)
+            fragment:SetHiddenForReason(FRAGMENT_REASON_SCENE, false)
+            fragment:SetHiddenForReason(FRAGMENT_REASON_COMBAT, false)
+            fragment:SetHiddenForReason(FRAGMENT_REASON_LAM, false)
+        end
+
+        if state.root then
+            state.root:SetHidden(true)
+        end
+
+        return previousSceneHidden ~= (state.sceneHidden == true)
+    end
 
     local gates = refreshVisibilityGates(hostSettings)
     local lamOverride = gates.lam == true
@@ -4621,16 +4646,23 @@ function TrackerHost.SetVisible(isVisible)
         changed = changed or (previousSetting ~= visible)
     end
 
-    if state.root then
+    local visibilityChanged
+    local appliedViaRules = type(TrackerHost.ApplyVisibilityRules) == "function"
+
+    if appliedViaRules then
+        visibilityChanged = TrackerHost.ApplyVisibilityRules()
+    elseif state.root then
         applyWindowVisibility()
+        visibilityChanged = true
     end
 
     local newVisible = TrackerHost.IsVisible()
-    if not previousVisible and newVisible then
+    if not previousVisible and newVisible and not appliedViaRules then
         requestPendingFullRebuild()
         triggerDeferredFullRebuildOnVisible()
     end
-    if changed or previousVisible ~= newVisible then
+
+    if changed or visibilityChanged or previousVisible ~= newVisible then
         queueRuntimeLayout()
     end
 
