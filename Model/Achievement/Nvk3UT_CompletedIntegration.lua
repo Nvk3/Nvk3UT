@@ -246,7 +246,7 @@ local function AddCompletedCategory(AchClass)
             return result
         end
 
-        if Nvk3UT._completedMounted then
+        if self._nvkCompletedMounted then
             return result
         end
 
@@ -273,7 +273,7 @@ local function AddCompletedCategory(AchClass)
             return result
         end
 
-        Nvk3UT._completedMounted = true
+        self._nvkCompletedMounted = true
 
         lookup[COMPLETED_LOOKUP_KEY] = parentNode
         self._nvkCompletedNode = parentNode
