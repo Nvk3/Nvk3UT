@@ -22,6 +22,18 @@ local FormatCategoryHeaderText =
         return text
     end
 
+local function ShouldShowQuestCategoryCounts()
+    local addon = Nvk3UT
+    local sv = addon and addon.SV
+    local general = sv and sv.General
+
+    if general and general.showQuestCategoryCounts ~= nil then
+        return general.showQuestCategoryCounts ~= false
+    end
+
+    return true
+end
+
 local CATEGORY_TOGGLE_TEXTURES = {
     expanded = {
         up = "EsoUI/Art/Buttons/tree_open_up.dds",
@@ -3397,7 +3409,7 @@ local function LayoutCategory(category)
         state.categoryControls[normalizedKey] = control
     end
     local count = #category.quests
-    control.label:SetText(FormatCategoryHeaderText(category.name or "", count, "quest"))
+    control.label:SetText(FormatCategoryHeaderText(category.name or "", count, ShouldShowQuestCategoryCounts()))
     local expanded = IsCategoryExpanded(category.key)
     if IsDebugLoggingEnabled() then
         DebugLog(string.format(
