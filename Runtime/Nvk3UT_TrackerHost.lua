@@ -746,6 +746,14 @@ local function migrateHostSettings(general)
         general.features.hideDefaultQuestTracker = quest.hideDefault and true or false
     end
 
+    if general.hideBaseQuestTracker == nil then
+        if general.features.hideDefaultQuestTracker ~= nil then
+            general.hideBaseQuestTracker = general.features.hideDefaultQuestTracker == true
+        elseif quest and quest.hideDefault ~= nil then
+            general.hideBaseQuestTracker = quest.hideDefault and true or false
+        end
+    end
+
     if general.layout.autoGrowV == nil then
         if quest and quest.autoGrowV ~= nil then
             general.layout.autoGrowV = quest.autoGrowV == true
@@ -775,12 +783,19 @@ local function ensureFeatureSettings()
     migrateHostSettings(sv.General)
     sv.General.features = sv.General.features or {}
 
+    if sv.General.hideBaseQuestTracker == nil then
+        sv.General.hideBaseQuestTracker = false
+    else
+        sv.General.hideBaseQuestTracker = sv.General.hideBaseQuestTracker == true
+    end
+
     local features = sv.General.features
     if features.hideDefaultQuestTracker == nil then
-        features.hideDefaultQuestTracker = false
-    else
-        features.hideDefaultQuestTracker = features.hideDefaultQuestTracker == true
+        features.hideDefaultQuestTracker = sv.General.hideBaseQuestTracker
     end
+
+    features.hideDefaultQuestTracker = features.hideDefaultQuestTracker == true
+    sv.General.hideBaseQuestTracker = features.hideDefaultQuestTracker
 
     return features
 end
@@ -2575,21 +2590,32 @@ local function applyFeatureSettings()
     state.features = ensureFeatureSettings()
     local features = state.features
 
-    if not (ZO_QuestTracker and ZO_QuestTracker.SetHidden) then
-        return
+    local hideBase = false
+    local sv = getSavedVars()
+    local general = sv and sv.General
+    if general and general.hideBaseQuestTracker ~= nil then
+        hideBase = general.hideBaseQuestTracker == true
+    elseif features and features.hideDefaultQuestTracker ~= nil then
+        hideBase = features.hideDefaultQuestTracker == true
     end
 
-    if state.previousDefaultQuestTrackerHidden == nil then
-        state.previousDefaultQuestTrackerHidden = ZO_QuestTracker:IsHidden()
-    end
+    if Nvk3UT and Nvk3UT.QuestTracker and type(Nvk3UT.QuestTracker.ApplyBaseQuestTrackerVisibility) == "function" then
+        pcall(Nvk3UT.QuestTracker.ApplyBaseQuestTrackerVisibility)
+    elseif Nvk3UT and type(Nvk3UT.ApplyBaseQuestTrackerVisibility) == "function" then
+        pcall(Nvk3UT.ApplyBaseQuestTrackerVisibility)
+    elseif ZO_QuestTracker and ZO_QuestTracker.SetHidden then
+        if state.previousDefaultQuestTrackerHidden == nil then
+            state.previousDefaultQuestTrackerHidden = ZO_QuestTracker:IsHidden()
+        end
 
-    if features.hideDefaultQuestTracker then
-        ZO_QuestTracker:SetHidden(true)
-    else
-        if state.previousDefaultQuestTrackerHidden ~= nil then
-            ZO_QuestTracker:SetHidden(state.previousDefaultQuestTrackerHidden)
+        if hideBase then
+            ZO_QuestTracker:SetHidden(true)
         else
-            ZO_QuestTracker:SetHidden(false)
+            if state.previousDefaultQuestTrackerHidden ~= nil then
+                ZO_QuestTracker:SetHidden(state.previousDefaultQuestTrackerHidden)
+            else
+                ZO_QuestTracker:SetHidden(false)
+            end
         end
     end
 end
@@ -4445,6 +4471,12 @@ local function initTrackers()
     local achievementOpts = cloneTable(sv.AchievementTracker or {})
     if Nvk3UT.AchievementTracker and Nvk3UT.AchievementTracker.Init and state.achievementContainer then
         pcall(Nvk3UT.AchievementTracker.Init, state.achievementContainer, achievementOpts)
+    end
+
+    if Nvk3UT and Nvk3UT.QuestTracker and type(Nvk3UT.QuestTracker.ApplyBaseQuestTrackerVisibility) == "function" then
+        pcall(Nvk3UT.QuestTracker.ApplyBaseQuestTrackerVisibility)
+    elseif Nvk3UT and type(Nvk3UT.ApplyBaseQuestTrackerVisibility) == "function" then
+        pcall(Nvk3UT.ApplyBaseQuestTrackerVisibility)
     end
 
     local goldenTracker = Nvk3UT and Nvk3UT.GoldenTracker

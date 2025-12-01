@@ -203,6 +203,9 @@ local function getGeneral()
     if general.showCategoryCounts == nil then
         general.showCategoryCounts = true
     end
+    if general.hideBaseQuestTracker == nil then
+        general.hideBaseQuestTracker = false
+    end
     return general
 end
 
@@ -1867,21 +1870,22 @@ local function registerPanel(displayTitle)
                 type = "checkbox",
                 name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_HIDE_DEFAULT),
                 getFunc = function()
-                    local isShown = GetSetting_Bool(SETTING_TYPE_UI, UI_SETTING_SHOW_QUEST_TRACKER)
-                    return not isShown
+                    local general = getGeneral and getGeneral()
+                    if general and general.hideBaseQuestTracker ~= nil then
+                        return general.hideBaseQuestTracker
+                    end
+                    return false
                 end,
                 setFunc = function(value)
-                    local hideDefault = value == true
+                    local general = getGeneral and getGeneral()
+                    if general then
+                        general.hideBaseQuestTracker = value == true
+                    end
 
-                    local features = getFeatures()
-                    features.hideDefaultQuestTracker = hideDefault
-
-                    local showDefault = not hideDefault
-
-                    if type(ZO_QuestTracker_SetEnabled) == "function" then
-                        ZO_QuestTracker_SetEnabled(showDefault)
-                    else
-                        SetSetting(SETTING_TYPE_UI, UI_SETTING_SHOW_QUEST_TRACKER, showDefault and "1" or "0")
+                    if Nvk3UT and Nvk3UT.QuestTracker and type(Nvk3UT.QuestTracker.ApplyBaseQuestTrackerVisibility) == "function" then
+                        pcall(Nvk3UT.QuestTracker.ApplyBaseQuestTrackerVisibility)
+                    elseif Nvk3UT and type(Nvk3UT.ApplyBaseQuestTrackerVisibility) == "function" then
+                        pcall(Nvk3UT.ApplyBaseQuestTrackerVisibility)
                     end
                 end,
                 default = false,

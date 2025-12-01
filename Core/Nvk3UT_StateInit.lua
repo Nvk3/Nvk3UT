@@ -337,6 +337,7 @@ local defaults = {
         showCategoryCounts = true,
         showQuestCategoryCounts = true,
         showAchievementCategoryCounts = true,
+        hideBaseQuestTracker = false,
         window = {
             left = 200,
             top = 200,

@@ -8,6 +8,17 @@ QuestTracker.__index = QuestTracker
 local MODULE_NAME = addonName .. "QuestTracker"
 local EVENT_NAMESPACE = MODULE_NAME .. "_Event"
 
+local addon = Nvk3UT
+
+local function GetHideBaseQuestTrackerFlag()
+    local sv = addon and addon.SV
+    local general = sv and sv.General
+    if general and general.hideBaseQuestTracker ~= nil then
+        return general.hideBaseQuestTracker == true
+    end
+    return false
+end
+
 local Utils = Nvk3UT and Nvk3UT.Utils
 local QuestState = Nvk3UT and Nvk3UT.QuestState
 local QuestSelection = Nvk3UT and Nvk3UT.QuestSelection
@@ -3810,6 +3821,43 @@ end
 function QuestTracker.GetContentSize()
     UpdateContentSize()
     return state.contentWidth or 0, state.contentHeight or 0
+end
+
+function Nvk3UT.QuestTracker.ApplyBaseQuestTrackerVisibility()
+    local hide = GetHideBaseQuestTrackerFlag()
+
+    local fragment = QUEST_TRACKER_FRAGMENT
+    local trackerControl = ZO_QuestTracker
+    local sceneManager = SCENE_MANAGER
+
+    if not sceneManager or not fragment then
+        return
+    end
+
+    local function applyToScene(sceneName)
+        local scene = sceneManager:GetScene(sceneName)
+        if not scene then
+            return
+        end
+
+        local has = scene:HasFragment(fragment)
+        if hide then
+            if has then
+                scene:RemoveFragment(fragment)
+            end
+        else
+            if not has then
+                scene:AddFragment(fragment)
+            end
+        end
+    end
+
+    applyToScene("hud")
+    applyToScene("hudui")
+
+    if trackerControl and trackerControl.SetHidden then
+        trackerControl:SetHidden(hide)
+    end
 end
 
 Nvk3UT.QuestTracker = QuestTracker
