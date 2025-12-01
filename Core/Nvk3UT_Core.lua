@@ -1,13 +1,15 @@
 -- Core/Nvk3UT_Core.lua
 -- Central addon root. Owns global table, SafeCall, module registry, SavedVariables bootstrap, lifecycle entry points.
 
-local ADDON_NAME    = ADDON_NAME    or "Nvk3UT"
-local ADDON_VERSION = "0.13.1"
+local ADDON_NAME        = ADDON_NAME        or "Nvk3UT"
+local ADDON_VERSION     = "0.13.14"
+local ADDON_VERSION_INT = 1314
 Nvk3UT = Nvk3UT or {}
 local Addon = Nvk3UT
 
 Addon.addonName    = ADDON_NAME
 Addon.addonVersion = ADDON_VERSION
+Addon.addonVersionInt = Addon.addonVersionInt or ADDON_VERSION_INT
 Addon.versionString = Addon.versionString or Addon.addonVersion
 Addon.SV           = Addon.SV or nil
 Addon.sv           = Addon.sv or Addon.SV -- legacy alias expected by existing modules
