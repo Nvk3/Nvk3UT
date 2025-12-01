@@ -26,15 +26,18 @@ Model/Endeavor/Nvk3UT_EndeavorModel.lua
 ## Model — Achievement
 Model/Achievement/Nvk3UT_AchievementState.lua
 Model/Achievement/Nvk3UT_AchievementStages.lua
-Model/Achievement/Nvk3UT_FavoritesData.lua
-Model/Achievement/Nvk3UT_RecentData.lua
-Model/Achievement/Nvk3UT_TodoData.lua
-Model/Achievement/Nvk3UT_FavoritesIntegration.lua
-Model/Achievement/Nvk3UT_RecentIntegration.lua
-Model/Achievement/Nvk3UT_TodoIntegration.lua
 Model/Achievement/Nvk3UT_AchievementList.lua
 Model/Achievement/Nvk3UT_AchievementModel.lua
 Model/Achievement/Nvk3UT_AchievementCache.lua
+## Model — Achievement Favorites
+Model/Achievement/Nvk3UT_FavoritesData.lua
+Model/Achievement/Nvk3UT_FavoritesIntegration.lua
+## Model — Achievement Recent
+Model/Achievement/Nvk3UT_RecentData.lua
+Model/Achievement/Nvk3UT_RecentIntegration.lua
+## Model — Achievement Todo
+Model/Achievement/Nvk3UT_TodoData.lua
+Model/Achievement/Nvk3UT_TodoIntegration.lua
 ## Model — Golden
 Model/Golden/Nvk3UT_GoldenState.lua
 Model/Golden/Nvk3UT_GoldenList.lua
