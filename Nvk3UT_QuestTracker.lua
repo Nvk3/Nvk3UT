@@ -15,7 +15,19 @@ local function GetHideBaseQuestTrackerFlag()
     if general and general.hideBaseQuestTracker ~= nil then
         return general.hideBaseQuestTracker == true
     end
-    return false
+    return true
+end
+
+local function GetQuestTrackerEnabledFlag()
+    local addon = Nvk3UT
+    local sv = addon and addon.SV
+    local questTracker = sv and sv.QuestTracker
+
+    if questTracker and questTracker.active ~= nil then
+        return questTracker.active ~= false
+    end
+
+    return true
 end
 
 local function GetBaseQuestTracker()
@@ -3838,9 +3850,16 @@ end
 
 function QuestTracker.ApplyBaseQuestTrackerVisibility()
     local hide = GetHideBaseQuestTrackerFlag()
+    local questTrackerEnabled = GetQuestTrackerEnabledFlag()
+    local shouldHide = hide and questTrackerEnabled
 
     if Nvk3UT and Nvk3UT.Debug then
-        Nvk3UT.Debug("ApplyBaseQuestTrackerVisibility: hide=%s", tostring(hide))
+        Nvk3UT.Debug(
+            "ApplyBaseQuestTrackerVisibility: hide=%s, questTrackerEnabled=%s, effectiveHide=%s",
+            tostring(hide),
+            tostring(questTrackerEnabled),
+            tostring(shouldHide)
+        )
     end
 
     local tracker = GetBaseQuestTracker()
@@ -3850,11 +3869,11 @@ function QuestTracker.ApplyBaseQuestTrackerVisibility()
 
     local fragment = tracker and tracker.GetFragment and tracker:GetFragment()
     if fragment and type(fragment.SetHiddenForReason) == "function" then
-        fragment:SetHiddenForReason("Nvk3UT_HideBaseQuestTracker", hide, DEFAULT_HUD_DURATION, DEFAULT_HUD_DURATION)
+        fragment:SetHiddenForReason("Nvk3UT_HideBaseQuestTracker", shouldHide, DEFAULT_HUD_DURATION, DEFAULT_HUD_DURATION)
     end
 
     if tracker and tracker.SetHidden then
-        tracker:SetHidden(hide)
+        tracker:SetHidden(shouldHide)
     end
 end
 

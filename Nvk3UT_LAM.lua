@@ -1858,6 +1858,12 @@ local function registerPanel(displayTitle)
                         host:ApplyVisibilityRules()
                     end
 
+                    if Nvk3UT and Nvk3UT.QuestTracker and type(Nvk3UT.QuestTracker.ApplyBaseQuestTrackerVisibility) == "function" then
+                        pcall(Nvk3UT.QuestTracker.ApplyBaseQuestTrackerVisibility)
+                    elseif Nvk3UT and type(Nvk3UT.ApplyBaseQuestTrackerVisibility) == "function" then
+                        pcall(Nvk3UT.ApplyBaseQuestTrackerVisibility)
+                    end
+
                     LamQueueFullRebuild("questActive")
                 end,
                 default = true,
@@ -1868,10 +1874,9 @@ local function registerPanel(displayTitle)
                 name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_HIDE_DEFAULT),
                 getFunc = function()
                     local general = getGeneral()
-                    if general and general.hideBaseQuestTracker ~= nil then
+                    if general then
                         return general.hideBaseQuestTracker == true
                     end
-                    return false
                 end,
                 setFunc = function(value)
                     local general = getGeneral()
@@ -1889,7 +1894,7 @@ local function registerPanel(displayTitle)
                         pcall(Nvk3UT.ApplyBaseQuestTrackerVisibility)
                     end
                 end,
-                default = false,
+                default = true,
             }
 
             controls[#controls + 1] = {
