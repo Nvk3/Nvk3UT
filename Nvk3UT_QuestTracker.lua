@@ -18,6 +18,20 @@ local function GetHideBaseQuestTrackerFlag()
     return false
 end
 
+local function GetBaseQuestTracker()
+    local tracker = QUEST_TRACKER
+
+    if tracker == nil then
+        tracker = ASSISTED_QUEST_TRACKER or FOCUSED_QUEST_TRACKER
+    end
+
+    if tracker and type(tracker.GetFragment) == "function" then
+        return tracker
+    end
+
+    return nil
+end
+
 local Utils = Nvk3UT and Nvk3UT.Utils
 local QuestState = Nvk3UT and Nvk3UT.QuestState
 local QuestSelection = Nvk3UT and Nvk3UT.QuestSelection
@@ -3829,34 +3843,15 @@ function QuestTracker.ApplyBaseQuestTrackerVisibility()
         Nvk3UT.Debug("ApplyBaseQuestTrackerVisibility: hide=%s", tostring(hide))
     end
 
-    local sm = SCENE_MANAGER
-    local fragment = QUEST_TRACKER_FRAGMENT
-    local tracker = ZO_QuestTracker
-
-    if not sm or not fragment then
+    local tracker = GetBaseQuestTracker()
+    if not tracker then
         return
     end
 
-    local function applyToScene(sceneName)
-        local scene = sm:GetScene(sceneName)
-        if not scene then
-            return
-        end
-
-        local has = scene:HasFragment(fragment)
-        if hide then
-            if has then
-                scene:RemoveFragment(fragment)
-            end
-        else
-            if not has then
-                scene:AddFragment(fragment)
-            end
-        end
+    local fragment = tracker and tracker.GetFragment and tracker:GetFragment()
+    if fragment and type(fragment.SetHiddenForReason) == "function" then
+        fragment:SetHiddenForReason("Nvk3UT_HideBaseQuestTracker", hide, DEFAULT_HUD_DURATION, DEFAULT_HUD_DURATION)
     end
-
-    applyToScene("hud")
-    applyToScene("hudui")
 
     if tracker and tracker.SetHidden then
         tracker:SetHidden(hide)
