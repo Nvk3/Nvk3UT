@@ -294,6 +294,13 @@ function Addon:OnAddonLoaded(actualAddonName)
     self.Debug("Nvk3UT loaded v%s", tostring(self.addonVersion))
 
     _SafeCall(function()
+        local questModel = Addon.QuestModel
+        if questModel and questModel.OnAddonLoaded then
+            questModel.OnAddonLoaded(nil, actualAddonName)
+        end
+    end)
+
+    _SafeCall(function()
         -- TODO Model: move favorites saved-variable init into Model layer.
         if Addon.FavoritesData and Addon.FavoritesData.InitSavedVars then
             Addon.FavoritesData.InitSavedVars()
@@ -363,6 +370,20 @@ function Addon:OnPlayerActivated()
             pcall(Nvk3UT.QuestTracker.ApplyBaseQuestTrackerVisibility)
         elseif type(Nvk3UT) == "table" and type(Nvk3UT.ApplyBaseQuestTrackerVisibility) == "function" then
             pcall(Nvk3UT.ApplyBaseQuestTrackerVisibility)
+        end
+    end)
+
+    _SafeCall(function()
+        local questModel = Addon.QuestModel
+        if questModel and questModel.OnPlayerActivated then
+            questModel.OnPlayerActivated()
+        end
+    end)
+
+    _SafeCall(function()
+        local questTracker = Addon.QuestTracker
+        if questTracker and questTracker.OnPlayerActivated then
+            questTracker.OnPlayerActivated()
         end
     end)
 
@@ -469,33 +490,37 @@ end
 do
     -- Forward EVENT_ADD_ON_LOADED into our lifecycle API
     local function _OnAddonLoaded(_, loadedAddonName)
-        -- We don't unregister here because EVENT_ADD_ON_LOADED fires multiple times
-        -- for every addon. Our :OnAddonLoaded() already filters by addon name.
+        if loadedAddonName ~= ADDON_NAME then
+            return
+        end
+
+        if EVENT_MANAGER then
+            EVENT_MANAGER:UnregisterForEvent("Nvk3UT_Init_AddOnLoaded", EVENT_ADD_ON_LOADED)
+        end
+
         if Nvk3UT and Nvk3UT.OnAddonLoaded then
             Nvk3UT:OnAddonLoaded(loadedAddonName)
         end
-    end
 
-    -- Forward EVENT_PLAYER_ACTIVATED into our lifecycle API
-    local function _OnPlayerActivated()
-        if Nvk3UT and Nvk3UT.OnPlayerActivated then
-            Nvk3UT:OnPlayerActivated()
+        if EVENT_MANAGER then
+            EVENT_MANAGER:RegisterForEvent(
+                "Nvk3UT_Init_PlayerActivated",
+                EVENT_PLAYER_ACTIVATED,
+                function()
+                    if Nvk3UT and Nvk3UT.OnPlayerActivated then
+                        Nvk3UT:OnPlayerActivated()
+                    end
+
+                    EVENT_MANAGER:UnregisterForEvent("Nvk3UT_Init_PlayerActivated", EVENT_PLAYER_ACTIVATED)
+                end
+            )
         end
-
-        -- Only need this once per session
-        EVENT_MANAGER:UnregisterForEvent("Nvk3UT_Init_PlayerActivated", EVENT_PLAYER_ACTIVATED)
     end
 
     EVENT_MANAGER:RegisterForEvent(
         "Nvk3UT_Init_AddOnLoaded",
         EVENT_ADD_ON_LOADED,
         _OnAddonLoaded
-    )
-
-    EVENT_MANAGER:RegisterForEvent(
-        "Nvk3UT_Init_PlayerActivated",
-        EVENT_PLAYER_ACTIVATED,
-        _OnPlayerActivated
     )
 end
 --------------------------------------------------------------------------------
