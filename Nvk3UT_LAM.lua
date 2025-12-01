@@ -1314,6 +1314,22 @@ local function registerPanel(displayTitle)
                 }
             end
 
+            controls[#controls + 1] = {
+                type = "checkbox",
+                name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_ACHIEVEMENT_TOOLTIPS),
+                tooltip = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_ACHIEVEMENT_TOOLTIPS_DESC),
+                getFunc = function()
+                    local general = getGeneral()
+                    return general.features.tooltips ~= false
+                end,
+                setFunc = function(value)
+                    local general = getGeneral()
+                    general.features.tooltips = value
+                    updateTooltips(value)
+                end,
+                default = true,
+            }
+
             return controls
         end)(),
     }
@@ -2354,38 +2370,6 @@ local function registerPanel(displayTitle)
                     local general = getGeneral()
                     general.showAchievementCategoryCounts = value ~= false
                     refreshAchievementTracker()
-                end,
-                default = true,
-            }
-
-            controls[#controls + 1] = {
-                type = "checkbox",
-                name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_TRACKER_TOOLTIPS),
-                tooltip = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_TRACKER_TOOLTIPS_DESC),
-                getFunc = function()
-                    local settings = getAchievementSettings()
-                    return settings.tooltips ~= false
-                end,
-                setFunc = function(value)
-                    local settings = getAchievementSettings()
-                    settings.tooltips = value
-                    applyAchievementSettings()
-                end,
-                default = true,
-            }
-
-            controls[#controls + 1] = {
-                type = "checkbox",
-                name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_ACHIEVEMENT_TOOLTIPS),
-                tooltip = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_ACHIEVEMENT_TOOLTIPS_DESC),
-                getFunc = function()
-                    local general = getGeneral()
-                    return general.features.tooltips ~= false
-                end,
-                setFunc = function(value)
-                    local general = getGeneral()
-                    general.features.tooltips = value
-                    updateTooltips(value)
                 end,
                 default = true,
             }
