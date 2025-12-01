@@ -861,16 +861,13 @@ local function HookSceneAndEvents()
       end
     end)
   end
-  EVENT_MANAGER:RegisterForEvent(T.name .. "_PA", EVENT_PLAYER_ACTIVATED, function()
-    EVENT_MANAGER:UnregisterForEvent(T.name .. "_PA", EVENT_PLAYER_ACTIVATED)
+  T.HookNow()
+  zo_callLater(function()
     T.HookNow()
-    zo_callLater(function()
-      T.HookNow()
-    end, 500)
-    zo_callLater(function()
-      T.HookNow()
-    end, 2000)
-  end)
+  end, 500)
+  zo_callLater(function()
+    T.HookNow()
+  end, 2000)
   zo_callLater(function()
     local Rebuild = Nvk3UT and Nvk3UT.Rebuild
     if Rebuild and SecurePostHook and Rebuild.ForceAchievementRefresh then
