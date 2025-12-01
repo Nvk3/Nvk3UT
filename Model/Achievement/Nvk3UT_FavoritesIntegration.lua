@@ -705,7 +705,7 @@ local function HookAchievementContext()
     end
 end
 
-function Nvk3UT_EnableFavorites()
+function Nvk3UT.EnableFavorites()
     if not hasPrunedCompletedFavorites then
         hasPrunedCompletedFavorites = true
         local Fav = getFavoritesModule()

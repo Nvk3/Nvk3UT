@@ -375,7 +375,7 @@ local function OverrideOnAchievementUpdated(AchClass)
   end
 end
 
-function Nvk3UT_EnableTodoCategory()
+function Nvk3UT.EnableTodoCategory()
   local AchClass = getmetatable(ACHIEVEMENTS).__index
   AddTodoCategory(AchClass)
   OverrideOnCategorySelected(AchClass)

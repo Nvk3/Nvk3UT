@@ -216,33 +216,33 @@ function Addon:HandleAchievementChanged(achievementId)
 end
 
 local function EnableCompletedCategory()
-    if Nvk3UT_EnableCompletedCategory then
-        _SafeCall(Nvk3UT_EnableCompletedCategory)
+    if Nvk3UT and Nvk3UT.EnableCompletedCategory then
+        _SafeCall(Nvk3UT.EnableCompletedCategory)
     end
 end
 
 local function EnableFavoritesCategory()
-    if Nvk3UT_EnableFavorites then
-        _SafeCall(Nvk3UT_EnableFavorites)
+    if Nvk3UT and Nvk3UT.EnableFavorites then
+        _SafeCall(Nvk3UT.EnableFavorites)
     end
 end
 
 local function EnableRecentCategory()
-    if Nvk3UT_EnableRecentCategory then
-        _SafeCall(Nvk3UT_EnableRecentCategory)
+    if Nvk3UT and Nvk3UT.EnableRecentCategory then
+        _SafeCall(Nvk3UT.EnableRecentCategory)
     end
 end
 
 local function EnableTodoCategory()
-    if Nvk3UT_EnableTodoCategory then
-        _SafeCall(Nvk3UT_EnableTodoCategory)
+    if Nvk3UT and Nvk3UT.EnableTodoCategory then
+        _SafeCall(Nvk3UT.EnableTodoCategory)
     end
 end
 
 local function logIntegrationsEnabled()
     local utils = Addon.Utils
     if utils and utils.d then
-        utils.d("[Nvk3UT][Core][Integrations] enabled", string.format("data={favorites:%s, recent:%s, completed:%s}", tostring(Nvk3UT_EnableFavorites and true or false), tostring(Nvk3UT_EnableRecentCategory and true or false), tostring(Nvk3UT_EnableCompletedCategory and true or false)))
+        utils.d("[Nvk3UT][Core][Integrations] enabled", string.format("data={favorites:%s, recent:%s, completed:%s}", tostring(Nvk3UT and Nvk3UT.EnableFavorites and true or false), tostring(Nvk3UT and Nvk3UT.EnableRecentCategory and true or false), tostring(Nvk3UT and Nvk3UT.EnableCompletedCategory and true or false)))
     end
 end
 

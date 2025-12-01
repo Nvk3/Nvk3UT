@@ -417,7 +417,7 @@ local function OverrideOnAchievementUpdated(AchClass)
     end
 end
 
-function Nvk3UT_EnableCompletedCategory()
+function Nvk3UT.EnableCompletedCategory()
     local AchClass = getmetatable(ACHIEVEMENTS).__index
     AddCompletedCategory(AchClass)
     OverrideOnCategorySelected(AchClass)

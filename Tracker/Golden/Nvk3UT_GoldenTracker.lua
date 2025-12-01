@@ -1249,7 +1249,7 @@ Nvk3UT.GoldenTracker = GoldenTracker
 
 -- MARK: GEVENTS_SWITCH_REFRESH_EXPORT
 -- GEVENTS note: Central events will continue to call this entry point after ESO registrations move to Events/.
-function Nvk3UT_GoldenTracker_RequestFullRefresh(...)
+function Nvk3UT.GoldenTracker_RequestFullRefresh(...)
     return GoldenTracker.RequestFullRefresh(...)
 end
 
