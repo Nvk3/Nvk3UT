@@ -43,6 +43,25 @@ These archives contain **third-party addons and example implementations** used *
 
 ---
 
+### Function Namespace Rule (ESOUI Compliance)
+
+All addon functions must be defined under the global addon table `Nvk3UT` and **never** as standalone global functions.
+
+**Allowed:**
+```lua
+function Nvk3UT.DoSomething(...)
+    ...
+end
+
+Not allowed:
+
+function Nvk3UT_DoSomething(...)
+    ...
+end
+```
+
+---
+
 ## 🧠 Behavior and Commit Policy
 - Each Pull Request must reference a corresponding GitHub Issue (e.g., `Fixes #7`).
 - Commits should have **short, descriptive messages** (e.g., `Add tooltip progress tracking`, `Fix multi-stage achievement detection`).

@@ -62,7 +62,7 @@ function Summary:GetHeight()
     return 0
 end
 
-function Nvk3UT_EnableTodoSummary(...)
+function Nvk3UT.EnableTodoSummary(...)
     logShim("Init")
     if type(Summary.Init) ~= "function" then
         return nil
@@ -70,7 +70,7 @@ function Nvk3UT_EnableTodoSummary(...)
     return safeCall(Summary.Init, Summary, ...)
 end
 
-function Nvk3UT_RefreshTodoSummary(...)
+function Nvk3UT.RefreshTodoSummary(...)
     logShim("Refresh")
     if type(Summary.Refresh) ~= "function" then
         return nil
@@ -78,7 +78,7 @@ function Nvk3UT_RefreshTodoSummary(...)
     return safeCall(Summary.Refresh, Summary, ...)
 end
 
-function Nvk3UT_SetTodoSummaryVisible(...)
+function Nvk3UT.SetTodoSummaryVisible(...)
     logShim("SetVisible")
     if type(Summary.SetVisible) ~= "function" then
         return nil
@@ -86,7 +86,7 @@ function Nvk3UT_SetTodoSummaryVisible(...)
     return safeCall(Summary.SetVisible, Summary, ...)
 end
 
-function Nvk3UT_GetTodoSummaryHeight(...)
+function Nvk3UT.GetTodoSummaryHeight(...)
     if type(Summary.GetHeight) ~= "function" then
         return 0
     end

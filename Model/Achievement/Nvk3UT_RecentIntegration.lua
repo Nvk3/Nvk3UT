@@ -203,7 +203,7 @@ local function Override_ZO_GetAchievementIds()
     end
 end
 
-function Nvk3UT_EnableRecentCategory()
+function Nvk3UT.EnableRecentCategory()
     local Recent = getRecentData()
     if not Recent then
         return
