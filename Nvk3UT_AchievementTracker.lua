@@ -23,6 +23,18 @@ local FormatCategoryHeaderText =
         return text
     end
 
+local function ShouldShowAchievementCategoryCounts()
+    local addon = Nvk3UT
+    local sv = addon and addon.SV
+    local general = sv and sv.General
+
+    if general and general.showAchievementCategoryCounts ~= nil then
+        return general.showAchievementCategoryCounts ~= false
+    end
+
+    return true
+end
+
 local function FormatDisplayString(text)
     if text == nil then
         return ""
@@ -1677,7 +1689,11 @@ local function LayoutCategory()
 
     local control = AcquireCategoryControl()
     control.data = { categoryKey = CATEGORY_KEY }
-    control.label:SetText(FormatCategoryHeaderText(GetString(SI_NVK3UT_TRACKER_ACHIEVEMENT_CATEGORY_MAIN), total or 0, "achievement"))
+    control.label:SetText(FormatCategoryHeaderText(
+        GetString(SI_NVK3UT_TRACKER_ACHIEVEMENT_CATEGORY_MAIN),
+        total or 0,
+        ShouldShowAchievementCategoryCounts()
+    ))
 
     local expanded = IsCategoryExpanded()
     local colorRole = expanded and "activeTitle" or "categoryTitle"
