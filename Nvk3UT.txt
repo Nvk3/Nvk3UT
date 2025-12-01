@@ -1,11 +1,11 @@
 ## Title: Nvk3's Ultimate Tracker
-## Description: Favorites category + context menu; 'Kürzlich' as its own category with same icon; Status + LAM.
+## Description: Combines Quest, Endeavor, Achievement, Golden Pursuit and Journal enhancements into one customizable tracking window with category control, filtering and full LAM integration.
 ## Author: Nvk3
 ## Version: 0.13.1
 ## AddOnVersion: 1301
 ## APIVersion: 101048
-## DependsOn: LibAddonMenu-2.0
-## OptionalDependsOn: LibCustomMenu-2.0
+## DependsOn: LibAddonMenu-2.0>=41 LibCustomMenu>=730
+## OptionalDependsOn:
 ## SavedVariables: Nvk3UT_SV Nvk3UT_Data_Favorites Nvk3UT_Data_Recent Nvk3UT_Data_Quests
 Core/Nvk3UT_Utils.lua
 Core/Nvk3UT_Diagnostics.lua
