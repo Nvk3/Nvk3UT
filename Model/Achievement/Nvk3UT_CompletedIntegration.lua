@@ -246,6 +246,10 @@ local function AddCompletedCategory(AchClass)
             return result
         end
 
+        if Nvk3UT._completedMounted then
+            return result
+        end
+
         _debugLog("[CompletedIntegration.lua:AddCompletedCategory] starting Completed build")
 
         local nodeTemplate = "ZO_IconHeader"
@@ -268,6 +272,8 @@ local function AddCompletedCategory(AchClass)
         if not parentNode then
             return result
         end
+
+        Nvk3UT._completedMounted = true
 
         lookup[COMPLETED_LOOKUP_KEY] = parentNode
         self._nvkCompletedNode = parentNode
