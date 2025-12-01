@@ -129,6 +129,73 @@ local function _collectOrderedChildren(node)
     return ordered
 end
 
+local function RemoveVanillaCompletedCategory(self)
+    if not self then
+        return
+    end
+
+    local tree = self.categoryTree
+    local lookup = self.nodeLookupData
+
+    if not (tree and lookup) then
+        return
+    end
+
+    local completedName = sanitizePlainName(
+        (GetString and GetString(SI_ACHIEVEMENT_CATEGORY_COMPLETED)) or "Completed"
+    )
+
+    local rootNode = (tree.GetRootNode and tree:GetRootNode()) or tree.rootNode
+    if not rootNode then
+        return
+    end
+
+    local children = _collectOrderedChildren(rootNode)
+    if #children == 0 and tree.GetChildren then
+        local rawChildren = tree:GetChildren()
+        if type(rawChildren) == "table" then
+            for idx = 1, #rawChildren do
+                children[#children + 1] = rawChildren[idx]
+            end
+        end
+    end
+
+    if #children == 0 then
+        return
+    end
+
+    local nvkNode = self._nvkCompletedNode or lookup[COMPLETED_LOOKUP_KEY]
+
+    for idx = 1, #children do
+        local node = children[idx]
+        if node and node ~= nvkNode then
+            local data = node.GetData and node:GetData()
+            if data and not data.isNvkCompleted then
+                local plainName = sanitizePlainName(data.name or data.text)
+                local matchesName = completedName
+                    and plainName
+                    and zo_strlower(plainName) == zo_strlower(completedName)
+                local matchesCategoryIndex = ACHIEVEMENT_CATEGORY_COMPLETED
+                    and data.categoryIndex == ACHIEVEMENT_CATEGORY_COMPLETED
+
+                if matchesName or matchesCategoryIndex then
+                    if tree.RemoveNode then
+                        pcall(tree.RemoveNode, tree, node)
+                    end
+
+                    for key, entry in pairs(lookup) do
+                        if entry == node then
+                            lookup[key] = nil
+                        end
+                    end
+
+                    return
+                end
+            end
+        end
+    end
+end
+
 -- Collect tooltip payloads whenever the completed tree is rebuilt/refreshed so the
 -- summary tooltip reflects the on-screen ordering and point totals.
 local function _updateCompletedTooltip(ach)
@@ -251,6 +318,11 @@ local function AddCompletedCategory(AchClass)
         local lookup, tree = self.nodeLookupData, self.categoryTree
         if not (lookup and tree) then
             return result
+        end
+
+        if not self._nvkRemovedVanillaCompleted then
+            RemoveVanillaCompletedCategory(self)
+            self._nvkRemovedVanillaCompleted = true
         end
 
         if lookup[COMPLETED_LOOKUP_KEY] then
