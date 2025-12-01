@@ -331,8 +331,19 @@ function CompletedData.GetSubcategoryList()
 
     for index = 1, #monthKeys do
         local key = monthKeys[index]
-        push(names, keyToName[key])
-        push(ids, key)
+        if key ~= LAST50_KEY then
+            push(names, keyToName[key])
+            push(ids, key)
+            if Nvk3UT.debugEnabled then
+                Nvk3UT.Diagnostics:Debug("[CompletedData:GetSubcategoryList:MONTH] index=%d key=%s name=%s",
+                    index, tostring(key), tostring(keyToName[key])
+                )
+            end
+        else
+            if Nvk3UT.debugEnabled then
+                Nvk3UT.Diagnostics:Debug("[CompletedData] skipped duplicate LAST50_KEY in month list (index=%d)", index)
+            end
+        end
     end
 
     return names, ids
