@@ -87,6 +87,44 @@ ESO’s Lua runtime already provides a working unpack(), so no compatibility lay
 Going forward, any new code that needs to expand tables must directly call unpack(...) (or table.unpack(...) only in exceptional cases, with a comment explaining why).
 ```
 
+### ZOS API Usage Rule (No unnecessary wrappers)
+
+When calling ZOS-provided API functions (e.g. `ZO_Menu_GetNumMenuItems`, `GetUnitName`, `GetJournalQuestInfo`, etc.),  
+the addon must **not** wrap these functions in extra layers of defensive logic unless a specific ZOS bug is documented.
+
+**Allowed:**
+```lua
+local count = ZO_Menu_GetNumMenuItems()
+
+Not allowed:
+
+local function safeGetMenuItemCount()
+    if type(ZO_Menu_GetNumMenuItems) == "function" then
+        local ok, num = pcall(ZO_Menu_GetNumMenuItems)
+        if ok and type(num) == "number" then
+            return num
+        end
+    end
+    return nil
+end
+
+Reason:
+
+ZOS API functions are stable and guaranteed to exist.
+
+Over-defensive wrappers add unnecessary complexity and runtime overhead.
+
+Hiding real errors behind pcall makes debugging harder.
+
+ESOUI reviewers explicitly request clean and direct API usage.
+
+Going forward, use ZOS API functions as they are, and only build wrappers if:
+
+A real ZOS-side bug is known,
+
+It is documented in the code why the wrapper exists.
+```
+
 ---
 
 ## 🧠 Behavior and Commit Policy
