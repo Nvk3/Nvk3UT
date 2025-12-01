@@ -129,6 +129,65 @@ local function _collectOrderedChildren(node)
     return ordered
 end
 
+local function RemoveExistingLast50Children(self, parentNode, lookup)
+    local tree = self and self.categoryTree
+    if not (tree and parentNode) then
+        return
+    end
+
+    local expectedName = (GetString and GetString(SI_NVK3UT_JOURNAL_SUBCATEGORY_COMPLETED_LAST50)) or "Letzte 50"
+
+    local children = nil
+    if tree.GetChildren then
+        local raw = tree:GetChildren(parentNode)
+        if type(raw) == "table" then
+            children = raw
+        end
+    end
+
+    if not children and parentNode.GetChildren then
+        local raw = parentNode:GetChildren()
+        if type(raw) == "table" then
+            children = raw
+        end
+    end
+
+    if not (children and #children > 0) then
+        return
+    end
+
+    local removeList = {}
+    for idx = 1, #children do
+        local node = children[idx]
+        local data = node and node.GetData and node:GetData()
+        if data then
+            local plainName = data.nvkPlainName
+            local name = data.name or data.text
+            if plainName == expectedName or name == expectedName then
+                removeList[#removeList + 1] = node
+            end
+        end
+    end
+
+    if #removeList == 0 then
+        return
+    end
+
+    for idx = 1, #removeList do
+        local node = removeList[idx]
+        if tree.RemoveNode then
+            tree:RemoveNode(node)
+        end
+        if lookup and type(lookup) == "table" then
+            for key, value in pairs(lookup) do
+                if value == node then
+                    lookup[key] = nil
+                end
+            end
+        end
+    end
+end
+
 -- Collect tooltip payloads whenever the completed tree is rebuilt/refreshed so the
 -- summary tooltip reflects the on-screen ordering and point totals.
 local function _updateCompletedTooltip(ach)
@@ -301,6 +360,8 @@ local function AddCompletedCategory(AchClass)
         if type(names) ~= "table" or type(ids) ~= "table" then
             names, ids = {}, {}
         end
+
+        RemoveExistingLast50Children(self, parentNode, lookup)
 
         for index = 1, #ids do
             local node = self:AddCategory(lookup, tree, subTemplate, parentNode, ids[index], names[index], true)
