@@ -261,6 +261,8 @@ local function AddCompletedCategory(AchClass)
             return result
         end
 
+        _debugLog("[CompletedIntegration.lua:AddCompletedCategory] starting Completed build")
+
         local nodeTemplate = "ZO_IconHeader"
         local subTemplate = "ZO_TreeLabelSubCategory"
 
@@ -297,6 +299,12 @@ local function AddCompletedCategory(AchClass)
             parentData.nvkPlainName = parentData.nvkPlainName or sanitizePlainName(plainParent)
         end
 
+        _debugLog(
+            "[CompletedIntegration.lua:AddCompletedCategory:PARENT] categoryIndex=%s name=%s",
+            tostring(NVK3_DONE),
+            tostring(parentData and (parentData.nvkPlainName or parentData.name or parentData.text))
+        )
+
         local names, ids = Comp.GetSubcategoryList()
         if type(names) ~= "table" or type(ids) ~= "table" then
             names, ids = {}, {}
@@ -314,10 +322,19 @@ local function AddCompletedCategory(AchClass)
                     local plainName = names[index]
                     data.nvkPlainName = data.nvkPlainName or sanitizePlainName(plainName)
                 end
+
+                _debugLog(
+                    "[CompletedIntegration.lua:AddCompletedCategory:SUB] index=%d key=%s name=%s",
+                    index,
+                    tostring(ids[index]),
+                    tostring(data and (data.nvkPlainName or data.name or data.text or names[index]))
+                )
             end
         end
 
         _updateCompletedTooltip(self)
+
+        _debugLog("[CompletedIntegration.lua:AddCompletedCategory] Completed tooltip updated")
 
         if self.refreshGroups then
             self.refreshGroups:RefreshAll("FullUpdate")

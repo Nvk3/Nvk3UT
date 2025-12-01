@@ -323,16 +323,25 @@ end
 function CompletedData.GetSubcategoryList()
     ensureBuilt()
 
+    emitDebugMessage("[CompletedData:GetSubcategoryList] building subcategory list")
+
     local names = {}
     local ids = {}
 
     push(names, (GetString and GetString(SI_NVK3UT_JOURNAL_SUBCATEGORY_COMPLETED_LAST50)) or "Letzte 50")
     push(ids, LAST50_KEY)
+    emitDebugMessage("[CompletedData:GetSubcategoryList:LAST50] key=%d name=%s", LAST50_KEY, names[#names])
 
     for index = 1, #monthKeys do
         local key = monthKeys[index]
         push(names, keyToName[key])
         push(ids, key)
+        emitDebugMessage(
+            "[CompletedData:GetSubcategoryList:MONTH] index=%d key=%s name=%s",
+            index,
+            tostring(key),
+            tostring(keyToName[key])
+        )
     end
 
     return names, ids
