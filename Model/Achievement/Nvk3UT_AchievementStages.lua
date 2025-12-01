@@ -61,8 +61,6 @@ local function debugLog(fmt, ...)
     end
 end
 
-local unpack = table.unpack or unpack
-
 local function normalizeId(value)
     if type(value) == "number" then
         if value > 0 then

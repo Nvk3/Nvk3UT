@@ -2,7 +2,6 @@
 -- Builds Endeavor tracker view models from the Endeavor model snapshot.
 
 local addonName = "Nvk3UT"
-local unpack = unpack or table.unpack
 
 Nvk3UT = Nvk3UT or {}
 

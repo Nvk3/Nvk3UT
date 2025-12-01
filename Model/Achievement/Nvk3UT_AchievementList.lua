@@ -67,8 +67,6 @@ local function SafeCall(func, ...)
     return nil
 end
 
-local tableUnpack = table.unpack or unpack
-
 local function SafeCallMulti(func, ...)
     if type(func) ~= "function" then
         return nil
@@ -80,7 +78,7 @@ local function SafeCallMulti(func, ...)
     end
 
     table.remove(results, 1)
-    return tableUnpack(results)
+    return unpack(results)
 end
 
 local function FormatDisplayString(text)

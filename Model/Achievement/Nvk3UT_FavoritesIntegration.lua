@@ -93,7 +93,6 @@ local function ForceAchievementRefresh(context)
 end
 
 local _liveRefreshFavoritesIfActive
-local unpackResults = table.unpack or unpack
 
 local function _getAchievementsScrollList()
     local achievements = ACHIEVEMENTS
@@ -446,7 +445,7 @@ local function _wrapFavoritesMutation(methodName, evaluateChanged)
         if shouldRefresh then
             _liveRefreshFavoritesIfActive()
         end
-        return unpackResults(results)
+        return unpack(results)
     end
 end
 

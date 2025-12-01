@@ -111,7 +111,6 @@ local DEFAULT_FONTS = {
     toggle = "$(BOLD_FONT)|20|soft-shadow-thick",
 }
 
-local unpack = table.unpack or unpack
 local LEFT_MOUSE_BUTTON = MOUSE_BUTTON_INDEX_LEFT or 1
 local RIGHT_MOUSE_BUTTON = MOUSE_BUTTON_INDEX_RIGHT or 2
 

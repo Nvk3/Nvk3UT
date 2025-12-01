@@ -8,7 +8,6 @@ Addon.TrackerRuntime = Addon.TrackerRuntime or {}
 local Runtime = Addon.TrackerRuntime
 
 local WEAK_VALUE_MT = { __mode = "v" }
-local unpack = unpack or table.unpack
 
 Runtime._hostRef = Runtime._hostRef or setmetatable({}, WEAK_VALUE_MT)
 Runtime._dirty = Runtime._dirty or {}

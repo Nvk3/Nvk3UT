@@ -4,14 +4,6 @@
 
 Nvk3UT_StateInit = Nvk3UT_StateInit or {}
 
--- Safe unpack for Lua 5.1/5.2 without shadowing
-local fn_unpack = _G.unpack or (table and table.unpack) or function(t, i)
-    i = i or 1
-    if type(t) == "table" and t[i] ~= nil then
-        return t[i], fn_unpack(t, i + 1)
-    end
-end
-
 local function ShallowCopy(dst, src)
     if type(dst) ~= "table" then
         dst = {}

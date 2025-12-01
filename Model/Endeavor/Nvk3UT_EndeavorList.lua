@@ -1,7 +1,4 @@
--- Model/Endeavor/Nvk3UT_EndeavorList.lua
 -- Low-level Endeavor timed-activity scanner. No SV/UI/event side-effects.
-
-local unpack = unpack
 
 Nvk3UT = Nvk3UT or {}
 

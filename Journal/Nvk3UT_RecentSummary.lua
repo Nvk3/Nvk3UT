@@ -20,8 +20,6 @@ local state = {
 
 local eventsRegistered = false
 
-local tableUnpack = table.unpack or unpack
-
 local function safeCall(func, ...)
     local SafeCall = Nvk3UT and Nvk3UT.SafeCall
     if type(SafeCall) == "function" then
@@ -38,7 +36,7 @@ local function safeCall(func, ...)
     end
 
     table.remove(results, 1)
-    return tableUnpack(results)
+    return unpack(results)
 end
 
 local function logShim(action)

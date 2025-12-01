@@ -17,8 +17,6 @@ GoldenModel._systemStatus = type(GoldenModel._systemStatus) == "table" and Golde
 GoldenModel._stateInitialized = GoldenModel._stateInitialized == true
 GoldenModel._listInitialized = GoldenModel._listInitialized == true
 
-local unpack = _G.unpack or (table and table.unpack)
-
 local function resolveRoot()
     local root = rawget(_G, "Nvk3UT")
     if type(root) == "table" then
