@@ -13,8 +13,8 @@ Core/Nvk3UT_SelfTest.lua
 Core/Nvk3UT_StateInit.lua
 Core/Nvk3UT_Rebuild.lua
 Core/Nvk3UT_Core.lua
-Nvk3UT/lang/default.lua
-Nvk3UT/lang/$(language).lua
+lang/default.lua
+lang/$(language).lua
 ## Model — Quest
 Model/Quest/Nvk3UT_QuestState.lua
 Model/Quest/Nvk3UT_QuestSelection.lua
