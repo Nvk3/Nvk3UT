@@ -29,11 +29,9 @@ Model/Achievement/Nvk3UT_AchievementStages.lua
 Model/Achievement/Nvk3UT_FavoritesData.lua
 Model/Achievement/Nvk3UT_RecentData.lua
 Model/Achievement/Nvk3UT_TodoData.lua
-Model/Achievement/Nvk3UT_CompletedData.lua
 Model/Achievement/Nvk3UT_FavoritesIntegration.lua
 Model/Achievement/Nvk3UT_RecentIntegration.lua
 Model/Achievement/Nvk3UT_TodoIntegration.lua
-Model/Achievement/Nvk3UT_CompletedIntegration.lua
 Model/Achievement/Nvk3UT_AchievementList.lua
 Model/Achievement/Nvk3UT_AchievementModel.lua
 Model/Achievement/Nvk3UT_AchievementCache.lua
@@ -50,6 +48,9 @@ Journal/Nvk3UT_TodoCategory.lua
 Journal/Nvk3UT_TodoSummary.lua
 Journal/Nvk3UT_CompletedCategory.lua
 Journal/Nvk3UT_CompletedSummary.lua
+## Completed (must load after Journal)
+Model/Achievement/Nvk3UT_CompletedData.lua
+Model/Achievement/Nvk3UT_CompletedIntegration.lua
 ## === Runtime ===
 ## Runtime order: Runtime -> Host -> HostLayout (Quest -> Endeavor -> Achievement -> Golden enforced via layout)
 Runtime/Nvk3UT_TrackerRuntime.lua
