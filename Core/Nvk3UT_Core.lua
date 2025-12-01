@@ -358,6 +358,14 @@ function Addon:OnPlayerActivated()
         end
     end)
 
+    _SafeCall(function()
+        if Nvk3UT and Nvk3UT.QuestTracker and type(Nvk3UT.QuestTracker.ApplyBaseQuestTrackerVisibility) == "function" then
+            pcall(Nvk3UT.QuestTracker.ApplyBaseQuestTrackerVisibility)
+        elseif type(Nvk3UT) == "table" and type(Nvk3UT.ApplyBaseQuestTrackerVisibility) == "function" then
+            pcall(Nvk3UT.ApplyBaseQuestTrackerVisibility)
+        end
+    end)
+
     local cache = Nvk3UT and Nvk3UT.AchievementCache
     if cache and cache.SchedulePrebuild then
         _SafeCall(cache.SchedulePrebuild)

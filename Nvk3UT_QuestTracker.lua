@@ -8,6 +8,42 @@ QuestTracker.__index = QuestTracker
 local MODULE_NAME = addonName .. "QuestTracker"
 local EVENT_NAMESPACE = MODULE_NAME .. "_Event"
 
+local function GetHideBaseQuestTrackerFlag()
+    local addon = Nvk3UT
+    local sv = addon and addon.SV
+    local general = sv and sv.General
+    if general and general.hideBaseQuestTracker ~= nil then
+        return general.hideBaseQuestTracker == true
+    end
+    return true
+end
+
+local function GetQuestTrackerEnabledFlag()
+    local addon = Nvk3UT
+    local sv = addon and addon.SV
+    local questTracker = sv and sv.QuestTracker
+
+    if questTracker and questTracker.active ~= nil then
+        return questTracker.active ~= false
+    end
+
+    return true
+end
+
+local function GetBaseQuestTracker()
+    local tracker = QUEST_TRACKER
+
+    if tracker == nil then
+        tracker = ASSISTED_QUEST_TRACKER or FOCUSED_QUEST_TRACKER
+    end
+
+    if tracker and type(tracker.GetFragment) == "function" then
+        return tracker
+    end
+
+    return nil
+end
+
 local Utils = Nvk3UT and Nvk3UT.Utils
 local QuestState = Nvk3UT and Nvk3UT.QuestState
 local QuestSelection = Nvk3UT and Nvk3UT.QuestSelection
@@ -3810,6 +3846,35 @@ end
 function QuestTracker.GetContentSize()
     UpdateContentSize()
     return state.contentWidth or 0, state.contentHeight or 0
+end
+
+function QuestTracker.ApplyBaseQuestTrackerVisibility()
+    local hide = GetHideBaseQuestTrackerFlag()
+    local questTrackerEnabled = GetQuestTrackerEnabledFlag()
+    local shouldHide = hide and questTrackerEnabled
+
+    if Nvk3UT and Nvk3UT.Debug then
+        Nvk3UT.Debug(
+            "ApplyBaseQuestTrackerVisibility: hide=%s, questTrackerEnabled=%s, effectiveHide=%s",
+            tostring(hide),
+            tostring(questTrackerEnabled),
+            tostring(shouldHide)
+        )
+    end
+
+    local tracker = GetBaseQuestTracker()
+    if not tracker then
+        return
+    end
+
+    local fragment = tracker and tracker.GetFragment and tracker:GetFragment()
+    if fragment and type(fragment.SetHiddenForReason) == "function" then
+        fragment:SetHiddenForReason("Nvk3UT_HideBaseQuestTracker", shouldHide, DEFAULT_HUD_DURATION, DEFAULT_HUD_DURATION)
+    end
+
+    if tracker and tracker.SetHidden then
+        tracker:SetHidden(shouldHide)
+    end
 end
 
 Nvk3UT.QuestTracker = QuestTracker

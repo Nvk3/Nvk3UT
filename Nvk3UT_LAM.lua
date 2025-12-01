@@ -1554,23 +1554,6 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "checkbox",
-                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_HIDE_DEFAULT),
-                getFunc = function()
-                    local features = getFeatures()
-                    return features.hideDefaultQuestTracker == true
-                end,
-                setFunc = function(value)
-                    local features = getFeatures()
-                    features.hideDefaultQuestTracker = value == true
-                    if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
-                        Nvk3UT.TrackerHost.ApplySettings()
-                    end
-                end,
-                default = false,
-            })
-
-            addControl({
-                type = "checkbox",
                 name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_BACKGROUND),
                 getFunc = function()
                     local appearance = getAppearanceSettings()
@@ -1875,7 +1858,41 @@ local function registerPanel(displayTitle)
                         host:ApplyVisibilityRules()
                     end
 
+                    if Nvk3UT and Nvk3UT.QuestTracker and type(Nvk3UT.QuestTracker.ApplyBaseQuestTrackerVisibility) == "function" then
+                        pcall(Nvk3UT.QuestTracker.ApplyBaseQuestTrackerVisibility)
+                    elseif Nvk3UT and type(Nvk3UT.ApplyBaseQuestTrackerVisibility) == "function" then
+                        pcall(Nvk3UT.ApplyBaseQuestTrackerVisibility)
+                    end
+
                     LamQueueFullRebuild("questActive")
+                end,
+                default = true,
+            }
+
+            controls[#controls + 1] = {
+                type = "checkbox",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_HIDE_DEFAULT),
+                getFunc = function()
+                    local general = getGeneral()
+                    if general then
+                        return general.hideBaseQuestTracker == true
+                    end
+                end,
+                setFunc = function(value)
+                    local general = getGeneral()
+                    if general then
+                        general.hideBaseQuestTracker = (value == true)
+
+                        if Nvk3UT and Nvk3UT.Debug then
+                            Nvk3UT.Debug("LAM: hideBaseQuestTracker set to %s", tostring(general.hideBaseQuestTracker))
+                        end
+                    end
+
+                    if Nvk3UT and Nvk3UT.QuestTracker and type(Nvk3UT.QuestTracker.ApplyBaseQuestTrackerVisibility) == "function" then
+                        pcall(Nvk3UT.QuestTracker.ApplyBaseQuestTrackerVisibility)
+                    elseif Nvk3UT and type(Nvk3UT.ApplyBaseQuestTrackerVisibility) == "function" then
+                        pcall(Nvk3UT.ApplyBaseQuestTrackerVisibility)
+                    end
                 end,
                 default = true,
             }
