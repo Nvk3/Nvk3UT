@@ -29,6 +29,7 @@ local QUEST_SAVED_VARS_DEFAULTS = {
 
 local questSavedVars = nil
 local bootstrapState = {
+    registered = false,
     executed = false,
 }
 local playerState = {
@@ -244,6 +245,11 @@ end
 local ForceRebuildInternal
 
 local function OnPlayerActivated()
+    if bootstrapState.registered and EVENT_MANAGER then
+        EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "PlayerActivated", EVENT_PLAYER_ACTIVATED)
+        bootstrapState.registered = false
+    end
+
     local sv = EnsureSavedVars()
     local requiresBootstrap = ShouldBootstrap(sv)
     DebugInitLog("[Init] OnPlayerActivated → Bootstrap required: %s", tostring(requiresBootstrap))
@@ -259,13 +265,31 @@ local function OnPlayerActivated()
     end
 end
 
+local function RegisterForPlayerActivated()
+    if bootstrapState.registered or not EVENT_MANAGER then
+        return
+    end
+
+    EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. "PlayerActivated", EVENT_PLAYER_ACTIVATED, OnPlayerActivated)
+    bootstrapState.registered = true
+end
+
 local function OnAddOnLoaded(_, name)
     if name ~= addonName then
         return
     end
 
+    if EVENT_MANAGER then
+        EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "OnLoaded", EVENT_ADD_ON_LOADED)
+    end
+
     EnsureSavedVars()
+    RegisterForPlayerActivated()
     DebugInitLog("[Init] OnAddOnLoaded → SavedVars ready")
+end
+
+if EVENT_MANAGER then
+    EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. "OnLoaded", EVENT_ADD_ON_LOADED, OnAddOnLoaded)
 end
 
 local MIN_DEBOUNCE_MS = 50
@@ -532,7 +556,10 @@ function QuestModel.Shutdown()
     UnregisterQuestEvent(EVENT_QUEST_CONDITION_COUNTER_CHANGED)
     UnregisterQuestEvent(EVENT_QUEST_LOG_UPDATED)
     EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "TRACKING", EVENT_TRACKING_UPDATE)
+    EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "OnLoaded", EVENT_ADD_ON_LOADED)
     EVENT_MANAGER:UnregisterForUpdate(REBUILD_IDENTIFIER)
+    EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "PlayerActivated", EVENT_PLAYER_ACTIVATED)
+    bootstrapState.registered = false
     playerState.hasActivated = false
 
     QuestModel.isInitialized = false
@@ -568,14 +595,6 @@ function QuestModel.Unsubscribe(callback)
     if QuestModel.subscribers then
         QuestModel.subscribers[callback] = nil
     end
-end
-
-function QuestModel.OnAddonLoaded(...)
-    OnAddOnLoaded(...)
-end
-
-function QuestModel.OnPlayerActivated(...)
-    OnPlayerActivated(...)
 end
 
 Nvk3UT.QuestModel = QuestModel

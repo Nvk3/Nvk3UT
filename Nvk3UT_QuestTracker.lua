@@ -2634,6 +2634,7 @@ local function RegisterTrackingEvents()
 
     if EVENT_MANAGER then
         EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. "TrackUpdate", EVENT_TRACKING_UPDATE, OnTrackedQuestUpdate)
+        EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. "PlayerActivated", EVENT_PLAYER_ACTIVATED, OnPlayerActivated)
     end
 
     if FOCUSED_QUEST_TRACKER and FOCUSED_QUEST_TRACKER.RegisterCallback then
@@ -2650,6 +2651,7 @@ local function UnregisterTrackingEvents()
 
     if EVENT_MANAGER then
         EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "TrackUpdate", EVENT_TRACKING_UPDATE)
+        EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "PlayerActivated", EVENT_PLAYER_ACTIVATED)
     end
 
     if FOCUSED_QUEST_TRACKER and FOCUSED_QUEST_TRACKER.UnregisterCallback then
@@ -3814,10 +3816,6 @@ function QuestTracker.Init(parentControl, opts)
         source = "QuestTracker:Init",
     })
     AdoptTrackedQuestOnInit()
-end
-
-function QuestTracker.OnPlayerActivated(...)
-    OnPlayerActivated(...)
 end
 
 function QuestTracker.Refresh()
