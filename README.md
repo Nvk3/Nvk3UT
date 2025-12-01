@@ -10,6 +10,7 @@
 <p align="center">
   <img src="https://raw.githubusercontent.com/Nvk3/Nvk3UT/main/media/lazytracker.png" width="260">
 </p>
+
 # Nvk3UT – Ultimate Tracker for The Elder Scrolls Online (Beta)
 
 Nvk3UT combines ESO’s key progression systems into one fully configurable tracker window.
@@ -227,6 +228,7 @@ Your feedback helped shape Nvk3UT into a stable, feature-complete addon.
 <p align="center">
   <img src="https://raw.githubusercontent.com/Nvk3/Nvk3UT/main/media/lazytracker.png" width="260">
 </p>
+
 # Nvk3UT – Ultimativer Tracker für The Elder Scrolls Online (Beta)
 
 Nvk3UT vereint die wichtigsten Fortschritts-Systeme von ESO in einem einzigen, frei konfigurierbaren Tracker-Fenster.
