@@ -129,119 +129,102 @@ local function _collectOrderedChildren(node)
     return ordered
 end
 
-local function RemoveExistingLast50Children(self, parentNode, lookup)
-    if Nvk3UT and Nvk3UT.debugEnabled then
-        Nvk3UT.Diagnostics:Debug("[CompletedDedup] scan start (parent=%s)", tostring(parentNode))
-    end
-
+local function RemoveAllExistingLast50Nodes(self, lookup)
     local tree = self and self.categoryTree
-    if not (tree and parentNode) then
-        if Nvk3UT and Nvk3UT.debugEnabled then
-            Nvk3UT.Diagnostics:Debug("[CompletedDedup] WARNING: could not remove Last50 node=%s", tostring(parentNode))
-        end
-        return
-    end
-
     local expectedName = (GetString and GetString(SI_NVK3UT_JOURNAL_SUBCATEGORY_COMPLETED_LAST50)) or "Letzte 50"
+    local completedName = (GetString and GetString(SI_NVK3UT_JOURNAL_CATEGORY_COMPLETED)) or "Abgeschlossen"
 
-    local children = nil
-    if tree.GetChildren then
-        local raw = tree:GetChildren(parentNode)
-        if type(raw) == "table" then
-            children = raw
-        end
+    local numParents, numFound, numRemoved = 0, 0, 0
+
+    if Nvk3UT and Nvk3UT.debugEnabled then
+        Nvk3UT.Diagnostics:Debug("[CompletedDedup] global scan start")
     end
 
-    if not children and parentNode.GetChildren then
-        local raw = parentNode:GetChildren()
-        if type(raw) == "table" then
-            children = raw
-        end
-    end
-
-    if not (children and #children > 0) then
+    if not lookup or type(lookup) ~= "table" then
         if Nvk3UT and Nvk3UT.debugEnabled then
-            Nvk3UT.Diagnostics:Debug("[CompletedDedup] scan end: found=%d removed=%d", 0, 0)
+            Nvk3UT.Diagnostics:Debug("[CompletedDedup] WARNING: could not remove Last50 child=%s", tostring(nil))
+            Nvk3UT.Diagnostics:Debug("[CompletedDedup] scan end: parents=%d last50Found=%d removed=%d", numParents, numFound, numRemoved)
         end
         return
     end
 
-    local removeList, numFound, numRemoved = {}, 0, 0
-    for idx = 1, #children do
-        local node = children[idx]
+    local removeNodes = {}
+
+    for key, node in pairs(lookup) do
         local data = node and node.GetData and node:GetData()
         if data then
-            local plainName = data.nvkPlainName
-            local name = data.name or data.text
-            if plainName == expectedName or name == expectedName then
-                numFound = numFound + 1
+            local isCompletedParent = false
+            if data.categoryIndex == NVK3_DONE then
+                isCompletedParent = true
+            end
+
+            local plainName = data.nvkPlainName or data.name or data.text
+            if plainName == completedName then
+                isCompletedParent = true
+            end
+
+            if isCompletedParent then
+                numParents = numParents + 1
                 if Nvk3UT and Nvk3UT.debugEnabled then
-                    Nvk3UT.Diagnostics:Debug(
-                        "[CompletedDedup] found existing Last50 node (name=%s, key=%s)",
-                        tostring(data and (data.nvkPlainName or data.name or data.text)),
-                        tostring(data and data.categoryIndex)
-                    )
+                    Nvk3UT.Diagnostics:Debug("[CompletedDedup] found Completed parent=%s", tostring(node))
                 end
-                removeList[#removeList + 1] = node
+
+                local children = node.GetChildren and node:GetChildren()
+                if type(children) == "table" then
+                    for idx = 1, #children do
+                        local child = children[idx]
+                        local cdata = child and child.GetData and child:GetData()
+                        if cdata then
+                            local cname = cdata.nvkPlainName or cdata.name or cdata.text
+                            if cname == expectedName then
+                                numFound = numFound + 1
+                                if Nvk3UT and Nvk3UT.debugEnabled then
+                                    Nvk3UT.Diagnostics:Debug("[CompletedDedup] found Last50 child=%s", tostring(child))
+                                end
+                                removeNodes[#removeNodes + 1] = child
+                            end
+                        end
+                    end
+                end
             end
         end
     end
 
-    if #removeList == 0 then
-        if Nvk3UT and Nvk3UT.debugEnabled then
-            Nvk3UT.Diagnostics:Debug("[CompletedDedup] scan end: found=%d removed=%d", numFound, numRemoved)
-        end
-        return
-    end
-
-    for idx = 1, #removeList do
-        local node = removeList[idx]
+    for idx = 1, #removeNodes do
+        local node = removeNodes[idx]
         local removalSuccess = false
-        local lookupCleared = true
-
         if tree and tree.RemoveNode then
             tree:RemoveNode(node)
             removalSuccess = true
         end
 
-        if lookup and type(lookup) == "table" then
-            local hadMatch = false
-            for key, value in pairs(lookup) do
-                if value == node then
-                    lookup[key] = nil
-                    hadMatch = true
+        if lookup then
+            for k, v in pairs(lookup) do
+                if v == node then
+                    lookup[k] = nil
                 end
             end
-            if hadMatch then
-                for _, value in pairs(lookup) do
-                    if value == node then
-                        lookupCleared = false
-                        break
-                    end
-                end
-            end
-        else
-            lookupCleared = false
         end
 
         if removalSuccess then
             numRemoved = numRemoved + 1
             if Nvk3UT and Nvk3UT.debugEnabled then
-                Nvk3UT.Diagnostics:Debug("[CompletedDedup] removed Last50 node=%s", tostring(node))
+                Nvk3UT.Diagnostics:Debug("[CompletedDedup] removed Last50 child=%s", tostring(node))
             end
         else
             if Nvk3UT and Nvk3UT.debugEnabled then
-                Nvk3UT.Diagnostics:Debug("[CompletedDedup] WARNING: could not remove Last50 node=%s", tostring(node))
+                Nvk3UT.Diagnostics:Debug("[CompletedDedup] WARNING: could not remove Last50 child=%s", tostring(node))
             end
-        end
-
-        if not lookupCleared and Nvk3UT and Nvk3UT.debugEnabled then
-            Nvk3UT.Diagnostics:Debug("[CompletedDedup] WARNING: could not remove Last50 node=%s", tostring(node))
         end
     end
 
     if Nvk3UT and Nvk3UT.debugEnabled then
-        Nvk3UT.Diagnostics:Debug("[CompletedDedup] scan end: found=%d removed=%d", numFound, numRemoved)
+        Nvk3UT.Diagnostics:Debug(
+            "[CompletedDedup] scan end: parents=%d last50Found=%d removed=%d",
+            numParents,
+            numFound,
+            numRemoved
+        )
     end
 end
 
@@ -422,10 +405,10 @@ local function AddCompletedCategory(AchClass)
             Nvk3UT.Diagnostics:Debug("[CompletedDedup] starting cleanup before rebuild")
         end
 
-        RemoveExistingLast50Children(self, parentNode, lookup)
+        RemoveAllExistingLast50Nodes(self, lookup)
 
         if Nvk3UT and Nvk3UT.debugEnabled then
-            Nvk3UT.Diagnostics:Debug("[CompletedDedup] cleanup complete; now rebuilding subcategories")
+            Nvk3UT.Diagnostics:Debug("[CompletedDedup] global cleanup done; continuing with rebuild")
         end
 
         for index = 1, #ids do
