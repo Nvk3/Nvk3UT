@@ -129,6 +129,42 @@ local function _collectOrderedChildren(node)
     return ordered
 end
 
+local function _removeVanillaLast50Category(ach)
+    if not (_nvk3ut_is_enabled("completed")) then
+        return
+    end
+
+    if not (ach and ach.categoryTree and ach.categoryTree.RemoveNode and ach.categoryTree.GetRootNode) then
+        return
+    end
+
+    local root = ach.categoryTree:GetRootNode()
+    if not root then
+        return
+    end
+
+    local targetLabel = (GetString and GetString(SI_NVK3UT_JOURNAL_SUBCATEGORY_COMPLETED_LAST50)) or "Last 50"
+
+    local function visit(node)
+        local data = node and node.GetData and node:GetData()
+        local parent = node and node.GetParentNode and node:GetParentNode()
+        if data and parent and data.name == targetLabel then
+            local parentData = parent.GetData and parent:GetData()
+            if not (parentData and parentData.isNvkCompleted) then
+                ach.categoryTree:RemoveNode(node)
+                return
+            end
+        end
+
+        local children = _collectOrderedChildren(node)
+        for idx = 1, #children do
+            visit(children[idx])
+        end
+    end
+
+    visit(root)
+end
+
 -- Collect tooltip payloads whenever the completed tree is rebuilt/refreshed so the
 -- summary tooltip reflects the on-screen ordering and point totals.
 local function _updateCompletedTooltip(ach)
@@ -239,6 +275,9 @@ local function AddCompletedCategory(AchClass)
 
     function AchClass:AddTopLevelCategory(...)
         local result = orgAddTopLevelCategory(self, ...)
+
+        _removeVanillaLast50Category(self)
+
         if not _nvk3ut_is_enabled("completed") then
             return result
         end
