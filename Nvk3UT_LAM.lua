@@ -203,9 +203,6 @@ local function getGeneral()
     if general.showCategoryCounts == nil then
         general.showCategoryCounts = true
     end
-    if general.hideBaseQuestTracker == nil then
-        general.hideBaseQuestTracker = false
-    end
     return general
 end
 
@@ -1870,16 +1867,20 @@ local function registerPanel(displayTitle)
                 type = "checkbox",
                 name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_HIDE_DEFAULT),
                 getFunc = function()
-                    local general = getGeneral and getGeneral()
+                    local general = getGeneral()
                     if general and general.hideBaseQuestTracker ~= nil then
-                        return general.hideBaseQuestTracker
+                        return general.hideBaseQuestTracker == true
                     end
                     return false
                 end,
                 setFunc = function(value)
-                    local general = getGeneral and getGeneral()
+                    local general = getGeneral()
                     if general then
-                        general.hideBaseQuestTracker = value == true
+                        general.hideBaseQuestTracker = (value == true)
+
+                        if Nvk3UT and Nvk3UT.Debug then
+                            Nvk3UT.Debug("LAM: hideBaseQuestTracker set to %s", tostring(general.hideBaseQuestTracker))
+                        end
                     end
 
                     if Nvk3UT and Nvk3UT.QuestTracker and type(Nvk3UT.QuestTracker.ApplyBaseQuestTrackerVisibility) == "function" then

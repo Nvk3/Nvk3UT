@@ -3826,6 +3826,10 @@ end
 function Nvk3UT.QuestTracker.ApplyBaseQuestTrackerVisibility()
     local hide = GetHideBaseQuestTrackerFlag()
 
+    if Nvk3UT and Nvk3UT.Debug then
+        Nvk3UT.Debug("ApplyBaseQuestTrackerVisibility: hide=%s", tostring(hide))
+    end
+
     local fragment = QUEST_TRACKER_FRAGMENT
     local trackerControl = ZO_QuestTracker
     local sceneManager = SCENE_MANAGER

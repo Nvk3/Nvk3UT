@@ -783,19 +783,12 @@ local function ensureFeatureSettings()
     migrateHostSettings(sv.General)
     sv.General.features = sv.General.features or {}
 
-    if sv.General.hideBaseQuestTracker == nil then
-        sv.General.hideBaseQuestTracker = false
-    else
-        sv.General.hideBaseQuestTracker = sv.General.hideBaseQuestTracker == true
-    end
-
     local features = sv.General.features
     if features.hideDefaultQuestTracker == nil then
         features.hideDefaultQuestTracker = sv.General.hideBaseQuestTracker
     end
 
     features.hideDefaultQuestTracker = features.hideDefaultQuestTracker == true
-    sv.General.hideBaseQuestTracker = features.hideDefaultQuestTracker
 
     return features
 end
