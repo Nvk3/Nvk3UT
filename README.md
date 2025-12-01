@@ -397,29 +397,6 @@ Unter **Einstellungen → AddOns → Nvk3UT** kannst du:
 
 ---
 
-# ❗ Bekannte Probleme
-
-### 1. Formatierung
-
-Die Formatierung des **Quest-** und **Achievement-Trackers** unterscheidet sich leicht von den anderen Trackern.
-Dies wird in einer späteren Version vereinheitlicht.
-
-### 2. Statustext
-
-Der **Statustext** ist aktuell noch nicht konfigurierbar und stilistisch nicht final.
-Eine neue Version ist in Arbeit.
-
----
-
-# 📜 Changelog
-
-### **v0.13.1**
-
-**Release der funktionskompletten Version von Nvk3UT.**
-Ab dieser Version folgen reguläre Patches mit Änderungsprotokoll.
-
----
-
 # 🧑‍💻 Credits / Kontakt
 
 **Entwickler:**
