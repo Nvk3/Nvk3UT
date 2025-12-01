@@ -1,7 +1,3 @@
-if GetCVar("Language.2") ~= "de" then
-    return
-end
-
 local strings = {
     -- Sections
     SI_NVK3UT_LAM_SECTION_JOURNAL = "Journal-Erweiterungen",
@@ -235,5 +231,5 @@ local strings = {
 }
 
 for stringId, value in pairs(strings) do
-    SafeAddString(_G[stringId], value, 1)
+    SafeAddString(_G[stringId], value, 2)
 end
