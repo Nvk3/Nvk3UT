@@ -234,6 +234,37 @@ local function _updateCompletedTooltip(ach)
     end
 end
 
+local function RemoveVanillaCompletedNodes(self)
+    local lookup, tree = self.nodeLookupData, self.categoryTree
+    if not (lookup and tree) then
+        return
+    end
+
+    local baseCompletedName = (GetString and GetString(SI_ACHIEVEMENT_CATEGORY_COMPLETED)) or "Completed"
+    local nodesToRemove = {}
+
+    for key, node in pairs(lookup) do
+        local data = node and node.data
+        if key == COMPLETED_LOOKUP_KEY then
+            -- Skip our own lookup key
+        elseif data and (data.isNvkCompleted or data.categoryIndex == NVK3_DONE) then
+            -- Skip nodes that already belong to Nvk3UT
+        elseif data and (data.name == baseCompletedName or data.text == baseCompletedName) then
+            nodesToRemove[#nodesToRemove + 1] = { node = node, key = key }
+        end
+    end
+
+    for idx = 1, #nodesToRemove do
+        local entry = nodesToRemove[idx]
+        if entry.node and tree.RemoveNode then
+            tree:RemoveNode(entry.node)
+        end
+        if entry.key then
+            lookup[entry.key] = nil
+        end
+    end
+end
+
 local function AddCompletedCategory(AchClass)
     local orgAddTopLevelCategory = AchClass.AddTopLevelCategory
 
@@ -251,6 +282,11 @@ local function AddCompletedCategory(AchClass)
         local lookup, tree = self.nodeLookupData, self.categoryTree
         if not (lookup and tree) then
             return result
+        end
+
+        if not self._nvkRemovedVanillaCompleted then
+            RemoveVanillaCompletedNodes(self)
+            self._nvkRemovedVanillaCompleted = true
         end
 
         if lookup[COMPLETED_LOOKUP_KEY] then
