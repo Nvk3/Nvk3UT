@@ -24,28 +24,13 @@ end
 
 local compProvide_lastTs, compProvide_lastCount = 0, -1
 
-local function _isDebug()
-    local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
-    if utils and type(utils.IsDebugEnabled) == "function" then
-        return utils.IsDebugEnabled()
-    end
-    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
-    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
-        return diagnostics:IsDebugEnabled()
-    end
-    local root = Nvk3UT
-    if root and type(root.IsDebugEnabled) == "function" then
-        return root:IsDebugEnabled()
-    end
-    return false
-end
-
-local function _debugLog(...)
-    if not _isDebug() then
+local function _debugLog(fmt, ...)
+    if not (Nvk3UT and Nvk3UT.debugEnabled) then
         return
     end
-    if U and U.d then
-        U.d(...)
+    local diagnostics = Nvk3UT.Diagnostics
+    if diagnostics and diagnostics.Debug then
+        diagnostics:Debug(fmt, ...)
     end
 end
 
@@ -226,7 +211,7 @@ local function _updateCompletedTooltip(ach)
         parentData.nvkSummaryTooltipText = table.concat(parentLines, "\n")
     end
 
-    if _isDebug() then
+    if Nvk3UT and Nvk3UT.debugEnabled then
         _debugLog(
             "[Nvk3UT][Completed][TooltipData]",
             string.format("months=%d years=%d", monthlyCount, yearLineCount)
@@ -391,7 +376,7 @@ local function Override_ZO_GetAchievementIds()
             local key = subcategoryIndex or (Comp and Comp.Constants and Comp.Constants().LAST50_KEY)
             if key and Comp and Comp.ListForKey then
                 local list = Comp.ListForKey(key) or {}
-                if _isDebug() then
+                if Nvk3UT and Nvk3UT.debugEnabled then
                     local now = U and U.now and U.now() or GetTimeStamp()
                     if (now - compProvide_lastTs) > 0.5 or #list ~= compProvide_lastCount then
                         compProvide_lastTs = now

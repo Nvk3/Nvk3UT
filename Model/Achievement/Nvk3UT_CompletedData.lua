@@ -46,40 +46,14 @@ local function asUnix(ts)
     return nil
 end
 
-local function isDebugEnabled()
-    local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
-    if utils and type(utils.IsDebugEnabled) == "function" then
-        return utils:IsDebugEnabled()
-    end
-    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
-    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
-        return diagnostics:IsDebugEnabled()
-    end
-    local root = Nvk3UT
-    if root and type(root.IsDebugEnabled) == "function" then
-        return root:IsDebugEnabled()
-    end
-    return false
-end
-
 local function emitDebugMessage(fmt, ...)
-    if not isDebugEnabled() then
+    if not (Nvk3UT and Nvk3UT.debugEnabled) then
         return
     end
 
-    local message
-    local ok, formatted = pcall(string.format, fmt, ...)
-    if ok then
-        message = formatted
-    else
-        message = tostring(fmt)
-    end
-
-    local Utils = Nvk3UT and Nvk3UT.Utils
-    if Utils and Utils.d then
-        Utils.d("[Nvk3UT][CompletedData] %s", message)
-    elseif d then
-        d(string.format("[Nvk3UT][CompletedData] %s", message))
+    local diagnostics = Nvk3UT.Diagnostics
+    if diagnostics and diagnostics.Debug then
+        diagnostics:Debug(fmt, ...)
     end
 end
 
