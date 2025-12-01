@@ -1383,8 +1383,15 @@ local function registerPanel(displayTitle)
                 setFunc = function(value)
                     local general = getGeneral()
                     general.window.visible = value ~= false
-                    if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
-                        Nvk3UT.TrackerHost.ApplySettings()
+
+                    local addon = Nvk3UT
+                    local host = addon and addon.TrackerHost
+                    if host then
+                        if type(host.SetVisible) == "function" then
+                            pcall(host.SetVisible, value)
+                        elseif type(host.ApplySettings) == "function" then
+                            pcall(host.ApplySettings)
+                        end
                     end
                 end,
                 default = true,
