@@ -205,18 +205,18 @@ local function recordSectionGeometry(sectionId, width, height)
     entry.height = height
 
     if previousWidth == nil or previousHeight == nil then
-        return true
+        return true, previousWidth, previousHeight, width, height
     end
 
     if math.abs(previousWidth - width) > GEOMETRY_TOLERANCE then
-        return true
+        return true, previousWidth, previousHeight, width, height
     end
 
     if math.abs(previousHeight - height) > GEOMETRY_TOLERANCE then
-        return true
+        return true, previousWidth, previousHeight, width, height
     end
 
-    return false
+    return false, previousWidth, previousHeight, width, height
 end
 
 local function tryTrackerMethod(tracker, ...)
@@ -293,7 +293,17 @@ local function updateTrackerGeometry(sectionId, trackerKey, tracker)
         end
     end
 
-    return recordSectionGeometry(sectionId, width, height)
+    local changed, prevWidth, prevHeight, newWidth, newHeight = recordSectionGeometry(sectionId, width, height)
+
+    if changed and sectionId == "quest" then
+        debugVisibility(
+            "Runtime: quest geometry changed %s→%s",
+            tostring(prevHeight),
+            tostring(newHeight)
+        )
+    end
+
+    return changed
 end
 
 local function getFrameTimeMs()
