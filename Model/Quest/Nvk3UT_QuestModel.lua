@@ -380,7 +380,34 @@ end
 
 local function BuildSnapshot(self)
     local quests = CollectQuestEntries()
+    if type(quests) ~= "table" then
+        quests = {}
+    end
+
     local snapshot = BuildSnapshotFromQuests(quests)
+    if not snapshot or type(snapshot) ~= "table" then
+        snapshot = BuildSnapshotFromQuests({})
+    end
+
+    if type(snapshot.categories) ~= "table" then
+        snapshot.categories = { ordered = {}, byKey = {} }
+    end
+    if type(snapshot.categories.ordered) ~= "table" then
+        snapshot.categories.ordered = {}
+    end
+    if type(snapshot.categories.byKey) ~= "table" then
+        snapshot.categories.byKey = {}
+    end
+    if type(snapshot.quests) ~= "table" then
+        snapshot.quests = {}
+    end
+    if type(snapshot.questById) ~= "table" then
+        snapshot.questById = {}
+    end
+    if type(snapshot.questByJournalIndex) ~= "table" then
+        snapshot.questByJournalIndex = {}
+    end
+
     return snapshot, quests
 end
 

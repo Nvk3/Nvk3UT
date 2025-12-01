@@ -2760,6 +2760,8 @@ local function ResetLayoutState()
     state.lastAnchoredControl = nil
     state.categoryControls = {}
     state.questControls = {}
+    state.contentWidth = 0
+    state.contentHeight = 0
 end
 
 local function ReleaseAll(pool)
@@ -2812,6 +2814,15 @@ local function UpdateContentSize()
 
     state.contentWidth = maxWidth
     state.contentHeight = totalHeight
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(
+            "UpdateContentSize: controls=%d width=%s height=%s",
+            #state.orderedControls,
+            tostring(state.contentWidth),
+            tostring(state.contentHeight)
+        )
+    end
 end
 
 local function SelectCategoryToggleTexture(expanded, isMouseOver)
@@ -3542,7 +3553,12 @@ local function RelayoutFromCategoryIndex(startCategoryIndex)
     ApplyActiveQuestFromSaved()
     EnsurePools()
 
-    if not state.snapshot or not state.snapshot.categories or not state.snapshot.categories.ordered then
+    if
+        not state.snapshot
+        or not state.snapshot.categories
+        or not state.snapshot.categories.ordered
+        or #state.snapshot.categories.ordered == 0
+    then
         ReleaseAll(state.categoryPool)
         ReleaseAll(state.questPool)
         ReleaseAll(state.conditionPool)
@@ -3580,6 +3596,28 @@ end
 local function ApplySnapshot(snapshot, context)
     state.snapshot = snapshot
 
+    if IsDebugLoggingEnabled() then
+        local categoryCount = 0
+        local questCount = 0
+        if snapshot and snapshot.categories and snapshot.categories.ordered then
+            categoryCount = #snapshot.categories.ordered
+            for index = 1, categoryCount do
+                local category = snapshot.categories.ordered[index]
+                if category and type(category.quests) == "table" then
+                    questCount = questCount + #category.quests
+                end
+            end
+        end
+
+        DebugLog(
+            "ApplySnapshot: trigger=%s source=%s categories=%d quests=%d",
+            tostring((context and context.trigger) or "<nil>"),
+            tostring((context and context.source) or "<nil>"),
+            categoryCount,
+            questCount
+        )
+    end
+
     local trackingContext = {
         trigger = (context and context.trigger) or "refresh",
         source = (context and context.source) or "QuestTracker:ApplySnapshot",
@@ -3596,6 +3634,19 @@ end
 
 -- Apply the latest quest snapshot from the event-driven model and update the layout.
 local function OnQuestModelSnapshotUpdated(snapshot, context)
+    local previousCategories = 0
+    local previousQuests = 0
+    local previousHeight = state.contentHeight or 0
+    if state.snapshot and state.snapshot.categories and state.snapshot.categories.ordered then
+        previousCategories = #state.snapshot.categories.ordered
+        for index = 1, previousCategories do
+            local category = state.snapshot.categories.ordered[index]
+            if category and type(category.quests) == "table" then
+                previousQuests = previousQuests + #category.quests
+            end
+        end
+    end
+
     ApplySnapshot(snapshot or { categories = { ordered = {}, byKey = {} } }, context)
 
     if not state.isInitialized then
@@ -3603,6 +3654,30 @@ local function OnQuestModelSnapshotUpdated(snapshot, context)
     end
 
     RelayoutFromCategoryIndex(1)
+
+    if IsDebugLoggingEnabled() then
+        local newCategories = 0
+        local newQuests = 0
+        if state.snapshot and state.snapshot.categories and state.snapshot.categories.ordered then
+            newCategories = #state.snapshot.categories.ordered
+            for index = 1, newCategories do
+                local category = state.snapshot.categories.ordered[index]
+                if category and type(category.quests) == "table" then
+                    newQuests = newQuests + #category.quests
+                end
+            end
+        end
+
+        DebugLog(
+            "OnQuestModelSnapshotUpdated: prevCats=%d prevQuests=%d newCats=%d newQuests=%d height %s→%s",
+            previousCategories,
+            previousQuests,
+            newCategories,
+            newQuests,
+            tostring(previousHeight),
+            tostring(state.contentHeight)
+        )
+    end
 end
 
 -- Listen for snapshot updates from the quest model so the tracker stays in sync with game events.

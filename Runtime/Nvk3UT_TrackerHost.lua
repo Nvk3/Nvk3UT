@@ -2081,6 +2081,7 @@ measureTrackerContent = function(container, trackerModule, sectionId)
     local width = 0
     local height = 0
     local source
+    local measuredFromTracker = false
 
     if trackerModule and trackerModule.GetContentSize then
         local ok, trackerWidth, trackerHeight = pcall(trackerModule.GetContentSize)
@@ -2088,6 +2089,7 @@ measureTrackerContent = function(container, trackerModule, sectionId)
             width = tonumber(trackerWidth) or 0
             height = tonumber(trackerHeight) or 0
             source = "contentSize"
+            measuredFromTracker = true
         end
     end
 
@@ -2096,10 +2098,18 @@ measureTrackerContent = function(container, trackerModule, sectionId)
         if ok then
             height = tonumber(trackerHeight) or height or 0
             source = source or "heightOnly"
+            measuredFromTracker = measuredFromTracker or source ~= nil
         end
     end
 
-    if (width <= 0 or height <= 0) then
+    if measuredFromTracker and width <= 0 then
+        local holder = container and container.holder
+        if holder and holder.GetWidth then
+            width = math.max(width, holder:GetWidth() or 0)
+        elseif container and container.GetWidth then
+            width = math.max(width, container:GetWidth() or 0)
+        end
+    elseif not measuredFromTracker then
         local holder = container.holder
         if holder and holder.GetWidth then
             width = math.max(width, holder:GetWidth() or 0)
@@ -2122,25 +2132,22 @@ measureTrackerContent = function(container, trackerModule, sectionId)
     end
 
     if isDebugEnabled() then
-        local isTrackedSection = sectionId == "endeavor" or sectionId == "achievement"
-        if isTrackedSection then
-            local containerHeight
-            if container and type(container.GetHeight) == "function" then
-                local ok, measured = pcall(container.GetHeight, container)
-                if ok then
-                    containerHeight = measured
-                end
+        local containerHeight
+        if container and type(container.GetHeight) == "function" then
+            local ok, measured = pcall(container.GetHeight, container)
+            if ok then
+                containerHeight = measured
             end
-
-            debugLog(
-                "TrackerHost: measureTrackerContent section=%s source=%s width=%s height=%s containerHeight=%s",
-                tostring(sectionId or "<nil>"),
-                tostring(source),
-                tostring(width),
-                tostring(height),
-                tostring(containerHeight)
-            )
         end
+
+        debugLog(
+            "TrackerHost: measureTrackerContent section=%s source=%s width=%s height=%s containerHeight=%s",
+            tostring(sectionId or "<nil>"),
+            tostring(source),
+            tostring(width),
+            tostring(height),
+            tostring(containerHeight)
+        )
     end
 
     return width, height
@@ -2507,6 +2514,14 @@ local function measureContentSize()
         achievementWidth,
         goldenWidth
     )
+
+    if isDebugEnabled() then
+        debugLog(
+            "TrackerHost: measureContentSize questHeight=%s totalHeight=%s",
+            tostring(questHeight),
+            tostring(totalHeight)
+        )
+    end
 
     return maxWidth, totalHeight
 end
