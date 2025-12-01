@@ -40,8 +40,6 @@ local function getCategoriesNode()
     return root and root.categories
 end
 
-local unpack = table.unpack or unpack
-
 local function packArgs(...)
     return { n = select("#", ...), ... }
 end

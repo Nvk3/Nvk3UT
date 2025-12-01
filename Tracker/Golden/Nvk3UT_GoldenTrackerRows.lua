@@ -73,8 +73,6 @@ local DEFAULT_FONT_FACE = "$(BOLD_FONT)"
 local MIN_FONT_SIZE = 12
 local MAX_FONT_SIZE = 36
 
-local unpack = table.unpack or unpack
-
 local GOLDEN_FONT_DEFAULTS = {
     Category = { face = DEFAULT_FONT_FACE, size = 20, outline = DEFAULT_FONT_OUTLINE },
     Title = { face = DEFAULT_FONT_FACE, size = 16, outline = DEFAULT_FONT_OUTLINE },

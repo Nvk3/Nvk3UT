@@ -111,8 +111,6 @@ local OBJECTIVE_INDENT_X = 60
 local SCROLLBAR_WIDTH_RESERVE = 18
 local DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR = { 1, 1, 0.6, 1 }
 
-local unpack = table.unpack or unpack
-
 local SUBROW_ICON_SIZE = 16
 local SUBROW_ICON_GAP = 4
 local SUBROW_RIGHT_COLUMN_GAP = 8

@@ -9,8 +9,6 @@ Nvk3UT.GoldenList = GoldenList
 GoldenList._svRoot = type(GoldenList._svRoot) == "table" and GoldenList._svRoot or nil
 GoldenList._data = type(GoldenList._data) == "table" and GoldenList._data or nil
 
-local unpack = _G.unpack or (table and table.unpack)
-
 local function resolveRoot()
     local root = rawget(_G, "Nvk3UT")
     if type(root) == "table" then

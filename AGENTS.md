@@ -60,6 +60,33 @@ function Nvk3UT_DoSomething(...)
 end
 ```
 
+### unpack() Usage Rule
+
+The addon must **not** redefine or wrap `unpack`. We always use the built-in function provided by the ESO Lua runtime.
+
+**Allowed:**
+```lua
+local a, b, c = unpack(someTable)
+
+Not allowed:
+
+local fn_unpack = _G["unpack"] or table.unpack
+local unpack = table.unpack or unpack
+-- or any other custom alias/wrapper
+
+Reason:
+
+Avoids shadowing the global unpack function.
+
+Prevents subtle bugs when different modules try to be "compatible".
+
+Keeps the code consistent and easier to debug.
+
+ESO’s Lua runtime already provides a working unpack(), so no compatibility layer is needed.
+
+Going forward, any new code that needs to expand tables must directly call unpack(...) (or table.unpack(...) only in exceptional cases, with a comment explaining why).
+```
+
 ---
 
 ## 🧠 Behavior and Commit Policy

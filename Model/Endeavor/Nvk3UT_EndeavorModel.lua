@@ -1,7 +1,4 @@
--- Model/Endeavor/Nvk3UT_EndeavorModel.lua
 -- Timed Activities (Endeavor) data snapshot module. No UI or event wiring.
-
-local unpack = unpack
 
 Nvk3UT = Nvk3UT or {}
 

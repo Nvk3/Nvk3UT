@@ -31,8 +31,6 @@ local function DeepCopy(value)
     return result
 end
 
-local tableUnpack = table.unpack or unpack
-
 local function push(list, value)
     list[#list + 1] = value
 end
@@ -122,7 +120,7 @@ local function safeCallMulti(func, ...)
     end
 
     table.remove(results, 1)
-    return tableUnpack(results)
+    return unpack(results)
 end
 
 local function collectCompletionMeta(achievementId)

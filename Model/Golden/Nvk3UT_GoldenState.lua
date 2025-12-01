@@ -12,8 +12,6 @@ GoldenState._state = type(GoldenState._state) == "table" and GoldenState._state 
 GoldenState._defaults = type(GoldenState._defaults) == "table" and GoldenState._defaults or nil
 GoldenState._status = type(GoldenState._status) == "table" and GoldenState._status or nil
 
-local unpack = _G.unpack or (table and table.unpack)
-
 local VALID_COMPLETED_HANDLING = {
     hide = true,
     recolor = true,
