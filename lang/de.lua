@@ -231,6 +231,5 @@ local strings = {
 }
 
 for stringId, value in pairs(strings) do
-    ZO_CreateStringId(stringId, value)
-    SafeAddVersion(stringId, 1)
+    SafeAddString(_G[stringId], value, 2)
 end
