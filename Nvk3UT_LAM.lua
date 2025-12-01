@@ -1554,23 +1554,6 @@ local function registerPanel(displayTitle)
 
             addControl({
                 type = "checkbox",
-                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_HIDE_DEFAULT),
-                getFunc = function()
-                    local features = getFeatures()
-                    return features.hideDefaultQuestTracker == true
-                end,
-                setFunc = function(value)
-                    local features = getFeatures()
-                    features.hideDefaultQuestTracker = value == true
-                    if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplySettings then
-                        Nvk3UT.TrackerHost.ApplySettings()
-                    end
-                end,
-                default = false,
-            })
-
-            addControl({
-                type = "checkbox",
                 name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_BACKGROUND),
                 getFunc = function()
                     local appearance = getAppearanceSettings()
@@ -1878,6 +1861,30 @@ local function registerPanel(displayTitle)
                     LamQueueFullRebuild("questActive")
                 end,
                 default = true,
+            }
+
+            controls[#controls + 1] = {
+                type = "checkbox",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_HIDE_DEFAULT),
+                getFunc = function()
+                    local isShown = GetSetting_Bool(SETTING_TYPE_UI, UI_SETTING_SHOW_QUEST_TRACKER)
+                    return not isShown
+                end,
+                setFunc = function(value)
+                    local hideDefault = value == true
+
+                    local features = getFeatures()
+                    features.hideDefaultQuestTracker = hideDefault
+
+                    local showDefault = not hideDefault
+
+                    if type(ZO_QuestTracker_SetEnabled) == "function" then
+                        ZO_QuestTracker_SetEnabled(showDefault)
+                    else
+                        SetSetting(SETTING_TYPE_UI, UI_SETTING_SHOW_QUEST_TRACKER, showDefault and "1" or "0")
+                    end
+                end,
+                default = false,
             }
 
             controls[#controls + 1] = {
