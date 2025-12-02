@@ -206,7 +206,7 @@ Special thanks to the **guild “Die Chaoskrieger” (PC EU)** for supporting th
 * Ravalox’ Quest Tracker
   [https://www.esoui.com/downloads/info2218-RavaloxsQuestTracker.html](https://www.esoui.com/downloads/info2218-RavaloxsQuestTracker.html)
 * Vestige's Epic Quest
-  [https://www.esoui.com/downloads/info2218-RavaloxsQuestTracker.html](https://www.esoui.com/downloads/info3228-VestigesEpicQuest.html)
+  [https://www.esoui.com/downloads/info3228-VestigesEpicQuest.html](https://www.esoui.com/downloads/info3228-VestigesEpicQuest.html)
 
 These addons inspired UI concepts, layout approaches, and structural ideas.
 
@@ -436,7 +436,7 @@ Nvk3UT ist vollständig selbst entwickelt und komplett neu geschrieben.)*
 * Ravalox’ Quest Tracker
   [https://www.esoui.com/downloads/info2218-RavaloxsQuestTracker.html](https://www.esoui.com/downloads/info2218-RavaloxsQuestTracker.html)
 * Vestige's Epic Quest
-  [https://www.esoui.com/downloads/info2218-RavaloxsQuestTracker.html](https://www.esoui.com/downloads/info3228-VestigesEpicQuest.html)
+  [https://www.esoui.com/downloads/info3228-VestigesEpicQuest.html](https://www.esoui.com/downloads/info3228-VestigesEpicQuest.html)
 
 Diese Addons haben bei der Gestaltung einzelner UI-Konzepte und Layout-Überlegungen als Inspiration gedient.
 
