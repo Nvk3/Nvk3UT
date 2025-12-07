@@ -237,6 +237,14 @@ local strings = {
     SI_NVK3UT_JOURNAL_CONTEXT_ADD_FAVORITE = "Add to favorites",
     SI_NVK3UT_JOURNAL_CONTEXT_REMOVE_FAVORITE = "Remove from favorites",
 
+    -- Font faces
+    SI_NVK3UT_FONT_FACE_BOLD_DEFAULT = "Bold (Game Default)",
+    SI_NVK3UT_FONT_FACE_UNIVERS67 = "Univers 67 (Game)",
+    SI_NVK3UT_FONT_FACE_UNIVERS57 = "Univers 57 (Game)",
+    SI_NVK3UT_FONT_FACE_FUTURA_ANTIQUE = "Futura (Antique)",
+    SI_NVK3UT_FONT_FACE_HANDWRITTEN = "Handwritten",
+    SI_NVK3UT_FONT_FACE_TRAJAN = "Trajan",
+
     -- Font outlines
     SI_NVK3UT_FONT_OUTLINE_NONE = "None",
     SI_NVK3UT_FONT_OUTLINE_SOFT_THIN = "Soft (Thin)",

@@ -32,18 +32,24 @@ local function getAddonVersionString()
 end
 
 local FONT_FACE_CHOICES = {
-    { name = "Bold (Game Default)", face = "$(BOLD_FONT)" },
-    { name = "Univers 67 (Game)", face = "EsoUI/Common/Fonts/univers67.otf" },
-    { name = "Univers 57 (Game)", face = "EsoUI/Common/Fonts/univers57.otf" },
-    { name = "Futura (Antique)", face = "EsoUI/Common/Fonts/ProseAntiquePSMT.otf" },
-    { name = "Handschrift", face = "EsoUI/Common/Fonts/Handwritten_Bold.otf" },
-    { name = "Trajan", face = "EsoUI/Common/Fonts/TrajanPro-Regular.otf" },
+    { name = SI_NVK3UT_FONT_FACE_BOLD_DEFAULT, face = "$(BOLD_FONT)" },
+    { name = SI_NVK3UT_FONT_FACE_UNIVERS67, face = "EsoUI/Common/Fonts/univers67.otf" },
+    { name = SI_NVK3UT_FONT_FACE_UNIVERS57, face = "EsoUI/Common/Fonts/univers57.otf" },
+    { name = SI_NVK3UT_FONT_FACE_FUTURA_ANTIQUE, face = "EsoUI/Common/Fonts/ProseAntiquePSMT.otf" },
+    { name = SI_NVK3UT_FONT_FACE_HANDWRITTEN, face = "EsoUI/Common/Fonts/Handwritten_Bold.otf" },
+    { name = SI_NVK3UT_FONT_FACE_TRAJAN, face = "EsoUI/Common/Fonts/TrajanPro-Regular.otf" },
 }
 
 local FONT_FACE_NAMES, FONT_FACE_VALUES = (function()
     local names, values = {}, {}
     for index = 1, #FONT_FACE_CHOICES do
-        names[index] = FONT_FACE_CHOICES[index].name
+        local stringId = FONT_FACE_CHOICES[index].name
+        local localizedName = stringId and GetString(stringId)
+        if localizedName == nil or localizedName == "" then
+            localizedName = tostring(stringId)
+        end
+
+        names[index] = localizedName
         values[index] = FONT_FACE_CHOICES[index].face
     end
     return names, values
@@ -1057,20 +1063,8 @@ local function buildFontControls(label, settings, key, defaults, onChanged, adap
         {
             type = "dropdown",
             name = string.format(GetString(SI_NVK3UT_LAM_FONT_FACE_FORMAT), label),
-            choices = (function()
-                local names = {}
-                for index = 1, #FONT_FACE_CHOICES do
-                    names[index] = FONT_FACE_CHOICES[index].name
-                end
-                return names
-            end)(),
-            choicesValues = (function()
-                local values = {}
-                for index = 1, #FONT_FACE_CHOICES do
-                    values[index] = FONT_FACE_CHOICES[index].face
-                end
-                return values
-            end)(),
+            choices = FONT_FACE_NAMES,
+            choicesValues = FONT_FACE_VALUES,
             getFunc = function()
                 local font = ensureFontInstance()
                 return getFace(font)
