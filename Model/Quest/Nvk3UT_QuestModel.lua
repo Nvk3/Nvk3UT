@@ -652,6 +652,8 @@ local function AcquireQuestData()
         }
     end
 
+    QM_Debug("AcquireQuestData: questCount=%d, built=%d", questCount or 0, #questData)
+
     return questData, questListData, categoryListData, seenCategories
 end
 
@@ -672,6 +674,14 @@ local function PerformRebuildFromGame(self, forceFullRebuild)
         return false
     end
 
+    local newQuestCount = CountSnapshotQuests(snapshot)
+    QM_Debug(
+        "PerformRebuildFromGame: force=%s prevQuests=%d newQuests=%d",
+        tostring(forceFullRebuild),
+        prevQuestCount or 0,
+        newQuestCount or 0
+    )
+
     local snapshotsDiffer = SnapshotsDiffer(self.currentSnapshot, snapshot, forceFullRebuild)
     if snapshotsDiffer then
         snapshot.revision = (self.currentSnapshot and self.currentSnapshot.revision or 0) + 1
@@ -684,7 +694,6 @@ local function PerformRebuildFromGame(self, forceFullRebuild)
         self.currentSnapshot = snapshot
     end
 
-    local newQuestCount = CountSnapshotQuests(snapshot)
     local _, newQuestIdSet = BuildQuestIdSet(snapshot)
     local newRevision = (self.currentSnapshot and self.currentSnapshot.revision) or snapshot.revision or 0
 

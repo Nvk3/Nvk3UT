@@ -1869,6 +1869,20 @@ function QuestList:RefreshFromGame(forceFullRebuild, questData, categoryListData
     self._lastBuild.categories = BuildCategoriesIndexInternal(quests)
     self._lastBuild.signature = BuildOverallSignatureInternal(quests)
     self._lastBuild.updatedAtMs = GetTimestampMs()
+
+    local questDataType = type(questData)
+    local questDataCount = questDataType == "table" and #questData or 0
+    local listHasData = QuestListData and QuestListData.questList ~= nil
+    local catHasData = QuestListData and QuestListData.categoryList ~= nil
+    QL_Debug(
+        "RefreshFromGame: force=%s questDataType=%s questDataCount=%d listHasData=%s catHasData=%s finalQuests=%d",
+        tostring(forceFullRebuild),
+        questDataType,
+        questDataCount,
+        tostring(listHasData),
+        tostring(catHasData),
+        #quests
+    )
     return quests, questData
 end
 
