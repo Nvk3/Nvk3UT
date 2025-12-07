@@ -530,36 +530,13 @@ local function ForEachQuestIndex(callback)
 
     ForEachQuest(function(quest, category)
         if quest and quest.journalIndex then
-            visited[quest.journalIndex] = true
-            callback(quest.journalIndex, quest, category)
+            local journalIndex = quest.journalIndex
+            if not visited[journalIndex] then
+                visited[journalIndex] = true
+                callback(journalIndex, quest, category)
+            end
         end
     end)
-
-    if not GetNumJournalQuests then
-        return
-    end
-
-    local total = GetNumJournalQuests() or 0
-    local maxIndex = MAX_JOURNAL_QUESTS or total
-    if maxIndex and maxIndex > total then
-        total = maxIndex
-    end
-
-    for index = 1, total do
-        if not visited[index] then
-            local isValid = true
-            if IsValidJournalQuestIndex then
-                isValid = IsValidJournalQuestIndex(index)
-            elseif GetJournalQuestName then
-                local name = GetJournalQuestName(index)
-                isValid = name ~= nil and name ~= ""
-            end
-
-            if isValid then
-                callback(index, nil, nil)
-            end
-        end
-    end
 end
 
 local function CollectCategoryKeysForQuest(journalIndex)
@@ -1111,13 +1088,6 @@ local function ResolveQuestDebugInfo(journalIndex)
             end
         end
     end)
-
-    if (not questName or questName == "") and GetJournalQuestName then
-        local ok, name = SafeCall(GetJournalQuestName, journalIndex)
-        if ok and type(name) == "string" and name ~= "" then
-            questName = name
-        end
-    end
 
     info.name = questName
     info.categoryId = categoryKey
@@ -1747,20 +1717,17 @@ local function ProcessPendingExternalReveal()
 end
 
 local function DoesJournalQuestExist(journalIndex)
-    if not (journalIndex and GetJournalQuestName) then
+    if not journalIndex then
         return false
     end
 
-    local ok, name = SafeCall(GetJournalQuestName, journalIndex)
-    if not ok then
+    local byIndex = state.snapshot and state.snapshot.questByJournalIndex
+    if not byIndex then
         return false
     end
 
-    if type(name) ~= "string" then
-        return false
-    end
-
-    return name ~= ""
+    local quest = byIndex[journalIndex] or byIndex[tonumber(journalIndex)]
+    return quest ~= nil
 end
 
 local function GetFocusedQuestIndex()

@@ -435,6 +435,24 @@ local function PerformRebuild(self)
 
     snapshot.revision = (self.currentSnapshot and self.currentSnapshot.revision or 0) + 1
     self.currentSnapshot = snapshot
+
+    if IsDebugLoggingEnabled() then
+        local questList = GetQuestListModule()
+        local questListSignature = questList and questList._lastBuild and questList._lastBuild.signature
+        local snapshotSignature = snapshot and snapshot.signature
+
+        if questListSignature and snapshotSignature then
+            LogDebug(
+                self,
+                string.format(
+                    "QuestModel rebuild: QuestList signature=%s, snapshot signature=%s",
+                    tostring(questListSignature),
+                    tostring(snapshotSignature)
+                )
+            )
+        end
+    end
+
     PersistQuests(quests)
     NotifySubscribers(self)
     return true
@@ -481,13 +499,22 @@ end
 QuestModel.ForceRebuild = ForceRebuildInternal
 QuestModel.forceRebuild = ForceRebuildInternal
 
-local function OnQuestChanged(_, ...)
+local function OnQuestChanged(eventCode, ...)
     local self = QuestModel
     if not self.isInitialized or not playerState.hasActivated then
         return
     end
 
     ResetBaseCategoryCache()
+
+    if eventCode == EVENT_QUEST_REMOVED then
+        if IsDebugLoggingEnabled() then
+            LogDebug(self, "QuestModel: EVENT_QUEST_REMOVED – forcing immediate rebuild")
+        end
+        ForceRebuildInternal(self)
+        return
+    end
+
     ScheduleRebuild(self)
 end
 
