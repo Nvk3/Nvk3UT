@@ -6,10 +6,6 @@ local function GetQuestListModule()
     return Nvk3UT and Nvk3UT.QuestList
 end
 
-local function GetQuestJournalManager()
-    return QUEST_JOURNAL_MANAGER
-end
-
 local QuestModel = {}
 QuestModel.__index = QuestModel
 
@@ -618,6 +614,18 @@ local function OnQuestChanged(eventCode, ...)
             )
         )
     end
+
+    ResetBaseCategoryCache()
+
+    if eventCode == EVENT_QUEST_REMOVED then
+        if IsDebugLoggingEnabled() then
+            LogDebug(self, "[QMODEL] EVENT_QUEST_REMOVED – forcing immediate rebuild")
+        end
+        ForceRebuildInternal(self)
+        return
+    end
+
+    ScheduleRebuild(self)
 end
 
 local function OnTrackingUpdate(eventCode, trackingType)
@@ -654,20 +662,6 @@ function QuestModel.Init(opts)
         QuestModel.currentSnapshot = nil
     end
 
-    local questListUpdatedCallback = function()
-        if not QuestModel.isInitialized or not playerState.hasActivated then
-            return
-        end
-
-        ResetBaseCategoryCache()
-
-        if IsDebugLoggingEnabled() then
-            LogDebug(QuestModel, "[QMODEL] QuestListUpdated – scheduling rebuild")
-        end
-
-        ScheduleRebuild(QuestModel)
-    end
-
     local eventHandler = function(...)
         OnQuestChanged(...)
     end
@@ -678,16 +672,6 @@ function QuestModel.Init(opts)
     RegisterQuestEvent(EVENT_QUEST_CONDITION_COUNTER_CHANGED, eventHandler)
     RegisterQuestEvent(EVENT_QUEST_LOG_UPDATED, eventHandler)
     EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. "TRACKING", EVENT_TRACKING_UPDATE, OnTrackingUpdate)
-
-    local questJournalManager = GetQuestJournalManager()
-    if questJournalManager and questJournalManager.RegisterCallback then
-        questJournalManager:RegisterCallback("QuestListUpdated", questListUpdatedCallback)
-        QuestModel.questJournalManager = questJournalManager
-        QuestModel.questJournalCallback = questListUpdatedCallback
-        if IsDebugLoggingEnabled() then
-            LogDebug(QuestModel, "[QMODEL] Registered QuestListUpdated callback")
-        end
-    end
 
     if playerState.hasActivated then
         ForceRebuildInternal(QuestModel)
@@ -712,9 +696,6 @@ function QuestModel.Shutdown()
     EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "OnLoaded", EVENT_ADD_ON_LOADED)
     EVENT_MANAGER:UnregisterForUpdate(REBUILD_IDENTIFIER)
     EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "PlayerActivated", EVENT_PLAYER_ACTIVATED)
-    if QuestModel.questJournalManager and QuestModel.questJournalCallback and QuestModel.questJournalManager.UnregisterCallback then
-        QuestModel.questJournalManager:UnregisterCallback("QuestListUpdated", QuestModel.questJournalCallback)
-    end
     bootstrapState.registered = false
     playerState.hasActivated = false
 
@@ -722,8 +703,6 @@ function QuestModel.Shutdown()
     QuestModel.subscribers = nil
     QuestModel.currentSnapshot = nil
     QuestModel.pendingRebuild = nil
-    QuestModel.questJournalManager = nil
-    QuestModel.questJournalCallback = nil
 
     ResetBaseCategoryCache()
 end

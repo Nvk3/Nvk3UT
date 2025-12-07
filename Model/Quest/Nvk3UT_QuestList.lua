@@ -1076,35 +1076,12 @@ local function BuildBaseCategoryCacheFromData(questList, categoryList)
     }
 end
 
-local function AcquireQuestJournalData()
-    if not (QUEST_JOURNAL_MANAGER and QUEST_JOURNAL_MANAGER.GetQuestListData) then
-        return nil, nil, nil
-    end
-
-    local ok, questList, categoryList, seenCategories = pcall(QUEST_JOURNAL_MANAGER.GetQuestListData, QUEST_JOURNAL_MANAGER)
-    if not ok then
-        return nil, nil, nil
-    end
-
-    if type(questList) ~= "table" or type(categoryList) ~= "table" then
-        return nil, nil, nil
-    end
-
-    return questList, categoryList, seenCategories
-end
-
 local function AcquireBaseCategoryCache()
     if baseCategoryCache then
         return baseCategoryCache
     end
 
-    local questList, categoryList = AcquireQuestJournalData()
-    if type(questList) ~= "table" or type(categoryList) ~= "table" then
-        return nil
-    end
-
-    baseCategoryCache = BuildBaseCategoryCacheFromData(questList, categoryList)
-    return baseCategoryCache
+    return nil
 end
 
 local function GetTimestampMs()
@@ -1611,39 +1588,9 @@ end
 
 local function CollectQuestEntriesInternal()
     local diagnostics = GetDiagnostics()
-    local quests = {}
-
-    local questJournalManager = rawget(_G, "QUEST_JOURNAL_MANAGER") or QUEST_JOURNAL_MANAGER
-    if questJournalManager and type(questJournalManager.GetQuestListData) == "function" then
-        if diagnostics and diagnostics.Debug then
-            pcall(diagnostics.Debug, "[QLIST] Collecting quests from QUEST_JOURNAL_MANAGER:GetQuestListData()")
-        end
-
-        local ok, questListData = pcall(questJournalManager.GetQuestListData, questJournalManager)
-        if ok and type(questListData) == "table" then
-            for index = 1, #questListData do
-                local questData = questListData[index]
-                local journalIndex = questData and questData.journalIndex
-                if journalIndex then
-                    local questEntry = BuildQuestEntry(journalIndex)
-                    if questEntry then
-                        quests[#quests + 1] = questEntry
-                    end
-                else
-                    Warn(
-                        "QuestList: skipping quest entry with nil journalIndex from QUEST_JOURNAL_MANAGER (index=%d)",
-                        index
-                    )
-                end
-            end
-
-            table.sort(quests, CompareQuestEntries)
-            return quests
-        end
-    end
 
     if diagnostics and diagnostics.Debug then
-        pcall(diagnostics.Debug, "[QLIST] Collecting quests via raw GetNumJournalQuests/GetJournalQuestInfo fallback")
+        pcall(diagnostics.Debug, "[QLIST] Collecting quests via raw GetNumJournalQuests/GetJournalQuestInfo")
     end
 
     return CollectQuestEntriesFromRawApis()
