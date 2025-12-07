@@ -618,9 +618,6 @@ local function OnQuestChanged(eventCode, ...)
             )
         )
     end
-
-    ResetBaseCategoryCache()
-    ScheduleRebuild(self)
 end
 
 local function OnTrackingUpdate(eventCode, trackingType)
@@ -687,6 +684,9 @@ function QuestModel.Init(opts)
         questJournalManager:RegisterCallback("QuestListUpdated", questListUpdatedCallback)
         QuestModel.questJournalManager = questJournalManager
         QuestModel.questJournalCallback = questListUpdatedCallback
+        if IsDebugLoggingEnabled() then
+            LogDebug(QuestModel, "[QMODEL] Registered QuestListUpdated callback")
+        end
     end
 
     if playerState.hasActivated then

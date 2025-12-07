@@ -1589,7 +1589,7 @@ local function BuildQuestEntry(journalQuestIndex)
     return questEntry
 end
 
-local function CollectQuestEntriesInternal()
+local function CollectQuestEntriesFromRawApis()
     local quests = {}
 
     if not GetNumJournalQuests then
@@ -1607,6 +1607,46 @@ local function CollectQuestEntriesInternal()
 
     table.sort(quests, CompareQuestEntries)
     return quests
+end
+
+local function CollectQuestEntriesInternal()
+    local diagnostics = GetDiagnostics()
+    local quests = {}
+
+    local questJournalManager = rawget(_G, "QUEST_JOURNAL_MANAGER") or QUEST_JOURNAL_MANAGER
+    if questJournalManager and type(questJournalManager.GetQuestListData) == "function" then
+        if diagnostics and diagnostics.Debug then
+            pcall(diagnostics.Debug, "[QLIST] Collecting quests from QUEST_JOURNAL_MANAGER:GetQuestListData()")
+        end
+
+        local ok, questListData = pcall(questJournalManager.GetQuestListData, questJournalManager)
+        if ok and type(questListData) == "table" then
+            for index = 1, #questListData do
+                local questData = questListData[index]
+                local journalIndex = questData and questData.journalIndex
+                if journalIndex then
+                    local questEntry = BuildQuestEntry(journalIndex)
+                    if questEntry then
+                        quests[#quests + 1] = questEntry
+                    end
+                else
+                    Warn(
+                        "QuestList: skipping quest entry with nil journalIndex from QUEST_JOURNAL_MANAGER (index=%d)",
+                        index
+                    )
+                end
+            end
+
+            table.sort(quests, CompareQuestEntries)
+            return quests
+        end
+    end
+
+    if diagnostics and diagnostics.Debug then
+        pcall(diagnostics.Debug, "[QLIST] Collecting quests via raw GetNumJournalQuests/GetJournalQuestInfo fallback")
+    end
+
+    return CollectQuestEntriesFromRawApis()
 end
 
 local function BuildSnapshotFromQuestsInternal(quests)
