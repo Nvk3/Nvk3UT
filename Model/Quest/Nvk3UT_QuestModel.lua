@@ -38,6 +38,8 @@ local playerState = {
     hasActivated = false,
 }
 
+local questJournalListUpdatedCallback = nil
+
 local DEBUG_INIT = false
 
 local function IsDebugLoggingEnabled()
@@ -470,6 +472,11 @@ local function PerformRebuildFromGame(self, forceFullRebuild)
 
     PersistQuests(quests)
     NotifySubscribers(self)
+
+    if IsDebugLoggingEnabled() then
+        local afterCount = snapshot.quests and #snapshot.quests or 0
+        LogDebug(self, string.format("QuestModel: rebuild finished; snapshotCountAfter=%d", afterCount))
+    end
     return true
 end
 
@@ -568,13 +575,47 @@ local function OnQuestChanged(_, ...)
     ScheduleRebuild(self)
 end
 
+local function OnQuestJournalListUpdated()
+    local self = QuestModel
+    if not self.isInitialized or not playerState.hasActivated then
+        return
+    end
+
+    local journalCount = nil
+    if type(GetNumJournalQuests) == "function" then
+        journalCount = GetNumJournalQuests()
+    end
+
+    local snapshotCountBefore = 0
+    if self.currentSnapshot and type(self.currentSnapshot.quests) == "table" then
+        snapshotCountBefore = #self.currentSnapshot.quests
+    end
+
+    if IsDebugLoggingEnabled() then
+        LogDebug(
+            self,
+            string.format(
+                "QuestModel: QuestListUpdated → rebuilding from QUEST_JOURNAL_MANAGER; journalCount=%s, snapshotCountBefore=%d",
+                tostring(journalCount),
+                snapshotCountBefore
+            )
+        )
+    end
+
+    ForceFullRebuildFromGame(self)
+end
+
 local function OnQuestRemoved(_, ...)
     local self = QuestModel
     if not self.isInitialized or not playerState.hasActivated then
         return
     end
 
-    ForceFullRebuildFromGame(self)
+    ResetBaseCategoryCache()
+
+    if IsDebugLoggingEnabled() then
+        LogDebug(self, "Quest removed → awaiting QuestListUpdated for full rebuild")
+    end
 end
 
 local function OnQuestCompleted(_, ...)
@@ -583,7 +624,11 @@ local function OnQuestCompleted(_, ...)
         return
     end
 
-    ForceFullRebuildFromGame(self)
+    ResetBaseCategoryCache()
+
+    if IsDebugLoggingEnabled() then
+        LogDebug(self, "Quest completed → awaiting QuestListUpdated for full rebuild")
+    end
 end
 
 local function OnTrackingUpdate(eventCode, trackingType)
@@ -611,6 +656,15 @@ function QuestModel.Init(opts)
     end
     QuestModel.subscribers = {}
     QuestModel.isInitialized = true
+
+    if QUEST_JOURNAL_MANAGER and type(QUEST_JOURNAL_MANAGER.RegisterCallback) == "function" and not QuestModel.questJournalListCallbackRegistered then
+        questJournalListUpdatedCallback = questJournalListUpdatedCallback or function(...)
+            OnQuestJournalListUpdated(...)
+        end
+
+        QUEST_JOURNAL_MANAGER:RegisterCallback("QuestListUpdated", questJournalListUpdatedCallback)
+        QuestModel.questJournalListCallbackRegistered = true
+    end
 
     local savedSnapshot = BuildSnapshotFromSaved()
     if savedSnapshot then
@@ -657,6 +711,11 @@ function QuestModel.Shutdown()
     EVENT_MANAGER:UnregisterForUpdate(REBUILD_IDENTIFIER)
     EVENT_MANAGER:UnregisterForUpdate(FORCE_REBUILD_IDENTIFIER)
     EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "PlayerActivated", EVENT_PLAYER_ACTIVATED)
+
+    if QuestModel.questJournalListCallbackRegistered and QUEST_JOURNAL_MANAGER and type(QUEST_JOURNAL_MANAGER.UnregisterCallback) == "function" and questJournalListUpdatedCallback then
+        QUEST_JOURNAL_MANAGER:UnregisterCallback("QuestListUpdated", questJournalListUpdatedCallback)
+        QuestModel.questJournalListCallbackRegistered = false
+    end
     bootstrapState.registered = false
     playerState.hasActivated = false
 
