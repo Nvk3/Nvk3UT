@@ -12,8 +12,6 @@ QuestModel.__index = QuestModel
 local QUEST_MODEL_NAME = addonName .. "QuestModel"
 local EVENT_NAMESPACE = QUEST_MODEL_NAME .. "_Event"
 local REBUILD_IDENTIFIER = QUEST_MODEL_NAME .. "_Rebuild"
-local FORCE_REBUILD_IDENTIFIER = QUEST_MODEL_NAME .. "_ForceRebuild"
-local FORCE_REBUILD_DELAY_MS = 75
 
 local QUEST_SAVED_VARS_NAME = "Nvk3UT_Data_Quests"
 local QUEST_SAVED_VARS_VERSION = 1
@@ -501,12 +499,19 @@ local function PerformRebuild(self)
     return PerformRebuildFromGame(self, false)
 end
 
-local function ScheduleRebuild(self)
-    if not playerState.hasActivated then
+local function CancelScheduledRebuild(self)
+    if not self.pendingRebuild then
         return
     end
 
-    if self.pendingForceRebuild then
+    if EVENT_MANAGER then
+        EVENT_MANAGER:UnregisterForUpdate(REBUILD_IDENTIFIER)
+    end
+    self.pendingRebuild = false
+end
+
+local function ScheduleRebuild(self)
+    if not playerState.hasActivated then
         return
     end
 
@@ -553,29 +558,9 @@ local function ForceFullRebuildFromGame(self)
 
     ResetBaseCategoryCache()
 
-    if self.pendingRebuild then
-        EVENT_MANAGER:UnregisterForUpdate(REBUILD_IDENTIFIER)
-        self.pendingRebuild = false
-    end
+    CancelScheduledRebuild(self)
 
-    if not EVENT_MANAGER then
-        return PerformRebuildFromGame(self, true)
-    end
-
-    EVENT_MANAGER:UnregisterForUpdate(FORCE_REBUILD_IDENTIFIER)
-    self.pendingForceRebuild = true
-
-    EVENT_MANAGER:RegisterForUpdate(
-        FORCE_REBUILD_IDENTIFIER,
-        FORCE_REBUILD_DELAY_MS,
-        function()
-            EVENT_MANAGER:UnregisterForUpdate(FORCE_REBUILD_IDENTIFIER)
-            self.pendingForceRebuild = false
-            PerformRebuildFromGame(self, true)
-        end
-    )
-
-    return true
+    return PerformRebuildFromGame(self, true)
 end
 
 QuestModel.ForceFullRebuildFromGame = function(self)
@@ -726,7 +711,6 @@ function QuestModel.Shutdown()
     EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "TRACKING", EVENT_TRACKING_UPDATE)
     EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "OnLoaded", EVENT_ADD_ON_LOADED)
     EVENT_MANAGER:UnregisterForUpdate(REBUILD_IDENTIFIER)
-    EVENT_MANAGER:UnregisterForUpdate(FORCE_REBUILD_IDENTIFIER)
     EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "PlayerActivated", EVENT_PLAYER_ACTIVATED)
 
     if QuestModel.questJournalListCallbackRegistered and QUEST_JOURNAL_MANAGER and type(QUEST_JOURNAL_MANAGER.UnregisterCallback) == "function" and questJournalListUpdatedCallback then
@@ -740,7 +724,6 @@ function QuestModel.Shutdown()
     QuestModel.subscribers = nil
     QuestModel.currentSnapshot = nil
     QuestModel.pendingRebuild = nil
-    QuestModel.pendingForceRebuild = nil
 
     ResetBaseCategoryCache()
 end
