@@ -407,12 +407,14 @@ local function ResetBaseCategoryCache()
 end
 
 local function CollectQuestEntries(forceFullRebuild)
-    -- TEMP SHIM (QMODEL_004): forward quest refresh to QuestList facade.
+    local questData, questListData, categoryListData, seenCategories = AcquireQuestData()
+
     local questList = GetQuestListModule()
     if questList and questList.RefreshFromGame then
-        return questList:RefreshFromGame(forceFullRebuild)
+        return questList:RefreshFromGame(forceFullRebuild, questData, categoryListData, questListData, seenCategories)
     end
-    return {}
+
+    return {}, questData
 end
 
 local function BuildSnapshotFromQuests(quests)
@@ -437,7 +439,7 @@ local function BuildSnapshotFromQuests(quests)
 end
 
 local function BuildSnapshot(self, forceFullRebuild)
-    local quests = CollectQuestEntries(forceFullRebuild)
+    local quests, questData = CollectQuestEntries(forceFullRebuild)
     if type(quests) ~= "table" then
         quests = {}
     end
@@ -466,7 +468,7 @@ local function BuildSnapshot(self, forceFullRebuild)
         snapshot.questByJournalIndex = {}
     end
 
-    return snapshot, quests
+    return snapshot, quests, questData
 end
 
 local function SnapshotsDiffer(previous, current, forceFullRebuild)
@@ -504,6 +506,150 @@ local function BuildQuestIdSet(snapshot)
     return ids, mapping
 end
 
+local function CollectConditionList(journalQuestIndex, stepIndex, totalConditions)
+    local conditions = {}
+
+    if type(totalConditions) == "number" and totalConditions > 0 and type(GetJournalQuestConditionInfo) == "function" then
+        for conditionIndex = 1, totalConditions do
+            local conditionText, current, maxValue, isFailCondition, isConditionComplete, _, isConditionVisible =
+                GetJournalQuestConditionInfo(journalQuestIndex, stepIndex, conditionIndex)
+
+            conditions[#conditions + 1] = {
+                displayText = conditionText,
+                text = conditionText,
+                current = current,
+                max = maxValue,
+                complete = isConditionComplete == true,
+                isVisible = isConditionVisible ~= false,
+                isFailCondition = isFailCondition == true,
+                index = conditionIndex,
+            }
+        end
+    end
+
+    return conditions
+end
+
+local function CollectQuestSteps(journalQuestIndex)
+    if type(GetJournalQuestNumSteps) ~= "function" or type(GetJournalQuestStepInfo) ~= "function" then
+        return {}
+    end
+
+    local steps = {}
+    local numSteps = GetJournalQuestNumSteps(journalQuestIndex) or 0
+    for stepIndex = 1, numSteps do
+        local stepText, stepType, numConditions, isVisible, isCompleteStep, isOptional, isTracked =
+            GetJournalQuestStepInfo(journalQuestIndex, stepIndex)
+
+        local totalConditions = tonumber(numConditions) or 0
+        if type(GetJournalQuestNumConditions) == "function" then
+            local countedConditions = GetJournalQuestNumConditions(journalQuestIndex, stepIndex)
+            if type(countedConditions) == "number" and countedConditions > totalConditions then
+                totalConditions = countedConditions
+            end
+        end
+
+        local conditions = CollectConditionList(journalQuestIndex, stepIndex, totalConditions)
+
+        steps[#steps + 1] = {
+            stepIndex = stepIndex,
+            stepText = stepText,
+            stepType = stepType,
+            numConditions = numConditions,
+            totalConditions = totalConditions,
+            isVisible = isVisible ~= false,
+            isComplete = isCompleteStep == true,
+            isOptional = isOptional == true,
+            isTracked = isTracked == true,
+            conditions = conditions,
+        }
+    end
+
+    return steps
+end
+
+local function CollectLocationInfo(journalQuestIndex)
+    if type(GetJournalQuestLocationInfo) ~= "function" then
+        return {}
+    end
+
+    local zoneName, subZoneName, zoneIndex, poiIndex = GetJournalQuestLocationInfo(journalQuestIndex)
+    local data = {
+        zoneName = zoneName,
+        subZoneName = subZoneName,
+        zoneIndex = zoneIndex,
+        poiIndex = poiIndex,
+        isShareable = nil,
+    }
+
+    if type(GetJournalQuestShareable) == "function" then
+        local shareable = GetJournalQuestShareable(journalQuestIndex)
+        data.isShareable = shareable == true
+    end
+
+    return data
+end
+
+local function AcquireQuestData()
+    local questData = {}
+    local questListData = nil
+    local categoryListData = nil
+    local seenCategories = nil
+
+    if QUEST_JOURNAL_MANAGER and type(QUEST_JOURNAL_MANAGER.GetQuestListData) == "function" then
+        local ok, questList, categoryList, seen = pcall(QUEST_JOURNAL_MANAGER.GetQuestListData, QUEST_JOURNAL_MANAGER)
+        if ok then
+            questListData = questList
+            categoryListData = categoryList
+            seenCategories = seen
+        end
+    end
+
+    local questCount = type(GetNumJournalQuests) == "function" and GetNumJournalQuests() or 0
+    for journalIndex = 1, questCount do
+        local questName, backgroundText, activeStepText, activeStepType, questLevel, zoneName, questType, instanceDisplayType,
+            isRepeatable, isDaily, questDescription, displayType = GetJournalQuestInfo(journalIndex)
+
+        local questId = GetQuestIdForJournalIndex(journalIndex)
+        local tracked = type(IsJournalQuestTracked) == "function" and IsJournalQuestTracked(journalIndex) or false
+        local assisted = false
+        if tracked and type(GetTrackedIsAssisted) == "function" then
+            assisted = GetTrackedIsAssisted(TRACK_TYPE_QUEST, journalIndex) or false
+        end
+
+        local isComplete = false
+        if type(GetJournalQuestIsComplete) == "function" then
+            isComplete = GetJournalQuestIsComplete(journalIndex)
+        elseif type(IsJournalQuestComplete) == "function" then
+            isComplete = IsJournalQuestComplete(journalIndex)
+        end
+
+        questData[#questData + 1] = {
+            journalIndex = journalIndex,
+            questId = questId,
+            name = questName,
+            backgroundText = backgroundText,
+            activeStepText = activeStepText,
+            activeStepType = activeStepType,
+            level = questLevel,
+            zoneName = zoneName,
+            questType = questType,
+            instanceDisplayType = instanceDisplayType,
+            displayType = displayType,
+            isRepeatable = isRepeatable == true,
+            isDaily = isDaily == true,
+            description = questDescription,
+            tracked = tracked == true,
+            assisted = assisted == true,
+            isComplete = isComplete == true,
+            steps = CollectQuestSteps(journalIndex),
+            location = CollectLocationInfo(journalIndex),
+        }
+    end
+
+    return questData, questListData, categoryListData, seenCategories
+end
+
 local function PerformRebuildFromGame(self, forceFullRebuild)
     if not self.isInitialized or not playerState.hasActivated then
         return false
@@ -516,7 +662,7 @@ local function PerformRebuildFromGame(self, forceFullRebuild)
 
     QM_Debug("Rebuild start: force=%s, prevRevision=%d, prevQuestCount=%d", tostring(forceFullRebuild), prevRevision, prevQuestCount)
 
-    local snapshot, quests = BuildSnapshot(self, forceFullRebuild)
+    local snapshot, quests, questData = BuildSnapshot(self, forceFullRebuild)
     if not snapshot then
         return false
     end
@@ -568,6 +714,7 @@ local function PerformRebuildFromGame(self, forceFullRebuild)
         end
 
         local journalCount = nil
+        local questDataCount = type(questData) == "table" and #questData or 0
         if type(GetNumJournalQuests) == "function" then
             journalCount = GetNumJournalQuests()
         end
@@ -575,8 +722,9 @@ local function PerformRebuildFromGame(self, forceFullRebuild)
         LogDebug(
             self,
             string.format(
-                "QuestModel rebuild: journalCount=%s, snapshotCount=%d, categories=%d, revision=%d, signature=%s, force=%s",
+                "QuestModel rebuild: journalCount=%s, questDataCount=%d, snapshotCount=%d, categories=%d, revision=%d, signature=%s, force=%s",
                 tostring(journalCount),
+                questDataCount,
                 questCount,
                 categoryCount,
                 snapshot.revision,

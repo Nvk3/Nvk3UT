@@ -6,6 +6,7 @@ Nvk3UT.QuestList = Nvk3UT.QuestList or {}
 
 local QuestList = Nvk3UT.QuestList
 local Diagnostics = Nvk3UT and Nvk3UT.Diagnostics
+local QuestListData = {}
 
 local DEFAULT_OBJECTIVE_MODE = "focused"
 QuestList.OBJECTIVE_MODE = QuestList.OBJECTIVE_MODE or DEFAULT_OBJECTIVE_MODE
@@ -1107,27 +1108,12 @@ local function BuildBaseCategoryCacheFromData(questList, categoryList)
     }
 end
 
-local function AcquireQuestJournalData()
-    if not (QUEST_JOURNAL_MANAGER and QUEST_JOURNAL_MANAGER.GetQuestListData) then
-        return nil, nil, nil
+local function ApplyBaseCategoryCacheFromData(questListData, categoryListData)
+    if type(questListData) ~= "table" or type(categoryListData) ~= "table" then
+        return
     end
 
-    local journalCount = nil
-    if type(GetNumJournalQuests) == "function" then
-        journalCount = GetNumJournalQuests()
-    end
-    QL_Debug("AcquireQuestJournalData: journalCount=%s", tostring(journalCount))
-
-    local ok, questList, categoryList, seenCategories = pcall(QUEST_JOURNAL_MANAGER.GetQuestListData, QUEST_JOURNAL_MANAGER)
-    if not ok then
-        return nil, nil, nil
-    end
-
-    if type(questList) ~= "table" or type(categoryList) ~= "table" then
-        return nil, nil, nil
-    end
-
-    return questList, categoryList, seenCategories
+    baseCategoryCache = BuildBaseCategoryCacheFromData(questListData, categoryListData)
 end
 
 local function AcquireBaseCategoryCache()
@@ -1135,13 +1121,14 @@ local function AcquireBaseCategoryCache()
         return baseCategoryCache
     end
 
-    local questList, categoryList = AcquireQuestJournalData()
-    if type(questList) ~= "table" or type(categoryList) ~= "table" then
-        return nil
+    local questListData = QuestListData.questList
+    local categoryListData = QuestListData.categoryList
+    if type(questListData) == "table" and type(categoryListData) == "table" then
+        baseCategoryCache = BuildBaseCategoryCacheFromData(questListData, categoryListData)
+        return baseCategoryCache
     end
 
-    baseCategoryCache = BuildBaseCategoryCacheFromData(questList, categoryList)
-    return baseCategoryCache
+    return nil
 end
 
 local function GetTimestampMs()
@@ -1558,57 +1545,48 @@ local function BuildQuestKey(questId, journalQuestIndex)
     return nil
 end
 
-local function BuildQuestEntry(journalQuestIndex)
-    local questName, backgroundText, activeStepText, activeStepType, questLevel, zoneName, questType, instanceDisplayType, isRepeatable, isDaily, questDescription, displayType = GetJournalQuestInfo(journalQuestIndex)
+local function BuildQuestEntryFromQuestData(data)
+    if type(data) ~= "table" then
+        return nil
+    end
+
+    local questName = data.name
     if not questName or questName == "" then
-        local questIdForLog = GetJournalQuestId and GetJournalQuestId(journalQuestIndex) or nil
         QL_Debug(
-            "  SKIP_BUILD idx=%d, questId=%s, name='%s', reason=%s",
-            journalQuestIndex,
-            tostring(questIdForLog),
+            "  SKIP_BUILD idx=%s, questId=%s, name='%s', reason=%s",
+            tostring(data.journalIndex or -1),
+            tostring(data.questId),
             tostring(questName or "<unknown>"),
             "no_name"
         )
         return nil
     end
 
-    isRepeatable = not not isRepeatable
-    isDaily = not not isDaily
+    local isRepeatable = data.isRepeatable == true
+    local isDaily = data.isDaily == true
 
-    local questId = GetJournalQuestId and GetJournalQuestId(journalQuestIndex) or nil
-    local isTracked = IsJournalQuestTracked and IsJournalQuestTracked(journalQuestIndex) or false
-    isTracked = not not isTracked
-    local isAssisted = false
-    if GetTrackedIsAssisted and isTracked then
-        isAssisted = GetTrackedIsAssisted(TRACK_TYPE_QUEST, journalQuestIndex) or false
-    end
-    isAssisted = not not isAssisted
+    local questId = data.questId
+    local journalIndex = data.journalIndex
+    local isTracked = data.tracked == true
+    local isAssisted = data.assisted == true
+    local isComplete = data.isComplete == true
 
-    local isComplete = false
-    if GetJournalQuestIsComplete then
-        isComplete = GetJournalQuestIsComplete(journalQuestIndex)
-    elseif IsJournalQuestComplete then
-        isComplete = IsJournalQuestComplete(journalQuestIndex)
-    end
-    isComplete = not not isComplete
-
-    local category = ResolveQuestCategoryInternal(journalQuestIndex, questType, displayType, isRepeatable, isDaily)
-
-    local questKey = BuildQuestKey(questId, journalQuestIndex)
+    local category = ResolveQuestCategoryInternal(journalIndex, data.questType, data.displayType, isRepeatable, isDaily)
+    local questKey = BuildQuestKey(questId, journalIndex)
 
     local questEntry = {
-        journalIndex = journalQuestIndex,
+        journalIndex = journalIndex,
         questId = questId,
         questKey = questKey,
         name = questName,
-        backgroundText = backgroundText,
-        activeStepText = activeStepText,
-        activeStepType = activeStepType,
-        level = questLevel,
-        zoneName = zoneName,
-        questType = questType,
-        instanceDisplayType = instanceDisplayType,
-        displayType = displayType,
+        backgroundText = data.backgroundText,
+        activeStepText = data.activeStepText,
+        activeStepType = data.activeStepType,
+        level = data.level,
+        zoneName = data.zoneName,
+        questType = data.questType,
+        instanceDisplayType = data.instanceDisplayType,
+        displayType = data.displayType,
         flags = {
             tracked = isTracked,
             assisted = isAssisted,
@@ -1617,9 +1595,9 @@ local function BuildQuestEntry(journalQuestIndex)
             isDaily = isDaily,
         },
         category = category,
-        steps = CollectQuestSteps(journalQuestIndex),
-        location = CollectLocationInfo(journalQuestIndex),
-        description = questDescription,
+        steps = data.steps or {},
+        location = data.location or {},
+        description = data.description,
     }
 
     questEntry.name = questEntry.name or ""
@@ -1627,15 +1605,15 @@ local function BuildQuestEntry(journalQuestIndex)
     questEntry.category = questEntry.category or {}
 
     questEntry.meta = {
-        questType = questType,
-        displayType = displayType,
+        questType = data.questType,
+        displayType = data.displayType,
         categoryType = category and category.type or nil,
         categoryKey = category and category.key or nil,
         groupKey = category and category.groupKey or nil,
         groupName = category and category.groupName or nil,
         parentKey = category and category.parent and category.parent.key or nil,
         parentName = category and category.parent and category.parent.name or nil,
-        zoneName = zoneName,
+        zoneName = data.zoneName,
         isRepeatable = isRepeatable,
         isDaily = isDaily,
     }
@@ -1645,6 +1623,81 @@ local function BuildQuestEntry(journalQuestIndex)
     questEntry.signature = BuildQuestSignatureInternal(questEntry)
 
     return questEntry
+end
+
+local function BuildQuestEntry(journalQuestIndex)
+    local questName, backgroundText, activeStepText, activeStepType, questLevel, zoneName, questType, instanceDisplayType, isRepeatable, isDaily, questDescription, displayType = GetJournalQuestInfo(journalQuestIndex)
+    return BuildQuestEntryFromQuestData({
+        journalIndex = journalQuestIndex,
+        questId = GetJournalQuestId and GetJournalQuestId(journalQuestIndex) or nil,
+        name = questName,
+        backgroundText = backgroundText,
+        activeStepText = activeStepText,
+        activeStepType = activeStepType,
+        level = questLevel,
+        zoneName = zoneName,
+        questType = questType,
+        instanceDisplayType = instanceDisplayType,
+        displayType = displayType,
+        isRepeatable = isRepeatable,
+        isDaily = isDaily,
+        description = questDescription,
+        tracked = IsJournalQuestTracked and IsJournalQuestTracked(journalQuestIndex) or false,
+        assisted = GetTrackedIsAssisted and IsJournalQuestTracked and IsJournalQuestTracked(journalQuestIndex)
+            and (GetTrackedIsAssisted(TRACK_TYPE_QUEST, journalQuestIndex) or false)
+            or false,
+        isComplete = (GetJournalQuestIsComplete and GetJournalQuestIsComplete(journalQuestIndex))
+            or (IsJournalQuestComplete and IsJournalQuestComplete(journalQuestIndex))
+            or false,
+        steps = CollectQuestSteps(journalQuestIndex),
+        location = CollectLocationInfo(journalQuestIndex),
+    })
+end
+
+local function CollectQuestEntriesFromQuestData(questData)
+    local quests = {}
+    questData = type(questData) == "table" and questData or {}
+
+    for index = 1, #questData do
+        local row = questData[index]
+        QL_Debug(
+            "  JournalSlot idx=%s, questId=%s, name='%s', action=seen",
+            tostring(row and row.journalIndex or "?"),
+            tostring(row and row.questId),
+            tostring(row and row.name or "?")
+        )
+
+        local questEntry = BuildQuestEntryFromQuestData(row)
+        if questEntry then
+            quests[#quests + 1] = questEntry
+            local categoryKey = questEntry.meta and questEntry.meta.categoryKey or nil
+            QL_Debug(
+                "  JournalSlot idx=%s, questId=%s, name='%s', action=add, category=%s",
+                tostring(row and row.journalIndex or "?"),
+                tostring(row and row.questId),
+                tostring(row and row.name or questEntry.name or "?"),
+                tostring(categoryKey or "?")
+            )
+        else
+            local questName = row and row.name
+            local skipReason = "build_entry_failed"
+            if questName == nil or questName == "" then
+                skipReason = "missing_quest_name"
+            end
+
+            QL_Debug(
+                "  JournalSlot idx=%s, questId=%s, name='%s', action=skip, reason=%s",
+                tostring(row and row.journalIndex or "?"),
+                tostring(row and row.questId),
+                tostring(questName or "?"),
+                skipReason
+            )
+        end
+    end
+
+    table.sort(quests, CompareQuestEntries)
+    QL_Debug("CollectQuestEntriesInternal summary: journalCount=%d, built=%d", #questData, #quests)
+    return quests
 end
 
 local function CollectQuestEntriesInternal()
@@ -1749,6 +1802,7 @@ end
 function QuestList:ResetCaches()
     groupEntryCache = {}
     ResetBaseCategoryCacheInternal()
+    QuestListData = {}
 end
 
 function QuestList.ResetBaseCategoryCache()
@@ -1779,13 +1833,30 @@ function QuestList.BuildOverallSignature(quests)
     return BuildOverallSignatureInternal(quests)
 end
 
-function QuestList:RefreshFromGame(forceFullRebuild)
+function QuestList:RefreshFromGame(forceFullRebuild, questData, categoryListData, questListData, seenCategories)
     if forceFullRebuild then
         self:ResetCaches()
         self._lastBuild = nil
     end
 
-    local quests = CollectQuestEntriesInternal()
+    if type(questListData) == "table" then
+        QuestListData.questList = questListData
+        QuestListData.seenCategories = seenCategories
+    end
+    if type(categoryListData) == "table" then
+        QuestListData.categoryList = categoryListData
+    end
+
+    if QuestListData.questList and QuestListData.categoryList then
+        ApplyBaseCategoryCacheFromData(QuestListData.questList, QuestListData.categoryList)
+    end
+
+    local quests = nil
+    if type(questData) == "table" then
+        quests = CollectQuestEntriesFromQuestData(questData)
+    else
+        quests = CollectQuestEntriesInternal()
+    end
     self._lastBuild = self._lastBuild or {}
     self._lastBuild.quests = quests
     self._lastBuild.questByJournalIndex = {}
@@ -1798,7 +1869,7 @@ function QuestList:RefreshFromGame(forceFullRebuild)
     self._lastBuild.categories = BuildCategoriesIndexInternal(quests)
     self._lastBuild.signature = BuildOverallSignatureInternal(quests)
     self._lastBuild.updatedAtMs = GetTimestampMs()
-    return quests
+    return quests, questData
 end
 
 function QuestList:GetRawList()
