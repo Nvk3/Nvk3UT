@@ -331,15 +331,19 @@ end
 
 local function NotifySubscribers(self)
     if not self.subscribers then
-        return
+        return 0
     end
 
+    local notified = 0
     for callback in pairs(self.subscribers) do
+        notified = notified + 1
         local success, err = pcall(callback, self.currentSnapshot)
         if not success then
             LogDebug(self, "Subscriber callback failed", err)
         end
     end
+
+    return notified
 end
 
 local function ResetBaseCategoryCache()
@@ -436,13 +440,17 @@ local function PerformRebuildFromGame(self, forceFullRebuild)
         return false
     end
 
-    if not SnapshotsDiffer(self.currentSnapshot, snapshot, forceFullRebuild) then
-        PersistQuests(quests)
-        return false
+    local snapshotsDiffer = SnapshotsDiffer(self.currentSnapshot, snapshot, forceFullRebuild)
+    if snapshotsDiffer then
+        snapshot.revision = (self.currentSnapshot and self.currentSnapshot.revision or 0) + 1
+        self.currentSnapshot = snapshot
+    elseif not self.currentSnapshot then
+        snapshot.revision = 1
+        self.currentSnapshot = snapshot
+    elseif self.currentSnapshot then
+        snapshot.revision = self.currentSnapshot.revision or 0
+        self.currentSnapshot = snapshot
     end
-
-    snapshot.revision = (self.currentSnapshot and self.currentSnapshot.revision or 0) + 1
-    self.currentSnapshot = snapshot
 
     if IsDebugLoggingEnabled() then
         local categoryCount = 0
@@ -471,13 +479,22 @@ local function PerformRebuildFromGame(self, forceFullRebuild)
     end
 
     PersistQuests(quests)
-    NotifySubscribers(self)
+    local notifiedCount = NotifySubscribers(self)
 
     if IsDebugLoggingEnabled() then
         local afterCount = snapshot.quests and #snapshot.quests or 0
-        LogDebug(self, string.format("QuestModel: rebuild finished; snapshotCountAfter=%d", afterCount))
+        local revision = (self.currentSnapshot and self.currentSnapshot.revision) or snapshot.revision or 0
+        LogDebug(
+            self,
+            string.format(
+                "QuestModel: PerformRebuild finished; snapshotRevision=%d, questCount=%d, notifiedSubscribers=%d",
+                revision,
+                afterCount,
+                notifiedCount
+            )
+        )
     end
-    return true
+    return snapshotsDiffer or false
 end
 
 local function PerformRebuild(self)
