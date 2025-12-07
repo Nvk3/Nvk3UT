@@ -1561,6 +1561,14 @@ end
 local function BuildQuestEntry(journalQuestIndex)
     local questName, backgroundText, activeStepText, activeStepType, questLevel, zoneName, questType, instanceDisplayType, isRepeatable, isDaily, questDescription, displayType = GetJournalQuestInfo(journalQuestIndex)
     if not questName or questName == "" then
+        local questIdForLog = GetJournalQuestId and GetJournalQuestId(journalQuestIndex) or nil
+        QL_Debug(
+            "  SKIP_BUILD idx=%d, questId=%s, name='%s', reason=%s",
+            journalQuestIndex,
+            tostring(questIdForLog),
+            tostring(questName or "<unknown>"),
+            "no_name"
+        )
         return nil
     end
 
