@@ -1579,15 +1579,39 @@ local function BuildQuestEntry(journalQuestIndex)
 end
 
 local function CollectQuestEntriesInternal()
-    local quests = {}
-
-    if not GetNumJournalQuests then
-        return quests
+    local diagnostics = GetDiagnostics()
+    if diagnostics and diagnostics.Info then
+        diagnostics.Info("[QLIST] Collecting quests from QUEST_JOURNAL_MANAGER:GetQuestListData()")
     end
 
-    local total = GetNumJournalQuests() or 0
-    local questCount = math.min(total, QUEST_LOG_LIMIT)
-    for journalIndex = 1, questCount do
+    local questJournalManager = QUEST_JOURNAL_MANAGER
+    if not questJournalManager or type(questJournalManager.GetQuestListData) ~= "function" then
+        if diagnostics and diagnostics.Error then
+            diagnostics.Error("Nvk3UT QuestList: QUEST_JOURNAL_MANAGER or GetQuestListData is not available")
+        end
+        error("Nvk3UT QuestList: QUEST_JOURNAL_MANAGER or GetQuestListData is not available")
+    end
+
+    local allQuests, allCategories, seenCategories = questJournalManager:GetQuestListData()
+    if type(allQuests) ~= "table" or type(allCategories) ~= "table" then
+        if diagnostics and diagnostics.Error then
+            diagnostics.Error("Nvk3UT QuestList: GetQuestListData returned unexpected data")
+        end
+        error("Nvk3UT QuestList: GetQuestListData returned unexpected data")
+    end
+
+    local quests = {}
+
+    for index = 1, #allQuests do
+        local questData = allQuests[index]
+        local journalIndex = ExtractQuestJournalIndex(questData)
+        if type(journalIndex) ~= "number" then
+            if diagnostics and diagnostics.Error then
+                diagnostics.Error("Nvk3UT QuestList: Quest entry missing journal index (index=%s)", tostring(index))
+            end
+            error("Nvk3UT QuestList: GetQuestListData returned unexpected data")
+        end
+
         local questEntry = BuildQuestEntry(journalIndex)
         if questEntry then
             quests[#quests + 1] = questEntry
