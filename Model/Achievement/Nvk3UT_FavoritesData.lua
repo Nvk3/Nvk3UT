@@ -120,10 +120,20 @@ local function ensureStageDataInitialized()
         return
     end
 
-    stageDataInitialized = true
-
     local Stage = getStageHelper()
     local hasStageInfo = Stage and Stage.GetCurrentStageInfo
+    local getStageInfo = Stage and Stage.GetStageInfo
+
+    if type(hasStageInfo) ~= "function" or (getStageInfo ~= nil and type(getStageInfo) ~= "function") then
+        emitDebugMessage(
+            "ensureStageDataInitialized: stage helpers not functions (hasStageInfo=%s, getStageInfo=%s)",
+            type(hasStageInfo),
+            type(getStageInfo)
+        )
+        return
+    end
+
+    stageDataInitialized = true
 
     local scopes = { ACCOUNT_SCOPE, CHARACTER_SCOPE }
     for index = 1, #scopes do

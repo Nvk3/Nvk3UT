@@ -407,6 +407,11 @@ local function ResetBaseCategoryCache()
 end
 
 local function CollectQuestEntries(forceFullRebuild)
+    if type(AcquireQuestData) ~= "function" then
+        QM_Debug("CollectQuestEntries: AcquireQuestData is not a function (type=%s)", type(AcquireQuestData))
+        return {}, {}
+    end
+
     local questData, questListData, categoryListData, seenCategories = AcquireQuestData()
 
     local questList = GetQuestListModule()
