@@ -50,11 +50,11 @@ local FONT_FACE_NAMES, FONT_FACE_VALUES = (function()
 end)()
 
 local OUTLINE_CHOICES = {
-    { name = "Keiner", value = "none" },
-    { name = "Weich (dünn)", value = "soft-shadow-thin" },
-    { name = "Weich (dick)", value = "soft-shadow-thick" },
-    { name = "Schatten", value = "shadow" },
-    { name = "Kontur", value = "outline" },
+    { name = SI_NVK3UT_FONT_OUTLINE_NONE, value = "none" },
+    { name = SI_NVK3UT_FONT_OUTLINE_SOFT_THIN, value = "soft-shadow-thin" },
+    { name = SI_NVK3UT_FONT_OUTLINE_SOFT_THICK, value = "soft-shadow-thick" },
+    { name = SI_NVK3UT_FONT_OUTLINE_SHADOW, value = "shadow" },
+    { name = SI_NVK3UT_FONT_OUTLINE_OUTLINE, value = "outline" },
 }
 
 local function isDebugEnabled()
@@ -96,7 +96,13 @@ end
 local OUTLINE_NAMES, OUTLINE_VALUES = (function()
     local names, values = {}, {}
     for index = 1, #OUTLINE_CHOICES do
-        names[index] = OUTLINE_CHOICES[index].name
+        local stringId = OUTLINE_CHOICES[index].name
+        local localizedName = stringId and GetString(stringId)
+        if localizedName == nil or localizedName == "" then
+            localizedName = tostring(stringId)
+        end
+
+        names[index] = localizedName
         values[index] = OUTLINE_CHOICES[index].value
     end
     return names, values
@@ -1097,7 +1103,13 @@ local function buildFontControls(label, settings, key, defaults, onChanged, adap
             choices = (function()
                 local names = {}
                 for index = 1, #OUTLINE_CHOICES do
-                    names[index] = OUTLINE_CHOICES[index].name
+                    local stringId = OUTLINE_CHOICES[index].name
+                    local localizedName = stringId and GetString(stringId)
+                    if localizedName == nil or localizedName == "" then
+                        localizedName = tostring(stringId)
+                    end
+
+                    names[index] = localizedName
                 end
                 return names
             end)(),

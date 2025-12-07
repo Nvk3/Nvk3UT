@@ -237,6 +237,13 @@ local strings = {
     SI_NVK3UT_JOURNAL_CONTEXT_ADD_FAVORITE = "Add to favorites",
     SI_NVK3UT_JOURNAL_CONTEXT_REMOVE_FAVORITE = "Remove from favorites",
 
+    -- Font outlines
+    SI_NVK3UT_FONT_OUTLINE_NONE = "None",
+    SI_NVK3UT_FONT_OUTLINE_SOFT_THIN = "Soft (Thin)",
+    SI_NVK3UT_FONT_OUTLINE_SOFT_THICK = "Soft (Thick)",
+    SI_NVK3UT_FONT_OUTLINE_SHADOW = "Shadow",
+    SI_NVK3UT_FONT_OUTLINE_OUTLINE = "Outline",
+
     -- Shared formatting
     SI_NVK3UT_LAM_FONT_FACE_FORMAT = "%s - Font",
     SI_NVK3UT_LAM_FONT_SIZE_FORMAT = "%s - Size",
