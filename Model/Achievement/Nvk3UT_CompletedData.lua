@@ -3,10 +3,19 @@ Nvk3UT = Nvk3UT or {}
 local CompletedData = {}
 Nvk3UT.CompletedData = CompletedData
 
-local MONTH_NAMES = {
-    [1] = "Januar", [2] = "Februar", [3] = "März", [4] = "April",
-    [5] = "Mai", [6] = "Juni", [7] = "Juli", [8] = "August",
-    [9] = "September", [10] = "Oktober", [11] = "November", [12] = "Dezember",
+local MONTH_STRING_IDS = {
+    [1] = SI_NVK3UT_COMPLETED_MONTH_JANUARY,
+    [2] = SI_NVK3UT_COMPLETED_MONTH_FEBRUARY,
+    [3] = SI_NVK3UT_COMPLETED_MONTH_MARCH,
+    [4] = SI_NVK3UT_COMPLETED_MONTH_APRIL,
+    [5] = SI_NVK3UT_COMPLETED_MONTH_MAY,
+    [6] = SI_NVK3UT_COMPLETED_MONTH_JUNE,
+    [7] = SI_NVK3UT_COMPLETED_MONTH_JULY,
+    [8] = SI_NVK3UT_COMPLETED_MONTH_AUGUST,
+    [9] = SI_NVK3UT_COMPLETED_MONTH_SEPTEMBER,
+    [10] = SI_NVK3UT_COMPLETED_MONTH_OCTOBER,
+    [11] = SI_NVK3UT_COMPLETED_MONTH_NOVEMBER,
+    [12] = SI_NVK3UT_COMPLETED_MONTH_DECEMBER,
 }
 
 local LAST50_KEY = 90000
@@ -185,7 +194,11 @@ local function addIdToMonth(achievementId, timestamp)
     push(keyToList[key], achievementId)
 
     if not keyToName[key] then
-        local monthName = MONTH_NAMES[dateTable.month] or tostring(dateTable.month)
+        local monthStringId = MONTH_STRING_IDS[dateTable.month]
+        local monthName = monthStringId and GetString(monthStringId)
+        if not monthName or monthName == "" then
+            monthName = tostring(dateTable.month)
+        end
         keyToName[key] = string.format("%s %d", monthName, dateTable.year)
         push(monthKeys, key)
     end
