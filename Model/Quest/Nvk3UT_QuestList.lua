@@ -26,6 +26,44 @@ local function GetDiagnostics()
     return Diagnostics
 end
 
+local function QL_Debug(fmt, ...)
+    local diagnostics = GetDiagnostics()
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return diagnostics:IsDebugEnabled()
+        end)
+        if ok and enabled then
+            local message = fmt
+            if select("#", ...) > 0 then
+                message = string.format(fmt, ...)
+            end
+
+            if type(diagnostics.Debug) == "function" then
+                diagnostics:Debug(string.format("[QuestList] %s", message))
+                return
+            end
+        end
+    end
+
+    if d then
+        local questModel = Nvk3UT and Nvk3UT.QuestModel
+        if questModel and type(questModel.IsDebugEnabled) == "function" then
+            local ok, enabled = pcall(function()
+                return questModel:IsDebugEnabled()
+            end)
+            if not (ok and enabled) then
+                return
+            end
+        end
+
+        local message = fmt
+        if select("#", ...) > 0 then
+            message = string.format(fmt, ...)
+        end
+        d(string.format("[QuestList] %s", message))
+    end
+end
+
 local function SafeLower(value)
     if value == nil then
         return ""
@@ -1074,6 +1112,12 @@ local function AcquireQuestJournalData()
         return nil, nil, nil
     end
 
+    local journalCount = nil
+    if type(GetNumJournalQuests) == "function" then
+        journalCount = GetNumJournalQuests()
+    end
+    QL_Debug("AcquireQuestJournalData: journalCount=%s", tostring(journalCount))
+
     local ok, questList, categoryList, seenCategories = pcall(QUEST_JOURNAL_MANAGER.GetQuestListData, QUEST_JOURNAL_MANAGER)
     if not ok then
         return nil, nil, nil
@@ -1605,6 +1649,14 @@ local function CollectQuestEntriesInternal()
     local total = GetNumJournalQuests() or 0
     local questCount = math.min(total, QUEST_LOG_LIMIT)
     for journalIndex = 1, questCount do
+        if type(GetJournalQuestInfo) == "function" then
+            local questId = GetJournalQuestId and GetJournalQuestId(journalIndex) or nil
+            local ok, questName = pcall(GetJournalQuestInfo, journalIndex)
+            if ok then
+                QL_Debug("  JournalSlot idx=%d, questId=%s, name='%s'", journalIndex, tostring(questId), tostring(questName or "?"))
+            end
+        end
+
         local questEntry = BuildQuestEntry(journalIndex)
         if questEntry then
             quests[#quests + 1] = questEntry

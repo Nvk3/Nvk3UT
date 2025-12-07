@@ -176,6 +176,25 @@ local PRIORITY = {
 
 NVK_DEBUG_DESELECT = NVK_DEBUG_DESELECT or false
 
+local function CountSnapshotQuests(snapshot)
+    if snapshot and type(snapshot.quests) == "table" then
+        return #snapshot.quests
+    end
+    return 0
+end
+
+local function CountVisibleQuestRows()
+    local count = 0
+    if state.questControls then
+        for _, control in pairs(state.questControls) do
+            if control and control.IsHidden and not control:IsHidden() then
+                count = count + 1
+            end
+        end
+    end
+    return count
+end
+
 local function IsDebugLoggingEnabled()
     local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
     if utils and type(utils.IsDebugEnabled) == "function" then
@@ -203,6 +222,25 @@ local function DebugLog(...)
     elseif print then
         print("[" .. MODULE_NAME .. "]", ...)
     end
+end
+
+local function QT_Debug(fmt, ...)
+    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return diagnostics:IsDebugEnabled()
+        end)
+        if ok and enabled and type(diagnostics.Debug) == "function" then
+            local message = fmt
+            if select("#", ...) > 0 then
+                message = string.format(fmt, ...)
+            end
+            diagnostics:Debug(string.format("[QuestTracker] %s", message))
+            return
+        end
+    end
+
+    DebugLog(string.format(fmt, ...))
 end
 
 local function DebugDeselect(context, details)
@@ -3683,6 +3721,13 @@ end
 
 -- Apply the latest quest snapshot from the event-driven model and update the layout.
 local function OnQuestModelSnapshotUpdated(snapshot, context)
+    local questCount = CountSnapshotQuests(snapshot)
+    if snapshot and snapshot.revision then
+        QT_Debug("Tracker: received snapshot revision=%d, questCount=%d", snapshot.revision, questCount)
+    else
+        QT_Debug("Tracker: received snapshot with no revision; questCount=%d", questCount)
+    end
+
     local previousCategories = 0
     local previousQuests = 0
     local previousHeight = state.contentHeight or 0
@@ -3703,6 +3748,8 @@ local function OnQuestModelSnapshotUpdated(snapshot, context)
     end
 
     RelayoutFromCategoryIndex(1)
+
+    QT_Debug("Tracker: UI built, visibleQuestRows=%d", CountVisibleQuestRows())
 
     if IsDebugLoggingEnabled() then
         local newCategories = 0

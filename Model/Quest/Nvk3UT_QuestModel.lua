@@ -76,6 +76,41 @@ local function IsDebugLoggingEnabled()
     return false
 end
 
+local function QM_Debug(fmt, ...)
+    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        local ok, enabled = pcall(function()
+            return diagnostics:IsDebugEnabled()
+        end)
+        if ok and enabled then
+            local message = fmt
+            if select("#", ...) > 0 then
+                message = string.format(fmt, ...)
+            end
+
+            if type(diagnostics.Debug) == "function" then
+                diagnostics:Debug(string.format("[QuestModel] %s", message))
+                return
+            end
+        end
+    end
+
+    if not IsDebugLoggingEnabled() then
+        return
+    end
+
+    local message = fmt
+    if select("#", ...) > 0 then
+        message = string.format(fmt, ...)
+    end
+
+    if d then
+        d(string.format("[QuestModel] %s", message))
+    elseif print then
+        print("[QuestModel]", message)
+    end
+end
+
 local function DebugInitLog(message, ...)
     if not IsDebugLoggingEnabled() then
         return
@@ -104,6 +139,23 @@ local function CopyTable(value)
         copy[key] = CopyTable(entry)
     end
     return copy
+end
+
+local function GetQuestIdForJournalIndex(journalIndex)
+    if type(journalIndex) ~= "number" or journalIndex <= 0 then
+        return nil
+    end
+
+    if type(GetJournalQuestId) ~= "function" then
+        return nil
+    end
+
+    local ok, questId = pcall(GetJournalQuestId, journalIndex)
+    if ok then
+        return questId
+    end
+
+    return nil
 end
 
 local function BindQuestList(savedVars)
@@ -428,10 +480,41 @@ local function SnapshotsDiffer(previous, current, forceFullRebuild)
     return previous.signature ~= current.signature
 end
 
+local function CountSnapshotQuests(snapshot)
+    if not snapshot or type(snapshot.quests) ~= "table" then
+        return 0
+    end
+    return #snapshot.quests
+end
+
+local function BuildQuestIdSet(snapshot)
+    local ids = {}
+    local mapping = {}
+
+    if snapshot and type(snapshot.quests) == "table" then
+        for _, quest in ipairs(snapshot.quests) do
+            local questId = quest and quest.questId
+            if questId ~= nil then
+                mapping[questId] = true
+                ids[#ids + 1] = questId
+            end
+        end
+    end
+
+    return ids, mapping
+end
+
 local function PerformRebuildFromGame(self, forceFullRebuild)
     if not self.isInitialized or not playerState.hasActivated then
         return false
     end
+
+    local previousSnapshot = self.currentSnapshot
+    local prevRevision = previousSnapshot and previousSnapshot.revision or 0
+    local prevQuestCount = CountSnapshotQuests(previousSnapshot)
+    local _, prevQuestIdSet = BuildQuestIdSet(previousSnapshot)
+
+    QM_Debug("Rebuild start: force=%s, prevRevision=%d, prevQuestCount=%d", tostring(forceFullRebuild), prevRevision, prevQuestCount)
 
     local snapshot, quests = BuildSnapshot(self, forceFullRebuild)
     if not snapshot then
@@ -448,6 +531,33 @@ local function PerformRebuildFromGame(self, forceFullRebuild)
     elseif self.currentSnapshot then
         snapshot.revision = self.currentSnapshot.revision or 0
         self.currentSnapshot = snapshot
+    end
+
+    local newQuestCount = CountSnapshotQuests(snapshot)
+    local _, newQuestIdSet = BuildQuestIdSet(snapshot)
+    local newRevision = (self.currentSnapshot and self.currentSnapshot.revision) or snapshot.revision or 0
+
+    QM_Debug("Rebuild done: force=%s, newRevision=%d, newQuestCount=%d", tostring(forceFullRebuild), newRevision, newQuestCount)
+
+    local removedIds = {}
+    local addedIds = {}
+
+    for questId in pairs(prevQuestIdSet) do
+        if not newQuestIdSet[questId] then
+            removedIds[#removedIds + 1] = tostring(questId)
+        end
+    end
+
+    for questId in pairs(newQuestIdSet) do
+        if not prevQuestIdSet[questId] then
+            addedIds[#addedIds + 1] = tostring(questId)
+        end
+    end
+
+    if #removedIds > 0 or #addedIds > 0 then
+        QM_Debug("Rebuild diff: removedIds=%s, addedIds=%s", table.concat(removedIds, ","), table.concat(addedIds, ","))
+    else
+        QM_Debug("Rebuild diff: no questId changes")
     end
 
     if IsDebugLoggingEnabled() then
@@ -577,6 +687,72 @@ local function OnQuestChanged(_, ...)
     ScheduleRebuild(self)
 end
 
+local function LogQuestEvent(eventName, journalIndex, questName, detail)
+    local questId = GetQuestIdForJournalIndex(journalIndex)
+    QM_Debug(
+        "%s: journalIndex=%s, questId=%s, questName='%s'%s",
+        eventName,
+        tostring(journalIndex or -1),
+        tostring(questId),
+        questName or "?",
+        detail or ""
+    )
+end
+
+local function OnQuestAdded(eventCode, journalIndex, questName, objectiveName)
+    LogQuestEvent("EVENT_QUEST_ADDED", journalIndex, questName, string.format(", objectiveName='%s'", objectiveName or "?"))
+    OnQuestChanged(eventCode)
+end
+
+local function OnQuestAdvanced(eventCode, journalIndex, questName, isPushed, isComplete, mainStepChanged)
+    LogQuestEvent(
+        "EVENT_QUEST_ADVANCED",
+        journalIndex,
+        questName,
+        string.format(", isPushed=%s, isComplete=%s, mainStepChanged=%s", tostring(isPushed), tostring(isComplete), tostring(mainStepChanged))
+    )
+    OnQuestChanged(eventCode)
+end
+
+local function OnQuestConditionChanged(
+    eventCode,
+    journalIndex,
+    questName,
+    conditionText,
+    conditionType,
+    curCount,
+    newMax,
+    isFailCondition,
+    isComplete,
+    isCreditShared
+)
+    LogQuestEvent(
+        "EVENT_QUEST_CONDITION_COUNTER_CHANGED",
+        journalIndex,
+        questName,
+        string.format(
+            ", conditionText='%s', conditionType=%s, curCount=%s/%s, isFail=%s, isComplete=%s, shared=%s",
+            tostring(conditionText or ""),
+            tostring(conditionType),
+            tostring(curCount),
+            tostring(newMax),
+            tostring(isFailCondition),
+            tostring(isComplete),
+            tostring(isCreditShared)
+        )
+    )
+    OnQuestChanged(eventCode)
+end
+
+local function OnQuestLogUpdated(eventCode)
+    local journalCount = nil
+    if type(GetNumJournalQuests) == "function" then
+        journalCount = GetNumJournalQuests()
+    end
+    QM_Debug("EVENT_QUEST_LOG_UPDATED: journalCount=%s", tostring(journalCount))
+    OnQuestChanged(eventCode)
+end
+
 local function OnQuestJournalListUpdated()
     local self = QuestModel
     if not self.isInitialized or not playerState.hasActivated then
@@ -593,6 +769,12 @@ local function OnQuestJournalListUpdated()
         snapshotCountBefore = #self.currentSnapshot.quests
     end
 
+    QM_Debug(
+        "QuestModel: QuestListUpdated → rebuilding from QUEST_JOURNAL_MANAGER; journalCount=%s, snapshotCountBefore=%d",
+        tostring(journalCount),
+        snapshotCountBefore
+    )
+
     if IsDebugLoggingEnabled() then
         LogDebug(
             self,
@@ -607,11 +789,18 @@ local function OnQuestJournalListUpdated()
     ForceFullRebuildFromGame(self)
 end
 
-local function OnQuestRemoved(_, ...)
+local function OnQuestRemoved(_, isCompleted, journalIndex, questName)
     local self = QuestModel
     if not self.isInitialized or not playerState.hasActivated then
         return
     end
+
+    LogQuestEvent(
+        "EVENT_QUEST_REMOVED",
+        journalIndex,
+        questName,
+        string.format(", isCompleted=%s", tostring(isCompleted))
+    )
 
     ResetBaseCategoryCache()
 
@@ -620,11 +809,21 @@ local function OnQuestRemoved(_, ...)
     end
 end
 
-local function OnQuestCompleted(_, ...)
+local function OnQuestCompleted(_, questName, level, previousExperience, championPoints, questType, instanceDisplayType)
     local self = QuestModel
     if not self.isInitialized or not playerState.hasActivated then
         return
     end
+
+    QM_Debug(
+        "EVENT_QUEST_COMPLETE: questName='%s', questType=%s, instanceDisplayType=%s, level=%s, xpBefore=%s, cp=%s",
+        tostring(questName or ""),
+        tostring(questType),
+        tostring(instanceDisplayType),
+        tostring(level),
+        tostring(previousExperience),
+        tostring(championPoints)
+    )
 
     ResetBaseCategoryCache()
 
@@ -676,14 +875,10 @@ function QuestModel.Init(opts)
         QuestModel.currentSnapshot = nil
     end
 
-    local eventHandler = function(...)
-        OnQuestChanged(...)
-    end
-
-    RegisterQuestEvent(EVENT_QUEST_ADDED, eventHandler)
-    RegisterQuestEvent(EVENT_QUEST_ADVANCED, eventHandler)
-    RegisterQuestEvent(EVENT_QUEST_CONDITION_COUNTER_CHANGED, eventHandler)
-    RegisterQuestEvent(EVENT_QUEST_LOG_UPDATED, eventHandler)
+    RegisterQuestEvent(EVENT_QUEST_ADDED, OnQuestAdded)
+    RegisterQuestEvent(EVENT_QUEST_ADVANCED, OnQuestAdvanced)
+    RegisterQuestEvent(EVENT_QUEST_CONDITION_COUNTER_CHANGED, OnQuestConditionChanged)
+    RegisterQuestEvent(EVENT_QUEST_LOG_UPDATED, OnQuestLogUpdated)
     RegisterQuestEvent(EVENT_QUEST_REMOVED, OnQuestRemoved)
     RegisterQuestEvent(EVENT_QUEST_COMPLETE, OnQuestCompleted)
     EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. "TRACKING", EVENT_TRACKING_UPDATE, OnTrackingUpdate)
