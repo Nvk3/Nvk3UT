@@ -1649,21 +1649,51 @@ local function CollectQuestEntriesInternal()
     local total = GetNumJournalQuests() or 0
     local questCount = math.min(total, QUEST_LOG_LIMIT)
     for journalIndex = 1, questCount do
+        local questId = GetJournalQuestId and GetJournalQuestId(journalIndex) or nil
+        local questName = nil
         if type(GetJournalQuestInfo) == "function" then
-            local questId = GetJournalQuestId and GetJournalQuestId(journalIndex) or nil
-            local ok, questName = pcall(GetJournalQuestInfo, journalIndex)
+            local ok, name = pcall(GetJournalQuestInfo, journalIndex)
             if ok then
-                QL_Debug("  JournalSlot idx=%d, questId=%s, name='%s'", journalIndex, tostring(questId), tostring(questName or "?"))
+                questName = name
             end
         end
+
+        QL_Debug(
+            "  JournalSlot idx=%d, questId=%s, name='%s', action=seen",
+            journalIndex,
+            tostring(questId),
+            tostring(questName or "?")
+        )
 
         local questEntry = BuildQuestEntry(journalIndex)
         if questEntry then
             quests[#quests + 1] = questEntry
+            local categoryKey = questEntry.meta and questEntry.meta.categoryKey or nil
+            QL_Debug(
+                "  JournalSlot idx=%d, questId=%s, name='%s', action=add, category=%s",
+                journalIndex,
+                tostring(questId),
+                tostring(questName or questEntry.name or "?"),
+                tostring(categoryKey or "?")
+            )
+        else
+            local skipReason = "build_entry_failed"
+            if questName == nil or questName == "" then
+                skipReason = "missing_quest_name"
+            end
+
+            QL_Debug(
+                "  JournalSlot idx=%d, questId=%s, name='%s', action=skip, reason=%s",
+                journalIndex,
+                tostring(questId),
+                tostring(questName or "?"),
+                skipReason
+            )
         end
     end
 
     table.sort(quests, CompareQuestEntries)
+    QL_Debug("CollectQuestEntriesInternal summary: journalCount=%d, built=%d", questCount, #quests)
     return quests
 end
 
