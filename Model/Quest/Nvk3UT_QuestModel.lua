@@ -12,6 +12,8 @@ QuestModel.__index = QuestModel
 local QUEST_MODEL_NAME = addonName .. "QuestModel"
 local EVENT_NAMESPACE = QUEST_MODEL_NAME .. "_Event"
 local REBUILD_IDENTIFIER = QUEST_MODEL_NAME .. "_Rebuild"
+local FORCE_REBUILD_IDENTIFIER = QUEST_MODEL_NAME .. "_ForceRebuild"
+local FORCE_REBUILD_DELAY_MS = 75
 
 local QUEST_SAVED_VARS_NAME = "Nvk3UT_Data_Quests"
 local QUEST_SAVED_VARS_VERSION = 1
@@ -348,11 +350,11 @@ local function ResetBaseCategoryCache()
     end
 end
 
-local function CollectQuestEntries()
+local function CollectQuestEntries(forceFullRebuild)
     -- TEMP SHIM (QMODEL_004): forward quest refresh to QuestList facade.
     local questList = GetQuestListModule()
     if questList and questList.RefreshFromGame then
-        return questList:RefreshFromGame()
+        return questList:RefreshFromGame(forceFullRebuild)
     end
     return {}
 end
@@ -378,8 +380,8 @@ local function BuildSnapshotFromQuests(quests)
     }
 end
 
-local function BuildSnapshot(self)
-    local quests = CollectQuestEntries()
+local function BuildSnapshot(self, forceFullRebuild)
+    local quests = CollectQuestEntries(forceFullRebuild)
     if type(quests) ~= "table" then
         quests = {}
     end
@@ -411,24 +413,28 @@ local function BuildSnapshot(self)
     return snapshot, quests
 end
 
-local function SnapshotsDiffer(previous, current)
+local function SnapshotsDiffer(previous, current, forceFullRebuild)
+    if forceFullRebuild then
+        return true
+    end
+
     if not previous then
         return true
     end
     return previous.signature ~= current.signature
 end
 
-local function PerformRebuild(self)
+local function PerformRebuildFromGame(self, forceFullRebuild)
     if not self.isInitialized or not playerState.hasActivated then
         return false
     end
 
-    local snapshot, quests = BuildSnapshot(self)
+    local snapshot, quests = BuildSnapshot(self, forceFullRebuild)
     if not snapshot then
         return false
     end
 
-    if not SnapshotsDiffer(self.currentSnapshot, snapshot) then
+    if not SnapshotsDiffer(self.currentSnapshot, snapshot, forceFullRebuild) then
         PersistQuests(quests)
         return false
     end
@@ -443,14 +449,21 @@ local function PerformRebuild(self)
             categoryCount = #snapshot.categories.ordered
         end
 
+        local journalCount = nil
+        if type(GetNumJournalQuests) == "function" then
+            journalCount = GetNumJournalQuests()
+        end
+
         LogDebug(
             self,
             string.format(
-                "Rebuild snapshot revision=%d categories=%d quests=%d signature=%s",
-                snapshot.revision,
-                categoryCount,
+                "QuestModel rebuild: journalCount=%s, snapshotCount=%d, categories=%d, revision=%d, signature=%s, force=%s",
+                tostring(journalCount),
                 questCount,
-                tostring(snapshot.signature)
+                categoryCount,
+                snapshot.revision,
+                tostring(snapshot.signature),
+                tostring(forceFullRebuild)
             )
         )
     end
@@ -460,8 +473,16 @@ local function PerformRebuild(self)
     return true
 end
 
+local function PerformRebuild(self)
+    return PerformRebuildFromGame(self, false)
+end
+
 local function ScheduleRebuild(self)
     if not playerState.hasActivated then
+        return
+    end
+
+    if self.pendingForceRebuild then
         return
     end
 
@@ -494,12 +515,48 @@ ForceRebuildInternal = function(self)
         self.pendingRebuild = false
     end
 
-    local updated = PerformRebuild(self)
+    local updated = PerformRebuildFromGame(self, false)
     return updated
 end
 
 QuestModel.ForceRebuild = ForceRebuildInternal
 QuestModel.forceRebuild = ForceRebuildInternal
+
+local function ForceFullRebuildFromGame(self)
+    if not self.isInitialized or not playerState.hasActivated then
+        return false
+    end
+
+    ResetBaseCategoryCache()
+
+    if self.pendingRebuild then
+        EVENT_MANAGER:UnregisterForUpdate(REBUILD_IDENTIFIER)
+        self.pendingRebuild = false
+    end
+
+    if not EVENT_MANAGER then
+        return PerformRebuildFromGame(self, true)
+    end
+
+    EVENT_MANAGER:UnregisterForUpdate(FORCE_REBUILD_IDENTIFIER)
+    self.pendingForceRebuild = true
+
+    EVENT_MANAGER:RegisterForUpdate(
+        FORCE_REBUILD_IDENTIFIER,
+        FORCE_REBUILD_DELAY_MS,
+        function()
+            EVENT_MANAGER:UnregisterForUpdate(FORCE_REBUILD_IDENTIFIER)
+            self.pendingForceRebuild = false
+            PerformRebuildFromGame(self, true)
+        end
+    )
+
+    return true
+end
+
+QuestModel.ForceFullRebuildFromGame = function(self)
+    return ForceFullRebuildFromGame(self or QuestModel)
+end
 
 local function OnQuestChanged(_, ...)
     local self = QuestModel
@@ -509,6 +566,24 @@ local function OnQuestChanged(_, ...)
 
     ResetBaseCategoryCache()
     ScheduleRebuild(self)
+end
+
+local function OnQuestRemoved(_, ...)
+    local self = QuestModel
+    if not self.isInitialized or not playerState.hasActivated then
+        return
+    end
+
+    ForceFullRebuildFromGame(self)
+end
+
+local function OnQuestCompleted(_, ...)
+    local self = QuestModel
+    if not self.isInitialized or not playerState.hasActivated then
+        return
+    end
+
+    ForceFullRebuildFromGame(self)
 end
 
 local function OnTrackingUpdate(eventCode, trackingType)
@@ -550,10 +625,11 @@ function QuestModel.Init(opts)
     end
 
     RegisterQuestEvent(EVENT_QUEST_ADDED, eventHandler)
-    RegisterQuestEvent(EVENT_QUEST_REMOVED, eventHandler)
     RegisterQuestEvent(EVENT_QUEST_ADVANCED, eventHandler)
     RegisterQuestEvent(EVENT_QUEST_CONDITION_COUNTER_CHANGED, eventHandler)
     RegisterQuestEvent(EVENT_QUEST_LOG_UPDATED, eventHandler)
+    RegisterQuestEvent(EVENT_QUEST_REMOVED, OnQuestRemoved)
+    RegisterQuestEvent(EVENT_QUEST_COMPLETE, OnQuestCompleted)
     EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. "TRACKING", EVENT_TRACKING_UPDATE, OnTrackingUpdate)
 
     if playerState.hasActivated then
@@ -575,9 +651,11 @@ function QuestModel.Shutdown()
     UnregisterQuestEvent(EVENT_QUEST_ADVANCED)
     UnregisterQuestEvent(EVENT_QUEST_CONDITION_COUNTER_CHANGED)
     UnregisterQuestEvent(EVENT_QUEST_LOG_UPDATED)
+    UnregisterQuestEvent(EVENT_QUEST_COMPLETE)
     EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "TRACKING", EVENT_TRACKING_UPDATE)
     EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "OnLoaded", EVENT_ADD_ON_LOADED)
     EVENT_MANAGER:UnregisterForUpdate(REBUILD_IDENTIFIER)
+    EVENT_MANAGER:UnregisterForUpdate(FORCE_REBUILD_IDENTIFIER)
     EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "PlayerActivated", EVENT_PLAYER_ACTIVATED)
     bootstrapState.registered = false
     playerState.hasActivated = false
@@ -586,6 +664,7 @@ function QuestModel.Shutdown()
     QuestModel.subscribers = nil
     QuestModel.currentSnapshot = nil
     QuestModel.pendingRebuild = nil
+    QuestModel.pendingForceRebuild = nil
 
     ResetBaseCategoryCache()
 end

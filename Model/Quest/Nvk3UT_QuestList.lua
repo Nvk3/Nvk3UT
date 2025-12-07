@@ -1689,7 +1689,12 @@ function QuestList.BuildOverallSignature(quests)
     return BuildOverallSignatureInternal(quests)
 end
 
-function QuestList:RefreshFromGame()
+function QuestList:RefreshFromGame(forceFullRebuild)
+    if forceFullRebuild then
+        self:ResetCaches()
+        self._lastBuild = nil
+    end
+
     local quests = CollectQuestEntriesInternal()
     self._lastBuild = self._lastBuild or {}
     self._lastBuild.quests = quests
