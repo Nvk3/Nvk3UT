@@ -1,8 +1,8 @@
 ## Title: Nvk3's Ultimate Tracker
 ## Description: Combines Quest, Endeavor, Achievement, Golden Pursuit and Journal enhancements into one customizable tracking window with category control, filtering and full LAM integration.
 ## Author: Nvk3
-## Version: 0.13.14
-## AddOnVersion: 1314
+## Version: 0.13.15
+## AddOnVersion: 1315
 ## APIVersion: 101048
 ## DependsOn: LibAddonMenu-2.0>=41 LibCustomMenu>=730
 ## OptionalDependsOn:
