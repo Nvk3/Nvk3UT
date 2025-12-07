@@ -26,6 +26,13 @@ local function GetDiagnostics()
     return Diagnostics
 end
 
+local function Warn(fmt, ...)
+    local diagnostics = GetDiagnostics()
+    if diagnostics and diagnostics.Warn then
+        pcall(diagnostics.Warn, fmt, ...)
+    end
+end
+
 local function SafeLower(value)
     if value == nil then
         return ""
@@ -1296,6 +1303,10 @@ local function BuildCategoriesIndexInternal(quests)
 
     for index = 1, #quests do
         local quest = quests[index]
+        if not quest then
+            Warn("QuestList: skipping nil quest while building categories (index=%d)", index)
+            goto continue
+        end
         local category = quest.category or {}
         local key = category.key or string.format("unknown:%d", index)
         local categoryEntry = categoriesByKey[key]
@@ -1316,6 +1327,8 @@ local function BuildCategoriesIndexInternal(quests)
             orderedKeys[#orderedKeys + 1] = key
         end
         categoryEntry.quests[#categoryEntry.quests + 1] = quest
+
+        ::continue::
     end
 
     table.sort(orderedKeys, function(left, right)
@@ -1604,7 +1617,12 @@ local function BuildSnapshotFromQuestsInternal(quests)
     end
 
     for index = 1, #quests do
-        quests[index] = NormalizeQuestCategoryDataInternal(quests[index])
+        local quest = quests[index]
+        if quest then
+            quests[index] = NormalizeQuestCategoryDataInternal(quest)
+        else
+            Warn("QuestList: skipping nil quest during normalization (index=%d)", index)
+        end
     end
 
     local snapshot = {
@@ -1618,12 +1636,22 @@ local function BuildSnapshotFromQuestsInternal(quests)
 
     for index = 1, #quests do
         local quest = quests[index]
-        if quest then
+        if not quest then
+            Warn("QuestList: skipping nil quest while indexing (index=%d)", index)
+        else
             if quest.questId then
                 snapshot.questById[quest.questId] = quest
+            else
+                Warn("QuestList: quest missing questId while indexing (index=%d, name=%s)", index, tostring(quest.name))
             end
             if quest.journalIndex then
                 snapshot.questByJournalIndex[quest.journalIndex] = quest
+            else
+                Warn(
+                    "QuestList: quest missing journalIndex while indexing (index=%d, name=%s)",
+                    index,
+                    tostring(quest.name)
+                )
             end
         end
     end

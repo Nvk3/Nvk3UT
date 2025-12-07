@@ -379,14 +379,47 @@ local function BuildSnapshotFromQuests(quests)
 end
 
 local function BuildSnapshot(self)
-    local quests = CollectQuestEntries()
-    if type(quests) ~= "table" then
-        quests = {}
+    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
+
+    local okCollect, questsOrError = pcall(CollectQuestEntries)
+    if not okCollect then
+        if diagnostics and diagnostics.Error then
+            pcall(diagnostics.Error, string.format("[QMODEL] CollectQuestEntries failed: %s", tostring(questsOrError)))
+        end
+        return nil, nil
     end
 
-    local snapshot = BuildSnapshotFromQuests(quests)
+    local quests = questsOrError
+    if type(quests) ~= "table" then
+        if diagnostics and diagnostics.Error then
+            pcall(
+                diagnostics.Error,
+                string.format("[QMODEL] CollectQuestEntries returned non-table (%s)", type(quests))
+            )
+        end
+        return nil, nil
+    end
+
+    local okSnapshot, snapshotOrError = pcall(BuildSnapshotFromQuests, quests)
+    if not okSnapshot then
+        if diagnostics and diagnostics.Error then
+            pcall(
+                diagnostics.Error,
+                string.format("[QMODEL] BuildSnapshotFromQuests failed: %s", tostring(snapshotOrError))
+            )
+        end
+        return nil, quests
+    end
+
+    local snapshot = snapshotOrError
     if not snapshot or type(snapshot) ~= "table" then
-        snapshot = BuildSnapshotFromQuests({})
+        if diagnostics and diagnostics.Error then
+            pcall(
+                diagnostics.Error,
+                string.format("[QMODEL] BuildSnapshotFromQuests returned non-table (%s)", type(snapshot))
+            )
+        end
+        return nil, quests
     end
 
     if type(snapshot.categories) ~= "table" then
@@ -437,6 +470,10 @@ local function PerformRebuild(self)
 
     local snapshot, quests = BuildSnapshot(self)
     if not snapshot then
+        local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
+        if diagnostics and diagnostics.Error then
+            pcall(diagnostics.Error, "[QMODEL] PerformRebuild aborted, snapshot build failed")
+        end
         return false
     end
 
