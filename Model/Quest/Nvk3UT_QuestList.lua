@@ -1303,32 +1303,30 @@ local function BuildCategoriesIndexInternal(quests)
 
     for index = 1, #quests do
         local quest = quests[index]
-        if not quest then
+        if quest then
+            local category = quest.category or {}
+            local key = category.key or string.format("unknown:%d", index)
+            local categoryEntry = categoriesByKey[key]
+            if not categoryEntry then
+                categoryEntry = {
+                    key = key,
+                    name = category.name or "",
+                    order = category.order or 0,
+                    type = category.type,
+                    groupKey = category.groupKey,
+                    groupName = category.groupName,
+                    groupOrder = category.groupOrder,
+                    groupType = category.groupType,
+                    parent = GetCategoryParentCopyInternal(category),
+                    quests = {},
+                }
+                categoriesByKey[key] = categoryEntry
+                orderedKeys[#orderedKeys + 1] = key
+            end
+            categoryEntry.quests[#categoryEntry.quests + 1] = quest
+        else
             Warn("QuestList: skipping nil quest while building categories (index=%d)", index)
-            goto continue
         end
-        local category = quest.category or {}
-        local key = category.key or string.format("unknown:%d", index)
-        local categoryEntry = categoriesByKey[key]
-        if not categoryEntry then
-            categoryEntry = {
-                key = key,
-                name = category.name or "",
-                order = category.order or 0,
-                type = category.type,
-                groupKey = category.groupKey,
-                groupName = category.groupName,
-                groupOrder = category.groupOrder,
-                groupType = category.groupType,
-                parent = GetCategoryParentCopyInternal(category),
-                quests = {},
-            }
-            categoriesByKey[key] = categoryEntry
-            orderedKeys[#orderedKeys + 1] = key
-        end
-        categoryEntry.quests[#categoryEntry.quests + 1] = quest
-
-        ::continue::
     end
 
     table.sort(orderedKeys, function(left, right)

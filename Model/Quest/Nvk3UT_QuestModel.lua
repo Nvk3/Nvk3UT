@@ -451,16 +451,19 @@ local function SnapshotsDiffer(previous, current)
     return previous.signature ~= current.signature
 end
 
-local QUEST_EVENT_NAMES = {
-    [EVENT_QUEST_ADDED] = "EVENT_QUEST_ADDED",
-    [EVENT_QUEST_REMOVED] = "EVENT_QUEST_REMOVED",
-    [EVENT_QUEST_ADVANCED] = "EVENT_QUEST_ADVANCED",
-    [EVENT_QUEST_CONDITION_COUNTER_CHANGED] = "EVENT_QUEST_CONDITION_COUNTER_CHANGED",
-    [EVENT_QUEST_LOG_UPDATED] = "EVENT_QUEST_LOG_UPDATED",
-}
-
 local function ResolveQuestEventName(eventCode)
-    return QUEST_EVENT_NAMES[eventCode] or tostring(eventCode)
+    if eventCode == EVENT_QUEST_ADDED then
+        return "EVENT_QUEST_ADDED"
+    elseif eventCode == EVENT_QUEST_REMOVED then
+        return "EVENT_QUEST_REMOVED"
+    elseif eventCode == EVENT_QUEST_ADVANCED then
+        return "EVENT_QUEST_ADVANCED"
+    elseif eventCode == EVENT_QUEST_CONDITION_COUNTER_CHANGED then
+        return "EVENT_QUEST_CONDITION_COUNTER_CHANGED"
+    elseif eventCode == EVENT_QUEST_LOG_UPDATED then
+        return "EVENT_QUEST_LOG_UPDATED"
+    end
+    return tostring(eventCode)
 end
 
 local function PerformRebuild(self)
