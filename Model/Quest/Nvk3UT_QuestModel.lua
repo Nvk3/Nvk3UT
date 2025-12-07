@@ -435,6 +435,26 @@ local function PerformRebuild(self)
 
     snapshot.revision = (self.currentSnapshot and self.currentSnapshot.revision or 0) + 1
     self.currentSnapshot = snapshot
+
+    if IsDebugLoggingEnabled() then
+        local categoryCount = 0
+        local questCount = snapshot.quests and #snapshot.quests or 0
+        if snapshot.categories and snapshot.categories.ordered then
+            categoryCount = #snapshot.categories.ordered
+        end
+
+        LogDebug(
+            self,
+            string.format(
+                "Rebuild snapshot revision=%d categories=%d quests=%d signature=%s",
+                snapshot.revision,
+                categoryCount,
+                questCount,
+                tostring(snapshot.signature)
+            )
+        )
+    end
+
     PersistQuests(quests)
     NotifySubscribers(self)
     return true

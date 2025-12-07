@@ -149,6 +149,7 @@ local state = {
     pendingRefresh = false,
     contentWidth = 0,
     contentHeight = 0,
+    trackedQuestKey = nil,
     trackedQuestIndex = nil,
     trackedCategoryKeys = {},
     trackingEventsRegistered = false,
@@ -418,7 +419,7 @@ end
 
 local function NormalizeQuestKey(journalIndex)
     if QuestState and QuestState.NormalizeQuestKey then
-        return QuestState.NormalizeQuestKey(journalIndex)
+        return QuestState.NormalizeQuestKey(journalIndex, state and state.snapshot)
     end
 
     if journalIndex == nil then
@@ -448,7 +449,7 @@ local function DetermineQuestColorRole(quest)
         return "entryTitle"
     end
 
-    local questKey = NormalizeQuestKey(quest.journalIndex)
+    local questKey = NormalizeQuestKey(quest.questKey or quest.journalIndex)
     local selected = false
     if questKey and state.selectedQuestKey then
         selected = questKey == state.selectedQuestKey
@@ -477,6 +478,28 @@ local function DetermineQuestColorRole(quest)
     return "entryTitle"
 end
 
+local function ResolveQuestFromSnapshot(questRef)
+    if not state or not state.snapshot then
+        return nil
+    end
+
+    if type(questRef) == "table" and questRef.questKey then
+        return questRef
+    end
+
+    local questKey = NormalizeQuestKey(questRef)
+    if questKey and state.snapshot.questByKey and state.snapshot.questByKey[questKey] then
+        return state.snapshot.questByKey[questKey]
+    end
+
+    local numeric = tonumber(questRef)
+    if numeric and state.snapshot.questByJournalIndex then
+        return state.snapshot.questByJournalIndex[numeric]
+    end
+
+    return nil
+end
+
 local function QuestKeyToJournalIndex(questKey)
     if questKey == nil then
         return nil
@@ -484,6 +507,11 @@ local function QuestKeyToJournalIndex(questKey)
 
     if type(questKey) == "table" and questKey.questKey then
         questKey = questKey.questKey
+    end
+
+    local quest = ResolveQuestFromSnapshot(questKey)
+    if quest and quest.journalIndex then
+        return quest.journalIndex
     end
 
     local numeric = tonumber(questKey)
@@ -562,15 +590,17 @@ local function ForEachQuestIndex(callback)
     end
 end
 
-local function CollectCategoryKeysForQuest(journalIndex)
+local function CollectCategoryKeysForQuest(questKey)
     local keys = {}
-    if not journalIndex then
+    if not questKey then
         return keys, false
     end
 
     local found = false
+    local normalizedKey = NormalizeQuestKey(questKey)
     ForEachQuest(function(quest, category)
-        if quest.journalIndex == journalIndex then
+        local entryKey = NormalizeQuestKey(quest and (quest.questKey or quest.journalIndex))
+        if entryKey and normalizedKey and entryKey == normalizedKey then
             found = true
             if category and category.key then
                 local normalized = NormalizeCategoryKey(category.key)
@@ -716,10 +746,11 @@ local function ApplyActiveQuestFromSaved()
     local questKey = SyncSelectedQuestFromSaved()
     local journalIndex = QuestKeyToJournalIndex(questKey)
 
+    state.trackedQuestKey = questKey
     state.trackedQuestIndex = journalIndex
 
-    if journalIndex then
-        state.trackedCategoryKeys = CollectCategoryKeysForQuest(journalIndex)
+    if questKey then
+        state.trackedCategoryKeys = CollectCategoryKeysForQuest(questKey)
     else
         state.trackedCategoryKeys = {}
     end
@@ -1604,12 +1635,12 @@ local function LogScrollIntoView(questId)
     DebugLog(string.format("SCROLL_INTO_VIEW questId=%s", tostring(questId)))
 end
 
-local function ExpandCategoriesForExternalSelect(journalIndex)
-    if not (state.saved and journalIndex) then
+local function ExpandCategoriesForExternalSelect(questKey)
+    if not (state.saved and questKey) then
         return false, false
     end
 
-    local keys, found = CollectCategoryKeysForQuest(journalIndex)
+    local keys, found = CollectCategoryKeysForQuest(questKey)
     local expandedAny = false
 
     if keys then
@@ -1631,7 +1662,7 @@ local function ExpandCategoriesForExternalSelect(journalIndex)
     end
 
     if (not found) or not keys or next(keys) == nil then
-        LogMissingCategory(journalIndex)
+        LogMissingCategory(questKey)
     end
 
     if expandedAny and RequestRefresh then
@@ -1641,12 +1672,12 @@ local function ExpandCategoriesForExternalSelect(journalIndex)
     return expandedAny, found
 end
 
-local function ExpandCategoriesForClickSelect(journalIndex)
-    if not (state.saved and journalIndex) then
+local function ExpandCategoriesForClickSelect(questKey)
+    if not (state.saved and questKey) then
         return false, false
     end
 
-    local keys, found = CollectCategoryKeysForQuest(journalIndex)
+    local keys, found = CollectCategoryKeysForQuest(questKey)
     local expandedAny = false
 
     if keys then
@@ -1667,7 +1698,7 @@ local function ExpandCategoriesForClickSelect(journalIndex)
     end
 
     if (not found) or not keys or next(keys) == nil then
-        LogMissingCategory(journalIndex)
+        LogMissingCategory(questKey)
     end
 
     if expandedAny and RequestRefresh then
@@ -1683,10 +1714,12 @@ local function FindQuestControlByJournalIndex(journalIndex)
     end
 
     if state.questControls then
-        local numeric = tonumber(journalIndex) or journalIndex
-        local control = state.questControls[numeric]
-        if control then
-            return control
+        local controlKey = NormalizeQuestKey(journalIndex)
+        if controlKey then
+            local control = state.questControls[controlKey]
+            if control then
+                return control
+            end
         end
     end
 
@@ -1694,7 +1727,9 @@ local function FindQuestControlByJournalIndex(journalIndex)
         local control = state.orderedControls[index]
         if control and control.rowType == "quest" then
             local questData = control.data and control.data.quest
-            if questData and questData.journalIndex == journalIndex then
+            local questKey = NormalizeQuestKey(questData and (questData.questKey or questData.journalIndex))
+            local lookupKey = NormalizeQuestKey(journalIndex)
+            if questKey and lookupKey and questKey == lookupKey then
                 return control
             end
         end
@@ -1710,7 +1745,7 @@ local function EnsureQuestRowVisible(journalIndex, options)
     local control = FindQuestControlByJournalIndex(journalIndex)
     if not control or (control.IsHidden and control:IsHidden()) then
         if allowQueue and journalIndex then
-            state.pendingExternalReveal = { questId = journalIndex }
+            state.pendingExternalReveal = { questKey = NormalizeQuestKey(journalIndex) }
         end
         return false
     end
@@ -1718,7 +1753,7 @@ local function EnsureQuestRowVisible(journalIndex, options)
     local host = Nvk3UT and Nvk3UT.TrackerHost
     if not (host and host.ScrollControlIntoView) then
         if allowQueue and journalIndex then
-            state.pendingExternalReveal = { questId = journalIndex }
+            state.pendingExternalReveal = { questKey = NormalizeQuestKey(journalIndex) }
         end
         return false
     end
@@ -1726,7 +1761,7 @@ local function EnsureQuestRowVisible(journalIndex, options)
     local ok, ensured = pcall(host.ScrollControlIntoView, control)
     if not ok or not ensured then
         if allowQueue and journalIndex then
-            state.pendingExternalReveal = { questId = journalIndex }
+            state.pendingExternalReveal = { questKey = NormalizeQuestKey(journalIndex) }
         end
         return false
     end
@@ -1743,7 +1778,7 @@ local function ProcessPendingExternalReveal()
     end
 
     state.pendingExternalReveal = nil
-    EnsureQuestRowVisible(pending.questId, { allowQueue = false })
+    EnsureQuestRowVisible(pending.questKey, { allowQueue = false })
 end
 
 local function DoesJournalQuestExist(journalIndex)
@@ -1780,14 +1815,11 @@ local function GetFocusedQuestIndex()
 end
 
 local function UpdateTrackedQuestCache(forcedIndex, context)
-    local function normalize(index)
-        local numeric = tonumber(index)
-        if not numeric or numeric <= 0 then
-            return nil
-        end
-
-        if DoesJournalQuestExist(numeric) then
-            return numeric
+    local function normalize(key)
+        local questKey = NormalizeQuestKey(key)
+        local resolvedIndex = QuestKeyToJournalIndex(questKey or key)
+        if resolvedIndex and resolvedIndex > 0 and DoesJournalQuestExist(resolvedIndex) then
+            return resolvedIndex
         end
 
         return nil
@@ -1972,7 +2004,7 @@ local function AutoExpandQuestForTracking(journalIndex, forceExpand, context)
         end
     end
 
-    SetQuestExpanded(journalIndex, true, logContext)
+    SetQuestExpanded(questKey, true, logContext)
 end
 
 local function EnsureTrackedCategoriesExpanded(journalIndex, forceExpand, context)
@@ -1988,7 +2020,8 @@ local function EnsureTrackedCategoriesExpanded(journalIndex, forceExpand, contex
         return
     end
 
-    local keys = CollectCategoryKeysForQuest(journalIndex)
+    local questKey = NormalizeQuestKey(journalIndex)
+    local keys = CollectCategoryKeysForQuest(questKey)
     local logContext = {
         trigger = (context and context.trigger) or "auto",
         source = (context and context.source) or "QuestTracker:EnsureTrackedCategoriesExpanded",
@@ -2004,8 +2037,8 @@ local function EnsureTrackedCategoriesExpanded(journalIndex, forceExpand, contex
                     "Category expand skipped",
                     "category",
                     key,
-                    "journalIndex",
-                    journalIndex,
+                    "questKey",
+                    questKey,
                     "trigger",
                     logContext.trigger
                 )
@@ -2018,6 +2051,8 @@ local function EnsureTrackedQuestVisible(journalIndex, forceExpand, context)
     if not journalIndex then
         return
     end
+
+    local questKey = NormalizeQuestKey(journalIndex)
 
     DebugDeselect("EnsureTrackedQuestVisible", {
         journalIndex = journalIndex,
@@ -2034,14 +2069,14 @@ local function EnsureTrackedQuestVisible(journalIndex, forceExpand, context)
     local isNewTarget = context and context.isNewTarget
     if isExternal then
         LogExternalSelect(journalIndex)
-        ExpandCategoriesForExternalSelect(journalIndex)
+        ExpandCategoriesForExternalSelect(questKey)
     else
-        EnsureTrackedCategoriesExpanded(journalIndex, forceExpand, logContext)
+        EnsureTrackedCategoriesExpanded(questKey, forceExpand, logContext)
     end
     if isExternal and isNewTarget then
         logContext.forceWrite = true
     end
-    AutoExpandQuestForTracking(journalIndex, forceExpand, logContext)
+    AutoExpandQuestForTracking(questKey, forceExpand, logContext)
     if isExternal then
         EnsureQuestRowVisible(journalIndex, { allowQueue = true })
     end
@@ -2095,6 +2130,7 @@ local function SyncTrackedQuestState(forcedIndex, forceExpand, context)
                 })
                 if currentTracked == previousTracked then
                     state.trackedQuestIndex = nil
+                    state.trackedQuestKey = nil
                     state.trackedCategoryKeys = {}
                     currentTracked = nil
                 end
@@ -2858,9 +2894,11 @@ local function UpdateQuestIconSlot(control)
     local questData = control.data and control.data.quest
     local isSelected = false
     if questData then
-        local questKey = NormalizeQuestKey(questData.journalIndex)
+        local questKey = NormalizeQuestKey(questData.questKey or questData.journalIndex)
         if questKey and state.selectedQuestKey then
             isSelected = questKey == state.selectedQuestKey
+        elseif state.trackedQuestKey then
+            isSelected = questKey == state.trackedQuestKey
         elseif state.trackedQuestIndex then
             isSelected = questData.journalIndex == state.trackedQuestIndex
         end
@@ -3208,8 +3246,8 @@ local function AcquireQuestControl()
                 if not questData then
                     return
                 end
-                local journalIndex = questData.journalIndex
-                ToggleQuestExpansion(journalIndex, {
+                local questKey = NormalizeQuestKey(questData.questKey or questData.journalIndex)
+                ToggleQuestExpansion(questKey, {
                     trigger = "click",
                     source = "QuestTracker:OnToggleClick",
                 })
@@ -3234,6 +3272,7 @@ local function AcquireQuestControl()
                     return
                 end
                 local journalIndex = questData.journalIndex
+                local questKey = NormalizeQuestKey(questData.questKey or journalIndex)
                 local toggleMouseOver = false
                 if ctrl.iconSlot then
                     local toggleIsMouseOver = ctrl.iconSlot.IsMouseOver
@@ -3243,7 +3282,7 @@ local function AcquireQuestControl()
                 end
 
                 if toggleMouseOver then
-                    ToggleQuestExpansion(journalIndex, {
+                    ToggleQuestExpansion(questKey, {
                         trigger = "click",
                         source = "QuestTracker:OnRowClickToggle",
                     })
@@ -3251,14 +3290,14 @@ local function AcquireQuestControl()
                 end
 
                 if state.opts.autoTrack == false then
-                    ToggleQuestExpansion(journalIndex, {
+                    ToggleQuestExpansion(questKey, {
                         trigger = "click",
                         source = "QuestTracker:OnRowClickManualToggle",
                     })
                     return
                 end
 
-                HandleQuestRowClick(journalIndex)
+                HandleQuestRowClick(questKey)
             elseif button == MOUSE_BUTTON_INDEX_RIGHT then
                 local questData = ctrl.data and ctrl.data.quest
                 if not questData then
@@ -3403,8 +3442,8 @@ local function LayoutQuest(quest)
     local r, g, b, a = GetQuestTrackerColor(colorRole)
     ApplyBaseColor(control, r, g, b, a)
 
-    local questKey = NormalizeQuestKey(quest.journalIndex)
-    local expanded = IsQuestExpanded(quest.journalIndex)
+    local questKey = NormalizeQuestKey(quest.questKey or quest.journalIndex)
+    local expanded = IsQuestExpanded(questKey)
     if IsDebugLoggingEnabled() then
         DebugLog(string.format(
             "BUILD_APPLY quest=%s expanded=%s",
@@ -3424,8 +3463,11 @@ local function LayoutQuest(quest)
     control:SetHidden(false)
     AnchorControl(control, QUEST_INDENT_X)
 
-    if quest and quest.journalIndex then
-        state.questControls[quest.journalIndex] = control
+    if quest then
+        local controlKey = NormalizeQuestKey(quest.questKey or quest.journalIndex)
+        if controlKey then
+            state.questControls[controlKey] = control
+        end
     end
 
     if expanded then
@@ -3503,8 +3545,11 @@ local function ReleaseRowControl(control)
         end
     elseif rowType == "quest" then
         local questData = control.data and control.data.quest
-        if questData and questData.journalIndex then
-            state.questControls[questData.journalIndex] = nil
+        if questData then
+            local controlKey = NormalizeQuestKey(questData.questKey or questData.journalIndex)
+            if controlKey then
+                state.questControls[controlKey] = nil
+            end
         end
         if state.questPool and control.poolKey then
             state.questPool:ReleaseObject(control.poolKey)
@@ -3596,6 +3641,10 @@ end
 local function ApplySnapshot(snapshot, context)
     state.snapshot = snapshot
 
+    if QuestState and QuestState.ApplySnapshot then
+        QuestState.ApplySnapshot(snapshot)
+    end
+
     if IsDebugLoggingEnabled() then
         local categoryCount = 0
         local questCount = 0
@@ -3676,6 +3725,24 @@ local function OnQuestModelSnapshotUpdated(snapshot, context)
             newQuests,
             tostring(previousHeight),
             tostring(state.contentHeight)
+        )
+
+        local activeKey = state.selectedQuestKey or (state.saved and state.saved.active and state.saved.active.questKey)
+        local activeQuest = activeKey and ResolveQuestFromSnapshot(activeKey)
+        local trackedIndex = state.trackedQuestIndex
+        if not trackedIndex and GetTrackedQuestIndex then
+            local ok, tracked = SafeCall(GetTrackedQuestIndex)
+            if ok then
+                trackedIndex = tracked
+            end
+        end
+
+        DebugLog(
+            "OnQuestModelSnapshotUpdated: activeKey=%s questId=%s journalIndex=%s trackedIndex=%s",
+            tostring(activeKey),
+            tostring(activeQuest and activeQuest.questId),
+            tostring(activeQuest and activeQuest.journalIndex),
+            tostring(trackedIndex)
         )
     end
 end
@@ -3858,6 +3925,7 @@ function QuestTracker.Shutdown()
     state.pendingRefresh = false
     state.contentWidth = 0
     state.contentHeight = 0
+    state.trackedQuestKey = nil
     state.trackedQuestIndex = nil
     state.trackedCategoryKeys = {}
     state.trackingEventsRegistered = false
@@ -3951,6 +4019,13 @@ function QuestTracker.ApplyBaseQuestTrackerVisibility()
         tracker:SetHidden(shouldHide)
     end
 end
+
+-- Manual test plan:
+-- * With fresh SavedVariables, accept and complete quests quickly and confirm the tracker stays in sync without missing entries.
+-- * With existing SavedVariables from before questKey migration, turn in several quests and verify the active quest and category
+--   expansion state remain correct.
+-- * Enable debug mode and watch the quest model/tracker logs to ensure snapshot quest counts align with the base game after
+--   rapid quest turn-ins.
 
 Nvk3UT.QuestTracker = QuestTracker
 

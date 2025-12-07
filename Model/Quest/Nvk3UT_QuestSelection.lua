@@ -19,6 +19,18 @@ local function GetQuestStateModule()
     return Nvk3UT and Nvk3UT.QuestState
 end
 
+local function GetSnapshot()
+    local questModel = Nvk3UT and Nvk3UT.QuestModel
+    if questModel and type(questModel.GetSnapshot) == "function" then
+        local ok, snapshot = pcall(questModel.GetSnapshot)
+        if ok then
+            return snapshot
+        end
+    end
+
+    return nil
+end
+
 local function GetCurrentTimeSeconds()
     local questState = GetQuestStateModule()
     if questState and questState.GetCurrentTimeSeconds then
@@ -52,7 +64,7 @@ end
 local function NormalizeQuestKey(journalIndex)
     local questState = GetQuestStateModule()
     if questState and questState.NormalizeQuestKey then
-        return questState.NormalizeQuestKey(journalIndex)
+        return questState.NormalizeQuestKey(journalIndex, GetSnapshot())
     end
 
     if journalIndex == nil then

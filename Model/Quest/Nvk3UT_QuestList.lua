@@ -1500,6 +1500,20 @@ local function CompareQuestEntries(left, right)
     return left.journalIndex < right.journalIndex
 end
 
+local function BuildQuestKey(questId, journalQuestIndex)
+    if questId then
+        return tostring(questId)
+    end
+
+    -- Fallback for rare cases where questId is unavailable; this is intentionally
+    -- tied to the current journal index and should be treated as unstable.
+    if journalQuestIndex then
+        return string.format("journal:%s", tostring(journalQuestIndex))
+    end
+
+    return nil
+end
+
 local function BuildQuestEntry(journalQuestIndex)
     local questName, backgroundText, activeStepText, activeStepType, questLevel, zoneName, questType, instanceDisplayType, isRepeatable, isDaily, questDescription, displayType = GetJournalQuestInfo(journalQuestIndex)
     if not questName or questName == "" then
@@ -1528,9 +1542,12 @@ local function BuildQuestEntry(journalQuestIndex)
 
     local category = ResolveQuestCategoryInternal(journalQuestIndex, questType, displayType, isRepeatable, isDaily)
 
+    local questKey = BuildQuestKey(questId, journalQuestIndex)
+
     local questEntry = {
         journalIndex = journalQuestIndex,
         questId = questId,
+        questKey = questKey,
         name = questName,
         backgroundText = backgroundText,
         activeStepText = activeStepText,
@@ -1614,11 +1631,15 @@ local function BuildSnapshotFromQuestsInternal(quests)
         signature = BuildOverallSignatureInternal(quests),
         questById = {},
         questByJournalIndex = {},
+        questByKey = {},
     }
 
     for index = 1, #quests do
         local quest = quests[index]
         if quest then
+            if quest.questKey then
+                snapshot.questByKey[quest.questKey] = quest
+            end
             if quest.questId then
                 snapshot.questById[quest.questId] = quest
             end
@@ -1716,6 +1737,7 @@ function QuestList:BuildSnapshotFromQuests(quests)
     self._lastBuild = self._lastBuild or {}
     self._lastBuild.quests = snapshot.quests
     self._lastBuild.questByJournalIndex = snapshot.questByJournalIndex
+    self._lastBuild.questByKey = snapshot.questByKey
     self._lastBuild.categories = snapshot.categories
     self._lastBuild.signature = snapshot.signature
     self._lastBuild.updatedAtMs = snapshot.updatedAtMs

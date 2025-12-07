@@ -61,27 +61,90 @@ local function NormalizeCategoryKey(categoryKey)
     return tostring(categoryKey)
 end
 
-local function NormalizeQuestKey(journalIndex)
-    if journalIndex == nil then
+local lastSnapshot
+
+local function GetSnapshot(candidate)
+    if candidate ~= nil then
+        return candidate
+    end
+
+    if lastSnapshot ~= nil then
+        return lastSnapshot
+    end
+
+    local questModel = Nvk3UT and Nvk3UT.QuestModel
+    if questModel and type(questModel.GetSnapshot) == "function" then
+        local ok, snapshot = pcall(questModel.GetSnapshot)
+        if ok then
+            lastSnapshot = snapshot
+            return snapshot
+        end
+    end
+
+    return nil
+end
+
+local function NormalizeQuestKey(questRef, snapshot)
+    if questRef == nil then
         return nil
     end
 
-    if type(journalIndex) == "string" then
-        local numeric = tonumber(journalIndex)
+    if type(questRef) == "table" then
+        if questRef.questKey ~= nil then
+            return tostring(questRef.questKey)
+        end
+
+        if questRef.questId ~= nil then
+            return tostring(questRef.questId)
+        end
+
+        if questRef.journalIndex ~= nil then
+            return NormalizeQuestKey(questRef.journalIndex, snapshot)
+        end
+    end
+
+    local resolvedSnapshot = GetSnapshot(snapshot)
+    local candidate = questRef
+
+    if type(candidate) == "string" then
+        local numeric = tonumber(candidate)
+        if resolvedSnapshot then
+            if resolvedSnapshot.questByKey and resolvedSnapshot.questByKey[candidate] then
+                return resolvedSnapshot.questByKey[candidate].questKey or candidate
+            end
+
+            if numeric and resolvedSnapshot.questByJournalIndex then
+                local quest = resolvedSnapshot.questByJournalIndex[numeric]
+                if quest and quest.questKey then
+                    return tostring(quest.questKey)
+                end
+            end
+        end
+
         if numeric and numeric > 0 then
             return tostring(numeric)
         end
-        return journalIndex
+
+        return candidate
     end
 
-    if type(journalIndex) == "number" then
-        if journalIndex > 0 then
-            return tostring(journalIndex)
+    if type(candidate) == "number" then
+        local numeric = math.floor(candidate + 0.5)
+        if numeric > 0 and resolvedSnapshot and resolvedSnapshot.questByJournalIndex then
+            local quest = resolvedSnapshot.questByJournalIndex[numeric]
+            if quest and quest.questKey then
+                return tostring(quest.questKey)
+            end
         end
+
+        if numeric > 0 then
+            return tostring(numeric)
+        end
+
         return nil
     end
 
-    return tostring(journalIndex)
+    return tostring(candidate)
 end
 
 local function EnsureSavedDefaults(target)
@@ -156,6 +219,64 @@ local function MigrateLegacySavedState(target)
     end
 
     EnsureSavedDefaults(target)
+end
+
+local migrationState = { attempted = false }
+
+local function MigrateSavedQuestKeys(snapshot)
+    if migrationState.attempted then
+        return false
+    end
+
+    if not saved then
+        return false
+    end
+
+    local resolvedSnapshot = GetSnapshot(snapshot)
+    if not (resolvedSnapshot and resolvedSnapshot.questByKey and resolvedSnapshot.questByJournalIndex) then
+        return false
+    end
+
+    migrationState.attempted = true
+
+    local changed = false
+
+    local questTable = saved.quest
+    if type(questTable) == "table" then
+        local migrated = {}
+        for key, entry in pairs(questTable) do
+            local normalized = NormalizeQuestKey(key, resolvedSnapshot)
+            if normalized and resolvedSnapshot.questByKey[normalized] then
+                migrated[normalized] = entry
+                if normalized ~= key then
+                    changed = true
+                end
+            else
+                changed = true
+            end
+        end
+        saved.quest = migrated
+    end
+
+    local active = EnsureActiveSavedStateFallback(saved)
+    if active then
+        local normalized = NormalizeQuestKey(active.questKey, resolvedSnapshot)
+        if normalized and resolvedSnapshot.questByKey[normalized] then
+            if normalized ~= active.questKey then
+                active.questKey = normalized
+                changed = true
+            end
+        else
+            if active.questKey ~= nil then
+                active.questKey = nil
+                changed = true
+            end
+        end
+    end
+
+    lastSnapshot = resolvedSnapshot
+
+    return changed
 end
 
 local function EnsureActiveSavedStateFallback(target)
@@ -329,6 +450,7 @@ function QuestState.Bind(root)
 
     EnsureSavedTables(questTracker)
     EnsureSavedDefaults(questTracker)
+    MigrateSavedQuestKeys()
 
     local questSelection = GetQuestSelectionModule()
     if questSelection and questSelection.EnsureActiveSavedState then
@@ -361,6 +483,11 @@ end
 
 function QuestState.NormalizeQuestKey(journalIndex)
     return NormalizeQuestKey(journalIndex)
+end
+
+function QuestState.ApplySnapshot(snapshot)
+    lastSnapshot = snapshot or lastSnapshot
+    return MigrateSavedQuestKeys(snapshot)
 end
 
 -- TEMP SHIM (QMODEL_002): TODO remove on SWITCH token; forwards active-state ensures to QuestSelection.
