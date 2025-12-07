@@ -3686,6 +3686,14 @@ local function Rebuild()
         DebugLog("REBUILD_START")
     end
 
+    local questModel = Nvk3UT and Nvk3UT.QuestModel
+    if questModel and questModel.GetSnapshot then
+        local latest = questModel.GetSnapshot()
+        if latest then
+            state.snapshot = latest
+        end
+    end
+
     state.isRebuildInProgress = true
     ApplyActiveQuestFromSaved()
 
