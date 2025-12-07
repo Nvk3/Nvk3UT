@@ -418,6 +418,18 @@ local function SnapshotsDiffer(previous, current)
     return previous.signature ~= current.signature
 end
 
+local QUEST_EVENT_NAMES = {
+    [EVENT_QUEST_ADDED] = "EVENT_QUEST_ADDED",
+    [EVENT_QUEST_REMOVED] = "EVENT_QUEST_REMOVED",
+    [EVENT_QUEST_ADVANCED] = "EVENT_QUEST_ADVANCED",
+    [EVENT_QUEST_CONDITION_COUNTER_CHANGED] = "EVENT_QUEST_CONDITION_COUNTER_CHANGED",
+    [EVENT_QUEST_LOG_UPDATED] = "EVENT_QUEST_LOG_UPDATED",
+}
+
+local function ResolveQuestEventName(eventCode)
+    return QUEST_EVENT_NAMES[eventCode] or tostring(eventCode)
+end
+
 local function PerformRebuild(self)
     if not self.isInitialized or not playerState.hasActivated then
         return false
@@ -435,6 +447,40 @@ local function PerformRebuild(self)
 
     snapshot.revision = (self.currentSnapshot and self.currentSnapshot.revision or 0) + 1
     self.currentSnapshot = snapshot
+
+    if IsDebugLoggingEnabled() then
+        local questCount = (snapshot.quests and #snapshot.quests) or 0
+        local categoryCount = 0
+        if snapshot.categories and snapshot.categories.ordered then
+            categoryCount = #snapshot.categories.ordered
+        end
+
+        LogDebug(
+            self,
+            string.format(
+                "[QMODEL] Snapshot rebuilt: quests=%d, categories=%d, signature=%s",
+                questCount,
+                categoryCount,
+                tostring(snapshot.signature)
+            )
+        )
+
+        if snapshot.quests then
+            for index = 1, #snapshot.quests do
+                local quest = snapshot.quests[index]
+                LogDebug(
+                    self,
+                    string.format(
+                        "[QMODEL] quest #%d jIdx=%s id=%s name=%s",
+                        index,
+                        tostring(quest and quest.journalIndex),
+                        tostring(quest and quest.questId),
+                        tostring(quest and quest.name)
+                    )
+                )
+            end
+        end
+    end
 
     if IsDebugLoggingEnabled() then
         local questList = GetQuestListModule()
@@ -503,6 +549,30 @@ local function OnQuestChanged(eventCode, ...)
     local self = QuestModel
     if not self.isInitialized or not playerState.hasActivated then
         return
+    end
+
+    if IsDebugLoggingEnabled() then
+        local journalIndex = select(1, ...)
+        local questName = nil
+
+        if journalIndex and GetJournalQuestInfo then
+            local ok, name = pcall(GetJournalQuestInfo, journalIndex)
+            if ok then
+                questName = name
+            end
+        end
+
+        LogDebug(
+            self,
+            string.format(
+                "[QMODEL] OnQuestChanged event=%s journalIndex=%s arg2=%s arg3=%s questName=%s",
+                ResolveQuestEventName(eventCode),
+                tostring(journalIndex),
+                tostring(select(2, ...)),
+                tostring(select(3, ...)),
+                tostring(questName)
+            )
+        )
     end
 
     ResetBaseCategoryCache()

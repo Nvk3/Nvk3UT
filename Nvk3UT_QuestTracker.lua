@@ -165,6 +165,9 @@ local state = {
     questModelSubscription = nil,
 }
 
+local activeCategoryContext = nil
+local renderedQuestCount = nil
+
 local PRIORITY = {
     manual = 5,
     ["click-select"] = 4,
@@ -3374,10 +3377,20 @@ local function LayoutQuest(quest)
     local expanded = IsQuestExpanded(quest.journalIndex)
     if IsDebugLoggingEnabled() then
         DebugLog(string.format(
+            "[QTRACKER] render quest jIdx=%s id=%s name=%s category=%s",
+            tostring(quest and quest.journalIndex),
+            tostring(quest and quest.questId),
+            tostring(quest and quest.name),
+            tostring(activeCategoryContext and (activeCategoryContext.key or activeCategoryContext.name))
+        ))
+        DebugLog(string.format(
             "BUILD_APPLY quest=%s expanded=%s",
             tostring(questKey or quest.journalIndex),
             tostring(expanded)
         ))
+    end
+    if renderedQuestCount ~= nil then
+        renderedQuestCount = renderedQuestCount + 1
     end
     UpdateQuestIconSlot(control)
     ApplyRowMetrics(
@@ -3447,11 +3460,14 @@ local function LayoutCategory(category)
     control:SetHidden(false)
     AnchorControl(control, CATEGORY_INDENT_X)
 
+    local previousCategoryContext = activeCategoryContext
+    activeCategoryContext = category
     if expanded then
         for index = 1, count do
             LayoutQuest(category.quests[index])
         end
     end
+    activeCategoryContext = previousCategoryContext
 end
 
 local function ReleaseRowControl(control)
@@ -3694,6 +3710,22 @@ local function Rebuild()
         end
     end
 
+    local snapshot = state.snapshot
+    local snapshotQuestCount = snapshot and snapshot.quests and #snapshot.quests or 0
+    local snapshotCategoryCount = 0
+    if snapshot and snapshot.categories and snapshot.categories.ordered then
+        snapshotCategoryCount = #snapshot.categories.ordered
+    end
+    renderedQuestCount = 0
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format(
+            "[QTRACKER] Rebuild start: snapshotQuests=%d, snapshotCategories=%d",
+            snapshotQuestCount,
+            snapshotCategoryCount
+        ))
+    end
+
     state.isRebuildInProgress = true
     ApplyActiveQuestFromSaved()
 
@@ -3709,6 +3741,7 @@ local function Rebuild()
         NotifyHostContentChanged()
         state.isRebuildInProgress = false
         if IsDebugLoggingEnabled() then
+            DebugLog(string.format("[QTRACKER] Rebuild done: renderedQuests=%d", renderedQuestCount or 0))
             DebugLog("REBUILD_END")
         end
         return
@@ -3730,6 +3763,7 @@ local function Rebuild()
     state.isRebuildInProgress = false
 
     if IsDebugLoggingEnabled() then
+        DebugLog(string.format("[QTRACKER] Rebuild done: renderedQuests=%d", renderedQuestCount or 0))
         DebugLog("REBUILD_END")
     end
 end
