@@ -643,12 +643,17 @@ local function getCornerPosition()
 end
 
 local function isCornerButtonEnabled()
-    local hostSettings = getHostSettings()
+    local hostSettings = state and state.hostSettings
+    if not hostSettings then
+        local sv = getSavedVars()
+        hostSettings = sv and sv.Settings and sv.Settings.Host
+    end
+
     if hostSettings and hostSettings.CornerButtonEnabled ~= nil then
         return hostSettings.CornerButtonEnabled ~= false
     end
 
-    return DEFAULT_HOST_SETTINGS.CornerButtonEnabled ~= false
+    return true
 end
 
 local function getHostSettings()
