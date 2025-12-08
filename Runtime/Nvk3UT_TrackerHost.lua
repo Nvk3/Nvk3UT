@@ -644,15 +644,11 @@ end
 
 local function isCornerButtonEnabled()
     local hostSettings = getHostSettings()
-    if not hostSettings then
-        return false
+    if hostSettings and hostSettings.CornerButtonEnabled ~= nil then
+        return hostSettings.CornerButtonEnabled ~= false
     end
 
-    if hostSettings.CornerButtonEnabled == nil then
-        return DEFAULT_HOST_SETTINGS.CornerButtonEnabled
-    end
-
-    return hostSettings.CornerButtonEnabled ~= false
+    return DEFAULT_HOST_SETTINGS.CornerButtonEnabled ~= false
 end
 
 local function getHostSettings()
