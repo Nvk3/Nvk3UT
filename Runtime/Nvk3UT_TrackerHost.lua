@@ -648,6 +648,10 @@ local function isCornerButtonEnabled()
         return false
     end
 
+    if hostSettings.CornerButtonEnabled == nil then
+        return DEFAULT_HOST_SETTINGS.CornerButtonEnabled
+    end
+
     return hostSettings.CornerButtonEnabled ~= false
 end
 
@@ -2876,7 +2880,16 @@ ensureCornerButton = function()
         return
     end
 
+    local enabled = isCornerButtonEnabled()
     local button = state.cornerButton
+
+    if not enabled then
+        if button then
+            button:SetHidden(true)
+        end
+        return
+    end
+
     if not button then
         button = WINDOW_MANAGER:CreateControl(nil, state.root, CT_BUTTON)
         if not button then
