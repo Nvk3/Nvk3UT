@@ -148,14 +148,14 @@ local DEFAULT_HOST_SETTINGS = {
     CornerPosition = "TOP_RIGHT",
 }
 
-local CORNER_BUTTON_SIZE = 26
+local CORNER_BUTTON_SIZE = 32
 local COLLAPSED_MIN_WIDTH = 64
 local COLLAPSED_MIN_HEIGHT = 48
 local DEFAULT_CORNER_POSITION = "TOP_RIGHT"
 local CORNER_TEXTURES = {
-    normal = "EsoUI/Art/ChatWindow/chat_minimize_up.dds",
-    hover = "EsoUI/Art/ChatWindow/chat_minimize_over.dds",
-    pressed = "EsoUI/Art/ChatWindow/chat_minimize_down.dds",
+    normal = "EsoUI/Art/Buttons/tree_closed_up.dds",
+    hover = "EsoUI/Art/Buttons/tree_closed_over.dds",
+    pressed = "EsoUI/Art/Buttons/tree_closed_over.dds",
 }
 local CORNER_ROTATIONS = {
     TOP_RIGHT = math.rad(225),
