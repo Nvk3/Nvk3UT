@@ -3203,44 +3203,56 @@ local function createScrollContainer()
     if scrollContent.SetResizeToFitDescendents then
         scrollContent:SetResizeToFitDescendents(false)
     end
+
     local scrollbar = scrollContainer:GetNamedChild("ScrollBar")
     if scrollbar then
         if scrollbar.SetName then
             scrollbar:SetName(SCROLLBAR_NAME)
         end
-    else
+    elseif not createdFromTemplate then
         scrollbar = WINDOW_MANAGER:CreateControl(SCROLLBAR_NAME, scrollContainer, CT_SCROLLBAR)
     end
 
-    scrollbar:SetMouseEnabled(true)
-    scrollbar:ClearAnchors()
-    scrollbar:SetAnchor(TOPRIGHT, scrollContainer, TOPRIGHT, 0, 0)
-    scrollbar:SetAnchor(BOTTOMRIGHT, scrollContainer, BOTTOMRIGHT, 0, 0)
-    if scrollbar.SetWidth then
-        scrollbar:SetWidth(SCROLLBAR_WIDTH)
-    end
-    if scrollbar.SetHidden then
-        scrollbar:SetHidden(true)
-    end
-    if scrollbar.SetAllowDragging then
-        scrollbar:SetAllowDragging(true)
-    end
-    if scrollbar.SetStep then
-        scrollbar:SetStep(32)
-    end
-    if scrollbar.SetValue then
-        scrollbar:SetValue(0)
-    end
-    if scrollbar.SetMinMax then
-        scrollbar:SetMinMax(0, 0)
+    if scrollbar then
+        scrollbar:SetMouseEnabled(true)
+        if not createdFromTemplate then
+            scrollbar:ClearAnchors()
+            scrollbar:SetAnchor(TOPRIGHT, scrollContainer, TOPRIGHT, 0, 0)
+            scrollbar:SetAnchor(BOTTOMRIGHT, scrollContainer, BOTTOMRIGHT, 0, 0)
+            if scrollbar.SetWidth then
+                scrollbar:SetWidth(SCROLLBAR_WIDTH)
+            end
+        end
+        if createdFromTemplate and not scrollbar.GetName then
+            debugLog("TrackerHost: Scrollbar from template is missing expected API")
+        end
+        if scrollbar.SetHidden then
+            scrollbar:SetHidden(true)
+        end
+        if scrollbar.SetAllowDragging then
+            scrollbar:SetAllowDragging(true)
+        end
+        if scrollbar.SetStep then
+            scrollbar:SetStep(32)
+        end
+        if scrollbar.SetValue then
+            scrollbar:SetValue(0)
+        end
+        if scrollbar.SetMinMax then
+            scrollbar:SetMinMax(0, 0)
+        end
+
+        scrollbar:SetHandler("OnValueChanged", function(_, value)
+            if state.updatingScrollbar then
+                return
+            end
+            setScrollOffset(value, true)
+        end)
     end
 
-    scrollbar:SetHandler("OnValueChanged", function(_, value)
-        if state.updatingScrollbar then
-            return
-        end
-        setScrollOffset(value, true)
-    end)
+    if createdFromTemplate and not scrollbar then
+        debugLog("TrackerHost: ZO_ScrollContainer template missing ScrollBar child")
+    end
 
     scrollContainer:SetHandler("OnMouseWheel", function(_, delta)
         adjustScroll(delta)
@@ -4152,14 +4164,6 @@ local function applyWindowTopmost()
         end
     end
 
-    if state.scrollbar then
-        if state.scrollbar.SetDrawLayer then
-            state.scrollbar:SetDrawLayer(onTop and DL_OVERLAY or DL_BACKGROUND)
-        end
-        if state.scrollbar.SetDrawTier then
-            state.scrollbar:SetDrawTier(onTop and DT_HIGH or DT_LOW)
-        end
-    end
 end
 
 local function applyWindowSettings()
