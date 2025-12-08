@@ -408,6 +408,7 @@ local ensureCornerButton
 local refreshCornerButton
 local applyCollapsedVisibility
 local updateCornerButtonVisualState
+local applyWindowLock
 
 local function getSavedVars()
     return Nvk3UT and Nvk3UT.sv
@@ -2639,11 +2640,6 @@ local function applyLayoutConstraints()
     local maxWidth = layout.maxWidth
     local maxHeight = layout.maxHeight
 
-    if state.collapsed then
-        minWidth = math.min(minWidth, COLLAPSED_MIN_WIDTH)
-        minHeight = math.min(minHeight, COLLAPSED_MIN_HEIGHT)
-    end
-
     if maxWidth and maxHeight then
         state.root:SetDimensionConstraints(minWidth, minHeight, maxWidth, maxHeight)
     else
@@ -2673,10 +2669,6 @@ local function updateWindowGeometry()
     local targetHeight = tonumber(state.window.height) or DEFAULT_WINDOW.height
 
     local collapsed = state.collapsed == true
-    if collapsed then
-        minWidth = math.min(minWidth, COLLAPSED_MIN_WIDTH)
-        minHeight = math.min(minHeight, COLLAPSED_MIN_HEIGHT)
-    end
     targetWidth = clamp(targetWidth, minWidth, maxWidth)
     targetHeight = clamp(targetHeight, minHeight, maxHeight)
 
@@ -2690,35 +2682,8 @@ local function updateWindowGeometry()
         targetHeight = clamp(desiredHeight, minHeight, maxHeight)
     end
 
-    if collapsed then
-        if not state.expandedWindowSize then
-            state.expandedWindowSize = {
-                width = targetWidth,
-                height = targetHeight,
-            }
-        end
-
-        local collapsedWidth = math.max(
-            COLLAPSED_MIN_WIDTH,
-            RESIZE_BORDER_THICKNESS * 2 + CORNER_BUTTON_SIZE + (padding * 2)
-        )
-        local collapsedHeight = math.max(
-            COLLAPSED_MIN_HEIGHT,
-            RESIZE_BORDER_THICKNESS * 2 + CORNER_BUTTON_SIZE + (padding * 2)
-        )
-
-        targetWidth = clamp(collapsedWidth, RESIZE_BORDER_THICKNESS * 2, maxWidth)
-        targetHeight = clamp(collapsedHeight, RESIZE_BORDER_THICKNESS * 2, maxHeight)
-    else
-        if state.expandedWindowSize then
-            state.window.width = state.expandedWindowSize.width or targetWidth
-            state.window.height = state.expandedWindowSize.height or targetHeight
-            state.expandedWindowSize = nil
-        else
-            state.window.width = targetWidth
-            state.window.height = targetHeight
-        end
-    end
+    state.window.width = targetWidth
+    state.window.height = targetHeight
 
     applyLayoutConstraints()
 
@@ -2941,6 +2906,12 @@ ensureCornerButton = function()
             texture:SetAnchorFill()
             texture:SetTexture(CORNER_TEXTURES.normal)
             texture:SetColor(1, 1, 1, 0.9)
+            if texture.SetDrawLayer then
+                texture:SetDrawLayer(DL_OVERLAY)
+                texture:SetDrawTier(DT_MEDIUM)
+                texture:SetDrawLevel(3)
+            end
+            texture:SetHidden(false)
             state.cornerTexture = texture
         end
 
@@ -4156,7 +4127,7 @@ local function updateSectionLayout()
     anchorContainers()
 end
 
-local function applyWindowLock()
+applyWindowLock = function()
     if not (state.root and state.window) then
         return
     end
