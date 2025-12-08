@@ -2014,6 +2014,63 @@ local function EnsureTrackedCategoriesExpanded(journalIndex, forceExpand, contex
     end
 end
 
+-- Collapse all non-target categories when the active quest changes,
+-- if the LAM setting is enabled.
+local function CollapseNonActiveCategoriesForQuest(journalIndex, context)
+    if not (state and state.snapshot and state.snapshot.categories and state.snapshot.categories.ordered) then
+        return
+    end
+
+    -- Only active if the LAM option is enabled
+    if not state.opts or not state.opts.collapseOtherCategoriesOnActiveChange then
+        return
+    end
+
+    if not journalIndex or journalIndex <= 0 then
+        return
+    end
+
+    -- Use the same helper as EnsureTrackedCategoriesExpanded to find all category keys for this quest
+    local keys = CollectCategoryKeysForQuest(journalIndex)
+    if not keys or next(keys) == nil then
+        return
+    end
+
+    local ordered = state.snapshot.categories.ordered
+    if type(ordered) ~= "table" then
+        return
+    end
+
+    local debugEnabled = IsDebugLoggingEnabled()
+    local trigger = (context and context.trigger) or "auto"
+    local source = (context and context.source) or "QuestTracker:CollapseNonActiveCategoriesForQuest"
+
+    for index = 1, #ordered do
+        local category = ordered[index]
+        local catKey = category and NormalizeCategoryKey(category.key)
+        if catKey then
+            local shouldBeExpanded = keys[catKey] == true
+            local beforeExpanded = IsCategoryExpanded(catKey)
+
+            if beforeExpanded ~= shouldBeExpanded then
+                local changed = SetCategoryExpanded(catKey, shouldBeExpanded, {
+                    trigger = trigger,
+                    source = source,
+                    stateSource = context and context.stateSource,
+                })
+
+                if debugEnabled and not changed then
+                    DebugLog(
+                        "CollapseNonActiveCategoriesForQuest: category toggle skipped",
+                        "category", catKey,
+                        "shouldBeExpanded", tostring(shouldBeExpanded)
+                    )
+                end
+            end
+        end
+    end
+end
+
 local function EnsureTrackedQuestVisible(journalIndex, forceExpand, context)
     if not journalIndex then
         return
@@ -2038,6 +2095,15 @@ local function EnsureTrackedQuestVisible(journalIndex, forceExpand, context)
     else
         EnsureTrackedCategoriesExpanded(journalIndex, forceExpand, logContext)
     end
+
+    if isNewTarget then
+        CollapseNonActiveCategoriesForQuest(journalIndex, {
+            trigger = logContext.trigger,
+            source = logContext.source,
+            stateSource = logContext.stateSource,
+        })
+    end
+
     if isExternal and isNewTarget then
         logContext.forceWrite = true
     end
@@ -3887,6 +3953,7 @@ function QuestTracker.ApplySettings(settings)
     state.opts.autoExpand = settings.autoExpand ~= false
     state.opts.autoTrack = settings.autoTrack ~= false
     state.opts.active = (settings.active ~= false)
+    state.opts.collapseOtherCategoriesOnActiveChange = (settings.collapseOtherCategoriesOnActiveChange == true)
 
     RefreshVisibility()
     RequestRefresh()
