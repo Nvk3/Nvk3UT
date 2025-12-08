@@ -3154,8 +3154,6 @@ local function createScrollContainer()
             adjustScroll(delta)
         end)
 
-        attachDragHandlers(scrollBackground)
-
         state.scrollBackground = scrollBackground
     end
 
@@ -3591,7 +3589,6 @@ local function createContainers()
         contentStack:SetHandler("OnMouseWheel", function(_, delta)
             adjustScroll(delta)
         end)
-        attachDragHandlers(contentStack)
         state.contentStack = contentStack
     end
 
