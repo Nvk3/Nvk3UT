@@ -32,7 +32,6 @@ local FOOTER_BAR_NAME = SCROLL_CONTENT_NAME .. "_FooterBar"
 local MIN_WIDTH = 260
 local MIN_HEIGHT = 240
 local RESIZE_HANDLE_SIZE = 12
-local RESIZE_BORDER_INSET = 20 -- leave a clearly accessible border so the ESO resize hit-test reaches the root control
 local RESIZE_GRIP_SIZE = 26 -- larger corner grips for easier interactions
 local SCROLLBAR_WIDTH = 18
 local SCROLL_OVERSHOOT_PADDING = 0 -- no overshoot, scroll range == content height
@@ -203,6 +202,7 @@ local state = {
     scrollContainer = nil,
     scrollContent = nil,
     scrollbar = nil,
+    clientArea = nil,
     scrollContentRightOffset = 0,
     scrollOffset = 0,
     desiredScrollOffset = 0,
@@ -1017,6 +1017,22 @@ local function attachDragHandlers(control)
     control:SetHandler("OnMouseDown", function(_, button)
         if button ~= LEFT_MOUSE_BUTTON then
             return
+        end
+
+        local scrollbar = state.scrollbar
+        local mouseOver = WINDOW_MANAGER and WINDOW_MANAGER.GetMouseOverControl and WINDOW_MANAGER:GetMouseOverControl()
+        if scrollbar and mouseOver then
+            local current = mouseOver
+            while current do
+                if current == scrollbar then
+                    return
+                end
+                if current.GetParent then
+                    current = current:GetParent()
+                else
+                    break
+                end
+            end
         end
 
         startWindowDrag()
@@ -2759,17 +2775,19 @@ applyViewportPadding = function()
 
     local padding = math.max(0, tonumber(appearance and appearance.padding) or 0)
 
-    if state.scrollContainer then
+    local containerParent = state.clientArea or state.root
+
+    if state.scrollContainer and containerParent then
         state.scrollContainer:ClearAnchors()
-        state.scrollContainer:SetAnchor(TOPLEFT, state.root, TOPLEFT, padding, padding)
-        state.scrollContainer:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, -padding, -padding)
+        state.scrollContainer:SetAnchor(TOPLEFT, containerParent, TOPLEFT, padding, padding)
+        state.scrollContainer:SetAnchor(BOTTOMRIGHT, containerParent, BOTTOMRIGHT, -padding, -padding)
     end
 
     updateScrollContentAnchors()
 
     if state.scrollbar then
         state.scrollbar:ClearAnchors()
-        local parent = state.scrollContainer or state.root
+        local parent = state.scrollContainer or state.clientArea or state.root
         state.scrollbar:SetAnchor(TOPRIGHT, parent, TOPRIGHT, 0, 0)
         state.scrollbar:SetAnchor(BOTTOMRIGHT, parent, BOTTOMRIGHT, 0, 0)
         if state.scrollbar.SetWidth then
@@ -3104,15 +3122,10 @@ local function createDragLayer()
     dragLayer:SetDrawLayer(DL_BACKGROUND)
     dragLayer:SetDrawTier(DT_LOW)
     dragLayer:SetDrawLevel(1)
-    dragLayer:SetMouseEnabled(true)
+    dragLayer:SetMouseEnabled(false)
     if dragLayer.SetExcludeFromResizeToFitExtents then
         dragLayer:SetExcludeFromResizeToFitExtents(true)
     end
-    dragLayer:SetHandler("OnMouseWheel", function(_, delta)
-        adjustScroll(delta)
-    end)
-
-    attachDragHandlers(dragLayer)
 
     state.dragLayer = dragLayer
 end
@@ -3122,22 +3135,31 @@ local function createScrollContainer()
         return
     end
 
+    local parent = state.clientArea or state.root
+
+    local createdFromTemplate = false
     local scrollContainer = WINDOW_MANAGER:CreateControlFromVirtual(
         SCROLL_CONTAINER_NAME,
-        state.root,
+        parent,
         "ZO_ScrollContainer"
     )
-    if not scrollContainer then
-        scrollContainer = WINDOW_MANAGER:CreateControl(SCROLL_CONTAINER_NAME, state.root, CT_SCROLL)
+    if scrollContainer then
+        createdFromTemplate = true
+    else
+        scrollContainer = WINDOW_MANAGER:CreateControl(SCROLL_CONTAINER_NAME, parent, CT_SCROLL)
     end
     if not scrollContainer then
         return
     end
 
+    if createdFromTemplate and type(ZO_Scroll_Initialize) == "function" then
+        ZO_Scroll_Initialize(scrollContainer)
+    end
+
     scrollContainer:SetMouseEnabled(false)
     scrollContainer:SetClampedToScreen(false)
-    scrollContainer:SetAnchor(TOPLEFT, state.root, TOPLEFT, RESIZE_BORDER_INSET, RESIZE_BORDER_INSET)
-    scrollContainer:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, -RESIZE_BORDER_INSET, -RESIZE_BORDER_INSET)
+    scrollContainer:SetAnchor(TOPLEFT, parent, TOPLEFT, 0, 0)
+    scrollContainer:SetAnchor(BOTTOMRIGHT, parent, BOTTOMRIGHT, 0, 0)
     if scrollContainer.SetBackgroundColor then
         scrollContainer:SetBackgroundColor(0, 0, 0, 0)
     end
@@ -3158,8 +3180,6 @@ local function createScrollContainer()
         scrollBackground:SetHandler("OnMouseWheel", function(_, delta)
             adjustScroll(delta)
         end)
-
-        attachDragHandlers(scrollBackground)
 
         state.scrollBackground = scrollBackground
     end
@@ -3183,44 +3203,56 @@ local function createScrollContainer()
     if scrollContent.SetResizeToFitDescendents then
         scrollContent:SetResizeToFitDescendents(false)
     end
+
     local scrollbar = scrollContainer:GetNamedChild("ScrollBar")
     if scrollbar then
         if scrollbar.SetName then
             scrollbar:SetName(SCROLLBAR_NAME)
         end
-    else
+    elseif not createdFromTemplate then
         scrollbar = WINDOW_MANAGER:CreateControl(SCROLLBAR_NAME, scrollContainer, CT_SCROLLBAR)
     end
 
-    scrollbar:SetMouseEnabled(true)
-    scrollbar:ClearAnchors()
-    scrollbar:SetAnchor(TOPRIGHT, scrollContainer, TOPRIGHT, 0, 0)
-    scrollbar:SetAnchor(BOTTOMRIGHT, scrollContainer, BOTTOMRIGHT, 0, 0)
-    if scrollbar.SetWidth then
-        scrollbar:SetWidth(SCROLLBAR_WIDTH)
-    end
-    if scrollbar.SetHidden then
-        scrollbar:SetHidden(true)
-    end
-    if scrollbar.SetAllowDragging then
-        scrollbar:SetAllowDragging(true)
-    end
-    if scrollbar.SetStep then
-        scrollbar:SetStep(32)
-    end
-    if scrollbar.SetValue then
-        scrollbar:SetValue(0)
-    end
-    if scrollbar.SetMinMax then
-        scrollbar:SetMinMax(0, 0)
+    if scrollbar then
+        scrollbar:SetMouseEnabled(true)
+        if not createdFromTemplate then
+            scrollbar:ClearAnchors()
+            scrollbar:SetAnchor(TOPRIGHT, scrollContainer, TOPRIGHT, 0, 0)
+            scrollbar:SetAnchor(BOTTOMRIGHT, scrollContainer, BOTTOMRIGHT, 0, 0)
+            if scrollbar.SetWidth then
+                scrollbar:SetWidth(SCROLLBAR_WIDTH)
+            end
+        end
+        if createdFromTemplate and not scrollbar.GetName then
+            debugLog("TrackerHost: Scrollbar from template is missing expected API")
+        end
+        if scrollbar.SetHidden then
+            scrollbar:SetHidden(true)
+        end
+        if scrollbar.SetAllowDragging then
+            scrollbar:SetAllowDragging(true)
+        end
+        if scrollbar.SetStep then
+            scrollbar:SetStep(32)
+        end
+        if scrollbar.SetValue then
+            scrollbar:SetValue(0)
+        end
+        if scrollbar.SetMinMax then
+            scrollbar:SetMinMax(0, 0)
+        end
+
+        scrollbar:SetHandler("OnValueChanged", function(_, value)
+            if state.updatingScrollbar then
+                return
+            end
+            setScrollOffset(value, true)
+        end)
     end
 
-    scrollbar:SetHandler("OnValueChanged", function(_, value)
-        if state.updatingScrollbar then
-            return
-        end
-        setScrollOffset(value, true)
-    end)
+    if createdFromTemplate and not scrollbar then
+        debugLog("TrackerHost: ZO_ScrollContainer template missing ScrollBar child")
+    end
 
     scrollContainer:SetHandler("OnMouseWheel", function(_, delta)
         adjustScroll(delta)
@@ -3548,6 +3580,19 @@ local function createContainers()
         globalHost.sectionContainers = globalHost.sectionContainers or TrackerHost.sectionContainers
     end
 
+    if not state.clientArea then
+        local clientArea = WINDOW_MANAGER:CreateControl(nil, state.root, CT_CONTROL)
+        if clientArea then
+            clientArea:SetAnchor(TOPLEFT, state.root, TOPLEFT, RESIZE_BORDER_THICKNESS, RESIZE_BORDER_THICKNESS)
+            clientArea:SetAnchor(BOTTOMRIGHT, state.root, BOTTOMRIGHT, -RESIZE_BORDER_THICKNESS, -RESIZE_BORDER_THICKNESS)
+            clientArea:SetMouseEnabled(false)
+            if clientArea.SetExcludeFromResizeToFitExtents then
+                clientArea:SetExcludeFromResizeToFitExtents(true)
+            end
+            state.clientArea = clientArea
+        end
+    end
+
     createDragLayer()
     createScrollContainer()
     createResizeGrip()
@@ -3596,7 +3641,6 @@ local function createContainers()
         contentStack:SetHandler("OnMouseWheel", function(_, delta)
             adjustScroll(delta)
         end)
-        attachDragHandlers(contentStack)
         state.contentStack = contentStack
     end
 
@@ -4120,14 +4164,6 @@ local function applyWindowTopmost()
         end
     end
 
-    if state.scrollbar then
-        if state.scrollbar.SetDrawLayer then
-            state.scrollbar:SetDrawLayer(onTop and DL_OVERLAY or DL_BACKGROUND)
-        end
-        if state.scrollbar.SetDrawTier then
-            state.scrollbar:SetDrawTier(onTop and DT_HIGH or DT_LOW)
-        end
-    end
 end
 
 local function applyWindowSettings()
