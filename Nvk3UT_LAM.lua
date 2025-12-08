@@ -155,6 +155,20 @@ local DEFAULT_WINDOW_BARS = {
     footerHeightPx = 100,
 }
 
+local DEFAULT_HOST_SETTINGS = {
+    HideInCombat = false,
+    CornerButtonEnabled = true,
+    CornerPosition = "TOP_RIGHT",
+}
+
+local CORNER_POSITION_VALUES = { "TOP_RIGHT", "TOP_LEFT", "BOTTOM_RIGHT", "BOTTOM_LEFT" }
+local CORNER_POSITION_CHOICES = {
+    GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_CORNER_TOP_RIGHT),
+    GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_CORNER_TOP_LEFT),
+    GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_CORNER_BOTTOM_RIGHT),
+    GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_CORNER_BOTTOM_LEFT),
+}
+
 local MAX_BAR_HEIGHT = 250
 
 local function clamp(value, minimum, maximum)
@@ -168,6 +182,21 @@ local function clamp(value, minimum, maximum)
         return maximum
     end
     return value
+end
+
+local function normalizeCornerPosition(value)
+    if type(value) ~= "string" then
+        return DEFAULT_HOST_SETTINGS.CornerPosition
+    end
+
+    local normalized = value:upper():gsub("%s+", "_"):gsub("%-", "_")
+    for index = 1, #CORNER_POSITION_VALUES do
+        if normalized == CORNER_POSITION_VALUES[index] then
+            return normalized
+        end
+    end
+
+    return DEFAULT_HOST_SETTINGS.CornerPosition
 end
 
 local function getSavedVars()
@@ -229,10 +258,19 @@ local function getHostSettings()
     settings.Host = settings.Host or {}
     local host = settings.Host
     if host.HideInCombat == nil then
-        host.HideInCombat = false
+        host.HideInCombat = DEFAULT_HOST_SETTINGS.HideInCombat
     else
         host.HideInCombat = host.HideInCombat == true
     end
+
+    if host.CornerButtonEnabled == nil then
+        host.CornerButtonEnabled = DEFAULT_HOST_SETTINGS.CornerButtonEnabled
+    else
+        host.CornerButtonEnabled = host.CornerButtonEnabled ~= false
+    end
+
+    host.CornerPosition = normalizeCornerPosition(host.CornerPosition)
+
     return host
 end
 
@@ -1815,7 +1853,53 @@ local function registerPanel(displayTitle)
                         host:ApplyVisibilityRules()
                     end
                 end,
-                default = false,
+                default = DEFAULT_HOST_SETTINGS.HideInCombat,
+            })
+
+            addControl({
+                type = "checkbox",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_CORNER_BUTTON),
+                tooltip = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_CORNER_BUTTON_DESC),
+                getFunc = function()
+                    local settings = getHostSettings()
+                    return settings.CornerButtonEnabled ~= false
+                end,
+                setFunc = function(value)
+                    local settings = getHostSettings()
+                    settings.CornerButtonEnabled = value ~= false
+
+                    local host = Nvk3UT and Nvk3UT.TrackerHost
+                    if host and host.SetCornerButtonEnabled then
+                        host:SetCornerButtonEnabled(settings.CornerButtonEnabled)
+                    end
+                end,
+                default = DEFAULT_HOST_SETTINGS.CornerButtonEnabled,
+            })
+
+            addControl({
+                type = "dropdown",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_CORNER_POSITION),
+                tooltip = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_CORNER_POSITION_DESC),
+                choices = CORNER_POSITION_CHOICES,
+                choicesValues = CORNER_POSITION_VALUES,
+                getFunc = function()
+                    local settings = getHostSettings()
+                    return settings.CornerPosition
+                end,
+                setFunc = function(value)
+                    local settings = getHostSettings()
+                    settings.CornerPosition = normalizeCornerPosition(value)
+
+                    local host = Nvk3UT and Nvk3UT.TrackerHost
+                    if host and host.SetCornerPosition then
+                        host.SetCornerPosition(settings.CornerPosition)
+                    end
+                end,
+                disabled = function()
+                    local settings = getHostSettings()
+                    return settings.CornerButtonEnabled == false
+                end,
+                default = DEFAULT_HOST_SETTINGS.CornerPosition,
             })
 
             return controls

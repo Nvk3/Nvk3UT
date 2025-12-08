@@ -61,6 +61,14 @@ local strings = {
     SI_NVK3UT_LAM_TRACKER_HOST_HEADER_BEHAVIOR = "Verhalten",
     SI_NVK3UT_LAM_OPTION_TRACKER_HOST_HIDE_IN_COMBAT = "Tracker im Kampf ausblenden",
     SI_NVK3UT_LAM_OPTION_TRACKER_HOST_HIDE_IN_COMBAT_DESC = "Bei Aktivierung wird der gesamte Tracker-Host während des Kampfes ausgeblendet. Im Einstellungsmenü bleibt er sichtbar.",
+    SI_NVK3UT_LAM_OPTION_TRACKER_HOST_CORNER_BUTTON = "Einklapp-Ecke anzeigen",
+    SI_NVK3UT_LAM_OPTION_TRACKER_HOST_CORNER_BUTTON_DESC = "Zeigt eine Ecke am Trackerfenster an, mit der du das Fenster schnell ein- und ausklappen kannst.",
+    SI_NVK3UT_LAM_OPTION_TRACKER_HOST_CORNER_POSITION = "Eckenposition",
+    SI_NVK3UT_LAM_OPTION_TRACKER_HOST_CORNER_POSITION_DESC = "Wähle die Ecke des Trackerfensters, in der die Einklapp-Ecke angezeigt wird.",
+    SI_NVK3UT_LAM_OPTION_TRACKER_HOST_CORNER_TOP_RIGHT = "Oben rechts",
+    SI_NVK3UT_LAM_OPTION_TRACKER_HOST_CORNER_TOP_LEFT = "Oben links",
+    SI_NVK3UT_LAM_OPTION_TRACKER_HOST_CORNER_BOTTOM_RIGHT = "Unten rechts",
+    SI_NVK3UT_LAM_OPTION_TRACKER_HOST_CORNER_BOTTOM_LEFT = "Unten links",
 
     -- Debug
     SI_NVK3UT_LAM_OPTION_DEBUG_ENABLE = "Debug aktivieren",
