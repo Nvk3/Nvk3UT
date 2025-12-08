@@ -2795,9 +2795,8 @@ end
 
 setCollapsed = function(collapsed)
     local normalized = collapsed == true
-    if not isCornerButtonEnabled() then
-        normalized = false
-    end
+    -- CornerButtonEnabled only controls the visibility of the corner button,
+    -- not whether collapsing is allowed (used by keybinds as well).
 
     if not state.root then
         state.collapsed = normalized
@@ -2845,9 +2844,7 @@ refreshCornerButton = function()
     local enabled = isCornerButtonEnabled()
     if not enabled then
         button:SetHidden(true)
-        if state.collapsed then
-            setCollapsed(false)
-        end
+        -- Do not force un-collapse; collapsing is still allowed via keybind.
         return
     end
 
@@ -5603,6 +5600,25 @@ Nvk3UT.TrackerHost = TrackerHost
 TrackerHost.RefreshScroll = refreshScroll
 TrackerHost.NotifyContentChanged = notifyContentChanged
 TrackerHost.ScrollControlIntoView = scrollControlIntoView
+
+function Nvk3UT_ToggleTrackerCollapse()
+    local addon = _G and _G.Nvk3UT or Nvk3UT
+    if type(addon) ~= "table" then
+        return
+    end
+
+    local host = addon.TrackerHost
+    if type(host) ~= "table" then
+        return
+    end
+
+    local toggle = host.ToggleCollapsed
+    if type(toggle) ~= "function" then
+        return
+    end
+
+    pcall(toggle, host)
+end
 
 function TrackerHost.EnsureVisible(options)
     options = options or {}
