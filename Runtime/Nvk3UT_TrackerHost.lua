@@ -1019,6 +1019,14 @@ local function attachDragHandlers(control)
             return
         end
 
+        if WINDOW_MANAGER and WINDOW_MANAGER.GetMouseOverControl then
+            local mouseOver = WINDOW_MANAGER:GetMouseOverControl()
+            local scrollbar = state and state.scrollbar
+            if mouseOver and scrollbar and (mouseOver == scrollbar or (mouseOver.IsChildOf and mouseOver:IsChildOf(scrollbar))) then
+                return
+            end
+        end
+
         startWindowDrag()
     end)
 
