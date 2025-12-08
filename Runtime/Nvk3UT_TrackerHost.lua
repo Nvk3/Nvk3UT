@@ -3137,16 +3137,23 @@ local function createScrollContainer()
 
     local parent = state.clientArea or state.root
 
+    local createdFromTemplate = false
     local scrollContainer = WINDOW_MANAGER:CreateControlFromVirtual(
         SCROLL_CONTAINER_NAME,
         parent,
         "ZO_ScrollContainer"
     )
-    if not scrollContainer then
+    if scrollContainer then
+        createdFromTemplate = true
+    else
         scrollContainer = WINDOW_MANAGER:CreateControl(SCROLL_CONTAINER_NAME, parent, CT_SCROLL)
     end
     if not scrollContainer then
         return
+    end
+
+    if createdFromTemplate and type(ZO_Scroll_Initialize) == "function" then
+        ZO_Scroll_Initialize(scrollContainer)
     end
 
     scrollContainer:SetMouseEnabled(false)
