@@ -2740,6 +2740,16 @@ end
 applyCollapsedVisibility = function()
     local collapsed = state.collapsed == true
 
+    if state.backdrop then
+        local appearance = state.appearance or ensureAppearanceSettings()
+        local backgroundEnabled = appearance.enabled ~= false
+        local edgeAlpha = clamp(appearance.edgeAlpha, 0, 1)
+        local borderEnabled = appearance.edgeEnabled ~= false and edgeAlpha > 0
+        local shouldShow = backgroundEnabled or borderEnabled
+
+        state.backdrop:SetHidden(collapsed or not shouldShow)
+    end
+
     if state.scrollContainer then
         state.scrollContainer:SetHidden(collapsed)
     end
