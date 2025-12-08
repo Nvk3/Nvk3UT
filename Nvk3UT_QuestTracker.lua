@@ -151,6 +151,8 @@ local state = {
     contentHeight = 0,
     trackedQuestIndex = nil,
     trackedCategoryKeys = {},
+    lastActiveCategoryKey = nil,
+    currentActiveCategoryKey = nil,
     trackingEventsRegistered = false,
     suppressForceExpandFor = nil,
     pendingSelection = nil,
@@ -592,6 +594,29 @@ local function CollectCategoryKeysForQuest(journalIndex)
     end)
 
     return keys, found
+end
+
+local function SelectPrimaryCategoryKey(categoryKeys)
+    if not categoryKeys or next(categoryKeys) == nil then
+        return nil
+    end
+
+    local ordered = state.snapshot and state.snapshot.categories and state.snapshot.categories.ordered
+    if type(ordered) == "table" then
+        for index = 1, #ordered do
+            local category = ordered[index]
+            local normalizedKey = category and NormalizeCategoryKey(category.key)
+            if normalizedKey and categoryKeys[normalizedKey] then
+                return normalizedKey
+            end
+        end
+    end
+
+    for key in pairs(categoryKeys) do
+        return key
+    end
+
+    return nil
 end
 
 local function ResolveStateSource(context, fallback)
@@ -2018,6 +2043,56 @@ local function EnsureTrackedCategoriesExpanded(journalIndex, forceExpand, contex
     end
 end
 
+local function CollapsePreviousCategoryIfNeeded(context)
+    if not IsCollapseOtherCategoriesEnabled() then
+        return
+    end
+
+    local previousKey = state.lastActiveCategoryKey
+    local currentKey = state.currentActiveCategoryKey
+    if not previousKey or not currentKey then
+        return
+    end
+
+    if previousKey == currentKey then
+        return
+    end
+
+    local logContext = {
+        trigger = (context and context.trigger) or "auto",
+        source = (context and context.source) or "QuestTracker:CollapsePreviousCategoryOnActiveChange",
+    }
+
+    if context and context.stateSource ~= nil then
+        logContext.stateSource = context.stateSource
+    end
+
+    local debugEnabled = IsDebugLoggingEnabled()
+
+    if not IsCategoryExpanded(previousKey) then
+        if debugEnabled then
+            DebugLog(
+                "CollapsePreviousCategoryIfNeeded: category already collapsed",
+                "category",
+                previousKey
+            )
+        end
+        return
+    end
+
+    local changed = SetCategoryExpanded(previousKey, false, logContext)
+
+    if debugEnabled and not changed then
+        DebugLog(
+            "CollapsePreviousCategoryIfNeeded: category toggle skipped",
+            "category",
+            previousKey,
+            "trigger",
+            logContext.trigger
+        )
+    end
+end
+
 local function EnsureTrackedQuestVisible(journalIndex, forceExpand, context)
     if not journalIndex then
         return
@@ -2036,11 +2111,22 @@ local function EnsureTrackedQuestVisible(journalIndex, forceExpand, context)
     end
     local isExternal = context and context.isExternal
     local isNewTarget = context and context.isNewTarget
+
+    if isNewTarget then
+        local keys = CollectCategoryKeysForQuest(journalIndex)
+        state.lastActiveCategoryKey = state.currentActiveCategoryKey
+        state.currentActiveCategoryKey = SelectPrimaryCategoryKey(keys)
+    end
+
     if isExternal then
         LogExternalSelect(journalIndex)
         ExpandCategoriesForExternalSelect(journalIndex)
     else
         EnsureTrackedCategoriesExpanded(journalIndex, forceExpand, logContext)
+    end
+
+    if isNewTarget then
+        CollapsePreviousCategoryIfNeeded(logContext)
     end
 
     if isExternal and isNewTarget then
@@ -3865,6 +3951,8 @@ function QuestTracker.Shutdown()
     state.contentHeight = 0
     state.trackedQuestIndex = nil
     state.trackedCategoryKeys = {}
+    state.lastActiveCategoryKey = nil
+    state.currentActiveCategoryKey = nil
     state.trackingEventsRegistered = false
     state.suppressForceExpandFor = nil
     state.pendingSelection = nil
