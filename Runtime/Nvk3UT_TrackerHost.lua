@@ -634,12 +634,17 @@ local function ensureHostSettings()
 end
 
 local function getCornerPosition()
-    local hostSettings = getHostSettings()
-    if not hostSettings then
+    local sv = getSavedVars()
+    if not (sv and sv.Settings and sv.Settings.Host) then
         return DEFAULT_CORNER_POSITION
     end
 
-    return hostSettings.CornerPosition or DEFAULT_CORNER_POSITION
+    local position = sv.Settings.Host.CornerPosition
+    if type(position) ~= "string" or position == "" then
+        return DEFAULT_CORNER_POSITION
+    end
+
+    return normalizeCornerPosition(position)
 end
 
 local function isCornerButtonEnabled()
