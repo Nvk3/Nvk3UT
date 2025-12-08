@@ -305,6 +305,8 @@ defaultSV.TrackerDefaults.GoldenDefaults.hideBaseGameTracking = true
 
 local DEFAULT_HOST_SETTINGS = {
     HideInCombat = false,
+    CornerButtonEnabled = true,
+    CornerPosition = "TOP_RIGHT",
 }
 
 local DEFAULT_ACHIEVEMENT_CACHE = {

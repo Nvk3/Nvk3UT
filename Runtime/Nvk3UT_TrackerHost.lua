@@ -144,6 +144,31 @@ local GOLDEN_COLOR_INIT_ROLES = {
 
 local DEFAULT_HOST_SETTINGS = {
     HideInCombat = false,
+    CornerButtonEnabled = true,
+    CornerPosition = "TOP_RIGHT",
+}
+
+local CORNER_BUTTON_SIZE = 32
+local COLLAPSED_MIN_WIDTH = 64
+local COLLAPSED_MIN_HEIGHT = 48
+local DEFAULT_CORNER_POSITION = "TOP_RIGHT"
+local CORNER_TEXTURES = {
+    normal = "EsoUI/Art/Buttons/tree_closed_up.dds",
+    hover = "EsoUI/Art/Buttons/tree_closed_over.dds",
+    pressed = "EsoUI/Art/Buttons/tree_closed_over.dds",
+}
+local CORNER_ROTATIONS = {
+    TOP_RIGHT = math.rad(225),
+    TOP_LEFT = math.rad(315),
+    BOTTOM_RIGHT = math.rad(135),
+    BOTTOM_LEFT = math.rad(45),
+}
+
+local CORNER_ANCHORS = {
+    TOP_RIGHT = { point = TOPRIGHT, relative = TOPRIGHT, offsetX = -4, offsetY = 4 },
+    TOP_LEFT = { point = TOPLEFT, relative = TOPLEFT, offsetX = 4, offsetY = 4 },
+    BOTTOM_RIGHT = { point = BOTTOMRIGHT, relative = BOTTOMRIGHT, offsetX = -4, offsetY = -4 },
+    BOTTOM_LEFT = { point = BOTTOMLEFT, relative = BOTTOMLEFT, offsetX = 4, offsetY = -4 },
 }
 
 local LEFT_MOUSE_BUTTON = _G.MOUSE_BUTTON_INDEX_LEFT or 1
@@ -259,6 +284,12 @@ local state = {
     visibilityGates = nil,
     resizeGrip = nil,        -- legacy single grip (unused)
     resizeGrips = nil,       -- collection of resize grips along the full border
+    cornerButton = nil,
+    cornerTexture = nil,
+    cornerHover = false,
+    cornerPressed = false,
+    collapsed = false,
+    expandedWindowSize = nil,
 }
 
 local resizeState = {
@@ -372,6 +403,12 @@ local endResize
 local createResizeGrip
 local performLocalWindowRefresh
 local performFullHostRefresh
+local setCollapsed
+local ensureCornerButton
+local refreshCornerButton
+local applyCollapsedVisibility
+local updateCornerButtonVisualState
+local applyWindowLock
 
 local function getSavedVars()
     return Nvk3UT and Nvk3UT.sv
@@ -557,6 +594,19 @@ local function ensureAppearanceColorDefaults()
     return sv.appearance
 end
 
+local function normalizeCornerPosition(value)
+    if type(value) ~= "string" then
+        return DEFAULT_CORNER_POSITION
+    end
+
+    local normalized = value:upper():gsub("%s+", "_"):gsub("%-", "_")
+    if CORNER_ANCHORS[normalized] then
+        return normalized
+    end
+
+    return DEFAULT_CORNER_POSITION
+end
+
 local function ensureHostSettings()
     local sv = getSavedVars()
     if not sv then
@@ -573,7 +623,43 @@ local function ensureHostSettings()
         hostSettings.HideInCombat = hostSettings.HideInCombat == true
     end
 
+    if hostSettings.CornerButtonEnabled == nil then
+        hostSettings.CornerButtonEnabled = DEFAULT_HOST_SETTINGS.CornerButtonEnabled
+    else
+        hostSettings.CornerButtonEnabled = hostSettings.CornerButtonEnabled ~= false
+    end
+
+    hostSettings.CornerPosition = normalizeCornerPosition(hostSettings.CornerPosition)
+
     return hostSettings
+end
+
+local function getCornerPosition()
+    local sv = getSavedVars()
+    if not (sv and sv.Settings and sv.Settings.Host) then
+        return DEFAULT_CORNER_POSITION
+    end
+
+    local position = sv.Settings.Host.CornerPosition
+    if type(position) ~= "string" or position == "" then
+        return DEFAULT_CORNER_POSITION
+    end
+
+    return normalizeCornerPosition(position)
+end
+
+local function isCornerButtonEnabled()
+    local hostSettings = state and state.hostSettings
+    if not hostSettings then
+        local sv = getSavedVars()
+        hostSettings = sv and sv.Settings and sv.Settings.Host
+    end
+
+    if hostSettings and hostSettings.CornerButtonEnabled ~= nil then
+        return hostSettings.CornerButtonEnabled ~= false
+    end
+
+    return true
 end
 
 local function getHostSettings()
@@ -2582,15 +2668,16 @@ local function updateWindowGeometry()
     local targetWidth = tonumber(state.window.width) or DEFAULT_WINDOW.width
     local targetHeight = tonumber(state.window.height) or DEFAULT_WINDOW.height
 
+    local collapsed = state.collapsed == true
     targetWidth = clamp(targetWidth, minWidth, maxWidth)
     targetHeight = clamp(targetHeight, minHeight, maxHeight)
 
-    if layout.autoGrowH then
+    if not collapsed and layout.autoGrowH then
         local desiredWidth = math.floor((contentWidth + (padding * 2)) + 0.5)
         targetWidth = clamp(desiredWidth, minWidth, maxWidth)
     end
 
-    if layout.autoGrowV then
+    if not collapsed and layout.autoGrowV then
         local desiredHeight = math.floor((contentHeight + (padding * 2)) + 0.5)
         targetHeight = clamp(desiredHeight, minHeight, maxHeight)
     end
@@ -2607,6 +2694,241 @@ local function updateWindowGeometry()
     state.root:SetAnchor(TOPLEFT, anchorParent, TOPLEFT, state.window.left or 0, state.window.top or 0)
     state.root:SetDimensions(targetWidth, targetHeight)
     state.root:SetClampedToScreen(state.window.clamp ~= false)
+end
+
+local function updateCornerButtonAnchor()
+    local button = state.cornerButton
+    if not (button and state.root) then
+        return
+    end
+
+    local position = getCornerPosition()
+    local anchor = CORNER_ANCHORS[position] or CORNER_ANCHORS[DEFAULT_CORNER_POSITION]
+    if not anchor then
+        return
+    end
+
+    button:ClearAnchors()
+    button:SetAnchor(anchor.point, state.root, anchor.relative, anchor.offsetX, anchor.offsetY)
+end
+
+updateCornerButtonVisualState = function()
+    local texture = state.cornerTexture
+    if not texture then
+        return
+    end
+
+    local texturePath = CORNER_TEXTURES.normal
+    if state.cornerPressed and CORNER_TEXTURES.pressed then
+        texturePath = CORNER_TEXTURES.pressed
+    elseif state.cornerHover and CORNER_TEXTURES.hover then
+        texturePath = CORNER_TEXTURES.hover
+    end
+
+    texture:SetTexture(texturePath)
+
+    local rotation = CORNER_ROTATIONS[getCornerPosition()] or CORNER_ROTATIONS[DEFAULT_CORNER_POSITION]
+    if state.collapsed then
+        rotation = rotation + math.pi
+    end
+
+    if texture.SetTextureRotation then
+        texture:SetTextureRotation(rotation, 0.5, 0.5)
+    end
+end
+
+applyCollapsedVisibility = function()
+    local collapsed = state.collapsed == true
+
+    if state.backdrop then
+        local appearance = state.appearance or ensureAppearanceSettings()
+        local backgroundEnabled = appearance.enabled ~= false
+        local edgeAlpha = clamp(appearance.edgeAlpha, 0, 1)
+        local borderEnabled = appearance.edgeEnabled ~= false and edgeAlpha > 0
+        local shouldShow = backgroundEnabled or borderEnabled
+
+        state.backdrop:SetHidden(collapsed or not shouldShow)
+    end
+
+    if state.scrollContainer then
+        state.scrollContainer:SetHidden(collapsed)
+    end
+
+    if state.scrollbar then
+        if collapsed then
+            state.scrollbar:SetHidden(true)
+        else
+            local shouldHide = (state.scrollMaxOffset or 0) <= 0
+            state.scrollbar:SetHidden(shouldHide)
+        end
+    end
+
+    if state.headerBar and state.headerBar.SetHidden then
+        if collapsed then
+            state.headerBar:SetHidden(true)
+        end
+    end
+
+    if state.footerBar and state.footerBar.SetHidden then
+        if collapsed then
+            state.footerBar:SetHidden(true)
+        end
+    end
+
+    if state.dragLayer and state.dragLayer.SetHidden then
+        state.dragLayer:SetHidden(collapsed)
+    end
+
+    if collapsed and state.resizeGrips then
+        for _, grip in pairs(state.resizeGrips) do
+            if grip then
+                if grip.SetMouseEnabled then
+                    grip:SetMouseEnabled(false)
+                end
+                if grip.SetHidden then
+                    grip:SetHidden(true)
+                end
+            end
+        end
+    end
+end
+
+setCollapsed = function(collapsed)
+    local normalized = collapsed == true
+    if not isCornerButtonEnabled() then
+        normalized = false
+    end
+
+    if not state.root then
+        state.collapsed = normalized
+        return state.collapsed
+    end
+
+    if state.collapsed == normalized then
+        updateCornerButtonVisualState()
+        return state.collapsed
+    end
+
+    state.collapsed = normalized
+
+    if state.root and state.root.SetResizeHandleSize then
+        if normalized then
+            state.root:SetResizeHandleSize(0)
+        else
+            state.root:SetResizeHandleSize(state.window and state.window.locked == true and 0 or RESIZE_HANDLE_SIZE)
+        end
+    end
+
+    applyLayoutConstraints()
+    updateWindowGeometry()
+
+    if normalized then
+        applyCollapsedVisibility()
+    else
+        applyWindowBars()
+        applyCollapsedVisibility()
+        refreshScroll()
+        applyWindowLock()
+    end
+
+    refreshCornerButton()
+
+    return state.collapsed
+end
+
+refreshCornerButton = function()
+    local button = state.cornerButton
+    if not button then
+        return
+    end
+
+    local enabled = isCornerButtonEnabled()
+    if not enabled then
+        button:SetHidden(true)
+        if state.collapsed then
+            setCollapsed(false)
+        end
+        return
+    end
+
+    button:SetHidden(false)
+    updateCornerButtonAnchor()
+    updateCornerButtonVisualState()
+end
+
+ensureCornerButton = function()
+    if not (state.root and WINDOW_MANAGER) then
+        return
+    end
+
+    local enabled = isCornerButtonEnabled()
+    local button = state.cornerButton
+
+    if not enabled then
+        if button then
+            button:SetHidden(true)
+        end
+        return
+    end
+
+    if not button then
+        button = WINDOW_MANAGER:CreateControl(nil, state.root, CT_BUTTON)
+        if not button then
+            return
+        end
+
+        button:SetDimensions(CORNER_BUTTON_SIZE, CORNER_BUTTON_SIZE)
+        button:SetMouseEnabled(true)
+        if button.SetDrawLayer then
+            button:SetDrawLayer(DL_OVERLAY)
+            button:SetDrawTier(DT_MEDIUM)
+            button:SetDrawLevel(2)
+        end
+        button:SetHandler("OnMouseEnter", function()
+            state.cornerHover = true
+            updateCornerButtonVisualState()
+        end)
+        button:SetHandler("OnMouseExit", function()
+            state.cornerHover = false
+            state.cornerPressed = false
+            updateCornerButtonVisualState()
+        end)
+        button:SetHandler("OnMouseDown", function(_, mouseButton)
+            if mouseButton ~= LEFT_MOUSE_BUTTON then
+                return
+            end
+
+            state.cornerPressed = true
+            updateCornerButtonVisualState()
+        end)
+        button:SetHandler("OnMouseUp", function(_, mouseButton)
+            if mouseButton ~= LEFT_MOUSE_BUTTON then
+                return
+            end
+
+            state.cornerPressed = false
+            updateCornerButtonVisualState()
+            setCollapsed(not state.collapsed)
+        end)
+
+        local texture = WINDOW_MANAGER:CreateControl(nil, button, CT_TEXTURE)
+        if texture then
+            texture:SetAnchorFill()
+            texture:SetTexture(CORNER_TEXTURES.normal)
+            texture:SetColor(1, 1, 1, 0.9)
+            if texture.SetDrawLayer then
+                texture:SetDrawLayer(DL_OVERLAY)
+                texture:SetDrawTier(DT_MEDIUM)
+                texture:SetDrawLevel(3)
+            end
+            texture:SetHidden(false)
+            state.cornerTexture = texture
+        end
+
+        state.cornerButton = button
+    end
+
+    refreshCornerButton()
 end
 
 local function applyFeatureSettings()
@@ -2802,6 +3124,11 @@ refreshScroll = function(targetOffset)
     local scrollbar = state.scrollbar
 
     if not (scrollContainer and scrollContent and scrollbar) then
+        return
+    end
+
+    if state.collapsed then
+        scrollbar:SetHidden(true)
         return
     end
 
@@ -3810,7 +4137,7 @@ local function updateSectionLayout()
     anchorContainers()
 end
 
-local function applyWindowLock()
+applyWindowLock = function()
     if not (state.root and state.window) then
         return
     end
@@ -3987,6 +4314,7 @@ local function refreshWindowLayout(targetOffset)
     updateWindowGeometry()
     applyWindowVisibility()
     refreshScroll(targetOffset)
+    applyCollapsedVisibility()
 end
 
 local function scheduleDeferredRefresh(targetOffset)
@@ -4179,6 +4507,7 @@ local function applyWindowSettings()
     end
 
     createContainers()
+    ensureCornerButton()
 
     applyWindowBars()
     applyLayoutConstraints()
@@ -4190,6 +4519,7 @@ local function applyWindowSettings()
     ensureSceneFragment(state.root)
     applyWindowVisibility()
     refreshScroll()
+    applyCollapsedVisibility()
 end
 
 local function createBackdrop()
@@ -4767,6 +5097,49 @@ function TrackerHost.GetRootWindow()
     return state.root
 end
 
+function TrackerHost.SetCornerButtonEnabled(selfOrEnabled, maybeEnabled)
+    local enabled = maybeEnabled
+    if selfOrEnabled ~= TrackerHost then
+        enabled = selfOrEnabled
+    end
+
+    local hostSettings = ensureHostSettings()
+    hostSettings.CornerButtonEnabled = enabled ~= false
+
+    ensureCornerButton()
+    refreshCornerButton()
+end
+
+function TrackerHost.SetCornerPosition(selfOrPosition, maybePosition)
+    local position = maybePosition
+    if selfOrPosition ~= TrackerHost then
+        position = selfOrPosition
+    end
+
+    local hostSettings = ensureHostSettings()
+    hostSettings.CornerPosition = normalizeCornerPosition(position)
+
+    ensureCornerButton()
+    refreshCornerButton()
+end
+
+function TrackerHost.SetCollapsed(selfOrCollapsed, maybeCollapsed)
+    local collapsed = maybeCollapsed
+    if selfOrCollapsed ~= TrackerHost then
+        collapsed = selfOrCollapsed
+    end
+
+    return setCollapsed(collapsed)
+end
+
+function TrackerHost.ToggleCollapsed()
+    return setCollapsed(not state.collapsed)
+end
+
+function TrackerHost.IsCollapsed()
+    return state.collapsed == true
+end
+
 function TrackerHost.ApplySettings()
     if not getSavedVars() then
         return
@@ -5183,6 +5556,21 @@ function TrackerHost.Shutdown()
         state.backdrop:SetParent(nil)
     end
     state.backdrop = nil
+
+    if state.cornerButton then
+        state.cornerButton:SetHandler("OnMouseEnter", nil)
+        state.cornerButton:SetHandler("OnMouseExit", nil)
+        state.cornerButton:SetHandler("OnMouseDown", nil)
+        state.cornerButton:SetHandler("OnMouseUp", nil)
+        state.cornerButton:SetHidden(true)
+        state.cornerButton:SetParent(nil)
+    end
+    state.cornerButton = nil
+    state.cornerTexture = nil
+    state.cornerHover = false
+    state.cornerPressed = false
+    state.collapsed = false
+    state.expandedWindowSize = nil
 
     if state.root then
         state.root:SetHandler("OnMoveStop", nil)

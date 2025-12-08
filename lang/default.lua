@@ -61,6 +61,14 @@ local strings = {
     SI_NVK3UT_LAM_TRACKER_HOST_HEADER_BEHAVIOR = "Behavior",
     SI_NVK3UT_LAM_OPTION_TRACKER_HOST_HIDE_IN_COMBAT = "Hide tracker during combat",
     SI_NVK3UT_LAM_OPTION_TRACKER_HOST_HIDE_IN_COMBAT_DESC = "When enabled, the entire tracker host hides while you are in combat. The tracker remains visible while the AddOn Settings (LAM) are open.",
+    SI_NVK3UT_LAM_OPTION_TRACKER_HOST_CORNER_BUTTON = "Corner collapse button",
+    SI_NVK3UT_LAM_OPTION_TRACKER_HOST_CORNER_BUTTON_DESC = "Show a corner button on the tracker host that lets you quickly collapse or expand the tracker window.",
+    SI_NVK3UT_LAM_OPTION_TRACKER_HOST_CORNER_POSITION = "Corner position",
+    SI_NVK3UT_LAM_OPTION_TRACKER_HOST_CORNER_POSITION_DESC = "Choose the corner of the tracker host where the collapse button is displayed.",
+    SI_NVK3UT_LAM_OPTION_TRACKER_HOST_CORNER_TOP_RIGHT = "Top right",
+    SI_NVK3UT_LAM_OPTION_TRACKER_HOST_CORNER_TOP_LEFT = "Top left",
+    SI_NVK3UT_LAM_OPTION_TRACKER_HOST_CORNER_BOTTOM_RIGHT = "Bottom right",
+    SI_NVK3UT_LAM_OPTION_TRACKER_HOST_CORNER_BOTTOM_LEFT = "Bottom left",
 
     -- Debug
     SI_NVK3UT_LAM_OPTION_DEBUG_ENABLE = "Enable debug",
