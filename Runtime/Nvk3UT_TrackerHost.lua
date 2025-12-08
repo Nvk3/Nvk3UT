@@ -5604,6 +5604,25 @@ TrackerHost.RefreshScroll = refreshScroll
 TrackerHost.NotifyContentChanged = notifyContentChanged
 TrackerHost.ScrollControlIntoView = scrollControlIntoView
 
+function Nvk3UT_ToggleTrackerCollapse()
+    local addon = _G and _G.Nvk3UT or Nvk3UT
+    if type(addon) ~= "table" then
+        return
+    end
+
+    local host = addon.TrackerHost
+    if type(host) ~= "table" then
+        return
+    end
+
+    local toggle = host.ToggleCollapsed
+    if type(toggle) ~= "function" then
+        return
+    end
+
+    pcall(toggle, host)
+end
+
 function TrackerHost.EnsureVisible(options)
     options = options or {}
 

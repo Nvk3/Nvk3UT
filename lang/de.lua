@@ -260,6 +260,9 @@ local strings = {
     SI_NVK3UT_FONT_OUTLINE_SHADOW = "Schatten",
     SI_NVK3UT_FONT_OUTLINE_OUTLINE = "Kontur",
 
+    SI_BINDING_NAME_NVK3UT_CATEGORY = "Nvk3's Ultimate Tracker",
+    SI_BINDING_NAME_NVK3UT_TOGGLE_TRACKER_COLLAPSE = "Tracker ein-/ausklappen",
+
     -- Shared formatting
     SI_NVK3UT_LAM_FONT_FACE_FORMAT = "%s - Schriftart",
     SI_NVK3UT_LAM_FONT_SIZE_FORMAT = "%s - Größe",

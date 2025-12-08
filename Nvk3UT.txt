@@ -15,6 +15,7 @@ Core/Nvk3UT_Rebuild.lua
 Core/Nvk3UT_Core.lua
 lang/default.lua
 lang/$(language).lua
+Nvk3UT_Bindings.xml
 ## Model — Quest
 Model/Quest/Nvk3UT_QuestState.lua
 Model/Quest/Nvk3UT_QuestSelection.lua
