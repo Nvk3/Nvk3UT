@@ -2100,28 +2100,27 @@ local function registerPanel(displayTitle)
                         end
                     end
 
-                    local filter = getQuestFilter()
-                    local mode = filter and tonumber(filter.mode) or QUEST_FILTER_MODE_ALL
-                    if mode ~= QUEST_FILTER_MODE_ALL and mode ~= QUEST_FILTER_MODE_ACTIVE and mode ~= QUEST_FILTER_MODE_SELECTION then
-                        mode = QUEST_FILTER_MODE_ALL
-                        if filter then
-                            filter.mode = mode
+                    return QUEST_FILTER_MODE_ALL
+                end,
+                setFunc = function(value)
+                    local tracker = Nvk3UT and Nvk3UT.QuestTracker
+                    local filter
+                    if tracker and tracker.EnsureQuestFilterSavedVars then
+                        local ok, resolved = pcall(tracker.EnsureQuestFilterSavedVars)
+                        if ok then
+                            filter = resolved
                         end
                     end
 
-                    return mode
-                end,
-                setFunc = function(value)
-                    local filter = getQuestFilter()
+                    local numeric = tonumber(value) or QUEST_FILTER_MODE_ALL
+                    if numeric ~= QUEST_FILTER_MODE_ACTIVE and numeric ~= QUEST_FILTER_MODE_SELECTION then
+                        numeric = QUEST_FILTER_MODE_ALL
+                    end
+
                     if filter then
-                        local numeric = tonumber(value) or QUEST_FILTER_MODE_ALL
-                        if numeric ~= QUEST_FILTER_MODE_ACTIVE and numeric ~= QUEST_FILTER_MODE_SELECTION then
-                            numeric = QUEST_FILTER_MODE_ALL
-                        end
                         filter.mode = numeric
                     end
 
-                    local tracker = Nvk3UT and Nvk3UT.QuestTracker
                     if tracker and tracker.MarkDirty then
                         tracker.MarkDirty("LAM:QuestFilterMode")
                     end

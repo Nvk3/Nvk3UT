@@ -51,6 +51,17 @@ local QuestFilter = Nvk3UT and Nvk3UT.QuestFilter
 local QUEST_FILTER_MODE_ALL = (QuestFilter and QuestFilter.MODE_ALL) or 1
 local QUEST_FILTER_MODE_ACTIVE = (QuestFilter and QuestFilter.MODE_ACTIVE) or 2
 local QUEST_FILTER_MODE_SELECTION = (QuestFilter and QuestFilter.MODE_SELECTION) or 3
+
+local function IsValidQuestFilterMode(mode)
+    local numeric = tonumber(mode)
+    if not numeric then
+        return false
+    end
+
+    return numeric == QUEST_FILTER_MODE_ALL
+        or numeric == QUEST_FILTER_MODE_ACTIVE
+        or numeric == QUEST_FILTER_MODE_SELECTION
+end
 local FormatCategoryHeaderText =
     (Utils and Utils.FormatCategoryHeaderText)
     or function(baseText, count, showCounts)
@@ -76,34 +87,28 @@ end
 
 local function EnsureQuestFilterSavedVars()
     local addon = Nvk3UT
-    local sv = addon and addon.SV
-    if not (addon and sv) then
+    if not addon then
+        DebugLog("EnsureQuestFilterSavedVars: addon is nil")
         return nil
     end
 
+    local sv = addon.SV
+    if not sv then
+        DebugLog("EnsureQuestFilterSavedVars: addon.SV is nil")
+        return nil
+    end
+
+    sv.QuestTracker = sv.QuestTracker or {}
     local tracker = sv.QuestTracker
-    if type(tracker) ~= "table" then
-        tracker = {}
-        sv.QuestTracker = tracker
-    end
 
-    local filter = state.questFilter
-    if type(filter) ~= "table" then
-        filter = tracker.questFilter
-        if type(filter) ~= "table" then
-            if type(sv.questFilter) == "table" then
-                filter = sv.questFilter
-            else
-                filter = {}
-            end
-        end
-    end
+    tracker.questFilter = tracker.questFilter or {}
+    local filter = tracker.questFilter
 
-    tracker.questFilter = filter
-
-    local mode = tonumber(filter.mode)
-    if mode ~= QUEST_FILTER_MODE_ALL and mode ~= QUEST_FILTER_MODE_ACTIVE and mode ~= QUEST_FILTER_MODE_SELECTION then
+    local numericMode = tonumber(filter.mode)
+    if not IsValidQuestFilterMode(numericMode) then
         filter.mode = QUEST_FILTER_MODE_ALL
+    else
+        filter.mode = numericMode
     end
 
     if type(filter.selection) ~= "table" then
@@ -117,18 +122,18 @@ end
 local function GetQuestFilterMode()
     local questFilter = EnsureQuestFilterSavedVars()
     if not questFilter then
+        DebugLog("GetQuestFilterMode: filter is nil, falling back to ALL")
         return QUEST_FILTER_MODE_ALL
     end
 
-    local mode = tonumber(questFilter.mode)
-    local isValid = mode == QUEST_FILTER_MODE_ALL or mode == QUEST_FILTER_MODE_ACTIVE or mode == QUEST_FILTER_MODE_SELECTION
-
-    if not isValid then
+    local mode = questFilter.mode
+    if not IsValidQuestFilterMode(mode) then
+        DebugLog("GetQuestFilterMode: invalid mode '%s', resetting to ALL", tostring(mode))
         questFilter.mode = QUEST_FILTER_MODE_ALL
         return QUEST_FILTER_MODE_ALL
     end
 
-    return mode
+    return tonumber(mode)
 end
 
 local function IsQuestSelectionMode()
@@ -3966,6 +3971,23 @@ local function EmptySnapshot()
     return { categories = { ordered = {}, byKey = {} } }
 end
 
+local function CountSnapshotEntries(snapshot)
+    local categories = 0
+    local quests = 0
+
+    if snapshot and snapshot.categories and snapshot.categories.ordered then
+        categories = #snapshot.categories.ordered
+        for index = 1, categories do
+            local category = snapshot.categories.ordered[index]
+            if category and type(category.quests) == "table" then
+                quests = quests + #category.quests
+            end
+        end
+    end
+
+    return categories, quests
+end
+
 local function IsSnapshotValid(candidate)
     if type(candidate) ~= "table" then
         return false
@@ -3984,6 +4006,17 @@ local function BuildFilteredSnapshot(rawSnapshot)
     state.rawSnapshot = snapshot
 
     local filterMode = GetQuestFilterMode()
+
+    if IsDebugLoggingEnabled() then
+        local rawCategories, rawQuests = CountSnapshotEntries(snapshot)
+        DebugLog(
+            "BuildFilteredSnapshot: mode=%s raw categories=%d quests=%d",
+            tostring(filterMode),
+            rawCategories,
+            rawQuests
+        )
+    end
+
     if not QuestFilter or not QuestFilter.ApplyFilter or filterMode == QUEST_FILTER_MODE_ALL then
         return snapshot
     end
@@ -3995,11 +4028,22 @@ local function BuildFilteredSnapshot(rawSnapshot)
 
     local ok, filtered = pcall(QuestFilter.ApplyFilter, snapshot, filterMode, selection, activeQuestKey, categoryName)
     if ok and IsSnapshotValid(filtered) then
+        if IsDebugLoggingEnabled() then
+            local filteredCategories, filteredQuests = CountSnapshotEntries(filtered)
+            DebugLog(
+                "BuildFilteredSnapshot: mode=%s filtered categories=%d quests=%d",
+                tostring(filterMode),
+                filteredCategories,
+                filteredQuests
+            )
+        end
+
         filtered.signature = snapshot.signature
         filtered.updatedAtMs = snapshot.updatedAtMs
         return filtered
     end
 
+    DebugLog("BuildFilteredSnapshot: filter returned invalid result, falling back to unfiltered snapshot")
     return snapshot
 end
 
