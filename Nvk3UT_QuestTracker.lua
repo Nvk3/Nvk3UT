@@ -1832,7 +1832,7 @@ local function EnsureQuestJournalKeyLabel()
     questJournalSelectionKeyContainer:SetHidden(true)
     questJournalSelectionKeyContainer:SetWidth(360)
     questJournalSelectionKeyContainer:ClearAnchors()
-    questJournalSelectionKeyContainer:SetAnchor(BOTTOM, parent, BOTTOM, 5, -35)
+    questJournalSelectionKeyContainer:SetAnchor(BOTTOM, parent, BOTTOM, 5, -45)
 
     local keyLabelName = string.format("%sKey", containerName)
     questJournalSelectionKeyLabel = CreateControl(keyLabelName, questJournalSelectionKeyContainer, CT_LABEL)
