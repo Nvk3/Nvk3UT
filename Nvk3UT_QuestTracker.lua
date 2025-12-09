@@ -144,6 +144,8 @@ local state = {
     orderedControls = {},
     lastAnchoredControl = nil,
     snapshot = nil,
+    lastActiveCategoryKey = nil,
+    currentActiveCategoryKey = nil,
     categoryControls = {},
     questControls = {},
     pendingRefresh = false,
@@ -588,6 +590,35 @@ local function CollectCategoryKeysForQuest(journalIndex)
     end)
 
     return keys, found
+end
+
+local function ResolvePrimaryCategoryForQuest(journalIndex)
+    if
+        not state.snapshot
+        or not state.snapshot.categories
+        or not state.snapshot.categories.ordered
+        or not state.snapshot.categories.byKey
+    then
+        return nil, nil
+    end
+
+    if not journalIndex then
+        return nil, nil
+    end
+
+    local categoryKeys = CollectCategoryKeysForQuest(journalIndex)
+    local ordered = state.snapshot.categories.ordered
+    local byKey = state.snapshot.categories.byKey
+
+    for index = 1, #ordered do
+        local category = ordered[index]
+        local key = category and category.key and NormalizeCategoryKey(category.key)
+        if key and categoryKeys[key] then
+            return key, byKey[key] or category
+        end
+    end
+
+    return nil, nil
 end
 
 local function ResolveStateSource(context, fallback)
@@ -2032,6 +2063,44 @@ local function EnsureTrackedQuestVisible(journalIndex, forceExpand, context)
     end
     local isExternal = context and context.isExternal
     local isNewTarget = context and context.isNewTarget
+
+    local newCategoryKey
+    local newCategoryEntry
+
+    if isNewTarget then
+        newCategoryKey, newCategoryEntry = ResolvePrimaryCategoryForQuest(journalIndex)
+
+        if newCategoryKey then
+            local wasUninitialized = state.currentActiveCategoryKey == nil
+
+            state.lastActiveCategoryKey = state.currentActiveCategoryKey
+            state.currentActiveCategoryKey = newCategoryKey
+
+            if IsDebugLoggingEnabled() then
+                if wasUninitialized then
+                    DebugLog(string.format(
+                        "[CATEGORY_TRACK][init] journalIndex=%s categoryKey=%s categoryName=%s",
+                        tostring(journalIndex),
+                        tostring(state.currentActiveCategoryKey),
+                        tostring((newCategoryEntry and newCategoryEntry.name) or "<nil>")
+                    ))
+                end
+
+                DebugLog(string.format(
+                    "[CATEGORY_TRACK][switch] journalIndex=%s previous=%s current=%s categoryName=%s",
+                    tostring(journalIndex),
+                    tostring(state.lastActiveCategoryKey),
+                    tostring(state.currentActiveCategoryKey),
+                    tostring((newCategoryEntry and newCategoryEntry.name) or "<nil>")
+                ))
+            end
+        elseif IsDebugLoggingEnabled() then
+            DebugLog(string.format(
+                "[CATEGORY_TRACK][switch-skipped] journalIndex=%s reason=no-category",
+                tostring(journalIndex)
+            ))
+        end
+    end
     if isExternal then
         LogExternalSelect(journalIndex)
         ExpandCategoriesForExternalSelect(journalIndex)
@@ -3791,6 +3860,8 @@ function QuestTracker.Init(parentControl, opts)
     state.syncingTrackedState = false
     state.pendingDeselection = false
     state.pendingExternalReveal = nil
+    state.lastActiveCategoryKey = nil
+    state.currentActiveCategoryKey = nil
 
     QuestTracker.ApplyTheme(state.saved or {})
     QuestTracker.ApplySettings(state.saved or {})
@@ -3860,6 +3931,8 @@ function QuestTracker.Shutdown()
     state.contentHeight = 0
     state.trackedQuestIndex = nil
     state.trackedCategoryKeys = {}
+    state.lastActiveCategoryKey = nil
+    state.currentActiveCategoryKey = nil
     state.trackingEventsRegistered = false
     state.suppressForceExpandFor = nil
     state.pendingSelection = nil
