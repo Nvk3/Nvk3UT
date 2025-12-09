@@ -1816,7 +1816,7 @@ local function RefreshQuestJournalSelectionKeyLabelText()
         )
     end
 
-    local labelText = bindingString or ""
+    local labelText = (bindingString and bindingString ~= "") and bindingString or GetString(SI_ACTION_IS_NOT_BOUND)
     local shortLabel = GetString(SI_NVK3UT_QUEST_SELECTION_KEYBIND_SHORT)
     if shortLabel and shortLabel ~= "" then
         if labelText ~= "" then
