@@ -6,6 +6,10 @@ local function GetQuestListModule()
     return Nvk3UT and Nvk3UT.QuestList
 end
 
+local function GetQuestStateModule()
+    return Nvk3UT and Nvk3UT.QuestState
+end
+
 local QuestModel = {}
 QuestModel.__index = QuestModel
 
@@ -37,6 +41,44 @@ local playerState = {
 }
 
 local DEBUG_INIT = false
+
+local function NormalizeCategoryKey(categoryKey)
+    local questState = GetQuestStateModule()
+    if questState and questState.NormalizeCategoryKey then
+        return questState.NormalizeCategoryKey(categoryKey)
+    end
+
+    if categoryKey == nil then
+        return nil
+    end
+
+    if type(categoryKey) == "string" then
+        return categoryKey
+    end
+
+    if type(categoryKey) == "number" then
+        return tostring(categoryKey)
+    end
+
+    return tostring(categoryKey)
+end
+
+local function QuestKeyToJournalIndex(questKey)
+    if questKey == nil then
+        return nil
+    end
+
+    if type(questKey) == "table" and questKey.questKey then
+        questKey = questKey.questKey
+    end
+
+    local numeric = tonumber(questKey)
+    if numeric and numeric > 0 then
+        return numeric
+    end
+
+    return nil
+end
 
 local function IsDebugLoggingEnabled()
     if DEBUG_INIT then
@@ -102,6 +144,54 @@ local function CopyTable(value)
         copy[key] = CopyTable(entry)
     end
     return copy
+end
+
+local function AppendCategoryKey(list, seen, categoryKey)
+    local normalized = NormalizeCategoryKey(categoryKey)
+    if not normalized or seen[normalized] then
+        return
+    end
+
+    seen[normalized] = true
+    list[#list + 1] = normalized
+end
+
+local function CollectCategoryKeysForQuestFromSnapshot(snapshot, journalIndex)
+    local keys = {}
+    local orderedKeys = {}
+
+    if not snapshot or not journalIndex then
+        return keys, false, orderedKeys
+    end
+
+    local found = false
+    local seen = {}
+    local categories = snapshot.categories
+    local ordered = categories and categories.ordered
+
+    if type(ordered) ~= "table" then
+        return keys, found, orderedKeys
+    end
+
+    for index = 1, #ordered do
+        local category = ordered[index]
+        if category and type(category.quests) == "table" then
+            for questIndex = 1, #category.quests do
+                local quest = category.quests[questIndex]
+                if quest and quest.journalIndex == journalIndex then
+                    found = true
+                    AppendCategoryKey(orderedKeys, seen, category.key)
+                    AppendCategoryKey(orderedKeys, seen, category.parent and category.parent.key)
+                end
+            end
+        end
+    end
+
+    for idx = 1, #orderedKeys do
+        keys[orderedKeys[idx]] = true
+    end
+
+    return keys, found, orderedKeys
 end
 
 local function BindQuestList(savedVars)
@@ -496,6 +586,13 @@ local function OnTrackingUpdate(eventCode, trackingType)
         return
     end
     OnQuestChanged(eventCode)
+end
+
+function QuestModel.GetCategoryKeysForQuestKey(questKey)
+    local journalIndex = QuestKeyToJournalIndex(questKey)
+    local snapshot = QuestModel.GetSnapshot and QuestModel.GetSnapshot()
+
+    return CollectCategoryKeysForQuestFromSnapshot(snapshot, journalIndex)
 end
 
 function QuestModel.Init(opts)
