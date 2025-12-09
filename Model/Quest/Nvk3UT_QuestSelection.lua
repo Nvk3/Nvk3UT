@@ -312,6 +312,59 @@ local function LogActiveChange(previous, active, source)
     diagnostics:DebugIfEnabled("QuestSelection", "[QuestSelection] %s", message)
 end
 
+local function GetQuestTrackerSettings()
+    local addon = Nvk3UT
+    local sv = addon and addon.SV
+    local questTracker = sv and sv.QuestTracker
+
+    if type(questTracker) == "table" then
+        return questTracker
+    end
+
+    return nil
+end
+
+local function IsAutoCollapseEnabled()
+    local questTracker = GetQuestTrackerSettings()
+    return questTracker and questTracker.autoCollapsePreviousCategoryOnActiveQuestChange == true
+end
+
+function QuestSelection.ApplyAutoCollapsePreviousCategory()
+    if not IsAutoCollapseEnabled() then
+        return false
+    end
+
+    local previousSelection = saved and saved.previous
+    local previousCategoryKey = previousSelection and previousSelection.categoryKey
+    if not previousCategoryKey then
+        return false
+    end
+
+    local questTracker = Nvk3UT and Nvk3UT.QuestTracker
+    if not questTracker then
+        return false
+    end
+
+    if type(questTracker.IsCategoryExpanded) ~= "function" then
+        return false
+    end
+
+    if not questTracker.IsCategoryExpanded(previousCategoryKey) then
+        return false
+    end
+
+    if type(questTracker.ToggleCategoryExpansion) ~= "function" then
+        return false
+    end
+
+    questTracker.ToggleCategoryExpansion(previousCategoryKey, false, {
+        trigger = "auto-collapse",
+        source = "QuestSelection:ApplyAutoCollapsePreviousCategory",
+    })
+
+    return true
+end
+
 local function NormalizeSelectionEntry(entry, defaultSource)
     local normalized = CopySelectionEntry(entry)
 
@@ -395,6 +448,8 @@ local function ApplyActiveWrite(questKey, source, options)
     }, source)
 
     LogActiveChange(saved.previous, saved.active, source)
+
+    QuestSelection.ApplyAutoCollapsePreviousCategory()
 
     return true, normalized, priority, source
 end

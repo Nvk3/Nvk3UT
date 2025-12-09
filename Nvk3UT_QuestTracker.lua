@@ -3080,6 +3080,42 @@ SetQuestExpanded = function(journalIndex, expanded, context)
     return true
 end
 
+local function ToggleCategoryExpansion(categoryKey, expanded, context)
+    if not categoryKey then
+        return false
+    end
+
+    local targetExpanded = expanded
+    if targetExpanded == nil then
+        targetExpanded = not IsCategoryExpanded(categoryKey)
+    end
+
+    local toggleContext = context or {}
+    if toggleContext.trigger == nil then
+        toggleContext = {
+            trigger = "unknown",
+            source = toggleContext.source,
+        }
+    elseif toggleContext.source == nil then
+        toggleContext = {
+            trigger = toggleContext.trigger,
+            source = nil,
+        }
+    end
+
+    if not toggleContext.source then
+        toggleContext.source = "QuestTracker:ToggleCategoryExpansion"
+    end
+
+    local changed = SetCategoryExpanded(categoryKey, targetExpanded, toggleContext)
+    if changed then
+        QuestTracker.Refresh()
+        ScheduleToggleFollowup("questCategoryToggle")
+    end
+
+    return changed
+end
+
 local function ToggleQuestExpansion(journalIndex, context)
     if not journalIndex then
         return false
@@ -3150,14 +3186,10 @@ local function AcquireCategoryControl()
                 return
             end
             local expanded = not IsCategoryExpanded(catKey)
-            local changed = SetCategoryExpanded(catKey, expanded, {
+            ToggleCategoryExpansion(catKey, expanded, {
                 trigger = "click",
                 source = "QuestTracker:OnCategoryClick",
             })
-            if changed then
-                QuestTracker.Refresh()
-                ScheduleToggleFollowup("questCategoryToggle")
-            end
         end)
         control:SetHandler("OnMouseEnter", function(ctrl)
             ApplyMouseoverHighlight(ctrl)
@@ -3828,6 +3860,9 @@ function QuestTracker.Init(parentControl, opts)
     AdoptTrackedQuestOnInit()
 end
 
+QuestTracker.ToggleCategoryExpansion = ToggleCategoryExpansion
+QuestTracker.IsCategoryExpanded = IsCategoryExpanded
+
 function QuestTracker.Refresh()
     Rebuild()
 end
@@ -3896,6 +3931,8 @@ function QuestTracker.ApplySettings(settings)
 
     state.opts.autoExpand = settings.autoExpand ~= false
     state.opts.autoTrack = settings.autoTrack ~= false
+    state.opts.autoCollapsePreviousCategoryOnActiveQuestChange =
+        settings.autoCollapsePreviousCategoryOnActiveQuestChange == true
     state.opts.active = (settings.active ~= false)
 
     RefreshVisibility()
