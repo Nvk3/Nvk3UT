@@ -1736,8 +1736,10 @@ end
 
 local questJournalSelectionKeybindDescriptor = nil
 local questJournalSelectionKeybindEntry = nil
+local questJournalSelectionKeyLabel = nil
 local questJournalKeybindAdded = false
 local questJournalKeybindHooked = false
+local questJournalKeyLabelSceneHooked = false
 local questJournalContextMenuHooked = false
 
 local function GetFocusedQuestKey()
@@ -1790,6 +1792,105 @@ local function ToggleFocusedQuestSelection(source)
 
     DebugLog("QuestJournalKeybind.callback: toggling selection and marking tracker dirty")
     ToggleQuestSelection(questKey, source or "QuestJournal:Keybind")
+    UpdateQuestJournalSelectionKeyLabelVisibility("QuestJournal:KeybindToggle")
+end
+
+local function GetQuestJournalKeyLabelParent()
+    if QUEST_JOURNAL_KEYBOARD and QUEST_JOURNAL_KEYBOARD.control then
+        return QUEST_JOURNAL_KEYBOARD.control
+    end
+
+    return nil
+end
+
+local function RefreshQuestJournalSelectionKeyLabelText()
+    if not questJournalSelectionKeyLabel then
+        return
+    end
+
+    local bindingString = nil
+    if ZO_Keybindings_GetHighestPriorityBindingStringFromAction then
+        bindingString = ZO_Keybindings_GetHighestPriorityBindingStringFromAction(
+            "NVK3UT_TOGGLE_QUEST_SELECTION",
+            true
+        )
+    end
+
+    local labelText = bindingString or ""
+    local shortLabel = GetString(SI_NVK3UT_QUEST_SELECTION_KEYBIND_SHORT)
+    if shortLabel and shortLabel ~= "" then
+        if labelText ~= "" then
+            labelText = zo_strformat("<<1>> <<2>>", labelText, shortLabel)
+        else
+            labelText = shortLabel
+        end
+    end
+
+    questJournalSelectionKeyLabel:SetText(labelText)
+end
+
+local function EnsureQuestJournalKeyLabel()
+    if questJournalSelectionKeyLabel and questJournalSelectionKeyLabel.SetHidden then
+        return questJournalSelectionKeyLabel
+    end
+
+    local parent = GetQuestJournalKeyLabelParent()
+    if not parent then
+        if IsDebugLoggingEnabled() then
+            DebugLog("QuestJournalKeybindLabel: parent control missing")
+        end
+        return nil
+    end
+
+    local controlName = string.format("%sNvk3UTQuestSelectionKeyLabel", parent:GetName() or "Nvk3UTQuestSelectionKeyLabel")
+    questJournalSelectionKeyLabel = CreateControl(controlName, parent, CT_LABEL)
+    questJournalSelectionKeyLabel:SetFont("ZoFontGame")
+    questJournalSelectionKeyLabel:SetHorizontalAlignment(TEXT_ALIGN_CENTER)
+    questJournalSelectionKeyLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
+    questJournalSelectionKeyLabel:SetHidden(true)
+    questJournalSelectionKeyLabel:SetWidth(360)
+
+    local anchorTarget = parent
+    if parent.GetNamedChild then
+        anchorTarget = parent:GetNamedChild("KeybindBG") or parent:GetNamedChild("KeybindContainer") or parent
+    end
+
+    questJournalSelectionKeyLabel:ClearAnchors()
+    questJournalSelectionKeyLabel:SetAnchor(BOTTOM, anchorTarget, BOTTOM, 0, -8)
+
+    if ZO_DEFAULT_ENABLED_COLOR then
+        questJournalSelectionKeyLabel:SetColor(ZO_DEFAULT_ENABLED_COLOR:UnpackRGB())
+    end
+
+    ZO_Keybindings_RegisterLabelForBindingUpdate(questJournalSelectionKeyLabel, "NVK3UT_TOGGLE_QUEST_SELECTION", true)
+
+    RefreshQuestJournalSelectionKeyLabelText()
+
+    return questJournalSelectionKeyLabel
+end
+
+local function UpdateQuestJournalSelectionKeyLabelVisibility(reason)
+    local label = EnsureQuestJournalKeyLabel()
+    if not label then
+        return
+    end
+
+    local shouldShow = IsQuestSelectionModeActive()
+    if shouldShow then
+        local isJournalShowing =
+            (QUEST_JOURNAL_SCENE and QUEST_JOURNAL_SCENE.IsShowing and QUEST_JOURNAL_SCENE:IsShowing())
+            or (SCENE_MANAGER and SCENE_MANAGER.IsShowing and SCENE_MANAGER:IsShowing("journal"))
+        shouldShow = isJournalShowing
+    end
+
+    if shouldShow then
+        shouldShow = GetFocusedQuestKey() ~= nil
+    end
+
+    label:SetHidden(not shouldShow)
+    if shouldShow then
+        RefreshQuestJournalSelectionKeyLabelText()
+    end
 end
 
 local function EnsureQuestJournalKeybind()
@@ -1837,6 +1938,20 @@ local function HookQuestJournalKeybind()
     DebugLog("QuestJournalKeybind: HookQuestJournalKeybind called")
 
     EnsureQuestJournalKeybind()
+    EnsureQuestJournalKeyLabel()
+
+    if not questJournalKeyLabelSceneHooked then
+        local questJournalScene = QUEST_JOURNAL_SCENE
+            or (SCENE_MANAGER and SCENE_MANAGER.GetScene and SCENE_MANAGER:GetScene("journal"))
+        if questJournalScene and questJournalScene.RegisterCallback then
+            questJournalScene:RegisterCallback("StateChange", function(_, newState)
+                if newState == SCENE_SHOWING or newState == SCENE_HIDDEN then
+                    UpdateQuestJournalSelectionKeyLabelVisibility("SceneChange")
+                end
+            end)
+            questJournalKeyLabelSceneHooked = true
+        end
+    end
 
     if not (ZO_PostHook and ZO_QuestJournal_Keyboard) then
         return
@@ -1864,6 +1979,8 @@ local function HookQuestJournalKeybind()
         table.insert(descriptorList, questJournalSelectionKeybindEntry)
         questJournalKeybindAdded = true
         DebugLog("QuestJournalKeybind: appended selection keybind descriptor")
+
+        UpdateQuestJournalSelectionKeyLabelVisibility("KeybindDescriptorAdded")
     end)
 
     questJournalKeybindHooked = true
@@ -4425,6 +4542,7 @@ QuestTracker.IsCategoryExpanded = IsCategoryExpanded
 QuestTracker.SetCategoryExpanded = SetCategoryExpanded
 QuestTracker.EnsureQuestFilterSavedVars = EnsureQuestFilterSavedVars
 QuestTracker.GetQuestFilterMode = GetQuestFilterMode
+QuestTracker.UpdateQuestJournalSelectionKeyLabelVisibility = UpdateQuestJournalSelectionKeyLabelVisibility
 QuestTracker.QUEST_FILTER_MODE_ALL = QUEST_FILTER_MODE_ALL
 QuestTracker.QUEST_FILTER_MODE_ACTIVE = QUEST_FILTER_MODE_ACTIVE
 QuestTracker.QUEST_FILTER_MODE_SELECTION = QUEST_FILTER_MODE_SELECTION
@@ -4625,6 +4743,10 @@ function Nvk3UT_ToggleQuestSelectionBinding()
     local runtime = addon.TrackerRuntime
     if runtime and runtime.QueueDirty then
         runtime:QueueDirty("quest")
+    end
+
+    if addon.QuestTracker and addon.QuestTracker.UpdateQuestJournalSelectionKeyLabelVisibility then
+        addon.QuestTracker.UpdateQuestJournalSelectionKeyLabelVisibility("Keybind:ToggleQuestSelection")
     end
 end
 

@@ -221,6 +221,7 @@ local strings = {
     SI_NVK3UT_TRACKER_QUEST_CONTEXT_ABANDON = "Abandon quest",
     SI_NVK3UT_QUEST_FILTER_CATEGORY_ACTIVE = "Quests",
     SI_NVK3UT_QUEST_SELECTION_KEYBIND = "Selection: track/untrack quest",
+    SI_NVK3UT_QUEST_SELECTION_KEYBIND_SHORT = "Quest selection",
     SI_NVK3UT_QUEST_SELECTION_ADD = "Add to quest selection",
     SI_NVK3UT_QUEST_SELECTION_REMOVE = "Remove from quest selection",
     SI_NVK3UT_QUEST_SELECTION_ADD_FROM_JOURNAL = "Add to quest selection",

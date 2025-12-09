@@ -221,6 +221,7 @@ local strings = {
     SI_NVK3UT_TRACKER_QUEST_CONTEXT_ABANDON = "Quest aufgeben",
     SI_NVK3UT_QUEST_FILTER_CATEGORY_ACTIVE = "Quests",
     SI_NVK3UT_QUEST_SELECTION_KEYBIND = "Questauswahl: verfolgen/abbrechen",
+    SI_NVK3UT_QUEST_SELECTION_KEYBIND_SHORT = "Questauswahl",
     SI_NVK3UT_QUEST_SELECTION_ADD = "Zur Questauswahl hinzufügen",
     SI_NVK3UT_QUEST_SELECTION_REMOVE = "Aus Questauswahl entfernen",
     SI_NVK3UT_QUEST_SELECTION_ADD_FROM_JOURNAL = "Zur Questauswahl hinzufügen",

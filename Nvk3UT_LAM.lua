@@ -2124,6 +2124,10 @@ local function registerPanel(displayTitle)
                     if runtime and runtime.QueueDirty then
                         runtime:QueueDirty("quest")
                     end
+
+                    if tracker and tracker.UpdateQuestJournalSelectionKeyLabelVisibility then
+                        tracker.UpdateQuestJournalSelectionKeyLabelVisibility("LAM:QuestFilterMode")
+                    end
                 end,
                 default = 1,
             }
