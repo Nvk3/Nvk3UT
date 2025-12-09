@@ -330,13 +330,28 @@ local function IsAutoCollapseEnabled()
 end
 
 function QuestSelection.ApplyAutoCollapsePreviousCategory()
+    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
+
     if not IsAutoCollapseEnabled() then
         return false
+    end
+
+    if diagnostics and type(diagnostics.DebugIfEnabled) == "function" then
+        diagnostics:DebugIfEnabled(
+            "QuestSelection",
+            "[AutoCollapse] Option enabled, evaluating previous category for collapse"
+        )
     end
 
     local previousSelection = saved and saved.previous
     local previousCategoryKey = previousSelection and previousSelection.categoryKey
     if not previousCategoryKey then
+        if diagnostics and type(diagnostics.DebugIfEnabled) == "function" then
+            diagnostics:DebugIfEnabled(
+                "QuestSelection",
+                "[AutoCollapse] No previous category to collapse (previous.categoryKey is nil)"
+            )
+        end
         return false
     end
 
@@ -350,6 +365,13 @@ function QuestSelection.ApplyAutoCollapsePreviousCategory()
     end
 
     if not questTracker.IsCategoryExpanded(previousCategoryKey) then
+        if diagnostics and type(diagnostics.DebugIfEnabled) == "function" then
+            diagnostics:DebugIfEnabled(
+                "QuestSelection",
+                "[AutoCollapse] Previous category '%s' is not expanded, skipping collapse",
+                tostring(previousCategoryKey)
+            )
+        end
         return false
     end
 
@@ -357,10 +379,25 @@ function QuestSelection.ApplyAutoCollapsePreviousCategory()
         return false
     end
 
+    if diagnostics and type(diagnostics.DebugIfEnabled) == "function" then
+        diagnostics:DebugIfEnabled(
+            "QuestSelection",
+            "[AutoCollapse] Collapsing previous category '%s' due to active quest change (trigger=auto-collapse)",
+            tostring(previousCategoryKey)
+        )
+    end
+
     questTracker.ToggleCategoryExpansion(previousCategoryKey, false, {
         trigger = "auto-collapse",
         source = "QuestSelection:ApplyAutoCollapsePreviousCategory",
     })
+
+    if diagnostics and type(diagnostics.DebugIfEnabled) == "function" then
+        diagnostics:DebugIfEnabled(
+            "QuestSelection",
+            "[AutoCollapse] Collapse applied successfully"
+        )
+    end
 
     return true
 end
