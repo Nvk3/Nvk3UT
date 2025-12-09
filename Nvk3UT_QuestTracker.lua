@@ -1638,7 +1638,10 @@ local function ExpandCategoriesForExternalSelect(journalIndex)
 
         for key in pairs(keys) do
             if key and SetCategoryExpanded then
-                local manualCollapseRespected = IsCategoryManualCollapseRespected(key)
+                local manualCollapseRespected =
+                    type(IsCategoryManualCollapseRespected) == "function"
+                    and IsCategoryManualCollapseRespected(key)
+                    or false
                 if manualCollapseRespected then
                     if debugEnabled then
                         DebugLog(
@@ -1687,7 +1690,10 @@ local function ExpandCategoriesForClickSelect(journalIndex)
 
         for key in pairs(keys) do
             if key and SetCategoryExpanded then
-                local manualCollapseRespected = IsCategoryManualCollapseRespected(key)
+                local manualCollapseRespected =
+                    type(IsCategoryManualCollapseRespected) == "function"
+                    and IsCategoryManualCollapseRespected(key)
+                    or false
                 if manualCollapseRespected then
                     if debugEnabled then
                         DebugLog(
@@ -2040,7 +2046,10 @@ local function EnsureTrackedCategoriesExpanded(journalIndex, forceExpand, contex
 
     for key in pairs(keys) do
         if key then
-            local manualCollapseRespected = IsCategoryManualCollapseRespected(key)
+            local manualCollapseRespected =
+                type(IsCategoryManualCollapseRespected) == "function"
+                and IsCategoryManualCollapseRespected(key)
+                or false
             if manualCollapseRespected then
                 if debugEnabled then
                     DebugLog(
