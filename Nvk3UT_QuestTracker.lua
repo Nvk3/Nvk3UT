@@ -1732,30 +1732,34 @@ local questJournalKeybindHooked = false
 local questJournalContextMenuHooked = false
 
 local function GetFocusedQuestKey()
-    local journalIndex = nil
-
     local journalManager = QUEST_JOURNAL_MANAGER
-    if journalManager and journalManager.GetSelectedQuestIndex then
-        local ok, selected = SafeCall(function(manager)
-            return manager:GetSelectedQuestIndex()
-        end, journalManager)
-        if ok then
-            local numeric = tonumber(selected)
-            if numeric and numeric > 0 then
-                journalIndex = numeric
-            end
+    if not (journalManager and type(journalManager.GetSelectedQuestIndex) == "function") then
+        if IsDebugLoggingEnabled() then
+            DebugLog("GetFocusedQuestKey: journalManager missing or GetSelectedQuestIndex unavailable")
         end
-    end
-
-    if not journalIndex then
-        journalIndex = GetFocusedQuestIndex()
-    end
-
-    if not journalIndex or (DoesJournalQuestExist and not DoesJournalQuestExist(journalIndex)) then
         return nil
     end
 
-    return NormalizeQuestKey(journalIndex)
+    local journalIndex = journalManager:GetSelectedQuestIndex()
+    if not journalIndex and type(GetFocusedQuestIndex) == "function" then
+        journalIndex = GetFocusedQuestIndex()
+    end
+
+    local numericIndex = tonumber(journalIndex)
+    if not numericIndex or numericIndex <= 0 then
+        return nil
+    end
+
+    if DoesJournalQuestExist and not DoesJournalQuestExist(numericIndex) then
+        return nil
+    end
+
+    local questKey = NormalizeQuestKey(numericIndex)
+    if not questKey and IsDebugLoggingEnabled() then
+        DebugLog("GetFocusedQuestKey: no questKey for journalIndex %s", tostring(journalIndex))
+    end
+
+    return questKey
 end
 
 local function ToggleFocusedQuestSelection(source)
