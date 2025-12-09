@@ -2021,6 +2021,22 @@ local function registerPanel(displayTitle)
 
             controls[#controls + 1] = {
                 type = "checkbox",
+                name = GetString(SI_NVK3UT_LAM_QUEST_COLLAPSE_PREVIOUS_CATEGORY),
+                tooltip = GetString(SI_NVK3UT_LAM_QUEST_COLLAPSE_PREVIOUS_CATEGORY_DESC),
+                getFunc = function()
+                    local settings = getQuestSettings()
+                    return settings.collapsePreviousCategoryOnActiveChange == true
+                end,
+                setFunc = function(value)
+                    local settings = getQuestSettings()
+                    settings.collapsePreviousCategoryOnActiveChange = (value == true)
+                    applyQuestSettings()
+                end,
+                default = false,
+            }
+
+            controls[#controls + 1] = {
+                type = "checkbox",
                 name = GetString(SI_NVK3UT_LAM_QUEST_SHOW_COUNTS),
                 tooltip = GetString(SI_NVK3UT_LAM_QUEST_SHOW_COUNTS_DESC),
                 getFunc = function()

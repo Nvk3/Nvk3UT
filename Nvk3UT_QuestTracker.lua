@@ -206,6 +206,10 @@ local function DebugLog(...)
     end
 end
 
+local function IsCollapsePreviousCategoryEnabled()
+    return state.opts and state.opts.collapsePreviousCategoryOnActiveChange == true
+end
+
 local function DebugDeselect(context, details)
     if not NVK_DEBUG_DESELECT then
         return
@@ -3959,6 +3963,7 @@ function QuestTracker.ApplySettings(settings)
 
     state.opts.autoExpand = settings.autoExpand ~= false
     state.opts.autoTrack = settings.autoTrack ~= false
+    state.opts.collapsePreviousCategoryOnActiveChange = (settings.collapsePreviousCategoryOnActiveChange == true)
     state.opts.active = (settings.active ~= false)
 
     RefreshVisibility()
