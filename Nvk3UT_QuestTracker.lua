@@ -1845,7 +1845,7 @@ local function EnsureQuestJournalKeyLabel()
     local keyBg = CreateControl(keyBgName, questJournalSelectionKeyContainer, CT_BACKDROP)
     keyBg:SetCenterColor(0, 0, 0, 1)
     keyBg:SetEdgeColor(1, 1, 1, 1)
-    keyBg:SetEdgeTexture("EsoUI/Art/Miscellaneous/keyboardKeyBorder.dds", 8, 2, 1.0, 0)
+    keyBg:SetEdgeTexture("EsoUI/Art/Miscellaneous/keyboardKeyBorder.dds", 16, 2, 1.0, 0)
     keyBg:SetInsets(2, 2, -2, -2)
     keyBg:SetDrawLayer(DL_BACKGROUND)
 
