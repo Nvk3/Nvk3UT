@@ -4,6 +4,9 @@
             <Action name="NVK3UT_TOGGLE_TRACKER_COLLAPSE">
                 <Down>Nvk3UT_ToggleTrackerCollapse()</Down>
             </Action>
+            <Action name="NVK3UT_TOGGLE_QUEST_SELECTION">
+                <Down>Nvk3UT_ToggleQuestSelectionBinding()</Down>
+            </Action>
         </Category>
     </Layer>
 </Bindings>

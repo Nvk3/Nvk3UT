@@ -4589,6 +4589,45 @@ function QuestTracker.ApplyBaseQuestTrackerVisibility()
     end
 end
 
+-- Binding handler exposed under Controls > Addons > Nvk3UT to toggle quest
+-- selection while the keyboard quest journal is open in selection mode.
+function Nvk3UT_ToggleQuestSelectionBinding()
+    local addon = _G and _G.Nvk3UT or Nvk3UT
+    if not addon then
+        return
+    end
+
+    if IsInGamepadPreferredMode and IsInGamepadPreferredMode() then
+        return
+    end
+
+    local questJournalVisible = false
+    if QUEST_JOURNAL_SCENE and QUEST_JOURNAL_SCENE.IsShowing and QUEST_JOURNAL_SCENE:IsShowing() then
+        questJournalVisible = true
+    elseif SCENE_MANAGER and SCENE_MANAGER.IsShowing and SCENE_MANAGER:IsShowing("journal") then
+        questJournalVisible = true
+    end
+
+    if not questJournalVisible then
+        return
+    end
+
+    if not IsQuestSelectionModeActive() then
+        return
+    end
+
+    local questKey = GetFocusedQuestKey()
+    if not questKey then
+        return
+    end
+
+    ToggleQuestSelection(questKey, "Keybind:ToggleQuestSelection")
+    local runtime = addon.TrackerRuntime
+    if runtime and runtime.QueueDirty then
+        runtime:QueueDirty("quest")
+    end
+end
+
 Nvk3UT.QuestTracker = QuestTracker
 
 return QuestTracker

@@ -274,6 +274,7 @@ local strings = {
 
     SI_BINDING_NAME_NVK3UT_CATEGORY = "Nvk3's Ultimate Tracker",
     SI_BINDING_NAME_NVK3UT_TOGGLE_TRACKER_COLLAPSE = "Tracker ein-/ausklappen",
+    SI_BINDING_NAME_NVK3UT_TOGGLE_QUEST_SELECTION = "Questauswahl umschalten",
 
     -- Shared formatting
     SI_NVK3UT_LAM_FONT_FACE_FORMAT = "%s - Schriftart",
