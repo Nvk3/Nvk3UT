@@ -206,8 +206,8 @@ local function DebugLog(...)
     end
 end
 
-local function IsCollapseOtherCategoriesEnabled()
-    return state.opts and state.opts.collapseOtherCategoriesOnActiveChange == true
+local function IsCollapsePreviousCategoryEnabled()
+    return state.opts and state.opts.collapsePreviousCategoryOnActiveChange == true
 end
 
 local function DebugDeselect(context, details)
@@ -2044,7 +2044,7 @@ local function EnsureTrackedCategoriesExpanded(journalIndex, forceExpand, contex
 end
 
 local function CollapsePreviousCategoryIfNeeded(context)
-    if not IsCollapseOtherCategoriesEnabled() then
+    if not IsCollapsePreviousCategoryEnabled() then
         return
     end
 
@@ -3980,7 +3980,7 @@ function QuestTracker.ApplySettings(settings)
     state.opts.autoExpand = settings.autoExpand ~= false
     state.opts.autoTrack = settings.autoTrack ~= false
     state.opts.active = (settings.active ~= false)
-    state.opts.collapseOtherCategoriesOnActiveChange = (settings.collapseOtherCategoriesOnActiveChange == true)
+    state.opts.collapsePreviousCategoryOnActiveChange = (settings.collapsePreviousCategoryOnActiveChange == true)
 
     RefreshVisibility()
     RequestRefresh()

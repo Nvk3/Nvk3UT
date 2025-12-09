@@ -356,7 +356,7 @@ local defaults = {
         autoGrowH = false,
         autoExpand = true,
         autoTrack = true,
-        collapseOtherCategoriesOnActiveChange = false,
+        collapsePreviousCategoryOnActiveChange = false,
         background = {
             enabled = true,
             alpha = 0.35,
@@ -707,6 +707,19 @@ local function MergeDefaults(target, source)
     return target
 end
 
+local function MigrateQuestTrackerCollapseFlag(questTracker)
+    if type(questTracker) ~= "table" then
+        return
+    end
+
+    if questTracker.collapsePreviousCategoryOnActiveChange == nil
+        and questTracker.collapseOtherCategoriesOnActiveChange ~= nil
+    then
+        questTracker.collapsePreviousCategoryOnActiveChange = questTracker.collapseOtherCategoriesOnActiveChange
+        questTracker.collapseOtherCategoriesOnActiveChange = nil
+    end
+end
+
 local function EnsureEndeavorData(saved, safeCall)
     if type(saved) ~= "table" then
         return false
@@ -790,7 +803,9 @@ local function AdoptLegacySettings(saved)
         end
     end
 
-    saved.QuestTracker = MergeDefaults(saved.QuestTracker, defaults.QuestTracker)
+    local questTracker = EnsureTable(saved, "QuestTracker")
+    MigrateQuestTrackerCollapseFlag(questTracker)
+    saved.QuestTracker = MergeDefaults(questTracker, defaults.QuestTracker)
     saved.AchievementTracker = MergeDefaults(saved.AchievementTracker, defaults.AchievementTracker)
     saved.appearance = MergeDefaults(saved.appearance, defaults.appearance)
 
@@ -810,6 +825,7 @@ local function EnsureFirstLoginStructures(saved)
     EnsureTable(general, "WindowBars")
 
     local questTracker = EnsureTable(saved, "QuestTracker")
+    MigrateQuestTrackerCollapseFlag(questTracker)
     MergeDefaults(questTracker, defaults.QuestTracker)
     MergeDefaults(EnsureTable(questTracker, "background"), defaults.QuestTracker.background)
     MergeDefaults(EnsureTable(questTracker, "fonts"), defaults.QuestTracker.fonts)

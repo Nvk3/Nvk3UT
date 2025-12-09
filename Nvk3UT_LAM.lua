@@ -2025,11 +2025,11 @@ local function registerPanel(displayTitle)
                 tooltip = GetString(SI_NVK3UT_LAM_QUEST_COLLAPSE_OTHER_CATEGORIES_DESC),
                 getFunc = function()
                     local settings = getQuestSettings()
-                    return settings.collapseOtherCategoriesOnActiveChange == true
+                    return settings.collapsePreviousCategoryOnActiveChange == true
                 end,
                 setFunc = function(value)
                     local settings = getQuestSettings()
-                    settings.collapseOtherCategoriesOnActiveChange = (value == true)
+                    settings.collapsePreviousCategoryOnActiveChange = (value == true)
                     applyQuestSettings()
                 end,
                 default = false,
