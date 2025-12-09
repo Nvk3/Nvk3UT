@@ -2,6 +2,9 @@ local addonName = "Nvk3UT"
 
 Nvk3UT = Nvk3UT or {}
 
+local state
+local DebugLog
+
 local QuestTracker = {}
 QuestTracker.__index = QuestTracker
 
@@ -106,6 +109,7 @@ local function EnsureQuestFilterSavedVars()
 
     local numericMode = tonumber(filter.mode)
     if not IsValidQuestFilterMode(numericMode) then
+        DebugLog("EnsureQuestFilterSavedVars: invalid mode '%s', resetting to ALL", tostring(filter.mode))
         filter.mode = QUEST_FILTER_MODE_ALL
     else
         filter.mode = numericMode
@@ -115,7 +119,6 @@ local function EnsureQuestFilterSavedVars()
         filter.selection = {}
     end
 
-    state.questFilter = filter
     return filter
 end
 
@@ -201,7 +204,7 @@ local ProcessTrackedQuestUpdate -- forward declaration for deferred tracking pro
 -- because SafeCall would still be nil at that point.
 local SafeCall
 
-local state = {
+state = {
     isInitialized = false,
     opts = {},
     fonts = {},
@@ -234,7 +237,6 @@ local state = {
     isRebuildInProgress = false,
     questModelSubscription = nil,
     rawSnapshot = nil,
-    questFilter = nil,
 }
 
 local PRIORITY = {
@@ -263,7 +265,7 @@ local function IsDebugLoggingEnabled()
     return false
 end
 
-local function DebugLog(...)
+function DebugLog(...)
     local isEnabled = type(IsDebugLoggingEnabled) == "function" and IsDebugLoggingEnabled()
     if not isEnabled then
         return
@@ -4005,6 +4007,11 @@ local function BuildFilteredSnapshot(rawSnapshot)
     local snapshot = rawSnapshot or EmptySnapshot()
     state.rawSnapshot = snapshot
 
+    if not IsSnapshotValid(snapshot) then
+        DebugLog("BuildFilteredSnapshot: raw snapshot invalid, returning unfiltered snapshot")
+        return snapshot
+    end
+
     local filterMode = GetQuestFilterMode()
 
     if IsDebugLoggingEnabled() then
@@ -4367,7 +4374,6 @@ function QuestTracker.Shutdown()
     state.isRebuildInProgress = false
     state.questModelSubscription = nil
     state.rawSnapshot = nil
-    state.questFilter = nil
     NotifyHostContentChanged()
 end
 

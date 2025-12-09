@@ -423,6 +423,8 @@ local function getQuestFilter()
     local mode = tonumber(filter.mode)
     if mode ~= QUEST_FILTER_MODE_ALL and mode ~= QUEST_FILTER_MODE_ACTIVE and mode ~= QUEST_FILTER_MODE_SELECTION then
         filter.mode = QUEST_FILTER_MODE_ALL
+    else
+        filter.mode = mode
     end
 
     if type(filter.selection) ~= "table" then
@@ -2103,24 +2105,17 @@ local function registerPanel(displayTitle)
                     return QUEST_FILTER_MODE_ALL
                 end,
                 setFunc = function(value)
-                    local tracker = Nvk3UT and Nvk3UT.QuestTracker
-                    local filter
-                    if tracker and tracker.EnsureQuestFilterSavedVars then
-                        local ok, resolved = pcall(tracker.EnsureQuestFilterSavedVars)
-                        if ok then
-                            filter = resolved
-                        end
-                    end
-
                     local numeric = tonumber(value) or QUEST_FILTER_MODE_ALL
                     if numeric ~= QUEST_FILTER_MODE_ACTIVE and numeric ~= QUEST_FILTER_MODE_SELECTION then
                         numeric = QUEST_FILTER_MODE_ALL
                     end
 
+                    local filter = getQuestFilter()
                     if filter then
                         filter.mode = numeric
                     end
 
+                    local tracker = Nvk3UT and Nvk3UT.QuestTracker
                     if tracker and tracker.MarkDirty then
                         tracker.MarkDirty("LAM:QuestFilterMode")
                     end
