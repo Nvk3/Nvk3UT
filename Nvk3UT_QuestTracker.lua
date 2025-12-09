@@ -1844,7 +1844,7 @@ local function EnsureQuestJournalKeyLabel()
 
     local controlName = string.format("%sNvk3UTQuestSelectionKeyLabel", parent:GetName() or "Nvk3UTQuestSelectionKeyLabel")
     questJournalSelectionKeyLabel = CreateControl(controlName, parent, CT_LABEL)
-    questJournalSelectionKeyLabel:SetFont("ZoFontGame")
+    questJournalSelectionKeyLabel:SetFont("ZoFontKeybindStripDescription")
     questJournalSelectionKeyLabel:SetHorizontalAlignment(TEXT_ALIGN_CENTER)
     questJournalSelectionKeyLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
     questJournalSelectionKeyLabel:SetHidden(true)
@@ -1856,10 +1856,10 @@ local function EnsureQuestJournalKeyLabel()
     end
 
     questJournalSelectionKeyLabel:ClearAnchors()
-    questJournalSelectionKeyLabel:SetAnchor(BOTTOM, anchorTarget, BOTTOM, 0, -8)
+    questJournalSelectionKeyLabel:SetAnchor(BOTTOM, anchorTarget, BOTTOM, 0, 0)
 
     if ZO_DEFAULT_ENABLED_COLOR then
-        questJournalSelectionKeyLabel:SetColor(ZO_DEFAULT_ENABLED_COLOR:UnpackRGB())
+        questJournalSelectionKeyLabel:SetColor(ZO_DEFAULT_ENABLED_COLOR:UnpackRGBA())
     end
 
     ZO_Keybindings_RegisterLabelForBindingUpdate(questJournalSelectionKeyLabel, "NVK3UT_TOGGLE_QUEST_SELECTION", true)
