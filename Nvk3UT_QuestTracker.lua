@@ -625,13 +625,11 @@ local function ResolvePrimaryCategoryForQuest(journalIndex)
     return nil, nil
 end
 
-local function CollapsePreviousCategoryIfNeeded(context)
+local function CollapsePreviousCategoryIfNeeded(previousKey, currentKey, context)
     if not IsCollapsePreviousCategoryEnabled() then
         return
     end
 
-    local previousKey = state.lastActiveCategoryKey
-    local currentKey = state.currentActiveCategoryKey
     if not previousKey or not currentKey then
         return
     end
@@ -2165,7 +2163,27 @@ local function EnsureTrackedQuestVisible(journalIndex, forceExpand, context)
     end
 
     if isNewTarget then
-        CollapsePreviousCategoryIfNeeded(context)
+        local previousKey = state.lastActiveCategoryKey
+        local currentKey = state.currentActiveCategoryKey
+        local trigger = logContext.trigger
+        local stateSource = logContext.stateSource
+
+        if previousKey and currentKey and previousKey ~= currentKey then
+            zo_callLater(function()
+                if not IsCollapsePreviousCategoryEnabled() then
+                    return
+                end
+
+                if state.currentActiveCategoryKey ~= currentKey then
+                    return
+                end
+
+                CollapsePreviousCategoryIfNeeded(previousKey, currentKey, {
+                    trigger = trigger,
+                    stateSource = stateSource,
+                })
+            end, 50)
+        end
     end
     if isExternal then
         LogExternalSelect(journalIndex)
