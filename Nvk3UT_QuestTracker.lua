@@ -521,6 +521,10 @@ local function NormalizeQuestKey(journalIndex)
     return tostring(journalIndex)
 end
 
+local function GetQuestKeyFromJournalIndex(journalIndex)
+    return NormalizeQuestKey(journalIndex)
+end
+
 local function IsQuestSelectedInFilter(questKey)
     local questFilter = EnsureQuestFilterSavedVars()
     if QuestFilter and QuestFilter.IsQuestSelected then
@@ -1745,10 +1749,9 @@ local function GetFocusedQuestKey()
         return nil
     end
 
-    local journalIndex
-    if type(journalManager.GetFocusedQuestIndex) == "function" then
-        journalIndex = journalManager:GetFocusedQuestIndex()
-    end
+    local journalIndex = type(journalManager.GetFocusedQuestIndex) == "function"
+        and journalManager:GetFocusedQuestIndex()
+        or nil
 
     if (not journalIndex or journalIndex == 0) and type(GetSelectedQuestIndex) == "function" then
         journalIndex = GetSelectedQuestIndex()
@@ -1766,7 +1769,7 @@ local function GetFocusedQuestKey()
         return nil
     end
 
-    local questKey = NormalizeQuestKey(numericIndex)
+    local questKey = GetQuestKeyFromJournalIndex(numericIndex)
     if not questKey and IsDebugLoggingEnabled() then
         DebugLog("GetFocusedQuestKey: no questKey for journalIndex %s", tostring(journalIndex))
     end
@@ -1864,7 +1867,7 @@ end
 
 local function AppendQuestJournalContextMenu(control, button, upInside)
     DebugLog(
-        "QuestJournalContextMenu: Append called, button=%s, upInside=%s, mode=%s",
+        "ContextMenuHook: OnMouseUp btn=%s inside=%s mode=%s",
         tostring(button),
         tostring(upInside),
         tostring(GetQuestFilterMode())
@@ -1880,7 +1883,7 @@ local function AppendQuestJournalContextMenu(control, button, upInside)
         return
     end
 
-    if not IsQuestSelectionMode() then
+    if not IsQuestSelectionModeActive() then
         DebugLog("QuestJournalContextMenu: exit (not selection mode)")
         return
     end
@@ -1897,7 +1900,7 @@ local function AppendQuestJournalContextMenu(control, button, upInside)
         return
     end
 
-    local questKey = NormalizeQuestKey(questIndex)
+    local questKey = GetQuestKeyFromJournalIndex(questIndex)
     if not questKey then
         DebugLog("QuestJournalContextMenu: exit (no questKey for questIndex %s)", tostring(questIndex))
         return
@@ -1920,8 +1923,17 @@ local function AppendQuestJournalContextMenu(control, button, upInside)
 
     AddCustomMenuItem(label, function()
         ToggleQuestSelection(questKey, "QuestJournal:ContextMenu")
+        QuestTracker.MarkDirty("JournalContext")
+        local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+        if runtime and runtime.QueueDirty then
+            runtime:QueueDirty("quest")
+        end
         DebugLog("QuestJournalContextMenu: toggled selection for questKey=%s", tostring(questKey))
     end)
+
+    if ShowMenu then
+        ShowMenu(control)
+    end
 end
 
 local function HookQuestJournalContextMenu()
