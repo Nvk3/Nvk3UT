@@ -1749,8 +1749,20 @@ local function GetFocusedQuestKey()
         return nil
     end
 
-    local journalIndex = journalManager.focusedQuestIndex
-    if type(journalIndex) ~= "number" or journalIndex <= 0 then
+    local journalIndex = nil
+    if type(journalManager.GetFocusedQuestIndex) == "function" then
+        journalIndex = journalManager:GetFocusedQuestIndex()
+    elseif type(GetFocusedQuestIndex) == "function" then
+        journalIndex = GetFocusedQuestIndex()
+    else
+        if IsDebugLoggingEnabled() then
+            DebugLog("GetFocusedQuestKey: no GetFocusedQuestIndex API available")
+        end
+        return nil
+    end
+
+    journalIndex = tonumber(journalIndex)
+    if not journalIndex or journalIndex <= 0 then
         if IsDebugLoggingEnabled() then
             DebugLog("GetFocusedQuestKey: no focused quest index (%s)", tostring(journalIndex))
         end
