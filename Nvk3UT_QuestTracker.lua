@@ -1847,20 +1847,17 @@ local function EnsureQuestJournalKeyLabel()
     questJournalSelectionKeyLabel:SetFont("ZoFontKeybindStripDescription")
     questJournalSelectionKeyLabel:SetHorizontalAlignment(TEXT_ALIGN_CENTER)
     questJournalSelectionKeyLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
+    do
+        local r = 197 / 255
+        local g = 194 / 255
+        local b = 158 / 255
+        local a = 1
+        questJournalSelectionKeyLabel:SetColor(r, g, b, a)
+    end
     questJournalSelectionKeyLabel:SetHidden(true)
     questJournalSelectionKeyLabel:SetWidth(360)
-
-    local anchorTarget = parent
-    if parent.GetNamedChild then
-        anchorTarget = parent:GetNamedChild("KeybindBG") or parent:GetNamedChild("KeybindContainer") or parent
-    end
-
     questJournalSelectionKeyLabel:ClearAnchors()
-    questJournalSelectionKeyLabel:SetAnchor(BOTTOM, anchorTarget, BOTTOM, 0, 0)
-
-    if ZO_DEFAULT_ENABLED_COLOR then
-        questJournalSelectionKeyLabel:SetColor(ZO_DEFAULT_ENABLED_COLOR:UnpackRGBA())
-    end
+    questJournalSelectionKeyLabel:SetAnchor(BOTTOM, parent, BOTTOM, 0, -10)
 
     ZO_Keybindings_RegisterLabelForBindingUpdate(questJournalSelectionKeyLabel, "NVK3UT_TOGGLE_QUEST_SELECTION", true)
 
