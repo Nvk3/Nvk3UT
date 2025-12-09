@@ -1731,6 +1731,7 @@ local function ShowQuestContextMenu(control, journalIndex)
 end
 
 local questJournalSelectionKeybindDescriptor = nil
+local questJournalSelectionKeybindEntry = nil
 local questJournalKeybindAdded = false
 local questJournalKeybindHooked = false
 local questJournalContextMenuHooked = false
@@ -1778,7 +1779,7 @@ local function ToggleFocusedQuestSelection(source)
 end
 
 local function EnsureQuestJournalKeybind()
-    if questJournalSelectionKeybindDescriptor then
+    if questJournalSelectionKeybindDescriptor and questJournalSelectionKeybindEntry then
         return
     end
 
@@ -1793,20 +1794,22 @@ local function EnsureQuestJournalKeybind()
         return IsQuestSelectionModeActive() and focusedKey ~= nil
     end
 
+    questJournalSelectionKeybindEntry = {
+        name = function()
+            return GetString(SI_NVK3UT_QUEST_SELECTION_KEYBIND)
+        end,
+        keybind = "UI_SHORTCUT_SECONDARY",
+        callback = function()
+            DebugLog("QuestJournalKeybind.callback: pressed")
+            ToggleFocusedQuestSelection("QuestJournal:Keybind")
+        end,
+        visible = isSelectionAvailable,
+        enabled = isSelectionAvailable,
+    }
+
     questJournalSelectionKeybindDescriptor = {
         alignment = KEYBIND_STRIP_ALIGN_LEFT,
-        {
-            name = function()
-                return GetString(SI_NVK3UT_QUEST_SELECTION_KEYBIND)
-            end,
-            keybind = "UI_SHORTCUT_SECONDARY",
-            callback = function()
-                DebugLog("QuestJournalKeybind.callback: pressed")
-                ToggleFocusedQuestSelection("QuestJournal:Keybind")
-            end,
-            visible = isSelectionAvailable,
-            enabled = isSelectionAvailable,
-        },
+        questJournalSelectionKeybindEntry,
     }
 
     Nvk3UT.questJournalSelectionKeybindDescriptor = questJournalSelectionKeybindDescriptor
@@ -1821,51 +1824,65 @@ local function HookQuestJournalKeybind()
 
     EnsureQuestJournalKeybind()
 
-    local scene = _G.QUEST_JOURNAL_SCENE or (SCENE_MANAGER and SCENE_MANAGER.GetScene and SCENE_MANAGER:GetScene("journal"))
-    if not scene then
-        DebugLog("QuestJournalKeybind: QUEST_JOURNAL_SCENE is nil")
+    if not (ZO_PostHook and ZO_QuestJournal_Keyboard) then
         return
     end
 
-    if not (KEYBIND_STRIP and questJournalSelectionKeybindDescriptor) then
-        return
-    end
+    ZO_PostHook(ZO_QuestJournal_Keyboard, "InitializeKeybindStripDescriptors", function(self)
+        DebugLog("QuestJournalKeybind: InitializeKeybindStripDescriptors posthook")
 
-    if questJournalKeybindHooked then
-        DebugLog("QuestJournalKeybind: already hooked, skipping duplicate registration")
-        return
-    end
-
-    scene:RegisterCallback("StateChange", function(oldState, newState)
-        DebugLog("QuestJournalKeybind: StateChange %s → %s", tostring(oldState), tostring(newState))
-        if newState == SCENE_SHOWING then
-            DebugLog("QuestJournalKeybind: SCENE_SHOWING → AddKeybindButtonGroup")
-            if not questJournalKeybindAdded then
-                KEYBIND_STRIP:AddKeybindButtonGroup(questJournalSelectionKeybindDescriptor)
-                questJournalKeybindAdded = true
-            end
-        elseif newState == SCENE_HIDDEN then
-            DebugLog("QuestJournalKeybind: SCENE_HIDDEN → RemoveKeybindButtonGroup")
-            if questJournalKeybindAdded then
-                KEYBIND_STRIP:RemoveKeybindButtonGroup(questJournalSelectionKeybindDescriptor)
-                questJournalKeybindAdded = false
-            end
+        if questJournalKeybindAdded then
+            DebugLog("QuestJournalKeybind: already added, skipping")
+            return
         end
+
+        local descriptorList = self and self.keybindStripDescriptor
+        if type(descriptorList) ~= "table" then
+            DebugLog("QuestJournalKeybind: keybindStripDescriptor missing")
+            return
+        end
+
+        if not questJournalSelectionKeybindEntry then
+            DebugLog("QuestJournalKeybind: keybind entry missing")
+            return
+        end
+
+        table.insert(descriptorList, questJournalSelectionKeybindEntry)
+        questJournalKeybindAdded = true
+        DebugLog("QuestJournalKeybind: appended selection keybind descriptor")
     end)
 
     questJournalKeybindHooked = true
 end
 
-local function AppendQuestJournalContextMenu(_, questIndex)
+local function AppendQuestJournalContextMenu(control, button, upInside)
     DebugLog(
-        "QuestJournalContextMenu: Append called, questIndex=%s, mode=%s",
-        tostring(questIndex),
+        "QuestJournalContextMenu: Append called, button=%s, upInside=%s, mode=%s",
+        tostring(button),
+        tostring(upInside),
         tostring(GetQuestFilterMode())
     )
+
+    if button ~= MOUSE_BUTTON_INDEX_RIGHT then
+        DebugLog("QuestJournalContextMenu: exit (not right mouse button)")
+        return
+    end
+
+    if not upInside then
+        DebugLog("QuestJournalContextMenu: exit (not upInside)")
+        return
+    end
 
     if not IsQuestSelectionMode() then
         DebugLog("QuestJournalContextMenu: exit (not selection mode)")
         return
+    end
+
+    local questIndex
+    if control then
+        local node = control.node
+        local data = node and node.data
+        questIndex = data and data.questIndex
     end
 
     if not questIndex then
@@ -1908,9 +1925,11 @@ local function HookQuestJournalContextMenu()
 
     DebugLog("QuestJournalContextMenu: HookQuestJournalContextMenu called")
 
-    if ZO_PostHook and QUEST_JOURNAL_MANAGER then
-        ZO_PostHook(QUEST_JOURNAL_MANAGER, "ShowQuestContextMenu", AppendQuestJournalContextMenu)
-        DebugLog("QuestJournalContextMenu: PostHook on QUEST_JOURNAL_MANAGER:ShowQuestContextMenu registered")
+    if ZO_PostHook then
+        ZO_PostHook("ZO_QuestJournalNavigationEntry_OnMouseUp", function(control, button, upInside)
+            AppendQuestJournalContextMenu(control, button, upInside)
+        end)
+        DebugLog("QuestJournalContextMenu: PostHook on ZO_QuestJournalNavigationEntry_OnMouseUp registered")
         questJournalContextMenuHooked = true
     end
 end
