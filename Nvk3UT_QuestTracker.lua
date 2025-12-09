@@ -563,6 +563,16 @@ local function ForEachQuestIndex(callback)
 end
 
 local function CollectCategoryKeysForQuest(journalIndex)
+    local questModel = Nvk3UT and Nvk3UT.QuestModel
+    if questModel and questModel.GetCategoryKeysForQuestKey then
+        local keys, found = questModel.GetCategoryKeysForQuestKey(journalIndex)
+        if type(keys) == "table" then
+            return keys, found
+        end
+
+        return {}, found
+    end
+
     local keys = {}
     if not journalIndex then
         return keys, false
