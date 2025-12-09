@@ -1738,20 +1738,27 @@ local questJournalContextMenuHooked = false
 
 local function GetFocusedQuestKey()
     local journalManager = QUEST_JOURNAL_MANAGER
-    if not (journalManager and type(journalManager.GetSelectedQuestIndex) == "function") then
+    if not journalManager then
         if IsDebugLoggingEnabled() then
-            DebugLog("GetFocusedQuestKey: journalManager missing or GetSelectedQuestIndex unavailable")
+            DebugLog("GetFocusedQuestKey: journalManager missing")
         end
         return nil
     end
 
-    local journalIndex = journalManager:GetSelectedQuestIndex()
-    if not journalIndex and type(GetFocusedQuestIndex) == "function" then
-        journalIndex = GetFocusedQuestIndex()
+    local journalIndex
+    if type(journalManager.GetFocusedQuestIndex) == "function" then
+        journalIndex = journalManager:GetFocusedQuestIndex()
+    end
+
+    if (not journalIndex or journalIndex == 0) and type(GetSelectedQuestIndex) == "function" then
+        journalIndex = GetSelectedQuestIndex()
     end
 
     local numericIndex = tonumber(journalIndex)
     if not numericIndex or numericIndex <= 0 then
+        if IsDebugLoggingEnabled() then
+            DebugLog("GetFocusedQuestKey: no focused quest index")
+        end
         return nil
     end
 
@@ -1914,7 +1921,7 @@ local function AppendQuestJournalContextMenu(control, button, upInside)
     AddCustomMenuItem(label, function()
         ToggleQuestSelection(questKey, "QuestJournal:ContextMenu")
         DebugLog("QuestJournalContextMenu: toggled selection for questKey=%s", tostring(questKey))
-    end, (_G and _G.MENU_ADD_OPTION_LABEL) or (MENU_ADD_OPTION_LABEL or 1))
+    end)
 end
 
 local function HookQuestJournalContextMenu()
