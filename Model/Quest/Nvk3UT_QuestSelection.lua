@@ -364,7 +364,19 @@ function QuestSelection.ApplyAutoCollapsePreviousCategory()
         return false
     end
 
-    if not questTracker.IsCategoryExpanded(previousCategoryKey) then
+    local categoryName = ResolveCategoryName(previousCategoryKey)
+    local isExpanded = questTracker.IsCategoryExpanded(previousCategoryKey)
+    if diagnostics and type(diagnostics.DebugIfEnabled) == "function" then
+        diagnostics:DebugIfEnabled(
+            "QuestSelection",
+            "[AutoCollapse] previous category key=%s name=%s expanded=%s",
+            tostring(previousCategoryKey),
+            tostring(categoryName or "-"),
+            tostring(isExpanded)
+        )
+    end
+
+    if not isExpanded then
         if diagnostics and type(diagnostics.DebugIfEnabled) == "function" then
             diagnostics:DebugIfEnabled(
                 "QuestSelection",
@@ -375,7 +387,7 @@ function QuestSelection.ApplyAutoCollapsePreviousCategory()
         return false
     end
 
-    if type(questTracker.ToggleCategoryExpansion) ~= "function" then
+    if type(questTracker.SetCategoryExpanded) ~= "function" then
         return false
     end
 
@@ -387,19 +399,21 @@ function QuestSelection.ApplyAutoCollapsePreviousCategory()
         )
     end
 
-    questTracker.ToggleCategoryExpansion(previousCategoryKey, false, {
-        trigger = "auto-collapse",
-        source = "QuestSelection:ApplyAutoCollapsePreviousCategory",
+    local changed = questTracker.SetCategoryExpanded(previousCategoryKey, false, {
+        trigger = "click",
+        source = "QuestTracker:AutoCollapsePreviousCategory",
+        manualCollapseRespected = true,
     })
 
     if diagnostics and type(diagnostics.DebugIfEnabled) == "function" then
         diagnostics:DebugIfEnabled(
             "QuestSelection",
-            "[AutoCollapse] Collapse applied successfully"
+            "[AutoCollapse] Collapse %s",
+            changed and "applied successfully" or "skipped by state"
         )
     end
 
-    return true
+    return changed == true
 end
 
 local function NormalizeSelectionEntry(entry, defaultSource)

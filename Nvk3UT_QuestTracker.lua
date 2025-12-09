@@ -761,9 +761,11 @@ local function WriteCategoryState(categoryKey, expanded, source, options)
 
     source = source or "auto"
     options = options or {}
+    local manualCollapseRespected = options.manualCollapseRespected
     state.saved.cat = state.saved.cat or {}
 
     local prev = state.saved.cat[key]
+    local previousManualCollapseRespected = prev and prev.manualCollapseRespected
     local priorityOverride = options.priorityOverride
     local priority = priorityOverride or PRIORITY[source] or 0
     local prevPriority = prev and (PRIORITY[prev.source] or 0) or 0
@@ -784,11 +786,15 @@ local function WriteCategoryState(categoryKey, expanded, source, options)
     end
 
     local newExpanded = expanded and true or false
+    if manualCollapseRespected == nil then
+        manualCollapseRespected = previousManualCollapseRespected
+    end
 
     state.saved.cat[key] = {
         expanded = newExpanded,
         source = source,
         ts = now,
+        manualCollapseRespected = manualCollapseRespected,
     }
 
     LogStateWrite("cat", key, newExpanded, source, priority)
@@ -1623,6 +1629,7 @@ local function ExpandCategoriesForExternalSelect(journalIndex)
     local expandedAny = false
 
     if keys then
+        local debugEnabled = IsDebugLoggingEnabled()
         local context = {
             trigger = "external-select",
             source = "QuestTracker:ExpandCategoriesForExternalSelect",
@@ -1631,10 +1638,22 @@ local function ExpandCategoriesForExternalSelect(journalIndex)
 
         for key in pairs(keys) do
             if key and SetCategoryExpanded then
-                local changed = SetCategoryExpanded(key, true, context)
-                if changed then
-                    expandedAny = true
-                    LogExpandCategory(key, "external-select")
+                local manualCollapseRespected = IsCategoryManualCollapseRespected(key)
+                if manualCollapseRespected then
+                    if debugEnabled then
+                        DebugLog(
+                            string.format(
+                                "CATEGORY_EXPAND_SKIP manual collapse respected (external-select) cat=%s",
+                                tostring(key)
+                            )
+                        )
+                    end
+                else
+                    local changed = SetCategoryExpanded(key, true, context)
+                    if changed then
+                        expandedAny = true
+                        LogExpandCategory(key, "external-select")
+                    end
                 end
             end
         end
@@ -1660,6 +1679,7 @@ local function ExpandCategoriesForClickSelect(journalIndex)
     local expandedAny = false
 
     if keys then
+        local debugEnabled = IsDebugLoggingEnabled()
         local context = {
             trigger = "click-select",
             source = "QuestTracker:ExpandCategoriesForClickSelect",
@@ -1667,10 +1687,22 @@ local function ExpandCategoriesForClickSelect(journalIndex)
 
         for key in pairs(keys) do
             if key and SetCategoryExpanded then
-                local changed = SetCategoryExpanded(key, true, context)
-                if changed then
-                    expandedAny = true
-                    LogExpandCategory(key, "click-select")
+                local manualCollapseRespected = IsCategoryManualCollapseRespected(key)
+                if manualCollapseRespected then
+                    if debugEnabled then
+                        DebugLog(
+                            string.format(
+                                "CATEGORY_EXPAND_SKIP manual collapse respected (click-select) cat=%s",
+                                tostring(key)
+                            )
+                        )
+                    end
+                else
+                    local changed = SetCategoryExpanded(key, true, context)
+                    if changed then
+                        expandedAny = true
+                        LogExpandCategory(key, "click-select")
+                    end
                 end
             end
         end
@@ -2008,17 +2040,30 @@ local function EnsureTrackedCategoriesExpanded(journalIndex, forceExpand, contex
 
     for key in pairs(keys) do
         if key then
-            local changed = SetCategoryExpanded(key, true, logContext)
-            if debugEnabled and not changed then
-                DebugLog(
-                    "Category expand skipped",
-                    "category",
-                    key,
-                    "journalIndex",
-                    journalIndex,
-                    "trigger",
-                    logContext.trigger
-                )
+            local manualCollapseRespected = IsCategoryManualCollapseRespected(key)
+            if manualCollapseRespected then
+                if debugEnabled then
+                    DebugLog(
+                        string.format(
+                            "CATEGORY_EXPAND_SKIP manual collapse respected (tracked) cat=%s trigger=%s",
+                            tostring(key),
+                            tostring(logContext.trigger)
+                        )
+                    )
+                end
+            else
+                local changed = SetCategoryExpanded(key, true, logContext)
+                if debugEnabled and not changed then
+                    DebugLog(
+                        "Category expand skipped",
+                        "category",
+                        key,
+                        "journalIndex",
+                        journalIndex,
+                        "trigger",
+                        logContext.trigger
+                    )
+                end
             end
         end
     end
@@ -2946,6 +2991,27 @@ local function IsCategoryExpanded(categoryKey)
     return GetDefaultCategoryExpanded()
 end
 
+local function IsCategoryManualCollapseRespected(categoryKey)
+    local key = NormalizeCategoryKey(categoryKey)
+    if not key then
+        return false
+    end
+
+    if QuestState and QuestState.GetCategoryManualCollapseRespected then
+        local stored = QuestState.GetCategoryManualCollapseRespected(key)
+        if stored ~= nil then
+            return stored and true or false
+        end
+    elseif state.saved and state.saved.cat then
+        local entry = state.saved.cat[key]
+        if entry and entry.manualCollapseRespected ~= nil then
+            return entry.manualCollapseRespected and true or false
+        end
+    end
+
+    return false
+end
+
 IsQuestExpanded = function(journalIndex)
     local key = NormalizeQuestKey(journalIndex)
     if not key then
@@ -2988,6 +3054,22 @@ SetCategoryExpanded = function(categoryKey, expanded, context)
         writeOptions = writeOptions or {}
         writeOptions.force = true
         writeOptions.allowTimestampRegression = true
+    end
+
+    local manualCollapseRespected
+    if expanded == false then
+        if context and context.manualCollapseRespected ~= nil then
+            manualCollapseRespected = context.manualCollapseRespected and true or false
+        elseif context and context.trigger == "click" then
+            manualCollapseRespected = true
+        end
+    else
+        manualCollapseRespected = false
+    end
+
+    if manualCollapseRespected ~= nil then
+        writeOptions = writeOptions or {}
+        writeOptions.manualCollapseRespected = manualCollapseRespected
     end
 
     local changed = WriteCategoryState(key, expanded, stateSource, writeOptions)
@@ -3862,6 +3944,7 @@ end
 
 QuestTracker.ToggleCategoryExpansion = ToggleCategoryExpansion
 QuestTracker.IsCategoryExpanded = IsCategoryExpanded
+QuestTracker.SetCategoryExpanded = SetCategoryExpanded
 
 function QuestTracker.Refresh()
     Rebuild()
