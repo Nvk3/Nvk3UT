@@ -232,6 +232,7 @@ local function ApplyCategoryWrite(categoryKey, expanded, source, options)
     end
 
     source = source or "auto"
+    options = options or {}
     local catTable = EnsureSavedTables(saved)
     if not catTable then
         return false
@@ -243,11 +244,17 @@ local function ApplyCategoryWrite(categoryKey, expanded, source, options)
         return false, key, previous and previous.expanded, priority, source
     end
 
+    local manualCollapseRespected = options.manualCollapseRespected
+    if manualCollapseRespected == nil then
+        manualCollapseRespected = previous and previous.manualCollapseRespected
+    end
+
     local newExpanded = expanded and true or false
     catTable[key] = {
         expanded = newExpanded,
         source = source,
         ts = timestamp,
+        manualCollapseRespected = manualCollapseRespected,
     }
 
     return true, key, newExpanded, priority, source
@@ -409,6 +416,29 @@ function QuestState.IsCategoryExpanded(categoryKey)
     local entry = catTable[key]
     if entry and entry.expanded ~= nil then
         return entry.expanded and true or false
+    end
+
+    return nil
+end
+
+function QuestState.GetCategoryManualCollapseRespected(categoryKey)
+    if not saved then
+        return nil
+    end
+
+    local key = NormalizeCategoryKey(categoryKey)
+    if not key then
+        return nil
+    end
+
+    local catTable = saved.cat
+    if type(catTable) ~= "table" then
+        return nil
+    end
+
+    local entry = catTable[key]
+    if entry and entry.manualCollapseRespected ~= nil then
+        return entry.manualCollapseRespected and true or false
     end
 
     return nil

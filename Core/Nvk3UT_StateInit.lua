@@ -356,6 +356,7 @@ local defaults = {
         autoGrowH = false,
         autoExpand = true,
         autoTrack = true,
+        autoCollapsePreviousCategoryOnActiveQuestChange = false,
         background = {
             enabled = true,
             alpha = 0.35,
