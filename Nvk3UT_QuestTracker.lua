@@ -1825,8 +1825,18 @@ local function HookQuestJournalKeybind()
     questJournalKeybindHooked = true
 end
 
-local function AppendQuestJournalContextMenu(journalIndex)
+local function AppendQuestJournalContextMenu(control, button, upInside)
+    if button ~= MOUSE_BUTTON_INDEX_RIGHT or not upInside then
+        return
+    end
+
     if not IsQuestSelectionMode() then
+        return
+    end
+
+    local data = control and control.data
+    local journalIndex = data and data.questIndex
+    if not journalIndex then
         return
     end
 
@@ -1835,18 +1845,18 @@ local function AppendQuestJournalContextMenu(journalIndex)
         return
     end
 
-    if not (ClearMenu and AddCustomMenuItem and ShowMenu) then
+    if not AddCustomMenuItem then
         return
     end
 
     local isSelected = IsQuestSelectedInFilter(questKey)
-    local label = GetString(isSelected and SI_NVK3UT_QUEST_SELECTION_REMOVE or SI_NVK3UT_QUEST_SELECTION_ADD)
+    local label = GetString(
+        isSelected and SI_NVK3UT_QUEST_SELECTION_REMOVE_FROM_JOURNAL or SI_NVK3UT_QUEST_SELECTION_ADD_FROM_JOURNAL
+    )
 
     AddCustomMenuItem(label, function()
         ToggleQuestSelection(questKey, "QuestJournal:ContextMenu")
-    end, (_G and _G.MENU_ADD_OPTION_LABEL) or 1)
-
-    ShowMenu()
+    end, (_G and _G.MENU_ADD_OPTION_LABEL) or (MENU_ADD_OPTION_LABEL or 1))
 end
 
 local function HookQuestJournalContextMenu()
@@ -1854,9 +1864,9 @@ local function HookQuestJournalContextMenu()
         return
     end
 
-    if QUEST_JOURNAL_MANAGER and ZO_PostHook then
-        ZO_PostHook(QUEST_JOURNAL_MANAGER, "ShowQuestContextMenu", function(_, journalIndex)
-            AppendQuestJournalContextMenu(journalIndex)
+    if ZO_PostHook then
+        ZO_PostHook("ZO_QuestJournalNavigationEntry_OnMouseUp", function(control, button, upInside)
+            AppendQuestJournalContextMenu(control, button, upInside)
         end)
         questJournalContextMenuHooked = true
     end

@@ -223,6 +223,8 @@ local strings = {
     SI_NVK3UT_QUEST_SELECTION_KEYBIND = "Questauswahl: verfolgen/abbrechen",
     SI_NVK3UT_QUEST_SELECTION_ADD = "Zur Questauswahl hinzufügen",
     SI_NVK3UT_QUEST_SELECTION_REMOVE = "Aus Questauswahl entfernen",
+    SI_NVK3UT_QUEST_SELECTION_ADD_FROM_JOURNAL = "Zur Questauswahl hinzufügen",
+    SI_NVK3UT_QUEST_SELECTION_REMOVE_FROM_JOURNAL = "Aus Questauswahl entfernen",
 
     SI_NVK3UT_TRACKER_ACHIEVEMENT_CONTEXT_LINK_CHAT = "In Chat einfügen",
     SI_NVK3UT_TRACKER_ACHIEVEMENT_CONTEXT_SHOW_IN_ACHIEVEMENTS = "In den Errungenschaften anzeigen",
