@@ -1832,7 +1832,7 @@ local function EnsureQuestJournalKeyLabel()
     questJournalSelectionKeyContainer:SetHidden(true)
     questJournalSelectionKeyContainer:SetWidth(360)
     questJournalSelectionKeyContainer:ClearAnchors()
-    questJournalSelectionKeyContainer:SetAnchor(BOTTOM, parent, BOTTOM, 5, -30)
+    questJournalSelectionKeyContainer:SetAnchor(BOTTOM, parent, BOTTOM, 5, -35)
 
     local keyLabelName = string.format("%sKey", containerName)
     questJournalSelectionKeyLabel = CreateControl(keyLabelName, questJournalSelectionKeyContainer, CT_LABEL)
@@ -1840,6 +1840,14 @@ local function EnsureQuestJournalKeyLabel()
     questJournalSelectionKeyLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
     questJournalSelectionKeyLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
     questJournalSelectionKeyLabel:ClearAnchors()
+
+    local keyBgName = string.format("%sBg", containerName)
+    local keyBg = CreateControl(keyBgName, questJournalSelectionKeyContainer, CT_BACKDROP)
+    keyBg:SetCenterColor(0, 0, 0, 1)
+    keyBg:SetEdgeColor(1, 1, 1, 1)
+    keyBg:SetEdgeTexture("EsoUI/Art/Miscellaneous/keyboardKeyBorder.dds", 8, 2, 1.0, 0)
+    keyBg:SetInsets(2, 2, -2, -2)
+    keyBg:SetDrawLayer(DL_BACKGROUND)
 
     ZO_Keybindings_RegisterLabelForBindingUpdate(questJournalSelectionKeyLabel, "NVK3UT_TOGGLE_QUEST_SELECTION", true)
 
@@ -1859,6 +1867,9 @@ local function EnsureQuestJournalKeyLabel()
     questJournalSelectionDescLabel:SetAnchor(CENTER, questJournalSelectionKeyContainer, CENTER, 0, 0)
 
     questJournalSelectionKeyLabel:SetAnchor(RIGHT, questJournalSelectionDescLabel, LEFT, -8, 0)
+    keyBg:ClearAnchors()
+    keyBg:SetAnchor(TOPLEFT, questJournalSelectionKeyLabel, TOPLEFT, -4, -2)
+    keyBg:SetAnchor(BOTTOMRIGHT, questJournalSelectionKeyLabel, BOTTOMRIGHT, 4, 2)
 
     RefreshQuestJournalSelectionKeyLabelText()
 
