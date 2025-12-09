@@ -1736,7 +1736,9 @@ end
 
 local questJournalSelectionKeybindDescriptor = nil
 local questJournalSelectionKeybindEntry = nil
+local questJournalSelectionKeyContainer = nil
 local questJournalSelectionKeyLabel = nil
+local questJournalSelectionDescLabel = nil
 local questJournalKeybindAdded = false
 local questJournalKeybindHooked = false
 local questJournalKeyLabelSceneHooked = false
@@ -1804,34 +1806,14 @@ local function GetQuestJournalKeyLabelParent()
 end
 
 local function RefreshQuestJournalSelectionKeyLabelText()
-    if not questJournalSelectionKeyLabel then
-        return
+    if questJournalSelectionDescLabel then
+        questJournalSelectionDescLabel:SetText(GetString(SI_NVK3UT_QUEST_SELECTION_KEYBIND_SHORT))
     end
-
-    local bindingString = nil
-    if ZO_Keybindings_GetHighestPriorityBindingStringFromAction then
-        bindingString = ZO_Keybindings_GetHighestPriorityBindingStringFromAction(
-            "NVK3UT_TOGGLE_QUEST_SELECTION",
-            true
-        )
-    end
-
-    local labelText = (bindingString and bindingString ~= "") and bindingString or GetString(SI_ACTION_IS_NOT_BOUND)
-    local shortLabel = GetString(SI_NVK3UT_QUEST_SELECTION_KEYBIND_SHORT)
-    if shortLabel and shortLabel ~= "" then
-        if labelText ~= "" then
-            labelText = zo_strformat("<<1>> <<2>>", labelText, shortLabel)
-        else
-            labelText = shortLabel
-        end
-    end
-
-    questJournalSelectionKeyLabel:SetText(labelText)
 end
 
 local function EnsureQuestJournalKeyLabel()
-    if questJournalSelectionKeyLabel and questJournalSelectionKeyLabel.SetHidden then
-        return questJournalSelectionKeyLabel
+    if questJournalSelectionKeyContainer and questJournalSelectionKeyContainer.SetHidden then
+        return questJournalSelectionKeyContainer
     end
 
     local parent = GetQuestJournalKeyLabelParent()
@@ -1842,28 +1824,44 @@ local function EnsureQuestJournalKeyLabel()
         return nil
     end
 
-    local controlName = string.format("%sNvk3UTQuestSelectionKeyLabel", parent:GetName() or "Nvk3UTQuestSelectionKeyLabel")
-    questJournalSelectionKeyLabel = CreateControl(controlName, parent, CT_LABEL)
-    questJournalSelectionKeyLabel:SetFont("ZoFontKeybindStripDescription")
+    local containerName = string.format(
+        "%sNvk3UTQuestSelectionKeyContainer",
+        parent:GetName() or "Nvk3UTQuestSelectionKeyContainer"
+    )
+    questJournalSelectionKeyContainer = CreateControl(containerName, parent, CT_CONTROL)
+    questJournalSelectionKeyContainer:SetHidden(true)
+    questJournalSelectionKeyContainer:SetWidth(360)
+    questJournalSelectionKeyContainer:ClearAnchors()
+    questJournalSelectionKeyContainer:SetAnchor(BOTTOM, parent, BOTTOM, 5, -30)
+
+    local keyLabelName = string.format("%sKey", containerName)
+    questJournalSelectionKeyLabel = CreateControl(keyLabelName, questJournalSelectionKeyContainer, CT_LABEL)
+    questJournalSelectionKeyLabel:SetFont("ZoFontKeybindStripKey")
     questJournalSelectionKeyLabel:SetHorizontalAlignment(TEXT_ALIGN_CENTER)
     questJournalSelectionKeyLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
+    questJournalSelectionKeyLabel:ClearAnchors()
+    questJournalSelectionKeyLabel:SetAnchor(LEFT, questJournalSelectionKeyContainer, LEFT, 0, 0)
+
+    ZO_Keybindings_RegisterLabelForBindingUpdate(questJournalSelectionKeyLabel, "NVK3UT_TOGGLE_QUEST_SELECTION", true)
+
+    local descLabelName = string.format("%sDesc", containerName)
+    questJournalSelectionDescLabel = CreateControl(descLabelName, questJournalSelectionKeyContainer, CT_LABEL)
+    questJournalSelectionDescLabel:SetFont("ZoFontKeybindStripDescription")
+    questJournalSelectionDescLabel:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+    questJournalSelectionDescLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
     do
         local r = 197 / 255
         local g = 194 / 255
         local b = 158 / 255
         local a = 1
-        questJournalSelectionKeyLabel:SetColor(r, g, b, a)
+        questJournalSelectionDescLabel:SetColor(r, g, b, a)
     end
-    questJournalSelectionKeyLabel:SetHidden(true)
-    questJournalSelectionKeyLabel:SetWidth(360)
-    questJournalSelectionKeyLabel:ClearAnchors()
-    questJournalSelectionKeyLabel:SetAnchor(BOTTOM, parent, BOTTOM, 5, -30)
-
-    ZO_Keybindings_RegisterLabelForBindingUpdate(questJournalSelectionKeyLabel, "NVK3UT_TOGGLE_QUEST_SELECTION", true)
+    questJournalSelectionDescLabel:ClearAnchors()
+    questJournalSelectionDescLabel:SetAnchor(LEFT, questJournalSelectionKeyLabel, RIGHT, 8, 0)
 
     RefreshQuestJournalSelectionKeyLabelText()
 
-    return questJournalSelectionKeyLabel
+    return questJournalSelectionKeyContainer
 end
 
 local function UpdateQuestJournalSelectionKeyLabelVisibility(reason)
