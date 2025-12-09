@@ -143,6 +143,10 @@ local function IsQuestSelectionMode()
     return GetQuestFilterMode() == QUEST_FILTER_MODE_SELECTION
 end
 
+local function IsQuestSelectionModeActive()
+    return IsQuestSelectionMode()
+end
+
 local CATEGORY_TOGGLE_TEXTURES = {
     expanded = {
         up = "EsoUI/Art/Buttons/tree_open_up.dds",
@@ -1777,7 +1781,7 @@ local function EnsureQuestJournalKeybind()
     end
 
     local function isSelectionAvailable()
-        return IsQuestSelectionMode() and GetFocusedQuestKey() ~= nil
+        return IsQuestSelectionModeActive() and GetFocusedQuestKey() ~= nil
     end
 
     questJournalSelectionKeybindDescriptor = {
@@ -1794,6 +1798,8 @@ local function EnsureQuestJournalKeybind()
             enabled = isSelectionAvailable,
         },
     }
+
+    Nvk3UT.questJournalSelectionKeybindDescriptor = questJournalSelectionKeybindDescriptor
 end
 
 local function HookQuestJournalKeybind()
