@@ -625,6 +625,64 @@ local function ResolvePrimaryCategoryForQuest(journalIndex)
     return nil, nil
 end
 
+local function CollapsePreviousCategoryIfNeeded(context)
+    if not IsCollapsePreviousCategoryEnabled() then
+        return
+    end
+
+    local previousKey = state.lastActiveCategoryKey
+    local currentKey = state.currentActiveCategoryKey
+    if not previousKey or not currentKey then
+        return
+    end
+    if previousKey == currentKey then
+        return
+    end
+
+    local snapshot = state.snapshot
+    if not snapshot or not snapshot.categories or not snapshot.categories.byKey then
+        return
+    end
+
+    local categoriesByKey = snapshot.categories.byKey
+    local previousCategory = categoriesByKey[previousKey]
+    if not previousCategory then
+        return
+    end
+
+    local normalizedKey = NormalizeCategoryKey(previousKey)
+    if not normalizedKey then
+        return
+    end
+
+    if not IsCategoryExpanded(normalizedKey) then
+        return
+    end
+
+    local trigger = (context and context.trigger) or "auto"
+    local source = "QuestTracker:CollapsePreviousCategoryOnActiveChange"
+    local stateSource = context and context.stateSource
+
+    local changed = SetCategoryExpanded(normalizedKey, false, {
+        trigger = trigger,
+        source = source,
+        stateSource = stateSource,
+    })
+
+    if changed and IsDebugLoggingEnabled() then
+        DebugLog(
+            "QuestTracker:CollapsedPreviousCategory",
+            {
+                previousKey = tostring(previousKey),
+                currentKey = tostring(currentKey),
+                previousName = tostring(previousCategory.name),
+                trigger = trigger,
+                stateSource = stateSource or "",
+            }
+        )
+    end
+end
+
 local function ResolveStateSource(context, fallback)
     if type(context) == "string" then
         return ResolveStateSource({ trigger = context }, fallback)
@@ -2104,6 +2162,10 @@ local function EnsureTrackedQuestVisible(journalIndex, forceExpand, context)
                 tostring(journalIndex)
             ))
         end
+    end
+
+    if isNewTarget then
+        CollapsePreviousCategoryIfNeeded(context)
     end
     if isExternal then
         LogExternalSelect(journalIndex)
