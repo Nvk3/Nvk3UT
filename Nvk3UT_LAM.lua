@@ -400,6 +400,16 @@ local function getQuestSettings()
     return sv.QuestTracker
 end
 
+local function getQuestFilter()
+    local sv = getSavedVars()
+    sv.questFilter = sv.questFilter or {}
+    if sv.questFilter.mode == nil then
+        sv.questFilter.mode = 1
+    end
+    sv.questFilter.selection = sv.questFilter.selection or {}
+    return sv.questFilter
+end
+
 local function getAchievementSettings()
     local sv = getSavedVars()
     sv.AchievementTracker = sv.AchievementTracker or {}
@@ -2048,6 +2058,36 @@ local function registerPanel(displayTitle)
                     refreshQuestTracker()
                 end,
                 default = true,
+            }
+
+            controls[#controls + 1] = {
+                type = "dropdown",
+                name = GetString(SI_NVK3UT_QUEST_FILTER_MODE),
+                choices = {
+                    GetString(SI_NVK3UT_QUEST_FILTER_MODE_ALL),
+                    GetString(SI_NVK3UT_QUEST_FILTER_MODE_ACTIVE),
+                    GetString(SI_NVK3UT_QUEST_FILTER_MODE_SELECTION),
+                },
+                choicesValues = { 1, 2, 3 },
+                getFunc = function()
+                    local filter = getQuestFilter()
+                    return filter.mode or 1
+                end,
+                setFunc = function(value)
+                    local filter = getQuestFilter()
+                    filter.mode = tonumber(value) or 1
+
+                    local tracker = Nvk3UT and Nvk3UT.QuestTracker
+                    if tracker and tracker.MarkDirty then
+                        tracker.MarkDirty("LAM:QuestFilterMode")
+                    end
+
+                    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+                    if runtime and runtime.QueueDirty then
+                        runtime:QueueDirty("quest")
+                    end
+                end,
+                default = 1,
             }
 
             controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_QUEST_HEADER_COLORS) }

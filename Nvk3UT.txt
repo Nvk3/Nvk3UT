@@ -59,6 +59,7 @@ Runtime/Nvk3UT_TrackerHostLayout.lua
 ## Golden kommt nach Achievement (HostLayout enforced). Falls später Runtime-Dateien für Golden hinzukommen, diese unter Achievement-relevanten Runtime-Einträgen einfügen.
 ## === Tracker ===
 ## Tracker order: Quest -> Endeavor -> Achievement -> Golden
+Nvk3UT_QuestFilter.lua
 Nvk3UT_QuestTracker.xml
 Nvk3UT_QuestTracker.lua
 ## Endeavor files: Facade -> Tracker -> Rows -> Layout (no events in this token)

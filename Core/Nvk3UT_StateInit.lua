@@ -365,6 +365,10 @@ local defaults = {
         },
         fonts = DEFAULT_QUEST_FONTS,
     },
+    questFilter = {
+        mode = 1,
+        selection = {},
+    },
     AchievementTracker = {
         active = true,
         lock = false,
@@ -791,6 +795,7 @@ local function AdoptLegacySettings(saved)
     end
 
     saved.QuestTracker = MergeDefaults(saved.QuestTracker, defaults.QuestTracker)
+    saved.questFilter = MergeDefaults(saved.questFilter, defaults.questFilter)
     saved.AchievementTracker = MergeDefaults(saved.AchievementTracker, defaults.AchievementTracker)
     saved.appearance = MergeDefaults(saved.appearance, defaults.appearance)
 
@@ -813,6 +818,10 @@ local function EnsureFirstLoginStructures(saved)
     MergeDefaults(questTracker, defaults.QuestTracker)
     MergeDefaults(EnsureTable(questTracker, "background"), defaults.QuestTracker.background)
     MergeDefaults(EnsureTable(questTracker, "fonts"), defaults.QuestTracker.fonts)
+
+    local questFilter = EnsureTable(saved, "questFilter")
+    MergeDefaults(questFilter, defaults.questFilter)
+    EnsureTable(questFilter, "selection")
 
     local achievementTracker = EnsureTable(saved, "AchievementTracker")
     MergeDefaults(achievementTracker, defaults.AchievementTracker)

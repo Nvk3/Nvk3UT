@@ -47,6 +47,7 @@ end
 local Utils = Nvk3UT and Nvk3UT.Utils
 local QuestState = Nvk3UT and Nvk3UT.QuestState
 local QuestSelection = Nvk3UT and Nvk3UT.QuestSelection
+local QuestFilter = Nvk3UT and Nvk3UT.QuestFilter
 local FormatCategoryHeaderText =
     (Utils and Utils.FormatCategoryHeaderText)
     or function(baseText, count, showCounts)
@@ -68,6 +69,58 @@ local function ShouldShowQuestCategoryCounts()
     end
 
     return true
+end
+
+local function EnsureQuestFilterSavedVars()
+    local addon = Nvk3UT
+    if not addon then
+        return nil
+    end
+
+    local questFilter = state.questFilter
+    if questFilter then
+        return questFilter
+    end
+
+    if QuestFilter and QuestFilter.EnsureSaved then
+        local ok, saved = pcall(QuestFilter.EnsureSaved, addon)
+        if ok then
+            state.questFilter = saved
+            return saved
+        end
+    end
+
+    local root = addon.SV
+    if type(root) == "table" then
+        root.questFilter = root.questFilter or { mode = 1, selection = {} }
+        state.questFilter = root.questFilter
+        return root.questFilter
+    end
+
+    return nil
+end
+
+local function GetQuestFilterMode()
+    local questFilter = EnsureQuestFilterSavedVars()
+    if QuestFilter and QuestFilter.GetMode then
+        local ok, mode = pcall(QuestFilter.GetMode, questFilter)
+        if ok then
+            return mode
+        end
+    end
+
+    if questFilter and questFilter.mode ~= nil then
+        local numeric = tonumber(questFilter.mode)
+        if numeric == 2 or numeric == 3 then
+            return numeric
+        end
+    end
+
+    return 1
+end
+
+local function IsQuestSelectionMode()
+    return GetQuestFilterMode() == 3
 end
 
 local CATEGORY_TOGGLE_TEXTURES = {
@@ -163,6 +216,8 @@ local state = {
     selectedQuestKey = nil,
     isRebuildInProgress = false,
     questModelSubscription = nil,
+    rawSnapshot = nil,
+    questFilter = nil,
 }
 
 local PRIORITY = {
@@ -441,6 +496,58 @@ local function NormalizeQuestKey(journalIndex)
     end
 
     return tostring(journalIndex)
+end
+
+local function IsQuestSelectedInFilter(questKey)
+    local questFilter = EnsureQuestFilterSavedVars()
+    if QuestFilter and QuestFilter.IsQuestSelected then
+        local ok, selected = pcall(QuestFilter.IsQuestSelected, questFilter, questKey)
+        if ok then
+            return selected == true
+        end
+    end
+
+    local normalized = NormalizeQuestKey(questKey)
+    if not normalized then
+        return false
+    end
+
+    local selection = questFilter and questFilter.selection
+    if type(selection) ~= "table" then
+        return false
+    end
+
+    return selection[normalized] == true
+end
+
+local function ToggleQuestSelection(questKey, source)
+    local questFilter = EnsureQuestFilterSavedVars()
+    if not questFilter then
+        return false
+    end
+
+    local changed = false
+    if QuestFilter and QuestFilter.ToggleSelection then
+        local ok, result = pcall(QuestFilter.ToggleSelection, questFilter, questKey)
+        changed = ok and result ~= nil
+    else
+        local normalized = NormalizeQuestKey(questKey)
+        if normalized then
+            questFilter.selection = questFilter.selection or {}
+            if questFilter.selection[normalized] == true then
+                questFilter.selection[normalized] = nil
+            else
+                questFilter.selection[normalized] = true
+            end
+            changed = true
+        end
+    end
+
+    if changed and QuestTracker.MarkDirty then
+        QuestTracker.MarkDirty(source or "QuestSelectionToggle")
+    end
+
+    return changed
 end
 
 local function DetermineQuestColorRole(quest)
@@ -1494,6 +1601,22 @@ local function BuildQuestContextMenuEntries(journalIndex)
         end,
     }
 
+    local questKey = NormalizeQuestKey(journalIndex)
+    if IsQuestSelectionMode() and questKey then
+        local isSelected = IsQuestSelectedInFilter(questKey)
+        local label = GetString(SI_NVK3UT_QUEST_SELECTION_ADD)
+        if isSelected then
+            label = GetString(SI_NVK3UT_QUEST_SELECTION_REMOVE)
+        end
+
+        entries[#entries + 1] = {
+            label = label,
+            callback = function()
+                ToggleQuestSelection(questKey, "QuestTracker:ContextMenu")
+            end,
+        }
+    end
+
     return entries
 end
 
@@ -1581,6 +1704,106 @@ local function ShowQuestContextMenu(control, journalIndex)
         ShowMenu(control)
     else
         ClearMenu()
+    end
+end
+
+local selectionKeybindGroup = nil
+local questJournalKeybindHooked = false
+local questJournalContextMenuHooked = false
+
+local function GetFocusedQuestKey()
+    local focused = GetFocusedQuestIndex()
+    return NormalizeQuestKey(focused)
+end
+
+local function ToggleFocusedQuestSelection(source)
+    local questKey = GetFocusedQuestKey()
+    if not questKey then
+        return
+    end
+
+    ToggleQuestSelection(questKey, source or "QuestJournal:Keybind")
+end
+
+local function EnsureQuestJournalKeybind()
+    if selectionKeybindGroup then
+        return
+    end
+
+    selectionKeybindGroup = {
+        alignment = KEYBIND_STRIP_ALIGN_LEFT,
+        {
+            name = function()
+                return GetString(SI_NVK3UT_QUEST_SELECTION_KEYBIND)
+            end,
+            keybind = "UI_SHORTCUT_SECONDARY",
+            visible = function()
+                return IsQuestSelectionMode() and GetFocusedQuestKey() ~= nil
+            end,
+            callback = function()
+                ToggleFocusedQuestSelection("QuestJournal:Keybind")
+            end,
+        },
+    }
+end
+
+local function HookQuestJournalKeybind()
+    if questJournalKeybindHooked then
+        return
+    end
+
+    EnsureQuestJournalKeybind()
+
+    local scene = _G.QUEST_JOURNAL_SCENE
+    if not (scene and KEYBIND_STRIP and selectionKeybindGroup) then
+        return
+    end
+
+    scene:RegisterCallback("StateChange", function(_, newState)
+        if newState == SCENE_SHOWING or newState == SCENE_SHOWN then
+            KEYBIND_STRIP:AddKeybindButtonGroup(selectionKeybindGroup)
+        elseif newState == SCENE_HIDING or newState == SCENE_HIDDEN then
+            KEYBIND_STRIP:RemoveKeybindButtonGroup(selectionKeybindGroup)
+        end
+    end)
+
+    questJournalKeybindHooked = true
+end
+
+local function AppendQuestJournalContextMenu(journalIndex)
+    if not IsQuestSelectionMode() then
+        return
+    end
+
+    local questKey = NormalizeQuestKey(journalIndex)
+    if not questKey then
+        return
+    end
+
+    if not (ClearMenu and AddCustomMenuItem and ShowMenu) then
+        return
+    end
+
+    local isSelected = IsQuestSelectedInFilter(questKey)
+    local label = GetString(isSelected and SI_NVK3UT_QUEST_SELECTION_REMOVE or SI_NVK3UT_QUEST_SELECTION_ADD)
+
+    AddCustomMenuItem(label, function()
+        ToggleQuestSelection(questKey, "QuestJournal:ContextMenu")
+    end, (_G and _G.MENU_ADD_OPTION_LABEL) or 1)
+
+    ShowMenu()
+end
+
+local function HookQuestJournalContextMenu()
+    if questJournalContextMenuHooked then
+        return
+    end
+
+    if QUEST_JOURNAL_MANAGER and ZO_PostHook then
+        ZO_PostHook(QUEST_JOURNAL_MANAGER, "ShowQuestContextMenu", function(_, journalIndex)
+            AppendQuestJournalContextMenu(journalIndex)
+        end)
+        questJournalContextMenuHooked = true
     end
 end
 
@@ -2765,6 +2988,7 @@ local function EnsureSavedVars()
         end
     end
 
+    EnsureQuestFilterSavedVars()
     ApplyActiveQuestFromSaved()
 end
 
@@ -3726,6 +3950,34 @@ local function RelayoutFromCategoryIndex(startCategoryIndex)
     ProcessPendingExternalReveal()
 end
 
+local function EmptySnapshot()
+    return { categories = { ordered = {}, byKey = {} } }
+end
+
+local function BuildFilteredSnapshot(rawSnapshot)
+    local snapshot = rawSnapshot or EmptySnapshot()
+    state.rawSnapshot = snapshot
+
+    local filterMode = GetQuestFilterMode()
+    if not QuestFilter or not QuestFilter.ApplyFilter or filterMode == 1 then
+        return snapshot
+    end
+
+    local questFilter = EnsureQuestFilterSavedVars()
+    local selection = questFilter and questFilter.selection
+    local activeQuestKey = SyncSelectedQuestFromSaved()
+    local categoryName = (GetString and GetString(SI_NVK3UT_QUEST_FILTER_CATEGORY_ACTIVE)) or "Quests"
+
+    local ok, filtered = pcall(QuestFilter.ApplyFilter, snapshot, filterMode, selection, activeQuestKey, categoryName)
+    if ok and filtered then
+        filtered.signature = snapshot.signature
+        filtered.updatedAtMs = snapshot.updatedAtMs
+        return filtered
+    end
+
+    return snapshot
+end
+
 local function ApplySnapshot(snapshot, context)
     state.snapshot = snapshot
 
@@ -3780,7 +4032,10 @@ local function OnQuestModelSnapshotUpdated(snapshot, context)
         end
     end
 
-    ApplySnapshot(snapshot or { categories = { ordered = {}, byKey = {} } }, context)
+    local rawSnapshot = snapshot or EmptySnapshot()
+    local filteredSnapshot = BuildFilteredSnapshot(rawSnapshot)
+
+    ApplySnapshot(filteredSnapshot, context)
 
     if not state.isInitialized then
         return
@@ -3937,6 +4192,9 @@ function QuestTracker.Init(parentControl, opts)
 
     SubscribeToQuestModel()
 
+    HookQuestJournalKeybind()
+    HookQuestJournalContextMenu()
+
     state.isInitialized = true
     RefreshVisibility()
 
@@ -3954,6 +4212,29 @@ end
 QuestTracker.ToggleCategoryExpansion = ToggleCategoryExpansion
 QuestTracker.IsCategoryExpanded = IsCategoryExpanded
 QuestTracker.SetCategoryExpanded = SetCategoryExpanded
+
+function QuestTracker.MarkDirty(reason)
+    local context = {
+        trigger = "filter",
+        source = reason or "QuestTracker.MarkDirty",
+    }
+
+    local rawSnapshot = state.rawSnapshot or state.snapshot
+    if not rawSnapshot then
+        local questModel = Nvk3UT and Nvk3UT.QuestModel
+        if questModel and questModel.GetSnapshot then
+            rawSnapshot = questModel.GetSnapshot()
+        end
+    end
+
+    rawSnapshot = rawSnapshot or EmptySnapshot()
+    OnQuestModelSnapshotUpdated(rawSnapshot, context)
+
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and runtime.QueueDirty then
+        pcall(runtime.QueueDirty, runtime, "quest")
+    end
+end
 
 function QuestTracker.Refresh()
     Rebuild()
@@ -4007,6 +4288,8 @@ function QuestTracker.Shutdown()
     state.selectedQuestKey = nil
     state.isRebuildInProgress = false
     state.questModelSubscription = nil
+    state.rawSnapshot = nil
+    state.questFilter = nil
     NotifyHostContentChanged()
 end
 
