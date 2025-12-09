@@ -1726,13 +1726,36 @@ local function ShowQuestContextMenu(control, journalIndex)
     end
 end
 
-local selectionKeybindGroup = nil
+local questJournalSelectionKeybindDescriptor = nil
+local questJournalKeybindAdded = false
 local questJournalKeybindHooked = false
 local questJournalContextMenuHooked = false
 
 local function GetFocusedQuestKey()
-    local focused = GetFocusedQuestIndex()
-    return NormalizeQuestKey(focused)
+    local journalIndex = nil
+
+    local journalManager = QUEST_JOURNAL_MANAGER
+    if journalManager and journalManager.GetSelectedQuestIndex then
+        local ok, selected = SafeCall(function(manager)
+            return manager:GetSelectedQuestIndex()
+        end, journalManager)
+        if ok then
+            local numeric = tonumber(selected)
+            if numeric and numeric > 0 then
+                journalIndex = numeric
+            end
+        end
+    end
+
+    if not journalIndex then
+        journalIndex = GetFocusedQuestIndex()
+    end
+
+    if not journalIndex or (DoesJournalQuestExist and not DoesJournalQuestExist(journalIndex)) then
+        return nil
+    end
+
+    return NormalizeQuestKey(journalIndex)
 end
 
 local function ToggleFocusedQuestSelection(source)
@@ -1745,23 +1768,26 @@ local function ToggleFocusedQuestSelection(source)
 end
 
 local function EnsureQuestJournalKeybind()
-    if selectionKeybindGroup then
+    if questJournalSelectionKeybindDescriptor then
         return
     end
 
-    selectionKeybindGroup = {
+    local function isSelectionAvailable()
+        return IsQuestSelectionMode() and GetFocusedQuestKey() ~= nil
+    end
+
+    questJournalSelectionKeybindDescriptor = {
         alignment = KEYBIND_STRIP_ALIGN_LEFT,
         {
             name = function()
                 return GetString(SI_NVK3UT_QUEST_SELECTION_KEYBIND)
             end,
             keybind = "UI_SHORTCUT_SECONDARY",
-            visible = function()
-                return IsQuestSelectionMode() and GetFocusedQuestKey() ~= nil
-            end,
             callback = function()
                 ToggleFocusedQuestSelection("QuestJournal:Keybind")
             end,
+            visible = isSelectionAvailable,
+            enabled = isSelectionAvailable,
         },
     }
 end
@@ -1774,15 +1800,21 @@ local function HookQuestJournalKeybind()
     EnsureQuestJournalKeybind()
 
     local scene = _G.QUEST_JOURNAL_SCENE
-    if not (scene and KEYBIND_STRIP and selectionKeybindGroup) then
+    if not (scene and KEYBIND_STRIP and questJournalSelectionKeybindDescriptor) then
         return
     end
 
     scene:RegisterCallback("StateChange", function(_, newState)
-        if newState == SCENE_SHOWING or newState == SCENE_SHOWN then
-            KEYBIND_STRIP:AddKeybindButtonGroup(selectionKeybindGroup)
-        elseif newState == SCENE_HIDING or newState == SCENE_HIDDEN then
-            KEYBIND_STRIP:RemoveKeybindButtonGroup(selectionKeybindGroup)
+        if newState == SCENE_SHOWING then
+            if not questJournalKeybindAdded then
+                KEYBIND_STRIP:AddKeybindButtonGroup(questJournalSelectionKeybindDescriptor)
+                questJournalKeybindAdded = true
+            end
+        elseif newState == SCENE_HIDDEN then
+            if questJournalKeybindAdded then
+                KEYBIND_STRIP:RemoveKeybindButtonGroup(questJournalSelectionKeybindDescriptor)
+                questJournalKeybindAdded = false
+            end
         end
     end)
 
