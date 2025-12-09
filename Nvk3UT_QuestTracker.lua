@@ -1837,17 +1837,16 @@ local function EnsureQuestJournalKeyLabel()
     local keyLabelName = string.format("%sKey", containerName)
     questJournalSelectionKeyLabel = CreateControl(keyLabelName, questJournalSelectionKeyContainer, CT_LABEL)
     questJournalSelectionKeyLabel:SetFont("ZoFontKeybindStripKey")
-    questJournalSelectionKeyLabel:SetHorizontalAlignment(TEXT_ALIGN_CENTER)
+    questJournalSelectionKeyLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
     questJournalSelectionKeyLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
     questJournalSelectionKeyLabel:ClearAnchors()
-    questJournalSelectionKeyLabel:SetAnchor(LEFT, questJournalSelectionKeyContainer, LEFT, 0, 0)
 
     ZO_Keybindings_RegisterLabelForBindingUpdate(questJournalSelectionKeyLabel, "NVK3UT_TOGGLE_QUEST_SELECTION", true)
 
     local descLabelName = string.format("%sDesc", containerName)
     questJournalSelectionDescLabel = CreateControl(descLabelName, questJournalSelectionKeyContainer, CT_LABEL)
     questJournalSelectionDescLabel:SetFont("ZoFontKeybindStripDescription")
-    questJournalSelectionDescLabel:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+    questJournalSelectionDescLabel:SetHorizontalAlignment(TEXT_ALIGN_CENTER)
     questJournalSelectionDescLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
     do
         local r = 197 / 255
@@ -1857,7 +1856,9 @@ local function EnsureQuestJournalKeyLabel()
         questJournalSelectionDescLabel:SetColor(r, g, b, a)
     end
     questJournalSelectionDescLabel:ClearAnchors()
-    questJournalSelectionDescLabel:SetAnchor(LEFT, questJournalSelectionKeyLabel, RIGHT, 8, 0)
+    questJournalSelectionDescLabel:SetAnchor(CENTER, questJournalSelectionKeyContainer, CENTER, 0, 0)
+
+    questJournalSelectionKeyLabel:SetAnchor(RIGHT, questJournalSelectionDescLabel, LEFT, -8, 0)
 
     RefreshQuestJournalSelectionKeyLabelText()
 
