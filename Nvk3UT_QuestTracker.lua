@@ -48,6 +48,9 @@ local Utils = Nvk3UT and Nvk3UT.Utils
 local QuestState = Nvk3UT and Nvk3UT.QuestState
 local QuestSelection = Nvk3UT and Nvk3UT.QuestSelection
 local QuestFilter = Nvk3UT and Nvk3UT.QuestFilter
+local QUEST_FILTER_MODE_ALL = (QuestFilter and QuestFilter.MODE_ALL) or 1
+local QUEST_FILTER_MODE_ACTIVE = (QuestFilter and QuestFilter.MODE_ACTIVE) or 2
+local QUEST_FILTER_MODE_SELECTION = (QuestFilter and QuestFilter.MODE_SELECTION) or 3
 local FormatCategoryHeaderText =
     (Utils and Utils.FormatCategoryHeaderText)
     or function(baseText, count, showCounts)
@@ -73,54 +76,63 @@ end
 
 local function EnsureQuestFilterSavedVars()
     local addon = Nvk3UT
-    if not addon then
+    local sv = addon and addon.SV
+    if not (addon and sv) then
         return nil
     end
 
-    local questFilter = state.questFilter
-    if questFilter then
-        return questFilter
+    local tracker = sv.QuestTracker
+    if type(tracker) ~= "table" then
+        tracker = {}
+        sv.QuestTracker = tracker
     end
 
-    if QuestFilter and QuestFilter.EnsureSaved then
-        local ok, saved = pcall(QuestFilter.EnsureSaved, addon)
-        if ok then
-            state.questFilter = saved
-            return saved
+    local filter = state.questFilter
+    if type(filter) ~= "table" then
+        filter = tracker.questFilter
+        if type(filter) ~= "table" then
+            if type(sv.questFilter) == "table" then
+                filter = sv.questFilter
+            else
+                filter = {}
+            end
         end
     end
 
-    local root = addon.SV
-    if type(root) == "table" then
-        root.questFilter = root.questFilter or { mode = 1, selection = {} }
-        state.questFilter = root.questFilter
-        return root.questFilter
+    tracker.questFilter = filter
+
+    local mode = tonumber(filter.mode)
+    if mode ~= QUEST_FILTER_MODE_ALL and mode ~= QUEST_FILTER_MODE_ACTIVE and mode ~= QUEST_FILTER_MODE_SELECTION then
+        filter.mode = QUEST_FILTER_MODE_ALL
     end
 
-    return nil
+    if type(filter.selection) ~= "table" then
+        filter.selection = {}
+    end
+
+    state.questFilter = filter
+    return filter
 end
 
 local function GetQuestFilterMode()
     local questFilter = EnsureQuestFilterSavedVars()
-    if QuestFilter and QuestFilter.GetMode then
-        local ok, mode = pcall(QuestFilter.GetMode, questFilter)
-        if ok then
-            return mode
-        end
+    if not questFilter then
+        return QUEST_FILTER_MODE_ALL
     end
 
-    if questFilter and questFilter.mode ~= nil then
-        local numeric = tonumber(questFilter.mode)
-        if numeric == 2 or numeric == 3 then
-            return numeric
-        end
+    local mode = tonumber(questFilter.mode)
+    local isValid = mode == QUEST_FILTER_MODE_ALL or mode == QUEST_FILTER_MODE_ACTIVE or mode == QUEST_FILTER_MODE_SELECTION
+
+    if not isValid then
+        questFilter.mode = QUEST_FILTER_MODE_ALL
+        return QUEST_FILTER_MODE_ALL
     end
 
-    return 1
+    return mode
 end
 
 local function IsQuestSelectionMode()
-    return GetQuestFilterMode() == 3
+    return GetQuestFilterMode() == QUEST_FILTER_MODE_SELECTION
 end
 
 local CATEGORY_TOGGLE_TEXTURES = {
@@ -3954,12 +3966,25 @@ local function EmptySnapshot()
     return { categories = { ordered = {}, byKey = {} } }
 end
 
+local function IsSnapshotValid(candidate)
+    if type(candidate) ~= "table" then
+        return false
+    end
+
+    local categories = candidate.categories
+    if type(categories) ~= "table" then
+        return false
+    end
+
+    return type(categories.ordered) == "table"
+end
+
 local function BuildFilteredSnapshot(rawSnapshot)
     local snapshot = rawSnapshot or EmptySnapshot()
     state.rawSnapshot = snapshot
 
     local filterMode = GetQuestFilterMode()
-    if not QuestFilter or not QuestFilter.ApplyFilter or filterMode == 1 then
+    if not QuestFilter or not QuestFilter.ApplyFilter or filterMode == QUEST_FILTER_MODE_ALL then
         return snapshot
     end
 
@@ -3969,7 +3994,7 @@ local function BuildFilteredSnapshot(rawSnapshot)
     local categoryName = (GetString and GetString(SI_NVK3UT_QUEST_FILTER_CATEGORY_ACTIVE)) or "Quests"
 
     local ok, filtered = pcall(QuestFilter.ApplyFilter, snapshot, filterMode, selection, activeQuestKey, categoryName)
-    if ok and filtered then
+    if ok and IsSnapshotValid(filtered) then
         filtered.signature = snapshot.signature
         filtered.updatedAtMs = snapshot.updatedAtMs
         return filtered
@@ -4034,6 +4059,10 @@ local function OnQuestModelSnapshotUpdated(snapshot, context)
 
     local rawSnapshot = snapshot or EmptySnapshot()
     local filteredSnapshot = BuildFilteredSnapshot(rawSnapshot)
+
+    if not IsSnapshotValid(filteredSnapshot) then
+        filteredSnapshot = rawSnapshot
+    end
 
     ApplySnapshot(filteredSnapshot, context)
 
@@ -4212,6 +4241,11 @@ end
 QuestTracker.ToggleCategoryExpansion = ToggleCategoryExpansion
 QuestTracker.IsCategoryExpanded = IsCategoryExpanded
 QuestTracker.SetCategoryExpanded = SetCategoryExpanded
+QuestTracker.EnsureQuestFilterSavedVars = EnsureQuestFilterSavedVars
+QuestTracker.GetQuestFilterMode = GetQuestFilterMode
+QuestTracker.QUEST_FILTER_MODE_ALL = QUEST_FILTER_MODE_ALL
+QuestTracker.QUEST_FILTER_MODE_ACTIVE = QUEST_FILTER_MODE_ACTIVE
+QuestTracker.QUEST_FILTER_MODE_SELECTION = QUEST_FILTER_MODE_SELECTION
 
 function QuestTracker.MarkDirty(reason)
     local context = {

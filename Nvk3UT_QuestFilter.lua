@@ -5,8 +5,15 @@ Nvk3UT.QuestFilter = Nvk3UT.QuestFilter or {}
 
 local QuestFilter = Nvk3UT.QuestFilter
 
-local DEFAULT_MODE = 1
+local QUEST_FILTER_MODE_ALL = 1
+local QUEST_FILTER_MODE_ACTIVE = 2
+local QUEST_FILTER_MODE_SELECTION = 3
+local DEFAULT_MODE = QUEST_FILTER_MODE_ALL
 local ACTIVE_ONLY_CATEGORY_KEY = "ACTIVE_ONLY"
+
+QuestFilter.MODE_ALL = QUEST_FILTER_MODE_ALL
+QuestFilter.MODE_ACTIVE = QUEST_FILTER_MODE_ACTIVE
+QuestFilter.MODE_SELECTION = QUEST_FILTER_MODE_SELECTION
 
 local function NormalizeQuestKey(questKey)
     local questState = Nvk3UT and Nvk3UT.QuestState
@@ -65,13 +72,21 @@ function QuestFilter.EnsureSaved(addon)
         return nil
     end
 
-    local questFilter = root.questFilter
+    root.QuestTracker = root.QuestTracker or {}
+    local tracker = root.QuestTracker
+
+    local questFilter = tracker.questFilter
     if type(questFilter) ~= "table" then
-        questFilter = {}
-        root.questFilter = questFilter
+        if type(root.questFilter) == "table" then
+            questFilter = root.questFilter
+        else
+            questFilter = {}
+        end
+        tracker.questFilter = questFilter
     end
 
-    if questFilter.mode == nil then
+    local mode = tonumber(questFilter.mode)
+    if mode ~= QUEST_FILTER_MODE_ALL and mode ~= QUEST_FILTER_MODE_ACTIVE and mode ~= QUEST_FILTER_MODE_SELECTION then
         questFilter.mode = DEFAULT_MODE
     end
 
@@ -88,7 +103,7 @@ function QuestFilter.GetMode(questFilter)
     end
 
     local numeric = tonumber(questFilter.mode)
-    if numeric == 2 or numeric == 3 then
+    if numeric == QUEST_FILTER_MODE_ACTIVE or numeric == QUEST_FILTER_MODE_SELECTION then
         return numeric
     end
 
@@ -101,7 +116,7 @@ function QuestFilter.SetMode(questFilter, mode)
     end
 
     local numeric = tonumber(mode)
-    if numeric ~= 2 and numeric ~= 3 then
+    if numeric ~= QUEST_FILTER_MODE_ACTIVE and numeric ~= QUEST_FILTER_MODE_SELECTION then
         numeric = DEFAULT_MODE
     end
 
@@ -255,11 +270,11 @@ function QuestFilter.ApplyFilter(rawSnapshot, mode, selection, activeQuestKey, a
     local snapshot = rawSnapshot or { categories = { ordered = {}, byKey = {} } }
     local filterMode = tonumber(mode) or DEFAULT_MODE
 
-    if filterMode ~= 2 and filterMode ~= 3 then
+    if filterMode ~= QUEST_FILTER_MODE_ACTIVE and filterMode ~= QUEST_FILTER_MODE_SELECTION then
         return snapshot
     end
 
-    if filterMode == 2 then
+    if filterMode == QUEST_FILTER_MODE_ACTIVE then
         return buildActiveOnlySnapshot(snapshot, activeQuestKey, activeCategoryName)
     end
 

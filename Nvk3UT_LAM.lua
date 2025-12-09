@@ -6,6 +6,11 @@ local DEFAULT_PANEL_TITLE = "Nvk3's Ultimate Tracker"
 local L = {}
 Nvk3UT.LAM = L
 
+local QuestTracker = Nvk3UT and Nvk3UT.QuestTracker
+local QUEST_FILTER_MODE_ALL = (QuestTracker and QuestTracker.QUEST_FILTER_MODE_ALL) or 1
+local QUEST_FILTER_MODE_ACTIVE = (QuestTracker and QuestTracker.QUEST_FILTER_MODE_ACTIVE) or 2
+local QUEST_FILTER_MODE_SELECTION = (QuestTracker and QuestTracker.QUEST_FILTER_MODE_SELECTION) or 3
+
 local function getAddonVersionString()
     local addon = Nvk3UT
     if type(addon) ~= "table" then
@@ -401,13 +406,30 @@ local function getQuestSettings()
 end
 
 local function getQuestFilter()
-    local sv = getSavedVars()
-    sv.questFilter = sv.questFilter or {}
-    if sv.questFilter.mode == nil then
-        sv.questFilter.mode = 1
+    local tracker = Nvk3UT and Nvk3UT.QuestTracker
+    if tracker and tracker.EnsureQuestFilterSavedVars then
+        local ok, filter = pcall(tracker.EnsureQuestFilterSavedVars)
+        if ok and filter then
+            return filter
+        end
     end
-    sv.questFilter.selection = sv.questFilter.selection or {}
-    return sv.questFilter
+
+    local sv = getSavedVars()
+    sv.QuestTracker = sv.QuestTracker or {}
+    local trackerSv = sv.QuestTracker
+    trackerSv.questFilter = trackerSv.questFilter or {}
+
+    local filter = trackerSv.questFilter
+    local mode = tonumber(filter.mode)
+    if mode ~= QUEST_FILTER_MODE_ALL and mode ~= QUEST_FILTER_MODE_ACTIVE and mode ~= QUEST_FILTER_MODE_SELECTION then
+        filter.mode = QUEST_FILTER_MODE_ALL
+    end
+
+    if type(filter.selection) ~= "table" then
+        filter.selection = {}
+    end
+
+    return filter
 end
 
 local function getAchievementSettings()
@@ -2070,12 +2092,34 @@ local function registerPanel(displayTitle)
                 },
                 choicesValues = { 1, 2, 3 },
                 getFunc = function()
+                    local tracker = Nvk3UT and Nvk3UT.QuestTracker
+                    if tracker and tracker.GetQuestFilterMode then
+                        local ok, mode = pcall(tracker.GetQuestFilterMode)
+                        if ok and mode ~= nil then
+                            return mode
+                        end
+                    end
+
                     local filter = getQuestFilter()
-                    return filter.mode or 1
+                    local mode = filter and tonumber(filter.mode) or QUEST_FILTER_MODE_ALL
+                    if mode ~= QUEST_FILTER_MODE_ALL and mode ~= QUEST_FILTER_MODE_ACTIVE and mode ~= QUEST_FILTER_MODE_SELECTION then
+                        mode = QUEST_FILTER_MODE_ALL
+                        if filter then
+                            filter.mode = mode
+                        end
+                    end
+
+                    return mode
                 end,
                 setFunc = function(value)
                     local filter = getQuestFilter()
-                    filter.mode = tonumber(value) or 1
+                    if filter then
+                        local numeric = tonumber(value) or QUEST_FILTER_MODE_ALL
+                        if numeric ~= QUEST_FILTER_MODE_ACTIVE and numeric ~= QUEST_FILTER_MODE_SELECTION then
+                            numeric = QUEST_FILTER_MODE_ALL
+                        end
+                        filter.mode = numeric
+                    end
 
                     local tracker = Nvk3UT and Nvk3UT.QuestTracker
                     if tracker and tracker.MarkDirty then
