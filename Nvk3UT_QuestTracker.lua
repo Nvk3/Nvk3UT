@@ -1821,12 +1821,23 @@ local function HookQuestJournalKeybind()
 
     EnsureQuestJournalKeybind()
 
-    local scene = _G.QUEST_JOURNAL_SCENE
-    if not (scene and KEYBIND_STRIP and questJournalSelectionKeybindDescriptor) then
+    local scene = _G.QUEST_JOURNAL_SCENE or (SCENE_MANAGER and SCENE_MANAGER.GetScene and SCENE_MANAGER:GetScene("journal"))
+    if not scene then
+        DebugLog("QuestJournalKeybind: QUEST_JOURNAL_SCENE is nil")
         return
     end
 
-    scene:RegisterCallback("StateChange", function(_, newState)
+    if not (KEYBIND_STRIP and questJournalSelectionKeybindDescriptor) then
+        return
+    end
+
+    if questJournalKeybindHooked then
+        DebugLog("QuestJournalKeybind: already hooked, skipping duplicate registration")
+        return
+    end
+
+    scene:RegisterCallback("StateChange", function(oldState, newState)
+        DebugLog("QuestJournalKeybind: StateChange %s → %s", tostring(oldState), tostring(newState))
         if newState == SCENE_SHOWING then
             DebugLog("QuestJournalKeybind: SCENE_SHOWING → AddKeybindButtonGroup")
             if not questJournalKeybindAdded then
@@ -1845,34 +1856,26 @@ local function HookQuestJournalKeybind()
     questJournalKeybindHooked = true
 end
 
-local function AppendQuestJournalContextMenu(control, button, upInside)
+local function AppendQuestJournalContextMenu(_, questIndex)
     DebugLog(
-        "QuestJournalContextMenu: Append called, button=%s, upInside=%s, mode=%s",
-        tostring(button),
-        tostring(upInside),
+        "QuestJournalContextMenu: Append called, questIndex=%s, mode=%s",
+        tostring(questIndex),
         tostring(GetQuestFilterMode())
     )
-
-    if button ~= MOUSE_BUTTON_INDEX_RIGHT or not upInside then
-        DebugLog("QuestJournalContextMenu: exit (not right mouse button or not upInside)")
-        return
-    end
 
     if not IsQuestSelectionMode() then
         DebugLog("QuestJournalContextMenu: exit (not selection mode)")
         return
     end
 
-    local data = control and control.data
-    local journalIndex = data and data.questIndex
-    if not journalIndex then
-        DebugLog("QuestJournalContextMenu: exit (no questIndex on control)")
+    if not questIndex then
+        DebugLog("QuestJournalContextMenu: exit (no questIndex)")
         return
     end
 
-    local questKey = NormalizeQuestKey(journalIndex)
+    local questKey = NormalizeQuestKey(questIndex)
     if not questKey then
-        DebugLog("QuestJournalContextMenu: exit (no questKey for questIndex %s)", tostring(journalIndex))
+        DebugLog("QuestJournalContextMenu: exit (no questKey for questIndex %s)", tostring(questIndex))
         return
     end
 
@@ -1882,17 +1885,18 @@ local function AppendQuestJournalContextMenu(control, button, upInside)
 
     local isSelected = IsQuestSelectedInFilter(questKey)
     DebugLog(
-        "QuestJournalContextMenu: adding item, questIndex=%s, questKey=%s, isSelected=%s",
-        tostring(journalIndex),
+        "QuestJournalContextMenu: questKey=%s, selected=%s",
         tostring(questKey),
         tostring(isSelected)
     )
+
     local label = GetString(
         isSelected and SI_NVK3UT_QUEST_SELECTION_REMOVE_FROM_JOURNAL or SI_NVK3UT_QUEST_SELECTION_ADD_FROM_JOURNAL
     )
 
     AddCustomMenuItem(label, function()
         ToggleQuestSelection(questKey, "QuestJournal:ContextMenu")
+        DebugLog("QuestJournalContextMenu: toggled selection for questKey=%s", tostring(questKey))
     end, (_G and _G.MENU_ADD_OPTION_LABEL) or (MENU_ADD_OPTION_LABEL or 1))
 end
 
@@ -1904,11 +1908,9 @@ local function HookQuestJournalContextMenu()
 
     DebugLog("QuestJournalContextMenu: HookQuestJournalContextMenu called")
 
-    if ZO_PostHook then
-        ZO_PostHook("ZO_QuestJournalNavigationEntry_OnMouseUp", function(control, button, upInside)
-            AppendQuestJournalContextMenu(control, button, upInside)
-        end)
-        DebugLog("QuestJournalContextMenu: PostHook on ZO_QuestJournalNavigationEntry_OnMouseUp registered")
+    if ZO_PostHook and QUEST_JOURNAL_MANAGER then
+        ZO_PostHook(QUEST_JOURNAL_MANAGER, "ShowQuestContextMenu", AppendQuestJournalContextMenu)
+        DebugLog("QuestJournalContextMenu: PostHook on QUEST_JOURNAL_MANAGER:ShowQuestContextMenu registered")
         questJournalContextMenuHooked = true
     end
 end
