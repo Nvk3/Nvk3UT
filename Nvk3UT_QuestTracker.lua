@@ -1857,7 +1857,7 @@ local function EnsureQuestJournalKeyLabel()
     questJournalSelectionKeyLabel:SetHidden(true)
     questJournalSelectionKeyLabel:SetWidth(360)
     questJournalSelectionKeyLabel:ClearAnchors()
-    questJournalSelectionKeyLabel:SetAnchor(BOTTOM, parent, BOTTOM, 0, -10)
+    questJournalSelectionKeyLabel:SetAnchor(BOTTOM, parent, BOTTOM, 0, -20)
 
     ZO_Keybindings_RegisterLabelForBindingUpdate(questJournalSelectionKeyLabel, "NVK3UT_TOGGLE_QUEST_SELECTION", true)
 
