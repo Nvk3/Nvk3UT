@@ -2170,6 +2170,10 @@ local function EnsureTrackedQuestVisible(journalIndex, forceExpand, context)
 
         if previousKey and currentKey and previousKey ~= currentKey then
             zo_callLater(function()
+                if not IsCollapsePreviousCategoryEnabled or type(IsCollapsePreviousCategoryEnabled) ~= "function" then
+                    return
+                end
+
                 if not IsCollapsePreviousCategoryEnabled() then
                     return
                 end
