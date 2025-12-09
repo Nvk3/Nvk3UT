@@ -625,8 +625,56 @@ local function ResolvePrimaryCategoryForQuest(journalIndex)
     return nil, nil
 end
 
-local function CollapsePreviousCategoryIfNeeded(previousKey, currentKey, context)
-    if not IsCollapsePreviousCategoryEnabled() then
+local function OnActiveQuestCategoryChanged(previousKey, currentKey, context)
+    local debugEnabled = IsDebugLoggingEnabled()
+    local journalIndex = context and context.journalIndex
+    local trigger = (context and context.trigger) or "auto"
+    local stateSource = context and context.stateSource
+    local wasUninitialized = context and context.wasUninitialized
+    local categoriesByKey = state.snapshot and state.snapshot.categories and state.snapshot.categories.byKey
+    local previousCategory = nil
+    local currentCategory = nil
+
+    if categoriesByKey then
+        previousCategory = previousKey and categoriesByKey[previousKey] or nil
+        currentCategory = currentKey and categoriesByKey[currentKey] or nil
+    end
+
+    if not currentCategory and context and context.categoryEntry then
+        currentCategory = context.categoryEntry
+    end
+    if not previousCategory and context and context.previousCategoryEntry then
+        previousCategory = context.previousCategoryEntry
+    end
+
+    if debugEnabled then
+        if currentKey == nil then
+            DebugLog(string.format(
+                "[CATEGORY_TRACK][switch-skipped] journalIndex=%s reason=no-category",
+                tostring(journalIndex)
+            ))
+        else
+            if wasUninitialized then
+                DebugLog(string.format(
+                    "[CATEGORY_TRACK][init] journalIndex=%s categoryKey=%s categoryName=%s",
+                    tostring(journalIndex),
+                    tostring(currentKey),
+                    tostring((currentCategory and currentCategory.name) or "<nil>")
+                ))
+            end
+
+            DebugLog(string.format(
+                "[CATEGORY_TRACK][switch] journalIndex=%s previous=%s current=%s categoryName=%s",
+                tostring(journalIndex),
+                tostring(previousKey),
+                tostring(currentKey),
+                tostring((currentCategory and currentCategory.name) or "<nil>")
+            ))
+        end
+    end
+
+    local collapseOptionCheck = IsCollapsePreviousCategoryEnabled
+    if type(collapseOptionCheck) ~= "function" or not collapseOptionCheck() then
         return
     end
 
@@ -637,14 +685,12 @@ local function CollapsePreviousCategoryIfNeeded(previousKey, currentKey, context
         return
     end
 
-    local snapshot = state.snapshot
-    if not snapshot or not snapshot.categories or not snapshot.categories.byKey then
+    if not categoriesByKey then
         return
     end
 
-    local categoriesByKey = snapshot.categories.byKey
-    local previousCategory = categoriesByKey[previousKey]
-    if not previousCategory then
+    local effectivePreviousCategory = previousCategory or categoriesByKey[previousKey]
+    if not effectivePreviousCategory then
         return
     end
 
@@ -657,27 +703,47 @@ local function CollapsePreviousCategoryIfNeeded(previousKey, currentKey, context
         return
     end
 
-    local trigger = (context and context.trigger) or "auto"
-    local source = "QuestTracker:CollapsePreviousCategoryOnActiveChange"
-    local stateSource = context and context.stateSource
-
     local changed = SetCategoryExpanded(normalizedKey, false, {
         trigger = trigger,
-        source = source,
+        source = "QuestTracker:OnActiveQuestCategoryChanged",
         stateSource = stateSource,
     })
 
-    if changed and IsDebugLoggingEnabled() then
+    if changed and debugEnabled then
         DebugLog(
             "QuestTracker:CollapsedPreviousCategory",
             {
                 previousKey = tostring(previousKey),
                 currentKey = tostring(currentKey),
-                previousName = tostring(previousCategory.name),
+                previousName = tostring(effectivePreviousCategory.name),
                 trigger = trigger,
                 stateSource = stateSource or "",
             }
         )
+    end
+end
+
+local function UpdateActiveQuestCategory(journalIndex, context)
+    local logContext = {
+        journalIndex = journalIndex,
+        trigger = (context and context.trigger) or "auto",
+        stateSource = context and context.stateSource,
+        source = (context and context.source) or "QuestTracker:UpdateActiveQuestCategory",
+    }
+
+    local previousKey = state.currentActiveCategoryKey
+    local newCategoryKey, newCategoryEntry = ResolvePrimaryCategoryForQuest(journalIndex)
+
+    if newCategoryKey then
+        logContext.categoryEntry = newCategoryEntry
+        logContext.wasUninitialized = previousKey == nil
+
+        state.lastActiveCategoryKey = previousKey
+        state.currentActiveCategoryKey = newCategoryKey
+
+        OnActiveQuestCategoryChanged(previousKey, newCategoryKey, logContext)
+    else
+        OnActiveQuestCategoryChanged(previousKey, nil, logContext)
     end
 end
 
@@ -2124,70 +2190,8 @@ local function EnsureTrackedQuestVisible(journalIndex, forceExpand, context)
     local isExternal = context and context.isExternal
     local isNewTarget = context and context.isNewTarget
 
-    local newCategoryKey
-    local newCategoryEntry
-
     if isNewTarget then
-        newCategoryKey, newCategoryEntry = ResolvePrimaryCategoryForQuest(journalIndex)
-
-        if newCategoryKey then
-            local wasUninitialized = state.currentActiveCategoryKey == nil
-
-            state.lastActiveCategoryKey = state.currentActiveCategoryKey
-            state.currentActiveCategoryKey = newCategoryKey
-
-            if IsDebugLoggingEnabled() then
-                if wasUninitialized then
-                    DebugLog(string.format(
-                        "[CATEGORY_TRACK][init] journalIndex=%s categoryKey=%s categoryName=%s",
-                        tostring(journalIndex),
-                        tostring(state.currentActiveCategoryKey),
-                        tostring((newCategoryEntry and newCategoryEntry.name) or "<nil>")
-                    ))
-                end
-
-                DebugLog(string.format(
-                    "[CATEGORY_TRACK][switch] journalIndex=%s previous=%s current=%s categoryName=%s",
-                    tostring(journalIndex),
-                    tostring(state.lastActiveCategoryKey),
-                    tostring(state.currentActiveCategoryKey),
-                    tostring((newCategoryEntry and newCategoryEntry.name) or "<nil>")
-                ))
-            end
-        elseif IsDebugLoggingEnabled() then
-            DebugLog(string.format(
-                "[CATEGORY_TRACK][switch-skipped] journalIndex=%s reason=no-category",
-                tostring(journalIndex)
-            ))
-        end
-    end
-
-    if isNewTarget then
-        local previousKey = state.lastActiveCategoryKey
-        local currentKey = state.currentActiveCategoryKey
-        local trigger = logContext.trigger
-        local stateSource = logContext.stateSource
-
-        if previousKey and currentKey and previousKey ~= currentKey then
-            zo_callLater(function()
-                if not IsCollapsePreviousCategoryEnabled or type(IsCollapsePreviousCategoryEnabled) ~= "function" then
-                    return
-                end
-
-                if not IsCollapsePreviousCategoryEnabled() then
-                    return
-                end
-
-                if state.currentActiveCategoryKey ~= currentKey then
-                    return
-                end
-
-                CollapsePreviousCategoryIfNeeded(previousKey, currentKey, {
-                    trigger = trigger,
-                    stateSource = stateSource,
-                })
-            end, 50)
-        end
+        UpdateActiveQuestCategory(journalIndex, logContext)
     end
     if isExternal then
         LogExternalSelect(journalIndex)
