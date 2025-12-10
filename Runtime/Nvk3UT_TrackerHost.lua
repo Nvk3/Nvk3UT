@@ -141,13 +141,6 @@ local GOLDEN_COLOR_INIT_ROLES = {
     "activeTitle",
     "completed",
 }
-
-local DEFAULT_HOST_SETTINGS = {
-    HideInCombat = false,
-    CornerButtonEnabled = true,
-    CornerPosition = "TOP_RIGHT",
-}
-
 local CORNER_BUTTON_SIZE = 32
 local COLLAPSED_MIN_WIDTH = 64
 local COLLAPSED_MIN_HEIGHT = 48
@@ -216,7 +209,26 @@ local function getEndeavorModule()
     return nil
 end
 
-local SECTION_ORDER = { "quest", "endeavor", "achievement", "golden" }
+local DEFAULT_SECTION_ORDER_KEYS = {
+    "questSectionContainer",
+    "endeavorSectionContainer",
+    "achievementSectionContainer",
+    "goldenSectionContainer",
+}
+
+local SECTION_KEY_TO_ID = {
+    questSectionContainer = "quest",
+    endeavorSectionContainer = "endeavor",
+    achievementSectionContainer = "achievement",
+    goldenSectionContainer = "golden",
+}
+
+local DEFAULT_HOST_SETTINGS = {
+    HideInCombat = false,
+    CornerButtonEnabled = true,
+    CornerPosition = "TOP_RIGHT",
+    sectionOrder = DEFAULT_SECTION_ORDER_KEYS,
+}
 
 local state = {
     initialized = false,
@@ -607,6 +619,41 @@ local function normalizeCornerPosition(value)
     return DEFAULT_CORNER_POSITION
 end
 
+local function getDefaultSectionOrder()
+    local layout = Nvk3UT and Nvk3UT.TrackerHostLayout
+    if layout and type(layout.GetDefaultSectionOrder) == "function" then
+        local ok, order = pcall(layout.GetDefaultSectionOrder)
+        if ok and type(order) == "table" then
+            return order
+        end
+    end
+
+    return cloneTable(DEFAULT_SECTION_ORDER_KEYS)
+end
+
+local function normalizeSectionOrder(order)
+    local normalized = {}
+    local seen = {}
+
+    if type(order) == "table" then
+        for _, key in ipairs(order) do
+            if SECTION_KEY_TO_ID[key] and not seen[key] then
+                normalized[#normalized + 1] = key
+                seen[key] = true
+            end
+        end
+    end
+
+    for _, key in ipairs(getDefaultSectionOrder()) do
+        if not seen[key] then
+            normalized[#normalized + 1] = key
+            seen[key] = true
+        end
+    end
+
+    return normalized
+end
+
 local function ensureHostSettings()
     local sv = getSavedVars()
     if not sv then
@@ -630,6 +677,7 @@ local function ensureHostSettings()
     end
 
     hostSettings.CornerPosition = normalizeCornerPosition(hostSettings.CornerPosition)
+    hostSettings.sectionOrder = normalizeSectionOrder(hostSettings.sectionOrder)
 
     return hostSettings
 end
@@ -2255,7 +2303,49 @@ measureTrackerContent = function(container, trackerModule, sectionId)
 end
 
 function TrackerHost.GetSectionOrder()
-    return { unpack(SECTION_ORDER) }
+    local orderKeys
+    local layout = Nvk3UT and Nvk3UT.TrackerHostLayout
+    if layout and type(layout.GetSectionOrder) == "function" then
+        local ok, order = pcall(layout.GetSectionOrder)
+        if ok and type(order) == "table" then
+            orderKeys = order
+        end
+    end
+
+    if type(orderKeys) ~= "table" then
+        orderKeys = normalizeSectionOrder(state.hostSettings and state.hostSettings.sectionOrder)
+    end
+
+    local orderIds = {}
+    for index, key in ipairs(orderKeys) do
+        orderIds[index] = SECTION_KEY_TO_ID[key] or key
+    end
+
+    return orderIds
+end
+
+function TrackerHost.ApplySectionOrderFromSettings(shouldRefresh)
+    local layout = Nvk3UT and Nvk3UT.TrackerHostLayout
+    if not (layout and type(layout.SetSectionOrder) == "function") then
+        return nil
+    end
+
+    local hostSettings = ensureHostSettings()
+    state.hostSettings = hostSettings
+
+    local normalized = normalizeSectionOrder(hostSettings.sectionOrder)
+    local applied = layout.SetSectionOrder(normalized)
+    hostSettings.sectionOrder = type(applied) == "table" and applied or normalized
+
+    if shouldRefresh ~= false then
+        if performFullHostRefresh then
+            performFullHostRefresh("sectionOrder")
+        elseif anchorContainers then
+            anchorContainers()
+        end
+    end
+
+    return hostSettings.sectionOrder
 end
 
 function TrackerHost.GetSectionParent()
@@ -4932,6 +5022,8 @@ function TrackerHost.Init()
     state.layout = ensureLayoutSettings()
     state.features = ensureFeatureSettings()
     TrackerHost.EnsureAppearanceDefaults()
+
+    TrackerHost.ApplySectionOrderFromSettings(false)
 
     createRootControl()
     createContainers()
