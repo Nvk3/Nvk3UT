@@ -206,6 +206,7 @@ local IsQuestExpanded -- forward declaration so earlier functions can query ques
 local HandleQuestRowClick -- forward declaration for quest row click orchestration
 local FlushPendingTrackedQuestUpdate -- forward declaration for deferred tracking updates
 local ProcessTrackedQuestUpdate -- forward declaration for deferred tracking processing
+local RefreshQuestJournalTrackedIcons -- forward declaration for quest journal chevron updates
 -- Forward declaration so SafeCall is visible to functions defined above its body.
 -- Without this, calling SafeCall in ResolveQuestDebugInfo during quest accept can crash
 -- because SafeCall would still be nil at that point.
@@ -604,6 +605,10 @@ local function ToggleQuestSelection(questKey, source)
         if tree.RefreshVisible then
             tree:RefreshVisible()
         end
+    end
+
+    if changed and RefreshQuestJournalTrackedIcons then
+        RefreshQuestJournalTrackedIcons()
     end
 
     return changed
@@ -1773,10 +1778,8 @@ local questJournalSelectionKeybindEntry = nil
 local questJournalSelectionKeyContainer = nil
 local questJournalSelectionKeyLabel = nil
 local questJournalSelectionDescLabel = nil
-local questJournalEntryHooked = false
-
-local QUEST_TRACK_ICON_TEXTURE = "EsoUI/Art/Buttons/tree_closed_up.dds"
-local QUEST_TRACK_ICON_SIZE = 16
+local QUEST_JOURNAL_TRACK_ICON_TEXTURE = "EsoUI/Art/Buttons/tree_closed_up.dds"
+local QUEST_JOURNAL_TRACK_ICON_SIZE = 16
 local questJournalKeybindAdded = false
 local questJournalKeybindHooked = false
 local questJournalKeyLabelSceneHooked = false
@@ -1841,54 +1844,6 @@ local function GetQuestJournalKeyLabelParent()
     end
 
     return nil
-end
-
-local function ApplyQuestJournalTrackedIcon(control, questInfo)
-    if not control or not questInfo then
-        return
-    end
-
-    local journalIndex = questInfo.questIndex or (questInfo.data and questInfo.data.questIndex)
-
-    local questName = questInfo.name
-    if (not questName or questName == "") and GetJournalQuestName then
-        questName = GetJournalQuestName(journalIndex)
-    end
-
-    local label = control.text
-    if not label and control.GetNamedChild then
-        label = control:GetNamedChild("Text")
-    end
-
-    if not label or not label.SetText then
-        return
-    end
-
-    label:SetText(questName or "")
-
-    local icon = control:GetNamedChild("Nvk3UTQuestTrackIcon")
-
-    if not icon then
-        icon = WINDOW_MANAGER:CreateControl("$(parent)Nvk3UTQuestTrackIcon", control, CT_TEXTURE)
-        icon:SetDimensions(QUEST_TRACK_ICON_SIZE, QUEST_TRACK_ICON_SIZE)
-        icon:SetTexture(QUEST_TRACK_ICON_TEXTURE)
-        icon:SetTextureCoords(1, 0, 0, 0, 1, 1, 0, 1)
-        icon:ClearAnchors()
-        icon:SetAnchor(LEFT, label, RIGHT, 4, 0)
-    end
-
-    if not journalIndex or not questName or questName == "" then
-        icon:SetHidden(true)
-        return
-    end
-
-    local isTracked = IsQuestTrackedForFilter(journalIndex)
-
-    if isTracked then
-        icon:SetHidden(false)
-    else
-        icon:SetHidden(true)
-    end
 end
 
 RefreshQuestJournalSelectionKeyLabelText = function()
@@ -2155,6 +2110,9 @@ local function AppendQuestJournalContextMenu(control, button, upInside)
         DebugLog("QuestJournalContextMenu: toggled selection for questKey=%s", tostring(questKey))
         RefreshQuestJournalSelectionKeyLabelText()
         UpdateQuestJournalSelectionKeyLabelVisibility("QuestJournal:ContextMenu")
+        if RefreshQuestJournalTrackedIcons then
+            RefreshQuestJournalTrackedIcons()
+        end
     end)
 
     if ShowMenu then
@@ -2179,28 +2137,116 @@ local function HookQuestJournalContextMenu()
     end
 end
 
-local function HookQuestJournalNavigationEntryTemplate()
-    if questJournalEntryHooked then
+local function DebugQuestJournalIcons(message, ...)
+    local addon = Nvk3UT
+    local debugSettings = addon and addon.debug
+    if not (debugSettings and debugSettings.questJournalIcons) then
         return
     end
 
-    local navigationTree = QUEST_JOURNAL_KEYBOARD and QUEST_JOURNAL_KEYBOARD.navigationTree
-    local templateInfo = navigationTree and navigationTree.templateInfo
-    local template = templateInfo and templateInfo["ZO_QuestJournalNavigationEntry"]
-    local setupFunction = template and template.setupFunction
+    local formatted = message or ""
+    if select("#", ...) > 0 then
+        formatted = string.format(formatted, ...)
+    end
 
-    if not template then
+    local output = string.format("[Nvk3UT QuestIcons] %s", formatted)
+    if d then
+        d(output)
+    elseif print then
+        print(output)
+    end
+end
+
+local function IterateQuestJournalNodes(node, callback)
+    if not node or not callback then
         return
     end
 
-    template.setupFunction = function(control, questInfo, ...)
-        if type(setupFunction) == "function" then
-            setupFunction(control, questInfo, ...)
+    callback(node)
+
+    local children = node.children
+    if children then
+        for _, child in ipairs(children) do
+            IterateQuestJournalNodes(child, callback)
         end
-        ApplyQuestJournalTrackedIcon(control, questInfo)
+    end
+end
+
+RefreshQuestJournalTrackedIcons = function()
+    local questJournal = QUEST_JOURNAL_KEYBOARD
+    if not questJournal or not questJournal.navigationTree then
+        DebugQuestJournalIcons("Quest journal or navigationTree not ready")
+        return
     end
 
-    questJournalEntryHooked = true
+    local tree = questJournal.navigationTree
+    if not tree.rootNode then
+        DebugQuestJournalIcons("Quest journal tree has no root node")
+        return
+    end
+
+    DebugQuestJournalIcons("Refreshing quest journal tracked icons")
+
+    IterateQuestJournalNodes(tree.rootNode, function(node)
+        local data = node.data
+        local control = node.control
+
+        if not data or not control then
+            return
+        end
+
+        local journalIndex = data.questIndex or (data.data and data.data.questIndex)
+        local questName = data.name or (journalIndex and GetJournalQuestName and GetJournalQuestName(journalIndex))
+
+        local label = control.text
+        if not label and control.GetNamedChild then
+            label = control:GetNamedChild("Text")
+        end
+
+        if not label then
+            return
+        end
+
+        questName = questName or ""
+        label:SetText(questName)
+
+        local icon = control:GetNamedChild("Nvk3UTQuestTrackIcon")
+        if not icon then
+            icon = WINDOW_MANAGER:CreateControl("$(parent)Nvk3UTQuestTrackIcon", control, CT_TEXTURE)
+            icon:SetDimensions(QUEST_JOURNAL_TRACK_ICON_SIZE, QUEST_JOURNAL_TRACK_ICON_SIZE)
+            icon:SetTexture(QUEST_JOURNAL_TRACK_ICON_TEXTURE)
+            icon:SetTextureCoords(1, 0, 0, 0, 1, 1, 0, 1)
+            icon:ClearAnchors()
+            icon:SetAnchor(LEFT, label, RIGHT, 4, 0)
+        end
+
+        if not journalIndex or questName == "" or not DoesJournalQuestExist(journalIndex) then
+            icon:SetHidden(true)
+            return
+        end
+
+        local isTracked = IsQuestTrackedForFilter(journalIndex)
+        DebugQuestJournalIcons("Quest %s (index %d) tracked=%s", questName, journalIndex, tostring(isTracked))
+
+        icon:SetHidden(not isTracked)
+    end)
+end
+
+local function HookQuestJournalBuildQuestList()
+    if not QUEST_JOURNAL_KEYBOARD or not QUEST_JOURNAL_KEYBOARD.BuildQuestList then
+        DebugQuestJournalIcons("QUEST_JOURNAL_KEYBOARD.BuildQuestList not available for hook")
+        return
+    end
+
+    if QUEST_JOURNAL_KEYBOARD.NVK3UT_QuestIconsHooked then
+        return
+    end
+    QUEST_JOURNAL_KEYBOARD.NVK3UT_QuestIconsHooked = true
+
+    ZO_PostHook(QUEST_JOURNAL_KEYBOARD, "BuildQuestList", function()
+        DebugQuestJournalIcons("PostHook BuildQuestList -> RefreshQuestJournalTrackedIcons")
+        RefreshQuestJournalTrackedIcons()
+    end)
 end
 
 local function LogExternalSelect(questId)
@@ -4651,7 +4697,7 @@ function QuestTracker.Init(parentControl, opts)
 
     HookQuestJournalKeybind()
     HookQuestJournalContextMenu()
-    HookQuestJournalNavigationEntryTemplate()
+    HookQuestJournalBuildQuestList()
 
     state.isInitialized = true
     RefreshVisibility()
