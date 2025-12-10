@@ -6,6 +6,7 @@ local state
 local DebugLog
 local GetFocusedQuestIndex
 local RefreshQuestJournalSelectionKeyLabelText
+local UpdateQuestFilterKeybindLabelForActiveQuest
 local UpdateQuestJournalSelectionKeyLabelVisibility
 
 local QuestTracker = {}
@@ -1894,6 +1895,8 @@ RefreshQuestJournalSelectionKeyLabelText = function()
     questJournalSelectionDescLabel:SetText(GetString(stringId))
 end
 
+UpdateQuestFilterKeybindLabelForActiveQuest = RefreshQuestJournalSelectionKeyLabelText
+
 local function EnsureQuestJournalKeyLabel()
     if questJournalSelectionKeyContainer and questJournalSelectionKeyContainer.SetHidden then
         return questJournalSelectionKeyContainer
@@ -1980,6 +1983,12 @@ UpdateQuestJournalSelectionKeyLabelVisibility = function(reason)
     label:SetHidden(not shouldShow)
     if shouldShow then
         RefreshQuestJournalSelectionKeyLabelText()
+    end
+end
+
+local function OnActiveQuestSelected(_, journalIndex)
+    if UpdateQuestFilterKeybindLabelForActiveQuest then
+        UpdateQuestFilterKeybindLabelForActiveQuest(journalIndex)
     end
 end
 
@@ -4637,6 +4646,14 @@ function QuestTracker.Init(parentControl, opts)
     HookQuestJournalKeybind()
     HookQuestJournalContextMenu()
     HookQuestJournalNavigationEntryTemplate()
+
+    if EVENT_MANAGER then
+        EVENT_MANAGER:RegisterForEvent(
+            "Nvk3UT_QuestFilter_ActiveQuestLabel",
+            EVENT_QUEST_SELECTED,
+            OnActiveQuestSelected
+        )
+    end
 
     state.isInitialized = true
     RefreshVisibility()
