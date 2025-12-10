@@ -169,8 +169,12 @@ local function GetOrderedSections(host)
     end
 
     local ordered = {}
+    local orderList = SECTION_ORDER
+    if type(orderList) ~= "table" then
+        orderList = DEFAULT_SECTION_ORDER
+    end
 
-    for _, sectionKey in ipairs(SECTION_ORDER) do
+    for _, sectionKey in ipairs(orderList) do
         local definition = SECTION_DEFINITIONS[sectionKey]
         local sectionId = definition and definition.id or sectionKey
         local container
@@ -192,7 +196,7 @@ local function GetOrderedSections(host)
         end
     end
 
-    return ordered
+    return ordered or {}
 end
 
 local function getSectionContainer(host, sectionKey)
@@ -927,6 +931,15 @@ function Layout.ApplyLayout(host, sizes)
     end
 
     local sections = GetOrderedSections(host)
+    if type(sections) ~= "table" then
+        if isDebug() then
+            debugLog(
+                "HostLayout: GetOrderedSections returned non-table (type=%s) – falling back to empty list",
+                type(sections)
+            )
+        end
+        sections = {}
+    end
 
     local gap = SECTION_SPACING_Y
 

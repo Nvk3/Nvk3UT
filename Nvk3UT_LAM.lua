@@ -376,6 +376,70 @@ local function applySectionOrder(order)
     end
 end
 
+local function buildTrackerOrderControls()
+    local controls = {}
+    controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_TRACKER_HOST_ORDER) }
+
+    local trackerOrderNames = {
+        GetString(SI_NVK3UT_LAM_QUEST_SECTION),
+        GetString(SI_NVK3UT_LAM_ENDEAVOR_SECTION),
+        GetString(SI_NVK3UT_LAM_ACHIEVEMENT_SECTION),
+        GetString(SI_NVK3UT_LAM_GOLDEN_SECTION),
+    }
+    local trackerOrderValues = getDefaultSectionOrder()
+    local trackerSlotLabels = {
+        GetString(SI_NVK3UT_LAM_TRACKER_HOST_ORDER_POSITION_1),
+        GetString(SI_NVK3UT_LAM_TRACKER_HOST_ORDER_POSITION_2),
+        GetString(SI_NVK3UT_LAM_TRACKER_HOST_ORDER_POSITION_3),
+        GetString(SI_NVK3UT_LAM_TRACKER_HOST_ORDER_POSITION_4),
+    }
+
+    local function getOrderForSlot(slotIndex)
+        local order = getCurrentSectionOrder()
+        return order[slotIndex] or trackerOrderValues[slotIndex]
+    end
+
+    local function setOrderForSlot(slotIndex, trackerKey)
+        local order = getCurrentSectionOrder()
+        if order[slotIndex] == trackerKey then
+            return
+        end
+
+        local currentIndex
+        for index, key in ipairs(order) do
+            if key == trackerKey then
+                currentIndex = index
+                break
+            end
+        end
+
+        if currentIndex then
+            table.remove(order, currentIndex)
+        end
+
+        table.insert(order, slotIndex, trackerKey)
+
+        applySectionOrder(order)
+    end
+
+    for slotIndex = 1, #trackerOrderValues do
+        controls[#controls + 1] = {
+            type = "dropdown",
+            name = trackerSlotLabels[slotIndex],
+            choices = trackerOrderNames,
+            choicesValues = trackerOrderValues,
+            getFunc = function()
+                return getOrderForSlot(slotIndex)
+            end,
+            setFunc = function(value)
+                setOrderForSlot(slotIndex, value)
+            end,
+        }
+    end
+
+    return controls
+end
+
 local function getFeatures()
     local general = getGeneral()
     general.features = general.features or {}
@@ -2033,75 +2097,14 @@ local function registerPanel(displayTitle)
                 default = DEFAULT_HOST_SETTINGS.CornerPosition,
             })
 
-            local trackerOrderNames = {
-                GetString(SI_NVK3UT_LAM_QUEST_SECTION),
-                GetString(SI_NVK3UT_LAM_ENDEAVOR_SECTION),
-                GetString(SI_NVK3UT_LAM_ACHIEVEMENT_SECTION),
-                GetString(SI_NVK3UT_LAM_GOLDEN_SECTION),
-            }
-            local trackerOrderValues = getDefaultSectionOrder()
-            local trackerSlotLabels = {
-                GetString(SI_NVK3UT_LAM_TRACKER_HOST_ORDER_POSITION_1),
-                GetString(SI_NVK3UT_LAM_TRACKER_HOST_ORDER_POSITION_2),
-                GetString(SI_NVK3UT_LAM_TRACKER_HOST_ORDER_POSITION_3),
-                GetString(SI_NVK3UT_LAM_TRACKER_HOST_ORDER_POSITION_4),
-            }
-
-            controls[#controls + 1] = {
-                type = "submenu",
-                name = GetString(SI_NVK3UT_LAM_TRACKER_HOST_ORDER),
-                controls = (function()
-                    local orderControls = {}
-
-                    local function getOrderForSlot(slotIndex)
-                        local order = getCurrentSectionOrder()
-                        return order[slotIndex] or trackerOrderValues[slotIndex]
-                    end
-
-                    local function setOrderForSlot(slotIndex, trackerKey)
-                        local order = getCurrentSectionOrder()
-                        if order[slotIndex] == trackerKey then
-                            return
-                        end
-
-                        local currentIndex
-                        for index, key in ipairs(order) do
-                            if key == trackerKey then
-                                currentIndex = index
-                                break
-                            end
-                        end
-
-                        if currentIndex then
-                            table.remove(order, currentIndex)
-                        end
-
-                        table.insert(order, slotIndex, trackerKey)
-
-                        applySectionOrder(order)
-                    end
-
-                    for slotIndex = 1, #trackerOrderValues do
-                        orderControls[#orderControls + 1] = {
-                            type = "dropdown",
-                            name = trackerSlotLabels[slotIndex],
-                            choices = trackerOrderNames,
-                            choicesValues = trackerOrderValues,
-                            getFunc = function()
-                                return getOrderForSlot(slotIndex)
-                            end,
-                            setFunc = function(value)
-                                setOrderForSlot(slotIndex, value)
-                            end,
-                        }
-                    end
-
-                    return orderControls
-                end)(),
-            }
-
             return controls
         end)(),
+    }
+
+    options[#options + 1] = {
+        type = "submenu",
+        name = GetString(SI_NVK3UT_LAM_SECTION_TRACKER_ORDER),
+        controls = buildTrackerOrderControls(),
     }
 
 

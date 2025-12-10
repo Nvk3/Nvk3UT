@@ -3,6 +3,7 @@ local strings = {
     SI_NVK3UT_LAM_SECTION_JOURNAL = "Journal extensions",
     SI_NVK3UT_LAM_SECTION_STATUS_TEXT = "Status text",
     SI_NVK3UT_LAM_SECTION_TRACKER_HOST = "Tracker host",
+    SI_NVK3UT_LAM_SECTION_TRACKER_ORDER = "Tracker order",
     SI_NVK3UT_LAM_SECTION_DEBUG = "Debug & Support",
 
     -- Journal section
