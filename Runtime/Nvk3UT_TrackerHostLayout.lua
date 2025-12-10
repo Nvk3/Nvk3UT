@@ -970,10 +970,14 @@ function Layout.ApplyLayout(host, sizes)
         foundSections[entry.id] = true
     end
 
-    for _, spec in ipairs(ORDERED_SECTIONS) do
-        if not foundSections[spec.id] then
-            reportMissing(host, spec.id)
+    if type(ORDERED_SECTIONS) == "table" then
+        for _, spec in ipairs(ORDERED_SECTIONS) do
+            if not foundSections[spec.id] then
+                reportMissing(host, spec.id)
+            end
         end
+    elseif isDebug() then
+        debugLog("HostLayout: ORDERED_SECTIONS missing or invalid (type=%s)", type(ORDERED_SECTIONS))
     end
 
     local goldenAccounted = false
