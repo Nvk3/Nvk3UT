@@ -550,7 +550,7 @@ local function IsQuestSelectedInFilter(questKey)
     return selection[normalized] == true
 end
 
-local function IsQuestTrackedForFilter(journalIndex)
+function Nvk3UT.IsQuestTrackedForFilter(journalIndex)
     local normalizedIndex = tonumber(journalIndex)
     if not normalizedIndex or normalizedIndex <= 0 then
         return false
@@ -566,6 +566,10 @@ local function IsQuestTrackedForFilter(journalIndex)
     end
 
     return IsQuestSelectedInFilter(questKey)
+end
+
+local function IsQuestTrackedForFilter(journalIndex)
+    return Nvk3UT.IsQuestTrackedForFilter(journalIndex)
 end
 
 local function ToggleQuestSelection(questKey, source)
@@ -1770,7 +1774,7 @@ local questJournalSelectionKeyContainer = nil
 local questJournalSelectionKeyLabel = nil
 local questJournalSelectionDescLabel = nil
 local questJournalEntryHooked = false
-local questTrackIconMarkup = zo_iconFormat("EsoUI/Art/Antiquities/antiquities_tabIcon_scrying_up.dds", 16, 16)
+local questTrackIconMarkup = zo_iconFormat("/esoui/art/antiquities/antiquities_tabicon_scrying_up.dds", 16, 16)
 local questJournalKeybindAdded = false
 local questJournalKeybindHooked = false
 local questJournalKeyLabelSceneHooked = false
@@ -2170,12 +2174,14 @@ local function HookQuestJournalNavigationEntryTemplate()
     local template = templateInfo and templateInfo["ZO_QuestJournalNavigationEntry"]
     local setupFunction = template and template.setupFunction
 
-    if type(setupFunction) ~= "function" then
+    if not template then
         return
     end
 
     template.setupFunction = function(control, questInfo, ...)
-        setupFunction(control, questInfo, ...)
+        if type(setupFunction) == "function" then
+            setupFunction(control, questInfo, ...)
+        end
         ApplyQuestJournalTrackedIcon(control, questInfo)
     end
 
