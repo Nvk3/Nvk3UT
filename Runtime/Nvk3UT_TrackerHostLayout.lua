@@ -927,18 +927,19 @@ function Layout.ApplyLayout(host, sizes)
 
     local parent = getSectionParent(host)
     if not parent then
+        debugLog("HostLayout: no section parent for host, skipping layout")
         return 0
     end
 
     local sections = GetOrderedSections(host)
     if type(sections) ~= "table" then
-        if isDebug() then
-            debugLog(
-                "HostLayout: GetOrderedSections returned non-table (type=%s) – falling back to empty list",
-                type(sections)
-            )
-        end
-        sections = {}
+        debugLog("HostLayout: GetOrderedSections returned %s, skipping layout", type(sections))
+        return 0
+    end
+
+    if #sections == 0 then
+        debugLog("HostLayout: GetOrderedSections returned empty list, skipping layout")
+        return 0
     end
 
     local gap = SECTION_SPACING_Y
@@ -955,6 +956,14 @@ function Layout.ApplyLayout(host, sizes)
     local previousVisible
     local placedCount = 0
     local currentTop = startOffset
+
+    if isDebug() then
+        local ids = {}
+        for index, entry in ipairs(sections) do
+            ids[index] = tostring(entry.id or entry.key or index)
+        end
+        debugLog("HostLayout: Sections to layout: %s", table.concat(ids, ", "))
+    end
 
     local foundSections = {}
     for _, entry in ipairs(sections) do
