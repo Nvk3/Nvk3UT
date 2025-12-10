@@ -125,6 +125,14 @@ local function ensureStageDataInitialized()
     local Stage = getStageHelper()
     local hasStageInfo = Stage and Stage.GetCurrentStageInfo
 
+    if type(hasStageInfo) ~= "function" then
+        emitDebugMessage(
+            "FavoritesData.ensureStageDataInitialized: hasStageInfo is not a function (type=%s), skipping stage init",
+            type(hasStageInfo)
+        )
+        return
+    end
+
     local scopes = { ACCOUNT_SCOPE, CHARACTER_SCOPE }
     for index = 1, #scopes do
         local scope = scopes[index]
