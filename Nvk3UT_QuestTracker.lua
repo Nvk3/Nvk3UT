@@ -8,6 +8,8 @@ local GetFocusedQuestIndex
 local RefreshQuestJournalSelectionKeyLabelText
 local UpdateQuestJournalSelectionKeyLabelVisibility
 local RefreshQuestJournalStars
+local UpdateQuestFilterKeybindForJournalIndex
+local DoesJournalQuestExist
 
 local QuestTracker = {}
 QuestTracker.__index = QuestTracker
@@ -1679,7 +1681,7 @@ local function BuildQuestContextMenuEntries(journalIndex)
             label = label,
             callback = function()
                 ToggleQuestSelection(questKey, "QuestTracker:ContextMenu")
-                RefreshQuestJournalSelectionKeyLabelText()
+                RefreshQuestJournalSelectionKeyLabelText(journalIndex)
                 UpdateQuestJournalSelectionKeyLabelVisibility("QuestTracker:ContextMenu")
                 if RefreshQuestJournalStars then
                     RefreshQuestJournalStars()
@@ -1787,6 +1789,7 @@ local questJournalKeybindAdded = false
 local questJournalKeybindHooked = false
 local questJournalKeyLabelSceneHooked = false
 local questJournalContextMenuHooked = false
+local questJournalSelectionChangedHooked = false
 
 local function GetFocusedQuestKey()
     local journalManager = QUEST_JOURNAL_MANAGER
@@ -1852,22 +1855,52 @@ local function GetQuestJournalKeyLabelParent()
     return nil
 end
 
-RefreshQuestJournalSelectionKeyLabelText = function()
+local function DebugQuestFilterKeybind(msg, ...)
+    if Nvk3UT and Nvk3UT.debug and Nvk3UT.debug.questFilterKeybind then
+        d(string.format("[Nvk3UT QuestFilter] " .. msg, ...))
+    end
+end
+
+UpdateQuestFilterKeybindForJournalIndex = function(journalIndex)
+    if not (journalIndex and DoesJournalQuestExist) then
+        return
+    end
+
+    if not DoesJournalQuestExist(journalIndex) then
+        return
+    end
+
+    local isTracked = IsQuestTrackedForFilter(journalIndex)
+
+    DebugQuestFilterKeybind(
+        "Update keybind for quest index %d, tracked=%s",
+        journalIndex,
+        tostring(isTracked)
+    )
+
     if not questJournalSelectionDescLabel then
         return
     end
 
-    local journalIndex
-    if GetFocusedQuestIndex then
-        journalIndex = GetFocusedQuestIndex()
-    end
-
     local stringId = SI_NVK3UT_TRACK_QUEST
-    if IsQuestTrackedForFilter(journalIndex) then
+    if isTracked then
         stringId = SI_NVK3UT_UNTRACK_QUEST
     end
 
     questJournalSelectionDescLabel:SetText(GetString(stringId))
+end
+
+RefreshQuestJournalSelectionKeyLabelText = function(journalIndex)
+    if not questJournalSelectionDescLabel then
+        return
+    end
+
+    local resolvedIndex = journalIndex
+    if not resolvedIndex and GetFocusedQuestIndex then
+        resolvedIndex = GetFocusedQuestIndex()
+    end
+
+    UpdateQuestFilterKeybindForJournalIndex(resolvedIndex)
 end
 
 local function EnsureQuestJournalKeyLabel()
@@ -2052,6 +2085,61 @@ local function HookQuestJournalKeybind()
     questJournalKeybindHooked = true
 end
 
+local function ResolveJournalIndexFromSelection(selection)
+    local numeric = tonumber(selection)
+    if numeric then
+        return numeric
+    end
+
+    if type(selection) == "table" then
+        numeric = tonumber(selection.questIndex)
+        if numeric then
+            return numeric
+        end
+
+        if selection.data then
+            numeric = tonumber(selection.data.questIndex)
+            if numeric then
+                return numeric
+            end
+        end
+    end
+
+    return nil
+end
+
+local function HookQuestJournalSelectionChanged()
+    if questJournalSelectionChangedHooked then
+        return
+    end
+
+    local function onSelectionChanged(selection)
+        local journalIndex = ResolveJournalIndexFromSelection(selection)
+        if not journalIndex and GetFocusedQuestIndex then
+            journalIndex = GetFocusedQuestIndex()
+        end
+
+        UpdateQuestFilterKeybindForJournalIndex(journalIndex)
+        UpdateQuestJournalSelectionKeyLabelVisibility("QuestJournalSelectionChanged")
+    end
+
+    local manager = QUEST_JOURNAL_MANAGER
+    if manager and manager.RegisterCallback then
+        manager:RegisterCallback("QuestSelected", function(_, selection)
+            onSelectionChanged(selection)
+        end)
+        questJournalSelectionChangedHooked = true
+        return
+    end
+
+    if ZO_PostHook and ZO_QuestJournal_Keyboard and ZO_QuestJournal_Keyboard.OnSelectionChanged then
+        ZO_PostHook(ZO_QuestJournal_Keyboard, "OnSelectionChanged", function(_, selection)
+            onSelectionChanged(selection)
+        end)
+        questJournalSelectionChangedHooked = true
+    end
+end
+
 local function AppendQuestJournalContextMenu(control, button, upInside)
     DebugLog(
         "ContextMenuHook: OnMouseUp btn=%s inside=%s mode=%s",
@@ -2114,7 +2202,7 @@ local function AppendQuestJournalContextMenu(control, button, upInside)
             runtime:QueueDirty("quest")
         end
         DebugLog("QuestJournalContextMenu: toggled selection for questKey=%s", tostring(questKey))
-        RefreshQuestJournalSelectionKeyLabelText()
+        RefreshQuestJournalSelectionKeyLabelText(questIndex)
         UpdateQuestJournalSelectionKeyLabelVisibility("QuestJournal:ContextMenu")
         if RefreshQuestJournalStars then
             RefreshQuestJournalStars()
@@ -4676,9 +4764,15 @@ function QuestTracker.Init(parentControl, opts)
     HookQuestJournalKeybind()
     HookQuestJournalContextMenu()
     HookQuestJournalBuildQuestListForStars()
+    HookQuestJournalSelectionChanged()
 
     state.isInitialized = true
     RefreshVisibility()
+
+    local initialJournalIndex = GetFocusedQuestIndex and GetFocusedQuestIndex()
+    if initialJournalIndex then
+        UpdateQuestFilterKeybindForJournalIndex(initialJournalIndex)
+    end
 
     local questModel = Nvk3UT and Nvk3UT.QuestModel
     local snapshot = state.snapshot
