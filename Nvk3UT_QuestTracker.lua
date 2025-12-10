@@ -2,6 +2,12 @@ local addonName = "Nvk3UT"
 
 Nvk3UT = Nvk3UT or {}
 
+local state
+local DebugLog
+local GetFocusedQuestIndex
+local RefreshQuestJournalSelectionKeyLabelText
+local UpdateQuestJournalSelectionKeyLabelVisibility
+
 local QuestTracker = {}
 QuestTracker.__index = QuestTracker
 
@@ -47,6 +53,21 @@ end
 local Utils = Nvk3UT and Nvk3UT.Utils
 local QuestState = Nvk3UT and Nvk3UT.QuestState
 local QuestSelection = Nvk3UT and Nvk3UT.QuestSelection
+local QuestFilter = Nvk3UT and Nvk3UT.QuestFilter
+local QUEST_FILTER_MODE_ALL = (QuestFilter and QuestFilter.MODE_ALL) or 1
+local QUEST_FILTER_MODE_ACTIVE = (QuestFilter and QuestFilter.MODE_ACTIVE) or 2
+local QUEST_FILTER_MODE_SELECTION = (QuestFilter and QuestFilter.MODE_SELECTION) or 3
+
+local function IsValidQuestFilterMode(mode)
+    local numeric = tonumber(mode)
+    if not numeric then
+        return false
+    end
+
+    return numeric == QUEST_FILTER_MODE_ALL
+        or numeric == QUEST_FILTER_MODE_ACTIVE
+        or numeric == QUEST_FILTER_MODE_SELECTION
+end
 local FormatCategoryHeaderText =
     (Utils and Utils.FormatCategoryHeaderText)
     or function(baseText, count, showCounts)
@@ -68,6 +89,65 @@ local function ShouldShowQuestCategoryCounts()
     end
 
     return true
+end
+
+local function EnsureQuestFilterSavedVars()
+    local addon = Nvk3UT
+    if not addon then
+        DebugLog("EnsureQuestFilterSavedVars: addon is nil")
+        return nil
+    end
+
+    local sv = addon.SV
+    if not sv then
+        DebugLog("EnsureQuestFilterSavedVars: addon.SV is nil")
+        return nil
+    end
+
+    sv.QuestTracker = sv.QuestTracker or {}
+    local tracker = sv.QuestTracker
+
+    tracker.questFilter = tracker.questFilter or {}
+    local filter = tracker.questFilter
+
+    local numericMode = tonumber(filter.mode)
+    if not IsValidQuestFilterMode(numericMode) then
+        DebugLog("EnsureQuestFilterSavedVars: invalid mode '%s', resetting to ALL", tostring(filter.mode))
+        filter.mode = QUEST_FILTER_MODE_ALL
+    else
+        filter.mode = numericMode
+    end
+
+    if type(filter.selection) ~= "table" then
+        filter.selection = {}
+    end
+
+    return filter
+end
+
+local function GetQuestFilterMode()
+    local questFilter = EnsureQuestFilterSavedVars()
+    if not questFilter then
+        DebugLog("GetQuestFilterMode: filter is nil, falling back to ALL")
+        return QUEST_FILTER_MODE_ALL
+    end
+
+    local mode = questFilter.mode
+    if not IsValidQuestFilterMode(mode) then
+        DebugLog("GetQuestFilterMode: invalid mode '%s', resetting to ALL", tostring(mode))
+        questFilter.mode = QUEST_FILTER_MODE_ALL
+        return QUEST_FILTER_MODE_ALL
+    end
+
+    return tonumber(mode)
+end
+
+local function IsQuestSelectionMode()
+    return GetQuestFilterMode() == QUEST_FILTER_MODE_SELECTION
+end
+
+local function IsQuestSelectionModeActive()
+    return IsQuestSelectionMode()
 end
 
 local CATEGORY_TOGGLE_TEXTURES = {
@@ -131,7 +211,7 @@ local ProcessTrackedQuestUpdate -- forward declaration for deferred tracking pro
 -- because SafeCall would still be nil at that point.
 local SafeCall
 
-local state = {
+state = {
     isInitialized = false,
     opts = {},
     fonts = {},
@@ -163,6 +243,7 @@ local state = {
     selectedQuestKey = nil,
     isRebuildInProgress = false,
     questModelSubscription = nil,
+    rawSnapshot = nil,
 }
 
 local PRIORITY = {
@@ -191,7 +272,7 @@ local function IsDebugLoggingEnabled()
     return false
 end
 
-local function DebugLog(...)
+function DebugLog(...)
     local isEnabled = type(IsDebugLoggingEnabled) == "function" and IsDebugLoggingEnabled()
     if not isEnabled then
         return
@@ -441,6 +522,87 @@ local function NormalizeQuestKey(journalIndex)
     end
 
     return tostring(journalIndex)
+end
+
+local function GetQuestKeyFromJournalIndex(journalIndex)
+    return NormalizeQuestKey(journalIndex)
+end
+
+local function IsQuestSelectedInFilter(questKey)
+    local questFilter = EnsureQuestFilterSavedVars()
+    if QuestFilter and QuestFilter.IsQuestSelected then
+        local ok, selected = pcall(QuestFilter.IsQuestSelected, questFilter, questKey)
+        if ok then
+            return selected == true
+        end
+    end
+
+    local normalized = NormalizeQuestKey(questKey)
+    if not normalized then
+        return false
+    end
+
+    local selection = questFilter and questFilter.selection
+    if type(selection) ~= "table" then
+        return false
+    end
+
+    return selection[normalized] == true
+end
+
+local function IsQuestTrackedForFilter(journalIndex)
+    local normalizedIndex = tonumber(journalIndex)
+    if not normalizedIndex or normalizedIndex <= 0 then
+        return false
+    end
+
+    if DoesJournalQuestExist and not DoesJournalQuestExist(normalizedIndex) then
+        return false
+    end
+
+    local questKey = GetQuestKeyFromJournalIndex(normalizedIndex)
+    if not questKey then
+        return false
+    end
+
+    return IsQuestSelectedInFilter(questKey)
+end
+
+local function ToggleQuestSelection(questKey, source)
+    local questFilter = EnsureQuestFilterSavedVars()
+    if not questFilter then
+        return false
+    end
+
+    local changed = false
+    if QuestFilter and QuestFilter.ToggleSelection then
+        local ok, result = pcall(QuestFilter.ToggleSelection, questFilter, questKey)
+        changed = ok and result ~= nil
+    else
+        local normalized = NormalizeQuestKey(questKey)
+        if normalized then
+            questFilter.selection = questFilter.selection or {}
+            if questFilter.selection[normalized] == true then
+                questFilter.selection[normalized] = nil
+            else
+                questFilter.selection[normalized] = true
+            end
+            changed = true
+        end
+    end
+
+    if changed and QuestTracker.MarkDirty then
+        QuestTracker.MarkDirty(source or "QuestSelectionToggle")
+    end
+
+    if changed and QUEST_JOURNAL_KEYBOARD and QUEST_JOURNAL_KEYBOARD.navigationTree then
+        local tree = QUEST_JOURNAL_KEYBOARD.navigationTree
+        if tree.RefreshVisible then
+            tree:RefreshVisible()
+        end
+    end
+
+    return changed
 end
 
 local function DetermineQuestColorRole(quest)
@@ -1494,6 +1656,24 @@ local function BuildQuestContextMenuEntries(journalIndex)
         end,
     }
 
+    local questKey = NormalizeQuestKey(journalIndex)
+    if IsQuestSelectionMode() and questKey then
+        local isSelected = IsQuestSelectedInFilter(questKey)
+        local label = GetString(SI_NVK3UT_TRACK_QUEST)
+        if isSelected then
+            label = GetString(SI_NVK3UT_UNTRACK_QUEST)
+        end
+
+        entries[#entries + 1] = {
+            label = label,
+            callback = function()
+                ToggleQuestSelection(questKey, "QuestTracker:ContextMenu")
+                RefreshQuestJournalSelectionKeyLabelText()
+                UpdateQuestJournalSelectionKeyLabelVisibility("QuestTracker:ContextMenu")
+            end,
+        }
+    end
+
     return entries
 end
 
@@ -1582,6 +1762,424 @@ local function ShowQuestContextMenu(control, journalIndex)
     else
         ClearMenu()
     end
+end
+
+local questJournalSelectionKeybindDescriptor = nil
+local questJournalSelectionKeybindEntry = nil
+local questJournalSelectionKeyContainer = nil
+local questJournalSelectionKeyLabel = nil
+local questJournalSelectionDescLabel = nil
+local questJournalEntryHooked = false
+local questTrackIconMarkup = zo_iconFormat("EsoUI/Art/Antiquities/antiquities_tabIcon_scrying_up.dds", 16, 16)
+local questJournalKeybindAdded = false
+local questJournalKeybindHooked = false
+local questJournalKeyLabelSceneHooked = false
+local questJournalContextMenuHooked = false
+
+local function GetFocusedQuestKey()
+    local journalManager = QUEST_JOURNAL_MANAGER
+    if not journalManager then
+        if IsDebugLoggingEnabled() then
+            DebugLog("GetFocusedQuestKey: journalManager missing")
+        end
+        return nil
+    end
+
+    local journalIndex = nil
+    if type(journalManager.GetFocusedQuestIndex) == "function" then
+        journalIndex = journalManager:GetFocusedQuestIndex()
+    elseif type(GetFocusedQuestIndex) == "function" then
+        journalIndex = GetFocusedQuestIndex()
+    else
+        if IsDebugLoggingEnabled() then
+            DebugLog("GetFocusedQuestKey: no GetFocusedQuestIndex API available")
+        end
+        return nil
+    end
+
+    journalIndex = tonumber(journalIndex)
+    if not journalIndex or journalIndex <= 0 then
+        if IsDebugLoggingEnabled() then
+            DebugLog("GetFocusedQuestKey: no focused quest index (%s)", tostring(journalIndex))
+        end
+        return nil
+    end
+
+    if DoesJournalQuestExist and not DoesJournalQuestExist(journalIndex) then
+        return nil
+    end
+
+    local questKey = GetQuestKeyFromJournalIndex(journalIndex)
+    if not questKey and IsDebugLoggingEnabled() then
+        DebugLog("GetFocusedQuestKey: no questKey for journalIndex %s", tostring(journalIndex))
+    end
+
+    return questKey
+end
+
+local function ToggleFocusedQuestSelection(source)
+    local questKey = GetFocusedQuestKey()
+    DebugLog("QuestJournalKeybind.callback: questKey=%s", tostring(questKey))
+    if not questKey then
+        return
+    end
+
+    DebugLog("QuestJournalKeybind.callback: toggling selection and marking tracker dirty")
+    ToggleQuestSelection(questKey, source or "QuestJournal:Keybind")
+    UpdateQuestJournalSelectionKeyLabelVisibility("QuestJournal:KeybindToggle")
+end
+
+local function GetQuestJournalKeyLabelParent()
+    if QUEST_JOURNAL_KEYBOARD and QUEST_JOURNAL_KEYBOARD.control then
+        return QUEST_JOURNAL_KEYBOARD.control
+    end
+
+    return nil
+end
+
+local function ApplyQuestJournalTrackedIcon(control, questInfo)
+    if not control or not questInfo then
+        return
+    end
+
+    local journalIndex = questInfo.questIndex or (questInfo.data and questInfo.data.questIndex)
+    if not journalIndex then
+        return
+    end
+
+    local questName = questInfo.name
+    if (not questName or questName == "") and GetJournalQuestName then
+        questName = GetJournalQuestName(journalIndex)
+    end
+
+    if not questName or questName == "" then
+        return
+    end
+
+    local label = control.text
+    if not label and control.GetNamedChild then
+        label = control:GetNamedChild("Text")
+    end
+
+    if not label or not label.SetText then
+        return
+    end
+
+    if IsQuestTrackedForFilter(journalIndex) then
+        label:SetText(string.format("%s %s", questName, questTrackIconMarkup))
+    else
+        label:SetText(questName)
+    end
+end
+
+RefreshQuestJournalSelectionKeyLabelText = function()
+    if not questJournalSelectionDescLabel then
+        return
+    end
+
+    local journalIndex
+    if GetFocusedQuestIndex then
+        journalIndex = GetFocusedQuestIndex()
+    end
+
+    local stringId = SI_NVK3UT_TRACK_QUEST
+    if IsQuestTrackedForFilter(journalIndex) then
+        stringId = SI_NVK3UT_UNTRACK_QUEST
+    end
+
+    questJournalSelectionDescLabel:SetText(GetString(stringId))
+end
+
+local function EnsureQuestJournalKeyLabel()
+    if questJournalSelectionKeyContainer and questJournalSelectionKeyContainer.SetHidden then
+        return questJournalSelectionKeyContainer
+    end
+
+    local parent = GetQuestJournalKeyLabelParent()
+    if not parent then
+        if IsDebugLoggingEnabled() then
+            DebugLog("QuestJournalKeybindLabel: parent control missing")
+        end
+        return nil
+    end
+
+    local containerName = string.format(
+        "%sNvk3UTQuestSelectionKeyContainer",
+        parent:GetName() or "Nvk3UTQuestSelectionKeyContainer"
+    )
+    questJournalSelectionKeyContainer = CreateControl(containerName, parent, CT_CONTROL)
+    questJournalSelectionKeyContainer:SetHidden(true)
+    questJournalSelectionKeyContainer:SetWidth(360)
+    questJournalSelectionKeyContainer:ClearAnchors()
+    questJournalSelectionKeyContainer:SetAnchor(BOTTOM, parent, BOTTOM, 5, -45)
+
+    local keyLabelName = string.format("%sKey", containerName)
+    questJournalSelectionKeyLabel = CreateControl(keyLabelName, questJournalSelectionKeyContainer, CT_LABEL)
+    questJournalSelectionKeyLabel:SetFont("ZoFontKeybindStripKey")
+    questJournalSelectionKeyLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+    questJournalSelectionKeyLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
+    questJournalSelectionKeyLabel:ClearAnchors()
+
+    local keyBgName = string.format("%sBg", containerName)
+    local keyBg = CreateControl(keyBgName, questJournalSelectionKeyContainer, CT_BACKDROP)
+    keyBg:SetCenterColor(0, 0, 0, 1)
+    keyBg:SetEdgeColor(1, 1, 1, 1)
+    keyBg:SetEdgeTexture(nil, 2, 2, 2, 2)
+    keyBg:SetInsets(2, 2, -2, -2)
+    keyBg:SetDrawLayer(DL_BACKGROUND)
+
+    ZO_Keybindings_RegisterLabelForBindingUpdate(questJournalSelectionKeyLabel, "NVK3UT_TOGGLE_QUEST_SELECTION", true)
+
+    local descLabelName = string.format("%sDesc", containerName)
+    questJournalSelectionDescLabel = CreateControl(descLabelName, questJournalSelectionKeyContainer, CT_LABEL)
+    questJournalSelectionDescLabel:SetFont("ZoFontKeybindStripDescription")
+    questJournalSelectionDescLabel:SetHorizontalAlignment(TEXT_ALIGN_CENTER)
+    questJournalSelectionDescLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
+    do
+        local r = 197 / 255
+        local g = 194 / 255
+        local b = 158 / 255
+        local a = 1
+        questJournalSelectionDescLabel:SetColor(r, g, b, a)
+    end
+    questJournalSelectionDescLabel:ClearAnchors()
+    questJournalSelectionDescLabel:SetAnchor(CENTER, questJournalSelectionKeyContainer, CENTER, 0, 0)
+
+    questJournalSelectionKeyLabel:SetAnchor(RIGHT, questJournalSelectionDescLabel, LEFT, -8, 0)
+    keyBg:ClearAnchors()
+    keyBg:SetAnchor(TOPLEFT, questJournalSelectionKeyLabel, TOPLEFT, -4, -2)
+    keyBg:SetAnchor(BOTTOMRIGHT, questJournalSelectionKeyLabel, BOTTOMRIGHT, 4, 2)
+
+    RefreshQuestJournalSelectionKeyLabelText()
+
+    return questJournalSelectionKeyContainer
+end
+
+UpdateQuestJournalSelectionKeyLabelVisibility = function(reason)
+    local label = EnsureQuestJournalKeyLabel()
+    if not label then
+        return
+    end
+
+    local shouldShow = IsQuestSelectionModeActive()
+    if shouldShow then
+        local isJournalShowing =
+            (QUEST_JOURNAL_SCENE and QUEST_JOURNAL_SCENE.IsShowing and QUEST_JOURNAL_SCENE:IsShowing())
+            or (SCENE_MANAGER and SCENE_MANAGER.IsShowing and SCENE_MANAGER:IsShowing("journal"))
+        shouldShow = isJournalShowing
+    end
+
+    if shouldShow then
+        shouldShow = GetFocusedQuestKey() ~= nil
+    end
+
+    label:SetHidden(not shouldShow)
+    if shouldShow then
+        RefreshQuestJournalSelectionKeyLabelText()
+    end
+end
+
+local function EnsureQuestJournalKeybind()
+    if questJournalSelectionKeybindDescriptor and questJournalSelectionKeybindEntry then
+        return
+    end
+
+    local function isSelectionAvailable()
+        local mode = GetQuestFilterMode()
+        local focusedKey = GetFocusedQuestKey()
+        DebugLog(
+            "QuestJournalKeybind.visible: mode=%s, focusedKey=%s",
+            tostring(mode),
+            tostring(focusedKey)
+        )
+        return IsQuestSelectionModeActive() and focusedKey ~= nil
+    end
+
+    questJournalSelectionKeybindEntry = {
+        name = function()
+            return GetString(SI_NVK3UT_QUEST_SELECTION_KEYBIND)
+        end,
+        keybind = "UI_SHORTCUT_SECONDARY",
+        callback = function()
+            DebugLog("QuestJournalKeybind.callback: pressed")
+            ToggleFocusedQuestSelection("QuestJournal:Keybind")
+        end,
+        visible = isSelectionAvailable,
+        enabled = isSelectionAvailable,
+    }
+
+    questJournalSelectionKeybindDescriptor = {
+        alignment = KEYBIND_STRIP_ALIGN_LEFT,
+        questJournalSelectionKeybindEntry,
+    }
+
+    Nvk3UT.questJournalSelectionKeybindDescriptor = questJournalSelectionKeybindDescriptor
+end
+
+local function HookQuestJournalKeybind()
+    if questJournalKeybindHooked then
+        return
+    end
+
+    DebugLog("QuestJournalKeybind: HookQuestJournalKeybind called")
+
+    EnsureQuestJournalKeybind()
+    EnsureQuestJournalKeyLabel()
+
+    if not questJournalKeyLabelSceneHooked then
+        local questJournalScene = QUEST_JOURNAL_SCENE
+            or (SCENE_MANAGER and SCENE_MANAGER.GetScene and SCENE_MANAGER:GetScene("journal"))
+        if questJournalScene and questJournalScene.RegisterCallback then
+            questJournalScene:RegisterCallback("StateChange", function(_, newState)
+                if newState == SCENE_SHOWING or newState == SCENE_HIDDEN then
+                    UpdateQuestJournalSelectionKeyLabelVisibility("SceneChange")
+                end
+            end)
+            questJournalKeyLabelSceneHooked = true
+        end
+    end
+
+    if not (ZO_PostHook and ZO_QuestJournal_Keyboard) then
+        return
+    end
+
+    ZO_PostHook(ZO_QuestJournal_Keyboard, "InitializeKeybindStripDescriptors", function(self)
+        DebugLog("QuestJournalKeybind: InitializeKeybindStripDescriptors posthook")
+
+        if questJournalKeybindAdded then
+            DebugLog("QuestJournalKeybind: already added, skipping")
+            return
+        end
+
+        local descriptorList = self and self.keybindStripDescriptor
+        if type(descriptorList) ~= "table" then
+            DebugLog("QuestJournalKeybind: keybindStripDescriptor missing")
+            return
+        end
+
+        if not questJournalSelectionKeybindEntry then
+            DebugLog("QuestJournalKeybind: keybind entry missing")
+            return
+        end
+
+        table.insert(descriptorList, questJournalSelectionKeybindEntry)
+        questJournalKeybindAdded = true
+        DebugLog("QuestJournalKeybind: appended selection keybind descriptor")
+
+        UpdateQuestJournalSelectionKeyLabelVisibility("KeybindDescriptorAdded")
+    end)
+
+    questJournalKeybindHooked = true
+end
+
+local function AppendQuestJournalContextMenu(control, button, upInside)
+    DebugLog(
+        "ContextMenuHook: OnMouseUp btn=%s inside=%s mode=%s",
+        tostring(button),
+        tostring(upInside),
+        tostring(GetQuestFilterMode())
+    )
+
+    if button ~= MOUSE_BUTTON_INDEX_RIGHT then
+        DebugLog("QuestJournalContextMenu: exit (not right mouse button)")
+        return
+    end
+
+    if not upInside then
+        DebugLog("QuestJournalContextMenu: exit (not upInside)")
+        return
+    end
+
+    if not IsQuestSelectionModeActive() then
+        DebugLog("QuestJournalContextMenu: exit (not selection mode)")
+        return
+    end
+
+    local questIndex
+    if control then
+        local node = control.node
+        local data = node and node.data
+        questIndex = data and data.questIndex
+    end
+
+    if not questIndex then
+        DebugLog("QuestJournalContextMenu: exit (no questIndex)")
+        return
+    end
+
+    local questKey = GetQuestKeyFromJournalIndex(questIndex)
+    if not questKey then
+        DebugLog("QuestJournalContextMenu: exit (no questKey for questIndex %s)", tostring(questIndex))
+        return
+    end
+
+    if not AddCustomMenuItem then
+        return
+    end
+
+    local isSelected = IsQuestSelectedInFilter(questKey)
+    DebugLog(
+        "QuestJournalContextMenu: questKey=%s, selected=%s",
+        tostring(questKey),
+        tostring(isSelected)
+    )
+
+    local label = GetString(isSelected and SI_NVK3UT_UNTRACK_QUEST or SI_NVK3UT_TRACK_QUEST)
+
+    AddCustomMenuItem(label, function()
+        ToggleQuestSelection(questKey, "QuestJournal:ContextMenu")
+        QuestTracker.MarkDirty("JournalContext")
+        local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+        if runtime and runtime.QueueDirty then
+            runtime:QueueDirty("quest")
+        end
+        DebugLog("QuestJournalContextMenu: toggled selection for questKey=%s", tostring(questKey))
+        RefreshQuestJournalSelectionKeyLabelText()
+        UpdateQuestJournalSelectionKeyLabelVisibility("QuestJournal:ContextMenu")
+    end)
+
+    if ShowMenu then
+        ShowMenu(control)
+    end
+end
+
+local function HookQuestJournalContextMenu()
+    if questJournalContextMenuHooked then
+        DebugLog("QuestJournalContextMenu: Hook already registered, skipping")
+        return
+    end
+
+    DebugLog("QuestJournalContextMenu: HookQuestJournalContextMenu called")
+
+    if ZO_PostHook then
+        ZO_PostHook("ZO_QuestJournalNavigationEntry_OnMouseUp", function(control, button, upInside)
+            AppendQuestJournalContextMenu(control, button, upInside)
+        end)
+        DebugLog("QuestJournalContextMenu: PostHook on ZO_QuestJournalNavigationEntry_OnMouseUp registered")
+        questJournalContextMenuHooked = true
+    end
+end
+
+local function HookQuestJournalNavigationEntryTemplate()
+    if questJournalEntryHooked then
+        return
+    end
+
+    local navigationTree = QUEST_JOURNAL_KEYBOARD and QUEST_JOURNAL_KEYBOARD.navigationTree
+    local templateInfo = navigationTree and navigationTree.templateInfo
+    local template = templateInfo and templateInfo["ZO_QuestJournalNavigationEntry"]
+    local setupFunction = template and template.setupFunction
+
+    if type(setupFunction) ~= "function" then
+        return
+    end
+
+    template.setupFunction = function(control, questInfo, ...)
+        setupFunction(control, questInfo, ...)
+        ApplyQuestJournalTrackedIcon(control, questInfo)
+    end
+
+    questJournalEntryHooked = true
 end
 
 local function LogExternalSelect(questId)
@@ -1811,7 +2409,7 @@ local function DoesJournalQuestExist(journalIndex)
     return name ~= ""
 end
 
-local function GetFocusedQuestIndex()
+GetFocusedQuestIndex = function()
     if QUEST_JOURNAL_MANAGER and QUEST_JOURNAL_MANAGER.GetFocusedQuestIndex then
         local ok, focused = SafeCall(function(manager)
             return manager:GetFocusedQuestIndex()
@@ -2765,6 +3363,7 @@ local function EnsureSavedVars()
         end
     end
 
+    EnsureQuestFilterSavedVars()
     ApplyActiveQuestFromSaved()
 end
 
@@ -3726,6 +4325,91 @@ local function RelayoutFromCategoryIndex(startCategoryIndex)
     ProcessPendingExternalReveal()
 end
 
+local function EmptySnapshot()
+    return { categories = { ordered = {}, byKey = {} } }
+end
+
+local function CountSnapshotEntries(snapshot)
+    local categories = 0
+    local quests = 0
+
+    if snapshot and snapshot.categories and snapshot.categories.ordered then
+        categories = #snapshot.categories.ordered
+        for index = 1, categories do
+            local category = snapshot.categories.ordered[index]
+            if category and type(category.quests) == "table" then
+                quests = quests + #category.quests
+            end
+        end
+    end
+
+    return categories, quests
+end
+
+local function IsSnapshotValid(candidate)
+    if type(candidate) ~= "table" then
+        return false
+    end
+
+    local categories = candidate.categories
+    if type(categories) ~= "table" then
+        return false
+    end
+
+    return type(categories.ordered) == "table"
+end
+
+local function BuildFilteredSnapshot(rawSnapshot)
+    local snapshot = rawSnapshot or EmptySnapshot()
+    state.rawSnapshot = snapshot
+
+    if not IsSnapshotValid(snapshot) then
+        DebugLog("BuildFilteredSnapshot: raw snapshot invalid, returning unfiltered snapshot")
+        return snapshot
+    end
+
+    local filterMode = GetQuestFilterMode()
+
+    if IsDebugLoggingEnabled() then
+        local rawCategories, rawQuests = CountSnapshotEntries(snapshot)
+        DebugLog(
+            "BuildFilteredSnapshot: mode=%s raw categories=%d quests=%d",
+            tostring(filterMode),
+            rawCategories,
+            rawQuests
+        )
+    end
+
+    if not QuestFilter or not QuestFilter.ApplyFilter or filterMode == QUEST_FILTER_MODE_ALL then
+        return snapshot
+    end
+
+    local questFilter = EnsureQuestFilterSavedVars()
+    local selection = questFilter and questFilter.selection
+    local activeQuestKey = SyncSelectedQuestFromSaved()
+    local categoryName = (GetString and GetString(SI_NVK3UT_QUEST_FILTER_CATEGORY_ACTIVE)) or "Quests"
+
+    local ok, filtered = pcall(QuestFilter.ApplyFilter, snapshot, filterMode, selection, activeQuestKey, categoryName)
+    if ok and IsSnapshotValid(filtered) then
+        if IsDebugLoggingEnabled() then
+            local filteredCategories, filteredQuests = CountSnapshotEntries(filtered)
+            DebugLog(
+                "BuildFilteredSnapshot: mode=%s filtered categories=%d quests=%d",
+                tostring(filterMode),
+                filteredCategories,
+                filteredQuests
+            )
+        end
+
+        filtered.signature = snapshot.signature
+        filtered.updatedAtMs = snapshot.updatedAtMs
+        return filtered
+    end
+
+    DebugLog("BuildFilteredSnapshot: filter returned invalid result, falling back to unfiltered snapshot")
+    return snapshot
+end
+
 local function ApplySnapshot(snapshot, context)
     state.snapshot = snapshot
 
@@ -3780,7 +4464,14 @@ local function OnQuestModelSnapshotUpdated(snapshot, context)
         end
     end
 
-    ApplySnapshot(snapshot or { categories = { ordered = {}, byKey = {} } }, context)
+    local rawSnapshot = snapshot or EmptySnapshot()
+    local filteredSnapshot = BuildFilteredSnapshot(rawSnapshot)
+
+    if not IsSnapshotValid(filteredSnapshot) then
+        filteredSnapshot = rawSnapshot
+    end
+
+    ApplySnapshot(filteredSnapshot, context)
 
     if not state.isInitialized then
         return
@@ -3937,6 +4628,10 @@ function QuestTracker.Init(parentControl, opts)
 
     SubscribeToQuestModel()
 
+    HookQuestJournalKeybind()
+    HookQuestJournalContextMenu()
+    HookQuestJournalNavigationEntryTemplate()
+
     state.isInitialized = true
     RefreshVisibility()
 
@@ -3954,6 +4649,35 @@ end
 QuestTracker.ToggleCategoryExpansion = ToggleCategoryExpansion
 QuestTracker.IsCategoryExpanded = IsCategoryExpanded
 QuestTracker.SetCategoryExpanded = SetCategoryExpanded
+QuestTracker.EnsureQuestFilterSavedVars = EnsureQuestFilterSavedVars
+QuestTracker.GetQuestFilterMode = GetQuestFilterMode
+QuestTracker.UpdateQuestJournalSelectionKeyLabelVisibility = UpdateQuestJournalSelectionKeyLabelVisibility
+QuestTracker.QUEST_FILTER_MODE_ALL = QUEST_FILTER_MODE_ALL
+QuestTracker.QUEST_FILTER_MODE_ACTIVE = QUEST_FILTER_MODE_ACTIVE
+QuestTracker.QUEST_FILTER_MODE_SELECTION = QUEST_FILTER_MODE_SELECTION
+
+function QuestTracker.MarkDirty(reason)
+    local context = {
+        trigger = "filter",
+        source = reason or "QuestTracker.MarkDirty",
+    }
+
+    local rawSnapshot = state.rawSnapshot or state.snapshot
+    if not rawSnapshot then
+        local questModel = Nvk3UT and Nvk3UT.QuestModel
+        if questModel and questModel.GetSnapshot then
+            rawSnapshot = questModel.GetSnapshot()
+        end
+    end
+
+    rawSnapshot = rawSnapshot or EmptySnapshot()
+    OnQuestModelSnapshotUpdated(rawSnapshot, context)
+
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and runtime.QueueDirty then
+        pcall(runtime.QueueDirty, runtime, "quest")
+    end
+end
 
 function QuestTracker.Refresh()
     Rebuild()
@@ -4007,6 +4731,7 @@ function QuestTracker.Shutdown()
     state.selectedQuestKey = nil
     state.isRebuildInProgress = false
     state.questModelSubscription = nil
+    state.rawSnapshot = nil
     NotifyHostContentChanged()
 end
 
@@ -4088,6 +4813,49 @@ function QuestTracker.ApplyBaseQuestTrackerVisibility()
 
     if tracker and tracker.SetHidden then
         tracker:SetHidden(shouldHide)
+    end
+end
+
+-- Binding handler exposed under Controls > Addons > Nvk3UT to toggle quest
+-- selection while the keyboard quest journal is open in selection mode.
+function Nvk3UT_ToggleQuestSelectionBinding()
+    local addon = _G and _G.Nvk3UT or Nvk3UT
+    if not addon then
+        return
+    end
+
+    if IsInGamepadPreferredMode and IsInGamepadPreferredMode() then
+        return
+    end
+
+    local questJournalVisible = false
+    if QUEST_JOURNAL_SCENE and QUEST_JOURNAL_SCENE.IsShowing and QUEST_JOURNAL_SCENE:IsShowing() then
+        questJournalVisible = true
+    elseif SCENE_MANAGER and SCENE_MANAGER.IsShowing and SCENE_MANAGER:IsShowing("journal") then
+        questJournalVisible = true
+    end
+
+    if not questJournalVisible then
+        return
+    end
+
+    if not IsQuestSelectionModeActive() then
+        return
+    end
+
+    local questKey = GetFocusedQuestKey()
+    if not questKey then
+        return
+    end
+
+    ToggleQuestSelection(questKey, "Keybind:ToggleQuestSelection")
+    local runtime = addon.TrackerRuntime
+    if runtime and runtime.QueueDirty then
+        runtime:QueueDirty("quest")
+    end
+
+    if addon.QuestTracker and addon.QuestTracker.UpdateQuestJournalSelectionKeyLabelVisibility then
+        addon.QuestTracker.UpdateQuestJournalSelectionKeyLabelVisibility("Keybind:ToggleQuestSelection")
     end
 end
 

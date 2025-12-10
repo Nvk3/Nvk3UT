@@ -89,6 +89,10 @@ local strings = {
     SI_NVK3UT_LAM_QUEST_COLLAPSE_PREVIOUS_ON_ACTIVE_CHANGE_DESC = "When enabled, automatically collapses the category of the previously active quest whenever the active quest changes.",
     SI_NVK3UT_LAM_QUEST_SHOW_COUNTS = "Show counts in category headers",
     SI_NVK3UT_LAM_QUEST_SHOW_COUNTS_DESC = "If enabled, category headers display the number of contained entries, e.g., 'Repeatable (12)'. Disable to hide the counts.",
+    SI_NVK3UT_QUEST_FILTER_MODE = "Quest filter mode",
+    SI_NVK3UT_QUEST_FILTER_MODE_ALL = "All quests",
+    SI_NVK3UT_QUEST_FILTER_MODE_ACTIVE = "Only active quest",
+    SI_NVK3UT_QUEST_FILTER_MODE_SELECTION = "Quest selection",
     SI_NVK3UT_LAM_QUEST_HEADER_COLORS = "Quest Tracker Colors",
     SI_NVK3UT_LAM_QUEST_COLOR_CATEGORY = "Category / section title color",
     SI_NVK3UT_LAM_QUEST_COLOR_CATEGORY_DESC = "Adjusts the color of zone headers and category titles in the quest tracker.",
@@ -215,6 +219,15 @@ local strings = {
     SI_NVK3UT_TRACKER_QUEST_CONTEXT_SHARE = "Share quest",
     SI_NVK3UT_TRACKER_QUEST_CONTEXT_SHOW_ON_MAP = "Show on map",
     SI_NVK3UT_TRACKER_QUEST_CONTEXT_ABANDON = "Abandon quest",
+    SI_NVK3UT_QUEST_FILTER_CATEGORY_ACTIVE = "Quests",
+    SI_NVK3UT_QUEST_SELECTION_KEYBIND = "Selection: track/untrack quest",
+    SI_NVK3UT_QUEST_SELECTION_KEYBIND_SHORT = "Quest selection",
+    SI_NVK3UT_QUEST_SELECTION_ADD = "Add to quest selection",
+    SI_NVK3UT_QUEST_SELECTION_REMOVE = "Remove from quest selection",
+    SI_NVK3UT_QUEST_SELECTION_ADD_FROM_JOURNAL = "Add to quest selection",
+    SI_NVK3UT_QUEST_SELECTION_REMOVE_FROM_JOURNAL = "Remove from quest selection",
+    SI_NVK3UT_TRACK_QUEST = "Track Quest",
+    SI_NVK3UT_UNTRACK_QUEST = "Don't track Quest",
 
     SI_NVK3UT_TRACKER_ACHIEVEMENT_CONTEXT_LINK_CHAT = "Link in Chat",
     SI_NVK3UT_TRACKER_ACHIEVEMENT_CONTEXT_SHOW_IN_ACHIEVEMENTS = "Show in Achievements",
@@ -264,6 +277,7 @@ local strings = {
 
     SI_BINDING_NAME_NVK3UT_CATEGORY = "Nvk3's Ultimate Tracker",
     SI_BINDING_NAME_NVK3UT_TOGGLE_TRACKER_COLLAPSE = "Toggle tracker collapsed state",
+    SI_BINDING_NAME_NVK3UT_TOGGLE_QUEST_SELECTION = "Toggle quest selection",
 
     -- Shared formatting
     SI_NVK3UT_LAM_FONT_FACE_FORMAT = "%s - Font",
