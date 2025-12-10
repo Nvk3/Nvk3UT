@@ -4,6 +4,9 @@ Nvk3UT = Nvk3UT or {}
 
 local state
 local DebugLog
+local GetFocusedQuestIndex
+local RefreshQuestJournalSelectionKeyLabelText
+local UpdateQuestJournalSelectionKeyLabelVisibility
 
 local QuestTracker = {}
 QuestTracker.__index = QuestTracker
@@ -1631,15 +1634,17 @@ local function BuildQuestContextMenuEntries(journalIndex)
     local questKey = NormalizeQuestKey(journalIndex)
     if IsQuestSelectionMode() and questKey then
         local isSelected = IsQuestSelectedInFilter(questKey)
-        local label = GetString(SI_NVK3UT_QUEST_SELECTION_ADD)
+        local label = GetString(SI_NVK3UT_TRACK_QUEST)
         if isSelected then
-            label = GetString(SI_NVK3UT_QUEST_SELECTION_REMOVE)
+            label = GetString(SI_NVK3UT_UNTRACK_QUEST)
         end
 
         entries[#entries + 1] = {
             label = label,
             callback = function()
                 ToggleQuestSelection(questKey, "QuestTracker:ContextMenu")
+                RefreshQuestJournalSelectionKeyLabelText()
+                UpdateQuestJournalSelectionKeyLabelVisibility("QuestTracker:ContextMenu")
             end,
         }
     end
@@ -1805,10 +1810,22 @@ local function GetQuestJournalKeyLabelParent()
     return nil
 end
 
-local function RefreshQuestJournalSelectionKeyLabelText()
-    if questJournalSelectionDescLabel then
-        questJournalSelectionDescLabel:SetText(GetString(SI_NVK3UT_QUEST_SELECTION_KEYBIND_SHORT))
+RefreshQuestJournalSelectionKeyLabelText = function()
+    if not questJournalSelectionDescLabel then
+        return
     end
+
+    local journalIndex
+    if GetFocusedQuestIndex then
+        journalIndex = GetFocusedQuestIndex()
+    end
+
+    local stringId = SI_NVK3UT_TRACK_QUEST
+    if journalIndex and IsQuestTracked and IsQuestTracked(journalIndex) then
+        stringId = SI_NVK3UT_UNTRACK_QUEST
+    end
+
+    questJournalSelectionDescLabel:SetText(GetString(stringId))
 end
 
 local function EnsureQuestJournalKeyLabel()
@@ -1876,7 +1893,7 @@ local function EnsureQuestJournalKeyLabel()
     return questJournalSelectionKeyContainer
 end
 
-local function UpdateQuestJournalSelectionKeyLabelVisibility(reason)
+UpdateQuestJournalSelectionKeyLabelVisibility = function(reason)
     local label = EnsureQuestJournalKeyLabel()
     if not label then
         return
@@ -2045,9 +2062,7 @@ local function AppendQuestJournalContextMenu(control, button, upInside)
         tostring(isSelected)
     )
 
-    local label = GetString(
-        isSelected and SI_NVK3UT_QUEST_SELECTION_REMOVE_FROM_JOURNAL or SI_NVK3UT_QUEST_SELECTION_ADD_FROM_JOURNAL
-    )
+    local label = GetString(isSelected and SI_NVK3UT_UNTRACK_QUEST or SI_NVK3UT_TRACK_QUEST)
 
     AddCustomMenuItem(label, function()
         ToggleQuestSelection(questKey, "QuestJournal:ContextMenu")
@@ -2057,6 +2072,8 @@ local function AppendQuestJournalContextMenu(control, button, upInside)
             runtime:QueueDirty("quest")
         end
         DebugLog("QuestJournalContextMenu: toggled selection for questKey=%s", tostring(questKey))
+        RefreshQuestJournalSelectionKeyLabelText()
+        UpdateQuestJournalSelectionKeyLabelVisibility("QuestJournal:ContextMenu")
     end)
 
     if ShowMenu then
@@ -2308,7 +2325,7 @@ local function DoesJournalQuestExist(journalIndex)
     return name ~= ""
 end
 
-local function GetFocusedQuestIndex()
+GetFocusedQuestIndex = function()
     if QUEST_JOURNAL_MANAGER and QUEST_JOURNAL_MANAGER.GetFocusedQuestIndex then
         local ok, focused = SafeCall(function(manager)
             return manager:GetFocusedQuestIndex()

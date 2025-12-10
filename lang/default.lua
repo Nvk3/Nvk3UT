@@ -226,6 +226,8 @@ local strings = {
     SI_NVK3UT_QUEST_SELECTION_REMOVE = "Remove from quest selection",
     SI_NVK3UT_QUEST_SELECTION_ADD_FROM_JOURNAL = "Add to quest selection",
     SI_NVK3UT_QUEST_SELECTION_REMOVE_FROM_JOURNAL = "Remove from quest selection",
+    SI_NVK3UT_TRACK_QUEST = "Track Quest",
+    SI_NVK3UT_UNTRACK_QUEST = "Don't track Quest",
 
     SI_NVK3UT_TRACKER_ACHIEVEMENT_CONTEXT_LINK_CHAT = "Link in Chat",
     SI_NVK3UT_TRACKER_ACHIEVEMENT_CONTEXT_SHOW_IN_ACHIEVEMENTS = "Show in Achievements",
