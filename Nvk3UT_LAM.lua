@@ -164,6 +164,12 @@ local DEFAULT_HOST_SETTINGS = {
     HideInCombat = false,
     CornerButtonEnabled = true,
     CornerPosition = "TOP_RIGHT",
+    sectionOrder = {
+        "questSectionContainer",
+        "endeavorSectionContainer",
+        "achievementSectionContainer",
+        "goldenSectionContainer",
+    },
 }
 
 local CORNER_POSITION_VALUES = { "TOP_RIGHT", "TOP_LEFT", "BOTTOM_RIGHT", "BOTTOM_LEFT" }
@@ -175,6 +181,22 @@ local CORNER_POSITION_CHOICES = {
 }
 
 local MAX_BAR_HEIGHT = 250
+
+local DEFAULT_SECTION_ORDER_KEYS = {
+    "questSectionContainer",
+    "endeavorSectionContainer",
+    "achievementSectionContainer",
+    "goldenSectionContainer",
+}
+
+local VALID_SECTION_KEYS = {
+    questSectionContainer = true,
+    endeavorSectionContainer = true,
+    achievementSectionContainer = true,
+    goldenSectionContainer = true,
+}
+
+local acquireLam
 
 local function clamp(value, minimum, maximum)
     if value == nil then
@@ -258,6 +280,46 @@ local function getSettings()
     return sv.Settings
 end
 
+local function getDefaultSectionOrder()
+    local layout = Nvk3UT and Nvk3UT.TrackerHostLayout
+    if layout and type(layout.GetDefaultSectionOrder) == "function" then
+        local ok, order = pcall(layout.GetDefaultSectionOrder)
+        if ok and type(order) == "table" then
+            return order
+        end
+    end
+
+    local copy = {}
+    for index, key in ipairs(DEFAULT_SECTION_ORDER_KEYS) do
+        copy[index] = key
+    end
+
+    return copy
+end
+
+local function normalizeSectionOrder(order)
+    local normalized = {}
+    local seen = {}
+
+    if type(order) == "table" then
+        for _, key in ipairs(order) do
+            if VALID_SECTION_KEYS[key] and not seen[key] then
+                normalized[#normalized + 1] = key
+                seen[key] = true
+            end
+        end
+    end
+
+    for _, key in ipairs(getDefaultSectionOrder()) do
+        if not seen[key] then
+            normalized[#normalized + 1] = key
+            seen[key] = true
+        end
+    end
+
+    return normalized
+end
+
 local function getHostSettings()
     local settings = getSettings()
     settings.Host = settings.Host or {}
@@ -275,8 +337,107 @@ local function getHostSettings()
     end
 
     host.CornerPosition = normalizeCornerPosition(host.CornerPosition)
+    host.sectionOrder = normalizeSectionOrder(host.sectionOrder)
 
     return host
+end
+
+local function getCurrentSectionOrder()
+    local host = getHostSettings()
+    host.sectionOrder = normalizeSectionOrder(host.sectionOrder)
+    return host.sectionOrder
+end
+
+local function applySectionOrder(order)
+    local hostOrder = normalizeSectionOrder(order)
+    local hostSettings = getHostSettings()
+    hostSettings.sectionOrder = hostOrder
+
+    local layout = Nvk3UT and Nvk3UT.TrackerHostLayout
+    if layout and type(layout.SetSectionOrder) == "function" then
+        local applied = layout.SetSectionOrder(hostOrder)
+        if type(applied) == "table" then
+            hostSettings.sectionOrder = applied
+        end
+    end
+
+    local trackerHost = Nvk3UT and Nvk3UT.TrackerHost
+    if trackerHost then
+        if type(trackerHost.ApplySectionOrderFromSettings) == "function" then
+            trackerHost.ApplySectionOrderFromSettings()
+        elseif type(trackerHost.Refresh) == "function" then
+            trackerHost.Refresh()
+        end
+    end
+
+    local LAM = acquireLam()
+    if LAM and LAM.util and type(LAM.util.RequestRefreshIfNeeded) == "function" and L._panelControl then
+        LAM.util.RequestRefreshIfNeeded(L._panelControl)
+    end
+end
+
+local function buildTrackerOrderControls()
+    local controls = {}
+    controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_TRACKER_HOST_ORDER) }
+
+    local trackerOrderNames = {
+        GetString(SI_NVK3UT_LAM_QUEST_SECTION),
+        GetString(SI_NVK3UT_LAM_ENDEAVOR_SECTION),
+        GetString(SI_NVK3UT_LAM_ACHIEVEMENT_SECTION),
+        GetString(SI_NVK3UT_LAM_GOLDEN_SECTION),
+    }
+    local trackerOrderValues = getDefaultSectionOrder()
+    local trackerSlotLabels = {
+        GetString(SI_NVK3UT_LAM_TRACKER_HOST_ORDER_POSITION_1),
+        GetString(SI_NVK3UT_LAM_TRACKER_HOST_ORDER_POSITION_2),
+        GetString(SI_NVK3UT_LAM_TRACKER_HOST_ORDER_POSITION_3),
+        GetString(SI_NVK3UT_LAM_TRACKER_HOST_ORDER_POSITION_4),
+    }
+
+    local function getOrderForSlot(slotIndex)
+        local order = getCurrentSectionOrder()
+        return order[slotIndex] or trackerOrderValues[slotIndex]
+    end
+
+    local function setOrderForSlot(slotIndex, trackerKey)
+        local order = getCurrentSectionOrder()
+        if order[slotIndex] == trackerKey then
+            return
+        end
+
+        local currentIndex
+        for index, key in ipairs(order) do
+            if key == trackerKey then
+                currentIndex = index
+                break
+            end
+        end
+
+        if currentIndex then
+            table.remove(order, currentIndex)
+        end
+
+        table.insert(order, slotIndex, trackerKey)
+
+        applySectionOrder(order)
+    end
+
+    for slotIndex = 1, #trackerOrderValues do
+        controls[#controls + 1] = {
+            type = "dropdown",
+            name = trackerSlotLabels[slotIndex],
+            choices = trackerOrderNames,
+            choicesValues = trackerOrderValues,
+            getFunc = function()
+                return getOrderForSlot(slotIndex)
+            end,
+            setFunc = function(value)
+                setOrderForSlot(slotIndex, value)
+            end,
+        }
+    end
+
+    return controls
 end
 
 local function getFeatures()
@@ -1199,7 +1360,7 @@ local function buildFontControls(label, settings, key, defaults, onChanged, adap
     }
 end
 
-local function acquireLam()
+function acquireLam()
     if LibAddonMenu2 then
         return LibAddonMenu2
     end
@@ -1938,6 +2099,12 @@ local function registerPanel(displayTitle)
 
             return controls
         end)(),
+    }
+
+    options[#options + 1] = {
+        type = "submenu",
+        name = GetString(SI_NVK3UT_LAM_SECTION_TRACKER_ORDER),
+        controls = buildTrackerOrderControls(),
     }
 
 

@@ -3,6 +3,7 @@ local strings = {
     SI_NVK3UT_LAM_SECTION_JOURNAL = "Journal-Erweiterungen",
     SI_NVK3UT_LAM_SECTION_STATUS_TEXT = "Status-Text",
     SI_NVK3UT_LAM_SECTION_TRACKER_HOST = "Tracker Host",
+    SI_NVK3UT_LAM_SECTION_TRACKER_ORDER = "Tracker-Reihenfolge",
     SI_NVK3UT_LAM_SECTION_DEBUG = "Debug & Support",
 
     -- Journal section
@@ -69,6 +70,11 @@ local strings = {
     SI_NVK3UT_LAM_OPTION_TRACKER_HOST_CORNER_TOP_LEFT = "Oben links",
     SI_NVK3UT_LAM_OPTION_TRACKER_HOST_CORNER_BOTTOM_RIGHT = "Unten rechts",
     SI_NVK3UT_LAM_OPTION_TRACKER_HOST_CORNER_BOTTOM_LEFT = "Unten links",
+    SI_NVK3UT_LAM_TRACKER_HOST_ORDER = "Tracker-Reihenfolge",
+    SI_NVK3UT_LAM_TRACKER_HOST_ORDER_POSITION_1 = "Position 1",
+    SI_NVK3UT_LAM_TRACKER_HOST_ORDER_POSITION_2 = "Position 2",
+    SI_NVK3UT_LAM_TRACKER_HOST_ORDER_POSITION_3 = "Position 3",
+    SI_NVK3UT_LAM_TRACKER_HOST_ORDER_POSITION_4 = "Position 4",
 
     -- Debug
     SI_NVK3UT_LAM_OPTION_DEBUG_ENABLE = "Debug aktivieren",

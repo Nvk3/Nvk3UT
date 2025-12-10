@@ -307,6 +307,12 @@ local DEFAULT_HOST_SETTINGS = {
     HideInCombat = false,
     CornerButtonEnabled = true,
     CornerPosition = "TOP_RIGHT",
+    sectionOrder = {
+        "questSectionContainer",
+        "endeavorSectionContainer",
+        "achievementSectionContainer",
+        "goldenSectionContainer",
+    },
 }
 
 local DEFAULT_ACHIEVEMENT_CACHE = {

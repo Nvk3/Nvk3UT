@@ -18,13 +18,6 @@ local DEFAULT_SECTION_ORDER = {
     "goldenSectionContainer",
 }
 
-local ORDERED_SECTIONS = {
-    { key = "questSectionContainer", id = "quest" },
-    { key = "endeavorSectionContainer", id = "endeavor" },
-    { key = "achievementSectionContainer", id = "achievement" },
-    { key = "goldenSectionContainer", id = "golden" },
-}
-
 local SECTION_SPACING_Y = 0
 
 local function copyOrder(order)
@@ -82,12 +75,60 @@ local function normalizeSectionOrder(orderTable)
     return sanitized
 end
 
+local function formatOrder(order)
+    local labels = {}
+    for index, key in ipairs(order) do
+        local definition = SECTION_DEFINITIONS[key]
+        labels[index] = definition and definition.displayName or tostring(key)
+    end
+
+    return table.concat(labels, ", ")
+end
+
+local function ordersEqual(a, b)
+    if a == b then
+        return true
+    end
+
+    if type(a) ~= "table" or type(b) ~= "table" then
+        return false
+    end
+
+    if #a ~= #b then
+        return false
+    end
+
+    for index = 1, #a do
+        if a[index] ~= b[index] then
+            return false
+        end
+    end
+
+    return true
+end
+
+function Layout.GetDefaultSectionOrder()
+    return copyOrder(DEFAULT_SECTION_ORDER)
+end
+
 function Layout.GetSectionOrder()
     return copyOrder(SECTION_ORDER)
 end
 
 function Layout.SetSectionOrder(orderTable)
-    SECTION_ORDER = normalizeSectionOrder(orderTable)
+    local previousOrder = SECTION_ORDER
+    local normalized = normalizeSectionOrder(orderTable)
+
+    if not ordersEqual(previousOrder, normalized) and isDebug() then
+        debugLog(
+            "HostLayout: section order %s → %s",
+            formatOrder(previousOrder),
+            formatOrder(normalized)
+        )
+    end
+
+    SECTION_ORDER = normalized
+
     return Layout.GetSectionOrder()
 end
 
@@ -128,28 +169,34 @@ local function GetOrderedSections(host)
     end
 
     local ordered = {}
+    local orderList = SECTION_ORDER
+    if type(orderList) ~= "table" then
+        orderList = DEFAULT_SECTION_ORDER
+    end
 
-    for _, spec in ipairs(ORDERED_SECTIONS) do
+    for _, sectionKey in ipairs(orderList) do
+        local definition = SECTION_DEFINITIONS[sectionKey]
+        local sectionId = definition and definition.id or sectionKey
         local container
         if registry then
-            container = registry[spec.id]
+            container = registry[sectionId]
         end
 
         if not container then
-            container = getSectionContainer(host, spec.key)
+            container = getSectionContainer(host, sectionKey)
         end
 
         if container then
             ordered[#ordered + 1] = {
-                id = spec.id,
-                key = spec.key,
-                definition = SECTION_DEFINITIONS[spec.key],
+                id = sectionId,
+                key = sectionKey,
+                definition = SECTION_DEFINITIONS[sectionKey],
                 container = container,
             }
         end
     end
 
-    return ordered
+    return ordered or {}
 end
 
 local function getSectionContainer(host, sectionKey)
@@ -880,10 +927,20 @@ function Layout.ApplyLayout(host, sizes)
 
     local parent = getSectionParent(host)
     if not parent then
+        debugLog("HostLayout: no section parent for host, skipping layout")
         return 0
     end
 
     local sections = GetOrderedSections(host)
+    if type(sections) ~= "table" then
+        debugLog("HostLayout: GetOrderedSections returned %s, skipping layout", type(sections))
+        return 0
+    end
+
+    if #sections == 0 then
+        debugLog("HostLayout: GetOrderedSections returned empty list, skipping layout")
+        return 0
+    end
 
     local gap = SECTION_SPACING_Y
 
@@ -900,15 +957,27 @@ function Layout.ApplyLayout(host, sizes)
     local placedCount = 0
     local currentTop = startOffset
 
+    if isDebug() then
+        local ids = {}
+        for index, entry in ipairs(sections) do
+            ids[index] = tostring(entry.id or entry.key or index)
+        end
+        debugLog("HostLayout: Sections to layout: %s", table.concat(ids, ", "))
+    end
+
     local foundSections = {}
     for _, entry in ipairs(sections) do
         foundSections[entry.id] = true
     end
 
-    for _, spec in ipairs(ORDERED_SECTIONS) do
-        if not foundSections[spec.id] then
-            reportMissing(host, spec.id)
+    if type(ORDERED_SECTIONS) == "table" then
+        for _, spec in ipairs(ORDERED_SECTIONS) do
+            if not foundSections[spec.id] then
+                reportMissing(host, spec.id)
+            end
         end
+    elseif isDebug() then
+        debugLog("HostLayout: ORDERED_SECTIONS missing or invalid (type=%s)", type(ORDERED_SECTIONS))
     end
 
     local goldenAccounted = false
