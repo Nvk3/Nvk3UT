@@ -1895,7 +1895,9 @@ RefreshQuestJournalSelectionKeyLabelText = function()
     questJournalSelectionDescLabel:SetText(GetString(stringId))
 end
 
-UpdateQuestFilterKeybindLabelForActiveQuest = RefreshQuestJournalSelectionKeyLabelText
+UpdateQuestFilterKeybindLabelForActiveQuest = function()
+    RefreshQuestJournalSelectionKeyLabelText()
+end
 
 local function EnsureQuestJournalKeyLabel()
     if questJournalSelectionKeyContainer and questJournalSelectionKeyContainer.SetHidden then
@@ -1983,12 +1985,6 @@ UpdateQuestJournalSelectionKeyLabelVisibility = function(reason)
     label:SetHidden(not shouldShow)
     if shouldShow then
         RefreshQuestJournalSelectionKeyLabelText()
-    end
-end
-
-local function OnActiveQuestSelected(_, journalIndex)
-    if UpdateQuestFilterKeybindLabelForActiveQuest then
-        UpdateQuestFilterKeybindLabelForActiveQuest(journalIndex)
     end
 end
 
@@ -3255,6 +3251,10 @@ local function OnTrackedQuestUpdate(_, trackingType, context)
     end
 
     ProcessTrackedQuestUpdate(trackingType, context)
+
+    if trackingType == TRACK_TYPE_QUEST then
+        UpdateQuestFilterKeybindLabelForActiveQuest(context)
+    end
 end
 
 FlushPendingTrackedQuestUpdate = function()
@@ -3277,6 +3277,7 @@ local function OnFocusedTrackerAssistChanged(_, assistedData)
                 source = "QuestTracker:OnFocusedTrackerAssistChanged",
                 isExternal = true,
             })
+            UpdateQuestFilterKeybindLabelForActiveQuest(questIndex)
             return
         end
     end
@@ -3286,6 +3287,7 @@ local function OnFocusedTrackerAssistChanged(_, assistedData)
         source = "QuestTracker:OnFocusedTrackerAssistChanged",
         isExternal = true,
     })
+    UpdateQuestFilterKeybindLabelForActiveQuest()
 end
 
 local function OnPlayerActivated()
@@ -4646,14 +4648,6 @@ function QuestTracker.Init(parentControl, opts)
     HookQuestJournalKeybind()
     HookQuestJournalContextMenu()
     HookQuestJournalNavigationEntryTemplate()
-
-    if EVENT_MANAGER then
-        EVENT_MANAGER:RegisterForEvent(
-            "Nvk3UT_QuestFilter_ActiveQuestLabel",
-            EVENT_QUEST_SELECTED,
-            OnActiveQuestSelected
-        )
-    end
 
     state.isInitialized = true
     RefreshVisibility()
