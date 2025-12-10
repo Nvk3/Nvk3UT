@@ -2132,6 +2132,34 @@ local function registerPanel(displayTitle)
                 default = 1,
             }
 
+            controls[#controls + 1] = {
+                type = "checkbox",
+                name = GetString(SI_NVK3UT_LAM_QUEST_FILTER_AUTO_TRACK_NEW),
+                tooltip = GetString(SI_NVK3UT_LAM_QUEST_FILTER_AUTO_TRACK_NEW_DESC),
+                getFunc = function()
+                    local filter = getQuestFilter()
+                    return filter.autoTrackNewQuestsInSelectionMode ~= false
+                end,
+                setFunc = function(value)
+                    local filter = getQuestFilter()
+                    if filter then
+                        filter.autoTrackNewQuestsInSelectionMode = value == true
+                    end
+                end,
+                default = true,
+                disabled = function()
+                    local tracker = Nvk3UT and Nvk3UT.QuestTracker
+                    if tracker and tracker.GetQuestFilterMode then
+                        local ok, mode = pcall(tracker.GetQuestFilterMode)
+                        if ok then
+                            return mode ~= QUEST_FILTER_MODE_SELECTION
+                        end
+                    end
+
+                    return false
+                end,
+            }
+
             controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_QUEST_HEADER_COLORS) }
 
             controls[#controls + 1] = {

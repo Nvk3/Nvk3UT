@@ -6,6 +6,7 @@ local state
 local DebugLog
 local GetFocusedQuestIndex
 local RefreshQuestJournalSelectionKeyLabelText
+local UpdateQuestFilterKeybindLabelForActiveQuest
 local UpdateQuestJournalSelectionKeyLabelVisibility
 
 local QuestTracker = {}
@@ -120,6 +121,12 @@ local function EnsureQuestFilterSavedVars()
 
     if type(filter.selection) ~= "table" then
         filter.selection = {}
+    end
+
+    if filter.autoTrackNewQuestsInSelectionMode == nil then
+        filter.autoTrackNewQuestsInSelectionMode = true
+    else
+        filter.autoTrackNewQuestsInSelectionMode = filter.autoTrackNewQuestsInSelectionMode == true
     end
 
     return filter
@@ -607,6 +614,20 @@ local function ToggleQuestSelection(questKey, source)
     end
 
     return changed
+end
+
+local function SelectQuestInFilter(journalIndex, source)
+    if IsQuestTrackedForFilter(journalIndex) then
+        return false
+    end
+
+    local questKey = GetQuestKeyFromJournalIndex(journalIndex)
+    if not questKey then
+        return false
+    end
+
+    ToggleQuestSelection(questKey, source or "QuestTracker:AutoTrackNewQuest")
+    return true
 end
 
 local function DetermineQuestColorRole(quest)
@@ -1892,6 +1913,10 @@ RefreshQuestJournalSelectionKeyLabelText = function()
     end
 
     questJournalSelectionDescLabel:SetText(GetString(stringId))
+end
+
+UpdateQuestFilterKeybindLabelForActiveQuest = function()
+    RefreshQuestJournalSelectionKeyLabelText()
 end
 
 local function EnsureQuestJournalKeyLabel()
@@ -3246,6 +3271,38 @@ local function OnTrackedQuestUpdate(_, trackingType, context)
     end
 
     ProcessTrackedQuestUpdate(trackingType, context)
+
+    if trackingType == TRACK_TYPE_QUEST then
+        UpdateQuestFilterKeybindLabelForActiveQuest(context)
+    end
+end
+
+local function ShouldAutoTrackNewQuest()
+    if not IsQuestSelectionMode() then
+        return false
+    end
+
+    local questFilter = EnsureQuestFilterSavedVars()
+    if not questFilter then
+        return false
+    end
+
+    return questFilter.autoTrackNewQuestsInSelectionMode ~= false
+end
+
+local function OnQuestAdded(_, journalIndex)
+    if not ShouldAutoTrackNewQuest() then
+        return
+    end
+
+    local numericIndex = tonumber(journalIndex)
+    if not numericIndex or numericIndex <= 0 then
+        return
+    end
+
+    if SelectQuestInFilter(numericIndex, "QuestTracker:OnQuestAdded") then
+        UpdateQuestFilterKeybindLabelForActiveQuest(numericIndex)
+    end
 end
 
 FlushPendingTrackedQuestUpdate = function()
@@ -3268,6 +3325,7 @@ local function OnFocusedTrackerAssistChanged(_, assistedData)
                 source = "QuestTracker:OnFocusedTrackerAssistChanged",
                 isExternal = true,
             })
+            UpdateQuestFilterKeybindLabelForActiveQuest(questIndex)
             return
         end
     end
@@ -3277,6 +3335,7 @@ local function OnFocusedTrackerAssistChanged(_, assistedData)
         source = "QuestTracker:OnFocusedTrackerAssistChanged",
         isExternal = true,
     })
+    UpdateQuestFilterKeybindLabelForActiveQuest()
 end
 
 local function OnPlayerActivated()
@@ -3303,6 +3362,7 @@ local function RegisterTrackingEvents()
     if EVENT_MANAGER then
         EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. "TrackUpdate", EVENT_TRACKING_UPDATE, OnTrackedQuestUpdate)
         EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. "PlayerActivated", EVENT_PLAYER_ACTIVATED, OnPlayerActivated)
+        EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. "QuestAdded", EVENT_QUEST_ADDED, OnQuestAdded)
     end
 
     if FOCUSED_QUEST_TRACKER and FOCUSED_QUEST_TRACKER.RegisterCallback then
@@ -3320,6 +3380,7 @@ local function UnregisterTrackingEvents()
     if EVENT_MANAGER then
         EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "TrackUpdate", EVENT_TRACKING_UPDATE)
         EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "PlayerActivated", EVENT_PLAYER_ACTIVATED)
+        EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "QuestAdded", EVENT_QUEST_ADDED)
     end
 
     if FOCUSED_QUEST_TRACKER and FOCUSED_QUEST_TRACKER.UnregisterCallback then
