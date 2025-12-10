@@ -93,6 +93,9 @@ local strings = {
     SI_NVK3UT_QUEST_FILTER_MODE_ALL = "Alle Quests",
     SI_NVK3UT_QUEST_FILTER_MODE_ACTIVE = "Nur aktive Quest",
     SI_NVK3UT_QUEST_FILTER_MODE_SELECTION = "Questauswahl",
+    SI_NVK3UT_LAM_QUEST_FILTER_AUTO_TRACK_NEW = "Neue Quests automatisch tracken",
+    SI_NVK3UT_LAM_QUEST_FILTER_AUTO_TRACK_NEW_DESC =
+    "Wenn der Questauswahl-Modus aktiv ist, werden neu angenommene Quests automatisch zum Questfilter hinzugefügt.",
     SI_NVK3UT_LAM_QUEST_HEADER_COLORS = "Farben Quest Tracker",
     SI_NVK3UT_LAM_QUEST_COLOR_CATEGORY = "Kategorie- / Abschnittstitel",
     SI_NVK3UT_LAM_QUEST_COLOR_CATEGORY_DESC = "Passt die Farbe von Zonen- und Kategorietiteln im Quest-Tracker an.",

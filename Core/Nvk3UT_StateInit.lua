@@ -367,6 +367,7 @@ local defaults = {
     },
     questFilter = {
         mode = 1,
+        autoTrackNewQuestsInSelectionMode = true,
         selection = {},
     },
     AchievementTracker = {
