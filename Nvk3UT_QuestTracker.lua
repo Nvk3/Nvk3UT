@@ -7,6 +7,7 @@ local DebugLog
 local GetFocusedQuestIndex
 local RefreshQuestJournalSelectionKeyLabelText
 local UpdateQuestJournalSelectionKeyLabelVisibility
+local RefreshQuestJournalStars
 
 local QuestTracker = {}
 QuestTracker.__index = QuestTracker
@@ -282,6 +283,12 @@ function DebugLog(...)
         d(string.format("[%s]", MODULE_NAME), ...)
     elseif print then
         print("[" .. MODULE_NAME .. "]", ...)
+    end
+end
+
+local function DebugQuestJournal(msg, ...)
+    if Nvk3UT and Nvk3UT.debug and Nvk3UT.debug.questJournalStars then
+        d(string.format("[Nvk3UT QuestStars] " .. msg, ...))
     end
 end
 
@@ -1674,6 +1681,9 @@ local function BuildQuestContextMenuEntries(journalIndex)
                 ToggleQuestSelection(questKey, "QuestTracker:ContextMenu")
                 RefreshQuestJournalSelectionKeyLabelText()
                 UpdateQuestJournalSelectionKeyLabelVisibility("QuestTracker:ContextMenu")
+                if RefreshQuestJournalStars then
+                    RefreshQuestJournalStars()
+                end
             end,
         }
     end
@@ -1829,6 +1839,9 @@ local function ToggleFocusedQuestSelection(source)
     DebugLog("QuestJournalKeybind.callback: toggling selection and marking tracker dirty")
     ToggleQuestSelection(questKey, source or "QuestJournal:Keybind")
     UpdateQuestJournalSelectionKeyLabelVisibility("QuestJournal:KeybindToggle")
+    if RefreshQuestJournalStars then
+        RefreshQuestJournalStars()
+    end
 end
 
 local function GetQuestJournalKeyLabelParent()
@@ -2103,6 +2116,9 @@ local function AppendQuestJournalContextMenu(control, button, upInside)
         DebugLog("QuestJournalContextMenu: toggled selection for questKey=%s", tostring(questKey))
         RefreshQuestJournalSelectionKeyLabelText()
         UpdateQuestJournalSelectionKeyLabelVisibility("QuestJournal:ContextMenu")
+        if RefreshQuestJournalStars then
+            RefreshQuestJournalStars()
+        end
     end)
 
     if ShowMenu then
@@ -2125,6 +2141,90 @@ local function HookQuestJournalContextMenu()
         DebugLog("QuestJournalContextMenu: PostHook on ZO_QuestJournalNavigationEntry_OnMouseUp registered")
         questJournalContextMenuHooked = true
     end
+end
+
+local function UpdateQuestJournalRowStar(node)
+    if not node then
+        return
+    end
+
+    local data = node.data
+    local control = node.control
+
+    if not data or not control then
+        return
+    end
+
+    local journalIndex = data.questIndex or (data.data and data.data.questIndex)
+    if not journalIndex or not DoesJournalQuestExist(journalIndex) then
+        return
+    end
+
+    local questName = data.name or GetJournalQuestName(journalIndex)
+    if not questName or questName == "" then
+        return
+    end
+
+    local label = control.text
+    if not label and control.GetNamedChild then
+        label = control:GetNamedChild("Text")
+    end
+    if not label then
+        return
+    end
+
+    local isTracked = IsQuestTrackedForFilter(journalIndex)
+    DebugQuestJournal("Row for quest '%s' (index %d) tracked=%s", questName, journalIndex, tostring(isTracked))
+
+    if isTracked then
+        label:SetText(string.format("%s *", questName))
+    else
+        label:SetText(questName)
+    end
+end
+
+local function RefreshQuestJournalStars()
+    local questJournal = QUEST_JOURNAL_KEYBOARD
+    if not questJournal or not questJournal.navigationTree or not questJournal.navigationTree.rootNode then
+        DebugQuestJournal("Quest journal tree not ready")
+        return
+    end
+
+    DebugQuestJournal("Refreshing quest journal stars")
+
+    local function Visit(node)
+        if not node then
+            return
+        end
+
+        UpdateQuestJournalRowStar(node)
+
+        local children = node.children
+        if children then
+            for _, child in ipairs(children) do
+                Visit(child)
+            end
+        end
+    end
+
+    Visit(questJournal.navigationTree.rootNode)
+end
+
+local function HookQuestJournalBuildQuestListForStars()
+    if not QUEST_JOURNAL_KEYBOARD or not QUEST_JOURNAL_KEYBOARD.BuildQuestList then
+        DebugQuestJournal("QUEST_JOURNAL_KEYBOARD.BuildQuestList not available for stars hook")
+        return
+    end
+
+    if QUEST_JOURNAL_KEYBOARD.NVK3UT_QuestStarsHooked then
+        return
+    end
+    QUEST_JOURNAL_KEYBOARD.NVK3UT_QuestStarsHooked = true
+
+    ZO_PostHook(QUEST_JOURNAL_KEYBOARD, "BuildQuestList", function()
+        DebugQuestJournal("PostHook BuildQuestList -> RefreshQuestJournalStars")
+        RefreshQuestJournalStars()
+    end)
 end
 
 local function LogExternalSelect(questId)
@@ -4575,6 +4675,7 @@ function QuestTracker.Init(parentControl, opts)
 
     HookQuestJournalKeybind()
     HookQuestJournalContextMenu()
+    HookQuestJournalBuildQuestListForStars()
 
     state.isInitialized = true
     RefreshVisibility()
@@ -4800,6 +4901,9 @@ function Nvk3UT_ToggleQuestSelectionBinding()
 
     if addon.QuestTracker and addon.QuestTracker.UpdateQuestJournalSelectionKeyLabelVisibility then
         addon.QuestTracker.UpdateQuestJournalSelectionKeyLabelVisibility("Keybind:ToggleQuestSelection")
+    end
+    if RefreshQuestJournalStars then
+        RefreshQuestJournalStars()
     end
 end
 
