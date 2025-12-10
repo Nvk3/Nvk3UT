@@ -550,6 +550,24 @@ local function IsQuestSelectedInFilter(questKey)
     return selection[normalized] == true
 end
 
+local function IsQuestTrackedForFilter(journalIndex)
+    local normalizedIndex = tonumber(journalIndex)
+    if not normalizedIndex or normalizedIndex <= 0 then
+        return false
+    end
+
+    if DoesJournalQuestExist and not DoesJournalQuestExist(normalizedIndex) then
+        return false
+    end
+
+    local questKey = GetQuestKeyFromJournalIndex(normalizedIndex)
+    if not questKey then
+        return false
+    end
+
+    return IsQuestSelectedInFilter(questKey)
+end
+
 local function ToggleQuestSelection(questKey, source)
     local questFilter = EnsureQuestFilterSavedVars()
     if not questFilter then
@@ -575,6 +593,13 @@ local function ToggleQuestSelection(questKey, source)
 
     if changed and QuestTracker.MarkDirty then
         QuestTracker.MarkDirty(source or "QuestSelectionToggle")
+    end
+
+    if changed and QUEST_JOURNAL_KEYBOARD and QUEST_JOURNAL_KEYBOARD.navigationTree then
+        local tree = QUEST_JOURNAL_KEYBOARD.navigationTree
+        if tree.RefreshVisible then
+            tree:RefreshVisible()
+        end
     end
 
     return changed
@@ -1744,6 +1769,8 @@ local questJournalSelectionKeybindEntry = nil
 local questJournalSelectionKeyContainer = nil
 local questJournalSelectionKeyLabel = nil
 local questJournalSelectionDescLabel = nil
+local questJournalEntryHooked = false
+local questTrackIconMarkup = zo_iconFormat("EsoUI/Art/Antiquities/antiquities_tabIcon_scrying_up.dds", 16, 16)
 local questJournalKeybindAdded = false
 local questJournalKeybindHooked = false
 local questJournalKeyLabelSceneHooked = false
@@ -1810,6 +1837,41 @@ local function GetQuestJournalKeyLabelParent()
     return nil
 end
 
+local function ApplyQuestJournalTrackedIcon(control, questInfo)
+    if not control or not questInfo then
+        return
+    end
+
+    local journalIndex = questInfo.questIndex or (questInfo.data and questInfo.data.questIndex)
+    if not journalIndex then
+        return
+    end
+
+    local questName = questInfo.name
+    if (not questName or questName == "") and GetJournalQuestName then
+        questName = GetJournalQuestName(journalIndex)
+    end
+
+    if not questName or questName == "" then
+        return
+    end
+
+    local label = control.text
+    if not label and control.GetNamedChild then
+        label = control:GetNamedChild("Text")
+    end
+
+    if not label or not label.SetText then
+        return
+    end
+
+    if IsQuestTrackedForFilter(journalIndex) then
+        label:SetText(string.format("%s %s", questName, questTrackIconMarkup))
+    else
+        label:SetText(questName)
+    end
+end
+
 RefreshQuestJournalSelectionKeyLabelText = function()
     if not questJournalSelectionDescLabel then
         return
@@ -1821,7 +1883,7 @@ RefreshQuestJournalSelectionKeyLabelText = function()
     end
 
     local stringId = SI_NVK3UT_TRACK_QUEST
-    if journalIndex and IsQuestTracked and IsQuestTracked(journalIndex) then
+    if IsQuestTrackedForFilter(journalIndex) then
         stringId = SI_NVK3UT_UNTRACK_QUEST
     end
 
@@ -2096,6 +2158,28 @@ local function HookQuestJournalContextMenu()
         DebugLog("QuestJournalContextMenu: PostHook on ZO_QuestJournalNavigationEntry_OnMouseUp registered")
         questJournalContextMenuHooked = true
     end
+end
+
+local function HookQuestJournalNavigationEntryTemplate()
+    if questJournalEntryHooked then
+        return
+    end
+
+    local navigationTree = QUEST_JOURNAL_KEYBOARD and QUEST_JOURNAL_KEYBOARD.navigationTree
+    local templateInfo = navigationTree and navigationTree.templateInfo
+    local template = templateInfo and templateInfo["ZO_QuestJournalNavigationEntry"]
+    local setupFunction = template and template.setupFunction
+
+    if type(setupFunction) ~= "function" then
+        return
+    end
+
+    template.setupFunction = function(control, questInfo, ...)
+        setupFunction(control, questInfo, ...)
+        ApplyQuestJournalTrackedIcon(control, questInfo)
+    end
+
+    questJournalEntryHooked = true
 end
 
 local function LogExternalSelect(questId)
@@ -4546,6 +4630,7 @@ function QuestTracker.Init(parentControl, opts)
 
     HookQuestJournalKeybind()
     HookQuestJournalContextMenu()
+    HookQuestJournalNavigationEntryTemplate()
 
     state.isInitialized = true
     RefreshVisibility()
