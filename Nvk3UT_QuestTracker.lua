@@ -1774,7 +1774,9 @@ local questJournalSelectionKeyContainer = nil
 local questJournalSelectionKeyLabel = nil
 local questJournalSelectionDescLabel = nil
 local questJournalEntryHooked = false
-local questTrackIconMarkup = zo_iconFormat("/esoui/art/antiquities/antiquities_tabicon_scrying_up.dds", 16, 16)
+
+local QUEST_TRACK_ICON_TEXTURE = "EsoUI/Art/Buttons/tree_closed_up.dds"
+local QUEST_TRACK_ICON_SIZE = 16
 local questJournalKeybindAdded = false
 local questJournalKeybindHooked = false
 local questJournalKeyLabelSceneHooked = false
@@ -1847,17 +1849,10 @@ local function ApplyQuestJournalTrackedIcon(control, questInfo)
     end
 
     local journalIndex = questInfo.questIndex or (questInfo.data and questInfo.data.questIndex)
-    if not journalIndex then
-        return
-    end
 
     local questName = questInfo.name
     if (not questName or questName == "") and GetJournalQuestName then
         questName = GetJournalQuestName(journalIndex)
-    end
-
-    if not questName or questName == "" then
-        return
     end
 
     local label = control.text
@@ -1869,10 +1864,30 @@ local function ApplyQuestJournalTrackedIcon(control, questInfo)
         return
     end
 
-    if IsQuestTrackedForFilter(journalIndex) then
-        label:SetText(string.format("%s %s", questName, questTrackIconMarkup))
+    label:SetText(questName or "")
+
+    local icon = control:GetNamedChild("Nvk3UTQuestTrackIcon")
+
+    if not icon then
+        icon = WINDOW_MANAGER:CreateControl("$(parent)Nvk3UTQuestTrackIcon", control, CT_TEXTURE)
+        icon:SetDimensions(QUEST_TRACK_ICON_SIZE, QUEST_TRACK_ICON_SIZE)
+        icon:SetTexture(QUEST_TRACK_ICON_TEXTURE)
+        icon:SetTextureCoords(1, 0, 0, 0, 1, 1, 0, 1)
+        icon:ClearAnchors()
+        icon:SetAnchor(LEFT, label, RIGHT, 4, 0)
+    end
+
+    if not journalIndex or not questName or questName == "" then
+        icon:SetHidden(true)
+        return
+    end
+
+    local isTracked = IsQuestTrackedForFilter(journalIndex)
+
+    if isTracked then
+        icon:SetHidden(false)
     else
-        label:SetText(questName)
+        icon:SetHidden(true)
     end
 end
 
