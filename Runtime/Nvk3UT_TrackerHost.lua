@@ -301,6 +301,7 @@ local state = {
     cornerHover = false,
     cornerPressed = false,
     collapsed = false,
+    cornerExpandFullRefreshPending = false,
     expandedWindowSize = nil,
 }
 
@@ -2918,6 +2919,20 @@ setCollapsed = function(collapsed)
         applyCollapsedVisibility()
         refreshScroll()
         applyWindowLock()
+
+        if not state.cornerExpandFullRefreshPending
+            and type(zo_callLater) == "function"
+            and type(performFullHostRefresh) == "function"
+            and state.root then
+            state.cornerExpandFullRefreshPending = true
+            zo_callLater(function()
+                state.cornerExpandFullRefreshPending = false
+
+                if state.root and type(performFullHostRefresh) == "function" then
+                    performFullHostRefresh("cornerExpand")
+                end
+            end, 1)
+        end
     end
 
     refreshCornerButton()
