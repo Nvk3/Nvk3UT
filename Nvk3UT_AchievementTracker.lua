@@ -145,6 +145,14 @@ local function DebugLog(...)
     end
 end
 
+local function DebugClickTrace(message)
+    if not IsDebugLoggingEnabled() or not message or message == "" then
+        return
+    end
+
+    DebugLog(message)
+end
+
 local FAVORITES_LOOKUP_KEY = "NVK3UT_FAVORITES_ROOT"
 local FAVORITES_CATEGORY_ID = "Nvk3UT_Favorites"
 
@@ -1093,6 +1101,10 @@ local function SetCategoryExpanded(expanded, context)
         afterExpanded = IsCategoryExpanded()
     end
 
+    if context and context.trigger == "click" then
+        DebugClickTrace(string.format("[AUI] CategoryClick key=%s expanded=%s", tostring(CATEGORY_KEY), afterExpanded and "true" or "false"))
+    end
+
     if beforeExpanded ~= afterExpanded then
         LogCategoryExpansion(
             afterExpanded and "expand" or "collapse",
@@ -1114,6 +1126,10 @@ local function SetEntryExpanded(achievementId, expanded, source)
         return
     end
     state.saved.entryExpanded[achievementId] = expanded and true or false
+
+    if source == "AchievementTracker:ToggleAchievementObjectives" then
+        DebugClickTrace(string.format("[AUI] EntryClick id=%s expanded=%s", tostring(achievementId), expanded and "true" or "false"))
+    end
 end
 
 local function IsEntryExpanded(achievementId)
