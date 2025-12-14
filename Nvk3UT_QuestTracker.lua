@@ -2512,11 +2512,11 @@ local function EnsureExclusiveAssistedQuest(journalIndex)
         local shouldAssist = isTarget and true or false
 
         if isTarget then
-            SafeCall(SetTrackedIsAssisted, TRACK_TYPE_QUEST, index, shouldAssist)
+            SafeCall(SetTrackedIsAssisted, TRACK_TYPE_QUEST, shouldAssist, index)
         elseif type(GetTrackedIsAssisted) == "function" then
             local ok, assisted = SafeCall(GetTrackedIsAssisted, TRACK_TYPE_QUEST, index)
             if ok and assisted then
-                SafeCall(SetTrackedIsAssisted, TRACK_TYPE_QUEST, index, false)
+                SafeCall(SetTrackedIsAssisted, TRACK_TYPE_QUEST, false, index)
             end
         end
     end)
@@ -3498,8 +3498,15 @@ local function AnchorControl(control, indentX)
 end
 
 local function UpdateContentSize()
-    if QuestTrackerLayout and QuestTrackerLayout.UpdateContentSize then
-        return QuestTrackerLayout:UpdateContentSize()
+    if not (QuestTrackerLayout and QuestTrackerLayout.UpdateContentSize) then
+        return
+    end
+
+    QuestTrackerLayout:UpdateContentSize()
+
+    if QuestTrackerLayout.state and state then
+        state.contentWidth = QuestTrackerLayout.state.contentWidth
+        state.contentHeight = QuestTrackerLayout.state.contentHeight
     end
 end
 
