@@ -1343,7 +1343,11 @@ local function Rebuild()
     AchievementTrackerRows.SetFonts(state.fonts)
     AchievementTrackerRows.SetOptions(state.opts)
     AchievementTrackerRows.SetSaved(state.saved)
-    AchievementTrackerRows.Rebuild(state.snapshot)
+    local ok, rebuildError = pcall(AchievementTrackerRows.Rebuild, state.snapshot)
+    if not ok then
+        DebugLog("AchievementTrackerRows.Rebuild failed: %s", tostring(rebuildError))
+        return
+    end
 
     state.contentWidth, state.contentHeight, state.lastHeight = AchievementTrackerRows.GetContentSize()
     NotifyHostContentChanged()

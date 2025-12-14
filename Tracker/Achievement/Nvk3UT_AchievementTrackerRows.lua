@@ -55,6 +55,64 @@ local state = {
     controls = {},
 }
 
+local debugLogOnce = {}
+
+local function IsDebugLoggingEnabled()
+    local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
+    if utils and type(utils.IsDebugEnabled) == "function" then
+        return utils:IsDebugEnabled()
+    end
+
+    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        return diagnostics:IsDebugEnabled()
+    end
+
+    local addon = Nvk3UT
+    if addon and type(addon.IsDebugEnabled) == "function" then
+        return addon:IsDebugEnabled()
+    end
+
+    return false
+end
+
+local function DebugLogOnce(key, fmt, ...)
+    if not IsDebugLoggingEnabled() then
+        return
+    end
+
+    if debugLogOnce[key] then
+        return
+    end
+
+    debugLogOnce[key] = true
+
+    local ok, message = pcall(string.format, fmt, ...)
+    if not ok then
+        message = tostring(fmt)
+    end
+
+    if d then
+        d(string.format("[%s] %s", MODULE_NAME, message))
+    elseif print then
+        print(string.format("[%s] %s", MODULE_NAME, message))
+    end
+end
+
+local function SafeCallDependency(key, fn, ...)
+    if type(fn) ~= "function" then
+        return nil, false
+    end
+
+    local ok, result = pcall(fn, ...)
+    if not ok then
+        DebugLogOnce(key, "%s failed: %s", tostring(key), tostring(result))
+        return nil, false
+    end
+
+    return result, true
+end
+
 local function ResetLayoutState()
     state.orderedControls = {}
     state.lastAnchoredControl = nil
@@ -460,18 +518,14 @@ local function IsFavoriteAchievement(achievementId)
         return false
     end
 
-    if achievementState.IsFavorite then
-        local result = achievementState.IsFavorite(achievementId)
-        if result ~= nil then
-            return result == true
-        end
+    local result, ok = SafeCallDependency("AchievementState.IsFavorite", achievementState.IsFavorite, achievementId)
+    if ok and result ~= nil then
+        return result == true
     end
 
-    if achievementState.IsTodo then
-        local result = achievementState.IsTodo(achievementId)
-        if result ~= nil then
-            return result == true
-        end
+    result, ok = SafeCallDependency("AchievementState.IsTodo", achievementState.IsTodo, achievementId)
+    if ok and result ~= nil then
+        return result == true
     end
 
     return false
@@ -479,8 +533,13 @@ end
 
 local function IsRecentAchievement(achievementId)
     local achievementState = Nvk3UT and Nvk3UT.AchievementState
-    if achievementState and achievementState.IsRecent then
-        return achievementState.IsRecent(achievementId) == true
+    if not achievementState then
+        return false
+    end
+
+    local result, ok = SafeCallDependency("AchievementState.IsRecent", achievementState.IsRecent, achievementId)
+    if ok then
+        return result == true
     end
 
     return false
@@ -489,8 +548,8 @@ end
 local function BuildTodoLookup()
     local achievementState = Nvk3UT and Nvk3UT.AchievementState
     if achievementState and achievementState.GetTodoLookup then
-        local result = achievementState.GetTodoLookup()
-        if type(result) == "table" then
+        local result, ok = SafeCallDependency("AchievementState.GetTodoLookup", achievementState.GetTodoLookup)
+        if ok and type(result) == "table" then
             return result
         end
     end
@@ -504,18 +563,26 @@ local function HasAnyFavoriteAchievements()
         return false
     end
 
-    if achievementState.HasAnyFavorites and achievementState.HasAnyFavorites() then
+    local result, ok = SafeCallDependency("AchievementState.HasAnyFavorites", achievementState.HasAnyFavorites)
+    if ok and result then
         return true
     end
 
-    local favoritesData = achievementState.GetFavoritesData and achievementState.GetFavoritesData()
+    local favoritesData
+    result, ok = SafeCallDependency("AchievementState.GetFavoritesData", achievementState.GetFavoritesData)
+    if ok then
+        favoritesData = result
+    end
+
     if favoritesData then
-        if favoritesData.GetTotalFavoriteCount and favoritesData.GetTotalFavoriteCount() > 0 then
+        result, ok = SafeCallDependency("FavoritesData.GetTotalFavoriteCount", favoritesData.GetTotalFavoriteCount)
+        if ok and result and result > 0 then
             return true
         end
     end
 
-    if achievementState.HasAnyTodos and achievementState.HasAnyTodos() then
+    result, ok = SafeCallDependency("AchievementState.HasAnyTodos", achievementState.HasAnyTodos)
+    if ok and result then
         return true
     end
 

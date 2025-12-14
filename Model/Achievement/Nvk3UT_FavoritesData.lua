@@ -120,11 +120,16 @@ local function ensureStageDataInitialized()
         return
     end
 
-    stageDataInitialized = true
-
     local Stage = getStageHelper()
-    local hasStageInfo = Stage and Stage.GetCurrentStageInfo
+    if type(Stage) ~= "table" then
+        emitDebugMessage(
+            "FavoritesData.ensureStageDataInitialized: Stage helper unavailable (type=%s), skipping stage init",
+            type(Stage)
+        )
+        return
+    end
 
+    local hasStageInfo = Stage and Stage.GetCurrentStageInfo
     if type(hasStageInfo) ~= "function" then
         emitDebugMessage(
             "FavoritesData.ensureStageDataInitialized: hasStageInfo is not a function (type=%s), skipping stage init",
@@ -133,18 +138,26 @@ local function ensureStageDataInitialized()
         return
     end
 
+    if type(ensureSet) ~= "function" then
+        emitDebugMessage(
+            "FavoritesData.ensureStageDataInitialized: ensureSet is not a function (type=%s), skipping stage init",
+            type(ensureSet)
+        )
+        return
+    end
+
+    stageDataInitialized = true
+
     local scopes = { ACCOUNT_SCOPE, CHARACTER_SCOPE }
     for index = 1, #scopes do
         local scope = scopes[index]
         local set = ensureSet(scope, false)
         if type(set) == "table" then
-            if hasStageInfo then
-                for rawId, flagged in pairs(set) do
-                    if flagged then
-                        local normalized = FavoritesData.NormalizeId(rawId)
-                        if normalized then
-                            updateStageStateForId(set, rawId, normalized)
-                        end
+            for rawId, flagged in pairs(set) do
+                if flagged then
+                    local normalized = FavoritesData.NormalizeId(rawId)
+                    if normalized then
+                        updateStageStateForId(set, rawId, normalized)
                     end
                 end
             end
