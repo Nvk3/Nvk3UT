@@ -606,8 +606,8 @@ local function ToggleQuestSelection(questKey, source)
         end
     end
 
-    if changed and QuestTracker.MarkDirty then
-        QuestTracker.MarkDirty(source or "QuestSelectionToggle")
+    if changed and RequestRefresh then
+        RequestRefresh(source or "QuestSelectionToggle")
     end
 
     if changed and QUEST_JOURNAL_KEYBOARD and QUEST_JOURNAL_KEYBOARD.navigationTree then
@@ -2094,10 +2094,8 @@ local function AppendQuestJournalContextMenu(control, button, upInside)
 
     AddCustomMenuItem(label, function()
         ToggleQuestSelection(questKey, "QuestJournal:ContextMenu")
-        QuestTracker.MarkDirty("JournalContext")
-        local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
-        if runtime and runtime.QueueDirty then
-            runtime:QueueDirty("quest")
+        if RequestRefresh then
+            RequestRefresh("QuestJournal:ContextMenu")
         end
         DebugLog("QuestJournalContextMenu: toggled selection for questKey=%s", tostring(questKey))
         RefreshQuestJournalSelectionKeyLabelText()
@@ -2233,7 +2231,7 @@ local function ExpandCategoriesForExternalSelect(journalIndex)
     end
 
     if expandedAny and RequestRefresh then
-        RequestRefresh()
+        RequestRefresh("QuestTracker:ExpandCategoriesForExternalSelect")
     end
 
     return expandedAny, found
@@ -2285,7 +2283,7 @@ local function ExpandCategoriesForClickSelect(journalIndex)
     end
 
     if expandedAny and RequestRefresh then
-        RequestRefresh()
+        RequestRefresh("QuestTracker:ExpandCategoriesForClickSelect")
     end
 
     return expandedAny, found
@@ -2941,9 +2939,9 @@ local function SyncTrackedQuestState(forcedIndex, forceExpand, context)
         local hasTracked = currentTracked ~= nil
         local hadTracked = previousTracked ~= nil
 
-        if RequestRefresh and (previousTracked ~= currentTracked or hasTracked or hadTracked or pendingApplied or expansionChanged) then
-            RequestRefresh()
-        end
+    if RequestRefresh and (previousTracked ~= currentTracked or hasTracked or hadTracked or pendingApplied or expansionChanged) then
+        RequestRefresh("QuestTracker:SyncTrackedQuestState")
+    end
     until true
 
     if state.pendingDeselection and not state.trackedQuestIndex then
@@ -2975,29 +2973,16 @@ local function ForceAssistTrackedQuest(journalIndex)
     end, FOCUSED_QUEST_TRACKER, journalIndex)
 end
 
-local function RequestRefreshInternal()
-    if not state.isInitialized then
+local function RequestRefreshInternal(reason)
+    local controller = Nvk3UT and Nvk3UT.QuestTrackerController
+    if controller and controller.RequestRefresh then
+        controller:RequestRefresh(reason)
         return
     end
-    if state.pendingRefresh then
-        return
-    end
 
-    state.pendingRefresh = true
-
-    local function execute()
-        state.pendingRefresh = false
-        local snapshot = state.rawSnapshot or state.snapshot
-        if not snapshot then
-            return
-        end
-        QuestTracker.Refresh(snapshot)
-    end
-
-    if zo_callLater then
-        zo_callLater(execute, REFRESH_DEBOUNCE_MS)
-    else
-        execute()
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and runtime.QueueDirty then
+        runtime:QueueDirty("quest")
     end
 end
 
@@ -3891,9 +3876,8 @@ local function ToggleCategoryExpansion(categoryKey, expanded, context)
 
     local changed = SetCategoryExpanded(categoryKey, targetExpanded, toggleContext)
     if changed then
-        local snapshot = state.rawSnapshot or state.snapshot
-        if snapshot then
-            QuestTracker.Refresh(snapshot, toggleContext)
+        if RequestRefresh then
+            RequestRefresh(toggleContext.source)
         end
         ScheduleToggleFollowup("questCategoryToggle")
     end
@@ -3925,9 +3909,8 @@ local function ToggleQuestExpansion(journalIndex, context)
 
     local changed = SetQuestExpanded(journalIndex, not expanded, toggleContext)
     if changed then
-        local snapshot = state.rawSnapshot or state.snapshot
-        if snapshot then
-            QuestTracker.Refresh(snapshot, toggleContext)
+        if RequestRefresh then
+            RequestRefresh(toggleContext.source)
         end
         ScheduleToggleFollowup("questEntryToggle")
     end
@@ -4504,11 +4487,10 @@ local function SubscribeToQuestModel()
         return
     end
 
-    state.questModelSubscription = function(snapshot)
-        QuestTracker.Refresh(snapshot, {
-            trigger = "model",
-            source = "QuestTracker:QuestModelSubscription",
-        })
+    state.questModelSubscription = function()
+        if RequestRefresh then
+            RequestRefresh("QuestTracker:QuestModelSubscription")
+        end
     end
 
     questModel.Subscribe(state.questModelSubscription)
@@ -4681,25 +4663,16 @@ QuestTracker.QUEST_FILTER_MODE_ACTIVE = QUEST_FILTER_MODE_ACTIVE
 QuestTracker.QUEST_FILTER_MODE_SELECTION = QUEST_FILTER_MODE_SELECTION
 
 function QuestTracker.MarkDirty(reason)
-    local context = {
-        trigger = "filter",
-        source = reason or "QuestTracker.MarkDirty",
-    }
-
-    local rawSnapshot = state.rawSnapshot or state.snapshot
-    if not rawSnapshot then
-        local questModel = Nvk3UT and Nvk3UT.QuestModel
-        if questModel and questModel.GetSnapshot then
-            rawSnapshot = questModel.GetSnapshot()
-        end
+    local controller = Nvk3UT and Nvk3UT.QuestTrackerController
+    if controller and controller.RequestRefresh then
+        controller:RequestRefresh(reason or "QuestTracker.MarkDirty")
+        return
     end
 
-    rawSnapshot = rawSnapshot or EmptySnapshot()
-    QuestTracker.Refresh(rawSnapshot, context)
-
-    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
-    if runtime and runtime.QueueDirty then
-        pcall(runtime.QueueDirty, runtime, "quest")
+    if controller and controller.MarkDirty then
+        controller:MarkDirty(reason or "QuestTracker.MarkDirty")
+    elseif RequestRefresh then
+        RequestRefresh(reason or "QuestTracker.MarkDirty")
     end
 end
 
@@ -4892,9 +4865,14 @@ function Nvk3UT_ToggleQuestSelectionBinding()
     end
 
     ToggleQuestSelection(questKey, "Keybind:ToggleQuestSelection")
-    local runtime = addon.TrackerRuntime
-    if runtime and runtime.QueueDirty then
-        runtime:QueueDirty("quest")
+    local controller = addon and addon.QuestTrackerController
+    if controller and controller.RequestRefresh then
+        controller:RequestRefresh("Keybind:ToggleQuestSelection")
+    else
+        local runtime = addon and addon.TrackerRuntime
+        if runtime and runtime.QueueDirty then
+            runtime:QueueDirty("quest")
+        end
     end
 
     if addon.QuestTracker and addon.QuestTracker.UpdateQuestJournalSelectionKeyLabelVisibility then

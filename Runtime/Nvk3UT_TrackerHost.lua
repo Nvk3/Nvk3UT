@@ -1567,7 +1567,9 @@ local function triggerDeferredFullRebuildOnVisible()
     runtime.needsFullRebuildOnVisible = false
 
     local function markDirty(controller)
-        if controller and controller.MarkDirty then
+        if controller and controller.RequestRefresh then
+            safeCall(controller.RequestRefresh, controller, "TrackerHost:deferredRebuild")
+        elseif controller and controller.MarkDirty then
             safeCall(controller.MarkDirty, controller)
         end
     end
@@ -5298,11 +5300,16 @@ function TrackerHost.ApplyWindowBars()
 end
 
 function TrackerHost.Refresh()
-    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
-    if runtime and runtime.QueueDirty then
-        pcall(runtime.QueueDirty, runtime, "quest")
-    elseif Nvk3UT.QuestTracker and Nvk3UT.QuestTracker.RequestRefresh then
-        pcall(Nvk3UT.QuestTracker.RequestRefresh)
+    local controller = Nvk3UT and Nvk3UT.QuestTrackerController
+    if controller and controller.RequestRefresh then
+        pcall(controller.RequestRefresh, controller, "TrackerHost.Refresh")
+    else
+        local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+        if runtime and runtime.QueueDirty then
+            pcall(runtime.QueueDirty, runtime, "quest")
+        elseif Nvk3UT.QuestTracker and Nvk3UT.QuestTracker.RequestRefresh then
+            pcall(Nvk3UT.QuestTracker.RequestRefresh)
+        end
     end
 
     if Nvk3UT.AchievementTracker then

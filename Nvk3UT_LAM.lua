@@ -1041,13 +1041,16 @@ local function applyQuestTheme()
 end
 
 local function refreshQuestTracker()
-    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
-    if runtime and runtime.QueueDirty then
-        runtime:QueueDirty("quest")
+    local controller = Nvk3UT and Nvk3UT.QuestTrackerController
+    if controller and controller.RequestRefresh then
+        controller:RequestRefresh("LAM:refreshQuestTracker")
         return
     end
 
-    if Nvk3UT and Nvk3UT.QuestTracker and Nvk3UT.QuestTracker.RequestRefresh then
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and runtime.QueueDirty then
+        runtime:QueueDirty("quest")
+    elseif Nvk3UT and Nvk3UT.QuestTracker and Nvk3UT.QuestTracker.RequestRefresh then
         Nvk3UT.QuestTracker.RequestRefresh()
     end
 end
@@ -2137,9 +2140,14 @@ local function registerPanel(displayTitle)
                         Nvk3UT.QuestTracker.SetActive(normalized)
                     end
 
-                    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
-                    if runtime and runtime.QueueDirty then
-                        runtime:QueueDirty("quest")
+                    local controller = Nvk3UT and Nvk3UT.QuestTrackerController
+                    if controller and controller.RequestRefresh then
+                        controller:RequestRefresh("LAM:SetActive")
+                    else
+                        local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+                        if runtime and runtime.QueueDirty then
+                            runtime:QueueDirty("quest")
+                        end
                     end
 
                     if Nvk3UT and Nvk3UT.UI and Nvk3UT.UI.UpdateStatus then
@@ -2284,14 +2292,19 @@ local function registerPanel(displayTitle)
                         filter.mode = numeric
                     end
 
-                    local tracker = Nvk3UT and Nvk3UT.QuestTracker
-                    if tracker and tracker.MarkDirty then
-                        tracker.MarkDirty("LAM:QuestFilterMode")
-                    end
+                    local controller = Nvk3UT and Nvk3UT.QuestTrackerController
+                    if controller and controller.RequestRefresh then
+                        controller:RequestRefresh("LAM:QuestFilterMode")
+                    else
+                        local tracker = Nvk3UT and Nvk3UT.QuestTracker
+                        if tracker and tracker.MarkDirty then
+                            tracker.MarkDirty("LAM:QuestFilterMode")
+                        end
 
-                    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
-                    if runtime and runtime.QueueDirty then
-                        runtime:QueueDirty("quest")
+                        local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+                        if runtime and runtime.QueueDirty then
+                            runtime:QueueDirty("quest")
+                        end
                     end
 
                     if tracker and tracker.UpdateQuestJournalSelectionKeyLabelVisibility then
