@@ -602,6 +602,34 @@ local function HasAnyFavoriteAchievements()
     return false
 end
 
+local function ResolveFavoriteFlag(achievement)
+    if achievement then
+        if achievement.flags and achievement.flags.isFavorite ~= nil then
+            return achievement.flags.isFavorite == true
+        end
+
+        if achievement.isFavorite ~= nil then
+            return achievement.isFavorite == true
+        end
+    end
+
+    return IsFavoriteAchievement(achievement and achievement.id)
+end
+
+local function ResolveRecentFlag(achievement)
+    if achievement then
+        if achievement.flags and achievement.flags.isRecent ~= nil then
+            return achievement.flags.isRecent == true
+        end
+
+        if achievement.isRecent ~= nil then
+            return achievement.isRecent == true
+        end
+    end
+
+    return IsRecentAchievement(achievement and achievement.id)
+end
+
 local function LogCategoryExpansion(action, trigger, beforeExpanded, afterExpanded, source)
     local tracker = Nvk3UT and Nvk3UT.AchievementTracker
     local fn = tracker and tracker.LogCategoryExpansion
@@ -854,8 +882,8 @@ local function LayoutCategory()
         if achievement and achievement.id then
             local achievementId = achievement.id
             local isCompleted = achievement.flags and achievement.flags.isComplete
-            local isFavorite = IsFavoriteAchievement(achievementId)
-            local isRecent = IsRecentAchievement(achievementId)
+            local isFavorite = ResolveFavoriteFlag(achievement)
+            local isRecent = ResolveRecentFlag(achievement)
             local isTodo = todoLookup and todoLookup[achievementId] or false
 
             if isCompleted then
@@ -900,8 +928,8 @@ local function LayoutCategory()
     end
 
     local total = #visibleEntries
-
-    if not HasAnyFavoriteAchievements() then
+    local hasFavorites = HasAnyFavoriteAchievements()
+    if total == 0 and not hasFavorites then
         return
     end
 
@@ -1051,6 +1079,20 @@ local function Rebuild(snapshot)
     UpdateContentSize()
 
     local rowsCount = #state.orderedControls
+    if rowsCount == 0 and itemCount > 0 then
+        local first = achievements[1] or {}
+        local flags = first.flags or {}
+        DebugLog(
+            "AchievementRows: no rows built (items=%d) first id=%s name=%s favorite=%s recent=%s category=%s subcategory=%s",
+            itemCount,
+            tostring(first.id),
+            tostring(first.name),
+            tostring(flags.isFavorite or first.isFavorite),
+            tostring(flags.isRecent or first.isRecent),
+            tostring(first.categoryId or first.category),
+            tostring(first.subcategoryId or first.subcategory)
+        )
+    end
     DebugLog("AchievementRows: BuildOrRebuildRows done (rows=%d)", rowsCount)
 end
 
