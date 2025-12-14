@@ -3989,48 +3989,69 @@ local function FormatConditionText(condition)
     return text
 end
 
-local function AcquireCategoryControl()
-    local control, key = state.categoryPool:AcquireObject()
-    if not control.initialized then
-        control.label = control:GetNamedChild("Label")
-        control.toggle = control:GetNamedChild("Toggle")
-        if control.toggle and control.toggle.SetTexture then
-            control.toggle:SetTexture(SelectCategoryToggleTexture(false, false))
+local function InitializeCategoryControl(control)
+    if not control or control.initialized then
+        return
+    end
+
+    control.label = control:GetNamedChild("Label")
+    control.toggle = control:GetNamedChild("Toggle")
+    if control.toggle and control.toggle.SetTexture then
+        control.toggle:SetTexture(SelectCategoryToggleTexture(false, false))
+    end
+    control.isExpanded = false
+    control:SetHandler("OnMouseUp", function(ctrl, button, upInside)
+        if not upInside or button ~= MOUSE_BUTTON_INDEX_LEFT then
+            return
         end
-        control.isExpanded = false
-        control:SetHandler("OnMouseUp", function(ctrl, button, upInside)
-            if not upInside or button ~= MOUSE_BUTTON_INDEX_LEFT then
-                return
-            end
+        local catKey = ctrl.data and ctrl.data.categoryKey
+        if not catKey then
+            return
+        end
+        local expanded = not IsCategoryExpanded(catKey)
+        ToggleCategoryExpansion(catKey, expanded, {
+            trigger = "click",
+            source = "QuestTracker:OnCategoryClick",
+        })
+    end)
+    control:SetHandler("OnMouseEnter", function(ctrl)
+        ApplyMouseoverHighlight(ctrl)
+        local expanded = ctrl.isExpanded
+        if expanded == nil then
             local catKey = ctrl.data and ctrl.data.categoryKey
-            if not catKey then
-                return
-            end
-            local expanded = not IsCategoryExpanded(catKey)
-            ToggleCategoryExpansion(catKey, expanded, {
-                trigger = "click",
-                source = "QuestTracker:OnCategoryClick",
-            })
-        end)
-        control:SetHandler("OnMouseEnter", function(ctrl)
-            ApplyMouseoverHighlight(ctrl)
-            local expanded = ctrl.isExpanded
-            if expanded == nil then
-                local catKey = ctrl.data and ctrl.data.categoryKey
-                expanded = IsCategoryExpanded(catKey)
-            end
-            UpdateCategoryToggle(ctrl, expanded)
-        end)
-        control:SetHandler("OnMouseExit", function(ctrl)
-            RestoreBaseColor(ctrl)
-            local expanded = ctrl.isExpanded
-            if expanded == nil then
-                local catKey = ctrl.data and ctrl.data.categoryKey
-                expanded = IsCategoryExpanded(catKey)
-            end
-            UpdateCategoryToggle(ctrl, expanded)
-        end)
-        control.initialized = true
+            expanded = IsCategoryExpanded(catKey)
+        end
+        UpdateCategoryToggle(ctrl, expanded)
+    end)
+    control:SetHandler("OnMouseExit", function(ctrl)
+        RestoreBaseColor(ctrl)
+        local expanded = ctrl.isExpanded
+        if expanded == nil then
+            local catKey = ctrl.data and ctrl.data.categoryKey
+            expanded = IsCategoryExpanded(catKey)
+        end
+        UpdateCategoryToggle(ctrl, expanded)
+    end)
+    control.initialized = true
+end
+
+local function AcquireCategoryControl(providedControl)
+    local control, key
+
+    if providedControl ~= nil then
+        control = providedControl
+        key = providedControl.poolKey
+    else
+        control, key = state.categoryPool:AcquireObject()
+    end
+
+    if not control then
+        return nil, key
+    end
+
+    InitializeCategoryControl(control)
+    if not control.initialized then
+        return nil, key
     end
     control.rowType = "category"
     control.poolKey = key
@@ -4303,8 +4324,8 @@ local function LayoutQuest(quest)
     end
 end
 
-local function LayoutCategory(category)
-    local control = AcquireCategoryControl()
+local function LayoutCategory(category, categoryControl)
+    local control = AcquireCategoryControl(categoryControl)
     control.data = {
         categoryKey = category.key,
         parentKey = category.parent and category.parent.key or nil,

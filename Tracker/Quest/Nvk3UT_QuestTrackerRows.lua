@@ -74,11 +74,11 @@ end
 function Rows:BuildOrRebuildRows(viewModel)
     self.viewModel = viewModel
 
-    if type(self.callbacks.EnsurePools) == "function" then
-        self.callbacks.EnsurePools()
-    end
-
+    -- Reuse existing pooled categories across rebuilds. If we do not have a view model
+    -- or it is empty, release anything active and exit early.
     if not (viewModel and viewModel.categories and viewModel.categories.ordered) then
+        self:ReleaseAllCategories()
+
         if type(self.callbacks.UpdateContentSize) == "function" then
             self.callbacks.UpdateContentSize()
         end
@@ -91,16 +91,35 @@ function Rows:BuildOrRebuildRows(viewModel)
         return self:GetRowControls()
     end
 
+    if type(self.callbacks.EnsurePools) == "function" then
+        self.callbacks.EnsurePools()
+    end
+
     if type(self.callbacks.PrimeInitialSavedState) == "function" then
         self.callbacks.PrimeInitialSavedState()
     end
 
+    -- Start from a clean active set each rebuild so we reuse pooled controls without leaving
+    -- stale headers/containers anchored.
+    self:ReleaseAllCategories()
+
+    local usedCategoryCount = 0
     for index = 1, #viewModel.categories.ordered do
         local category = viewModel.categories.ordered[index]
         if category and category.quests and #category.quests > 0 then
+            usedCategoryCount = usedCategoryCount + 1
+            local header, container = self:AcquireCategory()
             if type(self.callbacks.LayoutCategory) == "function" then
-                self.callbacks.LayoutCategory(category)
+                self.callbacks.LayoutCategory(category, header, container)
             end
+        end
+    end
+
+    -- Return any unused active categories to the pool so repeated rebuilds do not leak controls.
+    if usedCategoryCount < #self.categoryPool.activeCategories then
+        for index = #self.categoryPool.activeCategories, usedCategoryCount + 1, -1 do
+            local category = table.remove(self.categoryPool.activeCategories, index)
+            self:ReleaseCategory(category.header, category.container)
         end
     end
 
@@ -145,9 +164,7 @@ function Rows:AcquireCategory()
         local headerName = string.format("%s_CategoryHeader_%d", headerNameBase, index)
         header = CreateControlFromVirtual(headerName, self.parent, "CategoryHeader_Template")
         header.rowType = "category"
-        header:SetHidden(true)
         container = CreateControl(headerName .. "_Container", self.parent, CT_CONTROL)
-        container:SetHidden(true)
     end
 
     if header.ClearAnchors then
@@ -158,10 +175,10 @@ function Rows:AcquireCategory()
     end
 
     if header.SetHidden then
-        header:SetHidden(false)
+        header:SetHidden(true)
     end
     if container and container.SetHidden then
-        container:SetHidden(false)
+        container:SetHidden(true)
     end
 
     table.insert(self.categoryPool.activeCategories, { header = header, container = container })
