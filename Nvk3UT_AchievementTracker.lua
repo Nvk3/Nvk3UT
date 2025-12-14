@@ -171,6 +171,29 @@ local state = {
     lastHeight = 0,
 }
 
+local function BuildFavoritesFromSnapshot()
+    local snapshot = state.snapshot
+    local achievements = (snapshot and snapshot.achievements) or {}
+
+    local favorites = {}
+    for index = 1, #achievements do
+        local achievement = achievements[index]
+        local achievementId = achievement and achievement.id
+        if achievementId and IsFavoriteAchievement(achievementId) then
+            favorites[#favorites + 1] = {
+                id = achievementId,
+                name = achievement and achievement.name,
+                icon = achievement and achievement.icon,
+                iconTexture = achievement and achievement.iconTexture,
+                progress = achievement and achievement.progress,
+                progressText = achievement and achievement.progressText,
+            }
+        end
+    end
+
+    return favorites
+end
+
 local function NormalizeMetric(value)
     local numeric = tonumber(value)
     if not numeric then
@@ -1739,13 +1762,12 @@ local function ApplyFavoritesView(viewModel)
         return
     end
 
-    if not (viewModel and type(viewModel.favorites) == "table") then
-        UpdateContentSize()
-        NotifyHostContentChanged()
-        return
+    local favorites = (viewModel and type(viewModel.favorites) == "table") and viewModel.favorites or nil
+    if not favorites then
+        favorites = BuildFavoritesFromSnapshot()
+        DebugLog(string.format("AchievementTracker: derived favorites=%d from snapshot", #favorites))
     end
 
-    local favorites = viewModel.favorites
     if #favorites == 0 then
         UpdateContentSize()
         NotifyHostContentChanged()
@@ -1794,6 +1816,11 @@ end
 
 local function OnSnapshotUpdated(snapshot)
     state.snapshot = snapshot
+    local count = 0
+    if snapshot and type(snapshot.achievements) == "table" then
+        count = #snapshot.achievements
+    end
+    DebugLog(string.format("AchievementTracker: snapshot received (achievements=%d)", count))
     Rebuild()
 end
 
@@ -1807,6 +1834,7 @@ local function SubscribeToModel()
     end
 
     Nvk3UT.AchievementModel.Subscribe(state.subscription)
+    DebugLog("AchievementTracker: subscribed to AchievementModel")
 end
 
 local function UnsubscribeFromModel()
@@ -1849,6 +1877,8 @@ function AchievementTracker.Init(parentControl, opts)
     state.viewModel = nil
 
     state.isInitialized = true
+
+    SubscribeToModel()
 
     RefreshVisibility()
     AchievementTracker.Refresh(opts and opts.viewModel)
