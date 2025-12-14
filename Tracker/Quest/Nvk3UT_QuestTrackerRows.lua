@@ -180,14 +180,64 @@ function Rows:ApplyObjectives(row, objectives)
 
     local verticalPadding = (self.state and self.state.verticalPadding) or 0
     local lastObjective = nil
-    local objectiveCount = type(objectives) == "table" and #objectives or 0
 
-    if objectiveCount > 0 and objectiveContainer.SetHidden then
+    local rawObjectiveCount = 0
+    if type(objectives) == "table" then
+        for _ in pairs(objectives) do
+            rawObjectiveCount = rawObjectiveCount + 1
+        end
+    end
+
+    local arrayCount = 0
+    if type(objectives) == "table" then
+        for _ in ipairs(objectives) do
+            arrayCount = arrayCount + 1
+        end
+    end
+
+    local isArray = (rawObjectiveCount > 0 and arrayCount == rawObjectiveCount) or (rawObjectiveCount == 0)
+
+    if rawObjectiveCount > 0 and objectiveContainer.SetHidden then
         objectiveContainer:SetHidden(false)
     end
 
-    for index = 1, objectiveCount do
-        local objectiveText = objectives[index]
+    local orderedKeys = nil
+    if not isArray and type(objectives) == "table" then
+        orderedKeys = {}
+        for key in pairs(objectives) do
+            orderedKeys[#orderedKeys + 1] = key
+        end
+        table.sort(orderedKeys, function(left, right)
+            local leftNumber = tonumber(left)
+            local rightNumber = tonumber(right)
+            if leftNumber and rightNumber then
+                return leftNumber < rightNumber
+            end
+            if leftNumber and not rightNumber then
+                return true
+            end
+            if rightNumber and not leftNumber then
+                return false
+            end
+            return tostring(left) < tostring(right)
+        end)
+    end
+
+    local function getObjective(index)
+        if type(objectives) ~= "table" then
+            return nil
+        end
+        if isArray then
+            return objectives[index]
+        end
+        local key = orderedKeys and orderedKeys[index]
+        return key and objectives[key] or nil
+    end
+
+    local iterCount = isArray and arrayCount or (orderedKeys and #orderedKeys or 0)
+
+    for index = 1, iterCount do
+        local objectiveText = getObjective(index)
         local label = AcquireObjectiveLabel(row)
         if label then
             local width = (objectiveContainer.GetWidth and objectiveContainer:GetWidth())
@@ -226,20 +276,22 @@ function Rows:ApplyObjectives(row, objectives)
     end
 
     safeDebug(
-        "%s: ApplyObjectives quest=%s objectives=%d used=%d free=%d",
+        "%s: ApplyObjectives quest=%s objectives=%d rawObjectiveKeys=%d array=%s used=%d free=%d",
         MODULE_TAG,
         tostring(row.questId or row.questKey or (row.data and row.data.quest and row.data.quest.journalIndex) or "<nil>"),
-        objectiveCount,
+        iterCount,
+        rawObjectiveCount,
+        tostring(isArray),
         pool and #pool.used or 0,
         pool and #pool.free or 0
     )
 
-    if pool and #pool.used ~= objectiveCount then
+    if pool and #pool.used ~= iterCount then
         safeDebug(
             "%s: WARN objective pool mismatch used=%d expected=%d",
             MODULE_TAG,
             pool and #pool.used or 0,
-            objectiveCount
+            iterCount
         )
     end
 end
