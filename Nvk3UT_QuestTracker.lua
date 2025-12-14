@@ -253,12 +253,14 @@ state = {
     isRebuildInProgress = false,
     questModelSubscription = nil,
     rawSnapshot = nil,
+    lastAutoExpandedQuestKey = nil,
 }
 
 local PRIORITY = {
     manual = 5,
     ["click-select"] = 4,
     ["external-select"] = 4,
+    tracked = 3,
     auto = 2,
     init = 1,
 }
@@ -1112,6 +1114,10 @@ local function WriteActiveQuest(questKey, source, options)
     LogStateWrite("active", normalized, nil, source, priority)
 
     ApplyActiveQuestFromSaved()
+
+    if normalized == nil then
+        state.lastAutoExpandedQuestKey = nil
+    end
 
     return true
 end
@@ -2582,6 +2588,13 @@ local function AutoExpandQuestForTracking(journalIndex, forceExpand, context)
         if context.forceWrite then
             logContext.forceWrite = true
         end
+        if context.priorityOverride ~= nil then
+            logContext.priorityOverride = context.priorityOverride
+        end
+    end
+
+    if logContext.priorityOverride == nil then
+        logContext.priorityOverride = PRIORITY.tracked
     end
 
     SetQuestExpanded(journalIndex, true, logContext)
@@ -2660,16 +2673,55 @@ local function EnsureTrackedQuestVisible(journalIndex, forceExpand, context)
     end
     local isExternal = context and context.isExternal
     local isNewTarget = context and context.isNewTarget
+    local questKey = NormalizeQuestKey and NormalizeQuestKey(journalIndex)
+
+    local shouldAutoExpand = forceExpand
+    if shouldAutoExpand == nil then
+        shouldAutoExpand = isNewTarget
+    end
+    if shouldAutoExpand == nil and questKey then
+        shouldAutoExpand = questKey ~= state.lastAutoExpandedQuestKey
+    end
+    if shouldAutoExpand == nil then
+        shouldAutoExpand = false
+    end
     if isExternal then
         LogExternalSelect(journalIndex)
         ExpandCategoriesForExternalSelect(journalIndex)
-    else
-        EnsureTrackedCategoriesExpanded(journalIndex, forceExpand, logContext)
+    elseif shouldAutoExpand then
+        local expansionContext = {
+            trigger = logContext.trigger,
+            source = logContext.source,
+            stateSource = logContext.stateSource,
+            priorityOverride = PRIORITY.tracked,
+        }
+        EnsureTrackedCategoriesExpanded(journalIndex, forceExpand, expansionContext)
     end
     if isExternal and isNewTarget then
         logContext.forceWrite = true
     end
-    AutoExpandQuestForTracking(journalIndex, forceExpand, logContext)
+    if shouldAutoExpand then
+        local questContext = {
+            trigger = logContext.trigger,
+            source = logContext.source,
+            stateSource = logContext.stateSource,
+            priorityOverride = PRIORITY.tracked,
+            forceWrite = logContext.forceWrite,
+        }
+        AutoExpandQuestForTracking(journalIndex, forceExpand, questContext)
+        if questKey then
+            state.lastAutoExpandedQuestKey = questKey
+        end
+    elseif IsDebugLoggingEnabled() then
+        DebugLog(
+            string.format(
+                "AUTO_EXPAND_SKIP quest=%s newTarget=%s forceExpand=%s",
+                tostring(questKey),
+                tostring(isNewTarget),
+                tostring(forceExpand)
+            )
+        )
+    end
     if isExternal then
         EnsureQuestRowVisible(journalIndex, { allowQueue = true })
     end
@@ -3710,6 +3762,11 @@ SetCategoryExpanded = function(categoryKey, expanded, context)
         writeOptions.manualCollapseRespected = manualCollapseRespected
     end
 
+    if context and context.priorityOverride ~= nil then
+        writeOptions = writeOptions or {}
+        writeOptions.priorityOverride = context.priorityOverride
+    end
+
     local changed = WriteCategoryState(key, expanded, stateSource, writeOptions)
     if not changed then
         return false
@@ -3773,6 +3830,11 @@ SetQuestExpanded = function(journalIndex, expanded, context)
         writeOptions = writeOptions or {}
         writeOptions.force = true
         writeOptions.allowTimestampRegression = true
+    end
+
+    if context and context.priorityOverride ~= nil then
+        writeOptions = writeOptions or {}
+        writeOptions.priorityOverride = context.priorityOverride
     end
 
     local changed = WriteQuestState(key, expanded, stateSource, writeOptions)
@@ -4074,6 +4136,9 @@ local function AcquireQuestControl(providedControl)
             RestoreBaseColor(ctrl)
         end)
         control.initialized = true
+    end
+    if QuestTrackerRows and QuestTrackerRows.ResetQuestRowObjectives then
+        QuestTrackerRows:ResetQuestRowObjectives(control)
     end
     control.rowType = "quest"
     control.poolKey = key
@@ -4471,6 +4536,11 @@ local function ConfigureLayoutHelper()
                     return QuestTrackerRows:AcquireQuestRow()
                 end
                 return nil
+            end,
+            ResetQuestRowObjectives = function(row)
+                if QuestTrackerRows and QuestTrackerRows.ResetQuestRowObjectives then
+                    return QuestTrackerRows:ResetQuestRowObjectives(row)
+                end
             end,
             DetermineQuestColorRole = DetermineQuestColorRole,
             UpdateQuestIconSlot = UpdateQuestIconSlot,

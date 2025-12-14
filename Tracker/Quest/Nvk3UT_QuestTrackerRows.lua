@@ -8,12 +8,18 @@ Rows.__index = Rows
 local MODULE_TAG = addonName .. ".QuestTrackerRows"
 
 local function clearObjectiveControls(row)
-    if not row or not row.objectiveControls then
+    if not row then
         return
     end
 
-    for index = 1, #row.objectiveControls do
-        local objectiveControl = row.objectiveControls[index]
+    local objectiveControls = row.objectiveControls
+    if not objectiveControls then
+        row.objectiveControls = {}
+        return
+    end
+
+    for index = 1, #objectiveControls do
+        local objectiveControl = objectiveControls[index]
         if objectiveControl then
             if objectiveControl.ClearAnchors then
                 objectiveControl:ClearAnchors()
@@ -27,9 +33,28 @@ local function clearObjectiveControls(row)
             if objectiveControl.label and objectiveControl.label.SetText then
                 objectiveControl.label:SetText("")
             end
+            if objectiveControl.SetText then
+                objectiveControl:SetText("")
+            end
+            objectiveControl.data = nil
         end
-        row.objectiveControls[index] = nil
+        objectiveControls[index] = nil
     end
+
+    if row.objectiveContainer then
+        if row.objectiveContainer.ClearAnchors then
+            row.objectiveContainer:ClearAnchors()
+        end
+        if row.objectiveContainer.SetHidden then
+            row.objectiveContainer:SetHidden(true)
+        end
+        if row.objectiveContainer.SetHeight then
+            row.objectiveContainer:SetHeight(0)
+        end
+    end
+
+    row.objectiveControls = {}
+    row.objectiveCount = nil
 end
 
 local function getAddon()
@@ -72,6 +97,10 @@ function Rows:Init(parentContainer, trackerState, callbacks)
     }
 
     safeDebug("%s: Init with parent %s", MODULE_TAG, tostring(parentContainer))
+end
+
+function Rows:ResetQuestRowObjectives(row)
+    clearObjectiveControls(row)
 end
 
 function Rows:Reset()
@@ -360,6 +389,8 @@ function Rows:AcquireQuestRow()
         name = row.GetName and row:GetName() or "<questRow>"
     end
 
+    self:ResetQuestRowObjectives(row)
+
     if row.ClearAnchors then
         row:ClearAnchors()
     end
@@ -423,10 +454,12 @@ function Rows:ReleaseQuestRow(row)
     row.questJournalIndex = nil
     row.questKey = nil
     row.categoryKey = nil
+    row.questId = nil
+    row.objectiveCount = nil
     row.poolKey = nil
     row.rowType = "quest"
 
-    clearObjectiveControls(row)
+    self:ResetQuestRowObjectives(row)
 
     if row.iconSlot then
         if row.iconSlot.SetTexture then

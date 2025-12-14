@@ -403,6 +403,7 @@ function Layout:LayoutQuest(quest)
     local ApplyBaseColor = self.deps.ApplyBaseColor
     local UpdateQuestIconSlot = self.deps.UpdateQuestIconSlot
     local IsQuestExpanded = self.deps.IsQuestExpanded
+    local ResetQuestRowObjectives = self.deps.ResetQuestRowObjectives
     local LayoutCondition = function(condition)
         self:LayoutCondition(condition)
     end
@@ -411,6 +412,10 @@ function Layout:LayoutQuest(quest)
     local control = AcquireQuestControl and AcquireQuestControl(providedControl)
     if not control then
         return
+    end
+
+    if ResetQuestRowObjectives then
+        ResetQuestRowObjectives(control)
     end
 
     control.data = { quest = quest }
