@@ -36,6 +36,9 @@ function Layout:Init(trackerState, deps)
     self.deps = deps or {}
 
     self.verticalPadding = deps.VERTICAL_PADDING or 0
+    self.categoryBottomPadExpanded = deps.CATEGORY_BOTTOM_PAD_EXPANDED or 0
+    self.categoryBottomPadCollapsed = deps.CATEGORY_BOTTOM_PAD_COLLAPSED or 0
+    self.bottomPixelNudge = deps.BOTTOM_PIXEL_NUDGE or 0
 
     safeDebug("%s: Init layout helper", MODULE_TAG)
 end
@@ -44,6 +47,7 @@ function Layout:ResetLayoutState()
     local state = self.state or {}
     state.orderedControls = {}
     state.lastAnchoredControl = nil
+    state.nextCategoryGap = nil
     state.categoryControls = {}
     state.questControls = {}
     state.contentWidth = 0
@@ -63,6 +67,26 @@ function Layout:GetContainerWidth()
     end
 
     return width
+end
+
+function Layout:GetCategoryBottomPadding(expanded)
+    if expanded then
+        return self.categoryBottomPadExpanded
+    end
+
+    return self.categoryBottomPadCollapsed
+end
+
+function Layout:ConsumePendingCategoryGap()
+    local state = self.state or {}
+    local gap = state.nextCategoryGap
+    state.nextCategoryGap = nil
+    return gap
+end
+
+function Layout:SetPendingCategoryGap(expanded)
+    local state = self.state or {}
+    state.nextCategoryGap = self:GetCategoryBottomPadding(expanded)
 end
 
 function Layout:ComputeRowHeight(control, indent, toggleWidth, leftPadding, rightPadding, minHeight)
@@ -216,10 +240,14 @@ function Layout:GetCategoryTotalHeight(categoryControl, rowsInCategory)
         end
     end
 
+    if headerHeight > 0 then
+        totalHeight = totalHeight + self:GetCategoryBottomPadding(categoryControl and categoryControl.isExpanded)
+    end
+
     return totalHeight, questCount
 end
 
-function Layout:AnchorControl(control, indentX)
+function Layout:AnchorControl(control, indentX, gapOverride)
     local state = self.state or {}
     indentX = indentX or 0
 
@@ -228,8 +256,12 @@ function Layout:AnchorControl(control, indentX)
     if state.lastAnchoredControl then
         local previousIndent = state.lastAnchoredControl.currentIndent or 0
         local offsetX = indentX - previousIndent
-        control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, offsetX, self.verticalPadding)
-        control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, 0, self.verticalPadding)
+        local gap = gapOverride
+        if type(gap) ~= "number" then
+            gap = self.verticalPadding
+        end
+        control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, offsetX, gap)
+        control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, 0, gap)
     else
         control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, 0)
         control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, 0, 0)
@@ -252,6 +284,7 @@ function Layout:UpdateContentSize()
 
     local currentCategoryControl = nil
     local currentCategoryRows = nil
+    local pendingCategoryGap = nil
 
     for index = 1, #state.orderedControls do
         local control = state.orderedControls[index]
@@ -273,6 +306,10 @@ function Layout:UpdateContentSize()
                         previousQuestCount or 0,
                         tostring(previousHeight)
                     )
+                end
+
+                if currentCategoryControl then
+                    pendingCategoryGap = self:GetCategoryBottomPadding(currentCategoryControl.isExpanded)
                 end
 
                 currentCategoryControl = control
@@ -332,8 +369,11 @@ function Layout:UpdateContentSize()
             end
 
             if visibleCount > 0 then
-                totalHeight = totalHeight + self.verticalPadding
+                local gap = pendingCategoryGap or self.verticalPadding
+                totalHeight = totalHeight + gap
             end
+
+            pendingCategoryGap = nil
 
             totalHeight = totalHeight + height
             visibleCount = visibleCount + 1
@@ -354,6 +394,14 @@ function Layout:UpdateContentSize()
             questCount or 0,
             tostring(height)
         )
+    end
+
+    if currentCategoryControl then
+        totalHeight = totalHeight + self:GetCategoryBottomPadding(currentCategoryControl.isExpanded)
+    end
+
+    if visibleCount > 0 then
+        totalHeight = totalHeight + self.bottomPixelNudge
     end
 
     state.contentWidth = maxWidth
@@ -523,7 +571,7 @@ function Layout:LayoutCategory(category, providedControl)
     end
     self:GetCategoryHeaderHeight(control)
     control:SetHidden(false)
-    self:AnchorControl(control, self.deps.CATEGORY_INDENT_X)
+    self:AnchorControl(control, self.deps.CATEGORY_INDENT_X, self:ConsumePendingCategoryGap())
 
     if expanded and category.quests then
         for index = 1, count do
@@ -532,6 +580,8 @@ function Layout:LayoutCategory(category, providedControl)
     elseif self.deps.SetCategoryRowsVisible then
         self.deps.SetCategoryRowsVisible(category.key, false)
     end
+
+    self:SetPendingCategoryGap(expanded)
 end
 
 function Layout:ReleaseRowControl(control)

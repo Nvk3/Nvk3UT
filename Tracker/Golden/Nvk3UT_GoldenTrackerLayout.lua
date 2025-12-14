@@ -7,7 +7,15 @@ Layout.__index = Layout
 
 local MODULE_TAG = addonName .. ".GoldenTrackerLayout"
 
-local ROW_GAP = 3
+local CATEGORY_HEADER_HEIGHT = 26
+local ENTRY_ROW_HEIGHT = 24
+local OBJECTIVE_ROW_HEIGHT = 18
+local HEADER_TO_ROWS_GAP = 3
+local ENTRY_ROW_SPACING = 3
+local CATEGORY_ENTRY_SPACING = 3
+local CATEGORY_BOTTOM_PAD_EXPANDED = 6
+local CATEGORY_BOTTOM_PAD_COLLAPSED = 6
+local BOTTOM_PIXEL_NUDGE = 3
 local Rows = Nvk3UT and Nvk3UT.GoldenTrackerRows
 
 local function safeDebug(message, ...)
@@ -161,61 +169,156 @@ function Layout.ApplyLayout(parentControl, rows)
     )
 
     local totalHeight = 0
-    local previousRow = nil
     local parentWidth = getParentWidth(parentControl)
+    local previousRow = nil
+    local previousKind = nil
+    local visibleCount = 0
+    local categoryHasHeader = false
+    local categoryRowCount = 0
+    local categoryExpanded = nil
+    local pendingGap = 0
 
-    local rowsModule = getRowsModule()
-    if rowsModule and type(rowsModule.GetCategoryRowHeight) == "function" and type(rowsModule.GetEntryRowHeight) == "function" then
-        local objectiveHeight
-        if type(rowsModule.GetObjectiveRowHeight) == "function" then
-            objectiveHeight = rowsModule.GetObjectiveRowHeight()
+    local function resolveCategoryExpanded(rowData)
+        if type(rowData) == "table" then
+            if rowData.__categoryExpanded ~= nil then
+                return rowData.__categoryExpanded == true
+            end
+
+            if rowData._nvk3utCategoryExpanded ~= nil then
+                return rowData._nvk3utCategoryExpanded == true
+            end
+
+            if rowData.categoryExpanded ~= nil then
+                return rowData.categoryExpanded == true
+            end
+
+            if rowData.expanded ~= nil then
+                return rowData.expanded == true
+            end
         end
-        safeDebug(
-            "ApplyLayout heights category=%s entry=%s objective=%s",
-            tostring(rowsModule.GetCategoryRowHeight()),
-            tostring(rowsModule.GetEntryRowHeight()),
-            tostring(objectiveHeight)
-        )
+
+        return true
+    end
+
+    local function finalizeCategory()
+        if not categoryHasHeader then
+            return
+        end
+
+        local pad
+        if categoryExpanded and categoryRowCount > 0 then
+            pad = CATEGORY_BOTTOM_PAD_EXPANDED
+        else
+            pad = CATEGORY_BOTTOM_PAD_COLLAPSED
+        end
+
+        pad = coerceHeight(pad)
+        if pad > 0 then
+            totalHeight = totalHeight + pad
+            pendingGap = math.max(pendingGap or 0, pad)
+        end
+
+        categoryHasHeader = false
+        categoryRowCount = 0
+        categoryExpanded = nil
+    end
+
+    local function resolveFallbackHeight(kind)
+        if kind == "category" then
+            return CATEGORY_HEADER_HEIGHT
+        elseif kind == "entry" then
+            return ENTRY_ROW_HEIGHT
+        elseif kind == "objective" then
+            return OBJECTIVE_ROW_HEIGHT
+        end
+
+        return 0
+    end
+
+    local function addControl(control, rowData, kind)
+        if not control then
+            return
+        end
+
+        if type(control.SetParent) == "function" then
+            control:SetParent(parentControl)
+        end
+
+        if type(control.SetHidden) == "function" then
+            control:SetHidden(false)
+        end
+
+        if type(control.ClearAnchors) == "function" then
+            control:ClearAnchors()
+        end
+
+        local gap = 0
+        if visibleCount > 0 then
+            if pendingGap and pendingGap > 0 then
+                gap = pendingGap
+            elseif previousKind == "header" and kind ~= "header" then
+                gap = HEADER_TO_ROWS_GAP
+            else
+                gap = ENTRY_ROW_SPACING
+            end
+
+            totalHeight = totalHeight + gap
+        end
+
+        if type(control.SetAnchor) == "function" then
+            if previousRow then
+                control:SetAnchor(TOPLEFT, previousRow, BOTTOMLEFT, 0, gap)
+                control:SetAnchor(TOPRIGHT, previousRow, BOTTOMRIGHT, 0, gap)
+            else
+                control:SetAnchor(TOPLEFT, parentControl, TOPLEFT, 0, 0)
+                control:SetAnchor(TOPRIGHT, parentControl, TOPRIGHT, 0, 0)
+            end
+        end
+
+        pendingGap = 0
+
+        local height = resolveRowHeight(control, rowData)
+        if height <= 0 then
+            height = resolveFallbackHeight(kind)
+        end
+
+        if control then
+            control.__height = height
+        end
+
+        applyDimensions(control, parentWidth, height)
+
+        totalHeight = totalHeight + height
+        visibleCount = visibleCount + 1
+        previousRow = control
+        previousKind = kind
+
+        if kind ~= "header" and categoryHasHeader then
+            categoryRowCount = categoryRowCount + 1
+        end
     end
 
     for index = 1, #rows do
         local row = rows[index]
         local control, rowData = resolveControl(row)
-        if control and (type(control) == "userdata" or type(control) == "table") then
-            if type(control.ClearAnchors) == "function" then
-                control:ClearAnchors()
-            end
+        local kind = resolveRowKind(control, rowData)
 
-            if type(control.SetParent) == "function" then
-                control:SetParent(parentControl)
-            end
-
-            if type(control.SetHidden) == "function" then
-                control:SetHidden(false)
-            end
-
-            if type(control.SetAnchor) == "function" then
-                if previousRow and type(previousRow.SetAnchor) == "function" then
-                    control:SetAnchor(TOPLEFT, previousRow, BOTTOMLEFT, 0, ROW_GAP)
-                else
-                    control:SetAnchor(TOPLEFT, parentControl, TOPLEFT, 0, 0)
-                end
-            end
-
-            local height = resolveRowHeight(control, rowData)
-            if control then
-                control.__height = height
-            end
-
-            applyDimensions(control, parentWidth, height)
-
-            if previousRow ~= nil then
-                totalHeight = totalHeight + ROW_GAP
-            end
-
-            totalHeight = totalHeight + height
-            previousRow = control
+        if kind == "category" then
+            finalizeCategory()
+            categoryHasHeader = true
+            categoryRowCount = 0
+            categoryExpanded = resolveCategoryExpanded(rowData)
         end
+
+        if control and (type(control) == "userdata" or type(control) == "table") then
+            addControl(control, rowData, kind or "row")
+        end
+    end
+
+    finalizeCategory()
+
+    if visibleCount > 0 then
+        totalHeight = totalHeight + BOTTOM_PIXEL_NUDGE
     end
 
     safeDebug("ApplyLayout rows=%d height=%d", #rows, totalHeight)
