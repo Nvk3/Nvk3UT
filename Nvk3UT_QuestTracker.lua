@@ -253,6 +253,7 @@ state = {
     isRebuildInProgress = false,
     questModelSubscription = nil,
     rawSnapshot = nil,
+    hasRenderedNonEmptySnapshot = false,
 }
 
 local PRIORITY = {
@@ -4220,6 +4221,11 @@ local function CountSnapshotEntries(snapshot)
     return categories, quests
 end
 
+local function IsEmptySnapshot(snapshot)
+    local categories, quests = CountSnapshotEntries(snapshot)
+    return categories == 0 and quests == 0
+end
+
 local function IsSnapshotValid(candidate)
     if type(candidate) ~= "table" then
         return false
@@ -4339,6 +4345,16 @@ local function OnQuestModelSnapshotUpdated(snapshot, context)
     end
 
     local rawSnapshot = snapshot or EmptySnapshot()
+    state.rawSnapshot = rawSnapshot
+
+    if IsEmptySnapshot(rawSnapshot) and not state.hasRenderedNonEmptySnapshot then
+        DebugLog("Init snapshot empty -> skip initial render, waiting for model update")
+        return
+    elseif IsEmptySnapshot(rawSnapshot) then
+        DebugLog("Ignore empty snapshot after having content")
+        return
+    end
+
     local filteredSnapshot = BuildFilteredSnapshot(rawSnapshot)
 
     if not IsSnapshotValid(filteredSnapshot) then
@@ -4352,6 +4368,10 @@ local function OnQuestModelSnapshotUpdated(snapshot, context)
     end
 
     RelayoutFromCategoryIndex(1)
+
+    if not IsEmptySnapshot(filteredSnapshot) then
+        state.hasRenderedNonEmptySnapshot = true
+    end
 
     if IsDebugLoggingEnabled() then
         local newCategories = 0
@@ -4531,10 +4551,14 @@ function QuestTracker.Init(parentControl, opts)
     local snapshot = state.snapshot
         or (questModel and questModel.GetSnapshot and questModel.GetSnapshot())
 
-    QuestTracker.Refresh(snapshot, {
-        trigger = "init",
-        source = "QuestTracker:Init",
-    })
+    if IsEmptySnapshot(snapshot) then
+        DebugLog("Init snapshot empty -> skip initial render, waiting for model update")
+    else
+        QuestTracker.Refresh(snapshot, {
+            trigger = "init",
+            source = "QuestTracker:Init",
+        })
+    end
     AdoptTrackedQuestOnInit()
 end
 
@@ -4630,6 +4654,7 @@ function QuestTracker.Shutdown()
     state.isRebuildInProgress = false
     state.questModelSubscription = nil
     state.rawSnapshot = nil
+    state.hasRenderedNonEmptySnapshot = false
     NotifyHostContentChanged()
 end
 
