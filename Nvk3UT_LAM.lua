@@ -1041,12 +1041,14 @@ local function applyQuestTheme()
 end
 
 local function refreshQuestTracker()
-    if Nvk3UT and Nvk3UT.QuestTracker then
-        if Nvk3UT.QuestTracker.RequestRefresh then
-            Nvk3UT.QuestTracker.RequestRefresh()
-        elseif Nvk3UT.QuestTracker.Refresh then
-            Nvk3UT.QuestTracker.Refresh()
-        end
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and runtime.QueueDirty then
+        runtime:QueueDirty("quest")
+        return
+    end
+
+    if Nvk3UT and Nvk3UT.QuestTracker and Nvk3UT.QuestTracker.RequestRefresh then
+        Nvk3UT.QuestTracker.RequestRefresh()
     end
 end
 

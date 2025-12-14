@@ -253,7 +253,6 @@ state = {
     isRebuildInProgress = false,
     questModelSubscription = nil,
     rawSnapshot = nil,
-    hasRenderedNonEmptySnapshot = false,
 }
 
 local PRIORITY = {
@@ -2932,7 +2931,11 @@ local function RequestRefreshInternal()
 
     local function execute()
         state.pendingRefresh = false
-        QuestTracker.Refresh()
+        local snapshot = state.rawSnapshot or state.snapshot
+        if not snapshot then
+            return
+        end
+        QuestTracker.Refresh(snapshot)
     end
 
     if zo_callLater then
@@ -3822,7 +3825,10 @@ local function ToggleCategoryExpansion(categoryKey, expanded, context)
 
     local changed = SetCategoryExpanded(categoryKey, targetExpanded, toggleContext)
     if changed then
-        QuestTracker.Refresh()
+        local snapshot = state.rawSnapshot or state.snapshot
+        if snapshot then
+            QuestTracker.Refresh(snapshot, toggleContext)
+        end
         ScheduleToggleFollowup("questCategoryToggle")
     end
 
@@ -3853,7 +3859,10 @@ local function ToggleQuestExpansion(journalIndex, context)
 
     local changed = SetQuestExpanded(journalIndex, not expanded, toggleContext)
     if changed then
-        QuestTracker.Refresh()
+        local snapshot = state.rawSnapshot or state.snapshot
+        if snapshot then
+            QuestTracker.Refresh(snapshot, toggleContext)
+        end
         ScheduleToggleFollowup("questEntryToggle")
     end
 
@@ -4221,11 +4230,6 @@ local function CountSnapshotEntries(snapshot)
     return categories, quests
 end
 
-local function IsEmptySnapshot(snapshot)
-    local categories, quests = CountSnapshotEntries(snapshot)
-    return categories == 0 and quests == 0
-end
-
 local function IsSnapshotValid(candidate)
     if type(candidate) ~= "table" then
         return false
@@ -4331,6 +4335,10 @@ end
 
 -- Apply the latest quest snapshot from the event-driven model and update the layout.
 local function OnQuestModelSnapshotUpdated(snapshot, context)
+    if not snapshot then
+        return
+    end
+
     local previousCategories = 0
     local previousQuests = 0
     local previousHeight = state.contentHeight or 0
@@ -4344,21 +4352,12 @@ local function OnQuestModelSnapshotUpdated(snapshot, context)
         end
     end
 
-    local rawSnapshot = snapshot or EmptySnapshot()
-    state.rawSnapshot = rawSnapshot
+    state.rawSnapshot = snapshot
 
-    if IsEmptySnapshot(rawSnapshot) and not state.hasRenderedNonEmptySnapshot then
-        DebugLog("Init snapshot empty -> skip initial render, waiting for model update")
-        return
-    elseif IsEmptySnapshot(rawSnapshot) then
-        DebugLog("Ignore empty snapshot after having content")
-        return
-    end
-
-    local filteredSnapshot = BuildFilteredSnapshot(rawSnapshot)
+    local filteredSnapshot = BuildFilteredSnapshot(snapshot)
 
     if not IsSnapshotValid(filteredSnapshot) then
-        filteredSnapshot = rawSnapshot
+        filteredSnapshot = snapshot
     end
 
     ApplySnapshot(filteredSnapshot, context)
@@ -4368,10 +4367,6 @@ local function OnQuestModelSnapshotUpdated(snapshot, context)
     end
 
     RelayoutFromCategoryIndex(1)
-
-    if not IsEmptySnapshot(filteredSnapshot) then
-        state.hasRenderedNonEmptySnapshot = true
-    end
 
     if IsDebugLoggingEnabled() then
         local newCategories = 0
@@ -4546,19 +4541,6 @@ function QuestTracker.Init(parentControl, opts)
 
     state.isInitialized = true
     RefreshVisibility()
-
-    local questModel = Nvk3UT and Nvk3UT.QuestModel
-    local snapshot = state.snapshot
-        or (questModel and questModel.GetSnapshot and questModel.GetSnapshot())
-
-    if IsEmptySnapshot(snapshot) then
-        DebugLog("Init snapshot empty -> skip initial render, waiting for model update")
-    else
-        QuestTracker.Refresh(snapshot, {
-            trigger = "init",
-            source = "QuestTracker:Init",
-        })
-    end
     AdoptTrackedQuestOnInit()
 end
 
@@ -4596,13 +4578,15 @@ function QuestTracker.MarkDirty(reason)
 end
 
 function QuestTracker.Refresh(viewModel, context)
-    local snapshot = viewModel or state.rawSnapshot or state.snapshot or EmptySnapshot()
+    if not viewModel then
+        return
+    end
     local refreshContext = context or {
         trigger = "refresh",
         source = "QuestTracker.Refresh",
     }
 
-    OnQuestModelSnapshotUpdated(snapshot, refreshContext)
+    OnQuestModelSnapshotUpdated(viewModel, refreshContext)
 end
 
 function QuestTracker.Shutdown()
@@ -4654,7 +4638,6 @@ function QuestTracker.Shutdown()
     state.isRebuildInProgress = false
     state.questModelSubscription = nil
     state.rawSnapshot = nil
-    state.hasRenderedNonEmptySnapshot = false
     NotifyHostContentChanged()
 end
 
@@ -4706,12 +4689,17 @@ function QuestTracker.RequestRefresh()
 end
 
 function QuestTracker.GetContentSize()
-    UpdateContentSize()
-    return state.contentWidth or 0, state.contentHeight or 0
+    local layoutState = QuestTrackerLayout and QuestTrackerLayout.state
+    local width = (layoutState and layoutState.contentWidth) or state.contentWidth or 0
+    local height = (layoutState and layoutState.contentHeight) or state.contentHeight or 0
+    return width or 0, height or 0
 end
 
 function QuestTracker.GetHeight()
-    UpdateContentSize()
+    local layoutState = QuestTrackerLayout and QuestTrackerLayout.state
+    if layoutState and layoutState.contentHeight then
+        return layoutState.contentHeight
+    end
     return state.contentHeight or 0
 end
 

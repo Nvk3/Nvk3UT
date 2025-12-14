@@ -5298,10 +5298,11 @@ function TrackerHost.ApplyWindowBars()
 end
 
 function TrackerHost.Refresh()
-    if Nvk3UT.QuestTracker then
-        if Nvk3UT.QuestTracker.Refresh then
-            pcall(Nvk3UT.QuestTracker.Refresh)
-        end
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and runtime.QueueDirty then
+        pcall(runtime.QueueDirty, runtime, "quest")
+    elseif Nvk3UT.QuestTracker and Nvk3UT.QuestTracker.RequestRefresh then
+        pcall(Nvk3UT.QuestTracker.RequestRefresh)
     end
 
     if Nvk3UT.AchievementTracker then
