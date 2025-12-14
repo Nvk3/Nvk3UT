@@ -332,6 +332,27 @@ function Controller:IsDirty()
     return state.isDirty == true
 end
 
+local function EnsureSnapshotShape(candidate)
+    local snapshot = candidate
+    if type(snapshot) ~= "table" then
+        snapshot = EmptySnapshot()
+    end
+
+    if type(snapshot.categories) ~= "table" then
+        snapshot.categories = { ordered = {}, byKey = {} }
+    end
+
+    if type(snapshot.categories.ordered) ~= "table" then
+        snapshot.categories.ordered = {}
+    end
+
+    if type(snapshot.categories.byKey) ~= "table" then
+        snapshot.categories.byKey = {}
+    end
+
+    return snapshot
+end
+
 function Controller:BuildViewModel()
     local root = getRoot()
     local QuestModel = root and root.QuestModel
@@ -342,6 +363,7 @@ function Controller:BuildViewModel()
     end
 
     local filtered = BuildFilteredSnapshot(snapshot)
+    filtered = EnsureSnapshotShape(filtered)
     if not IsSnapshotValid(filtered) then
         filtered = EmptySnapshot()
     end
@@ -356,8 +378,7 @@ function Controller:BuildViewModel()
     end
 
     dbg(
-        "BuildViewModel return: vmNil=%s cats=%d quests=%d keys=%s",
-        tostring(filtered == nil),
+        "BuildViewModel return: orderedCats=%d quests=%d keys=%s",
         categories,
         quests,
         table.concat(topLevelKeys, ",")
