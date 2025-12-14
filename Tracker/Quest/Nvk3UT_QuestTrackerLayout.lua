@@ -48,6 +48,7 @@ function Layout:ResetLayoutState()
     state.questControls = {}
     state.contentWidth = 0
     state.contentHeight = 0
+    self.rowsByCategory = nil
 end
 
 function Layout:GetContainerWidth()
@@ -241,6 +242,9 @@ end
 
 function Layout:UpdateContentSize()
     local state = self.state or {}
+    local rowsByCategory = self.rowsByCategory
+        or (self.deps.GetActiveRowsByCategory and self.deps.GetActiveRowsByCategory())
+        or {}
 
     local maxWidth = 0
     local totalHeight = 0
@@ -256,6 +260,10 @@ function Layout:UpdateContentSize()
             local height = 0
 
             if rowType == "category" then
+                local categoryKey = control.categoryKey or (control.data and control.data.categoryKey)
+                if categoryKey and control.isExpanded == false and self.deps.SetCategoryRowsVisible then
+                    self.deps.SetCategoryRowsVisible(categoryKey, false)
+                end
                 if currentCategoryControl and self.deps.IsDebugLoggingEnabled and self.deps.IsDebugLoggingEnabled() then
                     local previousHeight, previousQuestCount = self:GetCategoryTotalHeight(currentCategoryControl, currentCategoryRows)
                     safeDebug(
@@ -268,17 +276,56 @@ function Layout:UpdateContentSize()
                 end
 
                 currentCategoryControl = control
-                currentCategoryRows = {}
+                if categoryKey and rowsByCategory then
+                    currentCategoryRows = rowsByCategory[categoryKey] or {}
+                else
+                    currentCategoryRows = {}
+                end
+                if control.isExpanded == false then
+                    currentCategoryRows = {}
+                end
                 height = self:GetCategoryHeaderHeight(control)
             elseif rowType == "quest" then
-                height = self:GetQuestRowContentHeight(control, control.data)
-                if currentCategoryRows then
-                    table.insert(currentCategoryRows, control)
+                if currentCategoryControl and currentCategoryControl.isExpanded == false then
+                    height = 0
+                    if self.deps.SetCategoryRowsVisible then
+                        self.deps.SetCategoryRowsVisible(
+                            currentCategoryControl.categoryKey or (currentCategoryControl.data and currentCategoryControl.data.categoryKey),
+                            false
+                        )
+                    end
+                else
+                    height = self:GetQuestRowContentHeight(control, control.data)
+                    if currentCategoryRows then
+                        local alreadyListed = false
+                        for index = 1, #currentCategoryRows do
+                            if currentCategoryRows[index] == control then
+                                alreadyListed = true
+                                break
+                            end
+                        end
+                        if not alreadyListed then
+                            table.insert(currentCategoryRows, control)
+                        end
+                    end
                 end
             elseif rowType == "condition" then
-                height = self:GetConditionHeight(control, control.data and control.data.condition)
-                if currentCategoryRows then
-                    table.insert(currentCategoryRows, control)
+                if currentCategoryControl and currentCategoryControl.isExpanded == false then
+                    height = 0
+                else
+                    height = self:GetConditionHeight(control, control.data and control.data.condition)
+                    if currentCategoryRows then
+                        local alreadyListed = false
+                        for index = 1, #currentCategoryRows do
+                            if currentCategoryRows[index] == control then
+                                alreadyListed = true
+                                break
+                            end
+                        end
+                        if not alreadyListed then
+                            table.insert(currentCategoryRows, control)
+                        end
+                    end
                 end
             else
                 height = control.GetHeight and control:GetHeight() or 0
@@ -372,6 +419,10 @@ function Layout:LayoutQuest(quest)
     control.categoryKey = quest and quest.categoryKey
     if control.label then
         control.label:SetText(quest and quest.name or "")
+    end
+
+    if self.deps.RegisterQuestRow then
+        self.deps.RegisterQuestRow(control, control.categoryKey)
     end
 
     if DetermineQuestColorRole and GetQuestTrackerColor and ApplyBaseColor then
@@ -468,6 +519,8 @@ function Layout:LayoutCategory(category, providedControl)
         for index = 1, count do
             self:LayoutQuest(category.quests[index])
         end
+    elseif self.deps.SetCategoryRowsVisible then
+        self.deps.SetCategoryRowsVisible(category.key, false)
     end
 end
 
@@ -609,10 +662,12 @@ function Layout:RelayoutFromCategoryIndex(startCategoryIndex)
     end
 end
 
-function Layout:ApplyLayout(parentContainer, categoryControls, rowControls)
+function Layout:ApplyLayout(parentContainer, categoryControls, rowControls, rowsByCategory)
     if parentContainer and self.state then
         self.state.container = parentContainer
     end
+
+    self.rowsByCategory = rowsByCategory
 
     if categoryControls and type(categoryControls) == "table" then
         safeDebug("%s: ApplyLayout using provided controls (%d categories)", MODULE_TAG, #categoryControls)

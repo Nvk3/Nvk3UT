@@ -4370,7 +4370,23 @@ local function OnQuestModelSnapshotUpdated(snapshot, context)
         return
     end
 
-    RelayoutFromCategoryIndex(1)
+    local categoryControls
+    local rowControls
+    local rowsByCategory
+
+    if QuestTrackerRows and QuestTrackerRows.BuildOrRebuildRows then
+        rowsByCategory = QuestTrackerRows:BuildOrRebuildRows(state.snapshot)
+        if QuestTrackerRows.GetCategoryControls then
+            categoryControls = QuestTrackerRows:GetCategoryControls()
+        end
+        if QuestTrackerRows.GetRowControls then
+            rowControls = QuestTrackerRows:GetRowControls()
+        end
+    end
+
+    if QuestTrackerLayout and QuestTrackerLayout.ApplyLayout then
+        QuestTrackerLayout:ApplyLayout(state.container, categoryControls, rowControls, rowsByCategory)
+    end
 
     if IsDebugLoggingEnabled() then
         local newCategories = 0
@@ -4466,6 +4482,22 @@ local function ConfigureLayoutHelper()
             UpdateCategoryToggle = UpdateCategoryToggle,
             AcquireCategoryControl = AcquireCategoryControl,
             NormalizeCategoryKey = NormalizeCategoryKey,
+            SetCategoryRowsVisible = function(categoryKey, visible)
+                if QuestTrackerRows and QuestTrackerRows.SetCategoryRowsVisible then
+                    return QuestTrackerRows:SetCategoryRowsVisible(categoryKey, visible)
+                end
+            end,
+            RegisterQuestRow = function(row, categoryKey)
+                if QuestTrackerRows and QuestTrackerRows.RegisterQuestRow then
+                    QuestTrackerRows:RegisterQuestRow(row, categoryKey)
+                end
+            end,
+            GetActiveRowsByCategory = function()
+                if QuestTrackerRows and QuestTrackerRows.GetActiveRowsByCategory then
+                    return QuestTrackerRows:GetActiveRowsByCategory()
+                end
+                return nil
+            end,
             ReleaseAll = ReleaseAll,
             ApplyActiveQuestFromSaved = ApplyActiveQuestFromSaved,
             EnsurePools = EnsurePools,

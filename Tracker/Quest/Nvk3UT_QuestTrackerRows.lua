@@ -7,6 +7,31 @@ Rows.__index = Rows
 
 local MODULE_TAG = addonName .. ".QuestTrackerRows"
 
+local function clearObjectiveControls(row)
+    if not row or not row.objectiveControls then
+        return
+    end
+
+    for index = 1, #row.objectiveControls do
+        local objectiveControl = row.objectiveControls[index]
+        if objectiveControl then
+            if objectiveControl.ClearAnchors then
+                objectiveControl:ClearAnchors()
+            end
+            if objectiveControl.SetParent then
+                objectiveControl:SetParent(row)
+            end
+            if objectiveControl.SetHidden then
+                objectiveControl:SetHidden(true)
+            end
+            if objectiveControl.label and objectiveControl.label.SetText then
+                objectiveControl.label:SetText("")
+            end
+        end
+        row.objectiveControls[index] = nil
+    end
+end
+
 local function getAddon()
     return rawget(_G, addonName)
 end
@@ -36,6 +61,7 @@ function Rows:Init(parentContainer, trackerState, callbacks)
     self.state = trackerState
     self.callbacks = callbacks or {}
     self.rows = (trackerState and trackerState.orderedControls) or {}
+    self.activeRowsByCategory = {}
     self.categoryPool = {
         freeCategories = {},
         activeCategories = {},
@@ -51,6 +77,7 @@ end
 function Rows:Reset()
     if not self.state then
         self.rows = {}
+        self.activeRowsByCategory = {}
         return self.rows
     end
 
@@ -67,6 +94,7 @@ function Rows:Reset()
 
     self.rows = self.state.orderedControls or {}
     self.viewModel = nil
+    self.activeRowsByCategory = {}
 
     self:ReleaseAllRows()
     self:ReleaseAllCategories()
@@ -79,7 +107,12 @@ end
 function Rows:BuildOrRebuildRows(viewModel)
     self.viewModel = viewModel
 
+    if type(self.callbacks.ResetLayoutState) == "function" then
+        self.callbacks.ResetLayoutState()
+    end
+
     self:ReleaseAllRows()
+    self.activeRowsByCategory = {}
 
     -- Reuse existing pooled categories across rebuilds. If we do not have a view model
     -- or it is empty, release anything active and exit early.
@@ -145,6 +178,52 @@ function Rows:GetCategoryControls()
         end
     end
     return categoryControls
+end
+
+function Rows:RegisterQuestRow(row, categoryKey)
+    if not row then
+        return
+    end
+
+    categoryKey = categoryKey or row.categoryKey
+    if not categoryKey then
+        return
+    end
+
+    self.activeRowsByCategory = self.activeRowsByCategory or {}
+
+    if row.categoryKey and row.categoryKey ~= categoryKey then
+        local previous = self.activeRowsByCategory[row.categoryKey]
+        if previous then
+            for index = #previous, 1, -1 do
+                if previous[index] == row then
+                    table.remove(previous, index)
+                end
+            end
+            if #previous == 0 then
+                self.activeRowsByCategory[row.categoryKey] = nil
+            end
+        end
+    end
+
+    row.categoryKey = categoryKey
+    local bucket = self.activeRowsByCategory[categoryKey]
+    if not bucket then
+        bucket = {}
+        self.activeRowsByCategory[categoryKey] = bucket
+    end
+
+    for index = 1, #bucket do
+        if bucket[index] == row then
+            return
+        end
+    end
+
+    bucket[#bucket + 1] = row
+end
+
+function Rows:GetActiveRowsByCategory()
+    return self.activeRowsByCategory or {}
 end
 
 function Rows:AcquireCategory()
@@ -288,6 +367,7 @@ function Rows:AcquireQuestRow()
         row:SetHidden(false)
     end
 
+    row.rowType = "quest"
     row.objectiveControls = row.objectiveControls or {}
 
     table.insert(self.questPool.activeRows, row)
@@ -305,6 +385,21 @@ end
 function Rows:ReleaseQuestRow(row)
     if not (self.questPool and row) then
         return
+    end
+
+    if self.activeRowsByCategory then
+        local categoryKey = row.categoryKey
+        local bucket = categoryKey and self.activeRowsByCategory[categoryKey]
+        if bucket then
+            for index = #bucket, 1, -1 do
+                if bucket[index] == row then
+                    table.remove(bucket, index)
+                end
+            end
+            if #bucket == 0 then
+                self.activeRowsByCategory[categoryKey] = nil
+            end
+        end
     end
 
     for index, active in ipairs(self.questPool.activeRows) do
@@ -331,26 +426,7 @@ function Rows:ReleaseQuestRow(row)
     row.poolKey = nil
     row.rowType = "quest"
 
-    if row.objectiveControls then
-        for index = 1, #row.objectiveControls do
-            local objectiveControl = row.objectiveControls[index]
-            if objectiveControl then
-                if objectiveControl.ClearAnchors then
-                    objectiveControl:ClearAnchors()
-                end
-                if objectiveControl.SetParent then
-                    objectiveControl:SetParent(self.parent)
-                end
-                if objectiveControl.SetHidden then
-                    objectiveControl:SetHidden(true)
-                end
-                if objectiveControl.label and objectiveControl.label.SetText then
-                    objectiveControl.label:SetText("")
-                end
-            end
-            row.objectiveControls[index] = nil
-        end
-    end
+    clearObjectiveControls(row)
 
     if row.iconSlot then
         if row.iconSlot.SetTexture then
@@ -380,6 +456,46 @@ function Rows:ReleaseAllRows()
     while #self.questPool.activeRows > 0 do
         local row = table.remove(self.questPool.activeRows)
         self:ReleaseQuestRow(row)
+    end
+end
+
+function Rows:SetCategoryRowsVisible(categoryKey, visible)
+    if not categoryKey then
+        return
+    end
+
+    local rowsByCategory = self.activeRowsByCategory or {}
+    local rows = rowsByCategory[categoryKey]
+    if not rows or #rows == 0 then
+        return
+    end
+
+    for index = 1, #rows do
+        local row = rows[index]
+        if row then
+            if row.SetHidden then
+                row:SetHidden(not visible)
+            end
+            if not visible and row.ClearAnchors then
+                row:ClearAnchors()
+            end
+            if not visible then
+                clearObjectiveControls(row)
+            end
+            if not visible and row.objectiveControls then
+                for objectiveIndex = 1, #row.objectiveControls do
+                    local objectiveControl = row.objectiveControls[objectiveIndex]
+                    if objectiveControl then
+                        if objectiveControl.SetHidden then
+                            objectiveControl:SetHidden(true)
+                        end
+                        if objectiveControl.ClearAnchors then
+                            objectiveControl:ClearAnchors()
+                        end
+                    end
+                end
+            end
+        end
     end
 end
 
