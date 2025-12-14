@@ -120,6 +120,10 @@ local function ApplyBaseColor(control, r, g, b, a)
     end
 end
 
+local function DetermineMouseEnabled(rowType)
+    return rowType == "category" or rowType == "achievement"
+end
+
 local function CountTableEntries(tbl)
     if type(tbl) ~= "table" then
         return 0
@@ -206,9 +210,6 @@ function Rows:ResetControl(control)
     end
     if control.SetAlpha then
         control:SetAlpha(1)
-    end
-    if control.SetMouseEnabled then
-        control:SetMouseEnabled(true)
     end
     control.data = nil
     control.currentIndent = nil
@@ -319,6 +320,29 @@ function Rows:ApplyFonts(control, rowType)
     elseif rowType == "objective" then
         ApplyFont(control.label, self.fonts.objective)
     end
+end
+
+function Rows:SetRowMousePolicy(control, rowType)
+    if not control then
+        return
+    end
+
+    local mouseEnabled = DetermineMouseEnabled(rowType)
+
+    if control.SetMouseEnabled then
+        control:SetMouseEnabled(mouseEnabled)
+    end
+
+    local label = control.label
+    if label and label.SetMouseEnabled then
+        label:SetMouseEnabled(mouseEnabled)
+    end
+
+    if control.iconSlot and control.iconSlot.SetMouseEnabled then
+        control.iconSlot:SetMouseEnabled(mouseEnabled)
+    end
+
+    return mouseEnabled
 end
 
 function Rows:CreateCategoryRow(rowKey)
@@ -543,8 +567,12 @@ function Rows:AcquireRow(rowKey, rowType, parent)
             control:SetParent(parent)
         end
         self:ApplyFonts(control, rowType)
+        local mouseEnabled = self:SetRowMousePolicy(control, rowType)
         self.activeControlsByKey[rowKey] = control
         RegisterAcquisitionStats(self, rowType, wasCreated)
+        if wasCreated and IsDebugLoggingEnabled() then
+            DebugLog(string.format("Created rowType=%s mouse=%s", tostring(rowType), tostring(mouseEnabled)))
+        end
         return control
     end
 
