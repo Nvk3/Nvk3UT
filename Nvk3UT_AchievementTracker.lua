@@ -166,6 +166,19 @@ local state = {
     lastHeight = 0,
 }
 
+local function DebugLogIfEnabled(fmt, ...)
+    if not IsDebugLoggingEnabled() then
+        return
+    end
+
+    local ok, message = pcall(string.format, fmt, ...)
+    if not ok then
+        message = tostring(fmt)
+    end
+
+    DebugLog(message)
+end
+
 local function NormalizeMetric(value)
     local numeric = tonumber(value)
     if not numeric then
@@ -1147,6 +1160,58 @@ local function SyncContentSizeFromRows()
     state.contentWidth, state.contentHeight, state.lastHeight = AchievementTrackerRows.GetContentSize()
 end
 
+local function ApplyContentHeight(height)
+    local normalizedHeight = NormalizeMetric(height)
+    state.lastHeight = normalizedHeight
+    state.contentHeight = height or 0
+
+    if state.container and state.container.SetHeight then
+        state.container:SetHeight(normalizedHeight)
+    end
+
+    if state.control and state.control.SetHeight then
+        state.control:SetHeight(normalizedHeight)
+    end
+end
+
+local function ComputeSnapshotCounts(snapshot)
+    local counts = {
+        favorites = 0,
+        recent = 0,
+        todo = 0,
+        complete = 0,
+        incomplete = 0,
+    }
+
+    local achievements = (snapshot and snapshot.achievements) or {}
+    local todoLookup = BuildTodoLookup()
+
+    for index = 1, #achievements do
+        local achievement = achievements[index]
+        if achievement and achievement.id then
+            if achievement.flags and achievement.flags.isComplete then
+                counts.complete = counts.complete + 1
+            else
+                counts.incomplete = counts.incomplete + 1
+            end
+
+            if IsFavoriteAchievement(achievement.id) then
+                counts.favorites = counts.favorites + 1
+            end
+
+            if IsRecentAchievement(achievement.id) then
+                counts.recent = counts.recent + 1
+            end
+
+            if todoLookup and todoLookup[achievement.id] then
+                counts.todo = counts.todo + 1
+            end
+        end
+    end
+
+    return counts
+end
+
 local function IsCategoryExpanded()
     local achievementState = GetAchievementState()
     if achievementState and achievementState.IsGroupExpanded then
@@ -1350,6 +1415,7 @@ local function Rebuild()
     end
 
     state.contentWidth, state.contentHeight, state.lastHeight = AchievementTrackerRows.GetContentSize()
+    ApplyContentHeight(state.contentHeight)
     NotifyHostContentChanged()
 end
 
@@ -1442,7 +1508,29 @@ function AchievementTracker.Refresh()
         state.snapshot = Nvk3UT.AchievementModel.GetViewData() or state.snapshot
     end
 
+    local counts = ComputeSnapshotCounts(state.snapshot)
+    DebugLogIfEnabled(
+        "Achievement.Refresh: favorites=%d recent=%d todo=%d complete=%d incomplete=%d",
+        counts.favorites,
+        counts.recent,
+        counts.todo,
+        counts.complete,
+        counts.incomplete
+    )
+
     Rebuild()
+
+    SyncContentSizeFromRows()
+
+    local rowsBuilt = 0
+    if AchievementTrackerRows and AchievementTrackerRows.GetOrderedControls then
+        local orderedControls = AchievementTrackerRows.GetOrderedControls()
+        if type(orderedControls) == "table" then
+            rowsBuilt = #orderedControls
+        end
+    end
+
+    DebugLogIfEnabled("Achievement.Refresh: rowsBuilt=%d height=%d", rowsBuilt, state.lastHeight or 0)
 end
 
 function AchievementTracker.Shutdown()

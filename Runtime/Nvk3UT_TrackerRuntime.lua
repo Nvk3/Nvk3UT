@@ -15,6 +15,7 @@ Runtime._dirty.quest = Runtime._dirty.quest == true
 Runtime._dirty.endeavor = Runtime._dirty.endeavor == true
 Runtime._dirty.achievement = Runtime._dirty.achievement == true
 Runtime._dirty.layout = Runtime._dirty.layout == true
+Runtime._dirtyReasons = Runtime._dirtyReasons or {}
 Runtime._queuedChannelsForLog = Runtime._queuedChannelsForLog or {}
 Runtime._isProcessingFrame = Runtime._isProcessingFrame == true
 Runtime._lastProcessFrameMs = Runtime._lastProcessFrameMs or nil
@@ -153,6 +154,16 @@ local function ensureQueuedLogTable()
     end
 
     return queued
+end
+
+local function ensureDirtyReasons()
+    local reasons = Runtime._dirtyReasons
+    if type(reasons) ~= "table" then
+        reasons = {}
+        Runtime._dirtyReasons = reasons
+    end
+
+    return reasons
 end
 
 local function ensureGeometryState()
@@ -305,6 +316,45 @@ local function updateTrackerGeometry(sectionId, trackerKey, tracker)
     end
 
     return changed
+end
+
+local function getTrackerHeight(trackerKey, tracker)
+    local resolvedTracker = tracker
+    if type(resolvedTracker) ~= "table" then
+        resolvedTracker = rawget(Addon, trackerKey)
+    end
+
+    if type(resolvedTracker) ~= "table" then
+        return 0
+    end
+
+    local heightFn, mode = tryTrackerMethod(
+        resolvedTracker,
+        "GetHeight",
+        "GetContentHeight",
+        "GetSize",
+        "GetContentSize"
+    )
+
+    if type(heightFn) ~= "function" then
+        return 0
+    end
+
+    local ok, valueA, valueB = pcall(heightFn, resolvedTracker)
+    if not ok then
+        return 0
+    end
+
+    if mode == "GetHeight" or mode == "GetContentHeight" then
+        return normalizeLength(valueA)
+    end
+
+    local height = valueB
+    if height == nil then
+        height = valueA
+    end
+
+    return normalizeLength(height)
 end
 
 local function getFrameTimeMs()
@@ -866,9 +916,16 @@ end
 function Runtime:QueueDirty(channel, opts)
     local dirty = ensureDirtyState()
     local queuedLog = ensureQueuedLogTable()
+    local reasons = ensureDirtyReasons()
 
     local normalized = type(channel) == "string" and channel or "all"
     local applyAll = normalized == "all"
+    local reason = nil
+    if type(opts) == "string" then
+        reason = opts
+    elseif type(opts) == "table" then
+        reason = opts.reason or opts[1]
+    end
 
     if normalized == "golden" then
         if not self.goldenDirty then
@@ -900,6 +957,9 @@ function Runtime:QueueDirty(channel, opts)
             if not dirty[key] then
                 dirty[key] = true
                 queuedLog[key] = true
+                if reason then
+                    reasons[key] = reason
+                end
                 if key == "endeavor" then
                     debug("Runtime.QueueDirty: endeavor")
                 elseif key == "achievement" then
@@ -911,6 +971,9 @@ function Runtime:QueueDirty(channel, opts)
         if not dirty[normalized] then
             dirty[normalized] = true
             queuedLog[normalized] = true
+            if reason then
+                reasons[normalized] = reason
+            end
             if normalized == "endeavor" then
                 debug("Runtime.QueueDirty: endeavor")
             elseif normalized == "achievement" then
@@ -1037,6 +1100,10 @@ function Runtime:ProcessFrame(nowMs)
         local interactivityDirty = self._interactivityDirty == true
         self._interactivityDirty = false
 
+        local dirtyReasons = ensureDirtyReasons()
+        local achievementDirtyReason = dirtyReasons.achievement
+        dirtyReasons.achievement = nil
+
         local questViewModel, questVmBuilt = nil, false
         if questDirty then
             debug("ProcessFrame: questDirty -> refresh")
@@ -1142,6 +1209,17 @@ function Runtime:ProcessFrame(nowMs)
         local achievementGeometryChanged = false
         local refreshedAchievement = false
         if processAchievement then
+            local tracker = rawget(Addon, "AchievementTracker")
+            local hasTracker = type(tracker) == "table"
+            local hasContainer = hasTracker and (tracker.GetContentSize ~= nil or tracker.GetContentHeight ~= nil or tracker.GetHeight ~= nil)
+            local hasVm = achievementViewModel ~= nil
+            debug(
+                "Runtime.Refresh.Achievement: start (dirty reason=%s, hasTracker=%s, hasContainer=%s, hasModelSnapshot/VM=%s)",
+                tostring(achievementDirtyReason),
+                tostring(hasTracker),
+                tostring(hasContainer),
+                tostring(hasVm)
+            )
             refreshedAchievement = refreshAchievementTracker(achievementViewModel)
             if refreshedAchievement then
                 if not achievementVmBuilt then
@@ -1153,6 +1231,13 @@ function Runtime:ProcessFrame(nowMs)
                     end
                 end
             end
+
+            local achievementHeight = getTrackerHeight("AchievementTracker", tracker)
+            debug(
+                "Runtime.Refresh.Achievement: done (height=%s, geomChanged=%s)",
+                tostring(achievementHeight),
+                tostring(achievementGeometryChanged)
+            )
         end
 
         local goldenGeometryChanged = false

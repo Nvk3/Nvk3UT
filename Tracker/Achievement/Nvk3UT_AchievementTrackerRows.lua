@@ -57,6 +57,23 @@ local state = {
 
 local debugLogOnce = {}
 
+local function DebugLog(fmt, ...)
+    if not IsDebugLoggingEnabled() then
+        return
+    end
+
+    local ok, message = pcall(string.format, fmt, ...)
+    if not ok then
+        message = tostring(fmt)
+    end
+
+    if d then
+        d(string.format("[%s] %s", MODULE_NAME, message))
+    elseif print then
+        print(string.format("[%s] %s", MODULE_NAME, message))
+    end
+end
+
 local function IsDebugLoggingEnabled()
     local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
     if utils and type(utils.IsDebugEnabled) == "function" then
@@ -1026,12 +1043,19 @@ local function Rebuild(snapshot)
         return
     end
 
+    local achievements = (state.snapshot and state.snapshot.achievements) or {}
+    local itemCount = type(achievements) == "table" and #achievements or 0
+    DebugLog("AchievementRows: BuildOrRebuildRows (items=%d)", itemCount)
+
     DestroyControls()
     ResetLayoutState()
 
     LayoutCategory()
 
     UpdateContentSize()
+
+    local rowsCount = #state.orderedControls
+    DebugLog("AchievementRows: BuildOrRebuildRows done (rows=%d)", rowsCount)
 end
 
 function Rows.Initialize(params)
