@@ -232,7 +232,7 @@ state = {
     conditionPool = nil,
     orderedControls = {},
     lastAnchoredControl = nil,
-    snapshot = nil,
+    viewModel = nil,
     categoryControls = {},
     questControls = {},
     pendingRefresh = false,
@@ -252,7 +252,6 @@ state = {
     selectedQuestKey = nil,
     isRebuildInProgress = false,
     questModelSubscription = nil,
-    rawSnapshot = nil,
     lastAutoExpandedQuestKey = nil,
 }
 
@@ -685,16 +684,20 @@ local function QuestKeyToJournalIndex(questKey)
     return nil
 end
 
+local function GetActiveCategories()
+    if not (state.viewModel and type(state.viewModel.categories) == "table") then
+        return nil
+    end
+
+    return state.viewModel.categories
+end
+
 local function ForEachQuest(callback)
     if type(callback) ~= "function" then
         return
     end
 
-    if not state.snapshot or not state.snapshot.categories then
-        return
-    end
-
-    local ordered = state.snapshot.categories.ordered
+    local ordered = GetActiveCategories()
     if type(ordered) ~= "table" then
         return
     end
@@ -1127,11 +1130,7 @@ local function PrimeInitialSavedState()
         return
     end
 
-    if not state.snapshot or not state.snapshot.categories then
-        return
-    end
-
-    local ordered = state.snapshot.categories.ordered
+    local ordered = GetActiveCategories()
     if type(ordered) ~= "table" then
         return
     end
@@ -1273,20 +1272,18 @@ local function ResolveCategoryDebugInfo(categoryKey)
         return info
     end
 
-    if state.snapshot and state.snapshot.categories then
-        local ordered = state.snapshot.categories.ordered
-        if type(ordered) == "table" then
-            for index = 1, #ordered do
-                local category = ordered[index]
-                if category then
-                    if category.key == categoryKey then
-                        info.name = category.name or info.name
-                        return info
-                    end
-                    if category.parent and category.parent.key == categoryKey then
-                        info.name = category.parent.name or info.name
-                        return info
-                    end
+    local ordered = GetActiveCategories()
+    if type(ordered) == "table" then
+        for index = 1, #ordered do
+            local category = ordered[index]
+            if category then
+                if category.key == categoryKey then
+                    info.name = category.name or info.name
+                    return info
+                end
+                if category.parent and category.parent.key == categoryKey then
+                    info.name = category.parent.name or info.name
+                    return info
                 end
             end
         end
@@ -4270,18 +4267,19 @@ local function RelayoutFromCategoryIndex(startCategoryIndex)
     end
 end
 
-local function EmptySnapshot()
-    return { categories = { ordered = {}, byKey = {} } }
+local function EmptyViewModel()
+    return { categories = {} }
 end
 
-local function CountSnapshotEntries(snapshot)
+local function CountViewModelEntries(viewModel)
     local categories = 0
     local quests = 0
 
-    if snapshot and snapshot.categories and snapshot.categories.ordered then
-        categories = #snapshot.categories.ordered
+    local ordered = viewModel and viewModel.categories
+    if type(ordered) == "table" then
+        categories = #ordered
         for index = 1, categories do
-            local category = snapshot.categories.ordered[index]
+            local category = ordered[index]
             if category and type(category.quests) == "table" then
                 quests = quests + #category.quests
             end
@@ -4291,88 +4289,21 @@ local function CountSnapshotEntries(snapshot)
     return categories, quests
 end
 
-local function IsSnapshotValid(candidate)
-    if type(candidate) ~= "table" then
-        return false
-    end
-
-    local categories = candidate.categories
-    if type(categories) ~= "table" then
-        return false
-    end
-
-    return type(categories.ordered) == "table"
+local function IsViewModelValid(candidate)
+    return type(candidate) == "table" and type(candidate.categories) == "table"
 end
 
-local function BuildFilteredSnapshot(rawSnapshot)
-    local snapshot = rawSnapshot or EmptySnapshot()
-    state.rawSnapshot = snapshot
-
-    if not IsSnapshotValid(snapshot) then
-        DebugLog("BuildFilteredSnapshot: raw snapshot invalid, returning unfiltered snapshot")
-        return snapshot
+local function ApplyViewModel(viewModel, context)
+    if not IsViewModelValid(viewModel) then
+        viewModel = EmptyViewModel()
     end
 
-    local filterMode = GetQuestFilterMode()
+    state.viewModel = viewModel
 
     if IsDebugLoggingEnabled() then
-        local rawCategories, rawQuests = CountSnapshotEntries(snapshot)
+        local categoryCount, questCount = CountViewModelEntries(viewModel)
         DebugLog(
-            "BuildFilteredSnapshot: mode=%s raw categories=%d quests=%d",
-            tostring(filterMode),
-            rawCategories,
-            rawQuests
-        )
-    end
-
-    if not QuestFilter or not QuestFilter.ApplyFilter or filterMode == QUEST_FILTER_MODE_ALL then
-        return snapshot
-    end
-
-    local questFilter = EnsureQuestFilterSavedVars()
-    local selection = questFilter and questFilter.selection
-    local activeQuestKey = SyncSelectedQuestFromSaved()
-    local categoryName = (GetString and GetString(SI_NVK3UT_QUEST_FILTER_CATEGORY_ACTIVE)) or "Quests"
-
-    local ok, filtered = pcall(QuestFilter.ApplyFilter, snapshot, filterMode, selection, activeQuestKey, categoryName)
-    if ok and IsSnapshotValid(filtered) then
-        if IsDebugLoggingEnabled() then
-            local filteredCategories, filteredQuests = CountSnapshotEntries(filtered)
-            DebugLog(
-                "BuildFilteredSnapshot: mode=%s filtered categories=%d quests=%d",
-                tostring(filterMode),
-                filteredCategories,
-                filteredQuests
-            )
-        end
-
-        filtered.signature = snapshot.signature
-        filtered.updatedAtMs = snapshot.updatedAtMs
-        return filtered
-    end
-
-    DebugLog("BuildFilteredSnapshot: filter returned invalid result, falling back to unfiltered snapshot")
-    return snapshot
-end
-
-local function ApplySnapshot(snapshot, context)
-    state.snapshot = snapshot
-
-    if IsDebugLoggingEnabled() then
-        local categoryCount = 0
-        local questCount = 0
-        if snapshot and snapshot.categories and snapshot.categories.ordered then
-            categoryCount = #snapshot.categories.ordered
-            for index = 1, categoryCount do
-                local category = snapshot.categories.ordered[index]
-                if category and type(category.quests) == "table" then
-                    questCount = questCount + #category.quests
-                end
-            end
-        end
-
-        DebugLog(
-            "ApplySnapshot: trigger=%s source=%s categories=%d quests=%d",
+            "ApplyViewModel: trigger=%s source=%s categories=%d quests=%d",
             tostring((context and context.trigger) or "<nil>"),
             tostring((context and context.source) or "<nil>"),
             categoryCount,
@@ -4382,7 +4313,7 @@ local function ApplySnapshot(snapshot, context)
 
     local trackingContext = {
         trigger = (context and context.trigger) or "refresh",
-        source = (context and context.source) or "QuestTracker:ApplySnapshot",
+        source = (context and context.source) or "QuestTracker:ApplyViewModel",
     }
 
     UpdateTrackedQuestCache(nil, trackingContext)
@@ -4394,34 +4325,16 @@ local function ApplySnapshot(snapshot, context)
     NotifyStatusRefresh()
 end
 
--- Apply the latest quest snapshot from the event-driven model and update the layout.
-local function OnQuestModelSnapshotUpdated(snapshot, context)
-    if not snapshot then
+-- Apply the latest quest view model from the event-driven model and update the layout.
+local function OnQuestViewModelUpdated(viewModel, context)
+    if not IsViewModelValid(viewModel) then
         return
     end
 
-    local previousCategories = 0
-    local previousQuests = 0
+    local previousCategories, previousQuests = CountViewModelEntries(state.viewModel)
     local previousHeight = state.contentHeight or 0
-    if state.snapshot and state.snapshot.categories and state.snapshot.categories.ordered then
-        previousCategories = #state.snapshot.categories.ordered
-        for index = 1, previousCategories do
-            local category = state.snapshot.categories.ordered[index]
-            if category and type(category.quests) == "table" then
-                previousQuests = previousQuests + #category.quests
-            end
-        end
-    end
 
-    state.rawSnapshot = snapshot
-
-    local filteredSnapshot = BuildFilteredSnapshot(snapshot)
-
-    if not IsSnapshotValid(filteredSnapshot) then
-        filteredSnapshot = snapshot
-    end
-
-    ApplySnapshot(filteredSnapshot, context)
+    ApplyViewModel(viewModel, context)
 
     if not state.isInitialized then
         return
@@ -4438,7 +4351,7 @@ local function OnQuestModelSnapshotUpdated(snapshot, context)
     local rowsByCategory
 
     if QuestTrackerRows and QuestTrackerRows.BuildOrRebuildRows then
-        rowsByCategory = QuestTrackerRows:BuildOrRebuildRows(state.snapshot)
+        rowsByCategory = QuestTrackerRows:BuildOrRebuildRows(state.viewModel)
         if QuestTrackerRows.GetCategoryControls then
             categoryControls = QuestTrackerRows:GetCategoryControls()
         end
@@ -4452,20 +4365,10 @@ local function OnQuestModelSnapshotUpdated(snapshot, context)
     end
 
     if IsDebugLoggingEnabled() then
-        local newCategories = 0
-        local newQuests = 0
-        if state.snapshot and state.snapshot.categories and state.snapshot.categories.ordered then
-            newCategories = #state.snapshot.categories.ordered
-            for index = 1, newCategories do
-                local category = state.snapshot.categories.ordered[index]
-                if category and type(category.quests) == "table" then
-                    newQuests = newQuests + #category.quests
-                end
-            end
-        end
+        local newCategories, newQuests = CountViewModelEntries(state.viewModel)
 
         DebugLog(
-            "OnQuestModelSnapshotUpdated: prevCats=%d prevQuests=%d newCats=%d newQuests=%d height %s→%s",
+            "OnQuestViewModelUpdated: prevCats=%d prevQuests=%d newCats=%d newQuests=%d height %s→%s",
             previousCategories,
             previousQuests,
             newCategories,
@@ -4476,7 +4379,7 @@ local function OnQuestModelSnapshotUpdated(snapshot, context)
     end
 end
 
--- Listen for snapshot updates from the quest model so the tracker stays in sync with game events.
+-- Listen for view model updates from the quest model so the tracker stays in sync with game events.
 local function SubscribeToQuestModel()
     if state.questModelSubscription then
         return
@@ -4676,17 +4579,18 @@ function QuestTracker.MarkDirty(reason)
     end
 end
 
-function QuestTracker.Refresh(viewModel, context)
-    if not IsSnapshotValid(viewModel) then
+function QuestTracker:Refresh(viewModel, context)
+    if not IsViewModelValid(viewModel) then
         DebugLog("QuestTracker.Refresh called with nil/invalid viewModel -> skipping (no reset)")
         return
     end
+
     local refreshContext = context or {
         trigger = "refresh",
         source = "QuestTracker.Refresh",
     }
 
-    OnQuestModelSnapshotUpdated(viewModel, refreshContext)
+    OnQuestViewModelUpdated(viewModel, refreshContext)
 end
 
 function QuestTracker.Shutdown()
@@ -4714,7 +4618,7 @@ function QuestTracker.Shutdown()
 
     state.container = nil
     state.control = nil
-    state.snapshot = nil
+    state.viewModel = nil
     state.orderedControls = {}
     state.lastAnchoredControl = nil
     state.categoryControls = {}
@@ -4737,7 +4641,6 @@ function QuestTracker.Shutdown()
     state.selectedQuestKey = nil
     state.isRebuildInProgress = false
     state.questModelSubscription = nil
-    state.rawSnapshot = nil
     NotifyHostContentChanged()
 end
 

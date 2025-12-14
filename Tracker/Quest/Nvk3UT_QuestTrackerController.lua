@@ -106,6 +106,23 @@ local function CountSnapshotEntries(snapshot)
     return categories, quests
 end
 
+local function CountViewModelEntries(viewModel)
+    local categories = 0
+    local quests = 0
+
+    if viewModel and type(viewModel.categories) == "table" then
+        categories = #viewModel.categories
+        for index = 1, categories do
+            local category = viewModel.categories[index]
+            if category and type(category.quests) == "table" then
+                quests = quests + #category.quests
+            end
+        end
+    end
+
+    return categories, quests
+end
+
 local function IsSnapshotValid(candidate)
     if type(candidate) ~= "table" then
         return false
@@ -368,23 +385,66 @@ function Controller:BuildViewModel()
         filtered = EmptySnapshot()
     end
 
-    state.viewModel = filtered
-    state.isDirty = false
+    local viewModel = {
+        categories = {},
+        signature = filtered.signature,
+        updatedAtMs = filtered.updatedAtMs,
+    }
 
-    local categories, quests = CountSnapshotEntries(filtered)
-    local topLevelKeys = {}
-    for key, _ in pairs(filtered or {}) do
-        topLevelKeys[#topLevelKeys + 1] = tostring(key)
+    if filtered.categories then
+        if type(filtered.categories.ordered) == "table" then
+            viewModel.categories = filtered.categories.ordered
+        elseif type(filtered.categories) == "table" then
+            viewModel.categories = filtered.categories
+        end
     end
 
+    local hasObjectives = false
+    local categories, quests = CountViewModelEntries(viewModel)
+
+    if viewModel.categories then
+        for categoryIndex = 1, #viewModel.categories do
+            local category = viewModel.categories[categoryIndex]
+            if category and type(category.quests) == "table" then
+                for questIndex = 1, #category.quests do
+                    local quest = category.quests[questIndex]
+                    if quest then
+                        if quest.objectives and next(quest.objectives) then
+                            hasObjectives = true
+                            break
+                        end
+                        if quest.steps and #quest.steps > 0 then
+                            for stepIndex = 1, #quest.steps do
+                                local step = quest.steps[stepIndex]
+                                if step and step.conditions and #step.conditions > 0 then
+                                    hasObjectives = true
+                                    break
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+
+            if hasObjectives then
+                break
+            end
+        end
+    end
+
+    viewModel.hasObjectives = hasObjectives
+
+    state.viewModel = viewModel
+    state.isDirty = false
+
     dbg(
-        "BuildViewModel return: orderedCats=%d quests=%d keys=%s",
+        "BuildViewModel return: categories=%d quests=%d hasObjectives=%s",
         categories,
         quests,
-        table.concat(topLevelKeys, ",")
+        tostring(hasObjectives)
     )
 
-    return filtered
+    return viewModel
 end
 
 function Controller:GetLastReason()

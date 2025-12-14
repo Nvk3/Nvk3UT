@@ -338,7 +338,7 @@ function Rows:BuildOrRebuildRows(viewModel)
 
     -- Reuse existing pooled categories across rebuilds. If we do not have a view model
     -- or it is empty, release anything active and exit early.
-    if not (viewModel and viewModel.categories and viewModel.categories.ordered) then
+    if not (viewModel and type(viewModel.categories) == "table") then
         self:ReleaseAllCategories()
         return self:GetRowControls()
     end
@@ -356,8 +356,8 @@ function Rows:BuildOrRebuildRows(viewModel)
     self:ReleaseAllCategories()
 
     local usedCategoryCount = 0
-    for index = 1, #viewModel.categories.ordered do
-        local category = viewModel.categories.ordered[index]
+    for index = 1, #viewModel.categories do
+        local category = viewModel.categories[index]
         if category and category.quests and #category.quests > 0 then
             usedCategoryCount = usedCategoryCount + 1
             local header, container = self:AcquireCategory()
