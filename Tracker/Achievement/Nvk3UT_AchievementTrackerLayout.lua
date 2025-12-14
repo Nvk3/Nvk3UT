@@ -20,7 +20,15 @@ local function GetContainerWidth(parent)
     return width
 end
 
-local function ApplyRowMetrics(control, layoutCtx, rowData)
+local CATEGORY_ROW_TYPES = {
+    category = true,
+}
+
+local ENTRY_ROW_TYPES = {
+    achievement = true,
+}
+
+local function ApplyRowMetrics(control, layoutCtx, rowType, rowData)
     if not control or not control.label then
         return
     end
@@ -45,9 +53,12 @@ local function ApplyRowMetrics(control, layoutCtx, rowData)
     local targetHeight = textHeight + (rowData.textPaddingY or 0)
     if minHeight then
         targetHeight = math.max(minHeight, targetHeight)
+    elseif CATEGORY_ROW_TYPES[rowType] or ENTRY_ROW_TYPES[rowType] then
+        targetHeight = math.max(targetHeight, control:GetHeight() or 0)
     end
 
     control:SetHeight(targetHeight)
+    control.layoutHeight = targetHeight
 end
 
 local function RefreshControlMetrics(control, layoutCtx)
@@ -59,7 +70,7 @@ local function RefreshControlMetrics(control, layoutCtx)
     local rowData = control.layoutRowData or {}
     rowData.indent = indent
 
-    ApplyRowMetrics(control, layoutCtx, rowData)
+    ApplyRowMetrics(control, layoutCtx, control.rowType, rowData)
 end
 
 local function AnchorControl(control, layoutCtx, indentX)
@@ -108,7 +119,7 @@ function Layout:ApplyRowLayout(control, rowType, rowData, layoutCtx)
     rowData.textPaddingY = rowData.textPaddingY or layoutCtx.textPaddingY or 0
     control.layoutRowData = rowData
 
-    ApplyRowMetrics(control, layoutCtx, rowData)
+    ApplyRowMetrics(control, layoutCtx, rowType, rowData)
 
     if control.SetHidden then
         control:SetHidden(false)
@@ -137,7 +148,23 @@ function Layout:FinishLayout(layoutCtx)
             if width > maxWidth then
                 maxWidth = width
             end
-            totalHeight = totalHeight + (control:GetHeight() or 0)
+            local height = control.layoutHeight or control:GetHeight() or 0
+            if (height <= 0) and CATEGORY_ROW_TYPES[control.rowType] then
+                height = control.layoutRowData and control.layoutRowData.minHeight or height
+            elseif (height <= 0) and ENTRY_ROW_TYPES[control.rowType] then
+                height = control.layoutRowData and control.layoutRowData.minHeight or height
+            elseif (height <= 0) and control.layoutRowData then
+                local minHeight = control.layoutRowData.minHeight
+                if minHeight then
+                    height = minHeight
+                end
+            end
+
+            if height and height > 0 then
+                control.layoutHeight = height
+            end
+
+            totalHeight = totalHeight + (height or 0)
             if visibleCount > 1 then
                 totalHeight = totalHeight + layoutCtx.verticalPadding
             end
