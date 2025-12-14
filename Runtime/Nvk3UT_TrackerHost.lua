@@ -1952,11 +1952,11 @@ local function applyBootstrapVisibility(host)
     visibilityDebug("TrackerHost HUD visibility changed: %s", tostring(shouldShow))
 
     if TrackerHost.ApplyVisibilityRules() then
-        queueRuntimeLayout("hudVisible")
+        callRuntime("RequestFullRebuild", "hudVisible")
 
         if type(zo_callLater) == "function" then
             zo_callLater(function()
-                queueRuntimeLayout("hudVisible:deferred")
+                callRuntime("RequestFullRebuild", "hudVisible:deferred")
             end, 1)
         end
     end

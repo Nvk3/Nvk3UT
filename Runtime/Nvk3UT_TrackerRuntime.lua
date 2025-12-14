@@ -37,6 +37,8 @@ Runtime._pendingFullRebuildReason = type(Runtime._pendingFullRebuildReason) == "
         and Runtime._pendingFullRebuildReason
     or nil
 Runtime.needsFullRebuildOnVisible = Runtime.needsFullRebuildOnVisible == true
+Runtime._fullRebuildPending = Runtime._fullRebuildPending == true
+Runtime._fullRebuildReason = type(Runtime._fullRebuildReason) == "string" and Runtime._fullRebuildReason or nil
 
 local function debug(fmt, ...)
     if Addon and type(Addon.Debug) == "function" then
@@ -814,7 +816,7 @@ local function hasInteractivityWork()
 end
 
 local function hasPendingWork()
-    if hasDirtyFlags() or hasInteractivityWork() or Runtime.goldenDirty == true then
+    if hasDirtyFlags() or hasInteractivityWork() or Runtime.goldenDirty == true or Runtime._fullRebuildPending == true then
         return true
     end
 
@@ -944,6 +946,22 @@ function Runtime:QueueLayout(reason)
     end
 end
 
+function Runtime:RequestFullRebuild(reason)
+    if type(reason) == "string" and reason ~= "" then
+        self._fullRebuildReason = reason
+    end
+
+    self._fullRebuildPending = true
+
+    if reason then
+        debug("Runtime.RequestFullRebuild: %s", tostring(reason))
+    end
+
+    if hasPendingWork() then
+        scheduleProcessing()
+    end
+end
+
 function Runtime:SetPendingFullRebuild(reason)
     if type(reason) == "string" and reason ~= "" then
         self._pendingFullRebuildReason = reason
@@ -985,11 +1003,25 @@ function Runtime:ProcessFrame(nowMs)
 
     local function process()
         local dirty = ensureDirtyState()
+        local fullRebuildPending = self._fullRebuildPending == true
+        local fullRebuildReason = self._fullRebuildReason
+        self._fullRebuildPending = false
+        self._fullRebuildReason = nil
+
         local questDirty = dirty.quest == true or isQuestControllerDirty()
         local endeavorDirty = dirty.endeavor == true
         local achievementDirty = dirty.achievement == true
         local layoutDirty = dirty.layout == true
         local goldenDirty = self.goldenDirty == true
+
+        if fullRebuildPending then
+            questDirty = true
+            endeavorDirty = true
+            achievementDirty = true
+            layoutDirty = true
+            goldenDirty = true
+            debug("ProcessFrame: full rebuild pending (%s)", tostring(fullRebuildReason))
+        end
 
         dirty.quest = false
         dirty.endeavor = false
