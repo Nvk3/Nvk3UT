@@ -8,6 +8,7 @@ AchievementTracker.__index = AchievementTracker
 local MODULE_NAME = addonName .. "AchievementTracker"
 
 local Utils = Nvk3UT and Nvk3UT.Utils
+local AchievementRows = Nvk3UT and Nvk3UT.AchievementTrackerRows
 
 local function GetAchievementState()
     return Nvk3UT and Nvk3UT.AchievementState
@@ -157,13 +158,11 @@ local state = {
     saved = nil,
     control = nil,
     container = nil,
-    categoryPool = nil,
-    achievementPool = nil,
-    objectivePool = nil,
     orderedControls = {},
     lastAnchoredControl = nil,
     snapshot = nil,
     subscription = nil,
+    viewModel = nil,
     pendingRefresh = false,
     contentWidth = 0,
     contentHeight = 0,
@@ -1120,7 +1119,7 @@ local function RequestRefresh()
 
     local function execute()
         state.pendingRefresh = false
-        AchievementTracker.Refresh()
+        AchievementTracker.Refresh(state.viewModel)
     end
 
     if zo_callLater then
@@ -1718,23 +1717,68 @@ local function LayoutCategory()
     end
 end
 
-local function Rebuild()
+local function ApplyFavoritesView(viewModel)
     if not state.container then
         return
     end
 
-    EnsurePools()
-
-    ReleaseAll(state.categoryPool)
-    ReleaseAll(state.achievementPool)
-    ReleaseAll(state.objectivePool)
+    if AchievementRows and AchievementRows.ReleaseAll then
+        AchievementRows:ReleaseAll()
+    end
 
     ResetLayoutState()
 
-    LayoutCategory()
+    if not (viewModel and type(viewModel.favorites) == "table") then
+        UpdateContentSize()
+        NotifyHostContentChanged()
+        return
+    end
+
+    local favorites = viewModel.favorites
+    if #favorites == 0 then
+        UpdateContentSize()
+        NotifyHostContentChanged()
+        return
+    end
+
+    for index = 1, #favorites do
+        local favorite = favorites[index]
+
+        local rowData = {
+            name = FormatDisplayString(favorite and favorite.name),
+            icon = favorite and (favorite.icon or favorite.iconTexture),
+            progressText = favorite and favorite.progressText,
+        }
+
+        if not rowData.progressText and favorite and type(favorite.progress) == "table" then
+            local current = favorite.progress.current
+            local maximum = favorite.progress.max
+            if current ~= nil and maximum ~= nil then
+                rowData.progressText = string.format("%s/%s", tostring(current), tostring(maximum))
+            end
+        end
+
+        local row = AchievementRows and AchievementRows:CreateRow(state.container, index)
+        if row and AchievementRows.ApplyRowData then
+            AchievementRows:ApplyRowData(row, rowData)
+            if state.fonts then
+                ApplyFont(row.label, state.fonts.achievement)
+                ApplyFont(row.progressLabel, state.fonts.objective)
+            end
+            if row.SetWidth and state.container and state.container.GetWidth then
+                row:SetWidth(state.container:GetWidth())
+            end
+            row.currentIndent = 0
+            state.orderedControls[#state.orderedControls + 1] = row
+        end
+    end
 
     UpdateContentSize()
     NotifyHostContentChanged()
+end
+
+local function Rebuild(viewModel)
+    ApplyFavoritesView(viewModel or state.viewModel)
 end
 
 local function OnSnapshotUpdated(snapshot)
@@ -1791,34 +1835,30 @@ function AchievementTracker.Init(parentControl, opts)
         AchievementTracker.ApplySettings(opts)
     end
 
-    SubscribeToModel()
-
-    state.snapshot = Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.GetViewData and Nvk3UT.AchievementModel.GetViewData()
+    state.viewModel = nil
 
     state.isInitialized = true
 
     RefreshVisibility()
-    AchievementTracker.Refresh()
+    AchievementTracker.Refresh(opts and opts.viewModel)
 end
 
-function AchievementTracker.Refresh()
+function AchievementTracker.Refresh(viewModel)
     if not state.isInitialized then
         return
     end
 
-    if Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.GetViewData then
-        state.snapshot = Nvk3UT.AchievementModel.GetViewData() or state.snapshot
+    if viewModel ~= nil then
+        state.viewModel = viewModel
     end
 
-    Rebuild()
+    Rebuild(viewModel)
 end
 
 function AchievementTracker.Shutdown()
-    UnsubscribeFromModel()
-
-    ReleaseAll(state.categoryPool)
-    ReleaseAll(state.achievementPool)
-    ReleaseAll(state.objectivePool)
+    if AchievementRows and AchievementRows.ReleaseAll then
+        AchievementRows:ReleaseAll()
+    end
 
     state.categoryPool = nil
     state.achievementPool = nil
@@ -1827,6 +1867,7 @@ function AchievementTracker.Shutdown()
     state.container = nil
     state.control = nil
     state.snapshot = nil
+    state.viewModel = nil
     state.orderedControls = {}
     state.lastAnchoredControl = nil
     state.fonts = {}
