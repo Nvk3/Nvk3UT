@@ -4957,8 +4957,17 @@ local function initTrackers()
     end
 
     local achievementOpts = cloneTable(sv.AchievementTracker or {})
-    if Nvk3UT.AchievementTracker and Nvk3UT.AchievementTracker.Init and state.achievementContainer then
-        pcall(Nvk3UT.AchievementTracker.Init, state.achievementContainer, achievementOpts)
+    local achievementModuleLabel = nil
+    if state.achievementContainer then
+        achievementModuleLabel = safeCall(function()
+            local tracker = rawget(Nvk3UT, "AchievementTracker")
+            if type(tracker) == "table" and type(tracker.Init) == "function" then
+                tracker.Init(state.achievementContainer, achievementOpts)
+                return "facade"
+            end
+
+            return nil
+        end)
     end
 
     if Nvk3UT and Nvk3UT.QuestTracker and type(Nvk3UT.QuestTracker.ApplyBaseQuestTrackerVisibility) == "function" then
@@ -5029,6 +5038,16 @@ local function initTrackers()
             debugLog(string.format("Host.Init: Endeavor wired via %s and queued initial dirty", endeavorModuleLabel))
         else
             debugLog("Host.Init: Endeavor queued initial dirty (module unavailable)")
+        end
+
+        if achievementModuleLabel then
+            safeCall(function()
+                runtime:QueueDirty("achievement")
+            end)
+
+            debugLog("Host.Init: Achievement wired via facade and queued initial dirty")
+        elseif state.achievementContainer then
+            debugLog("Host.Init: Achievement queued initial dirty (module unavailable)")
         end
     end
 end
