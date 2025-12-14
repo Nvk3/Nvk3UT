@@ -31,63 +31,94 @@ local function safeDebug(message, ...)
     end
 end
 
-function Rows:Init(parentContainer)
+function Rows:Init(parentContainer, trackerState, callbacks)
     self.parent = parentContainer
-    self.rows = {}
+    self.state = trackerState
+    self.callbacks = callbacks or {}
+    self.rows = (trackerState and trackerState.orderedControls) or {}
 
     safeDebug("%s: Init with parent %s", MODULE_TAG, tostring(parentContainer))
 end
 
 function Rows:Reset()
-    if self.rows then
-        for index, control in ipairs(self.rows) do
-            if control and control.SetHidden then
-                control:SetHidden(true)
-            end
-
-            if control and control.ClearAnchors then
-                control:ClearAnchors()
-            end
-
-            self.rows[index] = nil
-        end
-    end
-
-    self.rows = {}
-    self.viewModel = nil
-
-    safeDebug("%s: Reset rows", MODULE_TAG)
-end
-
-function Rows:BuildOrRebuildRows(viewModel)
-    self:Reset()
-
-    self.viewModel = viewModel
-    if type(viewModel) ~= "table" then
-        safeDebug("%s: BuildOrRebuildRows called with missing viewModel", MODULE_TAG)
+    if not self.state then
+        self.rows = {}
         return self.rows
     end
 
-    local rows = self.rows
-    local rowList = viewModel.rows or viewModel
-    if type(rowList) ~= "table" then
-        return rows
+    local releaseAll = self.callbacks.ReleaseAll
+    if type(releaseAll) == "function" then
+        releaseAll(self.state.categoryPool)
+        releaseAll(self.state.questPool)
+        releaseAll(self.state.conditionPool)
     end
 
-    for _, entry in ipairs(rowList) do
-        local control = entry and entry.control
-        if control then
-            table.insert(rows, control)
+    if type(self.callbacks.ResetLayoutState) == "function" then
+        self.callbacks.ResetLayoutState()
+    end
+
+    self.rows = self.state.orderedControls or {}
+    self.viewModel = nil
+
+    safeDebug("%s: Reset rows", MODULE_TAG)
+
+    return self.rows
+end
+
+function Rows:BuildOrRebuildRows(viewModel)
+    self.viewModel = viewModel
+
+    if type(self.callbacks.EnsurePools) == "function" then
+        self.callbacks.EnsurePools()
+    end
+
+    if not (viewModel and viewModel.categories and viewModel.categories.ordered) then
+        if type(self.callbacks.UpdateContentSize) == "function" then
+            self.callbacks.UpdateContentSize()
+        end
+        if type(self.callbacks.NotifyHostContentChanged) == "function" then
+            self.callbacks.NotifyHostContentChanged()
+        end
+        if type(self.callbacks.ProcessPendingExternalReveal) == "function" then
+            self.callbacks.ProcessPendingExternalReveal()
+        end
+        return self:GetRowControls()
+    end
+
+    if type(self.callbacks.PrimeInitialSavedState) == "function" then
+        self.callbacks.PrimeInitialSavedState()
+    end
+
+    for index = 1, #viewModel.categories.ordered do
+        local category = viewModel.categories.ordered[index]
+        if category and category.quests and #category.quests > 0 then
+            if type(self.callbacks.LayoutCategory) == "function" then
+                self.callbacks.LayoutCategory(category)
+            end
         end
     end
 
-    safeDebug("%s: BuildOrRebuildRows completed with %d row(s)", MODULE_TAG, #rows)
+    if type(self.callbacks.UpdateContentSize) == "function" then
+        self.callbacks.UpdateContentSize()
+    end
 
-    return rows
+    if type(self.callbacks.NotifyHostContentChanged) == "function" then
+        self.callbacks.NotifyHostContentChanged()
+    end
+
+    if type(self.callbacks.ProcessPendingExternalReveal) == "function" then
+        self.callbacks.ProcessPendingExternalReveal()
+    end
+
+    local controls = self:GetRowControls()
+
+    safeDebug("%s: BuildOrRebuildRows completed with %d row(s)", MODULE_TAG, #controls)
+
+    return controls
 end
 
 function Rows:GetRowControls()
-    return self.rows or {}
+    return self.state and self.state.orderedControls or self.rows or {}
 end
 
 Nvk3UT.QuestTrackerRows = Rows

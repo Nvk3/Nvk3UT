@@ -55,6 +55,7 @@ local Utils = Nvk3UT and Nvk3UT.Utils
 local QuestState = Nvk3UT and Nvk3UT.QuestState
 local QuestSelection = Nvk3UT and Nvk3UT.QuestSelection
 local QuestFilter = Nvk3UT and Nvk3UT.QuestFilter
+local QuestTrackerRows = Nvk3UT and Nvk3UT.QuestTrackerRows
 local QUEST_FILTER_MODE_ALL = (QuestFilter and QuestFilter.MODE_ALL) or 1
 local QUEST_FILTER_MODE_ACTIVE = (QuestFilter and QuestFilter.MODE_ACTIVE) or 2
 local QUEST_FILTER_MODE_SELECTION = (QuestFilter and QuestFilter.MODE_SELECTION) or 3
@@ -4664,6 +4665,21 @@ local function UnsubscribeFromQuestModel()
     state.questModelSubscription = nil
 end
 
+local function ConfigureRowsHelper()
+    if QuestTrackerRows and QuestTrackerRows.Init then
+        QuestTrackerRows:Init(state.container, state, {
+            EnsurePools = EnsurePools,
+            ReleaseAll = ReleaseAll,
+            ResetLayoutState = ResetLayoutState,
+            PrimeInitialSavedState = PrimeInitialSavedState,
+            LayoutCategory = LayoutCategory,
+            UpdateContentSize = UpdateContentSize,
+            NotifyHostContentChanged = NotifyHostContentChanged,
+            ProcessPendingExternalReveal = ProcessPendingExternalReveal,
+        })
+    end
+end
+
 local function Rebuild()
     if not state.container then
         return
@@ -4676,35 +4692,40 @@ local function Rebuild()
     state.isRebuildInProgress = true
     ApplyActiveQuestFromSaved()
 
-    EnsurePools()
+    if QuestTrackerRows and QuestTrackerRows.Reset and QuestTrackerRows.BuildOrRebuildRows then
+        QuestTrackerRows:Reset()
+        QuestTrackerRows:BuildOrRebuildRows(state.snapshot)
+    else
+        EnsurePools()
 
-    ReleaseAll(state.categoryPool)
-    ReleaseAll(state.questPool)
-    ReleaseAll(state.conditionPool)
-    ResetLayoutState()
+        ReleaseAll(state.categoryPool)
+        ReleaseAll(state.questPool)
+        ReleaseAll(state.conditionPool)
+        ResetLayoutState()
 
-    if not state.snapshot or not state.snapshot.categories or not state.snapshot.categories.ordered then
+        if not state.snapshot or not state.snapshot.categories or not state.snapshot.categories.ordered then
+            UpdateContentSize()
+            NotifyHostContentChanged()
+            state.isRebuildInProgress = false
+            if IsDebugLoggingEnabled() then
+                DebugLog("REBUILD_END")
+            end
+            return
+        end
+
+        PrimeInitialSavedState()
+
+        for index = 1, #state.snapshot.categories.ordered do
+            local category = state.snapshot.categories.ordered[index]
+            if category and category.quests and #category.quests > 0 then
+                LayoutCategory(category)
+            end
+        end
+
         UpdateContentSize()
         NotifyHostContentChanged()
-        state.isRebuildInProgress = false
-        if IsDebugLoggingEnabled() then
-            DebugLog("REBUILD_END")
-        end
-        return
+        ProcessPendingExternalReveal()
     end
-
-    PrimeInitialSavedState()
-
-    for index = 1, #state.snapshot.categories.ordered do
-        local category = state.snapshot.categories.ordered[index]
-        if category and category.quests and #category.quests > 0 then
-            LayoutCategory(category)
-        end
-    end
-
-    UpdateContentSize()
-    NotifyHostContentChanged()
-    ProcessPendingExternalReveal()
 
     state.isRebuildInProgress = false
 
@@ -4736,6 +4757,8 @@ function QuestTracker.Init(parentControl, opts)
     if state.control and state.control.SetResizeToFitDescendents then
         state.control:SetResizeToFitDescendents(true)
     end
+
+    ConfigureRowsHelper()
 
     EnsureSavedVars()
     state.opts = {}
