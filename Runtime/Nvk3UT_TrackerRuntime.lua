@@ -924,6 +924,26 @@ function Runtime:QueueDirty(channel, opts)
     end
 end
 
+function Runtime:QueueLayout(reason)
+    local dirty = ensureDirtyState()
+    local queuedLog = ensureQueuedLogTable()
+
+    if not dirty.layout then
+        dirty.layout = true
+        queuedLog.layout = true
+    else
+        queuedLog.layout = true
+    end
+
+    if reason then
+        debug("Runtime.QueueLayout: %s", tostring(reason))
+    end
+
+    if hasPendingWork() then
+        scheduleProcessing()
+    end
+end
+
 function Runtime:SetPendingFullRebuild(reason)
     if type(reason) == "string" and reason ~= "" then
         self._pendingFullRebuildReason = reason

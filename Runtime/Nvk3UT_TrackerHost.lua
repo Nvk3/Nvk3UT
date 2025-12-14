@@ -1514,8 +1514,13 @@ local function callRuntime(methodName, ...)
     end)
 end
 
-queueRuntimeLayout = function()
-    callRuntime("QueueDirty", "layout")
+queueRuntimeLayout = function(reason)
+    if reason then
+        callRuntime("QueueLayout", reason)
+        return
+    end
+
+    callRuntime("QueueLayout")
 end
 
 local function requestPendingFullRebuild()
@@ -1947,7 +1952,13 @@ local function applyBootstrapVisibility(host)
     visibilityDebug("TrackerHost HUD visibility changed: %s", tostring(shouldShow))
 
     if TrackerHost.ApplyVisibilityRules() then
-        queueRuntimeLayout()
+        queueRuntimeLayout("hudVisible")
+
+        if type(zo_callLater) == "function" then
+            zo_callLater(function()
+                queueRuntimeLayout("hudVisible:deferred")
+            end, 1)
+        end
     end
 end
 
