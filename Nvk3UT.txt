@@ -60,6 +60,7 @@ Runtime/Nvk3UT_TrackerHostLayout.lua
 ## === Tracker ===
 ## Tracker order: Quest -> Endeavor -> Achievement -> Golden
 Nvk3UT_QuestFilter.lua
+Tracker/Quest/Nvk3UT_QuestTrackerController.lua
 Tracker/Quest/Nvk3UT_QuestTrackerRows.lua
 Tracker/Quest/Nvk3UT_QuestTrackerLayout.lua
 Nvk3UT_QuestTracker.xml
