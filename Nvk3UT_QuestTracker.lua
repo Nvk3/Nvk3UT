@@ -2503,6 +2503,10 @@ local function EnsureExclusiveAssistedQuest(journalIndex)
         return
     end
 
+    local function SetAssisted(questIndex, assisted)
+        SafeCall(SetTrackedIsAssisted, TRACK_TYPE_QUEST, assisted == true, questIndex)
+    end
+
     ForEachQuestIndex(function(index)
         if not index then
             return
@@ -2512,11 +2516,11 @@ local function EnsureExclusiveAssistedQuest(journalIndex)
         local shouldAssist = isTarget and true or false
 
         if isTarget then
-            SafeCall(SetTrackedIsAssisted, TRACK_TYPE_QUEST, shouldAssist, index)
+            SetAssisted(index, shouldAssist)
         elseif type(GetTrackedIsAssisted) == "function" then
             local ok, assisted = SafeCall(GetTrackedIsAssisted, TRACK_TYPE_QUEST, index)
             if ok and assisted then
-                SafeCall(SetTrackedIsAssisted, TRACK_TYPE_QUEST, false, index)
+                SetAssisted(index, false)
             end
         end
     end)
@@ -4578,7 +4582,8 @@ function QuestTracker.MarkDirty(reason)
 end
 
 function QuestTracker.Refresh(viewModel, context)
-    if not viewModel then
+    if not IsSnapshotValid(viewModel) then
+        DebugLog("QuestTracker.Refresh called with nil/invalid viewModel -> skipping (no reset)")
         return
     end
     local refreshContext = context or {
