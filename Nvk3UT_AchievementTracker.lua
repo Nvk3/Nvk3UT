@@ -8,7 +8,9 @@ AchievementTracker.__index = AchievementTracker
 local MODULE_NAME = addonName .. "AchievementTracker"
 
 local Utils = Nvk3UT and Nvk3UT.Utils
-local AchievementRows = Nvk3UT and Nvk3UT.AchievementTrackerRows
+local function GetAchievementRows()
+    return Nvk3UT and Nvk3UT.AchievementTrackerRows
+end
 
 local function GetAchievementState()
     return Nvk3UT and Nvk3UT.AchievementState
@@ -1722,11 +1724,20 @@ local function ApplyFavoritesView(viewModel)
         return
     end
 
+    local AchievementRows = GetAchievementRows()
+
     if AchievementRows and AchievementRows.ReleaseAll then
         AchievementRows:ReleaseAll()
     end
 
     ResetLayoutState()
+
+    if not AchievementRows then
+        DebugLog("[Nvk3UT WARN] AchievementRows missing (manifest/load-order); cannot render rows")
+        UpdateContentSize()
+        NotifyHostContentChanged()
+        return
+    end
 
     if not (viewModel and type(viewModel.favorites) == "table") then
         UpdateContentSize()
@@ -1856,6 +1867,7 @@ function AchievementTracker.Refresh(viewModel)
 end
 
 function AchievementTracker.Shutdown()
+    local AchievementRows = GetAchievementRows()
     if AchievementRows and AchievementRows.ReleaseAll then
         AchievementRows:ReleaseAll()
     end
