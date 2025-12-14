@@ -82,6 +82,7 @@ local OBJECTIVE_INDENT_X = ACHIEVEMENT_LABEL_INDENT_X + OBJECTIVE_RELATIVE_INDEN
 local VERTICAL_PADDING = 3
 
 local CATEGORY_KEY = "achievements"
+local CATEGORY_ROW_KEY = string.format("cat:%s", CATEGORY_KEY)
 
 local function ScheduleToggleFollowup(reason)
     local rebuild = (Nvk3UT and Nvk3UT.Rebuild) or _G.Nvk3UT_Rebuild
@@ -142,6 +143,22 @@ end
 
 local FAVORITES_LOOKUP_KEY = "NVK3UT_FAVORITES_ROOT"
 local FAVORITES_CATEGORY_ID = "Nvk3UT_Favorites"
+
+local function GetAchievementRowKey(achievementId)
+    if achievementId == nil then
+        return "entry:unknown"
+    end
+
+    return string.format("entry:%s", tostring(achievementId))
+end
+
+local function GetObjectiveRowKey(achievementId, objectiveIndex)
+    return string.format(
+        "obj:%s:%s",
+        tostring(achievementId or "unknown"),
+        tostring(objectiveIndex or 0)
+    )
+end
 
 local state = {
     isInitialized = false,
@@ -1323,7 +1340,7 @@ local function ReleaseRows()
     end
 end
 
-local function LayoutObjective(rows, achievement, objective)
+local function LayoutObjective(rows, achievement, objective, objectiveIndex)
     if not ShouldDisplayObjective(objective) then
         return
     end
@@ -1333,7 +1350,7 @@ local function LayoutObjective(rows, achievement, objective)
         return
     end
 
-    local control = rows:AcquireRow(#state.orderedControls + 1, "objective")
+    local control = rows:AcquireRow(GetObjectiveRowKey(achievement.id, objectiveIndex), "objective")
     local r, g, b, a = GetAchievementTrackerColor("objectiveText")
     rows:ApplyRow(control, "objective", {
         data = {
@@ -1349,7 +1366,7 @@ local function LayoutObjective(rows, achievement, objective)
 end
 
 local function LayoutAchievement(rows, achievement)
-    local control = rows:AcquireRow(#state.orderedControls + 1, "achievement")
+    local control = rows:AcquireRow(GetAchievementRowKey(achievement.id), "achievement")
     local hasObjectives = achievement.objectives and #achievement.objectives > 0
     local isFavorite = IsFavoriteAchievement(achievement.id)
     local r, g, b, a = GetAchievementTrackerColor("entryTitle")
@@ -1377,7 +1394,7 @@ local function LayoutAchievement(rows, achievement)
 
     if hasObjectives and expanded then
         for index = 1, #achievement.objectives do
-            LayoutObjective(rows, achievement, achievement.objectives[index])
+            LayoutObjective(rows, achievement, achievement.objectives[index], index)
         end
     end
 end
@@ -1453,7 +1470,7 @@ local function LayoutCategory(rows)
         return
     end
 
-    local control = rows:AcquireRow(#state.orderedControls + 1, "category")
+    local control = rows:AcquireRow(CATEGORY_ROW_KEY, "category")
     local expanded = IsCategoryExpanded()
     local colorRole = expanded and "activeTitle" or "categoryTitle"
     local r, g, b, a = GetAchievementTrackerColor(colorRole)

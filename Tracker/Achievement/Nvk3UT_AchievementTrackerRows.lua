@@ -21,6 +21,15 @@ local CATEGORY_TOGGLE_TEXTURES = {
 local LEFT_MOUSE_BUTTON = MOUSE_BUTTON_INDEX_LEFT or 1
 local RIGHT_MOUSE_BUTTON = MOUSE_BUTTON_INDEX_RIGHT or 2
 
+local CATEGORY_ROW_TYPES = {
+    category = true,
+}
+
+local ENTRY_ROW_TYPES = {
+    achievement = true,
+    objective = true,
+}
+
 local function Call(callback, ...)
     if type(callback) == "function" then
         return callback(...)
@@ -111,6 +120,27 @@ local function ApplyBaseColor(control, r, g, b, a)
     end
 end
 
+local function CountTableEntries(tbl)
+    if type(tbl) ~= "table" then
+        return 0
+    end
+
+    local count = 0
+    for _ in pairs(tbl) do
+        count = count + 1
+    end
+
+    return count
+end
+
+local function IsCategoryRowType(rowType)
+    return CATEGORY_ROW_TYPES[rowType] == true
+end
+
+local function IsEntryRowType(rowType)
+    return ENTRY_ROW_TYPES[rowType] == true
+end
+
 local function SelectCategoryToggleTexture(expanded, isMouseOver)
     local textures = expanded and CATEGORY_TOGGLE_TEXTURES.expanded or CATEGORY_TOGGLE_TEXTURES.collapsed
     if isMouseOver then
@@ -171,12 +201,36 @@ function Rows:ResetControl(control)
         return
     end
 
-    control:SetHidden(true)
+    if control.SetHidden then
+        control:SetHidden(true)
+    end
+    if control.SetAlpha then
+        control:SetAlpha(1)
+    end
+    if control.SetMouseEnabled then
+        control:SetMouseEnabled(true)
+    end
     control.data = nil
     control.currentIndent = nil
 
     if control.ClearAnchors then
         control:ClearAnchors()
+    end
+
+    local label = control.label
+    if label then
+        if label.SetText then
+            label:SetText("")
+        end
+        if label.SetColor then
+            label:SetColor(1, 1, 1, 1)
+        end
+        if label.SetWrapMode then
+            label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
+        end
+        if label.SetHidden then
+            label:SetHidden(false)
+        end
     end
 
     if control.rowType == "category" then
@@ -191,9 +245,7 @@ function Rows:ResetControl(control)
         end
         control.isExpanded = nil
     elseif control.rowType == "achievement" then
-        if control.label and control.label.SetText then
-            control.label:SetText("")
-        end
+        control.baseColor = nil
         if control.iconSlot then
             if control.iconSlot.SetTexture then
                 control.iconSlot:SetTexture(nil)
@@ -206,9 +258,7 @@ function Rows:ResetControl(control)
             end
         end
     elseif control.rowType == "objective" then
-        if control.label then
-            control.label:SetText("")
-        end
+        control.baseColor = nil
     end
 end
 
@@ -391,7 +441,33 @@ function Rows:BeginRefresh()
     self.activeControlsByKey = {}
     self.createdCount = 0
     self.reusedCount = 0
+    self.createdCategory = 0
+    self.reusedCategory = 0
+    self.createdEntry = 0
+    self.reusedEntry = 0
     self.freedCount = 0
+end
+
+local function RegisterAcquisitionStats(self, rowType, wasCreated)
+    if IsCategoryRowType(rowType) then
+        if wasCreated then
+            self.createdCategory = (self.createdCategory or 0) + 1
+        else
+            self.reusedCategory = (self.reusedCategory or 0) + 1
+        end
+    elseif IsEntryRowType(rowType) then
+        if wasCreated then
+            self.createdEntry = (self.createdEntry or 0) + 1
+        else
+            self.reusedEntry = (self.reusedEntry or 0) + 1
+        end
+    end
+
+    if wasCreated then
+        self.createdCount = (self.createdCount or 0) + 1
+    else
+        self.reusedCount = (self.reusedCount or 0) + 1
+    end
 end
 
 function Rows:AddToFreePool(control)
@@ -427,6 +503,7 @@ function Rows:AcquireRow(rowKey, rowType, parent)
 
     parent = parent or self.parent
 
+    local wasCreated = false
     local control = self.previousActiveControlsByKey[rowKey]
     if control then
         self.previousActiveControlsByKey[rowKey] = nil
@@ -444,10 +521,6 @@ function Rows:AcquireRow(rowKey, rowType, parent)
         end
     end
 
-    if control then
-        self.reusedCount = (self.reusedCount or 0) + 1
-    end
-
     if not control then
         if rowType == "category" then
             control = self:CreateCategoryRow(rowKey)
@@ -458,7 +531,7 @@ function Rows:AcquireRow(rowKey, rowType, parent)
         end
 
         if control then
-            self.createdCount = (self.createdCount or 0) + 1
+            wasCreated = true
             self.allControls[#self.allControls + 1] = control
         end
     end
@@ -471,6 +544,7 @@ function Rows:AcquireRow(rowKey, rowType, parent)
         end
         self:ApplyFonts(control, rowType)
         self.activeControlsByKey[rowKey] = control
+        RegisterAcquisitionStats(self, rowType, wasCreated)
         return control
     end
 
@@ -528,11 +602,15 @@ function Rows:EndRefresh()
     end
 
     if IsDebugLoggingEnabled() then
+        local activeCount = CountTableEntries(self.activeControlsByKey)
         DebugLog(string.format(
-            "Rows refresh complete: created=%d reused=%d freed=%d",
-            self.createdCount or 0,
-            self.reusedCount or 0,
-            self.freedCount or 0
+            "Rows refresh: active=%d freed=%d created(cat=%d entry=%d) reused(cat=%d entry=%d)",
+            activeCount,
+            self.freedCount or 0,
+            self.createdCategory or 0,
+            self.createdEntry or 0,
+            self.reusedCategory or 0,
+            self.reusedEntry or 0
         ))
     end
 end
