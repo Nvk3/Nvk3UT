@@ -416,20 +416,6 @@ local function refreshQuestTracker(viewModel)
         return false
     end
 
-    local refreshWithModel = tracker.RefreshWithViewModel or tracker.RefreshFromViewModel
-    if type(refreshWithModel) == "function" then
-        local invoked = callWithOptionalSelf(tracker, refreshWithModel, false, viewModel)
-        if invoked then
-            return true
-        end
-    end
-
-    local requestRefresh = tracker.RequestRefresh
-    if type(requestRefresh) == "function" then
-        callWithOptionalSelf(tracker, requestRefresh, false)
-        return true
-    end
-
     local refresh = tracker.Refresh
     if type(refresh) == "function" then
         local invoked = callWithOptionalSelf(tracker, refresh, false, viewModel)

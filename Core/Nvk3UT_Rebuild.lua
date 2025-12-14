@@ -429,16 +429,16 @@ end
 local function requestQuestTrackerRefresh()
     local root = getRoot()
     local tracker = root and root.QuestTracker
+    local runtime = root and root.TrackerRuntime
+    if type(runtime) == "table" and type(runtime.QueueDirty) == "function" then
+        return safeInvoke("TrackerRuntime.QueueDirty", runtime.QueueDirty, runtime, "quest")
+    end
     if type(tracker) ~= "table" then
         return false
     end
 
     if type(tracker.RequestRefresh) == "function" then
         return safeInvoke("QuestTracker.RequestRefresh", tracker.RequestRefresh)
-    end
-
-    if type(tracker.Refresh) == "function" then
-        return safeInvoke("QuestTracker.Refresh", tracker.Refresh)
     end
 
     return false
