@@ -50,6 +50,129 @@ function Layout:ResetLayoutState()
     state.contentHeight = 0
 end
 
+function Layout:GetContainerWidth()
+    local container = self.state and self.state.container
+    if not container or not container.GetWidth then
+        return 0
+    end
+
+    local width = container:GetWidth()
+    if not width or width <= 0 then
+        return 0
+    end
+
+    return width
+end
+
+function Layout:ComputeRowHeight(control, indent, toggleWidth, leftPadding, rightPadding, minHeight)
+    if not control or not control.label then
+        return 0
+    end
+
+    indent = indent or 0
+    toggleWidth = toggleWidth or 0
+    leftPadding = leftPadding or 0
+    rightPadding = rightPadding or 0
+
+    local availableWidth = self:GetContainerWidth() - indent - toggleWidth - leftPadding - rightPadding
+    if availableWidth < 0 then
+        availableWidth = 0
+    end
+
+    control.label:SetWidth(availableWidth)
+
+    local textHeight = control.label:GetTextHeight() or 0
+    local targetHeight = textHeight + (self.deps.ROW_TEXT_PADDING_Y or 0)
+    if minHeight then
+        targetHeight = math.max(minHeight, targetHeight)
+    end
+
+    control:SetHeight(targetHeight)
+
+    return targetHeight
+end
+
+function Layout:GetCategoryHeaderHeight(categoryControl)
+    if not categoryControl then
+        return 0
+    end
+
+    local toggleWidth = 0
+    if categoryControl.toggle then
+        local GetToggleWidth = self.deps.GetToggleWidth
+        toggleWidth = GetToggleWidth and GetToggleWidth(categoryControl.toggle, self.deps.CATEGORY_TOGGLE_WIDTH)
+            or (self.deps.CATEGORY_TOGGLE_WIDTH or 0)
+    end
+
+    return self:ComputeRowHeight(
+        categoryControl,
+        self.deps.CATEGORY_INDENT_X,
+        toggleWidth,
+        self.deps.TOGGLE_LABEL_PADDING_X,
+        0,
+        self.deps.CATEGORY_MIN_HEIGHT
+    )
+end
+
+function Layout:GetQuestRowHeight(rowControl, rowData)
+    if not rowControl then
+        return 0
+    end
+
+    return self:ComputeRowHeight(
+        rowControl,
+        self.deps.QUEST_INDENT_X,
+        self.deps.QUEST_ICON_SLOT_WIDTH,
+        self.deps.QUEST_ICON_SLOT_PADDING_X,
+        0,
+        self.deps.QUEST_MIN_HEIGHT
+    )
+end
+
+function Layout:GetConditionHeight(conditionControl)
+    if not conditionControl then
+        return 0
+    end
+
+    return self:ComputeRowHeight(
+        conditionControl,
+        self.deps.CONDITION_INDENT_X,
+        0,
+        0,
+        0,
+        self.deps.CONDITION_MIN_HEIGHT
+    )
+end
+
+function Layout:GetCategoryTotalHeight(categoryControl, rowsInCategory)
+    local headerHeight = self:GetCategoryHeaderHeight(categoryControl)
+    local totalHeight = headerHeight
+    local questCount = 0
+
+    if rowsInCategory then
+        for index = 1, #rowsInCategory do
+            local row = rowsInCategory[index]
+            local rowType = row and row.rowType
+            local rowHeight = 0
+
+            if rowType == "quest" then
+                rowHeight = self:GetQuestRowHeight(row, row and row.data and row.data.quest)
+                questCount = questCount + 1
+            elseif rowType == "condition" then
+                rowHeight = self:GetConditionHeight(row, row and row.data and row.data.condition)
+            else
+                rowHeight = row and row.GetHeight and row:GetHeight() or 0
+            end
+
+            if rowHeight > 0 then
+                totalHeight = totalHeight + self.verticalPadding + rowHeight
+            end
+        end
+    end
+
+    return totalHeight, questCount
+end
+
 function Layout:AnchorControl(control, indentX)
     local state = self.state or {}
     indentX = indentX or 0
@@ -73,28 +196,72 @@ end
 
 function Layout:UpdateContentSize()
     local state = self.state or {}
-    local RefreshControlMetrics = self.deps.RefreshControlMetrics
 
     local maxWidth = 0
     local totalHeight = 0
     local visibleCount = 0
 
+    local currentCategoryControl = nil
+    local currentCategoryRows = nil
+
     for index = 1, #state.orderedControls do
         local control = state.orderedControls[index]
-        if RefreshControlMetrics then
-            RefreshControlMetrics(control)
-        end
         if control and not control:IsHidden() then
+            local rowType = control.rowType
+            local height = 0
+
+            if rowType == "category" then
+                if currentCategoryControl and self.deps.IsDebugLoggingEnabled and self.deps.IsDebugLoggingEnabled() then
+                    local previousHeight, previousQuestCount = self:GetCategoryTotalHeight(currentCategoryControl, currentCategoryRows)
+                    safeDebug(
+                        "%s: Category height cat=%s quests=%d total=%s",
+                        MODULE_TAG,
+                        tostring(currentCategoryControl.categoryKey or (currentCategoryControl.data and currentCategoryControl.data.categoryKey)),
+                        previousQuestCount or 0,
+                        tostring(previousHeight)
+                    )
+                end
+
+                currentCategoryControl = control
+                currentCategoryRows = {}
+                height = self:GetCategoryHeaderHeight(control)
+            elseif rowType == "quest" then
+                height = self:GetQuestRowHeight(control, control.data and control.data.quest)
+                if currentCategoryRows then
+                    table.insert(currentCategoryRows, control)
+                end
+            elseif rowType == "condition" then
+                height = self:GetConditionHeight(control, control.data and control.data.condition)
+                if currentCategoryRows then
+                    table.insert(currentCategoryRows, control)
+                end
+            else
+                height = control.GetHeight and control:GetHeight() or 0
+            end
+
+            if visibleCount > 0 then
+                totalHeight = totalHeight + self.verticalPadding
+            end
+
+            totalHeight = totalHeight + height
             visibleCount = visibleCount + 1
+
             local width = (control:GetWidth() or 0) + (control.currentIndent or 0)
             if width > maxWidth then
                 maxWidth = width
             end
-            totalHeight = totalHeight + (control:GetHeight() or 0)
-            if visibleCount > 1 then
-                totalHeight = totalHeight + self.verticalPadding
-            end
         end
+    end
+
+    if currentCategoryControl and self.deps.IsDebugLoggingEnabled and self.deps.IsDebugLoggingEnabled() then
+        local height, questCount = self:GetCategoryTotalHeight(currentCategoryControl, currentCategoryRows)
+        safeDebug(
+            "%s: Category height cat=%s quests=%d total=%s",
+            MODULE_TAG,
+            tostring(currentCategoryControl.categoryKey or (currentCategoryControl.data and currentCategoryControl.data.categoryKey)),
+            questCount or 0,
+            tostring(height)
+        )
     end
 
     state.contentWidth = maxWidth
@@ -117,7 +284,6 @@ function Layout:LayoutCondition(condition)
     local AcquireConditionControl = self.deps.AcquireConditionControl
     local FormatConditionText = self.deps.FormatConditionText
     local GetQuestTrackerColor = self.deps.GetQuestTrackerColor
-    local ApplyRowMetrics = self.deps.ApplyRowMetrics
 
     local control = AcquireConditionControl and AcquireConditionControl()
     if not control then
@@ -132,9 +298,7 @@ function Layout:LayoutCondition(condition)
         local r, g, b, a = GetQuestTrackerColor("objectiveText")
         control.label:SetColor(r, g, b, a)
     end
-    if ApplyRowMetrics then
-        ApplyRowMetrics(control, self.deps.CONDITION_INDENT_X, 0, 0, 0, self.deps.CONDITION_MIN_HEIGHT)
-    end
+    self:GetConditionHeight(control)
     control:SetHidden(false)
     self:AnchorControl(control, self.deps.CONDITION_INDENT_X)
 end
@@ -146,7 +310,6 @@ function Layout:LayoutQuest(quest)
     local GetQuestTrackerColor = self.deps.GetQuestTrackerColor
     local ApplyBaseColor = self.deps.ApplyBaseColor
     local UpdateQuestIconSlot = self.deps.UpdateQuestIconSlot
-    local ApplyRowMetrics = self.deps.ApplyRowMetrics
     local IsQuestExpanded = self.deps.IsQuestExpanded
     local LayoutCondition = function(condition)
         self:LayoutCondition(condition)
@@ -184,16 +347,7 @@ function Layout:LayoutQuest(quest)
     if UpdateQuestIconSlot then
         UpdateQuestIconSlot(control)
     end
-    if ApplyRowMetrics then
-        ApplyRowMetrics(
-            control,
-            self.deps.QUEST_INDENT_X,
-            self.deps.QUEST_ICON_SLOT_WIDTH,
-            self.deps.QUEST_ICON_SLOT_PADDING_X,
-            0,
-            self.deps.QUEST_MIN_HEIGHT
-        )
-    end
+    self:GetQuestRowHeight(control, quest)
     control:SetHidden(false)
     self:AnchorControl(control, self.deps.QUEST_INDENT_X)
 
@@ -222,7 +376,6 @@ function Layout:LayoutCategory(category, providedControl)
     local GetQuestTrackerColor = self.deps.GetQuestTrackerColor
     local ApplyBaseColor = self.deps.ApplyBaseColor
     local UpdateCategoryToggle = self.deps.UpdateCategoryToggle
-    local ApplyRowMetrics = self.deps.ApplyRowMetrics
 
     local control = AcquireCategoryControl and AcquireCategoryControl(providedControl)
     if not control then
@@ -262,17 +415,7 @@ function Layout:LayoutCategory(category, providedControl)
     if UpdateCategoryToggle then
         UpdateCategoryToggle(control, expanded)
     end
-    if ApplyRowMetrics then
-        ApplyRowMetrics(
-            control,
-            self.deps.CATEGORY_INDENT_X,
-            self.deps.GetToggleWidth and self.deps.GetToggleWidth(control.toggle, self.deps.CATEGORY_TOGGLE_WIDTH)
-                or (self.deps.CATEGORY_TOGGLE_WIDTH or 0),
-            self.deps.TOGGLE_LABEL_PADDING_X,
-            0,
-            self.deps.CATEGORY_MIN_HEIGHT
-        )
-    end
+    self:GetCategoryHeaderHeight(control)
     control:SetHidden(false)
     self:AnchorControl(control, self.deps.CATEGORY_INDENT_X)
 

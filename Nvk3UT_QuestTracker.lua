@@ -1225,77 +1225,6 @@ local function GetToggleWidth(toggle, fallback)
     return fallback or 0
 end
 
-local function GetContainerWidth()
-    if not state.container or not state.container.GetWidth then
-        return 0
-    end
-
-    local width = state.container:GetWidth()
-    if not width or width <= 0 then
-        return 0
-    end
-
-    return width
-end
-
-local function ApplyRowMetrics(control, indent, toggleWidth, leftPadding, rightPadding, minHeight)
-    if not control or not control.label then
-        return
-    end
-
-    indent = indent or 0
-    toggleWidth = toggleWidth or 0
-    leftPadding = leftPadding or 0
-    rightPadding = rightPadding or 0
-
-    local containerWidth = GetContainerWidth()
-    local availableWidth = containerWidth - indent - toggleWidth - leftPadding - rightPadding
-    if availableWidth < 0 then
-        availableWidth = 0
-    end
-
-    control.label:SetWidth(availableWidth)
-
-    local textHeight = control.label:GetTextHeight() or 0
-    local targetHeight = textHeight + ROW_TEXT_PADDING_Y
-    if minHeight then
-        targetHeight = math.max(minHeight, targetHeight)
-    end
-
-    control:SetHeight(targetHeight)
-end
-
-local function RefreshControlMetrics(control)
-    if not control or not control.label then
-        return
-    end
-
-    local indent = control.currentIndent or 0
-    local rowType = control.rowType
-
-    if rowType == "category" then
-        ApplyRowMetrics(
-            control,
-            indent,
-            GetToggleWidth(control.toggle, CATEGORY_TOGGLE_WIDTH),
-            TOGGLE_LABEL_PADDING_X,
-            0,
-            CATEGORY_MIN_HEIGHT
-        )
-    elseif rowType == "quest" then
-        ApplyRowMetrics(
-            control,
-            indent,
-            QUEST_ICON_SLOT_WIDTH,
-            QUEST_ICON_SLOT_PADDING_X,
-            0,
-            QUEST_MIN_HEIGHT
-        )
-    elseif rowType == "condition" then
-        ApplyRowMetrics(control, indent, 0, 0, 0, CONDITION_MIN_HEIGHT)
-    end
-end
-
 local function ResolveQuestDebugInfo(journalIndex)
     local info = { id = journalIndex or "-" }
 
@@ -4476,8 +4405,6 @@ local function ConfigureLayoutHelper()
     if QuestTrackerLayout and QuestTrackerLayout.Init then
         QuestTrackerLayout:Init(state, {
             VERTICAL_PADDING = VERTICAL_PADDING,
-            RefreshControlMetrics = RefreshControlMetrics,
-            ApplyRowMetrics = ApplyRowMetrics,
             CONDITION_INDENT_X = CONDITION_INDENT_X,
             CONDITION_MIN_HEIGHT = CONDITION_MIN_HEIGHT,
             QUEST_INDENT_X = QUEST_INDENT_X,
@@ -4488,6 +4415,8 @@ local function ConfigureLayoutHelper()
             CATEGORY_TOGGLE_WIDTH = CATEGORY_TOGGLE_WIDTH,
             TOGGLE_LABEL_PADDING_X = TOGGLE_LABEL_PADDING_X,
             CATEGORY_MIN_HEIGHT = CATEGORY_MIN_HEIGHT,
+            ROW_TEXT_PADDING_Y = ROW_TEXT_PADDING_Y,
+            IsDebugLoggingEnabled = IsDebugLoggingEnabled,
             GetToggleWidth = GetToggleWidth,
             AcquireConditionControl = AcquireConditionControl,
             FormatConditionText = FormatConditionText,
