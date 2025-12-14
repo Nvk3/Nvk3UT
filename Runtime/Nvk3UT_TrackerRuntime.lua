@@ -437,7 +437,7 @@ local function refreshQuestTracker(viewModel)
 
     local refresh = tracker.Refresh
     if type(refresh) == "function" then
-        local invoked = callWithOptionalSelf(tracker, refresh, false, viewModel)
+        local invoked = callWithOptionalSelf(tracker, refresh, true, viewModel)
         return invoked
     end
 
