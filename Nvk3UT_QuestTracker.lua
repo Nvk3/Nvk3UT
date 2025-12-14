@@ -3277,6 +3277,61 @@ local function OnTrackedQuestUpdate(_, trackingType, context)
     end
 end
 
+local function ResolveTrackedQuestAfterQuestAdded()
+    local trackedIndex
+
+    if GetTrackedQuestIndex then
+        local ok, current = SafeCall(GetTrackedQuestIndex)
+        if ok then
+            local numeric = tonumber(current)
+            if numeric and numeric > 0 then
+                trackedIndex = numeric
+            end
+        end
+    end
+
+    if not trackedIndex then
+        trackedIndex = GetFocusedQuestIndex()
+    end
+
+    if trackedIndex and trackedIndex > 0 and DoesJournalQuestExist(trackedIndex) then
+        return trackedIndex
+    end
+
+    return nil
+end
+
+local function SyncActiveQuestForAutoTrack(journalIndex, questKey)
+    if not journalIndex or journalIndex <= 0 then
+        return
+    end
+
+    local normalizedQuestKey = questKey or GetQuestKeyFromJournalIndex(journalIndex)
+
+    local function execute()
+        local trackedIndex = ResolveTrackedQuestAfterQuestAdded()
+
+        DebugLog(
+            "QuestAdded: tracked/assisted after accept = %s (added=%s)",
+            tostring(trackedIndex),
+            tostring(journalIndex)
+        )
+
+        if trackedIndex == journalIndex then
+            DebugLog("QuestAdded: Auto-track detected -> syncing active questKey %s", tostring(normalizedQuestKey))
+            WriteActiveQuest(normalizedQuestKey, "auto")
+        else
+            DebugLog("QuestAdded: Auto-track not detected -> no sync")
+        end
+    end
+
+    if zo_callLater then
+        zo_callLater(execute, 0)
+    else
+        execute()
+    end
+end
+
 local function ShouldAutoTrackNewQuest()
     if not IsQuestSelectionMode() then
         return false
@@ -3291,11 +3346,19 @@ local function ShouldAutoTrackNewQuest()
 end
 
 local function OnQuestAdded(_, journalIndex)
+    local numericIndex = tonumber(journalIndex)
+    local questKey = GetQuestKeyFromJournalIndex(journalIndex)
+
+    DebugLog("QUEST_ADDED received: journalIndex=%s questKey=%s", tostring(numericIndex), tostring(questKey))
+
+    if numericIndex then
+        SyncActiveQuestForAutoTrack(numericIndex, questKey)
+    end
+
     if not ShouldAutoTrackNewQuest() then
         return
     end
 
-    local numericIndex = tonumber(journalIndex)
     if not numericIndex or numericIndex <= 0 then
         return
     end
