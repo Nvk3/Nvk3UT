@@ -4004,7 +4004,7 @@ local function InitializeCategoryControl(control)
         if not upInside or button ~= MOUSE_BUTTON_INDEX_LEFT then
             return
         end
-        local catKey = ctrl.data and ctrl.data.categoryKey
+        local catKey = ctrl.categoryKey or (ctrl.data and ctrl.data.categoryKey)
         if not catKey then
             return
         end
@@ -4018,7 +4018,7 @@ local function InitializeCategoryControl(control)
         ApplyMouseoverHighlight(ctrl)
         local expanded = ctrl.isExpanded
         if expanded == nil then
-            local catKey = ctrl.data and ctrl.data.categoryKey
+            local catKey = ctrl.categoryKey or (ctrl.data and ctrl.data.categoryKey)
             expanded = IsCategoryExpanded(catKey)
         end
         UpdateCategoryToggle(ctrl, expanded)
@@ -4027,7 +4027,7 @@ local function InitializeCategoryControl(control)
         RestoreBaseColor(ctrl)
         local expanded = ctrl.isExpanded
         if expanded == nil then
-            local catKey = ctrl.data and ctrl.data.categoryKey
+            local catKey = ctrl.categoryKey or (ctrl.data and ctrl.data.categoryKey)
             expanded = IsCategoryExpanded(catKey)
         end
         UpdateCategoryToggle(ctrl, expanded)
@@ -4335,6 +4335,7 @@ local function LayoutCategory(category, categoryControl)
         categoryType = category.type,
         groupOrder = category.groupOrder,
     }
+    control.categoryKey = category.key
     local normalizedKey = NormalizeCategoryKey(category.key)
     if normalizedKey then
         state.categoryControls[normalizedKey] = control

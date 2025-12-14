@@ -206,12 +206,32 @@ function Rows:ReleaseCategory(header, container)
             header:SetHidden(true)
         end
         header.data = nil
+        header.categoryKey = nil
         header.currentIndent = nil
         header.baseColor = nil
-        header.isExpanded = nil
+        header.isExpanded = false
+        if header.toggle and header.toggle.SetTexture then
+            header.toggle:SetTexture("EsoUI/Art/Buttons/tree_closed_up.dds")
+        end
     end
 
     if container then
+        if container.GetNumChildren then
+            for childIndex = container:GetNumChildren(), 1, -1 do
+                local child = container:GetChild(childIndex)
+                if child then
+                    if child.ClearAnchors then
+                        child:ClearAnchors()
+                    end
+                    if child.SetParent then
+                        child:SetParent(self.parent)
+                    end
+                    if child.SetHidden then
+                        child:SetHidden(true)
+                    end
+                end
+            end
+        end
         if container.ClearAnchors then
             container:ClearAnchors()
         end
