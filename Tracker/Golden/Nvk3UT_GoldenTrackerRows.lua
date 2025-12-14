@@ -58,7 +58,7 @@ local GOLDEN_HEADER_TITLE = GetString(SI_NVK3UT_TRACKER_GOLDEN_CATEGORY_MAIN)
 
 local CATEGORY_CHEVRON_SIZE = 20
 local CATEGORY_LABEL_OFFSET_X = 4
-local ENTRY_INDENT_X = 32
+local ENTRY_INDENT_X = DEFAULTS.OBJECTIVE_INDENT_X
 
 local CATEGORY_CHEVRON_TEXTURES = {
     expanded = "EsoUI/Art/Buttons/tree_open_up.dds",
@@ -1405,6 +1405,9 @@ local function applyCategoryRow(row, categoryData)
     if targetHeight then
         row.__height = targetHeight
     end
+
+    targetRow._nvk3utCategoryExpanded = expanded
+    row.__categoryExpanded = expanded
 
     if chevron and chevron.SetTexture then
         local textures = categoryData and categoryData.textures or CATEGORY_CHEVRON_TEXTURES
