@@ -162,7 +162,6 @@ local state = {
     container = nil,
     orderedControls = {},
     lastAnchoredControl = nil,
-    snapshot = nil,
     subscription = nil,
     viewModel = nil,
     pendingRefresh = false,
@@ -170,29 +169,6 @@ local state = {
     contentHeight = 0,
     lastHeight = 0,
 }
-
-local function BuildFavoritesFromSnapshot()
-    local snapshot = state.snapshot
-    local achievements = (snapshot and snapshot.achievements) or {}
-
-    local favorites = {}
-    for index = 1, #achievements do
-        local achievement = achievements[index]
-        local achievementId = achievement and achievement.id
-        if achievementId and IsFavoriteAchievement(achievementId) then
-            favorites[#favorites + 1] = {
-                id = achievementId,
-                name = achievement and achievement.name,
-                icon = achievement and achievement.icon,
-                iconTexture = achievement and achievement.iconTexture,
-                progress = achievement and achievement.progress,
-                progressText = achievement and achievement.progressText,
-            }
-        end
-    end
-
-    return favorites
-end
 
 local function NormalizeMetric(value)
     local numeric = tonumber(value)
@@ -1640,7 +1616,7 @@ local function LayoutAchievement(achievement)
 end
 
 local function LayoutCategory()
-    local achievements = (state.snapshot and state.snapshot.achievements) or {}
+    local achievements = {}
     local sections = state.opts.sections or {}
     local showCompleted = sections.completed ~= false
     local showFavorites = true
@@ -1762,10 +1738,9 @@ local function ApplyFavoritesView(viewModel)
         return
     end
 
-    local favorites = (viewModel and type(viewModel.favorites) == "table") and viewModel.favorites or nil
-    if not favorites then
-        favorites = BuildFavoritesFromSnapshot()
-        DebugLog(string.format("AchievementTracker: derived favorites=%d from snapshot", #favorites))
+    local favorites = (viewModel and type(viewModel.favorites) == "table") and viewModel.favorites or {}
+    if favorites ~= (viewModel and viewModel.favorites) then
+        DebugLog("AchievementTracker: no favorites provided; cleared rows")
     end
 
     if #favorites == 0 then
@@ -1815,13 +1790,16 @@ local function Rebuild(viewModel)
 end
 
 local function OnSnapshotUpdated(snapshot)
-    state.snapshot = snapshot
     local count = 0
     if snapshot and type(snapshot.achievements) == "table" then
         count = #snapshot.achievements
     end
     DebugLog(string.format("AchievementTracker: snapshot received (achievements=%d)", count))
-    Rebuild()
+
+    local controller = Nvk3UT and Nvk3UT.AchievementTrackerController
+    if controller and type(controller.MarkDirty) == "function" then
+        pcall(controller.MarkDirty, controller, "snapshot")
+    end
 end
 
 local function SubscribeToModel()
@@ -1908,7 +1886,6 @@ function AchievementTracker.Shutdown()
 
     state.container = nil
     state.control = nil
-    state.snapshot = nil
     state.viewModel = nil
     state.orderedControls = {}
     state.lastAnchoredControl = nil

@@ -4961,6 +4961,14 @@ local function initTrackers()
         pcall(Nvk3UT.AchievementTracker.Init, state.achievementContainer, achievementOpts)
     end
 
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and type(runtime.QueueDirty) == "function" then
+        safeCall(function()
+            runtime:QueueDirty("achievement")
+        end)
+        debugLog("Host.Init: Achievement queued initial dirty")
+    end
+
     if Nvk3UT and Nvk3UT.QuestTracker and type(Nvk3UT.QuestTracker.ApplyBaseQuestTrackerVisibility) == "function" then
         pcall(Nvk3UT.QuestTracker.ApplyBaseQuestTrackerVisibility)
     elseif Nvk3UT and type(Nvk3UT.ApplyBaseQuestTrackerVisibility) == "function" then

@@ -734,22 +734,50 @@ local function getEndeavorHeight()
 end
 
 local function buildAchievementViewModel()
+    local fallback = { favorites = {} }
     local controller = rawget(Addon, "AchievementTrackerController")
     if type(controller) ~= "table" then
-        return nil, false
+        return fallback, false
     end
 
     local build = controller.BuildViewModel or controller.Build
     if type(build) ~= "function" then
-        return nil, false
+        return fallback, false
     end
 
     local invoked, viewModel = callWithOptionalSelf(controller, build, false)
     if not invoked then
-        return nil, false
+        return fallback, false
+    end
+
+    if type(viewModel) ~= "table" then
+        viewModel = fallback
+    end
+
+    if type(viewModel.favorites) ~= "table" then
+        viewModel.favorites = fallback.favorites
     end
 
     return viewModel, true
+end
+
+local function isAchievementControllerDirty()
+    local controller = rawget(Addon, "AchievementTrackerController")
+    if type(controller) ~= "table" then
+        return false
+    end
+
+    local isDirty = controller.IsDirty
+    if type(isDirty) ~= "function" then
+        return false
+    end
+
+    local invoked, dirty = callWithOptionalSelf(controller, isDirty, false)
+    if not invoked then
+        return false
+    end
+
+    return dirty == true
 end
 
 local function refreshAchievementTracker(viewModel)
@@ -1012,7 +1040,7 @@ function Runtime:ProcessFrame(nowMs)
 
         local questDirty = dirty.quest == true or isQuestControllerDirty()
         local endeavorDirty = dirty.endeavor == true
-        local achievementDirty = dirty.achievement == true
+        local achievementDirty = dirty.achievement == true or isAchievementControllerDirty()
         local layoutDirty = dirty.layout == true
         local goldenDirty = self.goldenDirty == true
 
