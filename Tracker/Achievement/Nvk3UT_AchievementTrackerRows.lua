@@ -62,15 +62,27 @@ local function DebugLog(fmt, ...)
         return
     end
 
-    local ok, message = pcall(string.format, fmt, ...)
-    if not ok then
+    local message
+    if type(fmt) == "string" then
+        local ok, formatted = pcall(string.format, fmt, ...)
+        if ok then
+            message = formatted
+        end
+    end
+
+    if not message then
         message = tostring(fmt)
     end
 
-    if d then
-        d(string.format("[%s] %s", MODULE_NAME, message))
-    elseif print then
-        print(string.format("[%s] %s", MODULE_NAME, message))
+    local logger = nil
+    if type(d) == "function" then
+        logger = d
+    elseif type(print) == "function" then
+        logger = print
+    end
+
+    if logger then
+        logger(string.format("[%s] %s", MODULE_NAME, message))
     end
 end
 
@@ -104,15 +116,27 @@ local function DebugLogOnce(key, fmt, ...)
 
     debugLogOnce[key] = true
 
-    local ok, message = pcall(string.format, fmt, ...)
-    if not ok then
+    local message
+    if type(fmt) == "string" then
+        local ok, formatted = pcall(string.format, fmt, ...)
+        if ok then
+            message = formatted
+        end
+    end
+
+    if not message then
         message = tostring(fmt)
     end
 
-    if d then
-        d(string.format("[%s] %s", MODULE_NAME, message))
-    elseif print then
-        print(string.format("[%s] %s", MODULE_NAME, message))
+    local logger = nil
+    if type(d) == "function" then
+        logger = d
+    elseif type(print) == "function" then
+        logger = print
+    end
+
+    if logger then
+        logger(string.format("[%s] %s", MODULE_NAME, message))
     end
 end
 
