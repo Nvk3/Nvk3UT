@@ -342,8 +342,26 @@ function Controller:BuildViewModel()
     end
 
     local filtered = BuildFilteredSnapshot(snapshot)
+    if not IsSnapshotValid(filtered) then
+        filtered = EmptySnapshot()
+    end
+
     state.viewModel = filtered
     state.isDirty = false
+
+    local categories, quests = CountSnapshotEntries(filtered)
+    local topLevelKeys = {}
+    for key, _ in pairs(filtered or {}) do
+        topLevelKeys[#topLevelKeys + 1] = tostring(key)
+    end
+
+    dbg(
+        "BuildViewModel return: vmNil=%s cats=%d quests=%d keys=%s",
+        tostring(filtered == nil),
+        categories,
+        quests,
+        table.concat(topLevelKeys, ",")
+    )
 
     return filtered
 end
