@@ -5,7 +5,38 @@ Nvk3UT = Nvk3UT or {}
 local Rows = {}
 Rows.__index = Rows
 
-local MODULE_NAME = addonName .. ".AchievementTrackerRows"
+local MODULE_NAME = addonName .. "AchievementTrackerRows"
+
+local function IsDebugLoggingEnabled()
+    local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
+    if utils and type(utils.IsDebugEnabled) == "function" then
+        return utils:IsDebugEnabled()
+    end
+
+    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        return diagnostics:IsDebugEnabled()
+    end
+
+    local addon = Nvk3UT
+    if addon and type(addon.IsDebugEnabled) == "function" then
+        return addon:IsDebugEnabled()
+    end
+
+    return false
+end
+
+local function DebugLog(...)
+    if not IsDebugLoggingEnabled() then
+        return
+    end
+
+    if d then
+        d(string.format("[%s]", MODULE_NAME), ...)
+    elseif print then
+        print("[" .. MODULE_NAME .. "]", ...)
+    end
+end
 
 local CATEGORY_TOGGLE_TEXTURES = {
     expanded = {
@@ -57,68 +88,6 @@ local state = {
 
 local debugLogOnce = {}
 
-local function ResolveLogger()
-    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
-    if diagnostics and type(diagnostics.Debug) == "function" then
-        return diagnostics.Debug
-    end
-
-    if type(d) == "function" then
-        return d
-    end
-
-    if type(print) == "function" then
-        return print
-    end
-
-    return nil
-end
-
-local function FormatDebugMessage(fmt, ...)
-    if type(fmt) == "string" then
-        local ok, formatted = pcall(string.format, fmt, ...)
-        if ok then
-            return formatted
-        end
-    end
-
-    return tostring(fmt)
-end
-
-local function DebugLog(fmt, ...)
-    if not IsDebugLoggingEnabled() then
-        return
-    end
-
-    local logger = ResolveLogger()
-    if type(logger) ~= "function" then
-        return
-    end
-
-    local message = FormatDebugMessage(fmt, ...)
-    local ok, output = pcall(string.format, "[%s] %s", MODULE_NAME, message)
-    logger(ok and output or message)
-end
-
-local function IsDebugLoggingEnabled()
-    local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
-    if utils and type(utils.IsDebugEnabled) == "function" then
-        return utils:IsDebugEnabled()
-    end
-
-    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
-    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
-        return diagnostics:IsDebugEnabled()
-    end
-
-    local addon = Nvk3UT
-    if addon and type(addon.IsDebugEnabled) == "function" then
-        return addon:IsDebugEnabled()
-    end
-
-    return false
-end
-
 local function DebugLogOnce(key, fmt, ...)
     if not IsDebugLoggingEnabled() then
         return
@@ -130,14 +99,17 @@ local function DebugLogOnce(key, fmt, ...)
 
     debugLogOnce[key] = true
 
-    local logger = ResolveLogger()
-    if type(logger) ~= "function" then
+    if type(fmt) ~= "string" then
+        DebugLog(tostring(fmt))
         return
     end
 
-    local message = FormatDebugMessage(fmt, ...)
-    local ok, output = pcall(string.format, "[%s] %s", MODULE_NAME, message)
-    logger(ok and output or message)
+    local ok, message = pcall(string.format, fmt, ...)
+    if not ok then
+        message = tostring(fmt)
+    end
+
+    DebugLog(message)
 end
 
 local function SafeCallDependency(key, fn, ...)
