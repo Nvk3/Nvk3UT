@@ -16,6 +16,10 @@ end
 local function GetRows()
     return Nvk3UT and Nvk3UT.AchievementTrackerRows
 end
+
+local function GetLayout()
+    return Nvk3UT and Nvk3UT.AchievementTrackerLayout
+end
 local FormatCategoryHeaderText =
     (Utils and Utils.FormatCategoryHeaderText)
     or function(baseText, count, showCounts)
@@ -167,8 +171,6 @@ local state = {
     saved = nil,
     control = nil,
     container = nil,
-    orderedControls = {},
-    lastAnchoredControl = nil,
     snapshot = nil,
     subscription = nil,
     pendingRefresh = false,
@@ -176,6 +178,8 @@ local state = {
     contentHeight = 0,
     lastHeight = 0,
     rowsWarningLogged = false,
+    layoutWarningLogged = false,
+    layoutCtx = nil,
 }
 
 local function NormalizeMetric(value)
@@ -288,77 +292,6 @@ local function GetToggleWidth(toggle, fallback)
     end
 
     return fallback or 0
-end
-
-local function GetContainerWidth()
-    if not state.container or not state.container.GetWidth then
-        return 0
-    end
-
-    local width = state.container:GetWidth()
-    if not width or width <= 0 then
-        return 0
-    end
-
-    return width
-end
-
-local function ApplyRowMetrics(control, indent, toggleWidth, leftPadding, rightPadding, minHeight)
-    if not control or not control.label then
-        return
-    end
-
-    indent = indent or 0
-    toggleWidth = toggleWidth or 0
-    leftPadding = leftPadding or 0
-    rightPadding = rightPadding or 0
-
-    local containerWidth = GetContainerWidth()
-    local availableWidth = containerWidth - indent - toggleWidth - leftPadding - rightPadding
-    if availableWidth < 0 then
-        availableWidth = 0
-    end
-
-    control.label:SetWidth(availableWidth)
-
-    local textHeight = control.label:GetTextHeight() or 0
-    local targetHeight = textHeight + ROW_TEXT_PADDING_Y
-    if minHeight then
-        targetHeight = math.max(minHeight, targetHeight)
-    end
-
-    control:SetHeight(targetHeight)
-end
-
-local function RefreshControlMetrics(control)
-    if not control or not control.label then
-        return
-    end
-
-    local indent = control.currentIndent or 0
-    local rowType = control.rowType
-
-    if rowType == "category" then
-        ApplyRowMetrics(
-            control,
-            indent,
-            GetToggleWidth(control.toggle, CATEGORY_TOGGLE_WIDTH),
-            TOGGLE_LABEL_PADDING_X,
-            0,
-            CATEGORY_MIN_HEIGHT
-        )
-    elseif rowType == "achievement" then
-        ApplyRowMetrics(
-            control,
-            indent,
-            ACHIEVEMENT_ICON_SLOT_WIDTH,
-            ACHIEVEMENT_ICON_SLOT_PADDING_X,
-            0,
-            ACHIEVEMENT_MIN_HEIGHT
-        )
-    elseif rowType == "objective" then
-        ApplyRowMetrics(control, indent, 0, 0, 0, OBJECTIVE_MIN_HEIGHT)
-    end
 end
 
 local function EscapeDebugString(value)
@@ -1096,8 +1029,19 @@ local function RefreshVisibility()
 end
 
 local function ResetLayoutState()
-    state.orderedControls = {}
-    state.lastAnchoredControl = nil
+    state.layoutCtx = nil
+end
+
+local function UpdateContentSize()
+    local layout = EnsureLayoutHelper()
+    if not layout or not state.layoutCtx then
+        return
+    end
+
+    local contentWidth, contentHeight = layout:FinishLayout(state.layoutCtx)
+    state.contentWidth = contentWidth or state.contentWidth or 0
+    state.contentHeight = contentHeight or state.contentHeight or 0
+    state.lastHeight = NormalizeMetric(state.contentHeight)
 end
 
 local function WarnMissingRows()
@@ -1113,53 +1057,6 @@ local function WarnMissingRows()
     elseif print then
         print(message)
     end
-end
-
-local function AnchorControl(control, indentX)
-    indentX = indentX or 0
-    control:ClearAnchors()
-
-    if state.lastAnchoredControl then
-        local previousIndent = state.lastAnchoredControl.currentIndent or 0
-        local offsetX = indentX - previousIndent
-        control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, offsetX, VERTICAL_PADDING)
-        control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, 0, VERTICAL_PADDING)
-    else
-        control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, 0)
-        control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, 0, 0)
-    end
-
-    state.lastAnchoredControl = control
-    state.orderedControls[#state.orderedControls + 1] = control
-    control.currentIndent = indentX
-end
-
-local function UpdateContentSize()
-    local maxWidth = 0
-    local totalHeight = 0
-    local visibleCount = 0
-
-    for index = 1, #state.orderedControls do
-        local control = state.orderedControls[index]
-        if control then
-            RefreshControlMetrics(control)
-        end
-        if control and not control:IsHidden() then
-            visibleCount = visibleCount + 1
-            local width = (control:GetWidth() or 0) + (control.currentIndent or 0)
-            if width > maxWidth then
-                maxWidth = width
-            end
-            totalHeight = totalHeight + (control:GetHeight() or 0)
-            if visibleCount > 1 then
-                totalHeight = totalHeight + VERTICAL_PADDING
-            end
-        end
-    end
-
-    state.contentWidth = maxWidth
-    state.contentHeight = totalHeight
-    state.lastHeight = NormalizeMetric(totalHeight)
 end
 
 local function IsCategoryExpanded()
@@ -1333,6 +1230,37 @@ local function EnsureRowsHelper()
     return rows
 end
 
+local function WarnMissingLayout()
+    if state.layoutWarningLogged then
+        return
+    end
+
+    state.layoutWarningLogged = true
+
+    local message = string.format("[%s] Achievement tracker layout helper missing; skipping render", MODULE_NAME)
+    if d then
+        d(message)
+    elseif print then
+        print(message)
+    end
+end
+
+local function EnsureLayoutHelper()
+    local layout = GetLayout()
+    if not layout then
+        WarnMissingLayout()
+        return nil
+    end
+
+    if layout.Init then
+        layout:Init()
+    end
+
+    state.layoutWarningLogged = false
+
+    return layout
+end
+
 local function ReleaseRows()
     local rows = GetRows()
     if rows then
@@ -1340,7 +1268,7 @@ local function ReleaseRows()
     end
 end
 
-local function LayoutObjective(rows, achievement, objective, objectiveIndex)
+local function LayoutObjective(rows, layout, layoutCtx, achievement, objective, objectiveIndex)
     if not ShouldDisplayObjective(objective) then
         return
     end
@@ -1360,12 +1288,15 @@ local function LayoutObjective(rows, achievement, objective, objectiveIndex)
         labelText = text,
         color = { r, g, b, a },
     })
-    ApplyRowMetrics(control, OBJECTIVE_INDENT_X, 0, 0, 0, OBJECTIVE_MIN_HEIGHT)
-    control:SetHidden(false)
-    AnchorControl(control, OBJECTIVE_INDENT_X)
+    layout:ApplyRowLayout(
+        control,
+        "objective",
+        { indent = OBJECTIVE_INDENT_X, minHeight = OBJECTIVE_MIN_HEIGHT },
+        layoutCtx
+    )
 end
 
-local function LayoutAchievement(rows, achievement)
+local function LayoutAchievement(rows, layout, layoutCtx, achievement)
     local control = rows:AcquireRow(GetAchievementRowKey(achievement.id), "achievement")
     local hasObjectives = achievement.objectives and #achievement.objectives > 0
     local isFavorite = IsFavoriteAchievement(achievement.id)
@@ -1381,25 +1312,26 @@ local function LayoutAchievement(rows, achievement)
     })
 
     local expanded = hasObjectives and IsEntryExpanded(achievement.id)
-    ApplyRowMetrics(
+    layout:ApplyRowLayout(
         control,
-        ACHIEVEMENT_INDENT_X,
-        ACHIEVEMENT_ICON_SLOT_WIDTH,
-        ACHIEVEMENT_ICON_SLOT_PADDING_X,
-        0,
-        ACHIEVEMENT_MIN_HEIGHT
+        "achievement",
+        {
+            indent = ACHIEVEMENT_INDENT_X,
+            toggleWidth = ACHIEVEMENT_ICON_SLOT_WIDTH,
+            leftPadding = ACHIEVEMENT_ICON_SLOT_PADDING_X,
+            minHeight = ACHIEVEMENT_MIN_HEIGHT,
+        },
+        layoutCtx
     )
-    control:SetHidden(false)
-    AnchorControl(control, ACHIEVEMENT_INDENT_X)
 
     if hasObjectives and expanded then
         for index = 1, #achievement.objectives do
-            LayoutObjective(rows, achievement, achievement.objectives[index], index)
+            LayoutObjective(rows, layout, layoutCtx, achievement, achievement.objectives[index], index)
         end
     end
 end
 
-local function LayoutCategory(rows)
+local function LayoutCategory(rows, layout, layoutCtx)
     local achievements = (state.snapshot and state.snapshot.achievements) or {}
     local sections = state.opts.sections or {}
     local showCompleted = sections.completed ~= false
@@ -1484,21 +1416,21 @@ local function LayoutCategory(rows)
         baseColor = { r, g, b, a },
         expanded = expanded,
     })
-    ApplyRowMetrics(
+    layout:ApplyRowLayout(
         control,
-        CATEGORY_INDENT_X,
-        GetToggleWidth(control.toggle, CATEGORY_TOGGLE_WIDTH),
-        TOGGLE_LABEL_PADDING_X,
-        0,
-        CATEGORY_MIN_HEIGHT
+        "category",
+        {
+            indent = CATEGORY_INDENT_X,
+            toggleWidth = GetToggleWidth(control.toggle, CATEGORY_TOGGLE_WIDTH),
+            leftPadding = TOGGLE_LABEL_PADDING_X,
+            minHeight = CATEGORY_MIN_HEIGHT,
+        },
+        layoutCtx
     )
-
-    control:SetHidden(false)
-    AnchorControl(control, CATEGORY_INDENT_X)
 
     if expanded then
         for index = 1, #visibleEntries do
-            LayoutAchievement(rows, visibleEntries[index])
+            LayoutAchievement(rows, layout, layoutCtx, visibleEntries[index])
         end
     end
 end
@@ -1509,7 +1441,8 @@ local function Rebuild()
     end
 
     local rows = EnsureRowsHelper()
-    if not rows then
+    local layout = EnsureLayoutHelper()
+    if not rows or not layout then
         ResetLayoutState()
         state.contentWidth = 0
         state.contentHeight = 0
@@ -1518,13 +1451,16 @@ local function Rebuild()
         return
     end
 
-    rows:BeginRefresh()
-    ResetLayoutState()
+    state.layoutCtx = layout:BeginLayout(state.container, { verticalPadding = VERTICAL_PADDING, textPaddingY = ROW_TEXT_PADDING_Y })
 
-    LayoutCategory(rows)
+    rows:BeginRefresh()
+    LayoutCategory(rows, layout, state.layoutCtx)
 
     rows:EndRefresh()
-    UpdateContentSize()
+    local contentWidth, contentHeight = layout:FinishLayout(state.layoutCtx)
+    state.contentWidth = contentWidth or 0
+    state.contentHeight = contentHeight or 0
+    state.lastHeight = NormalizeMetric(contentHeight)
     NotifyHostContentChanged()
 end
 
@@ -1612,11 +1548,11 @@ function AchievementTracker.Shutdown()
     state.container = nil
     state.control = nil
     state.snapshot = nil
-    state.orderedControls = {}
-    state.lastAnchoredControl = nil
+    state.layoutCtx = nil
     state.fonts = {}
     state.opts = {}
     state.rowsWarningLogged = false
+    state.layoutWarningLogged = false
 
     state.isInitialized = false
     state.pendingRefresh = false
