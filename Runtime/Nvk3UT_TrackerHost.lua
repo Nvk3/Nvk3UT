@@ -5042,7 +5042,7 @@ local function initTrackers()
 
         if achievementModuleLabel then
             safeCall(function()
-                runtime:QueueDirty("achievement")
+                runtime:QueueDirty("achievement", "init")
             end)
 
             debugLog("Host.Init: Achievement wired via facade and queued initial dirty")

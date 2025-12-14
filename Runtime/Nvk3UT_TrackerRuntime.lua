@@ -902,6 +902,8 @@ function Runtime:QueueDirty(channel, opts)
                 queuedLog[key] = true
                 if key == "endeavor" then
                     debug("Runtime.QueueDirty: endeavor")
+                elseif key == "achievement" then
+                    debug("Runtime.QueueDirty: achievement")
                 end
             end
         end
@@ -911,6 +913,8 @@ function Runtime:QueueDirty(channel, opts)
             queuedLog[normalized] = true
             if normalized == "endeavor" then
                 debug("Runtime.QueueDirty: endeavor")
+            elseif normalized == "achievement" then
+                debug("Runtime.QueueDirty: achievement")
             end
         end
     end
@@ -1073,6 +1077,7 @@ function Runtime:ProcessFrame(nowMs)
         local processAchievement = achievementDirty and not suppressAchievementProcessing
         local achievementViewModel, achievementVmBuilt = nil, false
         if processAchievement then
+            debug("ProcessFrame: achievementDirty -> refresh")
             achievementViewModel, achievementVmBuilt = buildAchievementViewModel()
             if achievementVmBuilt then
                 debug("Runtime: built achievement view model")
