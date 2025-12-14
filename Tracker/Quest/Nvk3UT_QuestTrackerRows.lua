@@ -7,22 +7,28 @@ Rows.__index = Rows
 
 local MODULE_TAG = addonName .. ".QuestTrackerRows"
 
-local function clearObjectiveControls(row)
+local function resetObjectiveControls(row)
     if not row then
         return
     end
 
+    row.objectiveControls = row.objectiveControls or {}
     local objectiveControls = row.objectiveControls
-    if not objectiveControls then
-        row.objectiveControls = {}
-        return
-    end
 
     for index = 1, #objectiveControls do
         local objectiveControl = objectiveControls[index]
         if objectiveControl then
+            if objectiveControl.label and objectiveControl.label.SetText then
+                objectiveControl.label:SetText("")
+            end
+            if objectiveControl.SetText then
+                objectiveControl:SetText("")
+            end
             if objectiveControl.ClearAnchors then
                 objectiveControl:ClearAnchors()
+            end
+            if objectiveControl.label and objectiveControl.label.ClearAnchors then
+                objectiveControl.label:ClearAnchors()
             end
             if objectiveControl.SetParent then
                 objectiveControl:SetParent(row)
@@ -30,15 +36,11 @@ local function clearObjectiveControls(row)
             if objectiveControl.SetHidden then
                 objectiveControl:SetHidden(true)
             end
-            if objectiveControl.label and objectiveControl.label.SetText then
-                objectiveControl.label:SetText("")
-            end
-            if objectiveControl.SetText then
-                objectiveControl:SetText("")
+            if objectiveControl.label and objectiveControl.label.SetHidden then
+                objectiveControl.label:SetHidden(true)
             end
             objectiveControl.data = nil
         end
-        objectiveControls[index] = nil
     end
 
     if row.objectiveContainer then
@@ -53,8 +55,8 @@ local function clearObjectiveControls(row)
         end
     end
 
-    row.objectiveControls = {}
     row.objectiveCount = nil
+    row.objectiveHeight = nil
 end
 
 local function getAddon()
@@ -100,7 +102,7 @@ function Rows:Init(parentContainer, trackerState, callbacks)
 end
 
 function Rows:ResetQuestRowObjectives(row)
-    clearObjectiveControls(row)
+    resetObjectiveControls(row)
 end
 
 function Rows:Reset()
@@ -513,7 +515,7 @@ function Rows:SetCategoryRowsVisible(categoryKey, visible)
                 row:ClearAnchors()
             end
             if not visible then
-                clearObjectiveControls(row)
+                resetObjectiveControls(row)
             end
             if not visible and row.objectiveControls then
                 for objectiveIndex = 1, #row.objectiveControls do
