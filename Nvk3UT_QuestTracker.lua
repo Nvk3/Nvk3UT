@@ -56,6 +56,7 @@ local QuestState = Nvk3UT and Nvk3UT.QuestState
 local QuestSelection = Nvk3UT and Nvk3UT.QuestSelection
 local QuestFilter = Nvk3UT and Nvk3UT.QuestFilter
 local QuestTrackerRows = Nvk3UT and Nvk3UT.QuestTrackerRows
+local QuestTrackerLayout = Nvk3UT and Nvk3UT.QuestTrackerLayout
 local QUEST_FILTER_MODE_ALL = (QuestFilter and QuestFilter.MODE_ALL) or 1
 local QUEST_FILTER_MODE_ACTIVE = (QuestFilter and QuestFilter.MODE_ACTIVE) or 2
 local QUEST_FILTER_MODE_SELECTION = (QuestFilter and QuestFilter.MODE_SELECTION) or 3
@@ -3550,12 +3551,9 @@ local function BuildFontString(descriptor, fallback)
 end
 
 local function ResetLayoutState()
-    state.orderedControls = {}
-    state.lastAnchoredControl = nil
-    state.categoryControls = {}
-    state.questControls = {}
-    state.contentWidth = 0
-    state.contentHeight = 0
+    if QuestTrackerLayout and QuestTrackerLayout.ResetLayoutState then
+        QuestTrackerLayout:ResetLayoutState()
+    end
 end
 
 local function ReleaseAll(pool)
@@ -3565,57 +3563,14 @@ local function ReleaseAll(pool)
 end
 
 local function AnchorControl(control, indentX)
-    indentX = indentX or 0
-    control:ClearAnchors()
-
-    if state.lastAnchoredControl then
-        local previousIndent = state.lastAnchoredControl.currentIndent or 0
-        local offsetX = indentX - previousIndent
-        control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, offsetX, VERTICAL_PADDING)
-        control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, 0, VERTICAL_PADDING)
-    else
-        control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, 0)
-        control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, 0, 0)
+    if QuestTrackerLayout and QuestTrackerLayout.AnchorControl then
+        return QuestTrackerLayout:AnchorControl(control, indentX)
     end
-
-    state.lastAnchoredControl = control
-    state.orderedControls[#state.orderedControls + 1] = control
-    control.currentIndent = indentX
 end
 
 local function UpdateContentSize()
-    local maxWidth = 0
-    local totalHeight = 0
-    local visibleCount = 0
-
-    for index = 1, #state.orderedControls do
-        local control = state.orderedControls[index]
-        if control then
-            RefreshControlMetrics(control)
-        end
-        if control and not control:IsHidden() then
-            visibleCount = visibleCount + 1
-            local width = (control:GetWidth() or 0) + (control.currentIndent or 0)
-            if width > maxWidth then
-                maxWidth = width
-            end
-            totalHeight = totalHeight + (control:GetHeight() or 0)
-            if visibleCount > 1 then
-                totalHeight = totalHeight + VERTICAL_PADDING
-            end
-        end
-    end
-
-    state.contentWidth = maxWidth
-    state.contentHeight = totalHeight
-
-    if IsDebugLoggingEnabled() then
-        DebugLog(
-            "UpdateContentSize: controls=%d width=%s height=%s",
-            #state.orderedControls,
-            tostring(state.contentWidth),
-            tostring(state.contentHeight)
-        )
+    if QuestTrackerLayout and QuestTrackerLayout.UpdateContentSize then
+        return QuestTrackerLayout:UpdateContentSize()
     end
 end
 
@@ -4273,228 +4228,39 @@ local function EnsurePools()
 end
 
 local function LayoutCondition(condition)
-    if not ShouldDisplayCondition(condition) then
-        return
+    if QuestTrackerLayout and QuestTrackerLayout.LayoutCondition then
+        return QuestTrackerLayout:LayoutCondition(condition)
     end
-
-    local control = AcquireConditionControl()
-    control.data = { condition = condition }
-    control.label:SetText(FormatConditionText(condition))
-    if control.label then
-        local r, g, b, a = GetQuestTrackerColor("objectiveText")
-        control.label:SetColor(r, g, b, a)
-    end
-    ApplyRowMetrics(control, CONDITION_INDENT_X, 0, 0, 0, CONDITION_MIN_HEIGHT)
-    control:SetHidden(false)
-    AnchorControl(control, CONDITION_INDENT_X)
 end
 
 local function LayoutQuest(quest)
-    local providedControl
-    if QuestTrackerRows and QuestTrackerRows.AcquireQuestRow then
-        providedControl = QuestTrackerRows:AcquireQuestRow()
-    end
-
-    local control = AcquireQuestControl(providedControl)
-    control.data = { quest = quest }
-    control.questJournalIndex = quest and quest.journalIndex
-    control.questKey = NormalizeQuestKey(quest and quest.journalIndex)
-    control.categoryKey = quest and quest.categoryKey
-    control.label:SetText(quest.name or "")
-
-    local colorRole = DetermineQuestColorRole(quest)
-    local r, g, b, a = GetQuestTrackerColor(colorRole)
-    ApplyBaseColor(control, r, g, b, a)
-
-    local questKey = control.questKey
-    local expanded = IsQuestExpanded(quest.journalIndex)
-    if IsDebugLoggingEnabled() then
-        DebugLog(string.format(
-            "BUILD_APPLY quest=%s expanded=%s",
-            tostring(questKey or quest.journalIndex),
-            tostring(expanded)
-        ))
-    end
-    UpdateQuestIconSlot(control)
-    ApplyRowMetrics(
-        control,
-        QUEST_INDENT_X,
-        QUEST_ICON_SLOT_WIDTH,
-        QUEST_ICON_SLOT_PADDING_X,
-        0,
-        QUEST_MIN_HEIGHT
-    )
-    control:SetHidden(false)
-    AnchorControl(control, QUEST_INDENT_X)
-
-    if quest and quest.journalIndex then
-        state.questControls[quest.journalIndex] = control
-    end
-
-    if expanded then
-        for stepIndex = 1, #quest.steps do
-            local step = quest.steps[stepIndex]
-            if step.isVisible ~= false then
-                for conditionIndex = 1, #step.conditions do
-                    LayoutCondition(step.conditions[conditionIndex])
-                end
-            end
-        end
+    if QuestTrackerLayout and QuestTrackerLayout.LayoutQuest then
+        return QuestTrackerLayout:LayoutQuest(quest)
     end
 end
 
 local function LayoutCategory(category, categoryControl)
-    local control = AcquireCategoryControl(categoryControl)
-    control.data = {
-        categoryKey = category.key,
-        parentKey = category.parent and category.parent.key or nil,
-        parentName = category.parent and category.parent.name or nil,
-        groupKey = category.groupKey,
-        groupName = category.groupName,
-        categoryType = category.type,
-        groupOrder = category.groupOrder,
-    }
-    control.categoryKey = category.key
-    local normalizedKey = NormalizeCategoryKey(category.key)
-    if normalizedKey then
-        state.categoryControls[normalizedKey] = control
-    end
-    local count = #category.quests
-    control.label:SetText(FormatCategoryHeaderText(category.name or "", count, ShouldShowQuestCategoryCounts()))
-    local expanded = IsCategoryExpanded(category.key)
-    if IsDebugLoggingEnabled() then
-        DebugLog(string.format(
-            "BUILD_APPLY cat=%s expanded=%s",
-            tostring(category.key),
-            tostring(expanded)
-        ))
-    end
-    local colorRole = expanded and "activeTitle" or "categoryTitle"
-    local r, g, b, a = GetQuestTrackerColor(colorRole)
-    ApplyBaseColor(control, r, g, b, a)
-    UpdateCategoryToggle(control, expanded)
-    ApplyRowMetrics(
-        control,
-        CATEGORY_INDENT_X,
-        GetToggleWidth(control.toggle, CATEGORY_TOGGLE_WIDTH),
-        TOGGLE_LABEL_PADDING_X,
-        0,
-        CATEGORY_MIN_HEIGHT
-    )
-    control:SetHidden(false)
-    AnchorControl(control, CATEGORY_INDENT_X)
-
-    if expanded then
-        for index = 1, count do
-            LayoutQuest(category.quests[index])
-        end
+    if QuestTrackerLayout and QuestTrackerLayout.LayoutCategory then
+        return QuestTrackerLayout:LayoutCategory(category, categoryControl)
     end
 end
 
 local function ReleaseRowControl(control)
-    if not control then
-        return
-    end
-
-    local rowType = control.rowType
-    if rowType == "category" then
-        local normalized = control.data and NormalizeCategoryKey(control.data.categoryKey)
-        if normalized then
-            state.categoryControls[normalized] = nil
-        end
-        if state.categoryPool and control.poolKey then
-            state.categoryPool:ReleaseObject(control.poolKey)
-        end
-    elseif rowType == "quest" then
-        local questData = control.data and control.data.quest
-        if questData and questData.journalIndex then
-            state.questControls[questData.journalIndex] = nil
-        end
-        if state.questPool and control.poolKey then
-            state.questPool:ReleaseObject(control.poolKey)
-        end
-    else
-        if state.conditionPool and control.poolKey then
-            state.conditionPool:ReleaseObject(control.poolKey)
-        end
+    if QuestTrackerLayout and QuestTrackerLayout.ReleaseRowControl then
+        return QuestTrackerLayout:ReleaseRowControl(control)
     end
 end
 
 local function TrimOrderedControlsToCategory(keepCategoryCount)
-    if keepCategoryCount <= 0 then
-        ReleaseAll(state.categoryPool)
-        ReleaseAll(state.questPool)
-        ReleaseAll(state.conditionPool)
-        ResetLayoutState()
-        return
+    if QuestTrackerLayout and QuestTrackerLayout.TrimOrderedControlsToCategory then
+        return QuestTrackerLayout:TrimOrderedControlsToCategory(keepCategoryCount)
     end
-
-    local categoryCounter = 0
-    local releaseStartIndex = nil
-
-    for index = 1, #state.orderedControls do
-        local control = state.orderedControls[index]
-        if control and control.rowType == "category" then
-            categoryCounter = categoryCounter + 1
-            if categoryCounter > keepCategoryCount then
-                releaseStartIndex = index
-                break
-            end
-        end
-    end
-
-    if releaseStartIndex then
-        for index = #state.orderedControls, releaseStartIndex, -1 do
-            ReleaseRowControl(state.orderedControls[index])
-            table.remove(state.orderedControls, index)
-        end
-    end
-
-    state.lastAnchoredControl = state.orderedControls[#state.orderedControls]
 end
 
 local function RelayoutFromCategoryIndex(startCategoryIndex)
-    ApplyActiveQuestFromSaved()
-    EnsurePools()
-
-    if
-        not state.snapshot
-        or not state.snapshot.categories
-        or not state.snapshot.categories.ordered
-        or #state.snapshot.categories.ordered == 0
-    then
-        ReleaseAll(state.categoryPool)
-        ReleaseAll(state.questPool)
-        ReleaseAll(state.conditionPool)
-        ResetLayoutState()
-        UpdateContentSize()
-        NotifyHostContentChanged()
-        ProcessPendingExternalReveal()
-        return
+    if QuestTrackerLayout and QuestTrackerLayout.RelayoutFromCategoryIndex then
+        return QuestTrackerLayout:RelayoutFromCategoryIndex(startCategoryIndex)
     end
-
-    if startCategoryIndex <= 1 then
-        ReleaseAll(state.categoryPool)
-        ReleaseAll(state.questPool)
-        ReleaseAll(state.conditionPool)
-        ResetLayoutState()
-        startCategoryIndex = 1
-    else
-        TrimOrderedControlsToCategory(startCategoryIndex - 1)
-    end
-
-    PrimeInitialSavedState()
-
-    for index = startCategoryIndex, #state.snapshot.categories.ordered do
-        local category = state.snapshot.categories.ordered[index]
-        if category and category.quests and #category.quests > 0 then
-            LayoutCategory(category)
-        end
-    end
-
-    UpdateContentSize()
-    NotifyHostContentChanged()
-    ProcessPendingExternalReveal()
 end
 
 local function EmptySnapshot()
@@ -4706,6 +4472,55 @@ local function UnsubscribeFromQuestModel()
     state.questModelSubscription = nil
 end
 
+local function ConfigureLayoutHelper()
+    if QuestTrackerLayout and QuestTrackerLayout.Init then
+        QuestTrackerLayout:Init(state, {
+            VERTICAL_PADDING = VERTICAL_PADDING,
+            RefreshControlMetrics = RefreshControlMetrics,
+            ApplyRowMetrics = ApplyRowMetrics,
+            CONDITION_INDENT_X = CONDITION_INDENT_X,
+            CONDITION_MIN_HEIGHT = CONDITION_MIN_HEIGHT,
+            QUEST_INDENT_X = QUEST_INDENT_X,
+            QUEST_ICON_SLOT_WIDTH = QUEST_ICON_SLOT_WIDTH,
+            QUEST_ICON_SLOT_PADDING_X = QUEST_ICON_SLOT_PADDING_X,
+            QUEST_MIN_HEIGHT = QUEST_MIN_HEIGHT,
+            CATEGORY_INDENT_X = CATEGORY_INDENT_X,
+            CATEGORY_TOGGLE_WIDTH = CATEGORY_TOGGLE_WIDTH,
+            TOGGLE_LABEL_PADDING_X = TOGGLE_LABEL_PADDING_X,
+            CATEGORY_MIN_HEIGHT = CATEGORY_MIN_HEIGHT,
+            GetToggleWidth = GetToggleWidth,
+            AcquireConditionControl = AcquireConditionControl,
+            FormatConditionText = FormatConditionText,
+            GetQuestTrackerColor = GetQuestTrackerColor,
+            ApplyBaseColor = ApplyBaseColor,
+            ShouldDisplayCondition = ShouldDisplayCondition,
+            AcquireQuestControl = AcquireQuestControl,
+            AcquireQuestRow = function()
+                if QuestTrackerRows and QuestTrackerRows.AcquireQuestRow then
+                    return QuestTrackerRows:AcquireQuestRow()
+                end
+                return nil
+            end,
+            DetermineQuestColorRole = DetermineQuestColorRole,
+            UpdateQuestIconSlot = UpdateQuestIconSlot,
+            IsQuestExpanded = IsQuestExpanded,
+            NormalizeQuestKey = NormalizeQuestKey,
+            ShouldShowQuestCategoryCounts = ShouldShowQuestCategoryCounts,
+            IsCategoryExpanded = IsCategoryExpanded,
+            FormatCategoryHeaderText = FormatCategoryHeaderText,
+            UpdateCategoryToggle = UpdateCategoryToggle,
+            AcquireCategoryControl = AcquireCategoryControl,
+            NormalizeCategoryKey = NormalizeCategoryKey,
+            ReleaseAll = ReleaseAll,
+            ApplyActiveQuestFromSaved = ApplyActiveQuestFromSaved,
+            EnsurePools = EnsurePools,
+            PrimeInitialSavedState = PrimeInitialSavedState,
+            NotifyHostContentChanged = NotifyHostContentChanged,
+            ProcessPendingExternalReveal = ProcessPendingExternalReveal,
+        })
+    end
+end
+
 local function ConfigureRowsHelper()
     if QuestTrackerRows and QuestTrackerRows.Init then
         QuestTrackerRows:Init(state.container, state, {
@@ -4736,6 +4551,13 @@ local function Rebuild()
     if QuestTrackerRows and QuestTrackerRows.Reset and QuestTrackerRows.BuildOrRebuildRows then
         QuestTrackerRows:Reset()
         QuestTrackerRows:BuildOrRebuildRows(state.snapshot)
+        if QuestTrackerLayout and QuestTrackerLayout.ApplyLayout then
+            QuestTrackerLayout:ApplyLayout(
+                state.container,
+                QuestTrackerRows.GetCategoryControls and QuestTrackerRows:GetCategoryControls() or nil,
+                QuestTrackerRows.GetRowControls and QuestTrackerRows:GetRowControls() or nil
+            )
+        end
     else
         EnsurePools()
 
@@ -4763,9 +4585,13 @@ local function Rebuild()
             end
         end
 
-        UpdateContentSize()
-        NotifyHostContentChanged()
-        ProcessPendingExternalReveal()
+        if QuestTrackerLayout and QuestTrackerLayout.ApplyLayout then
+            QuestTrackerLayout:ApplyLayout(state.container)
+        else
+            UpdateContentSize()
+            NotifyHostContentChanged()
+            ProcessPendingExternalReveal()
+        end
     end
 
     state.isRebuildInProgress = false
@@ -4799,6 +4625,7 @@ function QuestTracker.Init(parentControl, opts)
         state.control:SetResizeToFitDescendents(true)
     end
 
+    ConfigureLayoutHelper()
     ConfigureRowsHelper()
 
     EnsureSavedVars()

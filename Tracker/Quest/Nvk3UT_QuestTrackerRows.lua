@@ -85,16 +85,6 @@ function Rows:BuildOrRebuildRows(viewModel)
     -- or it is empty, release anything active and exit early.
     if not (viewModel and viewModel.categories and viewModel.categories.ordered) then
         self:ReleaseAllCategories()
-
-        if type(self.callbacks.UpdateContentSize) == "function" then
-            self.callbacks.UpdateContentSize()
-        end
-        if type(self.callbacks.NotifyHostContentChanged) == "function" then
-            self.callbacks.NotifyHostContentChanged()
-        end
-        if type(self.callbacks.ProcessPendingExternalReveal) == "function" then
-            self.callbacks.ProcessPendingExternalReveal()
-        end
         return self:GetRowControls()
     end
 
@@ -130,18 +120,6 @@ function Rows:BuildOrRebuildRows(viewModel)
         end
     end
 
-    if type(self.callbacks.UpdateContentSize) == "function" then
-        self.callbacks.UpdateContentSize()
-    end
-
-    if type(self.callbacks.NotifyHostContentChanged) == "function" then
-        self.callbacks.NotifyHostContentChanged()
-    end
-
-    if type(self.callbacks.ProcessPendingExternalReveal) == "function" then
-        self.callbacks.ProcessPendingExternalReveal()
-    end
-
     local controls = self:GetRowControls()
 
     safeDebug(
@@ -157,6 +135,16 @@ end
 
 function Rows:GetRowControls()
     return self.state and self.state.orderedControls or self.rows or {}
+end
+
+function Rows:GetCategoryControls()
+    local categoryControls = {}
+    if self.categoryPool and self.categoryPool.activeCategories then
+        for index = 1, #self.categoryPool.activeCategories do
+            categoryControls[#categoryControls + 1] = self.categoryPool.activeCategories[index].header
+        end
+    end
+    return categoryControls
 end
 
 function Rows:AcquireCategory()
