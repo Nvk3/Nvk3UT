@@ -5299,9 +5299,7 @@ end
 
 function TrackerHost.Refresh()
     if Nvk3UT.QuestTracker then
-        if Nvk3UT.QuestTracker.RequestRefresh then
-            pcall(Nvk3UT.QuestTracker.RequestRefresh)
-        elseif Nvk3UT.QuestTracker.Refresh then
+        if Nvk3UT.QuestTracker.Refresh then
             pcall(Nvk3UT.QuestTracker.Refresh)
         end
     end

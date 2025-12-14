@@ -4383,7 +4383,7 @@ local function SubscribeToQuestModel()
     end
 
     state.questModelSubscription = function(snapshot)
-        OnQuestModelSnapshotUpdated(snapshot, {
+        QuestTracker.Refresh(snapshot, {
             trigger = "model",
             source = "QuestTracker:QuestModelSubscription",
         })
@@ -4465,71 +4465,6 @@ local function ConfigureRowsHelper()
     end
 end
 
-local function Rebuild()
-    if not state.container then
-        return
-    end
-
-    if IsDebugLoggingEnabled() then
-        DebugLog("REBUILD_START")
-    end
-
-    state.isRebuildInProgress = true
-    ApplyActiveQuestFromSaved()
-
-    if QuestTrackerRows and QuestTrackerRows.Reset and QuestTrackerRows.BuildOrRebuildRows then
-        QuestTrackerRows:Reset()
-        QuestTrackerRows:BuildOrRebuildRows(state.snapshot)
-        if QuestTrackerLayout and QuestTrackerLayout.ApplyLayout then
-            QuestTrackerLayout:ApplyLayout(
-                state.container,
-                QuestTrackerRows.GetCategoryControls and QuestTrackerRows:GetCategoryControls() or nil,
-                QuestTrackerRows.GetRowControls and QuestTrackerRows:GetRowControls() or nil
-            )
-        end
-    else
-        EnsurePools()
-
-        ReleaseAll(state.categoryPool)
-        ReleaseAll(state.questPool)
-        ReleaseAll(state.conditionPool)
-        ResetLayoutState()
-
-        if not state.snapshot or not state.snapshot.categories or not state.snapshot.categories.ordered then
-            UpdateContentSize()
-            NotifyHostContentChanged()
-            state.isRebuildInProgress = false
-            if IsDebugLoggingEnabled() then
-                DebugLog("REBUILD_END")
-            end
-            return
-        end
-
-        PrimeInitialSavedState()
-
-        for index = 1, #state.snapshot.categories.ordered do
-            local category = state.snapshot.categories.ordered[index]
-            if category and category.quests and #category.quests > 0 then
-                LayoutCategory(category)
-            end
-        end
-
-        if QuestTrackerLayout and QuestTrackerLayout.ApplyLayout then
-            QuestTrackerLayout:ApplyLayout(state.container)
-        else
-            UpdateContentSize()
-            NotifyHostContentChanged()
-            ProcessPendingExternalReveal()
-        end
-    end
-
-    state.isRebuildInProgress = false
-
-    if IsDebugLoggingEnabled() then
-        DebugLog("REBUILD_END")
-    end
-end
-
 local function RefreshVisibility()
     if not state.control then
         return
@@ -4589,7 +4524,7 @@ function QuestTracker.Init(parentControl, opts)
     local snapshot = state.snapshot
         or (questModel and questModel.GetSnapshot and questModel.GetSnapshot())
 
-    OnQuestModelSnapshotUpdated(snapshot, {
+    QuestTracker.Refresh(snapshot, {
         trigger = "init",
         source = "QuestTracker:Init",
     })
@@ -4621,7 +4556,7 @@ function QuestTracker.MarkDirty(reason)
     end
 
     rawSnapshot = rawSnapshot or EmptySnapshot()
-    OnQuestModelSnapshotUpdated(rawSnapshot, context)
+    QuestTracker.Refresh(rawSnapshot, context)
 
     local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
     if runtime and runtime.QueueDirty then
@@ -4629,8 +4564,14 @@ function QuestTracker.MarkDirty(reason)
     end
 end
 
-function QuestTracker.Refresh()
-    Rebuild()
+function QuestTracker.Refresh(viewModel, context)
+    local snapshot = viewModel or state.rawSnapshot or state.snapshot or EmptySnapshot()
+    local refreshContext = context or {
+        trigger = "refresh",
+        source = "QuestTracker.Refresh",
+    }
+
+    OnQuestModelSnapshotUpdated(snapshot, refreshContext)
 end
 
 function QuestTracker.Shutdown()
@@ -4735,6 +4676,11 @@ end
 function QuestTracker.GetContentSize()
     UpdateContentSize()
     return state.contentWidth or 0, state.contentHeight or 0
+end
+
+function QuestTracker.GetHeight()
+    UpdateContentSize()
+    return state.contentHeight or 0
 end
 
 function QuestTracker.ApplyBaseQuestTrackerVisibility()
