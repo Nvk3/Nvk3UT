@@ -288,6 +288,8 @@ function Rows:AcquireQuestRow()
         row:SetHidden(false)
     end
 
+    row.objectiveControls = row.objectiveControls or {}
+
     table.insert(self.questPool.activeRows, row)
 
     safeDebug(
@@ -328,6 +330,27 @@ function Rows:ReleaseQuestRow(row)
     row.categoryKey = nil
     row.poolKey = nil
     row.rowType = "quest"
+
+    if row.objectiveControls then
+        for index = 1, #row.objectiveControls do
+            local objectiveControl = row.objectiveControls[index]
+            if objectiveControl then
+                if objectiveControl.ClearAnchors then
+                    objectiveControl:ClearAnchors()
+                end
+                if objectiveControl.SetParent then
+                    objectiveControl:SetParent(self.parent)
+                end
+                if objectiveControl.SetHidden then
+                    objectiveControl:SetHidden(true)
+                end
+                if objectiveControl.label and objectiveControl.label.SetText then
+                    objectiveControl.label:SetText("")
+                end
+            end
+            row.objectiveControls[index] = nil
+        end
+    end
 
     if row.iconSlot then
         if row.iconSlot.SetTexture then

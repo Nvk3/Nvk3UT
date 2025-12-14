@@ -129,9 +129,21 @@ function Layout:GetQuestRowHeight(rowControl, rowData)
     )
 end
 
-function Layout:GetConditionHeight(conditionControl)
+function Layout:GetObjectiveTextHeight(conditionControl, objective)
     if not conditionControl then
         return 0
+    end
+
+    local label = conditionControl.label
+    if label then
+        local text = label.GetText and label:GetText()
+        if not text or text == "" then
+            text = objective
+            if type(objective) == "table" then
+                text = objective.displayText or objective.text or ""
+            end
+        end
+        label:SetText(text or "")
     end
 
     return self:ComputeRowHeight(
@@ -142,6 +154,39 @@ function Layout:GetConditionHeight(conditionControl)
         0,
         self.deps.CONDITION_MIN_HEIGHT
     )
+end
+
+function Layout:GetQuestRowContentHeight(rowControl, rowData)
+    if not rowControl then
+        return 0
+    end
+
+    local totalHeight = self:GetQuestRowHeight(rowControl, rowData and rowData.quest)
+
+    if rowControl.objectiveControls and #rowControl.objectiveControls > 0 then
+        for index = 1, #rowControl.objectiveControls do
+            local objectiveControl = rowControl.objectiveControls[index]
+            if objectiveControl and not objectiveControl:IsHidden() then
+                local objectiveHeight = self:GetObjectiveTextHeight(
+                    objectiveControl,
+                    objectiveControl.data and (objectiveControl.data.objective or objectiveControl.data.condition)
+                )
+                if objectiveHeight > 0 then
+                    totalHeight = totalHeight + self.verticalPadding + objectiveHeight
+                end
+            end
+        end
+    end
+
+    return totalHeight
+end
+
+function Layout:GetConditionHeight(conditionControl)
+    if not conditionControl then
+        return 0
+    end
+
+    return self:GetObjectiveTextHeight(conditionControl, conditionControl.data and conditionControl.data.condition)
 end
 
 function Layout:GetCategoryTotalHeight(categoryControl, rowsInCategory)
@@ -156,7 +201,7 @@ function Layout:GetCategoryTotalHeight(categoryControl, rowsInCategory)
             local rowHeight = 0
 
             if rowType == "quest" then
-                rowHeight = self:GetQuestRowHeight(row, row and row.data and row.data.quest)
+                rowHeight = self:GetQuestRowContentHeight(row, row and row.data)
                 questCount = questCount + 1
             elseif rowType == "condition" then
                 rowHeight = self:GetConditionHeight(row, row and row.data and row.data.condition)
@@ -226,7 +271,7 @@ function Layout:UpdateContentSize()
                 currentCategoryRows = {}
                 height = self:GetCategoryHeaderHeight(control)
             elseif rowType == "quest" then
-                height = self:GetQuestRowHeight(control, control.data and control.data.quest)
+                height = self:GetQuestRowContentHeight(control, control.data)
                 if currentCategoryRows then
                     table.insert(currentCategoryRows, control)
                 end
@@ -347,7 +392,7 @@ function Layout:LayoutQuest(quest)
     if UpdateQuestIconSlot then
         UpdateQuestIconSlot(control)
     end
-    self:GetQuestRowHeight(control, quest)
+    self:GetQuestRowContentHeight(control, control.data)
     control:SetHidden(false)
     self:AnchorControl(control, self.deps.QUEST_INDENT_X)
 
