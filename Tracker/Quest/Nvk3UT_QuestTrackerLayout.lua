@@ -404,6 +404,7 @@ function Layout:LayoutQuest(quest)
     local UpdateQuestIconSlot = self.deps.UpdateQuestIconSlot
     local IsQuestExpanded = self.deps.IsQuestExpanded
     local ResetQuestRowObjectives = self.deps.ResetQuestRowObjectives
+    local ApplyQuestObjectives = self.deps.ApplyQuestObjectives
     local LayoutCondition = function(condition)
         self:LayoutCondition(condition)
     end
@@ -424,6 +425,10 @@ function Layout:LayoutQuest(quest)
     control.categoryKey = quest and quest.categoryKey
     if control.label then
         control.label:SetText(quest and quest.name or "")
+    end
+
+    if ApplyQuestObjectives then
+        ApplyQuestObjectives(control, quest and quest.objectives)
     end
 
     if self.deps.RegisterQuestRow then

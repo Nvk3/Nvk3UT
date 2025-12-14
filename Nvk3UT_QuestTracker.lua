@@ -4542,6 +4542,11 @@ local function ConfigureLayoutHelper()
                     return QuestTrackerRows:ResetQuestRowObjectives(row)
                 end
             end,
+            ApplyQuestObjectives = function(row, objectives)
+                if QuestTrackerRows and QuestTrackerRows.ApplyObjectives then
+                    return QuestTrackerRows:ApplyObjectives(row, objectives)
+                end
+            end,
             DetermineQuestColorRole = DetermineQuestColorRole,
             UpdateQuestIconSlot = UpdateQuestIconSlot,
             IsQuestExpanded = IsQuestExpanded,
