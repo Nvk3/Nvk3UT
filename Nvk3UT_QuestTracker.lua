@@ -55,6 +55,8 @@ local Utils = Nvk3UT and Nvk3UT.Utils
 local QuestState = Nvk3UT and Nvk3UT.QuestState
 local QuestSelection = Nvk3UT and Nvk3UT.QuestSelection
 local QuestFilter = Nvk3UT and Nvk3UT.QuestFilter
+local QuestTrackerRows = Nvk3UT and Nvk3UT.QuestTrackerRows
+local QuestTrackerLayout = Nvk3UT and Nvk3UT.QuestTrackerLayout
 local QUEST_FILTER_MODE_ALL = (QuestFilter and QuestFilter.MODE_ALL) or 1
 local QUEST_FILTER_MODE_ACTIVE = (QuestFilter and QuestFilter.MODE_ACTIVE) or 2
 local QUEST_FILTER_MODE_SELECTION = (QuestFilter and QuestFilter.MODE_SELECTION) or 3
@@ -251,12 +253,14 @@ state = {
     isRebuildInProgress = false,
     questModelSubscription = nil,
     rawSnapshot = nil,
+    lastAutoExpandedQuestKey = nil,
 }
 
 local PRIORITY = {
     manual = 5,
     ["click-select"] = 4,
     ["external-select"] = 4,
+    tracked = 3,
     auto = 2,
     init = 1,
 }
@@ -602,8 +606,8 @@ local function ToggleQuestSelection(questKey, source)
         end
     end
 
-    if changed and QuestTracker.MarkDirty then
-        QuestTracker.MarkDirty(source or "QuestSelectionToggle")
+    if changed and RequestRefresh then
+        RequestRefresh(source or "QuestSelectionToggle")
     end
 
     if changed and QUEST_JOURNAL_KEYBOARD and QUEST_JOURNAL_KEYBOARD.navigationTree then
@@ -1111,6 +1115,10 @@ local function WriteActiveQuest(questKey, source, options)
 
     ApplyActiveQuestFromSaved()
 
+    if normalized == nil then
+        state.lastAutoExpandedQuestKey = nil
+    end
+
     return true
 end
 
@@ -1221,77 +1229,6 @@ local function GetToggleWidth(toggle, fallback)
     end
 
     return fallback or 0
-end
-
-local function GetContainerWidth()
-    if not state.container or not state.container.GetWidth then
-        return 0
-    end
-
-    local width = state.container:GetWidth()
-    if not width or width <= 0 then
-        return 0
-    end
-
-    return width
-end
-
-local function ApplyRowMetrics(control, indent, toggleWidth, leftPadding, rightPadding, minHeight)
-    if not control or not control.label then
-        return
-    end
-
-    indent = indent or 0
-    toggleWidth = toggleWidth or 0
-    leftPadding = leftPadding or 0
-    rightPadding = rightPadding or 0
-
-    local containerWidth = GetContainerWidth()
-    local availableWidth = containerWidth - indent - toggleWidth - leftPadding - rightPadding
-    if availableWidth < 0 then
-        availableWidth = 0
-    end
-
-    control.label:SetWidth(availableWidth)
-
-    local textHeight = control.label:GetTextHeight() or 0
-    local targetHeight = textHeight + ROW_TEXT_PADDING_Y
-    if minHeight then
-        targetHeight = math.max(minHeight, targetHeight)
-    end
-
-    control:SetHeight(targetHeight)
-end
-
-local function RefreshControlMetrics(control)
-    if not control or not control.label then
-        return
-    end
-
-    local indent = control.currentIndent or 0
-    local rowType = control.rowType
-
-    if rowType == "category" then
-        ApplyRowMetrics(
-            control,
-            indent,
-            GetToggleWidth(control.toggle, CATEGORY_TOGGLE_WIDTH),
-            TOGGLE_LABEL_PADDING_X,
-            0,
-            CATEGORY_MIN_HEIGHT
-        )
-    elseif rowType == "quest" then
-        ApplyRowMetrics(
-            control,
-            indent,
-            QUEST_ICON_SLOT_WIDTH,
-            QUEST_ICON_SLOT_PADDING_X,
-            0,
-            QUEST_MIN_HEIGHT
-        )
-    elseif rowType == "condition" then
-        ApplyRowMetrics(control, indent, 0, 0, 0, CONDITION_MIN_HEIGHT)
-    end
 end
 
 local function ResolveQuestDebugInfo(journalIndex)
@@ -2157,10 +2094,8 @@ local function AppendQuestJournalContextMenu(control, button, upInside)
 
     AddCustomMenuItem(label, function()
         ToggleQuestSelection(questKey, "QuestJournal:ContextMenu")
-        QuestTracker.MarkDirty("JournalContext")
-        local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
-        if runtime and runtime.QueueDirty then
-            runtime:QueueDirty("quest")
+        if RequestRefresh then
+            RequestRefresh("QuestJournal:ContextMenu")
         end
         DebugLog("QuestJournalContextMenu: toggled selection for questKey=%s", tostring(questKey))
         RefreshQuestJournalSelectionKeyLabelText()
@@ -2296,7 +2231,7 @@ local function ExpandCategoriesForExternalSelect(journalIndex)
     end
 
     if expandedAny and RequestRefresh then
-        RequestRefresh()
+        RequestRefresh("QuestTracker:ExpandCategoriesForExternalSelect")
     end
 
     return expandedAny, found
@@ -2348,7 +2283,7 @@ local function ExpandCategoriesForClickSelect(journalIndex)
     end
 
     if expandedAny and RequestRefresh then
-        RequestRefresh()
+        RequestRefresh("QuestTracker:ExpandCategoriesForClickSelect")
     end
 
     return expandedAny, found
@@ -2572,6 +2507,10 @@ local function EnsureExclusiveAssistedQuest(journalIndex)
         return
     end
 
+    local function SetAssisted(questIndex, assisted)
+        SafeCall(SetTrackedIsAssisted, TRACK_TYPE_QUEST, assisted == true, questIndex)
+    end
+
     ForEachQuestIndex(function(index)
         if not index then
             return
@@ -2581,11 +2520,11 @@ local function EnsureExclusiveAssistedQuest(journalIndex)
         local shouldAssist = isTarget and true or false
 
         if isTarget then
-            SafeCall(SetTrackedIsAssisted, TRACK_TYPE_QUEST, index, shouldAssist)
+            SetAssisted(index, shouldAssist)
         elseif type(GetTrackedIsAssisted) == "function" then
             local ok, assisted = SafeCall(GetTrackedIsAssisted, TRACK_TYPE_QUEST, index)
             if ok and assisted then
-                SafeCall(SetTrackedIsAssisted, TRACK_TYPE_QUEST, index, false)
+                SetAssisted(index, false)
             end
         end
     end)
@@ -2647,6 +2586,13 @@ local function AutoExpandQuestForTracking(journalIndex, forceExpand, context)
         if context.forceWrite then
             logContext.forceWrite = true
         end
+        if context.priorityOverride ~= nil then
+            logContext.priorityOverride = context.priorityOverride
+        end
+    end
+
+    if logContext.priorityOverride == nil then
+        logContext.priorityOverride = PRIORITY.tracked
     end
 
     SetQuestExpanded(journalIndex, true, logContext)
@@ -2725,16 +2671,55 @@ local function EnsureTrackedQuestVisible(journalIndex, forceExpand, context)
     end
     local isExternal = context and context.isExternal
     local isNewTarget = context and context.isNewTarget
+    local questKey = NormalizeQuestKey and NormalizeQuestKey(journalIndex)
+
+    local shouldAutoExpand = forceExpand
+    if shouldAutoExpand == nil then
+        shouldAutoExpand = isNewTarget
+    end
+    if shouldAutoExpand == nil and questKey then
+        shouldAutoExpand = questKey ~= state.lastAutoExpandedQuestKey
+    end
+    if shouldAutoExpand == nil then
+        shouldAutoExpand = false
+    end
     if isExternal then
         LogExternalSelect(journalIndex)
         ExpandCategoriesForExternalSelect(journalIndex)
-    else
-        EnsureTrackedCategoriesExpanded(journalIndex, forceExpand, logContext)
+    elseif shouldAutoExpand then
+        local expansionContext = {
+            trigger = logContext.trigger,
+            source = logContext.source,
+            stateSource = logContext.stateSource,
+            priorityOverride = PRIORITY.tracked,
+        }
+        EnsureTrackedCategoriesExpanded(journalIndex, forceExpand, expansionContext)
     end
     if isExternal and isNewTarget then
         logContext.forceWrite = true
     end
-    AutoExpandQuestForTracking(journalIndex, forceExpand, logContext)
+    if shouldAutoExpand then
+        local questContext = {
+            trigger = logContext.trigger,
+            source = logContext.source,
+            stateSource = logContext.stateSource,
+            priorityOverride = PRIORITY.tracked,
+            forceWrite = logContext.forceWrite,
+        }
+        AutoExpandQuestForTracking(journalIndex, forceExpand, questContext)
+        if questKey then
+            state.lastAutoExpandedQuestKey = questKey
+        end
+    elseif IsDebugLoggingEnabled() then
+        DebugLog(
+            string.format(
+                "AUTO_EXPAND_SKIP quest=%s newTarget=%s forceExpand=%s",
+                tostring(questKey),
+                tostring(isNewTarget),
+                tostring(forceExpand)
+            )
+        )
+    end
     if isExternal then
         EnsureQuestRowVisible(journalIndex, { allowQueue = true })
     end
@@ -2954,9 +2939,9 @@ local function SyncTrackedQuestState(forcedIndex, forceExpand, context)
         local hasTracked = currentTracked ~= nil
         local hadTracked = previousTracked ~= nil
 
-        if RequestRefresh and (previousTracked ~= currentTracked or hasTracked or hadTracked or pendingApplied or expansionChanged) then
-            RequestRefresh()
-        end
+    if RequestRefresh and (previousTracked ~= currentTracked or hasTracked or hadTracked or pendingApplied or expansionChanged) then
+        RequestRefresh("QuestTracker:SyncTrackedQuestState")
+    end
     until true
 
     if state.pendingDeselection and not state.trackedQuestIndex then
@@ -2988,25 +2973,16 @@ local function ForceAssistTrackedQuest(journalIndex)
     end, FOCUSED_QUEST_TRACKER, journalIndex)
 end
 
-local function RequestRefreshInternal()
-    if not state.isInitialized then
+local function RequestRefreshInternal(reason)
+    local controller = Nvk3UT and Nvk3UT.QuestTrackerController
+    if controller and controller.RequestRefresh then
+        controller:RequestRefresh(reason)
         return
     end
-    if state.pendingRefresh then
-        return
-    end
 
-    state.pendingRefresh = true
-
-    local function execute()
-        state.pendingRefresh = false
-        QuestTracker.Refresh()
-    end
-
-    if zo_callLater then
-        zo_callLater(execute, REFRESH_DEBOUNCE_MS)
-    else
-        execute()
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and runtime.QueueDirty then
+        runtime:QueueDirty("quest")
     end
 end
 
@@ -3549,12 +3525,9 @@ local function BuildFontString(descriptor, fallback)
 end
 
 local function ResetLayoutState()
-    state.orderedControls = {}
-    state.lastAnchoredControl = nil
-    state.categoryControls = {}
-    state.questControls = {}
-    state.contentWidth = 0
-    state.contentHeight = 0
+    if QuestTrackerLayout and QuestTrackerLayout.ResetLayoutState then
+        QuestTrackerLayout:ResetLayoutState()
+    end
 end
 
 local function ReleaseAll(pool)
@@ -3564,57 +3537,21 @@ local function ReleaseAll(pool)
 end
 
 local function AnchorControl(control, indentX)
-    indentX = indentX or 0
-    control:ClearAnchors()
-
-    if state.lastAnchoredControl then
-        local previousIndent = state.lastAnchoredControl.currentIndent or 0
-        local offsetX = indentX - previousIndent
-        control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, offsetX, VERTICAL_PADDING)
-        control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, 0, VERTICAL_PADDING)
-    else
-        control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, 0)
-        control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, 0, 0)
+    if QuestTrackerLayout and QuestTrackerLayout.AnchorControl then
+        return QuestTrackerLayout:AnchorControl(control, indentX)
     end
-
-    state.lastAnchoredControl = control
-    state.orderedControls[#state.orderedControls + 1] = control
-    control.currentIndent = indentX
 end
 
 local function UpdateContentSize()
-    local maxWidth = 0
-    local totalHeight = 0
-    local visibleCount = 0
-
-    for index = 1, #state.orderedControls do
-        local control = state.orderedControls[index]
-        if control then
-            RefreshControlMetrics(control)
-        end
-        if control and not control:IsHidden() then
-            visibleCount = visibleCount + 1
-            local width = (control:GetWidth() or 0) + (control.currentIndent or 0)
-            if width > maxWidth then
-                maxWidth = width
-            end
-            totalHeight = totalHeight + (control:GetHeight() or 0)
-            if visibleCount > 1 then
-                totalHeight = totalHeight + VERTICAL_PADDING
-            end
-        end
+    if not (QuestTrackerLayout and QuestTrackerLayout.UpdateContentSize) then
+        return
     end
 
-    state.contentWidth = maxWidth
-    state.contentHeight = totalHeight
+    QuestTrackerLayout:UpdateContentSize()
 
-    if IsDebugLoggingEnabled() then
-        DebugLog(
-            "UpdateContentSize: controls=%d width=%s height=%s",
-            #state.orderedControls,
-            tostring(state.contentWidth),
-            tostring(state.contentHeight)
-        )
+    if QuestTrackerLayout.state and state then
+        state.contentWidth = QuestTrackerLayout.state.contentWidth
+        state.contentHeight = QuestTrackerLayout.state.contentHeight
     end
 end
 
@@ -3810,6 +3747,11 @@ SetCategoryExpanded = function(categoryKey, expanded, context)
         writeOptions.manualCollapseRespected = manualCollapseRespected
     end
 
+    if context and context.priorityOverride ~= nil then
+        writeOptions = writeOptions or {}
+        writeOptions.priorityOverride = context.priorityOverride
+    end
+
     local changed = WriteCategoryState(key, expanded, stateSource, writeOptions)
     if not changed then
         return false
@@ -3875,6 +3817,11 @@ SetQuestExpanded = function(journalIndex, expanded, context)
         writeOptions.allowTimestampRegression = true
     end
 
+    if context and context.priorityOverride ~= nil then
+        writeOptions = writeOptions or {}
+        writeOptions.priorityOverride = context.priorityOverride
+    end
+
     local changed = WriteQuestState(key, expanded, stateSource, writeOptions)
     if not changed then
         return false
@@ -3929,7 +3876,9 @@ local function ToggleCategoryExpansion(categoryKey, expanded, context)
 
     local changed = SetCategoryExpanded(categoryKey, targetExpanded, toggleContext)
     if changed then
-        QuestTracker.Refresh()
+        if RequestRefresh then
+            RequestRefresh(toggleContext.source)
+        end
         ScheduleToggleFollowup("questCategoryToggle")
     end
 
@@ -3960,7 +3909,9 @@ local function ToggleQuestExpansion(journalIndex, context)
 
     local changed = SetQuestExpanded(journalIndex, not expanded, toggleContext)
     if changed then
-        QuestTracker.Refresh()
+        if RequestRefresh then
+            RequestRefresh(toggleContext.source)
+        end
         ScheduleToggleFollowup("questEntryToggle")
     end
 
@@ -3988,48 +3939,69 @@ local function FormatConditionText(condition)
     return text
 end
 
-local function AcquireCategoryControl()
-    local control, key = state.categoryPool:AcquireObject()
-    if not control.initialized then
-        control.label = control:GetNamedChild("Label")
-        control.toggle = control:GetNamedChild("Toggle")
-        if control.toggle and control.toggle.SetTexture then
-            control.toggle:SetTexture(SelectCategoryToggleTexture(false, false))
+local function InitializeCategoryControl(control)
+    if not control or control.initialized then
+        return
+    end
+
+    control.label = control:GetNamedChild("Label")
+    control.toggle = control:GetNamedChild("Toggle")
+    if control.toggle and control.toggle.SetTexture then
+        control.toggle:SetTexture(SelectCategoryToggleTexture(false, false))
+    end
+    control.isExpanded = false
+    control:SetHandler("OnMouseUp", function(ctrl, button, upInside)
+        if not upInside or button ~= MOUSE_BUTTON_INDEX_LEFT then
+            return
         end
-        control.isExpanded = false
-        control:SetHandler("OnMouseUp", function(ctrl, button, upInside)
-            if not upInside or button ~= MOUSE_BUTTON_INDEX_LEFT then
-                return
-            end
-            local catKey = ctrl.data and ctrl.data.categoryKey
-            if not catKey then
-                return
-            end
-            local expanded = not IsCategoryExpanded(catKey)
-            ToggleCategoryExpansion(catKey, expanded, {
-                trigger = "click",
-                source = "QuestTracker:OnCategoryClick",
-            })
-        end)
-        control:SetHandler("OnMouseEnter", function(ctrl)
-            ApplyMouseoverHighlight(ctrl)
-            local expanded = ctrl.isExpanded
-            if expanded == nil then
-                local catKey = ctrl.data and ctrl.data.categoryKey
-                expanded = IsCategoryExpanded(catKey)
-            end
-            UpdateCategoryToggle(ctrl, expanded)
-        end)
-        control:SetHandler("OnMouseExit", function(ctrl)
-            RestoreBaseColor(ctrl)
-            local expanded = ctrl.isExpanded
-            if expanded == nil then
-                local catKey = ctrl.data and ctrl.data.categoryKey
-                expanded = IsCategoryExpanded(catKey)
-            end
-            UpdateCategoryToggle(ctrl, expanded)
-        end)
-        control.initialized = true
+        local catKey = ctrl.categoryKey or (ctrl.data and ctrl.data.categoryKey)
+        if not catKey then
+            return
+        end
+        local expanded = not IsCategoryExpanded(catKey)
+        ToggleCategoryExpansion(catKey, expanded, {
+            trigger = "click",
+            source = "QuestTracker:OnCategoryClick",
+        })
+    end)
+    control:SetHandler("OnMouseEnter", function(ctrl)
+        ApplyMouseoverHighlight(ctrl)
+        local expanded = ctrl.isExpanded
+        if expanded == nil then
+            local catKey = ctrl.categoryKey or (ctrl.data and ctrl.data.categoryKey)
+            expanded = IsCategoryExpanded(catKey)
+        end
+        UpdateCategoryToggle(ctrl, expanded)
+    end)
+    control:SetHandler("OnMouseExit", function(ctrl)
+        RestoreBaseColor(ctrl)
+        local expanded = ctrl.isExpanded
+        if expanded == nil then
+            local catKey = ctrl.categoryKey or (ctrl.data and ctrl.data.categoryKey)
+            expanded = IsCategoryExpanded(catKey)
+        end
+        UpdateCategoryToggle(ctrl, expanded)
+    end)
+    control.initialized = true
+end
+
+local function AcquireCategoryControl(providedControl)
+    local control, key
+
+    if providedControl ~= nil then
+        control = providedControl
+        key = providedControl.poolKey
+    else
+        control, key = state.categoryPool:AcquireObject()
+    end
+
+    if not control then
+        return nil, key
+    end
+
+    InitializeCategoryControl(control)
+    if not control.initialized then
+        return nil, key
     end
     control.rowType = "category"
     control.poolKey = key
@@ -4040,8 +4012,19 @@ local function AcquireCategoryControl()
     return control, key
 end
 
-local function AcquireQuestControl()
-    local control, key = state.questPool:AcquireObject()
+local function AcquireQuestControl(providedControl)
+    local control, key
+
+    if providedControl ~= nil then
+        control = providedControl
+        key = providedControl.poolKey
+    else
+        control, key = state.questPool:AcquireObject()
+    end
+
+    if not control then
+        return nil, key
+    end
     if not control.initialized then
         control.label = control:GetNamedChild("Label")
         control.iconSlot = control:GetNamedChild("IconSlot")
@@ -4066,11 +4049,10 @@ local function AcquireQuestControl()
                     return
                 end
                 local parent = toggleCtrl:GetParent()
-                local questData = parent and parent.data and parent.data.quest
-                if not questData then
+                local journalIndex = parent and parent.questJournalIndex
+                if not journalIndex then
                     return
                 end
-                local journalIndex = questData.journalIndex
                 ToggleQuestExpansion(journalIndex, {
                     trigger = "click",
                     source = "QuestTracker:OnToggleClick",
@@ -4092,10 +4074,10 @@ local function AcquireQuestControl()
             end
             if button == MOUSE_BUTTON_INDEX_LEFT then
                 local questData = ctrl.data and ctrl.data.quest
-                if not questData then
+                local journalIndex = ctrl.questJournalIndex or (questData and questData.journalIndex)
+                if not journalIndex then
                     return
                 end
-                local journalIndex = questData.journalIndex
                 local toggleMouseOver = false
                 if ctrl.iconSlot then
                     local toggleIsMouseOver = ctrl.iconSlot.IsMouseOver
@@ -4123,10 +4105,11 @@ local function AcquireQuestControl()
                 HandleQuestRowClick(journalIndex)
             elseif button == MOUSE_BUTTON_INDEX_RIGHT then
                 local questData = ctrl.data and ctrl.data.quest
-                if not questData then
+                local journalIndex = ctrl.questJournalIndex or (questData and questData.journalIndex)
+                if not journalIndex then
                     return
                 end
-                ShowQuestContextMenu(ctrl, questData.journalIndex)
+                ShowQuestContextMenu(ctrl, journalIndex)
             end
         end)
         control:SetHandler("OnMouseEnter", function(ctrl)
@@ -4136,6 +4119,9 @@ local function AcquireQuestControl()
             RestoreBaseColor(ctrl)
         end)
         control.initialized = true
+    end
+    if QuestTrackerRows and QuestTrackerRows.ResetQuestRowObjectives then
+        QuestTrackerRows:ResetQuestRowObjectives(control)
     end
     control.rowType = "quest"
     control.poolKey = key
@@ -4201,6 +4187,15 @@ local function EnsurePools()
     state.conditionPool = ZO_ControlPool:New("QuestCondition_Template", state.container)
 
     local function resetControl(control)
+        if control.ClearAnchors then
+            control:ClearAnchors()
+        end
+        if state and state.container and control.SetParent then
+            control:SetParent(state.container)
+        end
+        if control.label and control.label.SetText then
+            control.label:SetText("")
+        end
         control:SetHidden(true)
         control.data = nil
         control.currentIndent = nil
@@ -4240,219 +4235,39 @@ local function EnsurePools()
 end
 
 local function LayoutCondition(condition)
-    if not ShouldDisplayCondition(condition) then
-        return
+    if QuestTrackerLayout and QuestTrackerLayout.LayoutCondition then
+        return QuestTrackerLayout:LayoutCondition(condition)
     end
-
-    local control = AcquireConditionControl()
-    control.data = { condition = condition }
-    control.label:SetText(FormatConditionText(condition))
-    if control.label then
-        local r, g, b, a = GetQuestTrackerColor("objectiveText")
-        control.label:SetColor(r, g, b, a)
-    end
-    ApplyRowMetrics(control, CONDITION_INDENT_X, 0, 0, 0, CONDITION_MIN_HEIGHT)
-    control:SetHidden(false)
-    AnchorControl(control, CONDITION_INDENT_X)
 end
 
 local function LayoutQuest(quest)
-    local control = AcquireQuestControl()
-    control.data = { quest = quest }
-    control.label:SetText(quest.name or "")
-
-    local colorRole = DetermineQuestColorRole(quest)
-    local r, g, b, a = GetQuestTrackerColor(colorRole)
-    ApplyBaseColor(control, r, g, b, a)
-
-    local questKey = NormalizeQuestKey(quest.journalIndex)
-    local expanded = IsQuestExpanded(quest.journalIndex)
-    if IsDebugLoggingEnabled() then
-        DebugLog(string.format(
-            "BUILD_APPLY quest=%s expanded=%s",
-            tostring(questKey or quest.journalIndex),
-            tostring(expanded)
-        ))
-    end
-    UpdateQuestIconSlot(control)
-    ApplyRowMetrics(
-        control,
-        QUEST_INDENT_X,
-        QUEST_ICON_SLOT_WIDTH,
-        QUEST_ICON_SLOT_PADDING_X,
-        0,
-        QUEST_MIN_HEIGHT
-    )
-    control:SetHidden(false)
-    AnchorControl(control, QUEST_INDENT_X)
-
-    if quest and quest.journalIndex then
-        state.questControls[quest.journalIndex] = control
-    end
-
-    if expanded then
-        for stepIndex = 1, #quest.steps do
-            local step = quest.steps[stepIndex]
-            if step.isVisible ~= false then
-                for conditionIndex = 1, #step.conditions do
-                    LayoutCondition(step.conditions[conditionIndex])
-                end
-            end
-        end
+    if QuestTrackerLayout and QuestTrackerLayout.LayoutQuest then
+        return QuestTrackerLayout:LayoutQuest(quest)
     end
 end
 
-local function LayoutCategory(category)
-    local control = AcquireCategoryControl()
-    control.data = {
-        categoryKey = category.key,
-        parentKey = category.parent and category.parent.key or nil,
-        parentName = category.parent and category.parent.name or nil,
-        groupKey = category.groupKey,
-        groupName = category.groupName,
-        categoryType = category.type,
-        groupOrder = category.groupOrder,
-    }
-    local normalizedKey = NormalizeCategoryKey(category.key)
-    if normalizedKey then
-        state.categoryControls[normalizedKey] = control
-    end
-    local count = #category.quests
-    control.label:SetText(FormatCategoryHeaderText(category.name or "", count, ShouldShowQuestCategoryCounts()))
-    local expanded = IsCategoryExpanded(category.key)
-    if IsDebugLoggingEnabled() then
-        DebugLog(string.format(
-            "BUILD_APPLY cat=%s expanded=%s",
-            tostring(category.key),
-            tostring(expanded)
-        ))
-    end
-    local colorRole = expanded and "activeTitle" or "categoryTitle"
-    local r, g, b, a = GetQuestTrackerColor(colorRole)
-    ApplyBaseColor(control, r, g, b, a)
-    UpdateCategoryToggle(control, expanded)
-    ApplyRowMetrics(
-        control,
-        CATEGORY_INDENT_X,
-        GetToggleWidth(control.toggle, CATEGORY_TOGGLE_WIDTH),
-        TOGGLE_LABEL_PADDING_X,
-        0,
-        CATEGORY_MIN_HEIGHT
-    )
-    control:SetHidden(false)
-    AnchorControl(control, CATEGORY_INDENT_X)
-
-    if expanded then
-        for index = 1, count do
-            LayoutQuest(category.quests[index])
-        end
+local function LayoutCategory(category, categoryControl)
+    if QuestTrackerLayout and QuestTrackerLayout.LayoutCategory then
+        return QuestTrackerLayout:LayoutCategory(category, categoryControl)
     end
 end
 
 local function ReleaseRowControl(control)
-    if not control then
-        return
-    end
-
-    local rowType = control.rowType
-    if rowType == "category" then
-        local normalized = control.data and NormalizeCategoryKey(control.data.categoryKey)
-        if normalized then
-            state.categoryControls[normalized] = nil
-        end
-        if state.categoryPool and control.poolKey then
-            state.categoryPool:ReleaseObject(control.poolKey)
-        end
-    elseif rowType == "quest" then
-        local questData = control.data and control.data.quest
-        if questData and questData.journalIndex then
-            state.questControls[questData.journalIndex] = nil
-        end
-        if state.questPool and control.poolKey then
-            state.questPool:ReleaseObject(control.poolKey)
-        end
-    else
-        if state.conditionPool and control.poolKey then
-            state.conditionPool:ReleaseObject(control.poolKey)
-        end
+    if QuestTrackerLayout and QuestTrackerLayout.ReleaseRowControl then
+        return QuestTrackerLayout:ReleaseRowControl(control)
     end
 end
 
 local function TrimOrderedControlsToCategory(keepCategoryCount)
-    if keepCategoryCount <= 0 then
-        ReleaseAll(state.categoryPool)
-        ReleaseAll(state.questPool)
-        ReleaseAll(state.conditionPool)
-        ResetLayoutState()
-        return
+    if QuestTrackerLayout and QuestTrackerLayout.TrimOrderedControlsToCategory then
+        return QuestTrackerLayout:TrimOrderedControlsToCategory(keepCategoryCount)
     end
-
-    local categoryCounter = 0
-    local releaseStartIndex = nil
-
-    for index = 1, #state.orderedControls do
-        local control = state.orderedControls[index]
-        if control and control.rowType == "category" then
-            categoryCounter = categoryCounter + 1
-            if categoryCounter > keepCategoryCount then
-                releaseStartIndex = index
-                break
-            end
-        end
-    end
-
-    if releaseStartIndex then
-        for index = #state.orderedControls, releaseStartIndex, -1 do
-            ReleaseRowControl(state.orderedControls[index])
-            table.remove(state.orderedControls, index)
-        end
-    end
-
-    state.lastAnchoredControl = state.orderedControls[#state.orderedControls]
 end
 
 local function RelayoutFromCategoryIndex(startCategoryIndex)
-    ApplyActiveQuestFromSaved()
-    EnsurePools()
-
-    if
-        not state.snapshot
-        or not state.snapshot.categories
-        or not state.snapshot.categories.ordered
-        or #state.snapshot.categories.ordered == 0
-    then
-        ReleaseAll(state.categoryPool)
-        ReleaseAll(state.questPool)
-        ReleaseAll(state.conditionPool)
-        ResetLayoutState()
-        UpdateContentSize()
-        NotifyHostContentChanged()
-        ProcessPendingExternalReveal()
-        return
+    if QuestTrackerLayout and QuestTrackerLayout.RelayoutFromCategoryIndex then
+        return QuestTrackerLayout:RelayoutFromCategoryIndex(startCategoryIndex)
     end
-
-    if startCategoryIndex <= 1 then
-        ReleaseAll(state.categoryPool)
-        ReleaseAll(state.questPool)
-        ReleaseAll(state.conditionPool)
-        ResetLayoutState()
-        startCategoryIndex = 1
-    else
-        TrimOrderedControlsToCategory(startCategoryIndex - 1)
-    end
-
-    PrimeInitialSavedState()
-
-    for index = startCategoryIndex, #state.snapshot.categories.ordered do
-        local category = state.snapshot.categories.ordered[index]
-        if category and category.quests and #category.quests > 0 then
-            LayoutCategory(category)
-        end
-    end
-
-    UpdateContentSize()
-    NotifyHostContentChanged()
-    ProcessPendingExternalReveal()
 end
 
 local function EmptySnapshot()
@@ -4581,6 +4396,10 @@ end
 
 -- Apply the latest quest snapshot from the event-driven model and update the layout.
 local function OnQuestModelSnapshotUpdated(snapshot, context)
+    if not snapshot then
+        return
+    end
+
     local previousCategories = 0
     local previousQuests = 0
     local previousHeight = state.contentHeight or 0
@@ -4594,11 +4413,12 @@ local function OnQuestModelSnapshotUpdated(snapshot, context)
         end
     end
 
-    local rawSnapshot = snapshot or EmptySnapshot()
-    local filteredSnapshot = BuildFilteredSnapshot(rawSnapshot)
+    state.rawSnapshot = snapshot
+
+    local filteredSnapshot = BuildFilteredSnapshot(snapshot)
 
     if not IsSnapshotValid(filteredSnapshot) then
-        filteredSnapshot = rawSnapshot
+        filteredSnapshot = snapshot
     end
 
     ApplySnapshot(filteredSnapshot, context)
@@ -4607,7 +4427,29 @@ local function OnQuestModelSnapshotUpdated(snapshot, context)
         return
     end
 
-    RelayoutFromCategoryIndex(1)
+    if state.conditionPool then
+        state.conditionPool:ReleaseAllObjects()
+    end
+
+    ResetLayoutState()
+
+    local categoryControls
+    local rowControls
+    local rowsByCategory
+
+    if QuestTrackerRows and QuestTrackerRows.BuildOrRebuildRows then
+        rowsByCategory = QuestTrackerRows:BuildOrRebuildRows(state.snapshot)
+        if QuestTrackerRows.GetCategoryControls then
+            categoryControls = QuestTrackerRows:GetCategoryControls()
+        end
+        if QuestTrackerRows.GetRowControls then
+            rowControls = QuestTrackerRows:GetRowControls()
+        end
+    end
+
+    if QuestTrackerLayout and QuestTrackerLayout.ApplyLayout then
+        QuestTrackerLayout:ApplyLayout(state.container, categoryControls, rowControls, rowsByCategory)
+    end
 
     if IsDebugLoggingEnabled() then
         local newCategories = 0
@@ -4645,11 +4487,10 @@ local function SubscribeToQuestModel()
         return
     end
 
-    state.questModelSubscription = function(snapshot)
-        OnQuestModelSnapshotUpdated(snapshot, {
-            trigger = "model",
-            source = "QuestTracker:QuestModelSubscription",
-        })
+    state.questModelSubscription = function()
+        if RequestRefresh then
+            RequestRefresh("QuestTracker:QuestModelSubscription")
+        end
     end
 
     questModel.Subscribe(state.questModelSubscription)
@@ -4664,52 +4505,93 @@ local function UnsubscribeFromQuestModel()
     state.questModelSubscription = nil
 end
 
-local function Rebuild()
-    if not state.container then
-        return
+local function ConfigureLayoutHelper()
+    if QuestTrackerLayout and QuestTrackerLayout.Init then
+        QuestTrackerLayout:Init(state, {
+            VERTICAL_PADDING = VERTICAL_PADDING,
+            CONDITION_INDENT_X = CONDITION_INDENT_X,
+            CONDITION_MIN_HEIGHT = CONDITION_MIN_HEIGHT,
+            QUEST_INDENT_X = QUEST_INDENT_X,
+            QUEST_ICON_SLOT_WIDTH = QUEST_ICON_SLOT_WIDTH,
+            QUEST_ICON_SLOT_PADDING_X = QUEST_ICON_SLOT_PADDING_X,
+            QUEST_MIN_HEIGHT = QUEST_MIN_HEIGHT,
+            CATEGORY_INDENT_X = CATEGORY_INDENT_X,
+            CATEGORY_TOGGLE_WIDTH = CATEGORY_TOGGLE_WIDTH,
+            TOGGLE_LABEL_PADDING_X = TOGGLE_LABEL_PADDING_X,
+            CATEGORY_MIN_HEIGHT = CATEGORY_MIN_HEIGHT,
+            ROW_TEXT_PADDING_Y = ROW_TEXT_PADDING_Y,
+            IsDebugLoggingEnabled = IsDebugLoggingEnabled,
+            GetToggleWidth = GetToggleWidth,
+            AcquireConditionControl = AcquireConditionControl,
+            FormatConditionText = FormatConditionText,
+            GetQuestTrackerColor = GetQuestTrackerColor,
+            ApplyBaseColor = ApplyBaseColor,
+            ShouldDisplayCondition = ShouldDisplayCondition,
+            AcquireQuestControl = AcquireQuestControl,
+            AcquireQuestRow = function()
+                if QuestTrackerRows and QuestTrackerRows.AcquireQuestRow then
+                    return QuestTrackerRows:AcquireQuestRow()
+                end
+                return nil
+            end,
+            ResetQuestRowObjectives = function(row)
+                if QuestTrackerRows and QuestTrackerRows.ResetQuestRowObjectives then
+                    return QuestTrackerRows:ResetQuestRowObjectives(row)
+                end
+            end,
+            ApplyQuestObjectives = function(row, objectives)
+                if QuestTrackerRows and QuestTrackerRows.ApplyObjectives then
+                    return QuestTrackerRows:ApplyObjectives(row, objectives)
+                end
+            end,
+            DetermineQuestColorRole = DetermineQuestColorRole,
+            UpdateQuestIconSlot = UpdateQuestIconSlot,
+            IsQuestExpanded = IsQuestExpanded,
+            NormalizeQuestKey = NormalizeQuestKey,
+            ShouldShowQuestCategoryCounts = ShouldShowQuestCategoryCounts,
+            IsCategoryExpanded = IsCategoryExpanded,
+            FormatCategoryHeaderText = FormatCategoryHeaderText,
+            UpdateCategoryToggle = UpdateCategoryToggle,
+            AcquireCategoryControl = AcquireCategoryControl,
+            NormalizeCategoryKey = NormalizeCategoryKey,
+            SetCategoryRowsVisible = function(categoryKey, visible)
+                if QuestTrackerRows and QuestTrackerRows.SetCategoryRowsVisible then
+                    return QuestTrackerRows:SetCategoryRowsVisible(categoryKey, visible)
+                end
+            end,
+            RegisterQuestRow = function(row, categoryKey)
+                if QuestTrackerRows and QuestTrackerRows.RegisterQuestRow then
+                    QuestTrackerRows:RegisterQuestRow(row, categoryKey)
+                end
+            end,
+            GetActiveRowsByCategory = function()
+                if QuestTrackerRows and QuestTrackerRows.GetActiveRowsByCategory then
+                    return QuestTrackerRows:GetActiveRowsByCategory()
+                end
+                return nil
+            end,
+            ReleaseAll = ReleaseAll,
+            ApplyActiveQuestFromSaved = ApplyActiveQuestFromSaved,
+            EnsurePools = EnsurePools,
+            PrimeInitialSavedState = PrimeInitialSavedState,
+            NotifyHostContentChanged = NotifyHostContentChanged,
+            ProcessPendingExternalReveal = ProcessPendingExternalReveal,
+        })
     end
+end
 
-    if IsDebugLoggingEnabled() then
-        DebugLog("REBUILD_START")
-    end
-
-    state.isRebuildInProgress = true
-    ApplyActiveQuestFromSaved()
-
-    EnsurePools()
-
-    ReleaseAll(state.categoryPool)
-    ReleaseAll(state.questPool)
-    ReleaseAll(state.conditionPool)
-    ResetLayoutState()
-
-    if not state.snapshot or not state.snapshot.categories or not state.snapshot.categories.ordered then
-        UpdateContentSize()
-        NotifyHostContentChanged()
-        state.isRebuildInProgress = false
-        if IsDebugLoggingEnabled() then
-            DebugLog("REBUILD_END")
-        end
-        return
-    end
-
-    PrimeInitialSavedState()
-
-    for index = 1, #state.snapshot.categories.ordered do
-        local category = state.snapshot.categories.ordered[index]
-        if category and category.quests and #category.quests > 0 then
-            LayoutCategory(category)
-        end
-    end
-
-    UpdateContentSize()
-    NotifyHostContentChanged()
-    ProcessPendingExternalReveal()
-
-    state.isRebuildInProgress = false
-
-    if IsDebugLoggingEnabled() then
-        DebugLog("REBUILD_END")
+local function ConfigureRowsHelper()
+    if QuestTrackerRows and QuestTrackerRows.Init then
+        QuestTrackerRows:Init(state.container, state, {
+            EnsurePools = EnsurePools,
+            ReleaseAll = ReleaseAll,
+            ResetLayoutState = ResetLayoutState,
+            PrimeInitialSavedState = PrimeInitialSavedState,
+            LayoutCategory = LayoutCategory,
+            UpdateContentSize = UpdateContentSize,
+            NotifyHostContentChanged = NotifyHostContentChanged,
+            ProcessPendingExternalReveal = ProcessPendingExternalReveal,
+        })
     end
 end
 
@@ -4736,6 +4618,9 @@ function QuestTracker.Init(parentControl, opts)
     if state.control and state.control.SetResizeToFitDescendents then
         state.control:SetResizeToFitDescendents(true)
     end
+
+    ConfigureLayoutHelper()
+    ConfigureRowsHelper()
 
     EnsureSavedVars()
     state.opts = {}
@@ -4764,15 +4649,6 @@ function QuestTracker.Init(parentControl, opts)
 
     state.isInitialized = true
     RefreshVisibility()
-
-    local questModel = Nvk3UT and Nvk3UT.QuestModel
-    local snapshot = state.snapshot
-        or (questModel and questModel.GetSnapshot and questModel.GetSnapshot())
-
-    OnQuestModelSnapshotUpdated(snapshot, {
-        trigger = "init",
-        source = "QuestTracker:Init",
-    })
     AdoptTrackedQuestOnInit()
 end
 
@@ -4787,30 +4663,30 @@ QuestTracker.QUEST_FILTER_MODE_ACTIVE = QUEST_FILTER_MODE_ACTIVE
 QuestTracker.QUEST_FILTER_MODE_SELECTION = QUEST_FILTER_MODE_SELECTION
 
 function QuestTracker.MarkDirty(reason)
-    local context = {
-        trigger = "filter",
-        source = reason or "QuestTracker.MarkDirty",
-    }
-
-    local rawSnapshot = state.rawSnapshot or state.snapshot
-    if not rawSnapshot then
-        local questModel = Nvk3UT and Nvk3UT.QuestModel
-        if questModel and questModel.GetSnapshot then
-            rawSnapshot = questModel.GetSnapshot()
-        end
+    local controller = Nvk3UT and Nvk3UT.QuestTrackerController
+    if controller and controller.RequestRefresh then
+        controller:RequestRefresh(reason or "QuestTracker.MarkDirty")
+        return
     end
 
-    rawSnapshot = rawSnapshot or EmptySnapshot()
-    OnQuestModelSnapshotUpdated(rawSnapshot, context)
-
-    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
-    if runtime and runtime.QueueDirty then
-        pcall(runtime.QueueDirty, runtime, "quest")
+    if controller and controller.MarkDirty then
+        controller:MarkDirty(reason or "QuestTracker.MarkDirty")
+    elseif RequestRefresh then
+        RequestRefresh(reason or "QuestTracker.MarkDirty")
     end
 end
 
-function QuestTracker.Refresh()
-    Rebuild()
+function QuestTracker.Refresh(viewModel, context)
+    if not IsSnapshotValid(viewModel) then
+        DebugLog("QuestTracker.Refresh called with nil/invalid viewModel -> skipping (no reset)")
+        return
+    end
+    local refreshContext = context or {
+        trigger = "refresh",
+        source = "QuestTracker.Refresh",
+    }
+
+    OnQuestModelSnapshotUpdated(viewModel, refreshContext)
 end
 
 function QuestTracker.Shutdown()
@@ -4913,8 +4789,18 @@ function QuestTracker.RequestRefresh()
 end
 
 function QuestTracker.GetContentSize()
-    UpdateContentSize()
-    return state.contentWidth or 0, state.contentHeight or 0
+    local layoutState = QuestTrackerLayout and QuestTrackerLayout.state
+    local width = (layoutState and layoutState.contentWidth) or state.contentWidth or 0
+    local height = (layoutState and layoutState.contentHeight) or state.contentHeight or 0
+    return width or 0, height or 0
+end
+
+function QuestTracker.GetHeight()
+    local layoutState = QuestTrackerLayout and QuestTrackerLayout.state
+    if layoutState and layoutState.contentHeight then
+        return layoutState.contentHeight
+    end
+    return state.contentHeight or 0
 end
 
 function QuestTracker.ApplyBaseQuestTrackerVisibility()
@@ -4979,9 +4865,14 @@ function Nvk3UT_ToggleQuestSelectionBinding()
     end
 
     ToggleQuestSelection(questKey, "Keybind:ToggleQuestSelection")
-    local runtime = addon.TrackerRuntime
-    if runtime and runtime.QueueDirty then
-        runtime:QueueDirty("quest")
+    local controller = addon and addon.QuestTrackerController
+    if controller and controller.RequestRefresh then
+        controller:RequestRefresh("Keybind:ToggleQuestSelection")
+    else
+        local runtime = addon and addon.TrackerRuntime
+        if runtime and runtime.QueueDirty then
+            runtime:QueueDirty("quest")
+        end
     end
 
     if addon.QuestTracker and addon.QuestTracker.UpdateQuestJournalSelectionKeyLabelVisibility then

@@ -1,0 +1,710 @@
+local addonName = "Nvk3UT"
+
+Nvk3UT = Nvk3UT or {}
+
+local Layout = {}
+Layout.__index = Layout
+
+local MODULE_TAG = addonName .. ".QuestTrackerLayout"
+
+local function getAddon()
+    return rawget(_G, addonName)
+end
+
+local function safeDebug(message, ...)
+    local addon = getAddon()
+    local debugFn = addon and addon.Debug
+
+    if type(debugFn) ~= "function" then
+        return
+    end
+
+    if select("#", ...) > 0 then
+        local ok, formatted = pcall(string.format, message, ...)
+        if ok then
+            debugFn(formatted)
+        else
+            debugFn(message)
+        end
+    else
+        debugFn(message)
+    end
+end
+
+function Layout:Init(trackerState, deps)
+    self.state = trackerState
+    self.deps = deps or {}
+
+    self.verticalPadding = deps.VERTICAL_PADDING or 0
+
+    safeDebug("%s: Init layout helper", MODULE_TAG)
+end
+
+function Layout:ResetLayoutState()
+    local state = self.state or {}
+    state.orderedControls = {}
+    state.lastAnchoredControl = nil
+    state.categoryControls = {}
+    state.questControls = {}
+    state.contentWidth = 0
+    state.contentHeight = 0
+    self.rowsByCategory = nil
+end
+
+function Layout:GetContainerWidth()
+    local container = self.state and self.state.container
+    if not container or not container.GetWidth then
+        return 0
+    end
+
+    local width = container:GetWidth()
+    if not width or width <= 0 then
+        return 0
+    end
+
+    return width
+end
+
+function Layout:ComputeRowHeight(control, indent, toggleWidth, leftPadding, rightPadding, minHeight)
+    if not control or not control.label then
+        return 0
+    end
+
+    indent = indent or 0
+    toggleWidth = toggleWidth or 0
+    leftPadding = leftPadding or 0
+    rightPadding = rightPadding or 0
+
+    local availableWidth = self:GetContainerWidth() - indent - toggleWidth - leftPadding - rightPadding
+    if availableWidth < 0 then
+        availableWidth = 0
+    end
+
+    control.label:SetWidth(availableWidth)
+
+    local textHeight = control.label:GetTextHeight() or 0
+    local targetHeight = textHeight + (self.deps.ROW_TEXT_PADDING_Y or 0)
+    if minHeight then
+        targetHeight = math.max(minHeight, targetHeight)
+    end
+
+    control:SetHeight(targetHeight)
+
+    return targetHeight
+end
+
+function Layout:GetCategoryHeaderHeight(categoryControl)
+    if not categoryControl then
+        return 0
+    end
+
+    local toggleWidth = 0
+    if categoryControl.toggle then
+        local GetToggleWidth = self.deps.GetToggleWidth
+        toggleWidth = GetToggleWidth and GetToggleWidth(categoryControl.toggle, self.deps.CATEGORY_TOGGLE_WIDTH)
+            or (self.deps.CATEGORY_TOGGLE_WIDTH or 0)
+    end
+
+    return self:ComputeRowHeight(
+        categoryControl,
+        self.deps.CATEGORY_INDENT_X,
+        toggleWidth,
+        self.deps.TOGGLE_LABEL_PADDING_X,
+        0,
+        self.deps.CATEGORY_MIN_HEIGHT
+    )
+end
+
+function Layout:GetQuestRowHeight(rowControl, rowData)
+    if not rowControl then
+        return 0
+    end
+
+    return self:ComputeRowHeight(
+        rowControl,
+        self.deps.QUEST_INDENT_X,
+        self.deps.QUEST_ICON_SLOT_WIDTH,
+        self.deps.QUEST_ICON_SLOT_PADDING_X,
+        0,
+        self.deps.QUEST_MIN_HEIGHT
+    )
+end
+
+function Layout:GetObjectiveTextHeight(conditionControl, objective)
+    if not conditionControl then
+        return 0
+    end
+
+    local label = conditionControl.label
+    if label then
+        local text = label.GetText and label:GetText()
+        if not text or text == "" then
+            text = objective
+            if type(objective) == "table" then
+                text = objective.displayText or objective.text or ""
+            end
+        end
+        label:SetText(text or "")
+    end
+
+    return self:ComputeRowHeight(
+        conditionControl,
+        self.deps.CONDITION_INDENT_X,
+        0,
+        0,
+        0,
+        self.deps.CONDITION_MIN_HEIGHT
+    )
+end
+
+function Layout:GetQuestRowContentHeight(rowControl, rowData)
+    if not rowControl then
+        return 0
+    end
+
+    local totalHeight = self:GetQuestRowHeight(rowControl, rowData and rowData.quest)
+
+    if rowControl.objectiveControls and #rowControl.objectiveControls > 0 then
+        for index = 1, #rowControl.objectiveControls do
+            local objectiveControl = rowControl.objectiveControls[index]
+            if objectiveControl and not objectiveControl:IsHidden() then
+                local objectiveHeight = self:GetObjectiveTextHeight(
+                    objectiveControl,
+                    objectiveControl.data and (objectiveControl.data.objective or objectiveControl.data.condition)
+                )
+                if objectiveHeight > 0 then
+                    totalHeight = totalHeight + self.verticalPadding + objectiveHeight
+                end
+            end
+        end
+    end
+
+    return totalHeight
+end
+
+function Layout:GetConditionHeight(conditionControl)
+    if not conditionControl then
+        return 0
+    end
+
+    return self:GetObjectiveTextHeight(conditionControl, conditionControl.data and conditionControl.data.condition)
+end
+
+function Layout:GetCategoryTotalHeight(categoryControl, rowsInCategory)
+    local headerHeight = self:GetCategoryHeaderHeight(categoryControl)
+    local totalHeight = headerHeight
+    local questCount = 0
+
+    if rowsInCategory then
+        for index = 1, #rowsInCategory do
+            local row = rowsInCategory[index]
+            local rowType = row and row.rowType
+            local rowHeight = 0
+
+            if rowType == "quest" then
+                rowHeight = self:GetQuestRowContentHeight(row, row and row.data)
+                questCount = questCount + 1
+            elseif rowType == "condition" then
+                rowHeight = self:GetConditionHeight(row, row and row.data and row.data.condition)
+            else
+                rowHeight = row and row.GetHeight and row:GetHeight() or 0
+            end
+
+            if rowHeight > 0 then
+                totalHeight = totalHeight + self.verticalPadding + rowHeight
+            end
+        end
+    end
+
+    return totalHeight, questCount
+end
+
+function Layout:AnchorControl(control, indentX)
+    local state = self.state or {}
+    indentX = indentX or 0
+
+    control:ClearAnchors()
+
+    if state.lastAnchoredControl then
+        local previousIndent = state.lastAnchoredControl.currentIndent or 0
+        local offsetX = indentX - previousIndent
+        control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, offsetX, self.verticalPadding)
+        control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, 0, self.verticalPadding)
+    else
+        control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, 0)
+        control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, 0, 0)
+    end
+
+    state.lastAnchoredControl = control
+    state.orderedControls[#state.orderedControls + 1] = control
+    control.currentIndent = indentX
+end
+
+function Layout:UpdateContentSize()
+    local state = self.state or {}
+    local rowsByCategory = self.rowsByCategory
+        or (self.deps.GetActiveRowsByCategory and self.deps.GetActiveRowsByCategory())
+        or {}
+
+    local maxWidth = 0
+    local totalHeight = 0
+    local visibleCount = 0
+
+    local currentCategoryControl = nil
+    local currentCategoryRows = nil
+
+    for index = 1, #state.orderedControls do
+        local control = state.orderedControls[index]
+        if control and not control:IsHidden() then
+            local rowType = control.rowType
+            local height = 0
+
+            if rowType == "category" then
+                local categoryKey = control.categoryKey or (control.data and control.data.categoryKey)
+                if categoryKey and control.isExpanded == false and self.deps.SetCategoryRowsVisible then
+                    self.deps.SetCategoryRowsVisible(categoryKey, false)
+                end
+                if currentCategoryControl and self.deps.IsDebugLoggingEnabled and self.deps.IsDebugLoggingEnabled() then
+                    local previousHeight, previousQuestCount = self:GetCategoryTotalHeight(currentCategoryControl, currentCategoryRows)
+                    safeDebug(
+                        "%s: Category height cat=%s quests=%d total=%s",
+                        MODULE_TAG,
+                        tostring(currentCategoryControl.categoryKey or (currentCategoryControl.data and currentCategoryControl.data.categoryKey)),
+                        previousQuestCount or 0,
+                        tostring(previousHeight)
+                    )
+                end
+
+                currentCategoryControl = control
+                if categoryKey and rowsByCategory then
+                    currentCategoryRows = rowsByCategory[categoryKey] or {}
+                else
+                    currentCategoryRows = {}
+                end
+                if control.isExpanded == false then
+                    currentCategoryRows = {}
+                end
+                height = self:GetCategoryHeaderHeight(control)
+            elseif rowType == "quest" then
+                if currentCategoryControl and currentCategoryControl.isExpanded == false then
+                    height = 0
+                    if self.deps.SetCategoryRowsVisible then
+                        self.deps.SetCategoryRowsVisible(
+                            currentCategoryControl.categoryKey or (currentCategoryControl.data and currentCategoryControl.data.categoryKey),
+                            false
+                        )
+                    end
+                else
+                    height = self:GetQuestRowContentHeight(control, control.data)
+                    if currentCategoryRows then
+                        local alreadyListed = false
+                        for index = 1, #currentCategoryRows do
+                            if currentCategoryRows[index] == control then
+                                alreadyListed = true
+                                break
+                            end
+                        end
+                        if not alreadyListed then
+                            table.insert(currentCategoryRows, control)
+                        end
+                    end
+                end
+            elseif rowType == "condition" then
+                if currentCategoryControl and currentCategoryControl.isExpanded == false then
+                    height = 0
+                else
+                    height = self:GetConditionHeight(control, control.data and control.data.condition)
+                    if currentCategoryRows then
+                        local alreadyListed = false
+                        for index = 1, #currentCategoryRows do
+                            if currentCategoryRows[index] == control then
+                                alreadyListed = true
+                                break
+                            end
+                        end
+                        if not alreadyListed then
+                            table.insert(currentCategoryRows, control)
+                        end
+                    end
+                end
+            else
+                height = control.GetHeight and control:GetHeight() or 0
+            end
+
+            if visibleCount > 0 then
+                totalHeight = totalHeight + self.verticalPadding
+            end
+
+            totalHeight = totalHeight + height
+            visibleCount = visibleCount + 1
+
+            local width = (control:GetWidth() or 0) + (control.currentIndent or 0)
+            if width > maxWidth then
+                maxWidth = width
+            end
+        end
+    end
+
+    if currentCategoryControl and self.deps.IsDebugLoggingEnabled and self.deps.IsDebugLoggingEnabled() then
+        local height, questCount = self:GetCategoryTotalHeight(currentCategoryControl, currentCategoryRows)
+        safeDebug(
+            "%s: Category height cat=%s quests=%d total=%s",
+            MODULE_TAG,
+            tostring(currentCategoryControl.categoryKey or (currentCategoryControl.data and currentCategoryControl.data.categoryKey)),
+            questCount or 0,
+            tostring(height)
+        )
+    end
+
+    state.contentWidth = maxWidth
+    state.contentHeight = totalHeight
+
+    safeDebug(
+        "%s: UpdateContentSize controls=%d width=%s height=%s",
+        MODULE_TAG,
+        #state.orderedControls,
+        tostring(state.contentWidth),
+        tostring(state.contentHeight)
+    )
+end
+
+function Layout:LayoutCondition(condition)
+    if not (self.deps.ShouldDisplayCondition and self.deps.ShouldDisplayCondition(condition)) then
+        return
+    end
+
+    local AcquireConditionControl = self.deps.AcquireConditionControl
+    local FormatConditionText = self.deps.FormatConditionText
+    local GetQuestTrackerColor = self.deps.GetQuestTrackerColor
+
+    local control = AcquireConditionControl and AcquireConditionControl()
+    if not control then
+        return
+    end
+
+    control.data = { condition = condition }
+    if control.label and FormatConditionText then
+        control.label:SetText(FormatConditionText(condition))
+    end
+    if control.label and GetQuestTrackerColor then
+        local r, g, b, a = GetQuestTrackerColor("objectiveText")
+        control.label:SetColor(r, g, b, a)
+    end
+    self:GetConditionHeight(control)
+    control:SetHidden(false)
+    self:AnchorControl(control, self.deps.CONDITION_INDENT_X)
+end
+
+function Layout:LayoutQuest(quest)
+    local AcquireQuestControl = self.deps.AcquireQuestControl
+    local AcquireQuestRow = self.deps.AcquireQuestRow
+    local DetermineQuestColorRole = self.deps.DetermineQuestColorRole
+    local GetQuestTrackerColor = self.deps.GetQuestTrackerColor
+    local ApplyBaseColor = self.deps.ApplyBaseColor
+    local UpdateQuestIconSlot = self.deps.UpdateQuestIconSlot
+    local IsQuestExpanded = self.deps.IsQuestExpanded
+    local ResetQuestRowObjectives = self.deps.ResetQuestRowObjectives
+    local ApplyQuestObjectives = self.deps.ApplyQuestObjectives
+    local LayoutCondition = function(condition)
+        self:LayoutCondition(condition)
+    end
+
+    local providedControl = AcquireQuestRow and AcquireQuestRow()
+    local control = AcquireQuestControl and AcquireQuestControl(providedControl)
+    if not control then
+        return
+    end
+
+    if ResetQuestRowObjectives then
+        ResetQuestRowObjectives(control)
+    end
+
+    control.data = { quest = quest }
+    control.questJournalIndex = quest and quest.journalIndex
+    control.questKey = self.deps.NormalizeQuestKey and self.deps.NormalizeQuestKey(quest and quest.journalIndex)
+    control.categoryKey = quest and quest.categoryKey
+    if control.label then
+        control.label:SetText(quest and quest.name or "")
+    end
+
+    if ApplyQuestObjectives then
+        ApplyQuestObjectives(control, quest and quest.objectives)
+    end
+
+    if self.deps.RegisterQuestRow then
+        self.deps.RegisterQuestRow(control, control.categoryKey)
+    end
+
+    if DetermineQuestColorRole and GetQuestTrackerColor and ApplyBaseColor then
+        local colorRole = DetermineQuestColorRole(quest)
+        local r, g, b, a = GetQuestTrackerColor(colorRole)
+        ApplyBaseColor(control, r, g, b, a)
+    end
+
+    local questKey = control.questKey
+    local expanded = IsQuestExpanded and IsQuestExpanded(quest and quest.journalIndex)
+    safeDebug(
+        "%s: Layout quest=%s expanded=%s",
+        MODULE_TAG,
+        tostring(questKey or (quest and quest.journalIndex)),
+        tostring(expanded)
+    )
+
+    if UpdateQuestIconSlot then
+        UpdateQuestIconSlot(control)
+    end
+    self:GetQuestRowContentHeight(control, control.data)
+    control:SetHidden(false)
+    self:AnchorControl(control, self.deps.QUEST_INDENT_X)
+
+    local state = self.state or {}
+    if quest and quest.journalIndex then
+        state.questControls[quest.journalIndex] = control
+    end
+
+    if expanded and quest and quest.steps then
+        for stepIndex = 1, #quest.steps do
+            local step = quest.steps[stepIndex]
+            if step.isVisible ~= false and step.conditions then
+                for conditionIndex = 1, #step.conditions do
+                    LayoutCondition(step.conditions[conditionIndex])
+                end
+            end
+        end
+    end
+end
+
+function Layout:LayoutCategory(category, providedControl)
+    local AcquireCategoryControl = self.deps.AcquireCategoryControl
+    local FormatCategoryHeaderText = self.deps.FormatCategoryHeaderText
+    local ShouldShowQuestCategoryCounts = self.deps.ShouldShowQuestCategoryCounts
+    local IsCategoryExpanded = self.deps.IsCategoryExpanded
+    local GetQuestTrackerColor = self.deps.GetQuestTrackerColor
+    local ApplyBaseColor = self.deps.ApplyBaseColor
+    local UpdateCategoryToggle = self.deps.UpdateCategoryToggle
+
+    local control = AcquireCategoryControl and AcquireCategoryControl(providedControl)
+    if not control then
+        return
+    end
+
+    control.data = {
+        categoryKey = category.key,
+        parentKey = category.parent and category.parent.key or nil,
+        parentName = category.parent and category.parent.name or nil,
+        groupKey = category.groupKey,
+        groupName = category.groupName,
+        categoryType = category.type,
+        groupOrder = category.groupOrder,
+    }
+    control.categoryKey = category.key
+
+    local state = self.state or {}
+    local normalizedKey = self.deps.NormalizeCategoryKey and self.deps.NormalizeCategoryKey(category.key)
+    if normalizedKey then
+        state.categoryControls[normalizedKey] = control
+    end
+
+    local count = #category.quests
+    if control.label and FormatCategoryHeaderText then
+        control.label:SetText(FormatCategoryHeaderText(category.name or "", count, ShouldShowQuestCategoryCounts and ShouldShowQuestCategoryCounts()))
+    end
+
+    local expanded = IsCategoryExpanded and IsCategoryExpanded(category.key)
+    safeDebug("%s: Layout cat=%s expanded=%s", MODULE_TAG, tostring(category.key), tostring(expanded))
+
+    if GetQuestTrackerColor and ApplyBaseColor then
+        local colorRole = expanded and "activeTitle" or "categoryTitle"
+        local r, g, b, a = GetQuestTrackerColor(colorRole)
+        ApplyBaseColor(control, r, g, b, a)
+    end
+    if UpdateCategoryToggle then
+        UpdateCategoryToggle(control, expanded)
+    end
+    self:GetCategoryHeaderHeight(control)
+    control:SetHidden(false)
+    self:AnchorControl(control, self.deps.CATEGORY_INDENT_X)
+
+    if expanded and category.quests then
+        for index = 1, count do
+            self:LayoutQuest(category.quests[index])
+        end
+    elseif self.deps.SetCategoryRowsVisible then
+        self.deps.SetCategoryRowsVisible(category.key, false)
+    end
+end
+
+function Layout:ReleaseRowControl(control)
+    local state = self.state or {}
+    if not control then
+        return
+    end
+
+    local rowType = control.rowType
+    if rowType == "category" then
+        local normalized = control.data and self.deps.NormalizeCategoryKey and self.deps.NormalizeCategoryKey(control.data.categoryKey)
+        if normalized and state.categoryControls then
+            state.categoryControls[normalized] = nil
+        end
+        if state.categoryPool and control.poolKey then
+            state.categoryPool:ReleaseObject(control.poolKey)
+        end
+    elseif rowType == "quest" then
+        local questData = control.data and control.data.quest
+        if questData and questData.journalIndex and state.questControls then
+            state.questControls[questData.journalIndex] = nil
+        end
+        if state.questPool and control.poolKey then
+            state.questPool:ReleaseObject(control.poolKey)
+        end
+    else
+        if state.conditionPool and control.poolKey then
+            state.conditionPool:ReleaseObject(control.poolKey)
+        end
+    end
+end
+
+function Layout:TrimOrderedControlsToCategory(keepCategoryCount)
+    local state = self.state or {}
+    local ReleaseAll = self.deps.ReleaseAll
+
+    if keepCategoryCount <= 0 then
+        if ReleaseAll then
+            ReleaseAll(state.categoryPool)
+            ReleaseAll(state.questPool)
+            ReleaseAll(state.conditionPool)
+        end
+        self:ResetLayoutState()
+        return
+    end
+
+    local categoryCounter = 0
+    local releaseStartIndex = nil
+
+    for index = 1, #state.orderedControls do
+        local control = state.orderedControls[index]
+        if control and control.rowType == "category" then
+            categoryCounter = categoryCounter + 1
+            if categoryCounter > keepCategoryCount then
+                releaseStartIndex = index
+                break
+            end
+        end
+    end
+
+    if releaseStartIndex then
+        for index = #state.orderedControls, releaseStartIndex, -1 do
+            self:ReleaseRowControl(state.orderedControls[index])
+            table.remove(state.orderedControls, index)
+        end
+    end
+
+    state.lastAnchoredControl = state.orderedControls[#state.orderedControls]
+end
+
+function Layout:RelayoutFromCategoryIndex(startCategoryIndex)
+    local state = self.state or {}
+    local ApplyActiveQuestFromSaved = self.deps.ApplyActiveQuestFromSaved
+    local EnsurePools = self.deps.EnsurePools
+    local ReleaseAll = self.deps.ReleaseAll
+    local PrimeInitialSavedState = self.deps.PrimeInitialSavedState
+    local NotifyHostContentChanged = self.deps.NotifyHostContentChanged
+    local ProcessPendingExternalReveal = self.deps.ProcessPendingExternalReveal
+
+    if ApplyActiveQuestFromSaved then
+        ApplyActiveQuestFromSaved()
+    end
+    if EnsurePools then
+        EnsurePools()
+    end
+
+    if
+        not state.snapshot
+        or not state.snapshot.categories
+        or not state.snapshot.categories.ordered
+        or #state.snapshot.categories.ordered == 0
+    then
+        if ReleaseAll then
+            ReleaseAll(state.categoryPool)
+            ReleaseAll(state.questPool)
+            ReleaseAll(state.conditionPool)
+        end
+        self:ResetLayoutState()
+        self:UpdateContentSize()
+        if NotifyHostContentChanged then
+            NotifyHostContentChanged()
+        end
+        if ProcessPendingExternalReveal then
+            ProcessPendingExternalReveal()
+        end
+        return
+    end
+
+    if startCategoryIndex <= 1 then
+        if ReleaseAll then
+            ReleaseAll(state.categoryPool)
+            ReleaseAll(state.questPool)
+            ReleaseAll(state.conditionPool)
+        end
+        self:ResetLayoutState()
+        startCategoryIndex = 1
+    else
+        self:TrimOrderedControlsToCategory(startCategoryIndex - 1)
+    end
+
+    if PrimeInitialSavedState then
+        PrimeInitialSavedState()
+    end
+
+    for index = startCategoryIndex, #state.snapshot.categories.ordered do
+        local category = state.snapshot.categories.ordered[index]
+        if category and category.quests and #category.quests > 0 then
+            self:LayoutCategory(category)
+        end
+    end
+
+    self:UpdateContentSize()
+    if NotifyHostContentChanged then
+        NotifyHostContentChanged()
+    end
+    if ProcessPendingExternalReveal then
+        ProcessPendingExternalReveal()
+    end
+end
+
+function Layout:ApplyLayout(parentContainer, categoryControls, rowControls, rowsByCategory)
+    if parentContainer and self.state then
+        self.state.container = parentContainer
+    end
+
+    self.rowsByCategory = rowsByCategory
+
+    if categoryControls and type(categoryControls) == "table" then
+        safeDebug("%s: ApplyLayout using provided controls (%d categories)", MODULE_TAG, #categoryControls)
+    else
+        safeDebug("%s: ApplyLayout using current snapshot", MODULE_TAG)
+    end
+
+    if self.state and (rowControls or (self.state.orderedControls and #self.state.orderedControls > 0)) then
+        self:UpdateContentSize()
+        if self.deps.NotifyHostContentChanged then
+            self.deps.NotifyHostContentChanged()
+        end
+        if self.deps.ProcessPendingExternalReveal then
+            self.deps.ProcessPendingExternalReveal()
+        end
+        return rowControls or self.state.orderedControls
+    end
+
+    self:RelayoutFromCategoryIndex(1)
+    return self.state and self.state.orderedControls or {}
+end
+
+function Layout:GetCategoryControls()
+    local state = self.state or {}
+    return state.categoryControls
+end
+
+Nvk3UT.QuestTrackerLayout = Layout
+
+return Layout

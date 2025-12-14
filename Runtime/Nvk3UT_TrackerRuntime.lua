@@ -37,6 +37,8 @@ Runtime._pendingFullRebuildReason = type(Runtime._pendingFullRebuildReason) == "
         and Runtime._pendingFullRebuildReason
     or nil
 Runtime.needsFullRebuildOnVisible = Runtime.needsFullRebuildOnVisible == true
+Runtime._fullRebuildPending = Runtime._fullRebuildPending == true
+Runtime._fullRebuildReason = type(Runtime._fullRebuildReason) == "string" and Runtime._fullRebuildReason or nil
 
 local function debug(fmt, ...)
     if Addon and type(Addon.Debug) == "function" then
@@ -410,29 +412,34 @@ local function buildQuestViewModel()
     return viewModel, true
 end
 
+local function isQuestControllerDirty()
+    local controller = rawget(Addon, "QuestTrackerController")
+    if type(controller) ~= "table" then
+        return false
+    end
+
+    local isDirty = controller.IsDirty
+    if type(isDirty) ~= "function" then
+        return false
+    end
+
+    local invoked, dirty = callWithOptionalSelf(controller, isDirty, false)
+    if not invoked then
+        return false
+    end
+
+    return dirty == true
+end
+
 local function refreshQuestTracker(viewModel)
     local tracker = rawget(Addon, "QuestTracker")
     if type(tracker) ~= "table" then
         return false
     end
 
-    local refreshWithModel = tracker.RefreshWithViewModel or tracker.RefreshFromViewModel
-    if type(refreshWithModel) == "function" then
-        local invoked = callWithOptionalSelf(tracker, refreshWithModel, false, viewModel)
-        if invoked then
-            return true
-        end
-    end
-
-    local requestRefresh = tracker.RequestRefresh
-    if type(requestRefresh) == "function" then
-        callWithOptionalSelf(tracker, requestRefresh, false)
-        return true
-    end
-
     local refresh = tracker.Refresh
     if type(refresh) == "function" then
-        local invoked = callWithOptionalSelf(tracker, refresh, false, viewModel)
+        local invoked = callWithOptionalSelf(tracker, refresh, true, viewModel)
         return invoked
     end
 
@@ -797,7 +804,11 @@ end
 
 local function hasDirtyFlags()
     local dirty = ensureDirtyState()
-    return dirty.quest or dirty.endeavor or dirty.achievement or dirty.layout
+    if dirty.quest or dirty.endeavor or dirty.achievement or dirty.layout then
+        return true
+    end
+
+    return isQuestControllerDirty()
 end
 
 local function hasInteractivityWork()
@@ -805,7 +816,7 @@ local function hasInteractivityWork()
 end
 
 local function hasPendingWork()
-    if hasDirtyFlags() or hasInteractivityWork() or Runtime.goldenDirty == true then
+    if hasDirtyFlags() or hasInteractivityWork() or Runtime.goldenDirty == true or Runtime._fullRebuildPending == true then
         return true
     end
 
@@ -915,6 +926,42 @@ function Runtime:QueueDirty(channel, opts)
     end
 end
 
+function Runtime:QueueLayout(reason)
+    local dirty = ensureDirtyState()
+    local queuedLog = ensureQueuedLogTable()
+
+    if not dirty.layout then
+        dirty.layout = true
+        queuedLog.layout = true
+    else
+        queuedLog.layout = true
+    end
+
+    if reason then
+        debug("Runtime.QueueLayout: %s", tostring(reason))
+    end
+
+    if hasPendingWork() then
+        scheduleProcessing()
+    end
+end
+
+function Runtime:RequestFullRebuild(reason)
+    if type(reason) == "string" and reason ~= "" then
+        self._fullRebuildReason = reason
+    end
+
+    self._fullRebuildPending = true
+
+    if reason then
+        debug("Runtime.RequestFullRebuild: %s", tostring(reason))
+    end
+
+    if hasPendingWork() then
+        scheduleProcessing()
+    end
+end
+
 function Runtime:SetPendingFullRebuild(reason)
     if type(reason) == "string" and reason ~= "" then
         self._pendingFullRebuildReason = reason
@@ -956,11 +1003,25 @@ function Runtime:ProcessFrame(nowMs)
 
     local function process()
         local dirty = ensureDirtyState()
-        local questDirty = dirty.quest == true
+        local fullRebuildPending = self._fullRebuildPending == true
+        local fullRebuildReason = self._fullRebuildReason
+        self._fullRebuildPending = false
+        self._fullRebuildReason = nil
+
+        local questDirty = dirty.quest == true or isQuestControllerDirty()
         local endeavorDirty = dirty.endeavor == true
         local achievementDirty = dirty.achievement == true
         local layoutDirty = dirty.layout == true
         local goldenDirty = self.goldenDirty == true
+
+        if fullRebuildPending then
+            questDirty = true
+            endeavorDirty = true
+            achievementDirty = true
+            layoutDirty = true
+            goldenDirty = true
+            debug("ProcessFrame: full rebuild pending (%s)", tostring(fullRebuildReason))
+        end
 
         dirty.quest = false
         dirty.endeavor = false
@@ -972,6 +1033,7 @@ function Runtime:ProcessFrame(nowMs)
 
         local questViewModel, questVmBuilt = nil, false
         if questDirty then
+            debug("ProcessFrame: questDirty -> refresh")
             questViewModel, questVmBuilt = buildQuestViewModel()
             if questVmBuilt then
                 debug("Runtime: built quest view model")

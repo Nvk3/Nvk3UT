@@ -1514,8 +1514,13 @@ local function callRuntime(methodName, ...)
     end)
 end
 
-queueRuntimeLayout = function()
-    callRuntime("QueueDirty", "layout")
+queueRuntimeLayout = function(reason)
+    if reason then
+        callRuntime("QueueLayout", reason)
+        return
+    end
+
+    callRuntime("QueueLayout")
 end
 
 local function requestPendingFullRebuild()
@@ -1567,7 +1572,9 @@ local function triggerDeferredFullRebuildOnVisible()
     runtime.needsFullRebuildOnVisible = false
 
     local function markDirty(controller)
-        if controller and controller.MarkDirty then
+        if controller and controller.RequestRefresh then
+            safeCall(controller.RequestRefresh, controller, "TrackerHost:deferredRebuild")
+        elseif controller and controller.MarkDirty then
             safeCall(controller.MarkDirty, controller)
         end
     end
@@ -1945,7 +1952,13 @@ local function applyBootstrapVisibility(host)
     visibilityDebug("TrackerHost HUD visibility changed: %s", tostring(shouldShow))
 
     if TrackerHost.ApplyVisibilityRules() then
-        queueRuntimeLayout()
+        callRuntime("RequestFullRebuild", "hudVisible")
+
+        if type(zo_callLater) == "function" then
+            zo_callLater(function()
+                callRuntime("RequestFullRebuild", "hudVisible:deferred")
+            end, 1)
+        end
     end
 end
 
@@ -5298,11 +5311,15 @@ function TrackerHost.ApplyWindowBars()
 end
 
 function TrackerHost.Refresh()
-    if Nvk3UT.QuestTracker then
-        if Nvk3UT.QuestTracker.RequestRefresh then
+    local controller = Nvk3UT and Nvk3UT.QuestTrackerController
+    if controller and controller.RequestRefresh then
+        pcall(controller.RequestRefresh, controller, "TrackerHost.Refresh")
+    else
+        local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+        if runtime and runtime.QueueDirty then
+            pcall(runtime.QueueDirty, runtime, "quest")
+        elseif Nvk3UT.QuestTracker and Nvk3UT.QuestTracker.RequestRefresh then
             pcall(Nvk3UT.QuestTracker.RequestRefresh)
-        elseif Nvk3UT.QuestTracker.Refresh then
-            pcall(Nvk3UT.QuestTracker.Refresh)
         end
     end
 
