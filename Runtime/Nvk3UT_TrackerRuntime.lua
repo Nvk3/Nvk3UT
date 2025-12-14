@@ -410,6 +410,25 @@ local function buildQuestViewModel()
     return viewModel, true
 end
 
+local function isQuestControllerDirty()
+    local controller = rawget(Addon, "QuestTrackerController")
+    if type(controller) ~= "table" then
+        return false
+    end
+
+    local isDirty = controller.IsDirty
+    if type(isDirty) ~= "function" then
+        return false
+    end
+
+    local invoked, dirty = callWithOptionalSelf(controller, isDirty, false)
+    if not invoked then
+        return false
+    end
+
+    return dirty == true
+end
+
 local function refreshQuestTracker(viewModel)
     local tracker = rawget(Addon, "QuestTracker")
     if type(tracker) ~= "table" then
@@ -783,7 +802,11 @@ end
 
 local function hasDirtyFlags()
     local dirty = ensureDirtyState()
-    return dirty.quest or dirty.endeavor or dirty.achievement or dirty.layout
+    if dirty.quest or dirty.endeavor or dirty.achievement or dirty.layout then
+        return true
+    end
+
+    return isQuestControllerDirty()
 end
 
 local function hasInteractivityWork()
@@ -942,7 +965,7 @@ function Runtime:ProcessFrame(nowMs)
 
     local function process()
         local dirty = ensureDirtyState()
-        local questDirty = dirty.quest == true
+        local questDirty = dirty.quest == true or isQuestControllerDirty()
         local endeavorDirty = dirty.endeavor == true
         local achievementDirty = dirty.achievement == true
         local layoutDirty = dirty.layout == true
@@ -958,6 +981,7 @@ function Runtime:ProcessFrame(nowMs)
 
         local questViewModel, questVmBuilt = nil, false
         if questDirty then
+            debug("ProcessFrame: questDirty -> refresh")
             questViewModel, questVmBuilt = buildQuestViewModel()
             if questVmBuilt then
                 debug("Runtime: built quest view model")

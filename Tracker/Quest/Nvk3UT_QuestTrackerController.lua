@@ -309,6 +309,12 @@ function Controller:MarkDirty(reason)
     state.isDirty = true
     state.lastReason = reason
     dbg("MarkDirty: %s", tostring(reason))
+
+    local root = getRoot()
+    local runtime = root and rawget(root, "TrackerRuntime")
+    if runtime and type(runtime.QueueDirty) == "function" then
+        pcall(runtime.QueueDirty, runtime, "quest")
+    end
 end
 
 function Controller:ClearDirty()
