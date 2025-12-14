@@ -36,6 +36,10 @@ function Rows:Init(parentContainer, trackerState, callbacks)
     self.state = trackerState
     self.callbacks = callbacks or {}
     self.rows = (trackerState and trackerState.orderedControls) or {}
+    self.categoryPool = {
+        freeCategories = {},
+        activeCategories = {},
+    }
 
     safeDebug("%s: Init with parent %s", MODULE_TAG, tostring(parentContainer))
 end
@@ -59,6 +63,8 @@ function Rows:Reset()
 
     self.rows = self.state.orderedControls or {}
     self.viewModel = nil
+
+    self:ReleaseAllCategories()
 
     safeDebug("%s: Reset rows", MODULE_TAG)
 
@@ -119,6 +125,97 @@ end
 
 function Rows:GetRowControls()
     return self.state and self.state.orderedControls or self.rows or {}
+end
+
+function Rows:AcquireCategory()
+    if not self.categoryPool then
+        self.categoryPool = {
+            freeCategories = {},
+            activeCategories = {},
+        }
+    end
+
+    local category = table.remove(self.categoryPool.freeCategories)
+    local header = category and category.header or nil
+    local container = category and category.container or nil
+
+    if not header then
+        local headerNameBase = self.parent and self.parent.GetName and self.parent:GetName() or MODULE_TAG
+        local index = (#self.categoryPool.activeCategories) + (#self.categoryPool.freeCategories) + 1
+        local headerName = string.format("%s_CategoryHeader_%d", headerNameBase, index)
+        header = CreateControlFromVirtual(headerName, self.parent, "CategoryHeader_Template")
+        header.rowType = "category"
+        header:SetHidden(true)
+        container = CreateControl(headerName .. "_Container", self.parent, CT_CONTROL)
+        container:SetHidden(true)
+    end
+
+    if header.ClearAnchors then
+        header:ClearAnchors()
+    end
+    if container and container.ClearAnchors then
+        container:ClearAnchors()
+    end
+
+    if header.SetHidden then
+        header:SetHidden(false)
+    end
+    if container and container.SetHidden then
+        container:SetHidden(false)
+    end
+
+    table.insert(self.categoryPool.activeCategories, { header = header, container = container })
+
+    return header, container
+end
+
+function Rows:ReleaseCategory(header, container)
+    if not self.categoryPool then
+        return
+    end
+
+    for index, category in ipairs(self.categoryPool.activeCategories) do
+        if category.header == header and category.container == container then
+            table.remove(self.categoryPool.activeCategories, index)
+            break
+        end
+    end
+
+    if header then
+        if header.ClearAnchors then
+            header:ClearAnchors()
+        end
+        if header.SetHidden then
+            header:SetHidden(true)
+        end
+        header.data = nil
+        header.currentIndent = nil
+        header.baseColor = nil
+        header.isExpanded = nil
+    end
+
+    if container then
+        if container.ClearAnchors then
+            container:ClearAnchors()
+        end
+        if container.SetHidden then
+            container:SetHidden(true)
+        end
+        container.data = nil
+    end
+
+    table.insert(self.categoryPool.freeCategories, { header = header, container = container })
+end
+
+function Rows:ReleaseAllCategories()
+    if not self.categoryPool then
+        return
+    end
+
+    while #self.categoryPool.activeCategories > 0 do
+        local category = table.remove(self.categoryPool.activeCategories)
+        self:ReleaseCategory(category.header, category.container)
+    end
 end
 
 Nvk3UT.QuestTrackerRows = Rows
