@@ -5,6 +5,8 @@ Nvk3UT = Nvk3UT or {}
 local Rows = {}
 Rows.__index = Rows
 
+local MODULE_NAME = addonName .. "AchievementTrackerRows"
+
 local CATEGORY_TOGGLE_TEXTURES = {
     expanded = {
         up = "EsoUI/Art/Buttons/tree_open_up.dds",
@@ -22,6 +24,37 @@ local RIGHT_MOUSE_BUTTON = MOUSE_BUTTON_INDEX_RIGHT or 2
 local function Call(callback, ...)
     if type(callback) == "function" then
         return callback(...)
+    end
+end
+
+local function IsDebugLoggingEnabled()
+    local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
+    if utils and type(utils.IsDebugEnabled) == "function" then
+        return utils:IsDebugEnabled()
+    end
+
+    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        return diagnostics:IsDebugEnabled()
+    end
+
+    local addon = Nvk3UT
+    if addon and type(addon.IsDebugEnabled) == "function" then
+        return addon:IsDebugEnabled()
+    end
+
+    return false
+end
+
+local function DebugLog(message)
+    if not IsDebugLoggingEnabled() then
+        return
+    end
+
+    if d then
+        d(string.format("[%s] %s", MODULE_NAME, tostring(message)))
+    elseif print then
+        print(string.format("[%s] %s", MODULE_NAME, tostring(message)))
     end
 end
 
@@ -90,7 +123,9 @@ function Rows:Init(parent, opts)
     self.parent = parent
     self.fonts = (opts and opts.fonts) or {}
     self.callbacks = (opts and opts.callbacks) or {}
-    self.rows = self.rows or {}
+    self.activeControlsByKey = self.activeControlsByKey or {}
+    self.freeControlsByType = self.freeControlsByType or {}
+    self.allControls = self.allControls or {}
 end
 
 function Rows:SetFonts(fonts)
@@ -102,12 +137,26 @@ function Rows:SetCallbacks(callbacks)
 end
 
 function Rows:ReleaseAll()
-    if not self.rows then
+    if not self.activeControlsByKey and not self.freeControlsByType then
         return
     end
 
-    for _, control in pairs(self.rows) do
-        self:ResetControl(control)
+    if not self.freeControlsByType then
+        self.freeControlsByType = {}
+    end
+
+    if self.activeControlsByKey then
+        for key, control in pairs(self.activeControlsByKey) do
+            self.activeControlsByKey[key] = nil
+            self:AddToFreePool(control)
+        end
+    end
+
+    if self.previousActiveControlsByKey then
+        for key, control in pairs(self.previousActiveControlsByKey) do
+            self.previousActiveControlsByKey[key] = nil
+            self:AddToFreePool(control)
+        end
     end
 end
 
@@ -125,6 +174,10 @@ function Rows:ResetControl(control)
     control:SetHidden(true)
     control.data = nil
     control.currentIndent = nil
+
+    if control.ClearAnchors then
+        control:ClearAnchors()
+    end
 
     if control.rowType == "category" then
         control.baseColor = nil
@@ -333,33 +386,95 @@ function Rows:CreateObjectiveRow(rowKey)
     return control
 end
 
-function Rows:AcquireRow(rowKey, rowType)
-    if not self.rows then
-        self.rows = {}
+function Rows:BeginRefresh()
+    self.previousActiveControlsByKey = self.activeControlsByKey or {}
+    self.activeControlsByKey = {}
+    self.createdCount = 0
+    self.reusedCount = 0
+    self.freedCount = 0
+end
+
+function Rows:AddToFreePool(control)
+    if not control then
+        return
     end
 
-    local control = self.rows[rowKey]
+    self:ResetControl(control)
+
+    local rowType = control.rowType or "generic"
+    self.freeControlsByType = self.freeControlsByType or {}
+    local pool = self.freeControlsByType[rowType]
+    if not pool then
+        pool = {}
+        self.freeControlsByType[rowType] = pool
+    end
+
+    pool[#pool + 1] = control
+end
+
+function Rows:AcquireRow(rowKey, rowType, parent)
+    if not self.activeControlsByKey then
+        self.activeControlsByKey = {}
+    end
+
+    if not self.previousActiveControlsByKey then
+        self.previousActiveControlsByKey = {}
+    end
+
+    if not self.freeControlsByType then
+        self.freeControlsByType = {}
+    end
+
+    parent = parent or self.parent
+
+    local control = self.previousActiveControlsByKey[rowKey]
     if control then
-        if rowType then
-            control.rowType = rowType
-            self:ApplyFonts(control, rowType)
+        self.previousActiveControlsByKey[rowKey] = nil
+        if rowType and control.rowType ~= rowType then
+            self:AddToFreePool(control)
+            self.freedCount = (self.freedCount or 0) + 1
+            control = nil
         end
+    end
+
+    if not control then
+        local pool = self.freeControlsByType[rowType]
+        if pool and #pool > 0 then
+            control = table.remove(pool)
+        end
+    end
+
+    if control then
+        self.reusedCount = (self.reusedCount or 0) + 1
+    end
+
+    if not control then
+        if rowType == "category" then
+            control = self:CreateCategoryRow(rowKey)
+        elseif rowType == "achievement" then
+            control = self:CreateAchievementRow(rowKey)
+        elseif rowType == "objective" then
+            control = self:CreateObjectiveRow(rowKey)
+        end
+
+        if control then
+            self.createdCount = (self.createdCount or 0) + 1
+            self.allControls[#self.allControls + 1] = control
+        end
+    end
+
+    if control then
+        self:ResetControl(control)
+        control.rowType = rowType
+        if control.SetParent and parent and control:GetParent() ~= parent then
+            control:SetParent(parent)
+        end
+        self:ApplyFonts(control, rowType)
+        self.activeControlsByKey[rowKey] = control
         return control
     end
 
-    if rowType == "category" then
-        control = self:CreateCategoryRow(rowKey)
-    elseif rowType == "achievement" then
-        control = self:CreateAchievementRow(rowKey)
-    elseif rowType == "objective" then
-        control = self:CreateObjectiveRow(rowKey)
-    end
-
-    if control then
-        self.rows[rowKey] = control
-    end
-
-    return control
+    return nil
 end
 
 function Rows:ApplyRow(control, rowType, rowData)
@@ -396,6 +511,29 @@ function Rows:ApplyRow(control, rowType, rowData)
         if rowData and rowData.color and control.label and control.label.SetColor then
             control.label:SetColor(unpack(rowData.color))
         end
+    end
+end
+
+function Rows:EndRefresh()
+    if not self.freeControlsByType then
+        self.freeControlsByType = {}
+    end
+
+    if self.previousActiveControlsByKey then
+        for key, control in pairs(self.previousActiveControlsByKey) do
+            self.previousActiveControlsByKey[key] = nil
+            self:AddToFreePool(control)
+            self.freedCount = (self.freedCount or 0) + 1
+        end
+    end
+
+    if IsDebugLoggingEnabled() then
+        DebugLog(string.format(
+            "Rows refresh complete: created=%d reused=%d freed=%d",
+            self.createdCount or 0,
+            self.reusedCount or 0,
+            self.freedCount or 0
+        ))
     end
 end
 

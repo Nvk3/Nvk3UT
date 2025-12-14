@@ -1501,12 +1501,12 @@ local function Rebuild()
         return
     end
 
-    ReleaseRows()
-
+    rows:BeginRefresh()
     ResetLayoutState()
 
     LayoutCategory(rows)
 
+    rows:EndRefresh()
     UpdateContentSize()
     NotifyHostContentChanged()
 end
