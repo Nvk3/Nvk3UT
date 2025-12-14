@@ -618,12 +618,8 @@ function Layout:RelayoutFromCategoryIndex(startCategoryIndex)
         EnsurePools()
     end
 
-    if
-        not state.snapshot
-        or not state.snapshot.categories
-        or not state.snapshot.categories.ordered
-        or #state.snapshot.categories.ordered == 0
-    then
+    local categories = state.viewModel and state.viewModel.categories
+    if type(categories) ~= "table" or #categories == 0 then
         if ReleaseAll then
             ReleaseAll(state.categoryPool)
             ReleaseAll(state.questPool)
@@ -656,8 +652,8 @@ function Layout:RelayoutFromCategoryIndex(startCategoryIndex)
         PrimeInitialSavedState()
     end
 
-    for index = startCategoryIndex, #state.snapshot.categories.ordered do
-        local category = state.snapshot.categories.ordered[index]
+    for index = startCategoryIndex, #categories do
+        local category = categories[index]
         if category and category.quests and #category.quests > 0 then
             self:LayoutCategory(category)
         end
@@ -682,7 +678,7 @@ function Layout:ApplyLayout(parentContainer, categoryControls, rowControls, rows
     if categoryControls and type(categoryControls) == "table" then
         safeDebug("%s: ApplyLayout using provided controls (%d categories)", MODULE_TAG, #categoryControls)
     else
-        safeDebug("%s: ApplyLayout using current snapshot", MODULE_TAG)
+        safeDebug("%s: ApplyLayout using current view model", MODULE_TAG)
     end
 
     if self.state and (rowControls or (self.state.orderedControls and #self.state.orderedControls > 0)) then
