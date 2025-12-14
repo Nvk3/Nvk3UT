@@ -28,6 +28,10 @@ local ENTRY_ROW_TYPES = {
     achievement = true,
 }
 
+local OBJECTIVE_ROW_TYPES = {
+    objective = true,
+}
+
 local function ApplyRowMetrics(control, layoutCtx, rowType, rowData)
     if not control or not control.label then
         return
@@ -50,10 +54,16 @@ local function ApplyRowMetrics(control, layoutCtx, rowType, rowData)
     control.label:SetWidth(availableWidth)
 
     local textHeight = control.label:GetTextHeight() or 0
+    if textHeight > 0 and control.label.SetHeight then
+        control.label:SetHeight(textHeight)
+    end
+
     local targetHeight = textHeight + (rowData.textPaddingY or 0)
     if minHeight then
         targetHeight = math.max(minHeight, targetHeight)
     elseif CATEGORY_ROW_TYPES[rowType] or ENTRY_ROW_TYPES[rowType] then
+        targetHeight = math.max(targetHeight, control:GetHeight() or 0)
+    elseif OBJECTIVE_ROW_TYPES[rowType] then
         targetHeight = math.max(targetHeight, control:GetHeight() or 0)
     end
 
@@ -149,14 +159,15 @@ function Layout:FinishLayout(layoutCtx)
                 maxWidth = width
             end
             local height = control.layoutHeight or control:GetHeight() or 0
-            if (height <= 0) and CATEGORY_ROW_TYPES[control.rowType] then
-                height = control.layoutRowData and control.layoutRowData.minHeight or height
-            elseif (height <= 0) and ENTRY_ROW_TYPES[control.rowType] then
-                height = control.layoutRowData and control.layoutRowData.minHeight or height
-            elseif (height <= 0) and control.layoutRowData then
-                local minHeight = control.layoutRowData.minHeight
-                if minHeight then
-                    height = minHeight
+            if height <= 0 then
+                local layoutRowData = control.layoutRowData
+                if CATEGORY_ROW_TYPES[control.rowType] or ENTRY_ROW_TYPES[control.rowType] or OBJECTIVE_ROW_TYPES[control.rowType] then
+                    height = layoutRowData and layoutRowData.minHeight or height
+                elseif layoutRowData then
+                    local minHeight = layoutRowData.minHeight
+                    if minHeight then
+                        height = minHeight
+                    end
                 end
             end
 
