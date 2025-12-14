@@ -40,6 +40,10 @@ function Rows:Init(parentContainer, trackerState, callbacks)
         freeCategories = {},
         activeCategories = {},
     }
+    self.questPool = {
+        freeRows = {},
+        activeRows = {},
+    }
 
     safeDebug("%s: Init with parent %s", MODULE_TAG, tostring(parentContainer))
 end
@@ -64,6 +68,7 @@ function Rows:Reset()
     self.rows = self.state.orderedControls or {}
     self.viewModel = nil
 
+    self:ReleaseAllRows()
     self:ReleaseAllCategories()
 
     safeDebug("%s: Reset rows", MODULE_TAG)
@@ -73,6 +78,8 @@ end
 
 function Rows:BuildOrRebuildRows(viewModel)
     self.viewModel = viewModel
+
+    self:ReleaseAllRows()
 
     -- Reuse existing pooled categories across rebuilds. If we do not have a view model
     -- or it is empty, release anything active and exit early.
@@ -137,7 +144,13 @@ function Rows:BuildOrRebuildRows(viewModel)
 
     local controls = self:GetRowControls()
 
-    safeDebug("%s: BuildOrRebuildRows completed with %d row(s)", MODULE_TAG, #controls)
+    safeDebug(
+        "%s: BuildOrRebuildRows completed with %d row(s); questPool active=%d free=%d",
+        MODULE_TAG,
+        #controls,
+        self.questPool and #self.questPool.activeRows or 0,
+        self.questPool and #self.questPool.freeRows or 0
+    )
 
     return controls
 end
@@ -220,6 +233,9 @@ function Rows:ReleaseCategory(header, container)
             for childIndex = container:GetNumChildren(), 1, -1 do
                 local child = container:GetChild(childIndex)
                 if child then
+                    if child.rowType == "quest" then
+                        self:ReleaseQuestRow(child)
+                    end
                     if child.ClearAnchors then
                         child:ClearAnchors()
                     end
@@ -252,6 +268,107 @@ function Rows:ReleaseAllCategories()
     while #self.categoryPool.activeCategories > 0 do
         local category = table.remove(self.categoryPool.activeCategories)
         self:ReleaseCategory(category.header, category.container)
+    end
+end
+
+function Rows:AcquireQuestRow()
+    if not self.questPool then
+        self.questPool = {
+            freeRows = {},
+            activeRows = {},
+        }
+    end
+
+    local row = table.remove(self.questPool.freeRows)
+    local created = false
+    local name
+
+    if not row then
+        local nameBase = self.parent and self.parent.GetName and self.parent:GetName() or MODULE_TAG
+        local index = (#self.questPool.activeRows) + (#self.questPool.freeRows) + 1
+        name = string.format("%s_QuestRow_%d", nameBase, index)
+        row = CreateControlFromVirtual(name, self.parent, "QuestHeader_Template")
+        created = true
+    else
+        name = row.GetName and row:GetName() or "<questRow>"
+    end
+
+    if row.ClearAnchors then
+        row:ClearAnchors()
+    end
+    if row.SetHidden then
+        row:SetHidden(false)
+    end
+
+    table.insert(self.questPool.activeRows, row)
+
+    safeDebug(
+        "%s: AcquireQuestRow %s (%s)",
+        MODULE_TAG,
+        tostring(name),
+        created and "new" or "reused"
+    )
+
+    return row
+end
+
+function Rows:ReleaseQuestRow(row)
+    if not (self.questPool and row) then
+        return
+    end
+
+    for index, active in ipairs(self.questPool.activeRows) do
+        if active == row then
+            table.remove(self.questPool.activeRows, index)
+            break
+        end
+    end
+
+    if row.ClearAnchors then
+        row:ClearAnchors()
+    end
+    if row.SetParent then
+        row:SetParent(self.parent)
+    end
+    if row.SetHidden then
+        row:SetHidden(true)
+    end
+
+    row.data = nil
+    row.questJournalIndex = nil
+    row.questKey = nil
+    row.categoryKey = nil
+    row.poolKey = nil
+    row.rowType = "quest"
+
+    if row.iconSlot then
+        if row.iconSlot.SetTexture then
+            row.iconSlot:SetTexture(nil)
+        end
+        if row.iconSlot.SetAlpha then
+            row.iconSlot:SetAlpha(0)
+        end
+        if row.iconSlot.SetHidden then
+            row.iconSlot:SetHidden(false)
+        end
+    end
+    if row.label and row.label.SetText then
+        row.label:SetText("")
+    end
+
+    safeDebug("%s: ReleaseQuestRow %s", MODULE_TAG, row.GetName and row:GetName() or "<questRow>")
+
+    table.insert(self.questPool.freeRows, row)
+end
+
+function Rows:ReleaseAllRows()
+    if not self.questPool then
+        return
+    end
+
+    while #self.questPool.activeRows > 0 do
+        local row = table.remove(self.questPool.activeRows)
+        self:ReleaseQuestRow(row)
     end
 end
 

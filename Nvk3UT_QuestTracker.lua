@@ -4062,8 +4062,19 @@ local function AcquireCategoryControl(providedControl)
     return control, key
 end
 
-local function AcquireQuestControl()
-    local control, key = state.questPool:AcquireObject()
+local function AcquireQuestControl(providedControl)
+    local control, key
+
+    if providedControl ~= nil then
+        control = providedControl
+        key = providedControl.poolKey
+    else
+        control, key = state.questPool:AcquireObject()
+    end
+
+    if not control then
+        return nil, key
+    end
     if not control.initialized then
         control.label = control:GetNamedChild("Label")
         control.iconSlot = control:GetNamedChild("IconSlot")
@@ -4088,11 +4099,10 @@ local function AcquireQuestControl()
                     return
                 end
                 local parent = toggleCtrl:GetParent()
-                local questData = parent and parent.data and parent.data.quest
-                if not questData then
+                local journalIndex = parent and parent.questJournalIndex
+                if not journalIndex then
                     return
                 end
-                local journalIndex = questData.journalIndex
                 ToggleQuestExpansion(journalIndex, {
                     trigger = "click",
                     source = "QuestTracker:OnToggleClick",
@@ -4114,10 +4124,10 @@ local function AcquireQuestControl()
             end
             if button == MOUSE_BUTTON_INDEX_LEFT then
                 local questData = ctrl.data and ctrl.data.quest
-                if not questData then
+                local journalIndex = ctrl.questJournalIndex or (questData and questData.journalIndex)
+                if not journalIndex then
                     return
                 end
-                local journalIndex = questData.journalIndex
                 local toggleMouseOver = false
                 if ctrl.iconSlot then
                     local toggleIsMouseOver = ctrl.iconSlot.IsMouseOver
@@ -4145,10 +4155,11 @@ local function AcquireQuestControl()
                 HandleQuestRowClick(journalIndex)
             elseif button == MOUSE_BUTTON_INDEX_RIGHT then
                 local questData = ctrl.data and ctrl.data.quest
-                if not questData then
+                local journalIndex = ctrl.questJournalIndex or (questData and questData.journalIndex)
+                if not journalIndex then
                     return
                 end
-                ShowQuestContextMenu(ctrl, questData.journalIndex)
+                ShowQuestContextMenu(ctrl, journalIndex)
             end
         end)
         control:SetHandler("OnMouseEnter", function(ctrl)
@@ -4279,15 +4290,23 @@ local function LayoutCondition(condition)
 end
 
 local function LayoutQuest(quest)
-    local control = AcquireQuestControl()
+    local providedControl
+    if QuestTrackerRows and QuestTrackerRows.AcquireQuestRow then
+        providedControl = QuestTrackerRows:AcquireQuestRow()
+    end
+
+    local control = AcquireQuestControl(providedControl)
     control.data = { quest = quest }
+    control.questJournalIndex = quest and quest.journalIndex
+    control.questKey = NormalizeQuestKey(quest and quest.journalIndex)
+    control.categoryKey = quest and quest.categoryKey
     control.label:SetText(quest.name or "")
 
     local colorRole = DetermineQuestColorRole(quest)
     local r, g, b, a = GetQuestTrackerColor(colorRole)
     ApplyBaseColor(control, r, g, b, a)
 
-    local questKey = NormalizeQuestKey(quest.journalIndex)
+    local questKey = control.questKey
     local expanded = IsQuestExpanded(quest.journalIndex)
     if IsDebugLoggingEnabled() then
         DebugLog(string.format(
