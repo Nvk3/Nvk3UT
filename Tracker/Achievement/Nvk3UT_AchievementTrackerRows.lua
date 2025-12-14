@@ -57,33 +57,47 @@ local state = {
 
 local debugLogOnce = {}
 
+local function ResolveLogger()
+    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
+    if diagnostics and type(diagnostics.Debug) == "function" then
+        return diagnostics.Debug
+    end
+
+    if type(d) == "function" then
+        return d
+    end
+
+    if type(print) == "function" then
+        return print
+    end
+
+    return nil
+end
+
+local function FormatDebugMessage(fmt, ...)
+    if type(fmt) == "string" then
+        local ok, formatted = pcall(string.format, fmt, ...)
+        if ok then
+            return formatted
+        end
+    end
+
+    return tostring(fmt)
+end
+
 local function DebugLog(fmt, ...)
     if not IsDebugLoggingEnabled() then
         return
     end
 
-    local message
-    if type(fmt) == "string" then
-        local ok, formatted = pcall(string.format, fmt, ...)
-        if ok then
-            message = formatted
-        end
+    local logger = ResolveLogger()
+    if type(logger) ~= "function" then
+        return
     end
 
-    if not message then
-        message = tostring(fmt)
-    end
-
-    local logger = nil
-    if type(d) == "function" then
-        logger = d
-    elseif type(print) == "function" then
-        logger = print
-    end
-
-    if logger then
-        logger(string.format("[%s] %s", MODULE_NAME, message))
-    end
+    local message = FormatDebugMessage(fmt, ...)
+    local ok, output = pcall(string.format, "[%s] %s", MODULE_NAME, message)
+    logger(ok and output or message)
 end
 
 local function IsDebugLoggingEnabled()
@@ -116,28 +130,14 @@ local function DebugLogOnce(key, fmt, ...)
 
     debugLogOnce[key] = true
 
-    local message
-    if type(fmt) == "string" then
-        local ok, formatted = pcall(string.format, fmt, ...)
-        if ok then
-            message = formatted
-        end
+    local logger = ResolveLogger()
+    if type(logger) ~= "function" then
+        return
     end
 
-    if not message then
-        message = tostring(fmt)
-    end
-
-    local logger = nil
-    if type(d) == "function" then
-        logger = d
-    elseif type(print) == "function" then
-        logger = print
-    end
-
-    if logger then
-        logger(string.format("[%s] %s", MODULE_NAME, message))
-    end
+    local message = FormatDebugMessage(fmt, ...)
+    local ok, output = pcall(string.format, "[%s] %s", MODULE_NAME, message)
+    logger(ok and output or message)
 end
 
 local function SafeCallDependency(key, fn, ...)
