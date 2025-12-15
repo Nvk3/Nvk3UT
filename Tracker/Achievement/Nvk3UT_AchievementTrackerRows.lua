@@ -37,6 +37,14 @@ local function CallIfFunction(fn, fnName, ...)
     end
 end
 
+local function ResolveValue(value, ...)
+    if type(value) == "function" then
+        return value(...)
+    end
+
+    return value
+end
+
 local DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR = { 1, 1, 0.6, 1 }
 
 local LEFT_MOUSE_BUTTON = MOUSE_BUTTON_INDEX_LEFT or 1
@@ -375,8 +383,8 @@ local function ApplyCategory(control, rowData)
         return
     end
 
-    control.data = rowData and rowData.data or nil
-    control.isExpanded = rowData and rowData.expanded or nil
+    control.data = rowData and ResolveValue(rowData.data, control, rowData) or nil
+    control.isExpanded = rowData and ResolveValue(rowData.expanded, control, rowData) or nil
     control.__nvk3OnMouseUp = function(button, upInside)
         if not upInside then
             return
@@ -398,28 +406,34 @@ local function ApplyCategory(control, rowData)
     end
 
     if control.label then
-        if rowData and rowData.labelText and control.label.SetText then
-            control.label:SetText(rowData.labelText)
+        local labelText = rowData and ResolveValue(rowData.labelText, control, rowData)
+        if labelText and control.label.SetText then
+            control.label:SetText(labelText)
         end
-        if rowData and rowData.labelFont then
-            control.label:SetFont(rowData.labelFont)
+        local labelFont = rowData and ResolveValue(rowData.labelFont, control, rowData)
+        if labelFont then
+            control.label:SetFont(labelFont)
         end
     end
 
     if control.toggle then
-        if rowData and rowData.toggleFont then
-            control.toggle:SetFont(rowData.toggleFont)
+        local toggleFont = rowData and ResolveValue(rowData.toggleFont, control, rowData)
+        if toggleFont then
+            control.toggle:SetFont(toggleFont)
         end
-        if rowData and rowData.toggleTexture and control.toggle.SetTexture then
-            control.toggle:SetTexture(rowData.toggleTexture)
+        local toggleTexture = rowData and ResolveValue(rowData.toggleTexture, control, rowData)
+        if toggleTexture and control.toggle.SetTexture then
+            control.toggle:SetTexture(toggleTexture)
         end
-        if rowData and control.toggle.SetHidden then
-            control.toggle:SetHidden(rowData.toggleHidden == true)
+        local toggleHidden = rowData and ResolveValue(rowData.toggleHidden, control, rowData)
+        if control.toggle.SetHidden then
+            control.toggle:SetHidden(toggleHidden == true)
         end
     end
 
-    if rowData and rowData.baseColor then
-        ApplyBaseColor(control, rowData.baseColor)
+    local baseColor = rowData and ResolveValue(rowData.baseColor, control, rowData)
+    if baseColor then
+        ApplyBaseColor(control, baseColor)
     end
 end
 
