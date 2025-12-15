@@ -11,6 +11,32 @@ local state = {
     rowTypes = {},
 }
 
+local warnedCallbacks = {}
+
+local function WarnOnce(key, message)
+    if warnedCallbacks[key] then
+        return
+    end
+
+    warnedCallbacks[key] = true
+
+    if d then
+        d(string.format("[Nvk3UT WARN] %s", message))
+    elseif print then
+        print("[Nvk3UT WARN]", message)
+    end
+end
+
+local function CallIfFunction(fn, fnName, ...)
+    if type(fn) == "function" then
+        return fn(...)
+    end
+
+    if fnName then
+        WarnOnce(fnName, string.format("AchievementRows.ApplyCategory: missing %s callback", fnName))
+    end
+end
+
 local DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR = { 1, 1, 0.6, 1 }
 
 local LEFT_MOUSE_BUTTON = MOUSE_BUTTON_INDEX_LEFT or 1
@@ -357,26 +383,18 @@ local function ApplyCategory(control, rowData)
         end
 
         if button == LEFT_MOUSE_BUTTON then
-            if rowData and rowData.onLeftClick then
-                rowData.onLeftClick(control)
-            end
+            CallIfFunction(rowData and rowData.onLeftClick, "onLeftClick", control)
         elseif button == RIGHT_MOUSE_BUTTON then
-            if rowData and rowData.onRightClick then
-                rowData.onRightClick(control)
-            end
+            CallIfFunction(rowData and rowData.onRightClick, "onRightClick", control)
         end
     end
     control.__nvk3OnMouseEnter = function()
         ApplyMouseoverHighlight(control)
-        if rowData and rowData.onMouseEnter then
-            rowData.onMouseEnter(control)
-        end
+        CallIfFunction(rowData and rowData.onMouseEnter, "onMouseEnter", control)
     end
     control.__nvk3OnMouseExit = function()
         RestoreBaseColor(control)
-        if rowData and rowData.onMouseExit then
-            rowData.onMouseExit(control)
-        end
+        CallIfFunction(rowData and rowData.onMouseExit, "onMouseExit", control)
     end
 
     if control.label then
