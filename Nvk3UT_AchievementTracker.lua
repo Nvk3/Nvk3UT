@@ -1200,6 +1200,33 @@ local function UpdateContentSize()
     state.lastHeight = NormalizeMetric(totalHeight)
 end
 
+local function ApplyHostLayout()
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime then
+        local queueLayout = runtime.QueueDirty or runtime.MarkDirty or runtime.RequestRefresh
+        if type(queueLayout) == "function" then
+            queueLayout(runtime, "layout")
+            return true
+        end
+    end
+
+    local layout = Nvk3UT and Nvk3UT.TrackerHostLayout
+    if layout then
+        local apply = layout.Apply or layout.ApplyLayout or layout.Refresh or layout.Update
+        if type(apply) == "function" then
+            local host = Nvk3UT and Nvk3UT.TrackerHost
+            if host then
+                pcall(apply, layout, host)
+            else
+                pcall(apply, layout)
+            end
+            return true
+        end
+    end
+
+    return false
+end
+
 local function IsCategoryExpanded()
     local achievementState = GetAchievementState()
     if achievementState and achievementState.IsGroupExpanded then
@@ -1625,14 +1652,14 @@ local function LayoutCategory()
     end
 end
 
-local function Rebuild()
+local function RebuildFromSnapshot()
     if not state.container then
-        return
+        return false
     end
 
     local rows = GetAchievementTrackerRows()
     if not rows then
-        return
+        return false
     end
 
     rows.ReleaseAll()
@@ -1643,11 +1670,14 @@ local function Rebuild()
 
     UpdateContentSize()
     NotifyHostContentChanged()
+
+    return true
 end
 
 local function OnSnapshotUpdated(snapshot)
     state.snapshot = snapshot
-    Rebuild()
+    DebugLog("AchievementTracker: snapshot updated -> SHIM refresh")
+    AchievementTracker.Refresh(nil)
 end
 
 local function SubscribeToModel()
@@ -1713,16 +1743,33 @@ function AchievementTracker.Init(parentControl, opts)
     AchievementTracker.Refresh()
 end
 
-function AchievementTracker.Refresh()
+function AchievementTracker.Refresh(viewModel)
     if not state.isInitialized then
-        return
+        return false
     end
 
-    if Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.GetViewData then
-        state.snapshot = Nvk3UT.AchievementModel.GetViewData() or state.snapshot
+    local refreshed = false
+
+    if viewModel ~= nil then
+        local refreshWithViewModel = AchievementTracker.RefreshWithViewModel
+        if type(refreshWithViewModel) == "function" then
+            refreshed = refreshWithViewModel(AchievementTracker, viewModel) and true or false
+        end
     end
 
-    Rebuild()
+    if not refreshed then
+        if Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.GetViewData then
+            state.snapshot = Nvk3UT.AchievementModel.GetViewData() or state.snapshot
+        end
+
+        refreshed = RebuildFromSnapshot()
+    end
+
+    if refreshed then
+        ApplyHostLayout()
+    end
+
+    return refreshed
 end
 
 function AchievementTracker.Shutdown()

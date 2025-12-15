@@ -1139,13 +1139,11 @@ function Runtime:ProcessFrame(nowMs)
         if processAchievement then
             refreshedAchievement = refreshAchievementTracker(achievementViewModel)
             if refreshedAchievement then
+                achievementGeometryChanged = updateTrackerGeometry("achievement")
                 if not achievementVmBuilt then
                     debug("Runtime: deferred achievement geometry update (view model not built)")
-                else
-                    achievementGeometryChanged = updateTrackerGeometry("achievement")
-                    if achievementGeometryChanged then
-                        debug("Runtime: achievement tracker refreshed (geometry changed)")
-                    end
+                elseif achievementGeometryChanged then
+                    debug("Runtime: achievement tracker refreshed (geometry changed)")
                 end
             end
         end
