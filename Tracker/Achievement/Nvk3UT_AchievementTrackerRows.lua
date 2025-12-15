@@ -27,22 +27,20 @@ local function WarnOnce(key, message)
     end
 end
 
-local function CallIfFunction(fn, fnName, ...)
-    if type(fn) == "function" then
-        return fn(...)
-    end
-
-    if fnName then
-        WarnOnce(fnName, string.format("AchievementRows.ApplyCategory: missing %s callback", fnName))
-    end
-end
-
-local function ResolveValue(value, ...)
+local function Resolve(value, ...)
     if type(value) == "function" then
         return value(...)
     end
 
     return value
+end
+
+local function Call(fn, ...)
+    if type(fn) == "function" then
+        return fn(...)
+    end
+
+    return nil
 end
 
 local DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR = { 1, 1, 0.6, 1 }
@@ -383,55 +381,69 @@ local function ApplyCategory(control, rowData)
         return
     end
 
-    control.data = rowData and ResolveValue(rowData.data, control, rowData) or nil
-    control.isExpanded = rowData and ResolveValue(rowData.expanded, control, rowData) or nil
+    control.data = rowData and Resolve(rowData.data, control, rowData) or nil
+    control.isExpanded = rowData and Resolve(rowData.expanded, control, rowData) or nil
+
+    local onLeftClick = rowData and rowData.onLeftClick
+    local onRightClick = rowData and rowData.onRightClick
+    local onMouseEnter = rowData and rowData.onMouseEnter
+    local onMouseExit = rowData and rowData.onMouseExit
+
     control.__nvk3OnMouseUp = function(button, upInside)
         if not upInside then
             return
         end
 
         if button == LEFT_MOUSE_BUTTON then
-            CallIfFunction(rowData and rowData.onLeftClick, "onLeftClick", control)
+            if not Call(onLeftClick, control) and onLeftClick == nil then
+                WarnOnce("onLeftClick", "AchievementRows.ApplyCategory: missing onLeftClick callback")
+            end
         elseif button == RIGHT_MOUSE_BUTTON then
-            CallIfFunction(rowData and rowData.onRightClick, "onRightClick", control)
+            if not Call(onRightClick, control) and onRightClick == nil then
+                WarnOnce("onRightClick", "AchievementRows.ApplyCategory: missing onRightClick callback")
+            end
         end
     end
     control.__nvk3OnMouseEnter = function()
         ApplyMouseoverHighlight(control)
-        CallIfFunction(rowData and rowData.onMouseEnter, "onMouseEnter", control)
+        if not Call(onMouseEnter, control) and onMouseEnter == nil then
+            WarnOnce("onMouseEnter", "AchievementRows.ApplyCategory: missing onMouseEnter callback")
+        end
     end
     control.__nvk3OnMouseExit = function()
         RestoreBaseColor(control)
-        CallIfFunction(rowData and rowData.onMouseExit, "onMouseExit", control)
+        if not Call(onMouseExit, control) and onMouseExit == nil then
+            WarnOnce("onMouseExit", "AchievementRows.ApplyCategory: missing onMouseExit callback")
+        end
     end
 
     if control.label then
-        local labelText = rowData and ResolveValue(rowData.labelText, control, rowData)
+        local labelText = rowData and Resolve(rowData.labelText, control, rowData)
         if labelText and control.label.SetText then
             control.label:SetText(labelText)
         end
-        local labelFont = rowData and ResolveValue(rowData.labelFont, control, rowData)
+        local labelFont = rowData and Resolve(rowData.labelFont, control, rowData)
         if labelFont then
             control.label:SetFont(labelFont)
         end
     end
 
     if control.toggle then
-        local toggleFont = rowData and ResolveValue(rowData.toggleFont, control, rowData)
+        local toggleFont = rowData and Resolve(rowData.toggleFont, control, rowData)
         if toggleFont then
             control.toggle:SetFont(toggleFont)
         end
-        local toggleTexture = rowData and ResolveValue(rowData.toggleTexture, control, rowData)
+        local toggleTexture = rowData and Resolve(rowData.toggleTexture, control, rowData)
         if toggleTexture and control.toggle.SetTexture then
             control.toggle:SetTexture(toggleTexture)
         end
-        local toggleHidden = rowData and ResolveValue(rowData.toggleHidden, control, rowData)
+        local toggleHidden = rowData and Resolve(rowData.toggleHidden, control, rowData)
         if control.toggle.SetHidden then
             control.toggle:SetHidden(toggleHidden == true)
         end
     end
 
-    local baseColor = rowData and ResolveValue(rowData.baseColor, control, rowData)
+    local baseColor = rowData and Resolve(rowData.baseColor, control, rowData)
     if baseColor then
         ApplyBaseColor(control, baseColor)
     end
