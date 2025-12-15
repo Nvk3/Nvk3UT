@@ -9,6 +9,17 @@ local MODULE_NAME = addonName .. "AchievementTracker"
 
 local Utils = Nvk3UT and Nvk3UT.Utils
 
+local function GetAchievementTrackerRows()
+    local addon = Nvk3UT
+    if addon then
+        if not addon.AchievementTrackerRows and _G then
+            addon.AchievementTrackerRows = _G.Nvk3UT_AchievementTrackerRows or addon.AchievementTrackerRows
+        end
+        return addon.AchievementTrackerRows
+    end
+    return nil
+end
+
 local function GetAchievementState()
     return Nvk3UT and Nvk3UT.AchievementState
 end
@@ -157,9 +168,6 @@ local state = {
     saved = nil,
     control = nil,
     container = nil,
-    categoryPool = nil,
-    achievementPool = nil,
-    objectivePool = nil,
     orderedControls = {},
     lastAnchoredControl = nil,
     snapshot = nil,
@@ -1145,12 +1153,6 @@ local function ResetLayoutState()
     state.lastAnchoredControl = nil
 end
 
-local function ReleaseAll(pool)
-    if pool then
-        pool:ReleaseAllObjects()
-    end
-end
-
 local function AnchorControl(control, indentX)
     indentX = indentX or 0
     control:ClearAnchors()
@@ -1380,185 +1382,13 @@ local function ShouldDisplayObjective(objective)
     return true
 end
 
-local function AcquireCategoryControl()
-    local control = state.categoryPool:AcquireObject()
-    if not control.initialized then
-        control.label = control:GetNamedChild("Label")
-        control.toggle = control:GetNamedChild("Toggle")
-        if control.toggle and control.toggle.SetTexture then
-            control.toggle:SetTexture(SelectCategoryToggleTexture(false, false))
-        end
-        control.isExpanded = false
-        control:SetHandler("OnMouseUp", function(ctrl, button, upInside)
-            if not upInside or button ~= LEFT_MOUSE_BUTTON then
-                return
-            end
-            local expanded = not IsCategoryExpanded()
-            SetCategoryExpanded(expanded, {
-                trigger = "click",
-                source = "AchievementTracker:OnCategoryClick",
-            })
-            AchievementTracker.Refresh()
-            ScheduleToggleFollowup("achievementCategoryToggle")
-        end)
-        control:SetHandler("OnMouseEnter", function(ctrl)
-            ApplyMouseoverHighlight(ctrl)
-            local expanded = ctrl.isExpanded
-            if expanded == nil then
-                expanded = IsCategoryExpanded()
-            end
-            UpdateCategoryToggle(ctrl, expanded)
-        end)
-        control:SetHandler("OnMouseExit", function(ctrl)
-            RestoreBaseColor(ctrl)
-            local expanded = ctrl.isExpanded
-            if expanded == nil then
-                expanded = IsCategoryExpanded()
-            end
-            UpdateCategoryToggle(ctrl, expanded)
-        end)
-        control.initialized = true
-    end
-    control.rowType = "category"
-    ApplyLabelDefaults(control.label)
-    ApplyToggleDefaults(control.toggle)
-    ApplyFont(control.label, state.fonts.category)
-    ApplyFont(control.toggle, state.fonts.toggle)
-    return control
-end
-
-local function AcquireAchievementControl()
-    local control = state.achievementPool:AcquireObject()
-    if not control.initialized then
-        control.label = control:GetNamedChild("Label")
-        control.iconSlot = control:GetNamedChild("IconSlot")
-        if control.iconSlot then
-            control.iconSlot:SetDimensions(ACHIEVEMENT_ICON_SLOT_WIDTH, ACHIEVEMENT_ICON_SLOT_HEIGHT)
-            control.iconSlot:ClearAnchors()
-            control.iconSlot:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
-            if control.iconSlot.SetTexture then
-                control.iconSlot:SetTexture(nil)
-            end
-            if control.iconSlot.SetAlpha then
-                control.iconSlot:SetAlpha(0)
-            end
-            if control.iconSlot.SetHidden then
-                control.iconSlot:SetHidden(false)
-            end
-        end
-        if control.label then
-            control.label:ClearAnchors()
-            if control.iconSlot then
-                control.label:SetAnchor(TOPLEFT, control.iconSlot, TOPRIGHT, ACHIEVEMENT_ICON_SLOT_PADDING_X, 0)
-            else
-                control.label:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
-            end
-            control.label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
-        end
-        control:SetHandler("OnMouseUp", function(ctrl, button, upInside)
-            if not upInside then
-                return
-            end
-
-            if button == LEFT_MOUSE_BUTTON then
-                if not ctrl.data or not ctrl.data.achievementId or not ctrl.data.hasObjectives then
-                    return
-                end
-                local achievementId = ctrl.data.achievementId
-                local expanded = not IsEntryExpanded(achievementId)
-                SetEntryExpanded(achievementId, expanded, "AchievementTracker:ToggleAchievementObjectives")
-                AchievementTracker.Refresh()
-                ScheduleToggleFollowup("achievementEntryToggle")
-            elseif button == RIGHT_MOUSE_BUTTON then
-                if not ctrl.data or not ctrl.data.achievementId then
-                    return
-                end
-                ShowAchievementContextMenu(ctrl, ctrl.data)
-            end
-        end)
-        control:SetHandler("OnMouseEnter", function(ctrl)
-            ApplyMouseoverHighlight(ctrl)
-        end)
-        control:SetHandler("OnMouseExit", function(ctrl)
-            RestoreBaseColor(ctrl)
-        end)
-        control.initialized = true
-    end
-    control.rowType = "achievement"
-    ApplyLabelDefaults(control.label)
-    ApplyFont(control.label, state.fonts.achievement)
-    return control
-end
-
-local function AcquireObjectiveControl()
-    local control = state.objectivePool:AcquireObject()
-    if not control.initialized then
-        control.label = control:GetNamedChild("Label")
-        control.initialized = true
-    end
-    control.rowType = "objective"
-    ApplyLabelDefaults(control.label)
-    ApplyFont(control.label, state.fonts.objective)
-    return control
-end
-
-local function EnsurePools()
-    if state.categoryPool then
+local function LayoutObjective(achievement, objective, objectiveIndex)
+    if not ShouldDisplayObjective(objective) then
         return
     end
 
-    state.categoryPool = ZO_ControlPool:New("AchievementsCategoryHeader_Template", state.container)
-    state.achievementPool = ZO_ControlPool:New("AchievementHeader_Template", state.container)
-    state.objectivePool = ZO_ControlPool:New("AchievementObjective_Template", state.container)
-
-    local function resetControl(control)
-        control:SetHidden(true)
-        control.data = nil
-        control.currentIndent = nil
-    end
-
-    state.categoryPool:SetCustomResetBehavior(function(control)
-        resetControl(control)
-        control.baseColor = nil
-        if control.toggle then
-            if control.toggle.SetTexture then
-                control.toggle:SetTexture(SelectCategoryToggleTexture(false, false))
-            end
-            if control.toggle.SetHidden then
-                control.toggle:SetHidden(false)
-            end
-        end
-        control.isExpanded = nil
-    end)
-
-    state.achievementPool:SetCustomResetBehavior(function(control)
-        resetControl(control)
-        if control.label and control.label.SetText then
-            control.label:SetText("")
-        end
-        if control.iconSlot then
-            if control.iconSlot.SetTexture then
-                control.iconSlot:SetTexture(nil)
-            end
-            if control.iconSlot.SetAlpha then
-                control.iconSlot:SetAlpha(0)
-            end
-            if control.iconSlot.SetHidden then
-                control.iconSlot:SetHidden(false)
-            end
-        end
-    end)
-
-    state.objectivePool:SetCustomResetBehavior(function(control)
-        resetControl(control)
-        if control.label then
-            control.label:SetText("")
-        end
-    end)
-end
-
-local function LayoutObjective(achievement, objective)
-    if not ShouldDisplayObjective(objective) then
+    local rows = GetAchievementTrackerRows()
+    if not rows then
         return
     end
 
@@ -1567,36 +1397,80 @@ local function LayoutObjective(achievement, objective)
         return
     end
 
-    local control = AcquireObjectiveControl()
-    control.data = {
-        achievementId = achievement.id,
-        objective = objective,
+    local rowKey = {
+        key = string.format("objective-%s-%s", tostring(achievement.id), tostring(objectiveIndex or "")),
+        rowType = "objective",
     }
-    control.label:SetText(text)
-    if control.label then
-        local r, g, b, a = GetAchievementTrackerColor("objectiveText")
-        control.label:SetColor(r, g, b, a)
+    local control = rows.AcquireRow(rowKey)
+    if not control then
+        return
     end
+
+    local objectiveColor = { GetAchievementTrackerColor("objectiveText") }
+    rows.ApplyRow(control, "objective", {
+        data = {
+            achievementId = achievement.id,
+            objective = objective,
+        },
+        labelText = text,
+        labelFont = state.fonts.objective,
+        labelColor = objectiveColor,
+        baseColor = objectiveColor,
+    })
+
     ApplyRowMetrics(control, OBJECTIVE_INDENT_X, 0, 0, 0, OBJECTIVE_MIN_HEIGHT)
     control:SetHidden(false)
     AnchorControl(control, OBJECTIVE_INDENT_X)
 end
 
 local function LayoutAchievement(achievement)
-    local control = AcquireAchievementControl()
+    local rows = GetAchievementTrackerRows()
+    if not rows then
+        return
+    end
+
+    local rowKey = {
+        key = string.format("achievement-%s", tostring(achievement.id)),
+        rowType = "achievement",
+    }
+    local control = rows.AcquireRow(rowKey)
+    if not control then
+        return
+    end
+
     local hasObjectives = achievement.objectives and #achievement.objectives > 0
     local isFavorite = IsFavoriteAchievement(achievement.id)
-    control.data = {
-        achievementId = achievement.id,
-        hasObjectives = hasObjectives,
-        isFavorite = isFavorite,
-    }
-    control.label:SetText(FormatDisplayString(achievement.name))
-    local r, g, b, a = GetAchievementTrackerColor("entryTitle")
-    ApplyBaseColor(control, r, g, b, a)
-
     local expanded = hasObjectives and IsEntryExpanded(achievement.id)
+    local color = { GetAchievementTrackerColor("entryTitle") }
+    local rowData = {
+        data = {
+            achievementId = achievement.id,
+            hasObjectives = hasObjectives,
+            isFavorite = isFavorite,
+        },
+        labelText = FormatDisplayString(achievement.name),
+        labelFont = state.fonts.achievement,
+        baseColor = color,
+        onLeftClick = function(ctrl)
+            if not ctrl.data or not ctrl.data.achievementId or not ctrl.data.hasObjectives then
+                return
+            end
+            local achievementId = ctrl.data.achievementId
+            local expanded = not IsEntryExpanded(achievementId)
+            SetEntryExpanded(achievementId, expanded, "AchievementTracker:ToggleAchievementObjectives")
+            AchievementTracker.Refresh()
+            ScheduleToggleFollowup("achievementEntryToggle")
+        end,
+        onRightClick = function(ctrl)
+            if ctrl.data and ctrl.data.achievementId then
+                ShowAchievementContextMenu(ctrl, ctrl.data)
+            end
+        end,
+    }
+
     UpdateAchievementIconSlot(control)
+    rows.ApplyRow(control, "achievement", rowData)
+
     ApplyRowMetrics(
         control,
         ACHIEVEMENT_INDENT_X,
@@ -1610,12 +1484,17 @@ local function LayoutAchievement(achievement)
 
     if hasObjectives and expanded then
         for index = 1, #achievement.objectives do
-            LayoutObjective(achievement, achievement.objectives[index])
+            LayoutObjective(achievement, achievement.objectives[index], index)
         end
     end
 end
 
 local function LayoutCategory()
+    local rows = GetAchievementTrackerRows()
+    if not rows then
+        return
+    end
+
     local achievements = (state.snapshot and state.snapshot.achievements) or {}
     local sections = state.opts.sections or {}
     local showCompleted = sections.completed ~= false
@@ -1686,18 +1565,46 @@ local function LayoutCategory()
         return
     end
 
-    local control = AcquireCategoryControl()
-    control.data = { categoryKey = CATEGORY_KEY }
-    control.label:SetText(FormatCategoryHeaderText(
-        GetString(SI_NVK3UT_TRACKER_ACHIEVEMENT_CATEGORY_MAIN),
-        total or 0,
-        ShouldShowAchievementCategoryCounts()
-    ))
+    local rowKey = { key = "achievement-category", rowType = "category" }
+    local control = rows.AcquireRow(rowKey)
+    if not control then
+        return
+    end
 
     local expanded = IsCategoryExpanded()
     local colorRole = expanded and "activeTitle" or "categoryTitle"
-    local r, g, b, a = GetAchievementTrackerColor(colorRole)
-    ApplyBaseColor(control, r, g, b, a)
+    local baseColor = { GetAchievementTrackerColor(colorRole) }
+    local rowData = {
+        data = { categoryKey = CATEGORY_KEY },
+        labelText = FormatCategoryHeaderText(
+            GetString(SI_NVK3UT_TRACKER_ACHIEVEMENT_CATEGORY_MAIN),
+            total or 0,
+            ShouldShowAchievementCategoryCounts()
+        ),
+        labelFont = state.fonts.category,
+        toggleFont = state.fonts.toggle,
+        toggleTexture = SelectCategoryToggleTexture(expanded, false),
+        toggleHidden = false,
+        baseColor = baseColor,
+        expanded = expanded,
+        onLeftClick = function()
+            local nextExpanded = not IsCategoryExpanded()
+            SetCategoryExpanded(nextExpanded, {
+                trigger = "click",
+                source = "AchievementTracker:OnCategoryClick",
+            })
+            AchievementTracker.Refresh()
+            ScheduleToggleFollowup("achievementCategoryToggle")
+        end,
+        onMouseEnter = function(ctrl)
+            UpdateCategoryToggle(ctrl, IsCategoryExpanded())
+        end,
+        onMouseExit = function(ctrl)
+            UpdateCategoryToggle(ctrl, IsCategoryExpanded())
+        end,
+    }
+
+    rows.ApplyRow(control, "category", rowData)
     UpdateCategoryToggle(control, expanded)
     ApplyRowMetrics(
         control,
@@ -1723,11 +1630,12 @@ local function Rebuild()
         return
     end
 
-    EnsurePools()
+    local rows = GetAchievementTrackerRows()
+    if not rows then
+        return
+    end
 
-    ReleaseAll(state.categoryPool)
-    ReleaseAll(state.achievementPool)
-    ReleaseAll(state.objectivePool)
+    rows.ReleaseAll()
 
     ResetLayoutState()
 
@@ -1778,6 +1686,10 @@ function AchievementTracker.Init(parentControl, opts)
     if state.control and state.control.SetResizeToFitDescendents then
         state.control:SetResizeToFitDescendents(true)
     end
+    local rows = GetAchievementTrackerRows()
+    if rows then
+        rows.Init(state.container)
+    end
     EnsureSavedVars()
 
     state.opts = {}
@@ -1816,13 +1728,10 @@ end
 function AchievementTracker.Shutdown()
     UnsubscribeFromModel()
 
-    ReleaseAll(state.categoryPool)
-    ReleaseAll(state.achievementPool)
-    ReleaseAll(state.objectivePool)
-
-    state.categoryPool = nil
-    state.achievementPool = nil
-    state.objectivePool = nil
+    local rows = GetAchievementTrackerRows()
+    if rows then
+        rows.ReleaseAll()
+    end
 
     state.container = nil
     state.control = nil
