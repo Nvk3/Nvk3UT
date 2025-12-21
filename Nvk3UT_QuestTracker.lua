@@ -215,6 +215,7 @@ local IsQuestExpanded -- forward declaration so earlier functions can query ques
 local HandleQuestRowClick -- forward declaration for quest row click orchestration
 local FlushPendingTrackedQuestUpdate -- forward declaration for deferred tracking updates
 local ProcessTrackedQuestUpdate -- forward declaration for deferred tracking processing
+local EnsureTrackingEventsRegistered -- forward declaration for event bootstrap
 -- Forward declaration so SafeCall is visible to functions defined above its body.
 -- Without this, calling SafeCall in ResolveQuestDebugInfo during quest accept can crash
 -- because SafeCall would still be nil at that point.
@@ -241,6 +242,7 @@ state = {
     trackedQuestIndex = nil,
     trackedCategoryKeys = {},
     trackingEventsRegistered = false,
+    addOnLoadedRegistered = false,
     suppressForceExpandFor = nil,
     pendingSelection = nil,
     lastTrackedBeforeSync = nil,
@@ -3408,7 +3410,51 @@ local function RegisterTrackingEvents()
     state.trackingEventsRegistered = true
 end
 
+local function UnregisterAddOnLoadedBootstrap()
+    if not state.addOnLoadedRegistered then
+        return
+    end
+
+    if EVENT_MANAGER then
+        EVENT_MANAGER:UnregisterForEvent(EVENT_NAMESPACE .. "AddOnLoaded", EVENT_ADD_ON_LOADED)
+    end
+
+    state.addOnLoadedRegistered = false
+end
+
+local function OnQuestTrackerAddOnLoaded(_, name)
+    if name ~= addonName then
+        return
+    end
+
+    DebugLog("[Init] AddOnLoaded received → registering QuestTracker events")
+
+    UnregisterAddOnLoadedBootstrap()
+    EnsureTrackingEventsRegistered()
+end
+
+EnsureTrackingEventsRegistered = function()
+    if state.trackingEventsRegistered then
+        return
+    end
+
+    local isAddonLoaded = IsAddOnLoaded and IsAddOnLoaded(addonName)
+    if isAddonLoaded then
+        RegisterTrackingEvents()
+        return
+    end
+
+    DebugLog("[Init] Waiting for AddOnLoaded before registering QuestTracker events")
+
+    if EVENT_MANAGER and not state.addOnLoadedRegistered then
+        EVENT_MANAGER:RegisterForEvent(EVENT_NAMESPACE .. "AddOnLoaded", EVENT_ADD_ON_LOADED, OnQuestTrackerAddOnLoaded)
+        state.addOnLoadedRegistered = true
+    end
+end
+
 local function UnregisterTrackingEvents()
+    UnregisterAddOnLoadedBootstrap()
+
     if not state.trackingEventsRegistered then
         return
     end
@@ -4542,7 +4588,7 @@ function QuestTracker.Init(parentControl, opts)
         QuestTracker.ApplySettings(opts)
     end
 
-    RegisterTrackingEvents()
+    EnsureTrackingEventsRegistered()
 
     SubscribeToQuestModel()
 
@@ -4632,6 +4678,7 @@ function QuestTracker.Shutdown()
     state.trackedQuestIndex = nil
     state.trackedCategoryKeys = {}
     state.trackingEventsRegistered = false
+    state.addOnLoadedRegistered = false
     state.suppressForceExpandFor = nil
     state.pendingSelection = nil
     state.lastTrackedBeforeSync = nil
