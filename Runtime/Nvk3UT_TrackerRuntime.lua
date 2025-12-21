@@ -1152,6 +1152,8 @@ function Runtime:ProcessFrame(nowMs)
 
         local achievementGeometryChanged = false
         local refreshedAchievement = false
+        local achievementHeightAfterRefresh = nil
+        local shouldClearAchievementDirty = false
         if processAchievement then
             safeCall(function()
                 if achievementViewModel == nil then
@@ -1163,8 +1165,6 @@ function Runtime:ProcessFrame(nowMs)
 
                 refreshedAchievement = refreshAchievementTracker(achievementViewModel)
                 if refreshedAchievement then
-                    dirty.achievement = false
-
                     if not achievementVmBuilt then
                         debug("Runtime: deferred achievement geometry update (view model not built)")
                     else
@@ -1174,8 +1174,8 @@ function Runtime:ProcessFrame(nowMs)
                         end
                     end
 
-                    local achievementHeight = getAchievementHeight()
-                    debug("Runtime: achievementDirty processed (height=%s)", tostring(achievementHeight))
+                    achievementHeightAfterRefresh = getAchievementHeight()
+                    shouldClearAchievementDirty = true
                 end
             end)
 
@@ -1183,6 +1183,8 @@ function Runtime:ProcessFrame(nowMs)
                 dirty.achievement = true
             end
         end
+
+        local layoutApplied = false
 
         local goldenGeometryChanged = false
         local goldenRefreshed = false
@@ -1249,11 +1251,11 @@ function Runtime:ProcessFrame(nowMs)
                 tostring(goldenGeometryChanged)
             )
 
-            local applied = applyTrackerHostLayout()
+            layoutApplied = applyTrackerHostLayout()
 
             debugVisibility(
                 "Runtime: applyTrackerHostLayout() -> %s (dirty q=%s e=%s a=%s layout=%s golden=%s | geom q=%s e=%s a=%s g=%s)",
-                tostring(applied),
+                tostring(layoutApplied),
                 tostring(questDirty),
                 tostring(endeavorDirty),
                 tostring(achievementDirty),
@@ -1264,6 +1266,15 @@ function Runtime:ProcessFrame(nowMs)
                 tostring(achievementGeometryChanged),
                 tostring(goldenGeometryChanged)
             )
+        end
+
+        if shouldClearAchievementDirty and (not layoutRequired or layoutApplied) then
+            dirty.achievement = false
+
+            local achievementHeight = achievementHeightAfterRefresh or getAchievementHeight()
+            debug("Runtime: achievement refresh + layout applied (height=%s)", tostring(achievementHeight))
+        elseif shouldClearAchievementDirty and achievementDirty then
+            dirty.achievement = true
         end
 
         if interactivityDirty then

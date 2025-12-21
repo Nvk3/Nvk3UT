@@ -446,12 +446,18 @@ end
 
 local function requestAchievementTrackerRefresh()
     local root = getRoot()
-    local tracker = root and root.AchievementTracker
-    if type(tracker) ~= "table" then
-        return false
+    local runtime = root and root.TrackerRuntime
+    if type(runtime) == "table" and type(runtime.QueueDirty) == "function" then
+        return safeInvoke("TrackerRuntime.QueueDirty(achievement)", runtime.QueueDirty, runtime, "achievement")
     end
 
-    if type(tracker.Refresh) == "function" then
+    local controller = root and root.AchievementTrackerController
+    if type(controller) == "table" and type(controller.MarkDirty) == "function" then
+        return safeInvoke("AchievementTrackerController.MarkDirty", controller.MarkDirty, controller)
+    end
+
+    local tracker = root and root.AchievementTracker
+    if type(tracker) == "table" and type(tracker.Refresh) == "function" then
         return safeInvoke("AchievementTracker.Refresh", tracker.Refresh, tracker)
     end
 
