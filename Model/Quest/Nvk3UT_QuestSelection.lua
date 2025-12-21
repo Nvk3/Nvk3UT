@@ -355,6 +355,39 @@ function QuestSelection.ApplyAutoCollapsePreviousCategory()
         return false
     end
 
+    local activeSelection = saved and saved.active
+    local activeCategoryKey = activeSelection and activeSelection.categoryKey
+
+    if diagnostics and type(diagnostics.DebugIfEnabled) == "function" then
+        diagnostics:DebugIfEnabled(
+            "QuestSelection",
+            "[AutoCollapse] previous category key=%s, active category key=%s",
+            tostring(previousCategoryKey),
+            tostring(activeCategoryKey)
+        )
+    end
+
+    if not activeCategoryKey then
+        if diagnostics and type(diagnostics.DebugIfEnabled) == "function" then
+            diagnostics:DebugIfEnabled(
+                "QuestSelection",
+                "[AutoCollapse] Active category key missing, skipping collapse"
+            )
+        end
+        return false
+    end
+
+    if previousCategoryKey == activeCategoryKey then
+        if diagnostics and type(diagnostics.DebugIfEnabled) == "function" then
+            diagnostics:DebugIfEnabled(
+                "QuestSelection",
+                "[AutoCollapse] previous and active categories match (%s), skip (same category)",
+                tostring(previousCategoryKey)
+            )
+        end
+        return false
+    end
+
     local questTracker = Nvk3UT and Nvk3UT.QuestTracker
     if not questTracker then
         return false
@@ -394,8 +427,9 @@ function QuestSelection.ApplyAutoCollapsePreviousCategory()
     if diagnostics and type(diagnostics.DebugIfEnabled) == "function" then
         diagnostics:DebugIfEnabled(
             "QuestSelection",
-            "[AutoCollapse] Collapsing previous category '%s' due to active quest change (trigger=auto-collapse)",
-            tostring(previousCategoryKey)
+            "[AutoCollapse] Collapsing previous category '%s' (active category=%s) due to active quest change (collapse (different category))",
+            tostring(previousCategoryKey),
+            tostring(activeCategoryKey)
         )
     end
 
