@@ -182,12 +182,13 @@ function Layout.ComputeTotalHeight(rowHeights)
         return totalHeight
     end
 
+    local verticalPadding = Layout.GetVerticalPadding() or 0
     for index = 1, #rowHeights do
         local rowHeight = normalizeHeight(rowHeights[index])
         totalHeight = totalHeight + rowHeight
 
         if index > 1 then
-            totalHeight = totalHeight + Layout.GetVerticalPadding()
+            totalHeight = totalHeight + verticalPadding
         end
     end
 
