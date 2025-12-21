@@ -1075,9 +1075,7 @@ end
 
 local function refreshAchievementTracker()
     if Nvk3UT and Nvk3UT.AchievementTracker then
-        if Nvk3UT.AchievementTracker.RequestRefresh then
-            Nvk3UT.AchievementTracker:RequestRefresh()
-        elseif Nvk3UT.AchievementTracker.Refresh then
+        if Nvk3UT.AchievementTracker.Refresh then
             Nvk3UT.AchievementTracker:Refresh()
         end
     end

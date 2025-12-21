@@ -451,10 +451,6 @@ local function requestAchievementTrackerRefresh()
         return false
     end
 
-    if type(tracker.RequestRefresh) == "function" then
-        return safeInvoke("AchievementTracker.RequestRefresh", tracker.RequestRefresh, tracker)
-    end
-
     if type(tracker.Refresh) == "function" then
         return safeInvoke("AchievementTracker.Refresh", tracker.Refresh, tracker)
     end

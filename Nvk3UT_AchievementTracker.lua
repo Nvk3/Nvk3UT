@@ -120,25 +120,6 @@ end
 
 local NormalizeMetric
 
-local function ComputeEntryHeightLegacy(baseRowHeight, subrowHeights)
-    local totalHeight = NormalizeMetric(baseRowHeight)
-    local spacing = GetSubrowSpacing()
-
-    if type(subrowHeights) == "table" then
-        for index = 1, #subrowHeights do
-            local subrowHeight = NormalizeMetric(subrowHeights[index])
-            if subrowHeight > 0 then
-                if totalHeight > 0 then
-                    totalHeight = totalHeight + spacing
-                end
-                totalHeight = totalHeight + subrowHeight
-            end
-        end
-    end
-
-    return totalHeight
-end
-
 local DEFAULT_FONTS = {
     category = "$(BOLD_FONT)|20|soft-shadow-thick",
     achievement = "$(BOLD_FONT)|16|soft-shadow-thick",
@@ -224,7 +205,6 @@ local state = {
     contentHeight = 0,
     lastHeight = 0,
     rowsWarningLogged = false,
-    entryHeightMismatchLogged = false,
 }
 
 NormalizeMetric = function(value)
@@ -1226,17 +1206,6 @@ local function UpdateContentSize()
         totalHeight = ComputeTotalHeightLegacy(rowHeights, verticalPadding)
     end
 
-    if AchievementTrackerLayout and type(AchievementTrackerLayout.ComputeTotalHeight) == "function" then
-        local legacyHeight = ComputeTotalHeightLegacy(rowHeights, verticalPadding)
-        if legacyHeight ~= totalHeight then
-            DebugDiagnostics(string.format(
-                "Layout total height differs from legacy: old=%s new=%s",
-                tostring(legacyHeight),
-                tostring(totalHeight)
-            ))
-        end
-    end
-
     state.contentWidth = maxWidth
     state.contentHeight = totalHeight
     state.lastHeight = NormalizeMetric(totalHeight)
@@ -1514,19 +1483,6 @@ local function LayoutAchievement(rows, achievement)
     if AchievementTrackerLayout and type(AchievementTrackerLayout.ComputeEntryHeight) == "function" then
         local baseRowHeight = control:GetHeight() or 0
         local layoutHeight = AchievementTrackerLayout.ComputeEntryHeight(achievement, baseRowHeight, objectiveHeights)
-        local legacyHeight = ComputeEntryHeightLegacy(baseRowHeight, objectiveHeights)
-
-        if layoutHeight ~= legacyHeight and not state.entryHeightMismatchLogged then
-            DebugDiagnostics(string.format(
-                "Entry height differs for achievement %s (displayed subrows=%s expected=%s): old=%s new=%s",
-                tostring(achievement.id or "unknown"),
-                tostring(laidOutSubrows),
-                tostring(expectedSubrowCount),
-                tostring(legacyHeight),
-                tostring(layoutHeight)
-            ))
-            state.entryHeightMismatchLogged = true
-        end
     end
 end
 
@@ -1639,8 +1595,6 @@ local function Rebuild()
         return
     end
 
-    state.entryHeightMismatchLogged = false
-
     local rows = EnsureRowsHelper()
     if not rows then
         ResetLayoutState()
@@ -1663,7 +1617,10 @@ end
 
 local function OnSnapshotUpdated(snapshot)
     state.snapshot = snapshot
-    Rebuild()
+
+    if state.isInitialized then
+        AchievementTracker:Refresh(snapshot)
+    end
 end
 
 local function SubscribeToModel()

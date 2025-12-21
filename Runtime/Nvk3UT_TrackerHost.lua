@@ -5324,9 +5324,7 @@ function TrackerHost.Refresh()
     end
 
     if Nvk3UT.AchievementTracker then
-        if Nvk3UT.AchievementTracker.RequestRefresh then
-            pcall(Nvk3UT.AchievementTracker.RequestRefresh, Nvk3UT.AchievementTracker)
-        elseif Nvk3UT.AchievementTracker.Refresh then
+        if Nvk3UT.AchievementTracker.Refresh then
             pcall(Nvk3UT.AchievementTracker.Refresh, Nvk3UT.AchievementTracker)
         end
     end
