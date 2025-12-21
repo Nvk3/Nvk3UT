@@ -102,12 +102,48 @@ local function GetVerticalPadding()
     return 0
 end
 
+local function GetRowGap()
+    if AchievementTrackerLayout and type(AchievementTrackerLayout.GetRowGap) == "function" then
+        return AchievementTrackerLayout.GetRowGap()
+    end
+
+    return GetVerticalPadding()
+end
+
+local function GetHeaderToRowsGap()
+    if AchievementTrackerLayout and type(AchievementTrackerLayout.GetHeaderToRowsGap) == "function" then
+        return AchievementTrackerLayout.GetHeaderToRowsGap()
+    end
+
+    return GetRowGap()
+end
+
 local function GetSubrowSpacing()
     if AchievementTrackerLayout and type(AchievementTrackerLayout.GetSubrowSpacing) == "function" then
         return AchievementTrackerLayout.GetSubrowSpacing()
     end
 
     return GetVerticalPadding()
+end
+
+local function GetCategoryBottomPadding(isExpanded)
+    if AchievementTrackerLayout and type(AchievementTrackerLayout.GetCategoryBottomPadding) == "function" then
+        return AchievementTrackerLayout.GetCategoryBottomPadding(isExpanded)
+    end
+
+    if isExpanded == true then
+        return 6
+    end
+
+    return 6
+end
+
+local function GetBottomPixelNudge()
+    if AchievementTrackerLayout and type(AchievementTrackerLayout.GetBottomPixelNudge) == "function" then
+        return AchievementTrackerLayout.GetBottomPixelNudge()
+    end
+
+    return 0
 end
 
 local function GetRowHeight(rowType, textHeight)
@@ -1122,6 +1158,8 @@ end
 local function ResetLayoutState()
     state.orderedControls = {}
     state.lastAnchoredControl = nil
+    state.lastAnchoredKind = nil
+    state.categoryExpanded = nil
 end
 
 local function WarnMissingRows()
@@ -1157,11 +1195,27 @@ local function ComputeTotalHeightLegacy(rowHeights, verticalPadding)
     return totalHeight
 end
 
+local function ResolveRowKind(control)
+    if not control then
+        return nil
+    end
+
+    if control.rowType == "category" then
+        return "header"
+    end
+
+    return "row"
+end
+
 local function AnchorControl(control, indentX)
     indentX = indentX or 0
     control:ClearAnchors()
 
-    local verticalPadding = GetVerticalPadding()
+    local rowKind = ResolveRowKind(control)
+    local verticalPadding = GetRowGap()
+    if state.lastAnchoredKind == "header" then
+        verticalPadding = GetHeaderToRowsGap()
+    end
 
     if state.lastAnchoredControl then
         local previousIndent = state.lastAnchoredControl.currentIndent or 0
@@ -1174,6 +1228,7 @@ local function AnchorControl(control, indentX)
     end
 
     state.lastAnchoredControl = control
+    state.lastAnchoredKind = rowKind
     state.orderedControls[#state.orderedControls + 1] = control
     control.currentIndent = indentX
 end
@@ -1181,8 +1236,9 @@ end
 local function UpdateContentSize()
     local maxWidth = 0
     local visibleCount = 0
-    local rowHeights = {}
-    local verticalPadding = GetVerticalPadding()
+    local rowCount = 0
+    local measuredHeight = 0
+    local previousKind
 
     for index = 1, #state.orderedControls do
         local control = state.orderedControls[index]
@@ -1190,25 +1246,40 @@ local function UpdateContentSize()
             RefreshControlMetrics(control)
         end
         if control and not control:IsHidden() then
+            local height = control:GetHeight() or 0
+            local rowKind = ResolveRowKind(control)
+            local gap = 0
+            if previousKind ~= nil then
+                if previousKind == "header" then
+                    gap = GetHeaderToRowsGap()
+                else
+                    gap = GetRowGap()
+                end
+            end
+
+            measuredHeight = measuredHeight + gap + height
             visibleCount = visibleCount + 1
-            rowHeights[visibleCount] = control:GetHeight() or 0
+            if rowKind ~= "header" then
+                rowCount = rowCount + 1
+            end
+
             local width = (control:GetWidth() or 0) + (control.currentIndent or 0)
             if width > maxWidth then
                 maxWidth = width
             end
+
+            previousKind = rowKind
         end
     end
 
-    local totalHeight = 0
-    if AchievementTrackerLayout and type(AchievementTrackerLayout.ComputeTotalHeight) == "function" then
-        totalHeight = AchievementTrackerLayout.ComputeTotalHeight(rowHeights)
-    else
-        totalHeight = ComputeTotalHeightLegacy(rowHeights, verticalPadding)
+    if visibleCount > 0 then
+        local bottomPad = GetCategoryBottomPadding(state.categoryExpanded == true and rowCount > 0)
+        measuredHeight = measuredHeight + bottomPad + GetBottomPixelNudge()
     end
 
     state.contentWidth = maxWidth
-    state.contentHeight = totalHeight
-    state.lastHeight = NormalizeMetric(totalHeight)
+    state.contentHeight = measuredHeight
+    state.lastHeight = NormalizeMetric(measuredHeight)
 end
 
 local function IsCategoryExpanded()
@@ -1571,6 +1642,7 @@ local function LayoutCategory(rows)
         baseColor = { r, g, b, a },
         expanded = expanded,
     })
+    state.categoryExpanded = expanded
     ApplyRowMetrics(
         control,
         "category",

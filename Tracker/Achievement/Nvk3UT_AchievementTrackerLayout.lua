@@ -7,11 +7,15 @@ Layout.__index = Layout
 
 local MODULE_TAG = addonName .. ".AchievementTrackerLayout"
 
-local VERTICAL_PADDING = 3
-local ROW_TEXT_PADDING_Y = 8
+local ROW_GAP = 3
+local HEADER_TO_ROWS_GAP = 3
+local ROW_TEXT_PADDING_Y = 4
 local CATEGORY_MIN_HEIGHT = 26
 local ACHIEVEMENT_MIN_HEIGHT = 24
-local OBJECTIVE_MIN_HEIGHT = 20
+local OBJECTIVE_MIN_HEIGHT = 24
+local CATEGORY_BOTTOM_PAD_EXPANDED = 6
+local CATEGORY_BOTTOM_PAD_COLLAPSED = 6
+local BOTTOM_PIXEL_NUDGE = 3
 
 local function logLoaded()
     local root = rawget(_G, addonName)
@@ -26,11 +30,19 @@ local function logLoaded()
 end
 
 function Layout.GetVerticalPadding()
-    return VERTICAL_PADDING
+    return ROW_GAP
 end
 
 function Layout.GetRowTextPaddingY()
     return ROW_TEXT_PADDING_Y
+end
+
+function Layout.GetRowGap()
+    return ROW_GAP
+end
+
+function Layout.GetHeaderToRowsGap()
+    return HEADER_TO_ROWS_GAP
 end
 
 function Layout.GetCategoryMinHeight()
@@ -43,6 +55,18 @@ end
 
 function Layout.GetObjectiveMinHeight()
     return OBJECTIVE_MIN_HEIGHT
+end
+
+function Layout.GetCategoryBottomPadding(isExpanded)
+    if isExpanded then
+        return CATEGORY_BOTTOM_PAD_EXPANDED
+    end
+
+    return CATEGORY_BOTTOM_PAD_COLLAPSED
+end
+
+function Layout.GetBottomPixelNudge()
+    return BOTTOM_PIXEL_NUDGE
 end
 
 function Layout.GetRowMinHeight(rowType)
