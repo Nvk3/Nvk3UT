@@ -1119,7 +1119,7 @@ local function RequestRefresh()
 
     local function execute()
         state.pendingRefresh = false
-        AchievementTracker.Refresh()
+        AchievementTracker:Refresh()
     end
 
     if zo_callLater then
@@ -1688,8 +1688,15 @@ local function UnsubscribeFromModel()
     state.subscription = nil
 end
 
-function AchievementTracker.Init(parentControl, opts)
-    if not parentControl then
+function AchievementTracker:Init(parentControl, opts)
+    local control = parentControl
+    local initOpts = opts
+    if self ~= AchievementTracker then
+        control = self
+        initOpts = parentControl
+    end
+
+    if not control then
         error("AchievementTracker.Init requires a parent control")
     end
 
@@ -1697,8 +1704,8 @@ function AchievementTracker.Init(parentControl, opts)
         AchievementTracker.Shutdown()
     end
 
-    state.control = parentControl
-    state.container = parentControl
+    state.control = control
+    state.container = control
     if state.control and state.control.SetResizeToFitDescendents then
         state.control:SetResizeToFitDescendents(true)
     end
@@ -1710,9 +1717,9 @@ function AchievementTracker.Init(parentControl, opts)
     AchievementTracker.ApplyTheme(state.saved or {})
     AchievementTracker.ApplySettings(state.saved or {})
 
-    if opts then
-        AchievementTracker.ApplyTheme(opts)
-        AchievementTracker.ApplySettings(opts)
+    if initOpts then
+        AchievementTracker.ApplyTheme(initOpts)
+        AchievementTracker.ApplySettings(initOpts)
     end
 
     SubscribeToModel()
@@ -1722,19 +1729,30 @@ function AchievementTracker.Init(parentControl, opts)
     state.isInitialized = true
 
     RefreshVisibility()
-    AchievementTracker.Refresh()
+    AchievementTracker:Refresh()
+
+    DebugDiagnostics(string.format("Init complete height=%s", tostring(AchievementTracker:GetHeight())))
 end
 
-function AchievementTracker.Refresh()
+function AchievementTracker:Refresh(viewModel)
+    local data = viewModel
+    if self ~= AchievementTracker then
+        data = self
+    end
+
     if not state.isInitialized then
         return
     end
 
-    if Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.GetViewData then
+    if data ~= nil then
+        state.snapshot = data
+    elseif Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.GetViewData then
         state.snapshot = Nvk3UT.AchievementModel.GetViewData() or state.snapshot
     end
 
     Rebuild()
+
+    DebugDiagnostics(string.format("Refresh invoked height=%s", tostring(AchievementTracker:GetHeight())))
 end
 
 function AchievementTracker.Shutdown()
@@ -1826,7 +1844,7 @@ function AchievementTracker.RefreshVisibility()
     RefreshVisibility()
 end
 
-function AchievementTracker.GetHeight()
+function AchievementTracker:GetHeight()
     if state.isInitialized and state.container then
         UpdateContentSize()
     end

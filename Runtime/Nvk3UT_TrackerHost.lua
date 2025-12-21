@@ -2247,7 +2247,7 @@ measureTrackerContent = function(container, trackerModule, sectionId)
     local measuredFromTracker = false
 
     if trackerModule and trackerModule.GetContentSize then
-        local ok, trackerWidth, trackerHeight = pcall(trackerModule.GetContentSize)
+        local ok, trackerWidth, trackerHeight = pcall(trackerModule.GetContentSize, trackerModule)
         if ok then
             width = tonumber(trackerWidth) or 0
             height = tonumber(trackerHeight) or 0
@@ -4958,7 +4958,7 @@ local function initTrackers()
 
     local achievementOpts = cloneTable(sv.AchievementTracker or {})
     if Nvk3UT.AchievementTracker and Nvk3UT.AchievementTracker.Init and state.achievementContainer then
-        pcall(Nvk3UT.AchievementTracker.Init, state.achievementContainer, achievementOpts)
+        pcall(Nvk3UT.AchievementTracker.Init, Nvk3UT.AchievementTracker, state.achievementContainer, achievementOpts)
     end
 
     if Nvk3UT and Nvk3UT.QuestTracker and type(Nvk3UT.QuestTracker.ApplyBaseQuestTrackerVisibility) == "function" then
@@ -5325,9 +5325,9 @@ function TrackerHost.Refresh()
 
     if Nvk3UT.AchievementTracker then
         if Nvk3UT.AchievementTracker.RequestRefresh then
-            pcall(Nvk3UT.AchievementTracker.RequestRefresh)
+            pcall(Nvk3UT.AchievementTracker.RequestRefresh, Nvk3UT.AchievementTracker)
         elseif Nvk3UT.AchievementTracker.Refresh then
-            pcall(Nvk3UT.AchievementTracker.Refresh)
+            pcall(Nvk3UT.AchievementTracker.Refresh, Nvk3UT.AchievementTracker)
         end
     end
 
