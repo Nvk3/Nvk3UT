@@ -80,7 +80,6 @@ local ACHIEVEMENT_LABEL_INDENT_X = ACHIEVEMENT_INDENT_X + ACHIEVEMENT_ICON_SLOT_
 -- keep objective text inset relative to achievement titles after adding the persistent icon slot
 local OBJECTIVE_RELATIVE_INDENT = 18
 local OBJECTIVE_INDENT_X = ACHIEVEMENT_LABEL_INDENT_X + OBJECTIVE_RELATIVE_INDENT
-local VERTICAL_PADDING = 3
 
 local CATEGORY_KEY = "achievements"
 local CATEGORY_ROW_KEY = string.format("cat:%s", CATEGORY_KEY)
@@ -92,12 +91,24 @@ local function ScheduleToggleFollowup(reason)
     end
 end
 
-local CATEGORY_MIN_HEIGHT = 26
-local ACHIEVEMENT_MIN_HEIGHT = 24
-local OBJECTIVE_MIN_HEIGHT = 20
-local ROW_TEXT_PADDING_Y = 8
 local TOGGLE_LABEL_PADDING_X = 4
 local CATEGORY_TOGGLE_WIDTH = 20
+
+local function GetVerticalPadding()
+    if AchievementTrackerLayout and type(AchievementTrackerLayout.GetVerticalPadding) == "function" then
+        return AchievementTrackerLayout.GetVerticalPadding()
+    end
+
+    return 0
+end
+
+local function GetRowHeight(rowType, textHeight)
+    if AchievementTrackerLayout and type(AchievementTrackerLayout.ComputeRowHeight) == "function" then
+        return AchievementTrackerLayout.ComputeRowHeight(rowType, textHeight)
+    end
+
+    return 0
+end
 
 local DEFAULT_FONTS = {
     category = "$(BOLD_FONT)|20|soft-shadow-thick",
@@ -139,6 +150,13 @@ local function DebugLog(...)
         d(string.format("[%s]", MODULE_NAME), ...)
     elseif print then
         print("[" .. MODULE_NAME .. "]", ...)
+    end
+end
+
+local function DebugDiagnostics(message)
+    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
+    if diagnostics and type(diagnostics.DebugIfEnabled) == "function" then
+        diagnostics:DebugIfEnabled(MODULE_NAME, message)
     end
 end
 
@@ -304,7 +322,7 @@ local function GetContainerWidth()
     return width
 end
 
-local function ApplyRowMetrics(control, indent, toggleWidth, leftPadding, rightPadding, minHeight)
+local function ApplyRowMetrics(control, rowType, indent, toggleWidth, leftPadding, rightPadding)
     if not control or not control.label then
         return
     end
@@ -323,12 +341,7 @@ local function ApplyRowMetrics(control, indent, toggleWidth, leftPadding, rightP
     control.label:SetWidth(availableWidth)
 
     local textHeight = control.label:GetTextHeight() or 0
-    local targetHeight = textHeight + ROW_TEXT_PADDING_Y
-    if minHeight then
-        targetHeight = math.max(minHeight, targetHeight)
-    end
-
-    control:SetHeight(targetHeight)
+    control:SetHeight(GetRowHeight(rowType, textHeight))
 end
 
 local function RefreshControlMetrics(control)
@@ -342,23 +355,23 @@ local function RefreshControlMetrics(control)
     if rowType == "category" then
         ApplyRowMetrics(
             control,
+            rowType,
             indent,
             GetToggleWidth(control.toggle, CATEGORY_TOGGLE_WIDTH),
             TOGGLE_LABEL_PADDING_X,
-            0,
-            CATEGORY_MIN_HEIGHT
+            0
         )
     elseif rowType == "achievement" then
         ApplyRowMetrics(
             control,
+            rowType,
             indent,
             ACHIEVEMENT_ICON_SLOT_WIDTH,
             ACHIEVEMENT_ICON_SLOT_PADDING_X,
-            0,
-            ACHIEVEMENT_MIN_HEIGHT
+            0
         )
     elseif rowType == "objective" then
-        ApplyRowMetrics(control, indent, 0, 0, 0, OBJECTIVE_MIN_HEIGHT)
+        ApplyRowMetrics(control, rowType, indent, 0, 0, 0)
     end
 end
 
@@ -1116,15 +1129,35 @@ local function WarnMissingRows()
     end
 end
 
+local function ComputeTotalHeightLegacy(rowHeights, verticalPadding)
+    local totalHeight = 0
+
+    if type(rowHeights) ~= "table" then
+        return totalHeight
+    end
+
+    for index = 1, #rowHeights do
+        totalHeight = totalHeight + (tonumber(rowHeights[index]) or 0)
+
+        if index > 1 then
+            totalHeight = totalHeight + (verticalPadding or 0)
+        end
+    end
+
+    return totalHeight
+end
+
 local function AnchorControl(control, indentX)
     indentX = indentX or 0
     control:ClearAnchors()
 
+    local verticalPadding = GetVerticalPadding()
+
     if state.lastAnchoredControl then
         local previousIndent = state.lastAnchoredControl.currentIndent or 0
         local offsetX = indentX - previousIndent
-        control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, offsetX, VERTICAL_PADDING)
-        control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, 0, VERTICAL_PADDING)
+        control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, offsetX, verticalPadding)
+        control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, 0, verticalPadding)
     else
         control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, 0)
         control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, 0, 0)
@@ -1137,8 +1170,9 @@ end
 
 local function UpdateContentSize()
     local maxWidth = 0
-    local totalHeight = 0
     local visibleCount = 0
+    local rowHeights = {}
+    local verticalPadding = GetVerticalPadding()
 
     for index = 1, #state.orderedControls do
         local control = state.orderedControls[index]
@@ -1147,14 +1181,29 @@ local function UpdateContentSize()
         end
         if control and not control:IsHidden() then
             visibleCount = visibleCount + 1
+            rowHeights[visibleCount] = control:GetHeight() or 0
             local width = (control:GetWidth() or 0) + (control.currentIndent or 0)
             if width > maxWidth then
                 maxWidth = width
             end
-            totalHeight = totalHeight + (control:GetHeight() or 0)
-            if visibleCount > 1 then
-                totalHeight = totalHeight + VERTICAL_PADDING
-            end
+        end
+    end
+
+    local totalHeight = 0
+    if AchievementTrackerLayout and type(AchievementTrackerLayout.ComputeTotalHeight) == "function" then
+        totalHeight = AchievementTrackerLayout.ComputeTotalHeight(rowHeights)
+    else
+        totalHeight = ComputeTotalHeightLegacy(rowHeights, verticalPadding)
+    end
+
+    if AchievementTrackerLayout and type(AchievementTrackerLayout.ComputeTotalHeight) == "function" then
+        local legacyHeight = ComputeTotalHeightLegacy(rowHeights, verticalPadding)
+        if legacyHeight ~= totalHeight then
+            DebugDiagnostics(string.format(
+                "Layout total height differs from legacy: old=%s new=%s",
+                tostring(legacyHeight),
+                tostring(totalHeight)
+            ))
         end
     end
 
@@ -1361,7 +1410,7 @@ local function LayoutObjective(rows, achievement, objective, objectiveIndex)
         labelText = text,
         color = { r, g, b, a },
     })
-    ApplyRowMetrics(control, OBJECTIVE_INDENT_X, 0, 0, 0, OBJECTIVE_MIN_HEIGHT)
+    ApplyRowMetrics(control, "objective", OBJECTIVE_INDENT_X, 0, 0, 0)
     control:SetHidden(false)
     AnchorControl(control, OBJECTIVE_INDENT_X)
 end
@@ -1384,11 +1433,11 @@ local function LayoutAchievement(rows, achievement)
     local expanded = hasObjectives and IsEntryExpanded(achievement.id)
     ApplyRowMetrics(
         control,
+        "achievement",
         ACHIEVEMENT_INDENT_X,
         ACHIEVEMENT_ICON_SLOT_WIDTH,
         ACHIEVEMENT_ICON_SLOT_PADDING_X,
-        0,
-        ACHIEVEMENT_MIN_HEIGHT
+        0
     )
     control:SetHidden(false)
     AnchorControl(control, ACHIEVEMENT_INDENT_X)
@@ -1487,11 +1536,11 @@ local function LayoutCategory(rows)
     })
     ApplyRowMetrics(
         control,
+        "category",
         CATEGORY_INDENT_X,
         GetToggleWidth(control.toggle, CATEGORY_TOGGLE_WIDTH),
         TOGGLE_LABEL_PADDING_X,
-        0,
-        CATEGORY_MIN_HEIGHT
+        0
     )
 
     control:SetHidden(false)
