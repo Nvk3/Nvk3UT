@@ -118,6 +118,8 @@ local function GetRowHeight(rowType, textHeight)
     return 0
 end
 
+local NormalizeMetric
+
 local function ComputeEntryHeightLegacy(baseRowHeight, subrowHeights)
     local totalHeight = NormalizeMetric(baseRowHeight)
     local spacing = GetSubrowSpacing()
@@ -225,7 +227,7 @@ local state = {
     entryHeightMismatchLogged = false,
 }
 
-local function NormalizeMetric(value)
+NormalizeMetric = function(value)
     local numeric = tonumber(value)
     if not numeric then
         return 0
