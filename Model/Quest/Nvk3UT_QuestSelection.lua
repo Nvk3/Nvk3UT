@@ -169,6 +169,7 @@ local function CopySelectionEntry(entry)
     if type(entry) ~= "table" then
         return {
             questKey = nil,
+            questId = nil,
             categoryKey = nil,
             categoryKeys = {},
             source = "init",
@@ -178,11 +179,21 @@ local function CopySelectionEntry(entry)
 
     return {
         questKey = entry.questKey,
+        questId = entry.questId,
         categoryKey = entry.categoryKey,
         categoryKeys = CopyCategoryKeys(entry.categoryKeys),
         source = entry.source,
         ts = entry.ts,
     }
+end
+
+local function NormalizeQuestId(questId)
+    local numeric = tonumber(questId)
+    if numeric and numeric > 0 then
+        return numeric
+    end
+
+    return nil
 end
 
 local function CollectCategoryKeysForQuest(questKey)
@@ -454,6 +465,7 @@ local function NormalizeSelectionEntry(entry, defaultSource)
     local normalized = CopySelectionEntry(entry)
 
     normalized.questKey = NormalizeQuestKey(normalized.questKey)
+    normalized.questId = NormalizeQuestId(normalized.questId)
     normalized.categoryKeys = NormalizeCategoryKeys(normalized.categoryKeys)
     normalized.categoryKey = NormalizeCategoryKey(normalized.categoryKey or normalized.categoryKeys[1])
     normalized.source = (type(normalized.source) == "string" and normalized.source ~= "" and normalized.source)
@@ -462,6 +474,39 @@ local function NormalizeSelectionEntry(entry, defaultSource)
     normalized.ts = tonumber(normalized.ts) or 0
 
     return normalized
+end
+
+local function ResolveQuestIdForJournalIndex(journalIndex)
+    if not journalIndex or not GetJournalQuestId then
+        return nil
+    end
+
+    local ok, questId = pcall(GetJournalQuestId, journalIndex)
+    if ok then
+        return NormalizeQuestId(questId)
+    end
+
+    return nil
+end
+
+local function ResolveJournalIndexByQuestId(questId)
+    if not questId or not GetNumJournalQuests or not GetJournalQuestId then
+        return nil
+    end
+
+    questId = NormalizeQuestId(questId)
+    if not questId then
+        return nil
+    end
+
+    for journalIndex = 1, GetNumJournalQuests() do
+        local ok, id = pcall(GetJournalQuestId, journalIndex)
+        if ok and id == questId then
+            return journalIndex
+        end
+    end
+
+    return nil
 end
 
 local function EnsureActiveSavedStateInternal(target)
@@ -523,14 +568,29 @@ local function ApplyActiveWrite(questKey, source, options)
     local categoryKeys = BuildCategoryKeysList(categoryMap, orderedKeys)
     local categoryKey = categoryKeys[1]
 
+    local normalizedJournalIndex = QuestKeyToJournalIndex(normalized)
+    local questId = ResolveQuestIdForJournalIndex(normalizedJournalIndex)
+    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
+
     saved.previous = NormalizeSelectionEntry(active, active and active.source or "init")
     saved.active = NormalizeSelectionEntry({
         questKey = normalized,
+        questId = questId,
         categoryKey = categoryKey,
         categoryKeys = categoryKeys,
         source = source,
         ts = timestamp,
     }, source)
+
+    if diagnostics and type(diagnostics.DebugIfEnabled) == "function" and questId then
+        diagnostics:DebugIfEnabled(
+            "QuestSelection",
+            "[QuestSelection] Stored active questId=%s for questKey=%s (journalIndex=%s)",
+            tostring(questId),
+            tostring(normalized),
+            tostring(normalizedJournalIndex)
+        )
+    end
 
     LogActiveChange(saved.previous, saved.active, source)
 
@@ -594,7 +654,38 @@ end
 
 function QuestSelection.GetActiveQuestKey()
     local active = EnsureActiveSavedStateInternal(saved)
-    return active and active.questKey or nil
+    local questKey = active and active.questKey or nil
+    local journalIndex = QuestKeyToJournalIndex(questKey)
+    local questId = active and active.questId or nil
+    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
+
+    if questId then
+        local resolvedJournalIndex = ResolveJournalIndexByQuestId(questId)
+        if resolvedJournalIndex then
+            if journalIndex ~= resolvedJournalIndex then
+                local previousJournalIndex = journalIndex
+                local resolvedQuestKey = NormalizeQuestKey(resolvedJournalIndex)
+                active.questKey = resolvedQuestKey
+                questKey = resolvedQuestKey
+                journalIndex = resolvedJournalIndex
+
+                if diagnostics and type(diagnostics.DebugIfEnabled) == "function" then
+                    diagnostics:DebugIfEnabled(
+                        "QuestSelection",
+                        "[QuestSelection] Active quest reindexed: %s -> %s (questId=%s)",
+                        tostring(previousJournalIndex),
+                        tostring(resolvedJournalIndex),
+                        tostring(questId)
+                    )
+                end
+            else
+                questKey = NormalizeQuestKey(resolvedJournalIndex)
+                journalIndex = resolvedJournalIndex
+            end
+        end
+    end
+
+    return questKey
 end
 
 function QuestSelection.IsActive(questKey)
