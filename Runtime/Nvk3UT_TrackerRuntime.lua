@@ -752,6 +752,21 @@ local function buildAchievementViewModel()
     return viewModel, true
 end
 
+local function getAchievementHeight()
+    local tracker = rawget(Addon, "AchievementTracker")
+    if type(tracker) == "table" then
+        local getHeight = tracker.GetHeight or tracker.GetContentHeight or tracker.GetSize
+        if type(getHeight) == "function" then
+            local invoked, measured = callWithOptionalSelf(tracker, getHeight, true)
+            if invoked and measured ~= nil then
+                return normalizeLength(measured)
+            end
+        end
+    end
+
+    return 0
+end
+
 local function refreshAchievementTracker(viewModel)
     local tracker = rawget(Addon, "AchievementTracker")
     if type(tracker) ~= "table" then
@@ -1029,7 +1044,6 @@ function Runtime:ProcessFrame(nowMs)
 
         dirty.quest = false
         dirty.endeavor = false
-        dirty.achievement = false
         dirty.layout = false
 
         local interactivityDirty = self._interactivityDirty == true
@@ -1139,16 +1153,34 @@ function Runtime:ProcessFrame(nowMs)
         local achievementGeometryChanged = false
         local refreshedAchievement = false
         if processAchievement then
-            refreshedAchievement = refreshAchievementTracker(achievementViewModel)
-            if refreshedAchievement then
-                if not achievementVmBuilt then
-                    debug("Runtime: deferred achievement geometry update (view model not built)")
-                else
-                    achievementGeometryChanged = updateTrackerGeometry("achievement")
-                    if achievementGeometryChanged then
-                        debug("Runtime: achievement tracker refreshed (geometry changed)")
+            safeCall(function()
+                if achievementViewModel == nil then
+                    achievementViewModel, achievementVmBuilt = buildAchievementViewModel()
+                    if achievementVmBuilt then
+                        debug("Runtime: built achievement view model")
                     end
                 end
+
+                refreshedAchievement = refreshAchievementTracker(achievementViewModel)
+                if refreshedAchievement then
+                    dirty.achievement = false
+
+                    if not achievementVmBuilt then
+                        debug("Runtime: deferred achievement geometry update (view model not built)")
+                    else
+                        achievementGeometryChanged = updateTrackerGeometry("achievement")
+                        if achievementGeometryChanged then
+                            debug("Runtime: achievement tracker refreshed (geometry changed)")
+                        end
+                    end
+
+                    local achievementHeight = getAchievementHeight()
+                    debug("Runtime: achievementDirty processed (height=%s)", tostring(achievementHeight))
+                end
+            end)
+
+            if not refreshedAchievement and achievementDirty then
+                dirty.achievement = true
             end
         end
 
