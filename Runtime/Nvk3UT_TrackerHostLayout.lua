@@ -421,6 +421,15 @@ local function measureSection(host, sectionId, container)
         hostHeight = height
     end
 
+    local runtime = Addon and Addon.TrackerRuntime
+    if runtime and type(runtime._geometry) == "table" then
+        local geometry = runtime._geometry[sectionId]
+        if type(geometry) == "table" then
+            width = math.max(width, tonumber(geometry.width) or 0)
+            height = math.max(height, tonumber(geometry.height) or 0)
+        end
+    end
+
     local fallbackWidth
     local fallbackHeight
     if (width <= 0 or height <= 0) and container then
