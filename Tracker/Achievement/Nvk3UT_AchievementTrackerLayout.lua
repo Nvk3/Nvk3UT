@@ -86,6 +86,96 @@ function Layout.ComputeRowHeight(rowType, textHeight)
     return targetHeight
 end
 
+local function normalizeSubrowCandidate(objective)
+    if not objective then
+        return nil
+    end
+
+    if objective.isVisible == false then
+        return nil
+    end
+
+    if objective.isComplete then
+        return nil
+    end
+
+    local maxValue = tonumber(objective.max)
+    local currentValue = tonumber(objective.current)
+
+    if maxValue and currentValue and maxValue > 0 and currentValue >= maxValue then
+        return nil
+    end
+
+    local description = objective.description
+    if description == nil or description == "" then
+        return nil
+    end
+
+    return objective
+end
+
+function Layout.ComputeEntrySubrowCount(entry)
+    if not entry then
+        return 0
+    end
+
+    local objectives = entry.objectives
+    if type(objectives) ~= "table" then
+        return 0
+    end
+
+    local count = 0
+    for index = 1, #objectives do
+        if normalizeSubrowCandidate(objectives[index]) then
+            count = count + 1
+        end
+    end
+
+    return count
+end
+
+function Layout.ShouldDisplayObjective(objective)
+    return normalizeSubrowCandidate(objective) ~= nil
+end
+
+local function getSubrowSpacing()
+    return Layout.GetVerticalPadding()
+end
+
+local function computeSubrowHeight(rowType, textHeight)
+    return Layout.ComputeRowHeight(rowType, textHeight)
+end
+
+function Layout.GetSubrowHeight(rowType, textHeight)
+    return computeSubrowHeight(rowType, textHeight)
+end
+
+function Layout.GetSubrowSpacing()
+    return getSubrowSpacing()
+end
+
+function Layout.ComputeEntryHeight(entry, baseRowHeight, subrowHeights)
+    local totalHeight = normalizeHeight(baseRowHeight)
+    local spacing = getSubrowSpacing()
+
+    local objectives = entry and entry.objectives
+    local hasObjectives = type(objectives) == "table"
+
+    if hasObjectives and type(subrowHeights) == "table" then
+        for index = 1, #subrowHeights do
+            local subrowHeight = normalizeHeight(subrowHeights[index])
+            if subrowHeight > 0 then
+                if totalHeight > 0 then
+                    totalHeight = totalHeight + spacing
+                end
+                totalHeight = totalHeight + subrowHeight
+            end
+        end
+    end
+
+    return totalHeight
+end
+
 function Layout.ComputeTotalHeight(rowHeights)
     local totalHeight = 0
     if type(rowHeights) ~= "table" then

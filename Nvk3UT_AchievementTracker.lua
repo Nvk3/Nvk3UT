@@ -102,12 +102,39 @@ local function GetVerticalPadding()
     return 0
 end
 
+local function GetSubrowSpacing()
+    if AchievementTrackerLayout and type(AchievementTrackerLayout.GetSubrowSpacing) == "function" then
+        return AchievementTrackerLayout.GetSubrowSpacing()
+    end
+
+    return GetVerticalPadding()
+end
+
 local function GetRowHeight(rowType, textHeight)
     if AchievementTrackerLayout and type(AchievementTrackerLayout.ComputeRowHeight) == "function" then
         return AchievementTrackerLayout.ComputeRowHeight(rowType, textHeight)
     end
 
     return 0
+end
+
+local function ComputeEntryHeightLegacy(baseRowHeight, subrowHeights)
+    local totalHeight = NormalizeMetric(baseRowHeight)
+    local spacing = GetSubrowSpacing()
+
+    if type(subrowHeights) == "table" then
+        for index = 1, #subrowHeights do
+            local subrowHeight = NormalizeMetric(subrowHeights[index])
+            if subrowHeight > 0 then
+                if totalHeight > 0 then
+                    totalHeight = totalHeight + spacing
+                end
+                totalHeight = totalHeight + subrowHeight
+            end
+        end
+    end
+
+    return totalHeight
 end
 
 local DEFAULT_FONTS = {
@@ -195,6 +222,7 @@ local state = {
     contentHeight = 0,
     lastHeight = 0,
     rowsWarningLogged = false,
+    entryHeightMismatchLogged = false,
 }
 
 local function NormalizeMetric(value)
@@ -1326,6 +1354,10 @@ local function FormatObjectiveText(objective)
 end
 
 local function ShouldDisplayObjective(objective)
+    if AchievementTrackerLayout and type(AchievementTrackerLayout.ShouldDisplayObjective) == "function" then
+        return AchievementTrackerLayout.ShouldDisplayObjective(objective)
+    end
+
     if not objective then
         return false
     end
@@ -1350,6 +1382,26 @@ local function ShouldDisplayObjective(objective)
     end
 
     return true
+end
+
+local function CountDisplayableObjectives(achievement)
+    if AchievementTrackerLayout and type(AchievementTrackerLayout.ComputeEntrySubrowCount) == "function" then
+        return AchievementTrackerLayout.ComputeEntrySubrowCount(achievement)
+    end
+
+    local objectives = achievement and achievement.objectives
+    if type(objectives) ~= "table" then
+        return 0
+    end
+
+    local count = 0
+    for index = 1, #objectives do
+        if ShouldDisplayObjective(objectives[index]) then
+            count = count + 1
+        end
+    end
+
+    return count
 end
 
 local function BuildRowsCallbacks()
@@ -1392,12 +1444,12 @@ end
 
 local function LayoutObjective(rows, achievement, objective, objectiveIndex)
     if not ShouldDisplayObjective(objective) then
-        return
+        return nil
     end
 
     local text = FormatObjectiveText(objective)
     if text == "" then
-        return
+        return nil
     end
 
     local control = rows:AcquireRow(GetObjectiveRowKey(achievement.id, objectiveIndex), "objective")
@@ -1413,11 +1465,16 @@ local function LayoutObjective(rows, achievement, objective, objectiveIndex)
     ApplyRowMetrics(control, "objective", OBJECTIVE_INDENT_X, 0, 0, 0)
     control:SetHidden(false)
     AnchorControl(control, OBJECTIVE_INDENT_X)
+
+    return control:GetHeight()
 end
 
 local function LayoutAchievement(rows, achievement)
     local control = rows:AcquireRow(GetAchievementRowKey(achievement.id), "achievement")
     local hasObjectives = achievement.objectives and #achievement.objectives > 0
+    local expectedSubrowCount = CountDisplayableObjectives(achievement)
+    local objectiveHeights = {}
+    local laidOutSubrows = 0
     local isFavorite = IsFavoriteAchievement(achievement.id)
     local r, g, b, a = GetAchievementTrackerColor("entryTitle")
     rows:ApplyRow(control, "achievement", {
@@ -1444,7 +1501,29 @@ local function LayoutAchievement(rows, achievement)
 
     if hasObjectives and expanded then
         for index = 1, #achievement.objectives do
-            LayoutObjective(rows, achievement, achievement.objectives[index], index)
+            local objectiveHeight = LayoutObjective(rows, achievement, achievement.objectives[index], index)
+            if objectiveHeight then
+                laidOutSubrows = laidOutSubrows + 1
+                objectiveHeights[laidOutSubrows] = objectiveHeight
+            end
+        end
+    end
+
+    if AchievementTrackerLayout and type(AchievementTrackerLayout.ComputeEntryHeight) == "function" then
+        local baseRowHeight = control:GetHeight() or 0
+        local layoutHeight = AchievementTrackerLayout.ComputeEntryHeight(achievement, baseRowHeight, objectiveHeights)
+        local legacyHeight = ComputeEntryHeightLegacy(baseRowHeight, objectiveHeights)
+
+        if layoutHeight ~= legacyHeight and not state.entryHeightMismatchLogged then
+            DebugDiagnostics(string.format(
+                "Entry height differs for achievement %s (displayed subrows=%s expected=%s): old=%s new=%s",
+                tostring(achievement.id or "unknown"),
+                tostring(laidOutSubrows),
+                tostring(expectedSubrowCount),
+                tostring(legacyHeight),
+                tostring(layoutHeight)
+            ))
+            state.entryHeightMismatchLogged = true
         end
     end
 end
@@ -1557,6 +1636,8 @@ local function Rebuild()
     if not state.container then
         return
     end
+
+    state.entryHeightMismatchLogged = false
 
     local rows = EnsureRowsHelper()
     if not rows then
