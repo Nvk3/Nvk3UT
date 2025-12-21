@@ -73,6 +73,7 @@ Tracker/Endeavor/Nvk3UT_EndeavorTrackerRows.lua
 Tracker/Endeavor/Nvk3UT_EndeavorTrackerLayout.lua
 Nvk3UT_AchievementTracker.xml
 Tracker/Achievement/Nvk3UT_AchievementTrackerRows.lua
+Tracker/Achievement/Nvk3UT_AchievementTrackerLayout.lua
 Nvk3UT_AchievementTracker.lua
 # Golden Tracker (after Achievement)
 Tracker/Golden/Nvk3UT_GoldenTracker.lua

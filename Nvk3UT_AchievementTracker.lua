@@ -8,6 +8,7 @@ AchievementTracker.__index = AchievementTracker
 local MODULE_NAME = addonName .. "AchievementTracker"
 
 local Utils = Nvk3UT and Nvk3UT.Utils
+local AchievementTrackerLayout = Nvk3UT and Nvk3UT.AchievementTrackerLayout
 
 local function GetAchievementState()
     return Nvk3UT and Nvk3UT.AchievementState
