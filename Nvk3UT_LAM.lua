@@ -2429,7 +2429,7 @@ local function registerPanel(displayTitle)
             controls[#controls + 1] = {
                 type = "submenu",
                 name = GetString(SI_NVK3UT_LAM_QUEST_HEADER_COLORS),
-                controls = buildQuestColorControls,
+                controls = buildQuestColorControls(),
             }
 
             local function buildQuestFontControls()
@@ -2465,7 +2465,7 @@ local function registerPanel(displayTitle)
             controls[#controls + 1] = {
                 type = "submenu",
                 name = GetString(SI_NVK3UT_LAM_QUEST_HEADER_FONTS),
-                controls = buildQuestFontControls,
+                controls = buildQuestFontControls(),
             }
 
             return controls
@@ -2709,7 +2709,7 @@ local function registerPanel(displayTitle)
             controls[#controls + 1] = {
                 type = "submenu",
                 name = GetString(SI_NVK3UT_LAM_ENDEAVOR_SECTION_COLORS),
-                controls = buildEndeavorColorControls,
+                controls = buildEndeavorColorControls(),
             }
 
             local function buildEndeavorFontControls()
@@ -2784,7 +2784,7 @@ local function registerPanel(displayTitle)
             controls[#controls + 1] = {
                 type = "submenu",
                 name = GetString(SI_NVK3UT_LAM_ENDEAVOR_SECTION_FONTS),
-                controls = buildEndeavorFontControls,
+                controls = buildEndeavorFontControls(),
             }
             return controls
         end)(),
@@ -2926,7 +2926,7 @@ local function registerPanel(displayTitle)
             controls[#controls + 1] = {
                 type = "submenu",
                 name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_HEADER_COLORS),
-                controls = buildAchievementColorControls,
+                controls = buildAchievementColorControls(),
             }
 
             local function buildAchievementFontControls()
@@ -2962,7 +2962,7 @@ local function registerPanel(displayTitle)
             controls[#controls + 1] = {
                 type = "submenu",
                 name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_HEADER_FONTS),
-                controls = buildAchievementFontControls,
+                controls = buildAchievementFontControls(),
             }
 
             return controls
@@ -3326,7 +3326,7 @@ local function registerPanel(displayTitle)
             controls[#controls + 1] = {
                 type = "submenu",
                 name = GetString(SI_NVK3UT_LAM_GOLDEN_SECTION_COLORS),
-                controls = buildGoldenColorControls,
+                controls = buildGoldenColorControls(),
             }
 
             local function buildGoldenFontControls()
@@ -3405,7 +3405,7 @@ local function registerPanel(displayTitle)
             controls[#controls + 1] = {
                 type = "submenu",
                 name = GetString(SI_NVK3UT_LAM_GOLDEN_SECTION_FONTS),
-                controls = buildGoldenFontControls,
+                controls = buildGoldenFontControls(),
             }
 
             return controls
