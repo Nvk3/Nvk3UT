@@ -63,20 +63,14 @@ local function getGoldenSpacingSettings()
         return nil
     end
 
-    local config = sv.Golden
+    local config = type(sv.Golden) == "table" and sv.Golden or nil
     local trackerConfig = type(config) == "table" and config.Tracker
-    if type(trackerConfig) == "table" and type(trackerConfig.Spacing) == "table" then
-        return trackerConfig.Spacing
+    local spacing = type(trackerConfig) == "table" and trackerConfig.Spacing
+    if type(spacing) ~= "table" then
+        spacing = {}
     end
 
-    local trackerDefaults = sv.TrackerDefaults
-    local goldenDefaults = type(trackerDefaults) == "table" and trackerDefaults.GoldenDefaults
-    local defaultTracker = type(goldenDefaults) == "table" and goldenDefaults.Tracker
-    if type(defaultTracker) == "table" and type(defaultTracker.Spacing) == "table" then
-        return defaultTracker.Spacing
-    end
-
-    return nil
+    return spacing
 end
 
 local function ResolveGoldenSpacing(settings)
