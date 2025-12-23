@@ -2350,101 +2350,123 @@ local function registerPanel(displayTitle)
                 end,
             }
 
-            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_QUEST_HEADER_COLORS) }
+            local function buildQuestColorControls()
+                local colorControls = {}
+                colorControls[#colorControls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_QUEST_HEADER_COLORS) }
 
-            controls[#controls + 1] = {
-                type = "colorpicker",
-                name = GetString(SI_NVK3UT_LAM_QUEST_COLOR_CATEGORY),
-                tooltip = GetString(SI_NVK3UT_LAM_QUEST_COLOR_CATEGORY_DESC),
-                getFunc = function()
-                    return getTrackerColor("questTracker", "categoryTitle")
-                end,
-                setFunc = function(r, g, b, a)
-                    setTrackerColor("questTracker", "categoryTitle", r, g, b, a or 1)
-                    refreshQuestTracker()
-                end,
-                default = getTrackerColorDefaultTable("questTracker", "categoryTitle"),
-            }
-
-            controls[#controls + 1] = {
-                type = "colorpicker",
-                name = GetString(SI_NVK3UT_LAM_QUEST_COLOR_ENTRY),
-                tooltip = GetString(SI_NVK3UT_LAM_QUEST_COLOR_ENTRY_DESC),
-                getFunc = function()
-                    return getTrackerColor("questTracker", "entryTitle")
-                end,
-                setFunc = function(r, g, b, a)
-                    setTrackerColor("questTracker", "entryTitle", r, g, b, a or 1)
-                    refreshQuestTracker()
-                end,
-                default = getTrackerColorDefaultTable("questTracker", "entryTitle"),
-            }
-
-            controls[#controls + 1] = {
-                type = "colorpicker",
-                name = GetString(SI_NVK3UT_LAM_QUEST_COLOR_OBJECTIVE),
-                tooltip = GetString(SI_NVK3UT_LAM_QUEST_COLOR_OBJECTIVE_DESC),
-                getFunc = function()
-                    return getTrackerColor("questTracker", "objectiveText")
-                end,
-                setFunc = function(r, g, b, a)
-                    setTrackerColor("questTracker", "objectiveText", r, g, b, a or 1)
-                    refreshQuestTracker()
-                end,
-                default = getTrackerColorDefaultTable("questTracker", "objectiveText"),
-            }
-
-            controls[#controls + 1] = {
-                type = "colorpicker",
-                name = GetString(SI_NVK3UT_LAM_QUEST_COLOR_ACTIVE),
-                tooltip = GetString(SI_NVK3UT_LAM_QUEST_COLOR_ACTIVE_DESC),
-                getFunc = function()
-                    return getTrackerColor("questTracker", "activeTitle")
-                end,
-                setFunc = function(r, g, b, a)
-                    setTrackerColor("questTracker", "activeTitle", r, g, b, a or 1)
-                    refreshQuestTracker()
-                end,
-                default = getTrackerColorDefaultTable("questTracker", "activeTitle"),
-            }
-
-            controls[#controls + 1] = {
-                type = "colorpicker",
-                name = GetString(SI_NVK3UT_LAM_QUEST_COLOR_HIGHLIGHT),
-                tooltip = GetString(SI_NVK3UT_LAM_QUEST_COLOR_HIGHLIGHT_DESC),
-                getFunc = function()
-                    return getMouseoverHighlightColor("questTracker")
-                end,
-                setFunc = function(r, g, b, a)
-                    setMouseoverHighlightColor("questTracker", r, g, b, a or 1)
-                end,
-                default = getMouseoverHighlightDefaultTable("questTracker"),
-            }
-
-            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_QUEST_HEADER_FONTS) }
-
-            local fontGroups = {
-                { key = "category", label = GetString(SI_NVK3UT_LAM_QUEST_FONT_CATEGORY_LABEL) },
-                { key = "title", label = GetString(SI_NVK3UT_LAM_QUEST_FONT_TITLE_LABEL) },
-                { key = "line", label = GetString(SI_NVK3UT_LAM_QUEST_FONT_LINE_LABEL) },
-            }
-
-            for index = 1, #fontGroups do
-                local group = fontGroups[index]
-                local fontControls = buildFontControls(
-                    group.label,
-                    getQuestSettings(),
-                    group.key,
-                    questFontDefaults(group.key),
-                    function()
-                        applyQuestTheme()
+                colorControls[#colorControls + 1] = {
+                    type = "colorpicker",
+                    name = GetString(SI_NVK3UT_LAM_QUEST_COLOR_CATEGORY),
+                    tooltip = GetString(SI_NVK3UT_LAM_QUEST_COLOR_CATEGORY_DESC),
+                    getFunc = function()
+                        return getTrackerColor("questTracker", "categoryTitle")
+                    end,
+                    setFunc = function(r, g, b, a)
+                        setTrackerColor("questTracker", "categoryTitle", r, g, b, a or 1)
                         refreshQuestTracker()
-                    end
-                )
-                for i = 1, #fontControls do
-                    controls[#controls + 1] = fontControls[i]
-                end
+                    end,
+                    default = getTrackerColorDefaultTable("questTracker", "categoryTitle"),
+                }
+
+                colorControls[#colorControls + 1] = {
+                    type = "colorpicker",
+                    name = GetString(SI_NVK3UT_LAM_QUEST_COLOR_ENTRY),
+                    tooltip = GetString(SI_NVK3UT_LAM_QUEST_COLOR_ENTRY_DESC),
+                    getFunc = function()
+                        return getTrackerColor("questTracker", "entryTitle")
+                    end,
+                    setFunc = function(r, g, b, a)
+                        setTrackerColor("questTracker", "entryTitle", r, g, b, a or 1)
+                        refreshQuestTracker()
+                    end,
+                    default = getTrackerColorDefaultTable("questTracker", "entryTitle"),
+                }
+
+                colorControls[#colorControls + 1] = {
+                    type = "colorpicker",
+                    name = GetString(SI_NVK3UT_LAM_QUEST_COLOR_OBJECTIVE),
+                    tooltip = GetString(SI_NVK3UT_LAM_QUEST_COLOR_OBJECTIVE_DESC),
+                    getFunc = function()
+                        return getTrackerColor("questTracker", "objectiveText")
+                    end,
+                    setFunc = function(r, g, b, a)
+                        setTrackerColor("questTracker", "objectiveText", r, g, b, a or 1)
+                        refreshQuestTracker()
+                    end,
+                    default = getTrackerColorDefaultTable("questTracker", "objectiveText"),
+                }
+
+                colorControls[#colorControls + 1] = {
+                    type = "colorpicker",
+                    name = GetString(SI_NVK3UT_LAM_QUEST_COLOR_ACTIVE),
+                    tooltip = GetString(SI_NVK3UT_LAM_QUEST_COLOR_ACTIVE_DESC),
+                    getFunc = function()
+                        return getTrackerColor("questTracker", "activeTitle")
+                    end,
+                    setFunc = function(r, g, b, a)
+                        setTrackerColor("questTracker", "activeTitle", r, g, b, a or 1)
+                        refreshQuestTracker()
+                    end,
+                    default = getTrackerColorDefaultTable("questTracker", "activeTitle"),
+                }
+
+                colorControls[#colorControls + 1] = {
+                    type = "colorpicker",
+                    name = GetString(SI_NVK3UT_LAM_QUEST_COLOR_HIGHLIGHT),
+                    tooltip = GetString(SI_NVK3UT_LAM_QUEST_COLOR_HIGHLIGHT_DESC),
+                    getFunc = function()
+                        return getMouseoverHighlightColor("questTracker")
+                    end,
+                    setFunc = function(r, g, b, a)
+                        setMouseoverHighlightColor("questTracker", r, g, b, a or 1)
+                    end,
+                    default = getMouseoverHighlightDefaultTable("questTracker"),
+                }
+
+                return colorControls
             end
+
+            controls[#controls + 1] = {
+                type = "submenu",
+                name = GetString(SI_NVK3UT_LAM_QUEST_HEADER_COLORS),
+                controls = buildQuestColorControls,
+            }
+
+            local function buildQuestFontControls()
+                local fontControls = {}
+                fontControls[#fontControls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_QUEST_HEADER_FONTS) }
+
+                local fontGroups = {
+                    { key = "category", label = GetString(SI_NVK3UT_LAM_QUEST_FONT_CATEGORY_LABEL) },
+                    { key = "title", label = GetString(SI_NVK3UT_LAM_QUEST_FONT_TITLE_LABEL) },
+                    { key = "line", label = GetString(SI_NVK3UT_LAM_QUEST_FONT_LINE_LABEL) },
+                }
+
+                for index = 1, #fontGroups do
+                    local group = fontGroups[index]
+                    local groupFontControls = buildFontControls(
+                        group.label,
+                        getQuestSettings(),
+                        group.key,
+                        questFontDefaults(group.key),
+                        function()
+                            applyQuestTheme()
+                            refreshQuestTracker()
+                        end
+                    )
+                    for i = 1, #groupFontControls do
+                        fontControls[#fontControls + 1] = groupFontControls[i]
+                    end
+                end
+
+                return fontControls
+            end
+
+            controls[#controls + 1] = {
+                type = "submenu",
+                name = GetString(SI_NVK3UT_LAM_QUEST_HEADER_FONTS),
+                controls = buildQuestFontControls,
+            }
 
             return controls
         end)(),
@@ -2542,206 +2564,228 @@ local function registerPanel(displayTitle)
                 default = "hide",
             }
 
-            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_ENDEAVOR_SECTION_COLORS) }
+            local function buildEndeavorColorControls()
+                local colorControls = {}
+                colorControls[#colorControls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_ENDEAVOR_SECTION_COLORS) }
 
-            local colorEntries = {
-                {
-                    key = "CategoryTitle",
-                    role = ENDEAVOR_COLOR_ROLES.CategoryTitle,
-                    name = SI_NVK3UT_LAM_ENDEAVOR_COLOR_CATEGORY,
-                    tooltip = SI_NVK3UT_LAM_ENDEAVOR_COLOR_CATEGORY_DESC,
-                },
-                {
-                    key = "EntryName",
-                    role = ENDEAVOR_COLOR_ROLES.EntryName,
-                    name = SI_NVK3UT_LAM_ENDEAVOR_COLOR_ENTRY,
-                    tooltip = SI_NVK3UT_LAM_ENDEAVOR_COLOR_ENTRY_DESC,
-                },
-                {
-                    key = "Objective",
-                    role = ENDEAVOR_COLOR_ROLES.Objective,
-                    name = SI_NVK3UT_LAM_ENDEAVOR_COLOR_OBJECTIVE,
-                    tooltip = SI_NVK3UT_LAM_ENDEAVOR_COLOR_OBJECTIVE_DESC,
-                },
-                {
-                    key = "Active",
-                    role = ENDEAVOR_COLOR_ROLES.Active,
-                    name = SI_NVK3UT_LAM_ENDEAVOR_COLOR_ACTIVE,
-                    tooltip = SI_NVK3UT_LAM_ENDEAVOR_COLOR_ACTIVE_DESC,
-                },
-                {
-                    key = "Completed",
-                    role = ENDEAVOR_COLOR_ROLES.Completed,
-                    name = SI_NVK3UT_LAM_ENDEAVOR_COLOR_COMPLETED,
-                    tooltip = SI_NVK3UT_LAM_ENDEAVOR_COLOR_COMPLETED_DESC,
-                },
-            }
+                local colorEntries = {
+                    {
+                        key = "CategoryTitle",
+                        role = ENDEAVOR_COLOR_ROLES.CategoryTitle,
+                        name = SI_NVK3UT_LAM_ENDEAVOR_COLOR_CATEGORY,
+                        tooltip = SI_NVK3UT_LAM_ENDEAVOR_COLOR_CATEGORY_DESC,
+                    },
+                    {
+                        key = "EntryName",
+                        role = ENDEAVOR_COLOR_ROLES.EntryName,
+                        name = SI_NVK3UT_LAM_ENDEAVOR_COLOR_ENTRY,
+                        tooltip = SI_NVK3UT_LAM_ENDEAVOR_COLOR_ENTRY_DESC,
+                    },
+                    {
+                        key = "Objective",
+                        role = ENDEAVOR_COLOR_ROLES.Objective,
+                        name = SI_NVK3UT_LAM_ENDEAVOR_COLOR_OBJECTIVE,
+                        tooltip = SI_NVK3UT_LAM_ENDEAVOR_COLOR_OBJECTIVE_DESC,
+                    },
+                    {
+                        key = "Active",
+                        role = ENDEAVOR_COLOR_ROLES.Active,
+                        name = SI_NVK3UT_LAM_ENDEAVOR_COLOR_ACTIVE,
+                        tooltip = SI_NVK3UT_LAM_ENDEAVOR_COLOR_ACTIVE_DESC,
+                    },
+                    {
+                        key = "Completed",
+                        role = ENDEAVOR_COLOR_ROLES.Completed,
+                        name = SI_NVK3UT_LAM_ENDEAVOR_COLOR_COMPLETED,
+                        tooltip = SI_NVK3UT_LAM_ENDEAVOR_COLOR_COMPLETED_DESC,
+                    },
+                }
 
-            local function getAchievementColorDefault(colorKey)
-                local sv = getSavedVars()
-                if type(sv) ~= "table" then
-                    return nil
-                end
+                local function getAchievementColorDefault(colorKey)
+                    local sv = getSavedVars()
+                    if type(sv) ~= "table" then
+                        return nil
+                    end
 
-                local achievement = sv.Achievement
-                if type(achievement) ~= "table" then
-                    return nil
-                end
+                    local achievement = sv.Achievement
+                    if type(achievement) ~= "table" then
+                        return nil
+                    end
 
-                local colors = achievement.Colors
-                if type(colors) ~= "table" then
-                    return nil
-                end
+                    local colors = achievement.Colors
+                    if type(colors) ~= "table" then
+                        return nil
+                    end
 
-                local candidate = colors[colorKey]
-                if candidate == nil and colorKey == "Completed" then
-                    candidate = colors.Completed or colors.Objective
-                end
+                    local candidate = colors[colorKey]
+                    if candidate == nil and colorKey == "Completed" then
+                        candidate = colors.Completed or colors.Objective
+                    end
 
-                if type(candidate) ~= "table" then
-                    return nil
-                end
+                    if type(candidate) ~= "table" then
+                        return nil
+                    end
 
-                local r = candidate[1] or candidate.r or 1
-                local g = candidate[2] or candidate.g or 1
-                local b = candidate[3] or candidate.b or 1
-                local a = candidate[4] or candidate.a or 1
-                return r, g, b, a
-            end
-
-            local function getEndeavorDefaultColor(colorKey, role)
-                local r, g, b, a = getAchievementColorDefault(colorKey)
-                if r ~= nil then
+                    local r = candidate[1] or candidate.r or 1
+                    local g = candidate[2] or candidate.g or 1
+                    local b = candidate[3] or candidate.b or 1
+                    local a = candidate[4] or candidate.a or 1
                     return r, g, b, a
                 end
 
-                local fallback = getTrackerColorDefaultTable("endeavorTracker", role)
-                if type(fallback) == "table" then
-                    local fallbackR = fallback[1] or fallback.r or 1
-                    local fallbackG = fallback[2] or fallback.g or 1
-                    local fallbackB = fallback[3] or fallback.b or 1
-                    local fallbackA = fallback[4] or fallback.a or 1
-                    return fallbackR, fallbackG, fallbackB, fallbackA
-                end
-
-                if colorKey == "Completed" then
-                    return 0.8, 0.8, 0.8, 1
-                end
-
-                return 1, 1, 1, 1
-            end
-
-            for index = 1, #colorEntries do
-                local entry = colorEntries[index]
-                controls[#controls + 1] = {
-                    type = "colorpicker",
-                    name = GetString(entry.name),
-                    tooltip = GetString(entry.tooltip),
-                    width = "full",
-                    getFunc = function()
-                        local config = getEndeavorConfig()
-                        local colors = config.Colors or {}
-                        local color = colors[entry.key]
-                        local r = (color and (color[1] or color.r)) or 1
-                        local g = (color and (color[2] or color.g)) or 1
-                        local b = (color and (color[3] or color.b)) or 1
-                        local a = (color and (color[4] or color.a)) or 1
+                local function getEndeavorDefaultColor(colorKey, role)
+                    local r, g, b, a = getAchievementColorDefault(colorKey)
+                    if r ~= nil then
                         return r, g, b, a
+                    end
+
+                    local fallback = getTrackerColorDefaultTable("endeavorTracker", role)
+                    if type(fallback) == "table" then
+                        local fallbackR = fallback[1] or fallback.r or 1
+                        local fallbackG = fallback[2] or fallback.g or 1
+                        local fallbackB = fallback[3] or fallback.b or 1
+                        local fallbackA = fallback[4] or fallback.a or 1
+                        return fallbackR, fallbackG, fallbackB, fallbackA
+                    end
+
+                    if colorKey == "Completed" then
+                        return 0.8, 0.8, 0.8, 1
+                    end
+
+                    return 1, 1, 1, 1
+                end
+
+                for index = 1, #colorEntries do
+                    local entry = colorEntries[index]
+                    colorControls[#colorControls + 1] = {
+                        type = "colorpicker",
+                        name = GetString(entry.name),
+                        tooltip = GetString(entry.tooltip),
+                        width = "full",
+                        getFunc = function()
+                            local config = getEndeavorConfig()
+                            local colors = config.Colors or {}
+                            local color = colors[entry.key]
+                            local r = (color and (color[1] or color.r)) or 1
+                            local g = (color and (color[2] or color.g)) or 1
+                            local b = (color and (color[3] or color.b)) or 1
+                            local a = (color and (color[4] or color.a)) or 1
+                            return r, g, b, a
+                        end,
+                        setFunc = function(r, g, b, a)
+                            local config = getEndeavorConfig()
+                            config.Colors = config.Colors or {}
+                            config.Colors[entry.key] = config.Colors[entry.key] or { 1, 1, 1, 1 }
+                            local color = config.Colors[entry.key]
+                            local alpha = a or 1
+                            color[1], color[2], color[3], color[4] = r, g, b, alpha
+                            color.r, color.g, color.b, color.a = r, g, b, alpha
+                            setTrackerColor("endeavorTracker", entry.role, r, g, b, alpha)
+                            markEndeavorDirty("appearance")
+                            queueEndeavorDirty()
+                        end,
+                        default = function()
+                            return getEndeavorDefaultColor(entry.key, entry.role)
+                        end,
+                    }
+                end
+
+                colorControls[#colorControls + 1] = {
+                    type = "colorpicker",
+                    name = GetString(SI_NVK3UT_LAM_ENDEAVOR_COLOR_HIGHLIGHT),
+                    tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_COLOR_HIGHLIGHT_DESC),
+                    getFunc = function()
+                        return getMouseoverHighlightColor("endeavorTracker")
                     end,
                     setFunc = function(r, g, b, a)
-                        local config = getEndeavorConfig()
-                        config.Colors = config.Colors or {}
-                        config.Colors[entry.key] = config.Colors[entry.key] or { 1, 1, 1, 1 }
-                        local color = config.Colors[entry.key]
-                        local alpha = a or 1
-                        color[1], color[2], color[3], color[4] = r, g, b, alpha
-                        color.r, color.g, color.b, color.a = r, g, b, alpha
-                        setTrackerColor("endeavorTracker", entry.role, r, g, b, alpha)
-                        markEndeavorDirty("appearance")
-                        queueEndeavorDirty()
+                        setMouseoverHighlightColor("endeavorTracker", r, g, b, a or 1)
                     end,
-                    default = function()
-                        return getEndeavorDefaultColor(entry.key, entry.role)
-                    end,
+                    default = getMouseoverHighlightDefaultTable("endeavorTracker"),
                 }
+
+                return colorControls
             end
 
             controls[#controls + 1] = {
-                type = "colorpicker",
-                name = GetString(SI_NVK3UT_LAM_ENDEAVOR_COLOR_HIGHLIGHT),
-                tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_COLOR_HIGHLIGHT_DESC),
-                getFunc = function()
-                    return getMouseoverHighlightColor("endeavorTracker")
-                end,
-                setFunc = function(r, g, b, a)
-                    setMouseoverHighlightColor("endeavorTracker", r, g, b, a or 1)
-                end,
-                default = getMouseoverHighlightDefaultTable("endeavorTracker"),
+                type = "submenu",
+                name = GetString(SI_NVK3UT_LAM_ENDEAVOR_SECTION_COLORS),
+                controls = buildEndeavorColorControls,
             }
 
-            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_ENDEAVOR_SECTION_FONTS) }
+            local function buildEndeavorFontControls()
+                local fontControls = {}
+                fontControls[#fontControls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_ENDEAVOR_SECTION_FONTS) }
 
-            local fontGroups = {
-                { key = "Category", label = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_CATEGORY_LABEL) },
-                { key = "Title", label = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_TITLE_LABEL) },
-                { key = "Objective", label = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_LINE_LABEL) },
-            }
+                local fontGroups = {
+                    { key = "Category", label = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_CATEGORY_LABEL) },
+                    { key = "Title", label = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_TITLE_LABEL) },
+                    { key = "Objective", label = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_LINE_LABEL) },
+                }
 
-            local config = getEndeavorConfig()
-            for index = 1, #fontGroups do
-                local group = fontGroups[index]
-                local defaultsFactory = function()
-                    return endeavorFontDefaults(group.key)
-                end
-                local defaultsValue = defaultsFactory()
-                local fontControls = buildFontControls(
-                    group.label,
-                    config,
-                    group.key,
-                    defaultsFactory,
-                    function()
-                        markEndeavorDirty("appearance")
-                        queueEndeavorDirty()
-                    end,
-                    {
-                        ensureFont = ensureEndeavorFontGroup,
-                        getFace = function(font)
-                            return font.Face
-                        end,
-                        setFace = function(font, value)
-                            font.Face = value
-                        end,
-                        getSize = function(font)
-                            return font.Size
-                        end,
-                        setSize = function(font, value)
-                            font.Size = clampEndeavorFontSize(value)
-                        end,
-                        getOutline = function(font)
-                            return font.Outline
-                        end,
-                        setOutline = function(font, value)
-                            font.Outline = value
-                        end,
-                        clampSize = clampEndeavorFontSize,
-                    }
-                )
-
-                for i = 1, #fontControls do
-                    local control = fontControls[i]
-                    if i == 1 then
-                        control.tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_FAMILY_DESC)
-                        control.default = defaultsValue.Face
-                    elseif i == 2 then
-                        control.tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_SIZE_DESC)
-                        control.default = defaultsValue.Size
-                    else
-                        control.tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_OUTLINE_DESC)
-                        control.default = defaultsValue.Outline
+                local config = getEndeavorConfig()
+                for index = 1, #fontGroups do
+                    local group = fontGroups[index]
+                    local defaultsFactory = function()
+                        return endeavorFontDefaults(group.key)
                     end
-                    controls[#controls + 1] = control
+                    local defaultsValue = defaultsFactory()
+                    local groupFontControls = buildFontControls(
+                        group.label,
+                        config,
+                        group.key,
+                        defaultsFactory,
+                        function()
+                            markEndeavorDirty("appearance")
+                            queueEndeavorDirty()
+                        end,
+                        {
+                            ensureFont = ensureEndeavorFontGroup,
+                            getFace = function(font)
+                                return font.Face
+                            end,
+                            setFace = function(font, value)
+                                font.Face = value
+                            end,
+                            getSize = function(font)
+                                return font.Size
+                            end,
+                            setSize = function(font, value)
+                                font.Size = clampEndeavorFontSize(value)
+                            end,
+                            getOutline = function(font)
+                                return font.Outline
+                            end,
+                            setOutline = function(font, value)
+                                font.Outline = value
+                            end,
+                            clampSize = clampEndeavorFontSize,
+                        }
+                    )
+
+                    for i = 1, #groupFontControls do
+                        local control = groupFontControls[i]
+                        if i == 1 then
+                            control.tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_FAMILY_DESC)
+                            control.default = defaultsValue.Face
+                        elseif i == 2 then
+                            control.tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_SIZE_DESC)
+                            control.default = defaultsValue.Size
+                        else
+                            control.tooltip = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_OUTLINE_DESC)
+                            control.default = defaultsValue.Outline
+                        end
+                        fontControls[#fontControls + 1] = control
+                    end
                 end
+
+                return fontControls
             end
+
+            controls[#controls + 1] = {
+                type = "submenu",
+                name = GetString(SI_NVK3UT_LAM_ENDEAVOR_SECTION_FONTS),
+                controls = buildEndeavorFontControls,
+            }
             return controls
         end)(),
     }
@@ -2803,101 +2847,123 @@ local function registerPanel(displayTitle)
                 default = true,
             }
 
-            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_HEADER_COLORS) }
+            local function buildAchievementColorControls()
+                local colorControls = {}
+                colorControls[#colorControls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_HEADER_COLORS) }
 
-            controls[#controls + 1] = {
-                type = "colorpicker",
-                name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_COLOR_CATEGORY),
-                tooltip = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_COLOR_CATEGORY_DESC),
-                getFunc = function()
-                    return getTrackerColor("achievementTracker", "categoryTitle")
-                end,
-                setFunc = function(r, g, b, a)
-                    setTrackerColor("achievementTracker", "categoryTitle", r, g, b, a or 1)
-                    refreshAchievementTracker()
-                end,
-                default = getTrackerColorDefaultTable("achievementTracker", "categoryTitle"),
-            }
-
-            controls[#controls + 1] = {
-                type = "colorpicker",
-                name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_COLOR_ENTRY),
-                tooltip = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_COLOR_ENTRY_DESC),
-                getFunc = function()
-                    return getTrackerColor("achievementTracker", "entryTitle")
-                end,
-                setFunc = function(r, g, b, a)
-                    setTrackerColor("achievementTracker", "entryTitle", r, g, b, a or 1)
-                    refreshAchievementTracker()
-                end,
-                default = getTrackerColorDefaultTable("achievementTracker", "entryTitle"),
-            }
-
-            controls[#controls + 1] = {
-                type = "colorpicker",
-                name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_COLOR_OBJECTIVE),
-                tooltip = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_COLOR_OBJECTIVE_DESC),
-                getFunc = function()
-                    return getTrackerColor("achievementTracker", "objectiveText")
-                end,
-                setFunc = function(r, g, b, a)
-                    setTrackerColor("achievementTracker", "objectiveText", r, g, b, a or 1)
-                    refreshAchievementTracker()
-                end,
-                default = getTrackerColorDefaultTable("achievementTracker", "objectiveText"),
-            }
-
-            controls[#controls + 1] = {
-                type = "colorpicker",
-                name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_COLOR_ACTIVE),
-                tooltip = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_COLOR_ACTIVE_DESC),
-                getFunc = function()
-                    return getTrackerColor("achievementTracker", "activeTitle")
-                end,
-                setFunc = function(r, g, b, a)
-                    setTrackerColor("achievementTracker", "activeTitle", r, g, b, a or 1)
-                    refreshAchievementTracker()
-                end,
-                default = getTrackerColorDefaultTable("achievementTracker", "activeTitle"),
-            }
-
-            controls[#controls + 1] = {
-                type = "colorpicker",
-                name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_COLOR_HIGHLIGHT),
-                tooltip = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_COLOR_HIGHLIGHT_DESC),
-                getFunc = function()
-                    return getMouseoverHighlightColor("achievementTracker")
-                end,
-                setFunc = function(r, g, b, a)
-                    setMouseoverHighlightColor("achievementTracker", r, g, b, a or 1)
-                end,
-                default = getMouseoverHighlightDefaultTable("achievementTracker"),
-            }
-
-            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_HEADER_FONTS) }
-
-            local fontGroups = {
-                { key = "category", label = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_FONT_CATEGORY_LABEL) },
-                { key = "title", label = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_FONT_TITLE_LABEL) },
-                { key = "line", label = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_FONT_LINE_LABEL) },
-            }
-
-            for index = 1, #fontGroups do
-                local group = fontGroups[index]
-                local fontControls = buildFontControls(
-                    group.label,
-                    getAchievementSettings(),
-                    group.key,
-                    achievementFontDefaults(group.key),
-                    function()
-                        applyAchievementTheme()
+                colorControls[#colorControls + 1] = {
+                    type = "colorpicker",
+                    name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_COLOR_CATEGORY),
+                    tooltip = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_COLOR_CATEGORY_DESC),
+                    getFunc = function()
+                        return getTrackerColor("achievementTracker", "categoryTitle")
+                    end,
+                    setFunc = function(r, g, b, a)
+                        setTrackerColor("achievementTracker", "categoryTitle", r, g, b, a or 1)
                         refreshAchievementTracker()
-                    end
-                )
-                for i = 1, #fontControls do
-                    controls[#controls + 1] = fontControls[i]
-                end
+                    end,
+                    default = getTrackerColorDefaultTable("achievementTracker", "categoryTitle"),
+                }
+
+                colorControls[#colorControls + 1] = {
+                    type = "colorpicker",
+                    name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_COLOR_ENTRY),
+                    tooltip = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_COLOR_ENTRY_DESC),
+                    getFunc = function()
+                        return getTrackerColor("achievementTracker", "entryTitle")
+                    end,
+                    setFunc = function(r, g, b, a)
+                        setTrackerColor("achievementTracker", "entryTitle", r, g, b, a or 1)
+                        refreshAchievementTracker()
+                    end,
+                    default = getTrackerColorDefaultTable("achievementTracker", "entryTitle"),
+                }
+
+                colorControls[#colorControls + 1] = {
+                    type = "colorpicker",
+                    name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_COLOR_OBJECTIVE),
+                    tooltip = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_COLOR_OBJECTIVE_DESC),
+                    getFunc = function()
+                        return getTrackerColor("achievementTracker", "objectiveText")
+                    end,
+                    setFunc = function(r, g, b, a)
+                        setTrackerColor("achievementTracker", "objectiveText", r, g, b, a or 1)
+                        refreshAchievementTracker()
+                    end,
+                    default = getTrackerColorDefaultTable("achievementTracker", "objectiveText"),
+                }
+
+                colorControls[#colorControls + 1] = {
+                    type = "colorpicker",
+                    name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_COLOR_ACTIVE),
+                    tooltip = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_COLOR_ACTIVE_DESC),
+                    getFunc = function()
+                        return getTrackerColor("achievementTracker", "activeTitle")
+                    end,
+                    setFunc = function(r, g, b, a)
+                        setTrackerColor("achievementTracker", "activeTitle", r, g, b, a or 1)
+                        refreshAchievementTracker()
+                    end,
+                    default = getTrackerColorDefaultTable("achievementTracker", "activeTitle"),
+                }
+
+                colorControls[#colorControls + 1] = {
+                    type = "colorpicker",
+                    name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_COLOR_HIGHLIGHT),
+                    tooltip = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_COLOR_HIGHLIGHT_DESC),
+                    getFunc = function()
+                        return getMouseoverHighlightColor("achievementTracker")
+                    end,
+                    setFunc = function(r, g, b, a)
+                        setMouseoverHighlightColor("achievementTracker", r, g, b, a or 1)
+                    end,
+                    default = getMouseoverHighlightDefaultTable("achievementTracker"),
+                }
+
+                return colorControls
             end
+
+            controls[#controls + 1] = {
+                type = "submenu",
+                name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_HEADER_COLORS),
+                controls = buildAchievementColorControls,
+            }
+
+            local function buildAchievementFontControls()
+                local fontControls = {}
+                fontControls[#fontControls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_HEADER_FONTS) }
+
+                local fontGroups = {
+                    { key = "category", label = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_FONT_CATEGORY_LABEL) },
+                    { key = "title", label = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_FONT_TITLE_LABEL) },
+                    { key = "line", label = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_FONT_LINE_LABEL) },
+                }
+
+                for index = 1, #fontGroups do
+                    local group = fontGroups[index]
+                    local groupFontControls = buildFontControls(
+                        group.label,
+                        getAchievementSettings(),
+                        group.key,
+                        achievementFontDefaults(group.key),
+                        function()
+                            applyAchievementTheme()
+                            refreshAchievementTracker()
+                        end
+                    )
+                    for i = 1, #groupFontControls do
+                        fontControls[#fontControls + 1] = groupFontControls[i]
+                    end
+                end
+
+                return fontControls
+            end
+
+            controls[#controls + 1] = {
+                type = "submenu",
+                name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_HEADER_FONTS),
+                controls = buildAchievementFontControls,
+            }
 
             return controls
         end)(),
@@ -3121,204 +3187,226 @@ local function registerPanel(displayTitle)
                 default = "hide",
             }
 
-            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_GOLDEN_SECTION_COLORS) }
+            local function buildGoldenColorControls()
+                local colorControls = {}
+                colorControls[#colorControls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_GOLDEN_SECTION_COLORS) }
 
-            local colorEntries = {
-                {
-                    key = "CategoryTitleClosed",
-                    role = GOLDEN_COLOR_ROLES.CategoryTitleClosed,
-                    name = SI_NVK3UT_LAM_GOLDEN_COLOR_CATEGORY_CLOSED,
-                    tooltip = SI_NVK3UT_LAM_GOLDEN_COLOR_CATEGORY_CLOSED_DESC,
-                },
-                {
-                    key = "CategoryTitleOpen",
-                    role = GOLDEN_COLOR_ROLES.CategoryTitleOpen,
-                    name = SI_NVK3UT_LAM_GOLDEN_COLOR_CATEGORY_OPEN,
-                    tooltip = SI_NVK3UT_LAM_GOLDEN_COLOR_CATEGORY_OPEN_DESC,
-                },
-                {
-                    key = "EntryName",
-                    role = GOLDEN_COLOR_ROLES.EntryName,
-                    name = SI_NVK3UT_LAM_GOLDEN_COLOR_ENTRY,
-                    tooltip = SI_NVK3UT_LAM_GOLDEN_COLOR_ENTRY_DESC,
-                },
-                {
-                    key = "Objective",
-                    role = GOLDEN_COLOR_ROLES.Objective,
-                    name = SI_NVK3UT_LAM_GOLDEN_COLOR_OBJECTIVE,
-                    tooltip = SI_NVK3UT_LAM_GOLDEN_COLOR_OBJECTIVE_DESC,
-                },
-                {
-                    key = "Active",
-                    role = GOLDEN_COLOR_ROLES.Active,
-                    name = SI_NVK3UT_LAM_GOLDEN_COLOR_ACTIVE,
-                    tooltip = SI_NVK3UT_LAM_GOLDEN_COLOR_ACTIVE_DESC,
-                },
-                {
-                    key = "Completed",
-                    role = GOLDEN_COLOR_ROLES.Completed,
-                    name = SI_NVK3UT_LAM_GOLDEN_COLOR_COMPLETED,
-                    tooltip = SI_NVK3UT_LAM_GOLDEN_COLOR_COMPLETED_DESC,
-                },
-            }
+                local colorEntries = {
+                    {
+                        key = "CategoryTitleClosed",
+                        role = GOLDEN_COLOR_ROLES.CategoryTitleClosed,
+                        name = SI_NVK3UT_LAM_GOLDEN_COLOR_CATEGORY_CLOSED,
+                        tooltip = SI_NVK3UT_LAM_GOLDEN_COLOR_CATEGORY_CLOSED_DESC,
+                    },
+                    {
+                        key = "CategoryTitleOpen",
+                        role = GOLDEN_COLOR_ROLES.CategoryTitleOpen,
+                        name = SI_NVK3UT_LAM_GOLDEN_COLOR_CATEGORY_OPEN,
+                        tooltip = SI_NVK3UT_LAM_GOLDEN_COLOR_CATEGORY_OPEN_DESC,
+                    },
+                    {
+                        key = "EntryName",
+                        role = GOLDEN_COLOR_ROLES.EntryName,
+                        name = SI_NVK3UT_LAM_GOLDEN_COLOR_ENTRY,
+                        tooltip = SI_NVK3UT_LAM_GOLDEN_COLOR_ENTRY_DESC,
+                    },
+                    {
+                        key = "Objective",
+                        role = GOLDEN_COLOR_ROLES.Objective,
+                        name = SI_NVK3UT_LAM_GOLDEN_COLOR_OBJECTIVE,
+                        tooltip = SI_NVK3UT_LAM_GOLDEN_COLOR_OBJECTIVE_DESC,
+                    },
+                    {
+                        key = "Active",
+                        role = GOLDEN_COLOR_ROLES.Active,
+                        name = SI_NVK3UT_LAM_GOLDEN_COLOR_ACTIVE,
+                        tooltip = SI_NVK3UT_LAM_GOLDEN_COLOR_ACTIVE_DESC,
+                    },
+                    {
+                        key = "Completed",
+                        role = GOLDEN_COLOR_ROLES.Completed,
+                        name = SI_NVK3UT_LAM_GOLDEN_COLOR_COMPLETED,
+                        tooltip = SI_NVK3UT_LAM_GOLDEN_COLOR_COMPLETED_DESC,
+                    },
+                }
 
-            local function getGoldenDefaultColor(colorKey, role)
-                local defaults = getGoldenDefaults()
-                local colors = defaults.Colors
-                local sourceKey = colorKey
-                if colorKey == "CategoryTitleClosed" then
-                    sourceKey = "CategoryTitle"
-                elseif colorKey == "CategoryTitleOpen" then
-                    sourceKey = "EntryName"
-                end
+                local function getGoldenDefaultColor(colorKey, role)
+                    local defaults = getGoldenDefaults()
+                    local colors = defaults.Colors
+                    local sourceKey = colorKey
+                    if colorKey == "CategoryTitleClosed" then
+                        sourceKey = "CategoryTitle"
+                    elseif colorKey == "CategoryTitleOpen" then
+                        sourceKey = "EntryName"
+                    end
 
-                if type(colors) == "table" then
-                    local candidate = colors[sourceKey]
-                    if type(candidate) == "table" then
-                        local r = candidate[1] or candidate.r or 1
-                        local g = candidate[2] or candidate.g or 1
-                        local b = candidate[3] or candidate.b or 1
-                        local a = candidate[4] or candidate.a or 1
+                    if type(colors) == "table" then
+                        local candidate = colors[sourceKey]
+                        if type(candidate) == "table" then
+                            local r = candidate[1] or candidate.r or 1
+                            local g = candidate[2] or candidate.g or 1
+                            local b = candidate[3] or candidate.b or 1
+                            local a = candidate[4] or candidate.a or 1
+                            return r, g, b, a
+                        end
+                    end
+
+                    local fallbackRole = role
+                    if colorKey == "CategoryTitleClosed" then
+                        fallbackRole = ENDEAVOR_COLOR_ROLES.CategoryTitle
+                    elseif colorKey == "CategoryTitleOpen" then
+                        fallbackRole = ENDEAVOR_COLOR_ROLES.EntryName
+                    elseif colorKey == "EntryName" then
+                        fallbackRole = ENDEAVOR_COLOR_ROLES.EntryName
+                    elseif colorKey == "Objective" then
+                        fallbackRole = ENDEAVOR_COLOR_ROLES.Objective
+                    elseif colorKey == "Active" then
+                        fallbackRole = ENDEAVOR_COLOR_ROLES.Active
+                    elseif colorKey == "Completed" then
+                        fallbackRole = ENDEAVOR_COLOR_ROLES.Completed
+                    end
+
+                    local fallback = getTrackerColorDefaultTable("endeavorTracker", fallbackRole or role)
+                    if type(fallback) == "table" then
+                        local r = fallback[1] or fallback.r or 1
+                        local g = fallback[2] or fallback.g or 1
+                        local b = fallback[3] or fallback.b or 1
+                        local a = fallback[4] or fallback.a or 1
                         return r, g, b, a
                     end
+
+                    return 1, 1, 1, 1
                 end
 
-                local fallbackRole = role
-                if colorKey == "CategoryTitleClosed" then
-                    fallbackRole = ENDEAVOR_COLOR_ROLES.CategoryTitle
-                elseif colorKey == "CategoryTitleOpen" then
-                    fallbackRole = ENDEAVOR_COLOR_ROLES.EntryName
-                elseif colorKey == "EntryName" then
-                    fallbackRole = ENDEAVOR_COLOR_ROLES.EntryName
-                elseif colorKey == "Objective" then
-                    fallbackRole = ENDEAVOR_COLOR_ROLES.Objective
-                elseif colorKey == "Active" then
-                    fallbackRole = ENDEAVOR_COLOR_ROLES.Active
-                elseif colorKey == "Completed" then
-                    fallbackRole = ENDEAVOR_COLOR_ROLES.Completed
+                for index = 1, #colorEntries do
+                    local entry = colorEntries[index]
+                    colorControls[#colorControls + 1] = {
+                        type = "colorpicker",
+                        name = GetString(entry.name),
+                        tooltip = GetString(entry.tooltip),
+                        width = "full",
+                        getFunc = function()
+                            local config = getGoldenConfig()
+                            local colors = config.Colors or {}
+                            local color = colors[entry.key]
+                            local r = (color and (color[1] or color.r)) or 1
+                            local g = (color and (color[2] or color.g)) or 1
+                            local b = (color and (color[3] or color.b)) or 1
+                            local a = (color and (color[4] or color.a)) or 1
+                            return r, g, b, a
+                        end,
+                        setFunc = function(r, g, b, a)
+                            local alpha = a or 1
+                            setGoldenColor(entry.key, entry.role, r, g, b, alpha)
+                            markGoldenDirty("appearance")
+                            queueGoldenDirty()
+                        end,
+                        default = function()
+                            return getGoldenDefaultColor(entry.key, entry.role)
+                        end,
+                    }
                 end
 
-                local fallback = getTrackerColorDefaultTable("endeavorTracker", fallbackRole or role)
-                if type(fallback) == "table" then
-                    local r = fallback[1] or fallback.r or 1
-                    local g = fallback[2] or fallback.g or 1
-                    local b = fallback[3] or fallback.b or 1
-                    local a = fallback[4] or fallback.a or 1
-                    return r, g, b, a
-                end
-
-                return 1, 1, 1, 1
-            end
-
-            for index = 1, #colorEntries do
-                local entry = colorEntries[index]
-                controls[#controls + 1] = {
+                colorControls[#colorControls + 1] = {
                     type = "colorpicker",
-                    name = GetString(entry.name),
-                    tooltip = GetString(entry.tooltip),
-                    width = "full",
+                    name = GetString(SI_NVK3UT_LAM_GOLDEN_COLOR_HIGHLIGHT),
+                    tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_COLOR_HIGHLIGHT_DESC),
                     getFunc = function()
-                        local config = getGoldenConfig()
-                        local colors = config.Colors or {}
-                        local color = colors[entry.key]
-                        local r = (color and (color[1] or color.r)) or 1
-                        local g = (color and (color[2] or color.g)) or 1
-                        local b = (color and (color[3] or color.b)) or 1
-                        local a = (color and (color[4] or color.a)) or 1
-                        return r, g, b, a
+                        return getMouseoverHighlightColor("goldenTracker")
                     end,
                     setFunc = function(r, g, b, a)
-                        local alpha = a or 1
-                        setGoldenColor(entry.key, entry.role, r, g, b, alpha)
-                        markGoldenDirty("appearance")
-                        queueGoldenDirty()
+                        setMouseoverHighlightColor("goldenTracker", r, g, b, a or 1)
                     end,
-                    default = function()
-                        return getGoldenDefaultColor(entry.key, entry.role)
-                    end,
+                    default = getMouseoverHighlightDefaultTable("goldenTracker"),
                 }
+
+                return colorControls
             end
 
             controls[#controls + 1] = {
-                type = "colorpicker",
-                name = GetString(SI_NVK3UT_LAM_GOLDEN_COLOR_HIGHLIGHT),
-                tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_COLOR_HIGHLIGHT_DESC),
-                getFunc = function()
-                    return getMouseoverHighlightColor("goldenTracker")
-                end,
-                setFunc = function(r, g, b, a)
-                    setMouseoverHighlightColor("goldenTracker", r, g, b, a or 1)
-                end,
-                default = getMouseoverHighlightDefaultTable("goldenTracker"),
+                type = "submenu",
+                name = GetString(SI_NVK3UT_LAM_GOLDEN_SECTION_COLORS),
+                controls = buildGoldenColorControls,
             }
 
-            controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_GOLDEN_SECTION_FONTS) }
+            local function buildGoldenFontControls()
+                local fontControls = {}
+                fontControls[#fontControls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_GOLDEN_SECTION_FONTS) }
 
-            local fontGroups = {
-                { key = "Category", label = GetString(SI_NVK3UT_LAM_GOLDEN_FONT_CATEGORY_LABEL) },
-                { key = "Title", label = GetString(SI_NVK3UT_LAM_GOLDEN_FONT_TITLE_LABEL) },
-                { key = "Objective", label = GetString(SI_NVK3UT_LAM_GOLDEN_FONT_LINE_LABEL) },
-            }
+                local fontGroups = {
+                    { key = "Category", label = GetString(SI_NVK3UT_LAM_GOLDEN_FONT_CATEGORY_LABEL) },
+                    { key = "Title", label = GetString(SI_NVK3UT_LAM_GOLDEN_FONT_TITLE_LABEL) },
+                    { key = "Objective", label = GetString(SI_NVK3UT_LAM_GOLDEN_FONT_LINE_LABEL) },
+                }
 
-            local config = getGoldenConfig()
-            for index = 1, #fontGroups do
-                local group = fontGroups[index]
-                local defaultsFactory = function()
-                    return goldenFontDefaults(group.key)
-                end
-                local defaultsValue = defaultsFactory()
-                local fontControls = buildFontControls(
-                    group.label,
-                    config,
-                    group.key,
-                    defaultsFactory,
-                    function()
-                        markGoldenDirty("appearance")
-                        queueGoldenDirty()
-                    end,
-                    {
-                        ensureFont = ensureGoldenFontGroup,
-                        getFace = function(font)
-                            return font.Face or font.face
-                        end,
-                        setFace = function(font, value)
-                            font.face = value
-                            font.Face = value
-                        end,
-                        getSize = function(font)
-                            return font.Size or font.size
-                        end,
-                        setSize = function(font, value)
-                            local resolved = clampEndeavorFontSize(value)
-                            font.size = resolved
-                            font.Size = resolved
-                        end,
-                        getOutline = function(font)
-                            return font.Outline or font.outline
-                        end,
-                        setOutline = function(font, value)
-                            font.outline = value
-                            font.Outline = value
-                        end,
-                        clampSize = clampEndeavorFontSize,
-                    }
-                )
-
-                for i = 1, #fontControls do
-                    local control = fontControls[i]
-                    if i == 1 then
-                        control.tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_FONT_FAMILY_DESC)
-                        control.default = defaultsValue.face or defaultsValue.Face
-                    elseif i == 2 then
-                        control.tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_FONT_SIZE_DESC)
-                        control.default = defaultsValue.size or defaultsValue.Size
-                    else
-                        control.tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_FONT_OUTLINE_DESC)
-                        control.default = defaultsValue.outline or defaultsValue.Outline
+                local config = getGoldenConfig()
+                for index = 1, #fontGroups do
+                    local group = fontGroups[index]
+                    local defaultsFactory = function()
+                        return goldenFontDefaults(group.key)
                     end
-                    controls[#controls + 1] = control
+                    local defaultsValue = defaultsFactory()
+                    local groupFontControls = buildFontControls(
+                        group.label,
+                        config,
+                        group.key,
+                        defaultsFactory,
+                        function()
+                            markGoldenDirty("appearance")
+                            queueGoldenDirty()
+                        end,
+                        {
+                            ensureFont = ensureGoldenFontGroup,
+                            getFace = function(font)
+                                return font.Face or font.face
+                            end,
+                            setFace = function(font, value)
+                                font.face = value
+                                font.Face = value
+                            end,
+                            getSize = function(font)
+                                return font.Size or font.size
+                            end,
+                            setSize = function(font, value)
+                                local resolved = clampEndeavorFontSize(value)
+                                font.size = resolved
+                                font.Size = resolved
+                            end,
+                            getOutline = function(font)
+                                return font.Outline or font.outline
+                            end,
+                            setOutline = function(font, value)
+                                font.outline = value
+                                font.Outline = value
+                            end,
+                            clampSize = clampEndeavorFontSize,
+                        }
+                    )
+
+                    for i = 1, #groupFontControls do
+                        local control = groupFontControls[i]
+                        if i == 1 then
+                            control.tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_FONT_FAMILY_DESC)
+                            control.default = defaultsValue.face or defaultsValue.Face
+                        elseif i == 2 then
+                            control.tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_FONT_SIZE_DESC)
+                            control.default = defaultsValue.size or defaultsValue.Size
+                        else
+                            control.tooltip = GetString(SI_NVK3UT_LAM_GOLDEN_FONT_OUTLINE_DESC)
+                            control.default = defaultsValue.outline or defaultsValue.Outline
+                        end
+                        fontControls[#fontControls + 1] = control
+                    end
                 end
+
+                return fontControls
             end
+
+            controls[#controls + 1] = {
+                type = "submenu",
+                name = GetString(SI_NVK3UT_LAM_GOLDEN_SECTION_FONTS),
+                controls = buildGoldenFontControls,
+            }
 
             return controls
         end)(),
