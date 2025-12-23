@@ -128,6 +128,44 @@ end
 
 local ENDEAVOR_TRACKER_COLOR_KIND = "endeavorTracker"
 
+local ENDEAVOR_SPACING_DEFAULTS = {
+    categoryTop = HEADER_TO_ROWS_GAP,
+    categoryBottom = SECTION_BOTTOM_GAP,
+    categoryIndent = SUBHEADER_INDENT_X,
+    entrySpacing = ROW_GAP,
+    entryHeight = SECTION_ROW_HEIGHT,
+    entryPadding = 4,
+    objectiveTop = 0,
+    objectiveSpacing = OBJECTIVE_ROW_SPACING,
+    objectiveIndent = 60,
+    objectiveBottom = 0,
+}
+
+local function ResolveEndeavorSpacing(settings)
+    local spacing = type(settings) == "table" and settings.spacing or {}
+
+    local function resolve(value, defaultValue)
+        local numeric = tonumber(value)
+        if numeric == nil then
+            return defaultValue
+        end
+        return numeric
+    end
+
+    return {
+        categoryTop = resolve(spacing.categoryTop, ENDEAVOR_SPACING_DEFAULTS.categoryTop),
+        categoryBottom = resolve(spacing.categoryBottom, ENDEAVOR_SPACING_DEFAULTS.categoryBottom),
+        categoryIndent = resolve(spacing.categoryIndent, ENDEAVOR_SPACING_DEFAULTS.categoryIndent),
+        entrySpacing = resolve(spacing.entrySpacing, ENDEAVOR_SPACING_DEFAULTS.entrySpacing),
+        entryHeight = resolve(spacing.entryHeight, ENDEAVOR_SPACING_DEFAULTS.entryHeight),
+        entryPadding = resolve(spacing.entryPadding, ENDEAVOR_SPACING_DEFAULTS.entryPadding),
+        objectiveTop = resolve(spacing.objectiveTop, ENDEAVOR_SPACING_DEFAULTS.objectiveTop),
+        objectiveSpacing = resolve(spacing.objectiveSpacing, ENDEAVOR_SPACING_DEFAULTS.objectiveSpacing),
+        objectiveIndent = resolve(spacing.objectiveIndent, ENDEAVOR_SPACING_DEFAULTS.objectiveIndent),
+        objectiveBottom = resolve(spacing.objectiveBottom, ENDEAVOR_SPACING_DEFAULTS.objectiveBottom),
+    }
+end
+
 local function coerceHeight(value)
     if type(value) == "number" then
         if value ~= value then -- NaN guard
@@ -169,6 +207,30 @@ local function FormatParensCount(a, b)
     end
 
     return string.format("(%d/%d)", math.floor(aNum + 0.5), math.floor(bNum + 0.5))
+end
+
+local function ApplyEndeavorSpacing(settings)
+    local resolved = ResolveEndeavorSpacing(settings)
+
+    ROW_GAP = resolved.entrySpacing
+    SECTION_ROW_HEIGHT = resolved.entryHeight
+    HEADER_TO_ROWS_GAP = resolved.categoryTop
+    SECTION_BOTTOM_GAP = resolved.categoryBottom
+    SECTION_BOTTOM_GAP_COLLAPSED = resolved.categoryBottom
+    SUBHEADER_INDENT_X = resolved.categoryIndent
+    OBJECTIVE_ROW_SPACING = resolved.objectiveSpacing
+
+    state.spacing = resolved
+
+    local rows = getRowsModule()
+    if rows and type(rows.ApplySpacing) == "function" then
+        rows.ApplySpacing(resolved)
+    end
+
+    local layout = Nvk3UT and Nvk3UT.EndeavorTrackerLayout
+    if layout and type(layout.UpdateSpacing) == "function" then
+        layout.UpdateSpacing(resolved)
+    end
 end
 
 local function CallIfFunction(fn, ...)
@@ -1120,7 +1182,7 @@ local function buildObjectiveRows(rows, container, objectivesList, rowsOptions)
     local usedRows = {}
     container._objectiveRows = usedRows
 
-    local cursorY = 0
+    local cursorY = (state.spacing and state.spacing.objectiveTop) or ENDEAVOR_SPACING_DEFAULTS.objectiveTop or 0
     local visibleObjectives = 0
 
     for index = 1, #objectives do
@@ -1207,6 +1269,10 @@ local function buildObjectiveRows(rows, container, objectivesList, rowsOptions)
                 end
             end
         end
+    end
+
+    if visibleObjectives > 0 then
+        cursorY = cursorY + ((state.spacing and state.spacing.objectiveBottom) or ENDEAVOR_SPACING_DEFAULTS.objectiveBottom or 0)
     end
 
     local totalHeight = coerceHeight(cursorY)
@@ -1780,6 +1846,8 @@ function EndeavorTracker.Refresh(viewModel)
             local dailyVm = type(vm.daily) == "table" and vm.daily or {}
             local weeklyVm = type(vm.weekly) == "table" and vm.weekly or {}
             local settings = type(vm.settings) == "table" and vm.settings or {}
+
+            ApplyEndeavorSpacing(settings)
 
             local enabled = settings.enabled ~= false
             local showCounts = settings.showCounts ~= false

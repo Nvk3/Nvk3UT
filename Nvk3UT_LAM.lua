@@ -3015,10 +3015,10 @@ local function registerPanel(displayTitle)
                 entrySpacing = 3,
                 entryHeight = 24,
                 entryPadding = 4,
-                objectiveTop = 3,
-                objectiveSpacing = 1,
-                objectiveIndent = 32,
-                objectiveBottom = 2,
+                objectiveTop = 0,
+                objectiveSpacing = 3,
+                objectiveIndent = 60,
+                objectiveBottom = 0,
             }
 
             local endeavorSpacing = getEndeavorConfig().Tracker.Spacing

@@ -78,6 +78,24 @@ function Layout.Init()
     lastHeight = 0
 end
 
+function Layout.UpdateSpacing(spacing)
+    spacing = spacing or {}
+
+    local function resolve(value, fallback)
+        local numeric = tonumber(value)
+        if numeric == nil then
+            return fallback
+        end
+        return numeric
+    end
+
+    ROW_GAP = resolve(spacing.entrySpacing, ROW_GAP)
+    SECTION_ROW_HEIGHT = resolve(spacing.entryHeight, SECTION_ROW_HEIGHT)
+    HEADER_TO_ROWS_GAP = resolve(spacing.categoryTop, HEADER_TO_ROWS_GAP)
+    SECTION_BOTTOM_GAP = resolve(spacing.categoryBottom, SECTION_BOTTOM_GAP)
+    SECTION_BOTTOM_GAP_COLLAPSED = resolve(spacing.categoryBottom, SECTION_BOTTOM_GAP_COLLAPSED)
+end
+
 function Layout.Apply(container, context)
     local measured = 0
     if container == nil then

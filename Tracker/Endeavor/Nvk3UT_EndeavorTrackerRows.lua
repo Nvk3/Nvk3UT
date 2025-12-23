@@ -227,6 +227,23 @@ local function applyEndeavorRowMetrics(control, label, availableWidth, minHeight
     return targetHeight
 end
 
+local function resolveSpacingValue(value, fallback)
+    local numeric = tonumber(value)
+    if numeric == nil then
+        return fallback
+    end
+    return numeric
+end
+
+local function applySpacing(spacing)
+    spacing = spacing or {}
+
+    ROWS_HEIGHTS.entry = resolveSpacingValue(spacing.entryHeight, ROWS_HEIGHTS.entry)
+    ROW_TEXT_PADDING_Y = resolveSpacingValue(spacing.entryPadding, ROW_TEXT_PADDING_Y)
+    OBJECTIVE_INDENT_X = resolveSpacingValue(spacing.objectiveIndent, OBJECTIVE_INDENT_X)
+    OBJECTIVE_ROW_SPACING = resolveSpacingValue(spacing.objectiveSpacing, OBJECTIVE_ROW_SPACING)
+end
+
 local function isEndeavorWrapDebugEnabled()
     if type(isGoldenColorDebugEnabled) == "function" then
         return isGoldenColorDebugEnabled() == true
@@ -2094,6 +2111,10 @@ end
 
 function Rows.ApplyEntryRow(row, objective, options)
     applyEntryRow(row, objective, options)
+end
+
+function Rows.ApplySpacing(spacing)
+    applySpacing(spacing)
 end
 
 function Rows.ApplyGroupLabelColor(label, options, useCompletedStyle)

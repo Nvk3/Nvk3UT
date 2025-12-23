@@ -88,6 +88,19 @@ local DEFAULT_CATEGORY_FONT_SIZE = 20
 local DEFAULT_TITLE_FONT_SIZE = 16
 local DEFAULT_OBJECTIVE_FONT_SIZE = 14
 
+local DEFAULT_SPACING = {
+    categoryTop = 3,
+    categoryBottom = 3,
+    categoryIndent = 18,
+    entrySpacing = 3,
+    entryHeight = 24,
+    entryPadding = 4,
+    objectiveTop = 0,
+    objectiveSpacing = 3,
+    objectiveIndent = 60,
+    objectiveBottom = 0,
+}
+
 local function buildFontString(face, size, outline)
     return string.format("%s|%d|%s", face, size, outline)
 end
@@ -254,6 +267,32 @@ local function buildRowsOptions(colors, fonts, completedHandling, fontConfig)
         entryRole = "entryTitle",
         completedHandling = completedHandling,
         fontConfig = fontConfig,
+    }
+end
+
+local function buildSpacing(config)
+    local trackerConfig = type(config) == "table" and config.Tracker or nil
+    local spacingConfig = trackerConfig and trackerConfig.Spacing or {}
+
+    local function resolve(value, key)
+        local numeric = tonumber(value)
+        if numeric == nil then
+            return DEFAULT_SPACING[key]
+        end
+        return numeric
+    end
+
+    return {
+        categoryTop = resolve(spacingConfig.categoryTop, "categoryTop"),
+        categoryBottom = resolve(spacingConfig.categoryBottom, "categoryBottom"),
+        categoryIndent = resolve(spacingConfig.categoryIndent, "categoryIndent"),
+        entrySpacing = resolve(spacingConfig.entrySpacing, "entrySpacing"),
+        entryHeight = resolve(spacingConfig.entryHeight, "entryHeight"),
+        entryPadding = resolve(spacingConfig.entryPadding, "entryPadding"),
+        objectiveTop = resolve(spacingConfig.objectiveTop, "objectiveTop"),
+        objectiveSpacing = resolve(spacingConfig.objectiveSpacing, "objectiveSpacing"),
+        objectiveIndent = resolve(spacingConfig.objectiveIndent, "objectiveIndent"),
+        objectiveBottom = resolve(spacingConfig.objectiveBottom, "objectiveBottom"),
     }
 end
 
@@ -573,6 +612,7 @@ function Controller:BuildViewModel()
                 colors = colors,
                 fonts = fonts,
                 rowsOptions = rowsOptions,
+                spacing = buildSpacing(config),
             },
         }
     end
@@ -726,6 +766,7 @@ function Controller:BuildViewModel()
         colors = colors,
         fonts = fonts,
         rowsOptions = rowsOptions,
+        spacing = buildSpacing(config),
     }
 
     DBG(
