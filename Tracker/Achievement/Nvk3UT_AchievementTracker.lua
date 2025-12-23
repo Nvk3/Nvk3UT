@@ -71,6 +71,9 @@ local function FormatDisplayString(text)
     return value
 end
 
+local state
+local GetAchievementSpacing
+
 local CATEGORY_INDENT_X = 0
 local ACHIEVEMENT_INDENT_X = 18
 local ACHIEVEMENT_ICON_SLOT_WIDTH = 18
@@ -95,8 +98,9 @@ local TOGGLE_LABEL_PADDING_X = 4
 local CATEGORY_TOGGLE_WIDTH = 20
 
 local function GetVerticalPadding()
-    if state.spacing and state.spacing.entrySpacing then
-        return state.spacing.entrySpacing
+    local spacing = GetAchievementSpacing()
+    if spacing.entrySpacing ~= nil then
+        return spacing.entrySpacing
     end
 
     if AchievementTrackerLayout and type(AchievementTrackerLayout.GetVerticalPadding) == "function" then
@@ -107,8 +111,9 @@ local function GetVerticalPadding()
 end
 
 local function GetRowGap()
-    if state.spacing and state.spacing.entrySpacing then
-        return state.spacing.entrySpacing
+    local spacing = GetAchievementSpacing()
+    if spacing.entrySpacing ~= nil then
+        return spacing.entrySpacing
     end
 
     if AchievementTrackerLayout and type(AchievementTrackerLayout.GetRowGap) == "function" then
@@ -119,8 +124,9 @@ local function GetRowGap()
 end
 
 local function GetHeaderToRowsGap()
-    if state.spacing and state.spacing.entrySpacing then
-        return state.spacing.entrySpacing
+    local spacing = GetAchievementSpacing()
+    if spacing.entrySpacing ~= nil then
+        return spacing.entrySpacing
     end
 
     if AchievementTrackerLayout and type(AchievementTrackerLayout.GetHeaderToRowsGap) == "function" then
@@ -131,8 +137,9 @@ local function GetHeaderToRowsGap()
 end
 
 local function GetSubrowSpacing()
-    if state.spacing and state.spacing.objectiveSpacing then
-        return state.spacing.objectiveSpacing
+    local spacing = GetAchievementSpacing()
+    if spacing.objectiveSpacing ~= nil then
+        return spacing.objectiveSpacing
     end
 
     if AchievementTrackerLayout and type(AchievementTrackerLayout.GetSubrowSpacing) == "function" then
@@ -143,8 +150,9 @@ local function GetSubrowSpacing()
 end
 
 local function GetCategoryBottomPadding(isExpanded)
-    if state.spacing and state.spacing.categoryBottom ~= nil then
-        return state.spacing.categoryBottom
+    local spacing = GetAchievementSpacing()
+    if spacing.categoryBottom ~= nil then
+        return spacing.categoryBottom
     end
 
     if AchievementTrackerLayout and type(AchievementTrackerLayout.GetCategoryBottomPadding) == "function" then
@@ -159,8 +167,9 @@ local function GetCategoryBottomPadding(isExpanded)
 end
 
 local function GetCategoryTopPadding()
-    if state.spacing and state.spacing.categoryTop ~= nil then
-        return state.spacing.categoryTop
+    local spacing = GetAchievementSpacing()
+    if spacing.categoryTop ~= nil then
+        return spacing.categoryTop
     end
 
     if AchievementTrackerLayout and type(AchievementTrackerLayout.GetCategoryTopPadding) == "function" then
@@ -171,16 +180,18 @@ local function GetCategoryTopPadding()
 end
 
 local function GetObjectiveTopSpacing()
-    if state.spacing and state.spacing.objectiveTop ~= nil then
-        return state.spacing.objectiveTop
+    local spacing = GetAchievementSpacing()
+    if spacing.objectiveTop ~= nil then
+        return spacing.objectiveTop
     end
 
     return GetSubrowSpacing()
 end
 
 local function GetObjectiveBottomSpacing()
-    if state.spacing and state.spacing.objectiveBottom ~= nil then
-        return state.spacing.objectiveBottom
+    local spacing = GetAchievementSpacing()
+    if spacing.objectiveBottom ~= nil then
+        return spacing.objectiveBottom
     end
 
     return GetRowGap()
@@ -257,6 +268,22 @@ local function ResolveAchievementSpacing(settings)
     }
 end
 
+GetAchievementSpacing = function()
+    local resolved = state and state.spacing
+    if resolved ~= nil then
+        return resolved
+    end
+
+    local settings = (state and state.saved) or (Nvk3UT and Nvk3UT.sv and Nvk3UT.sv.AchievementTracker)
+    resolved = ResolveAchievementSpacing(settings)
+
+    if state then
+        state.spacing = resolved
+    end
+
+    return resolved
+end
+
 local function IsDebugLoggingEnabled()
     local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
     if utils and type(utils.IsDebugEnabled) == "function" then
@@ -311,7 +338,7 @@ local function GetObjectiveRowKey(achievementId, objectiveIndex)
     )
 end
 
-local state = {
+state = {
     isInitialized = false,
     opts = {},
     fonts = {},
