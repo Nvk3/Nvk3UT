@@ -39,6 +39,15 @@ Runtime._pendingFullRebuildReason = type(Runtime._pendingFullRebuildReason) == "
 Runtime.needsFullRebuildOnVisible = Runtime.needsFullRebuildOnVisible == true
 Runtime._fullRebuildPending = Runtime._fullRebuildPending == true
 Runtime._fullRebuildReason = type(Runtime._fullRebuildReason) == "string" and Runtime._fullRebuildReason or nil
+Runtime._endeavorInitialRefreshStarted = Runtime._endeavorInitialRefreshStarted == true
+Runtime._endeavorInitialRefreshDone = Runtime._endeavorInitialRefreshDone == true
+Runtime._endeavorInitialRetryCount = tonumber(Runtime._endeavorInitialRetryCount) or 0
+Runtime._endeavorInitialRetryHandle = Runtime._endeavorInitialRetryHandle
+Runtime._endeavorInitialRetryDelayMs = tonumber(Runtime._endeavorInitialRetryDelayMs) or 100
+Runtime._endeavorInitialRetryMax = tonumber(Runtime._endeavorInitialRetryMax) or 3
+
+local ENDEAVOR_INITIAL_RETRY_DELAY_MS = 100
+local ENDEAVOR_INITIAL_RETRY_MAX = 3
 
 local function debug(fmt, ...)
     if Addon and type(Addon.Debug) == "function" then
@@ -391,6 +400,131 @@ local function callWithOptionalSelf(targetTable, fn, preferPlainCall, ...)
     end
 
     return invoked, unpack(results)
+end
+
+local function getEndeavorModel()
+    if type(Addon) ~= "table" then
+        return nil
+    end
+
+    local model = rawget(Addon, "EndeavorModel")
+    if type(model) ~= "table" then
+        return nil
+    end
+
+    return model
+end
+
+local function endeavorModelHasData(model)
+    if type(model) ~= "table" then
+        return false
+    end
+
+    local function bucketHasData(bucket)
+        if type(bucket) ~= "table" then
+            return false
+        end
+
+        local items = bucket.items
+        if type(items) == "table" and #items > 0 then
+            return true
+        end
+
+        local total = tonumber(bucket.total)
+        if total and total > 0 then
+            return true
+        end
+
+        local limit = tonumber(bucket.limit)
+        if limit and limit > 0 then
+            return true
+        end
+
+        return false
+    end
+
+    local getViewData = model.GetViewData or model.GetViewModel
+    if type(getViewData) == "function" then
+        local ok, viewData = pcall(getViewData, model)
+        if ok and type(viewData) == "table" then
+            if bucketHasData(viewData.daily) or bucketHasData(viewData.weekly) then
+                return true
+            end
+        end
+    end
+
+    local getSummary = model.GetSummary
+    if type(getSummary) == "function" then
+        local ok, summary = pcall(getSummary, model)
+        if ok and type(summary) == "table" then
+            if (tonumber(summary.dailyTotal) or 0) > 0 or (tonumber(summary.weeklyTotal) or 0) > 0 then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+local function cancelEndeavorInitialRetry()
+    local handle = Runtime._endeavorInitialRetryHandle
+    if handle ~= nil and type(zo_removeCallLater) == "function" then
+        pcall(zo_removeCallLater, handle)
+    end
+    Runtime._endeavorInitialRetryHandle = nil
+end
+
+local function scheduleEndeavorInitialRefresh()
+    if Runtime._endeavorInitialRefreshDone then
+        return
+    end
+
+    if Runtime._endeavorInitialRefreshStarted and Runtime._endeavorInitialRetryHandle then
+        return
+    end
+
+    Runtime._endeavorInitialRefreshStarted = true
+
+    local function attempt()
+        if Runtime._endeavorInitialRefreshDone then
+            return
+        end
+
+        Runtime._endeavorInitialRetryHandle = nil
+        Runtime._endeavorInitialRetryCount = (tonumber(Runtime._endeavorInitialRetryCount) or 0) + 1
+
+        local model = getEndeavorModel()
+        if type(model) == "table" then
+            local refresh = model.RefreshFromGame or model.Refresh
+            if type(refresh) == "function" then
+                callWithOptionalSelf(model, refresh, false)
+            end
+        end
+
+        Runtime:QueueDirty("endeavor")
+
+        if endeavorModelHasData(model) or Runtime._endeavorInitialRetryCount >= Runtime._endeavorInitialRetryMax then
+            Runtime._endeavorInitialRefreshDone = true
+            cancelEndeavorInitialRetry()
+            return
+        end
+
+        local delay = Runtime._endeavorInitialRetryDelayMs or ENDEAVOR_INITIAL_RETRY_DELAY_MS
+        if type(delay) ~= "number" or delay < 0 then
+            delay = ENDEAVOR_INITIAL_RETRY_DELAY_MS
+        end
+
+        if type(zo_callLater) == "function" then
+            Runtime._endeavorInitialRetryHandle = zo_callLater(attempt, delay)
+        else
+            Runtime._endeavorInitialRefreshDone = true
+        end
+    end
+
+    Runtime._endeavorInitialRetryDelayMs = Runtime._endeavorInitialRetryDelayMs or ENDEAVOR_INITIAL_RETRY_DELAY_MS
+    Runtime._endeavorInitialRetryMax = Runtime._endeavorInitialRetryMax or ENDEAVOR_INITIAL_RETRY_MAX
+
+    attempt()
 end
 
 local function buildQuestViewModel()
@@ -876,6 +1010,12 @@ function Runtime:Init(hostWindow)
     self._interactivityDirty = true
     self._initialized = true
     self._deferredProcessFrame = false
+    cancelEndeavorInitialRetry()
+    self._endeavorInitialRefreshStarted = false
+    self._endeavorInitialRefreshDone = false
+    self._endeavorInitialRetryCount = 0
+    self._endeavorInitialRetryDelayMs = ENDEAVOR_INITIAL_RETRY_DELAY_MS
+    self._endeavorInitialRetryMax = ENDEAVOR_INITIAL_RETRY_MAX
     debug("TrackerRuntime.Init(%s)", tostring(hostWindow))
     scheduleProcessing()
 end
@@ -1045,6 +1185,10 @@ function Runtime:ProcessFrame(nowMs)
         dirty.quest = false
         dirty.endeavor = false
         dirty.layout = false
+
+        if not self._endeavorInitialRefreshDone then
+            scheduleEndeavorInitialRefresh()
+        end
 
         local interactivityDirty = self._interactivityDirty == true
         self._interactivityDirty = false
