@@ -33,7 +33,7 @@ local getAddonRoot
 local GOLDEN_SPACING_DEFAULTS = {
     categoryTop = 3,
     categoryBottom = 6,
-    categoryIndent = 60,
+    categoryIndent = 40,
     entrySpacing = 3,
     entryHeight = 24,
     entryPadding = 4,

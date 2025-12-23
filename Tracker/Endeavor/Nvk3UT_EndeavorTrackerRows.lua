@@ -9,7 +9,7 @@ Rows.__index = Rows
 local MODULE_TAG = addonName .. ".EndeavorTrackerRows"
 
 local ROW_TEXT_PADDING_Y = 4
-local ENTRY_INDENT_X = 18
+local ENTRY_INDENT_X = 40
 
 local ROWS_HEIGHTS = {
     category = 26,

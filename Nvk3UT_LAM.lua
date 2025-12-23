@@ -790,6 +790,11 @@ local function buildSpacingControls(spacing, defaults, setters)
     }
 
     controls[#controls + 1] = {
+        type = "header",
+        name = GetString(SI_NVK3UT_LAM_SPACING_HEADER_ENTRY),
+    }
+
+    controls[#controls + 1] = {
         type = "slider",
         name = GetString(SI_NVK3UT_LAM_SPACING_CATEGORY_INDENT),
         min = 0,
@@ -802,11 +807,6 @@ local function buildSpacingControls(spacing, defaults, setters)
             setters.onChange()
         end,
         default = defaults.categoryIndent,
-    }
-
-    controls[#controls + 1] = {
-        type = "header",
-        name = GetString(SI_NVK3UT_LAM_SPACING_HEADER_ENTRY),
     }
 
     controls[#controls + 1] = {
@@ -2661,7 +2661,7 @@ local function registerPanel(displayTitle)
             local questSpacingDefaults = {
                 categoryTop = 3,
                 categoryBottom = 6,
-                categoryIndent = 18,
+                categoryIndent = 40,
                 entrySpacing = 3,
                 entryHeight = 24,
                 entryPadding = 4,
@@ -3011,7 +3011,7 @@ local function registerPanel(displayTitle)
             local endeavorSpacingDefaults = {
                 categoryTop = 3,
                 categoryBottom = 3,
-                categoryIndent = 18,
+                categoryIndent = 40,
                 entrySpacing = 3,
                 entryHeight = 24,
                 entryPadding = 4,
@@ -3213,7 +3213,7 @@ local function registerPanel(displayTitle)
             local achievementSpacingDefaults = {
                 categoryTop = 0,
                 categoryBottom = 6,
-                categoryIndent = 18,
+                categoryIndent = 40,
                 entrySpacing = 3,
                 entryHeight = 24,
                 entryPadding = 4,
@@ -3687,7 +3687,7 @@ local function registerPanel(displayTitle)
             local goldenSpacingDefaults = {
                 categoryTop = 3,
                 categoryBottom = 6,
-                categoryIndent = 60,
+                categoryIndent = 40,
                 entrySpacing = 3,
                 entryHeight = 24,
                 entryPadding = 4,

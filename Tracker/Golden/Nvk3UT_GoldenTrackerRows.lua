@@ -57,7 +57,7 @@ local OBJECTIVE_VERTICAL_PADDING_Y = 2
 local spacingState = {
     entryHeight = DEFAULTS.ENTRY_HEIGHT,
     entryPadding = ROW_TEXT_PADDING_Y,
-    categoryIndent = ENTRY_INDENT_X,
+    categoryIndent = 40,
     objectiveIndent = DEFAULTS.OBJECTIVE_INDENT_X,
     objectiveTop = 0,
     objectiveSpacing = 3,
@@ -68,7 +68,7 @@ local GOLDEN_HEADER_TITLE = GetString(SI_NVK3UT_TRACKER_GOLDEN_CATEGORY_MAIN)
 
 local CATEGORY_CHEVRON_SIZE = 20
 local CATEGORY_LABEL_OFFSET_X = 4
-local ENTRY_INDENT_X = DEFAULTS.OBJECTIVE_INDENT_X
+local ENTRY_INDENT_X = 40
 
 local CATEGORY_CHEVRON_TEXTURES = {
     expanded = "EsoUI/Art/Buttons/tree_open_up.dds",
