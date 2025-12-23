@@ -44,12 +44,17 @@ local GOLDEN_SPACING_DEFAULTS = {
 }
 
 local function getSavedVars()
-    local root = getAddonRoot()
+    local root = rawget(_G, addonName) or Nvk3UT
     if type(root) ~= "table" then
         return nil
     end
 
-    return root.sv or root.SV
+    local sv = rawget(root, "sv") or rawget(root, "SV")
+    if type(sv) == "table" then
+        return sv
+    end
+
+    return nil
 end
 
 local function getGoldenSpacingSettings()
