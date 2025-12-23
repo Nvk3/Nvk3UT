@@ -161,6 +161,18 @@ function Rows:Init(parentContainer, trackerState, callbacks)
     safeDebug("%s: Init with parent %s", MODULE_TAG, tostring(parentContainer))
 end
 
+function Rows:ApplySpacing(spacing)
+    if not self.state then
+        return
+    end
+
+    spacing = spacing or {}
+
+    self.state.verticalPadding = spacing.objectiveSpacing or spacing.entrySpacing or self.state.verticalPadding
+    self.state.objectiveSpacing = spacing.objectiveSpacing or self.state.objectiveSpacing
+    self.state.objectiveTop = spacing.objectiveTop or self.state.objectiveTop
+end
+
 function Rows:ResetQuestRowObjectives(row)
     ReleaseAllObjectiveLabels(row)
 end
@@ -178,7 +190,8 @@ function Rows:ApplyObjectives(row, objectives)
         return
     end
 
-    local verticalPadding = (self.state and self.state.verticalPadding) or 0
+    local verticalPadding = (self.state and self.state.objectiveSpacing) or (self.state and self.state.verticalPadding) or 0
+    local topPadding = (self.state and self.state.objectiveTop) or verticalPadding
     local lastObjective = nil
 
     local rawObjectiveCount = 0
@@ -260,8 +273,8 @@ function Rows:ApplyObjectives(row, objectives)
                 label:SetAnchor(TOPLEFT, lastObjective, BOTTOMLEFT, 0, verticalPadding)
                 label:SetAnchor(TOPRIGHT, lastObjective, BOTTOMRIGHT, 0, verticalPadding)
             else
-                label:SetAnchor(TOPLEFT, objectiveContainer, TOPLEFT, 0, 0)
-                label:SetAnchor(TOPRIGHT, objectiveContainer, TOPRIGHT, 0, 0)
+                label:SetAnchor(TOPLEFT, objectiveContainer, TOPLEFT, 0, topPadding)
+                label:SetAnchor(TOPRIGHT, objectiveContainer, TOPRIGHT, 0, topPadding)
             end
 
             if label.SetHidden then

@@ -31,16 +31,48 @@ local function safeDebug(message, ...)
     end
 end
 
+local function applySpacing(self, deps)
+    if not self then
+        return
+    end
+
+    local spacing = deps or self.deps or {}
+
+    self.deps = self.deps or {}
+    self.deps.VERTICAL_PADDING = spacing.VERTICAL_PADDING or 0
+    self.deps.CATEGORY_BOTTOM_PAD_EXPANDED = spacing.CATEGORY_BOTTOM_PAD_EXPANDED or 0
+    self.deps.CATEGORY_BOTTOM_PAD_COLLAPSED = spacing.CATEGORY_BOTTOM_PAD_COLLAPSED or 0
+    self.deps.CATEGORY_TOP_PADDING = spacing.CATEGORY_TOP_PADDING or spacing.VERTICAL_PADDING or 0
+    self.deps.OBJECTIVE_TOP_PADDING = spacing.OBJECTIVE_TOP_PADDING or spacing.VERTICAL_PADDING or 0
+    self.deps.OBJECTIVE_SPACING = spacing.OBJECTIVE_SPACING or spacing.VERTICAL_PADDING or 0
+    self.deps.OBJECTIVE_BOTTOM_PADDING = spacing.OBJECTIVE_BOTTOM_PADDING or 0
+    self.deps.CONDITION_INDENT_X = spacing.CONDITION_INDENT_X or self.deps.CONDITION_INDENT_X
+    self.deps.QUEST_INDENT_X = spacing.QUEST_INDENT_X or self.deps.QUEST_INDENT_X
+    self.deps.QUEST_MIN_HEIGHT = spacing.QUEST_MIN_HEIGHT or self.deps.QUEST_MIN_HEIGHT
+    self.deps.ROW_TEXT_PADDING_Y = spacing.ROW_TEXT_PADDING_Y or self.deps.ROW_TEXT_PADDING_Y
+
+    self.verticalPadding = self.deps.VERTICAL_PADDING or 0
+    self.categoryTopPadding = self.deps.CATEGORY_TOP_PADDING or 0
+    self.objectiveTopPadding = self.deps.OBJECTIVE_TOP_PADDING or 0
+    self.objectiveSpacing = self.deps.OBJECTIVE_SPACING or 0
+    self.objectiveBottomPadding = self.deps.OBJECTIVE_BOTTOM_PADDING or 0
+    self.categoryBottomPadExpanded = self.deps.CATEGORY_BOTTOM_PAD_EXPANDED or 0
+    self.categoryBottomPadCollapsed = self.deps.CATEGORY_BOTTOM_PAD_COLLAPSED or 0
+end
+
 function Layout:Init(trackerState, deps)
     self.state = trackerState
     self.deps = deps or {}
 
-    self.verticalPadding = deps.VERTICAL_PADDING or 0
-    self.categoryBottomPadExpanded = deps.CATEGORY_BOTTOM_PAD_EXPANDED or 0
-    self.categoryBottomPadCollapsed = deps.CATEGORY_BOTTOM_PAD_COLLAPSED or 0
+    applySpacing(self, deps)
+
     self.bottomPixelNudge = deps.BOTTOM_PIXEL_NUDGE or 0
 
     safeDebug("%s: Init layout helper", MODULE_TAG)
+end
+
+function Layout:UpdateSpacing(deps)
+    applySpacing(self, deps)
 end
 
 function Layout:ResetLayoutState()
@@ -188,6 +220,11 @@ function Layout:GetQuestRowContentHeight(rowControl, rowData)
 
     local totalHeight = self:GetQuestRowHeight(rowControl, rowData and rowData.quest)
 
+    local objectiveTopPadding = self.objectiveTopPadding or self.verticalPadding
+    local objectiveSpacing = self.objectiveSpacing or self.verticalPadding
+    local objectiveBottomPadding = self.objectiveBottomPadding or 0
+    local hasObjective = false
+
     if rowControl.objectiveControls and #rowControl.objectiveControls > 0 then
         for index = 1, #rowControl.objectiveControls do
             local objectiveControl = rowControl.objectiveControls[index]
@@ -197,10 +234,16 @@ function Layout:GetQuestRowContentHeight(rowControl, rowData)
                     objectiveControl.data and (objectiveControl.data.objective or objectiveControl.data.condition)
                 )
                 if objectiveHeight > 0 then
-                    totalHeight = totalHeight + self.verticalPadding + objectiveHeight
+                    local padding = hasObjective and objectiveSpacing or objectiveTopPadding
+                    totalHeight = totalHeight + padding + objectiveHeight
+                    hasObjective = true
                 end
             end
         end
+    end
+
+    if hasObjective and objectiveBottomPadding > 0 then
+        totalHeight = totalHeight + objectiveBottomPadding
     end
 
     return totalHeight
@@ -263,8 +306,12 @@ function Layout:AnchorControl(control, indentX, gapOverride)
         control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, offsetX, gap)
         control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, 0, gap)
     else
-        control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, 0)
-        control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, 0, 0)
+        local gap = 0
+        if type(gapOverride) == "number" then
+            gap = gapOverride
+        end
+        control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, gap)
+        control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, 0, gap)
     end
 
     state.lastAnchoredControl = control
@@ -571,7 +618,11 @@ function Layout:LayoutCategory(category, providedControl)
     end
     self:GetCategoryHeaderHeight(control)
     control:SetHidden(false)
-    self:AnchorControl(control, self.deps.CATEGORY_INDENT_X, self:ConsumePendingCategoryGap())
+    local categoryGap = self:ConsumePendingCategoryGap()
+    if type(categoryGap) ~= "number" then
+        categoryGap = self.categoryTopPadding
+    end
+    self:AnchorControl(control, self.deps.CATEGORY_INDENT_X, categoryGap)
 
     if expanded and category.quests then
         for index = 1, count do

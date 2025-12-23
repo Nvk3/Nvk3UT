@@ -204,6 +204,44 @@ local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
 local REFRESH_DEBOUNCE_MS = 80
 local DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR = { 1, 1, 0.6, 1 }
 
+local QUEST_SPACING_DEFAULTS = {
+    categoryTop = 3,
+    categoryBottom = 6,
+    categoryIndent = 18,
+    entrySpacing = 3,
+    entryHeight = 24,
+    entryPadding = 4,
+    objectiveTop = 3,
+    objectiveSpacing = 3,
+    objectiveIndent = 60,
+    objectiveBottom = 3,
+}
+
+local function ResolveQuestSpacing(settings)
+    local spacing = settings and settings.spacing or {}
+
+    local function resolve(value, defaultValue)
+        local numeric = tonumber(value)
+        if numeric == nil then
+            return defaultValue
+        end
+        return numeric
+    end
+
+    return {
+        categoryTop = resolve(spacing.categoryTop, QUEST_SPACING_DEFAULTS.categoryTop),
+        categoryBottom = resolve(spacing.categoryBottom, QUEST_SPACING_DEFAULTS.categoryBottom),
+        categoryIndent = resolve(spacing.categoryIndent, QUEST_SPACING_DEFAULTS.categoryIndent),
+        entrySpacing = resolve(spacing.entrySpacing, QUEST_SPACING_DEFAULTS.entrySpacing),
+        entryHeight = resolve(spacing.entryHeight, QUEST_SPACING_DEFAULTS.entryHeight),
+        entryPadding = resolve(spacing.entryPadding, QUEST_SPACING_DEFAULTS.entryPadding),
+        objectiveTop = resolve(spacing.objectiveTop, QUEST_SPACING_DEFAULTS.objectiveTop),
+        objectiveSpacing = resolve(spacing.objectiveSpacing, QUEST_SPACING_DEFAULTS.objectiveSpacing),
+        objectiveIndent = resolve(spacing.objectiveIndent, QUEST_SPACING_DEFAULTS.objectiveIndent),
+        objectiveBottom = resolve(spacing.objectiveBottom, QUEST_SPACING_DEFAULTS.objectiveBottom),
+    }
+end
+
 local function ScheduleToggleFollowup(reason)
     local rebuild = (Nvk3UT and Nvk3UT.Rebuild) or _G.Nvk3UT_Rebuild
     if rebuild and type(rebuild.ScheduleToggleFollowup) == "function" then
@@ -257,6 +295,44 @@ state = {
     questModelSubscription = nil,
     lastAutoExpandedQuestKey = nil,
 }
+
+local function ApplyQuestSpacing(settings)
+    local resolved = ResolveQuestSpacing(settings)
+
+    VERTICAL_PADDING = resolved.entrySpacing
+    QUEST_MIN_HEIGHT = resolved.entryHeight
+    ROW_TEXT_PADDING_Y = resolved.entryPadding
+    QUEST_INDENT_X = resolved.categoryIndent
+    QUEST_LABEL_INDENT_X = QUEST_INDENT_X + QUEST_ICON_SLOT_WIDTH + QUEST_ICON_SLOT_PADDING_X
+    CONDITION_INDENT_X = resolved.objectiveIndent
+    CATEGORY_BOTTOM_PAD_EXPANDED = resolved.categoryBottom
+    CATEGORY_BOTTOM_PAD_COLLAPSED = resolved.categoryBottom
+
+    state.spacing = resolved
+    state.verticalPadding = resolved.entrySpacing
+    state.objectiveSpacing = resolved.objectiveSpacing
+    state.objectiveTop = resolved.objectiveTop
+
+    if QuestTrackerLayout and QuestTrackerLayout.UpdateSpacing then
+        QuestTrackerLayout:UpdateSpacing({
+            VERTICAL_PADDING = VERTICAL_PADDING,
+            CATEGORY_BOTTOM_PAD_EXPANDED = CATEGORY_BOTTOM_PAD_EXPANDED,
+            CATEGORY_BOTTOM_PAD_COLLAPSED = CATEGORY_BOTTOM_PAD_COLLAPSED,
+            CATEGORY_TOP_PADDING = resolved.categoryTop,
+            OBJECTIVE_TOP_PADDING = resolved.objectiveTop,
+            OBJECTIVE_SPACING = resolved.objectiveSpacing,
+            OBJECTIVE_BOTTOM_PADDING = resolved.objectiveBottom,
+            CONDITION_INDENT_X = CONDITION_INDENT_X,
+            QUEST_INDENT_X = QUEST_INDENT_X,
+            QUEST_MIN_HEIGHT = QUEST_MIN_HEIGHT,
+            ROW_TEXT_PADDING_Y = ROW_TEXT_PADDING_Y,
+        })
+    end
+
+    if QuestTrackerRows and QuestTrackerRows.ApplySpacing then
+        QuestTrackerRows:ApplySpacing(resolved)
+    end
+end
 
 local PRIORITY = {
     manual = 5,
@@ -4415,6 +4491,7 @@ local function ConfigureLayoutHelper()
     if QuestTrackerLayout and QuestTrackerLayout.Init then
         QuestTrackerLayout:Init(state, {
             VERTICAL_PADDING = VERTICAL_PADDING,
+            CATEGORY_TOP_PADDING = state.spacing and state.spacing.categoryTop or QUEST_SPACING_DEFAULTS.categoryTop,
             CONDITION_INDENT_X = CONDITION_INDENT_X,
             CONDITION_MIN_HEIGHT = CONDITION_MIN_HEIGHT,
             QUEST_INDENT_X = QUEST_INDENT_X,
@@ -4426,6 +4503,9 @@ local function ConfigureLayoutHelper()
             TOGGLE_LABEL_PADDING_X = TOGGLE_LABEL_PADDING_X,
             CATEGORY_MIN_HEIGHT = CATEGORY_MIN_HEIGHT,
             ROW_TEXT_PADDING_Y = ROW_TEXT_PADDING_Y,
+            OBJECTIVE_TOP_PADDING = state.spacing and state.spacing.objectiveTop or QUEST_SPACING_DEFAULTS.objectiveTop,
+            OBJECTIVE_SPACING = state.spacing and state.spacing.objectiveSpacing or VERTICAL_PADDING,
+            OBJECTIVE_BOTTOM_PADDING = state.spacing and state.spacing.objectiveBottom or QUEST_SPACING_DEFAULTS.objectiveBottom,
             CATEGORY_BOTTOM_PAD_EXPANDED = CATEGORY_BOTTOM_PAD_EXPANDED,
             CATEGORY_BOTTOM_PAD_COLLAPSED = CATEGORY_BOTTOM_PAD_COLLAPSED,
             BOTTOM_PIXEL_NUDGE = BOTTOM_PIXEL_NUDGE,
@@ -4528,9 +4608,6 @@ function QuestTracker.Init(parentControl, opts)
         state.control:SetResizeToFitDescendents(true)
     end
 
-    ConfigureLayoutHelper()
-    ConfigureRowsHelper()
-
     EnsureSavedVars()
     state.opts = {}
     state.fonts = {}
@@ -4540,10 +4617,16 @@ function QuestTracker.Init(parentControl, opts)
     state.pendingDeselection = false
     state.pendingExternalReveal = nil
 
+    ApplyQuestSpacing(state.saved or {})
+
+    ConfigureLayoutHelper()
+    ConfigureRowsHelper()
+
     QuestTracker.ApplyTheme(state.saved or {})
     QuestTracker.ApplySettings(state.saved or {})
 
     if opts then
+        ApplyQuestSpacing(opts)
         QuestTracker.ApplyTheme(opts)
         QuestTracker.ApplySettings(opts)
     end
@@ -4570,6 +4653,7 @@ QuestTracker.UpdateQuestJournalSelectionKeyLabelVisibility = UpdateQuestJournalS
 QuestTracker.QUEST_FILTER_MODE_ALL = QUEST_FILTER_MODE_ALL
 QuestTracker.QUEST_FILTER_MODE_ACTIVE = QUEST_FILTER_MODE_ACTIVE
 QuestTracker.QUEST_FILTER_MODE_SELECTION = QUEST_FILTER_MODE_SELECTION
+QuestTracker.ApplySpacing = ApplyQuestSpacing
 
 function QuestTracker.MarkDirty(reason)
     local controller = Nvk3UT and Nvk3UT.QuestTrackerController
@@ -4660,6 +4744,8 @@ function QuestTracker.ApplySettings(settings)
     if type(settings) ~= "table" then
         return
     end
+
+    ApplyQuestSpacing(settings)
 
     state.opts.autoExpand = settings.autoExpand ~= false
     state.opts.autoTrack = settings.autoTrack ~= false

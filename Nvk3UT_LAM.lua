@@ -2679,6 +2679,13 @@ local function registerPanel(displayTitle)
                 controls = buildSpacingControls(questSpacing, questSpacingDefaults, {
                     normalize = normalizeSpacingValue,
                     onChange = function()
+                        if Nvk3UT and Nvk3UT.QuestTracker and Nvk3UT.QuestTracker.ApplySpacing then
+                            Nvk3UT.QuestTracker.ApplySpacing(getQuestSettings())
+                        end
+                        local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+                        if runtime and runtime.QueueDirty then
+                            runtime:QueueDirty("quest")
+                        end
                         refreshQuestTracker()
                     end,
                 }),
