@@ -95,6 +95,10 @@ local TOGGLE_LABEL_PADDING_X = 4
 local CATEGORY_TOGGLE_WIDTH = 20
 
 local function GetVerticalPadding()
+    if state.spacing and state.spacing.entrySpacing then
+        return state.spacing.entrySpacing
+    end
+
     if AchievementTrackerLayout and type(AchievementTrackerLayout.GetVerticalPadding) == "function" then
         return AchievementTrackerLayout.GetVerticalPadding()
     end
@@ -103,6 +107,10 @@ local function GetVerticalPadding()
 end
 
 local function GetRowGap()
+    if state.spacing and state.spacing.entrySpacing then
+        return state.spacing.entrySpacing
+    end
+
     if AchievementTrackerLayout and type(AchievementTrackerLayout.GetRowGap) == "function" then
         return AchievementTrackerLayout.GetRowGap()
     end
@@ -111,6 +119,10 @@ local function GetRowGap()
 end
 
 local function GetHeaderToRowsGap()
+    if state.spacing and state.spacing.entrySpacing then
+        return state.spacing.entrySpacing
+    end
+
     if AchievementTrackerLayout and type(AchievementTrackerLayout.GetHeaderToRowsGap) == "function" then
         return AchievementTrackerLayout.GetHeaderToRowsGap()
     end
@@ -119,6 +131,10 @@ local function GetHeaderToRowsGap()
 end
 
 local function GetSubrowSpacing()
+    if state.spacing and state.spacing.objectiveSpacing then
+        return state.spacing.objectiveSpacing
+    end
+
     if AchievementTrackerLayout and type(AchievementTrackerLayout.GetSubrowSpacing) == "function" then
         return AchievementTrackerLayout.GetSubrowSpacing()
     end
@@ -127,6 +143,10 @@ local function GetSubrowSpacing()
 end
 
 local function GetCategoryBottomPadding(isExpanded)
+    if state.spacing and state.spacing.categoryBottom ~= nil then
+        return state.spacing.categoryBottom
+    end
+
     if AchievementTrackerLayout and type(AchievementTrackerLayout.GetCategoryBottomPadding) == "function" then
         return AchievementTrackerLayout.GetCategoryBottomPadding(isExpanded)
     end
@@ -136,6 +156,34 @@ local function GetCategoryBottomPadding(isExpanded)
     end
 
     return 6
+end
+
+local function GetCategoryTopPadding()
+    if state.spacing and state.spacing.categoryTop ~= nil then
+        return state.spacing.categoryTop
+    end
+
+    if AchievementTrackerLayout and type(AchievementTrackerLayout.GetCategoryTopPadding) == "function" then
+        return AchievementTrackerLayout.GetCategoryTopPadding()
+    end
+
+    return ACHIEVEMENT_SPACING_DEFAULTS.categoryTop
+end
+
+local function GetObjectiveTopSpacing()
+    if state.spacing and state.spacing.objectiveTop ~= nil then
+        return state.spacing.objectiveTop
+    end
+
+    return GetSubrowSpacing()
+end
+
+local function GetObjectiveBottomSpacing()
+    if state.spacing and state.spacing.objectiveBottom ~= nil then
+        return state.spacing.objectiveBottom
+    end
+
+    return GetRowGap()
 end
 
 local function GetBottomPixelNudge()
@@ -170,6 +218,44 @@ local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
 local REFRESH_DEBOUNCE_MS = 80
 
 local DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR = { 1, 1, 0.6, 1 }
+
+local ACHIEVEMENT_SPACING_DEFAULTS = {
+    categoryTop = 0,
+    categoryBottom = 6,
+    categoryIndent = 18,
+    entrySpacing = 3,
+    entryHeight = 24,
+    entryPadding = 4,
+    objectiveTop = 3,
+    objectiveSpacing = 3,
+    objectiveIndent = 60,
+    objectiveBottom = 0,
+}
+
+local function ResolveAchievementSpacing(settings)
+    local spacing = settings and settings.spacing or {}
+
+    local function resolve(value, defaultValue)
+        local numeric = tonumber(value)
+        if numeric == nil then
+            return defaultValue
+        end
+        return numeric
+    end
+
+    return {
+        categoryTop = resolve(spacing.categoryTop, ACHIEVEMENT_SPACING_DEFAULTS.categoryTop),
+        categoryBottom = resolve(spacing.categoryBottom, ACHIEVEMENT_SPACING_DEFAULTS.categoryBottom),
+        categoryIndent = resolve(spacing.categoryIndent, ACHIEVEMENT_SPACING_DEFAULTS.categoryIndent),
+        entrySpacing = resolve(spacing.entrySpacing, ACHIEVEMENT_SPACING_DEFAULTS.entrySpacing),
+        entryHeight = resolve(spacing.entryHeight, ACHIEVEMENT_SPACING_DEFAULTS.entryHeight),
+        entryPadding = resolve(spacing.entryPadding, ACHIEVEMENT_SPACING_DEFAULTS.entryPadding),
+        objectiveTop = resolve(spacing.objectiveTop, ACHIEVEMENT_SPACING_DEFAULTS.objectiveTop),
+        objectiveSpacing = resolve(spacing.objectiveSpacing, ACHIEVEMENT_SPACING_DEFAULTS.objectiveSpacing),
+        objectiveIndent = resolve(spacing.objectiveIndent, ACHIEVEMENT_SPACING_DEFAULTS.objectiveIndent),
+        objectiveBottom = resolve(spacing.objectiveBottom, ACHIEVEMENT_SPACING_DEFAULTS.objectiveBottom),
+    }
+end
 
 local function IsDebugLoggingEnabled()
     local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
@@ -241,6 +327,7 @@ local state = {
     contentHeight = 0,
     lastHeight = 0,
     rowsWarningLogged = false,
+    spacing = nil,
 }
 
 NormalizeMetric = function(value)
@@ -258,6 +345,37 @@ NormalizeMetric = function(value)
     end
 
     return numeric
+end
+
+local function ApplyAchievementSpacing(settings)
+    local resolved = ResolveAchievementSpacing(settings)
+
+    ACHIEVEMENT_INDENT_X = resolved.categoryIndent
+    ACHIEVEMENT_LABEL_INDENT_X = ACHIEVEMENT_INDENT_X + ACHIEVEMENT_ICON_SLOT_WIDTH + ACHIEVEMENT_ICON_SLOT_PADDING_X
+    OBJECTIVE_INDENT_X = resolved.objectiveIndent
+    OBJECTIVE_RELATIVE_INDENT = OBJECTIVE_INDENT_X - ACHIEVEMENT_LABEL_INDENT_X
+
+    state.spacing = resolved
+
+    if AchievementTrackerLayout and AchievementTrackerLayout.UpdateSpacing then
+        AchievementTrackerLayout.UpdateSpacing({
+            VERTICAL_PADDING = resolved.entrySpacing,
+            HEADER_TO_ROWS_GAP = resolved.entrySpacing,
+            ROW_TEXT_PADDING_Y = resolved.entryPadding,
+            CATEGORY_BOTTOM_PAD_EXPANDED = resolved.categoryBottom,
+            CATEGORY_BOTTOM_PAD_COLLAPSED = resolved.categoryBottom,
+            CATEGORY_TOP_PADDING = resolved.categoryTop,
+            ACHIEVEMENT_MIN_HEIGHT = resolved.entryHeight,
+            OBJECTIVE_TOP_PADDING = resolved.objectiveTop,
+            OBJECTIVE_SPACING = resolved.objectiveSpacing,
+            OBJECTIVE_BOTTOM_PADDING = resolved.objectiveBottom,
+        })
+    end
+
+    local rows = GetRows()
+    if rows and type(rows.ApplySpacing) == "function" then
+        rows:ApplySpacing(resolved)
+    end
 end
 
 local function GetAchievementTrackerColor(role)
@@ -1207,15 +1325,41 @@ local function ResolveRowKind(control)
     return "row"
 end
 
+local function GetInterRowGap(previousControl, currentControl)
+    local previousType = previousControl and previousControl.rowType
+    local currentType = currentControl and currentControl.rowType
+
+    if not previousControl then
+        if currentType == "category" then
+            return GetCategoryTopPadding()
+        end
+
+        return 0
+    end
+
+    if currentType == "objective" then
+        if previousType == "achievement" then
+            return GetObjectiveTopSpacing()
+        elseif previousType == "objective" then
+            return GetSubrowSpacing()
+        end
+    elseif previousType == "objective" then
+        return GetObjectiveBottomSpacing()
+    end
+
+    if previousType == "category" then
+        return GetHeaderToRowsGap()
+    end
+
+    return GetRowGap()
+end
+
 local function AnchorControl(control, indentX)
     indentX = indentX or 0
     control:ClearAnchors()
 
     local rowKind = ResolveRowKind(control)
-    local verticalPadding = GetRowGap()
-    if state.lastAnchoredKind == "header" then
-        verticalPadding = GetHeaderToRowsGap()
-    end
+    local verticalPadding = GetInterRowGap(state.lastAnchoredControl, control)
 
     if state.lastAnchoredControl then
         local previousIndent = state.lastAnchoredControl.currentIndent or 0
@@ -1223,8 +1367,8 @@ local function AnchorControl(control, indentX)
         control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, offsetX, verticalPadding)
         control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, 0, verticalPadding)
     else
-        control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, 0)
-        control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, 0, 0)
+        control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, verticalPadding)
+        control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, 0, verticalPadding)
     end
 
     state.lastAnchoredControl = control
@@ -1238,7 +1382,7 @@ local function UpdateContentSize()
     local visibleCount = 0
     local rowCount = 0
     local measuredHeight = 0
-    local previousKind
+    local previousControl
 
     for index = 1, #state.orderedControls do
         local control = state.orderedControls[index]
@@ -1247,18 +1391,11 @@ local function UpdateContentSize()
         end
         if control and not control:IsHidden() then
             local height = control:GetHeight() or 0
-            local rowKind = ResolveRowKind(control)
-            local gap = 0
-            if previousKind ~= nil then
-                if previousKind == "header" then
-                    gap = GetHeaderToRowsGap()
-                else
-                    gap = GetRowGap()
-                end
-            end
+            local gap = GetInterRowGap(previousControl, control)
 
             measuredHeight = measuredHeight + gap + height
             visibleCount = visibleCount + 1
+            local rowKind = ResolveRowKind(control)
             if rowKind ~= "header" then
                 rowCount = rowCount + 1
             end
@@ -1268,7 +1405,7 @@ local function UpdateContentSize()
                 maxWidth = width
             end
 
-            previousKind = rowKind
+            previousControl = control
         end
     end
 
@@ -1832,6 +1969,8 @@ function AchievementTracker.ApplySettings(settings)
         return
     end
 
+    ApplyAchievementSpacing(settings)
+
     state.opts.active = settings.active ~= false
     ApplySections(settings.sections)
     if settings.tooltips ~= nil then
@@ -1863,6 +2002,8 @@ end
 function AchievementTracker.RequestRefresh()
     RequestRefresh()
 end
+
+AchievementTracker.ApplySpacing = ApplyAchievementSpacing
 
 function AchievementTracker.SetActive(active)
     state.opts.active = (active ~= false)

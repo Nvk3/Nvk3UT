@@ -153,9 +153,22 @@ function Rows:Init(parent, opts)
     self.parent = parent
     self.fonts = (opts and opts.fonts) or {}
     self.callbacks = (opts and opts.callbacks) or {}
+    self.spacing = (opts and opts.spacing) or self.spacing or {}
     self.activeControlsByKey = self.activeControlsByKey or {}
     self.freeControlsByType = self.freeControlsByType or {}
     self.allControls = self.allControls or {}
+end
+
+function Rows:ApplySpacing(spacing)
+    if not spacing then
+        return
+    end
+
+    self.spacing = self.spacing or {}
+    self.spacing.entrySpacing = spacing.entrySpacing or self.spacing.entrySpacing
+    self.spacing.objectiveSpacing = spacing.objectiveSpacing or spacing.entrySpacing or self.spacing.objectiveSpacing
+    self.spacing.objectiveTop = spacing.objectiveTop or self.spacing.objectiveTop
+    self.spacing.objectiveBottom = spacing.objectiveBottom or self.spacing.objectiveBottom
 end
 
 function Rows:SetFonts(fonts)

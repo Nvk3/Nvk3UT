@@ -3211,7 +3211,7 @@ local function registerPanel(displayTitle)
             }
 
             local achievementSpacingDefaults = {
-                categoryTop = 3,
+                categoryTop = 0,
                 categoryBottom = 6,
                 categoryIndent = 18,
                 entrySpacing = 3,
@@ -3220,7 +3220,7 @@ local function registerPanel(displayTitle)
                 objectiveTop = 3,
                 objectiveSpacing = 3,
                 objectiveIndent = 60,
-                objectiveBottom = 3,
+                objectiveBottom = 0,
             }
 
             local achievementSpacing = getAchievementSettings().spacing
@@ -3231,6 +3231,13 @@ local function registerPanel(displayTitle)
                 controls = buildSpacingControls(achievementSpacing, achievementSpacingDefaults, {
                     normalize = normalizeSpacingValue,
                     onChange = function()
+                        if Nvk3UT and Nvk3UT.AchievementTracker and Nvk3UT.AchievementTracker.ApplySpacing then
+                            Nvk3UT.AchievementTracker.ApplySpacing(getAchievementSettings())
+                        end
+                        local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+                        if runtime and runtime.QueueDirty then
+                            runtime:QueueDirty("achievement")
+                        end
                         refreshAchievementTracker()
                     end,
                 }),

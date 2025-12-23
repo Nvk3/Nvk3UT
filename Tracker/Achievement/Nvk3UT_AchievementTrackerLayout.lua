@@ -13,6 +13,10 @@ local ROW_TEXT_PADDING_Y = 4
 local CATEGORY_MIN_HEIGHT = 26
 local ACHIEVEMENT_MIN_HEIGHT = 24
 local OBJECTIVE_MIN_HEIGHT = 24
+local CATEGORY_TOP_PADDING = 0
+local OBJECTIVE_TOP_PADDING = 3
+local OBJECTIVE_SPACING = 3
+local OBJECTIVE_BOTTOM_PADDING = 0
 local CATEGORY_BOTTOM_PAD_EXPANDED = 6
 local CATEGORY_BOTTOM_PAD_COLLAPSED = 6
 local BOTTOM_PIXEL_NUDGE = 3
@@ -27,6 +31,27 @@ local function logLoaded()
     if diagnostics and type(diagnostics.DebugIfEnabled) == "function" then
         diagnostics:DebugIfEnabled(MODULE_TAG, "Loaded achievement tracker layout module")
     end
+end
+
+local function applySpacing(deps)
+    if not deps then
+        return
+    end
+
+    ROW_GAP = deps.VERTICAL_PADDING or ROW_GAP
+    HEADER_TO_ROWS_GAP = deps.HEADER_TO_ROWS_GAP or HEADER_TO_ROWS_GAP or ROW_GAP
+    ROW_TEXT_PADDING_Y = deps.ROW_TEXT_PADDING_Y or ROW_TEXT_PADDING_Y
+    CATEGORY_BOTTOM_PAD_EXPANDED = deps.CATEGORY_BOTTOM_PAD_EXPANDED or CATEGORY_BOTTOM_PAD_EXPANDED
+    CATEGORY_BOTTOM_PAD_COLLAPSED = deps.CATEGORY_BOTTOM_PAD_COLLAPSED or CATEGORY_BOTTOM_PAD_COLLAPSED
+    CATEGORY_TOP_PADDING = deps.CATEGORY_TOP_PADDING or CATEGORY_TOP_PADDING
+    ACHIEVEMENT_MIN_HEIGHT = deps.ACHIEVEMENT_MIN_HEIGHT or ACHIEVEMENT_MIN_HEIGHT
+    OBJECTIVE_TOP_PADDING = deps.OBJECTIVE_TOP_PADDING or OBJECTIVE_TOP_PADDING or ROW_GAP
+    OBJECTIVE_SPACING = deps.OBJECTIVE_SPACING or OBJECTIVE_SPACING or ROW_GAP
+    OBJECTIVE_BOTTOM_PADDING = deps.OBJECTIVE_BOTTOM_PADDING or OBJECTIVE_BOTTOM_PADDING or 0
+end
+
+function Layout.UpdateSpacing(deps)
+    applySpacing(deps)
 end
 
 function Layout.GetVerticalPadding()
@@ -63,6 +88,10 @@ function Layout.GetCategoryBottomPadding(isExpanded)
     end
 
     return CATEGORY_BOTTOM_PAD_COLLAPSED
+end
+
+function Layout.GetCategoryTopPadding()
+    return CATEGORY_TOP_PADDING
 end
 
 function Layout.GetBottomPixelNudge()
@@ -163,7 +192,11 @@ function Layout.ShouldDisplayObjective(objective)
 end
 
 local function getSubrowSpacing()
-    return Layout.GetVerticalPadding()
+    return OBJECTIVE_SPACING or Layout.GetVerticalPadding()
+end
+
+local function getSubrowTopSpacing()
+    return OBJECTIVE_TOP_PADDING or getSubrowSpacing()
 end
 
 local function computeSubrowHeight(rowType, textHeight)
@@ -181,20 +214,32 @@ end
 function Layout.ComputeEntryHeight(entry, baseRowHeight, subrowHeights)
     local totalHeight = normalizeHeight(baseRowHeight)
     local spacing = getSubrowSpacing()
+    local topSpacing = getSubrowTopSpacing()
+    local bottomSpacing = OBJECTIVE_BOTTOM_PADDING or 0
 
     local objectives = entry and entry.objectives
     local hasObjectives = type(objectives) == "table"
+    local addedSubrows = 0
 
     if hasObjectives and type(subrowHeights) == "table" then
         for index = 1, #subrowHeights do
             local subrowHeight = normalizeHeight(subrowHeights[index])
             if subrowHeight > 0 then
                 if totalHeight > 0 then
-                    totalHeight = totalHeight + spacing
+                    if addedSubrows == 0 then
+                        totalHeight = totalHeight + topSpacing
+                    else
+                        totalHeight = totalHeight + spacing
+                    end
                 end
                 totalHeight = totalHeight + subrowHeight
+                addedSubrows = addedSubrows + 1
             end
         end
+    end
+
+    if addedSubrows > 0 then
+        totalHeight = totalHeight + bottomSpacing
     end
 
     return totalHeight
