@@ -610,6 +610,15 @@ function Rows:ApplySpacing(spacing)
     spacingState.objectiveTop = resolveSpacingValue(spacing.objectiveTop, spacingState.objectiveTop)
     spacingState.objectiveSpacing = resolveSpacingValue(spacing.objectiveSpacing, spacingState.objectiveSpacing)
     spacingState.objectiveBottom = resolveSpacingValue(spacing.objectiveBottom, spacingState.objectiveBottom)
+
+    if isGoldenColorDebugEnabled() then
+        safeDebug(
+            "[Spacing] baseIndent=%d setting=%s finalEntryIndent=%d",
+            0,
+            tostring(spacing.categoryIndent),
+            ENTRY_INDENT_X
+        )
+    end
 end
 
 local function getTrackerHostScrollContentWidth()

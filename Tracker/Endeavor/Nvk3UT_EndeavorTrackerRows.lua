@@ -9,6 +9,7 @@ Rows.__index = Rows
 local MODULE_TAG = addonName .. ".EndeavorTrackerRows"
 
 local ROW_TEXT_PADDING_Y = 4
+local ENTRY_INDENT_X = 18
 
 local ROWS_HEIGHTS = {
     category = 26,
@@ -240,8 +241,18 @@ local function applySpacing(spacing)
 
     ROWS_HEIGHTS.entry = resolveSpacingValue(spacing.entryHeight, ROWS_HEIGHTS.entry)
     ROW_TEXT_PADDING_Y = resolveSpacingValue(spacing.entryPadding, ROW_TEXT_PADDING_Y)
+    ENTRY_INDENT_X = resolveSpacingValue(spacing.categoryIndent, ENTRY_INDENT_X)
     OBJECTIVE_INDENT_X = resolveSpacingValue(spacing.objectiveIndent, OBJECTIVE_INDENT_X)
     OBJECTIVE_ROW_SPACING = resolveSpacingValue(spacing.objectiveSpacing, OBJECTIVE_ROW_SPACING)
+
+    if isDebugEnabled() then
+        safeDebug(
+            "[Spacing] baseIndent=%d setting=%s finalEntryIndent=%d",
+            0,
+            tostring(spacing.categoryIndent),
+            ENTRY_INDENT_X
+        )
+    end
 end
 
 local function isEndeavorWrapDebugEnabled()
@@ -2025,7 +2036,7 @@ local function applyEntryRow(row, objective, options)
         applyFontString(title, resolvedFont, DEFAULT_OBJECTIVE_FONT)
     end
     title:ClearAnchors()
-    title:SetAnchor(TOPLEFT, row, TOPLEFT, OBJECTIVE_INDENT_X, ENTRY_TOP_PAD)
+    title:SetAnchor(TOPLEFT, row, TOPLEFT, ENTRY_INDENT_X, ENTRY_TOP_PAD)
     title:SetText(combinedText)
     row.Label = title
     row.label = title
@@ -2054,7 +2065,7 @@ local function applyEntryRow(row, objective, options)
 
     applyObjectiveColor(title, options, data)
 
-    local availableWidth = computeEndeavorAvailableWidth(row, OBJECTIVE_INDENT_X, 0, 0)
+    local availableWidth = computeEndeavorAvailableWidth(row, ENTRY_INDENT_X, 0, 0)
     if title.SetWidth then
         title:SetWidth(availableWidth)
     end
