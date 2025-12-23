@@ -43,6 +43,19 @@ local GOLDEN_SPACING_DEFAULTS = {
     objectiveBottom = 3,
 }
 
+local GOLDEN_SPACING_KEYS = {
+    "categoryTop",
+    "categoryBottom",
+    "categoryIndent",
+    "entrySpacing",
+    "entryHeight",
+    "entryPadding",
+    "objectiveTop",
+    "objectiveSpacing",
+    "objectiveIndent",
+    "objectiveBottom",
+}
+
 local function getSavedVars()
     local root = rawget(_G, addonName) or Nvk3UT
     if type(root) ~= "table" then
@@ -97,6 +110,22 @@ local function ResolveGoldenSpacing(settings)
         objectiveIndent = resolve(spacing.objectiveIndent, GOLDEN_SPACING_DEFAULTS.objectiveIndent),
         objectiveBottom = resolve(spacing.objectiveBottom, GOLDEN_SPACING_DEFAULTS.objectiveBottom),
     }
+end
+
+local function MergeGoldenSpacing(baseSpacing, overrideSpacing)
+    local merged = {}
+
+    for index = 1, #GOLDEN_SPACING_KEYS do
+        local key = GOLDEN_SPACING_KEYS[index]
+        local overrideValue = type(overrideSpacing) == "table" and overrideSpacing[key]
+        if overrideValue ~= nil then
+            merged[key] = overrideValue
+        elseif type(baseSpacing) == "table" and baseSpacing[key] ~= nil then
+            merged[key] = baseSpacing[key]
+        end
+    end
+
+    return merged
 end
 
 local function getAddonRoot()
@@ -573,11 +602,15 @@ function GoldenTracker.Init(...)
     state.root = root
     state.content = content
 
-    ApplyGoldenSpacing({ spacing = getGoldenSpacingSettings() })
+    local goldenSpacing = getGoldenSpacingSettings() or {}
+    local mergedSpacing = goldenSpacing
 
-    if tracker.options then
-        ApplyGoldenSpacing(tracker.options)
+    local optionsSpacing = tracker.options and tracker.options.spacing
+    if type(optionsSpacing) == "table" then
+        mergedSpacing = MergeGoldenSpacing(goldenSpacing, optionsSpacing)
     end
+
+    ApplyGoldenSpacing({ spacing = mergedSpacing })
 
     if not root or not content then
         safeDebug("Init incomplete; root or content missing")
@@ -1148,11 +1181,15 @@ function GoldenTracker.Refresh(...)
     local rowsModule = getRowsModule()
     local layoutModule = getLayoutModule()
 
-    ApplyGoldenSpacing({ spacing = getGoldenSpacingSettings() })
+    local goldenSpacing = getGoldenSpacingSettings() or {}
+    local mergedSpacing = goldenSpacing
 
-    if tracker.options then
-        ApplyGoldenSpacing(tracker.options)
+    local optionsSpacing = tracker.options and tracker.options.spacing
+    if type(optionsSpacing) == "table" then
+        mergedSpacing = MergeGoldenSpacing(goldenSpacing, optionsSpacing)
     end
+
+    ApplyGoldenSpacing({ spacing = mergedSpacing })
 
     if rowsModule and type(rowsModule.ReleaseAllCategoryRows) == "function" then
         rowsModule.ReleaseAllCategoryRows()
