@@ -89,6 +89,7 @@ local function isDebugEnabled()
 end
 
 local INIT_POLLER_UPDATE_NAME = "Nvk3UT_Endeavor_InitPoller"
+local getRowsModule
 
 local CATEGORY_HEADER_HEIGHT = 26
 local SECTION_ROW_HEIGHT = 24
@@ -1484,7 +1485,7 @@ local function stopInitPoller(tracker)
     end
 end
 
-local function getRowsModule()
+getRowsModule = function()
     local root = rawget(_G, addonName)
     if type(root) ~= "table" then
         return nil
