@@ -2352,7 +2352,6 @@ local function registerPanel(displayTitle)
 
             local function buildQuestColorControls()
                 local colorControls = {}
-                colorControls[#colorControls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_QUEST_HEADER_COLORS) }
 
                 colorControls[#colorControls + 1] = {
                     type = "colorpicker",
@@ -2434,7 +2433,6 @@ local function registerPanel(displayTitle)
 
             local function buildQuestFontControls()
                 local fontControls = {}
-                fontControls[#fontControls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_QUEST_HEADER_FONTS) }
 
                 local fontGroups = {
                     { key = "category", label = GetString(SI_NVK3UT_LAM_QUEST_FONT_CATEGORY_LABEL) },
@@ -2566,7 +2564,6 @@ local function registerPanel(displayTitle)
 
             local function buildEndeavorColorControls()
                 local colorControls = {}
-                colorControls[#colorControls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_ENDEAVOR_SECTION_COLORS) }
 
                 local colorEntries = {
                     {
@@ -2714,7 +2711,6 @@ local function registerPanel(displayTitle)
 
             local function buildEndeavorFontControls()
                 local fontControls = {}
-                fontControls[#fontControls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_ENDEAVOR_SECTION_FONTS) }
 
                 local fontGroups = {
                     { key = "Category", label = GetString(SI_NVK3UT_LAM_ENDEAVOR_FONT_CATEGORY_LABEL) },
@@ -2849,7 +2845,6 @@ local function registerPanel(displayTitle)
 
             local function buildAchievementColorControls()
                 local colorControls = {}
-                colorControls[#colorControls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_HEADER_COLORS) }
 
                 colorControls[#colorControls + 1] = {
                     type = "colorpicker",
@@ -2931,7 +2926,6 @@ local function registerPanel(displayTitle)
 
             local function buildAchievementFontControls()
                 local fontControls = {}
-                fontControls[#fontControls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_HEADER_FONTS) }
 
                 local fontGroups = {
                     { key = "category", label = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_FONT_CATEGORY_LABEL) },
@@ -3189,7 +3183,6 @@ local function registerPanel(displayTitle)
 
             local function buildGoldenColorControls()
                 local colorControls = {}
-                colorControls[#colorControls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_GOLDEN_SECTION_COLORS) }
 
                 local colorEntries = {
                     {
@@ -3331,7 +3324,6 @@ local function registerPanel(displayTitle)
 
             local function buildGoldenFontControls()
                 local fontControls = {}
-                fontControls[#fontControls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_GOLDEN_SECTION_FONTS) }
 
                 local fontGroups = {
                     { key = "Category", label = GetString(SI_NVK3UT_LAM_GOLDEN_FONT_CATEGORY_LABEL) },
