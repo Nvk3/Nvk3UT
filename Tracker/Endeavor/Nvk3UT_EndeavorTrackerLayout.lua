@@ -78,7 +78,7 @@ function Layout.Init()
     lastHeight = 0
 end
 
-function Layout.UpdateSpacing(spacing)
+function Layout:UpdateSpacing(spacing)
     spacing = spacing or {}
 
     local function resolve(value, fallback)

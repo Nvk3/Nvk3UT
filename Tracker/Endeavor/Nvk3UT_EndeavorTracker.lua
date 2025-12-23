@@ -226,12 +226,12 @@ local function ApplyEndeavorSpacing(settings)
 
     local rows = getRowsModule()
     if rows and type(rows.ApplySpacing) == "function" then
-        rows.ApplySpacing(resolved)
+        rows:ApplySpacing(resolved)
     end
 
     local layout = Nvk3UT and Nvk3UT.EndeavorTrackerLayout
     if layout and type(layout.UpdateSpacing) == "function" then
-        layout.UpdateSpacing(resolved)
+        layout:UpdateSpacing(resolved)
     end
 end
 

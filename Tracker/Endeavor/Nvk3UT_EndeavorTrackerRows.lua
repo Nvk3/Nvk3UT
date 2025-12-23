@@ -2113,7 +2113,7 @@ function Rows.ApplyEntryRow(row, objective, options)
     applyEntryRow(row, objective, options)
 end
 
-function Rows.ApplySpacing(spacing)
+function Rows:ApplySpacing(spacing)
     applySpacing(spacing)
 end
 
