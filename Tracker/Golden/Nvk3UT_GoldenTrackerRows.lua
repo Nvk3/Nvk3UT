@@ -54,6 +54,16 @@ local SCROLLBAR_WIDTH_RESERVE = 18
 local ROW_TEXT_PADDING_Y = 4
 local OBJECTIVE_VERTICAL_PADDING_Y = 2
 
+local spacingState = {
+    entryHeight = DEFAULTS.ENTRY_HEIGHT,
+    entryPadding = ROW_TEXT_PADDING_Y,
+    categoryIndent = ENTRY_INDENT_X,
+    objectiveIndent = DEFAULTS.OBJECTIVE_INDENT_X,
+    objectiveTop = 0,
+    objectiveSpacing = 3,
+    objectiveBottom = 0,
+}
+
 local GOLDEN_HEADER_TITLE = GetString(SI_NVK3UT_TRACKER_GOLDEN_CATEGORY_MAIN)
 
 local CATEGORY_CHEVRON_SIZE = 20
@@ -570,6 +580,37 @@ local resolvedRowHeights = {
     [ROW_KINDS.entry] = DEFAULTS.ENTRY_HEIGHT,
     [ROW_KINDS.objective] = DEFAULTS.OBJECTIVE_HEIGHT,
 }
+
+local function resolveSpacingValue(value, defaultValue)
+    local numeric = tonumber(value)
+    if numeric == nil then
+        return defaultValue
+    end
+
+    return numeric
+end
+
+function Rows:ApplySpacing(spacing)
+    spacing = spacing or {}
+
+    local entryHeight = resolveSpacingValue(spacing.entryHeight, DEFAULTS.ENTRY_HEIGHT)
+    DEFAULTS.ENTRY_HEIGHT = entryHeight
+    ROW_HEIGHT_METRICS[ROW_KINDS.entry].minHeight = entryHeight
+    resolvedRowHeights[ROW_KINDS.entry] = entryHeight
+
+    spacingState.entryPadding = resolveSpacingValue(spacing.entryPadding, spacingState.entryPadding)
+    ROW_TEXT_PADDING_Y = spacingState.entryPadding
+
+    spacingState.categoryIndent = resolveSpacingValue(spacing.categoryIndent, spacingState.categoryIndent)
+    ENTRY_INDENT_X = spacingState.categoryIndent
+
+    spacingState.objectiveIndent = resolveSpacingValue(spacing.objectiveIndent, spacingState.objectiveIndent)
+    DEFAULTS.OBJECTIVE_INDENT_X = spacingState.objectiveIndent
+
+    spacingState.objectiveTop = resolveSpacingValue(spacing.objectiveTop, spacingState.objectiveTop)
+    spacingState.objectiveSpacing = resolveSpacingValue(spacing.objectiveSpacing, spacingState.objectiveSpacing)
+    spacingState.objectiveBottom = resolveSpacingValue(spacing.objectiveBottom, spacingState.objectiveBottom)
+end
 
 local function getTrackerHostScrollContentWidth()
     local root = getAddon()

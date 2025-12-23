@@ -18,6 +18,28 @@ local CATEGORY_BOTTOM_PAD_COLLAPSED = 6
 local BOTTOM_PIXEL_NUDGE = 3
 local Rows = Nvk3UT and Nvk3UT.GoldenTrackerRows
 
+local spacingDefaults = {
+    categoryTop = HEADER_TO_ROWS_GAP,
+    categoryBottom = CATEGORY_BOTTOM_PAD_EXPANDED,
+    categoryIndent = CATEGORY_ENTRY_SPACING,
+    entrySpacing = ENTRY_ROW_SPACING,
+    entryHeight = ENTRY_ROW_HEIGHT,
+    objectiveTop = HEADER_TO_ROWS_GAP,
+    objectiveSpacing = ENTRY_ROW_SPACING,
+    objectiveBottom = ENTRY_ROW_SPACING,
+}
+
+local spacing = {
+    categoryTop = spacingDefaults.categoryTop,
+    categoryBottom = spacingDefaults.categoryBottom,
+    categoryIndent = spacingDefaults.categoryIndent,
+    entrySpacing = spacingDefaults.entrySpacing,
+    entryHeight = spacingDefaults.entryHeight,
+    objectiveTop = spacingDefaults.objectiveTop,
+    objectiveSpacing = spacingDefaults.objectiveSpacing,
+    objectiveBottom = spacingDefaults.objectiveBottom,
+}
+
 local function safeDebug(message, ...)
     local debugFn = Nvk3UT and Nvk3UT.Debug
     if type(debugFn) ~= "function" then
@@ -46,6 +68,34 @@ local function getRowsModule()
     end
 
     return nil
+end
+
+local function resolveSpacingValue(value, defaultValue)
+    local numeric = tonumber(value)
+    if numeric == nil then
+        return defaultValue
+    end
+
+    return numeric
+end
+
+local function applySpacing(values)
+    values = values or {}
+
+    spacing.categoryTop = resolveSpacingValue(values.categoryTop, spacingDefaults.categoryTop)
+    spacing.categoryBottom = resolveSpacingValue(values.categoryBottom, spacingDefaults.categoryBottom)
+    spacing.categoryIndent = resolveSpacingValue(values.categoryIndent, spacingDefaults.categoryIndent)
+    spacing.entrySpacing = resolveSpacingValue(values.entrySpacing, spacingDefaults.entrySpacing)
+    spacing.entryHeight = resolveSpacingValue(values.entryHeight, spacingDefaults.entryHeight)
+    spacing.objectiveTop = resolveSpacingValue(values.objectiveTop, spacingDefaults.objectiveTop)
+    spacing.objectiveSpacing = resolveSpacingValue(values.objectiveSpacing, spacingDefaults.objectiveSpacing)
+    spacing.objectiveBottom = resolveSpacingValue(values.objectiveBottom, spacingDefaults.objectiveBottom)
+end
+
+applySpacing(spacingDefaults)
+
+function Layout:UpdateSpacing(values)
+    applySpacing(values)
 end
 
 local function getParentWidth(control)
@@ -178,6 +228,30 @@ function Layout.ApplyLayout(parentControl, rows)
     local categoryExpanded = nil
     local pendingGap = 0
 
+    local function resolveGap(previousKindValue, currentKind, pending)
+        if pending and pending > 0 then
+            return pending
+        end
+
+        if previousKindValue == "header" then
+            return spacing.categoryTop
+        end
+
+        if previousKindValue == "entry" and currentKind == "objective" then
+            return spacing.objectiveTop
+        end
+
+        if previousKindValue == "objective" then
+            if currentKind == "objective" then
+                return spacing.objectiveSpacing
+            end
+
+            return spacing.objectiveBottom
+        end
+
+        return spacing.entrySpacing
+    end
+
     local function resolveCategoryExpanded(rowData)
         if type(rowData) == "table" then
             if rowData.__categoryExpanded ~= nil then
@@ -205,12 +279,7 @@ function Layout.ApplyLayout(parentControl, rows)
             return
         end
 
-        local pad
-        if categoryExpanded and categoryRowCount > 0 then
-            pad = CATEGORY_BOTTOM_PAD_EXPANDED
-        else
-            pad = CATEGORY_BOTTOM_PAD_COLLAPSED
-        end
+        local pad = spacing.categoryBottom
 
         pad = coerceHeight(pad)
         if pad > 0 then
@@ -227,7 +296,7 @@ function Layout.ApplyLayout(parentControl, rows)
         if kind == "category" then
             return CATEGORY_HEADER_HEIGHT
         elseif kind == "entry" then
-            return ENTRY_ROW_HEIGHT
+            return spacing.entryHeight
         elseif kind == "objective" then
             return OBJECTIVE_ROW_HEIGHT
         end
@@ -254,13 +323,7 @@ function Layout.ApplyLayout(parentControl, rows)
 
         local gap = 0
         if visibleCount > 0 then
-            if pendingGap and pendingGap > 0 then
-                gap = pendingGap
-            elseif previousKind == "header" and kind ~= "header" then
-                gap = HEADER_TO_ROWS_GAP
-            else
-                gap = ENTRY_ROW_SPACING
-            end
+            gap = resolveGap(previousKind, kind, pendingGap)
 
             totalHeight = totalHeight + gap
         end

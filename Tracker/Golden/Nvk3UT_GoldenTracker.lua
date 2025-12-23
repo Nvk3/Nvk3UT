@@ -25,7 +25,80 @@ local state = {
     height = 0,
     initialized = false,
     options = nil,
+    spacing = nil,
 }
+
+local getAddonRoot
+
+local GOLDEN_SPACING_DEFAULTS = {
+    categoryTop = 3,
+    categoryBottom = 6,
+    categoryIndent = 60,
+    entrySpacing = 3,
+    entryHeight = 24,
+    entryPadding = 4,
+    objectiveTop = 3,
+    objectiveSpacing = 3,
+    objectiveIndent = 60,
+    objectiveBottom = 3,
+}
+
+local function getSavedVars()
+    local root = getAddonRoot()
+    if type(root) ~= "table" then
+        return nil
+    end
+
+    return root.sv or root.SV
+end
+
+local function getGoldenSpacingSettings()
+    local sv = getSavedVars()
+    if type(sv) ~= "table" then
+        return nil
+    end
+
+    local config = sv.Golden
+    local trackerConfig = type(config) == "table" and config.Tracker
+    if type(trackerConfig) == "table" and type(trackerConfig.Spacing) == "table" then
+        return trackerConfig.Spacing
+    end
+
+    local trackerDefaults = sv.TrackerDefaults
+    local goldenDefaults = type(trackerDefaults) == "table" and trackerDefaults.GoldenDefaults
+    local defaultTracker = type(goldenDefaults) == "table" and goldenDefaults.Tracker
+    if type(defaultTracker) == "table" and type(defaultTracker.Spacing) == "table" then
+        return defaultTracker.Spacing
+    end
+
+    return nil
+end
+
+local function ResolveGoldenSpacing(settings)
+    local spacing = settings and settings.spacing or {}
+
+    local function resolve(value, defaultValue)
+        local numeric = tonumber(value)
+        if numeric == nil then
+            return defaultValue
+        end
+
+        return numeric
+    end
+
+    return {
+        categoryTop = resolve(spacing.categoryTop, GOLDEN_SPACING_DEFAULTS.categoryTop),
+        categoryBottom = resolve(spacing.categoryBottom, GOLDEN_SPACING_DEFAULTS.categoryBottom),
+        categoryIndent = resolve(spacing.categoryIndent, GOLDEN_SPACING_DEFAULTS.categoryIndent),
+        entrySpacing = resolve(spacing.entrySpacing, GOLDEN_SPACING_DEFAULTS.entrySpacing),
+        entryHeight = resolve(spacing.entryHeight, GOLDEN_SPACING_DEFAULTS.entryHeight),
+        entryPadding = resolve(spacing.entryPadding, GOLDEN_SPACING_DEFAULTS.entryPadding),
+        objectiveTop = resolve(spacing.objectiveTop, GOLDEN_SPACING_DEFAULTS.objectiveTop),
+        objectiveSpacing = resolve(spacing.objectiveSpacing, GOLDEN_SPACING_DEFAULTS.objectiveSpacing),
+        objectiveIndent = resolve(spacing.objectiveIndent, GOLDEN_SPACING_DEFAULTS.objectiveIndent),
+        objectiveBottom = resolve(spacing.objectiveBottom, GOLDEN_SPACING_DEFAULTS.objectiveBottom),
+    }
+end
 
 local function getAddonRoot()
     local root = rawget(_G, addonName)
@@ -195,6 +268,31 @@ local function getLayoutModule()
     end
 
     return nil
+end
+
+local function ApplyGoldenSpacing(settings)
+    local resolved = ResolveGoldenSpacing(settings)
+
+    state.spacing = resolved
+
+    local layoutModule = getLayoutModule()
+    if layoutModule and type(layoutModule.UpdateSpacing) == "function" then
+        layoutModule:UpdateSpacing({
+            categoryTop = resolved.categoryTop,
+            categoryBottom = resolved.categoryBottom,
+            categoryIndent = resolved.categoryIndent,
+            entrySpacing = resolved.entrySpacing,
+            entryHeight = resolved.entryHeight,
+            objectiveTop = resolved.objectiveTop,
+            objectiveSpacing = resolved.objectiveSpacing,
+            objectiveBottom = resolved.objectiveBottom,
+        })
+    end
+
+    local rowsModule = getRowsModule()
+    if rowsModule and type(rowsModule.ApplySpacing) == "function" then
+        rowsModule:ApplySpacing(resolved)
+    end
 end
 
 local function ClearChildren(control)
@@ -475,6 +573,12 @@ function GoldenTracker.Init(...)
     tracker.content = content
     state.root = root
     state.content = content
+
+    ApplyGoldenSpacing({ spacing = getGoldenSpacingSettings() })
+
+    if tracker.options then
+        ApplyGoldenSpacing(tracker.options)
+    end
 
     if not root or not content then
         safeDebug("Init incomplete; root or content missing")
@@ -1045,6 +1149,12 @@ function GoldenTracker.Refresh(...)
     local rowsModule = getRowsModule()
     local layoutModule = getLayoutModule()
 
+    ApplyGoldenSpacing({ spacing = getGoldenSpacingSettings() })
+
+    if tracker.options then
+        ApplyGoldenSpacing(tracker.options)
+    end
+
     if rowsModule and type(rowsModule.ReleaseAllCategoryRows) == "function" then
         rowsModule.ReleaseAllCategoryRows()
     end
@@ -1244,6 +1354,8 @@ function GoldenTracker:GetHeight()
     end
     return height
 end
+
+GoldenTracker.ApplySpacing = ApplyGoldenSpacing
 
 Nvk3UT.GoldenTracker = GoldenTracker
 

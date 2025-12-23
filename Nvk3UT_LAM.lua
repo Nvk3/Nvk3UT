@@ -3692,7 +3692,7 @@ local function registerPanel(displayTitle)
                 entryHeight = 24,
                 entryPadding = 4,
                 objectiveTop = 3,
-                objectiveSpacing = 2,
+                objectiveSpacing = 3,
                 objectiveIndent = 60,
                 objectiveBottom = 3,
             }
