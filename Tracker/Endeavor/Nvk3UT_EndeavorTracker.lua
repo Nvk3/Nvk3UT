@@ -221,6 +221,8 @@ local function ApplyEndeavorSpacing(settings)
     OBJECTIVE_ROW_SPACING = resolved.objectiveSpacing
 
     state.spacing = resolved
+    state.objectiveSpacing = resolved.objectiveSpacing
+    state.objectiveTop = resolved.objectiveTop
 
     local rows = getRowsModule()
     if rows and type(rows.ApplySpacing) == "function" then
@@ -2256,6 +2258,8 @@ function EndeavorTracker.Dispose()
     state.container = nil
     state.ui = nil
 end
+
+EndeavorTracker.ApplySpacing = ApplyEndeavorSpacing
 
 Nvk3UT.EndeavorTracker = EndeavorTracker
 

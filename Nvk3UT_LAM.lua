@@ -3029,7 +3029,6 @@ local function registerPanel(displayTitle)
                 controls = buildSpacingControls(endeavorSpacing, endeavorSpacingDefaults, {
                     normalize = normalizeSpacingValue,
                     onChange = function()
-                        markEndeavorDirty("spacing")
                         queueEndeavorDirty()
                     end,
                 }),
