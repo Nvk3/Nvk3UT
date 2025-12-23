@@ -563,6 +563,7 @@ local function getQuestSettings()
     local sv = getSavedVars()
     sv.QuestTracker = sv.QuestTracker or {}
     sv.QuestTracker.fonts = sv.QuestTracker.fonts or {}
+    sv.QuestTracker.spacing = sv.QuestTracker.spacing or {}
     return sv.QuestTracker
 end
 
@@ -600,6 +601,7 @@ local function getAchievementSettings()
     sv.AchievementTracker = sv.AchievementTracker or {}
     sv.AchievementTracker.fonts = sv.AchievementTracker.fonts or {}
     sv.AchievementTracker.sections = sv.AchievementTracker.sections or {}
+    sv.AchievementTracker.spacing = sv.AchievementTracker.spacing or {}
     return sv.AchievementTracker
 end
 
@@ -631,6 +633,7 @@ local function getEndeavorConfig()
     config.Font = config.Font or {}
     config.Tracker = config.Tracker or {}
     config.Tracker.Fonts = config.Tracker.Fonts or {}
+    config.Tracker.Spacing = config.Tracker.Spacing or {}
     return config
 end
 
@@ -642,6 +645,7 @@ local function getGoldenConfig()
     config.Font = config.Font or {}
     config.Tracker = config.Tracker or {}
     config.Tracker.Fonts = config.Tracker.Fonts or {}
+    config.Tracker.Spacing = config.Tracker.Spacing or {}
 
     local endeavorConfig = getEndeavorConfig()
     local endeavorColors = (endeavorConfig and endeavorConfig.Colors) or {}
@@ -728,6 +732,194 @@ local function getGoldenConfig()
     end)
 
     return config
+end
+
+local function normalizeSpacingValue(value, defaultValue, minValue, maxValue)
+    local numeric = tonumber(value)
+    if numeric == nil then
+        numeric = defaultValue
+    end
+
+    numeric = math.floor(numeric + 0.5)
+    if minValue ~= nil then
+        numeric = math.max(minValue, numeric)
+    end
+    if maxValue ~= nil then
+        numeric = math.min(maxValue, numeric)
+    end
+
+    return numeric
+end
+
+local function buildSpacingControls(spacing, defaults, setters)
+    local controls = {}
+
+    controls[#controls + 1] = {
+        type = "header",
+        name = GetString(SI_NVK3UT_LAM_SPACING_HEADER_CATEGORY),
+    }
+
+    controls[#controls + 1] = {
+        type = "slider",
+        name = GetString(SI_NVK3UT_LAM_SPACING_CATEGORY_TOP),
+        min = 0,
+        max = 30,
+        getFunc = function()
+            return spacing.categoryTop or defaults.categoryTop
+        end,
+        setFunc = function(value)
+            spacing.categoryTop = setters.normalize(value, defaults.categoryTop, 0, 30)
+            setters.onChange()
+        end,
+        default = defaults.categoryTop,
+    }
+
+    controls[#controls + 1] = {
+        type = "slider",
+        name = GetString(SI_NVK3UT_LAM_SPACING_CATEGORY_BOTTOM),
+        min = 0,
+        max = 30,
+        getFunc = function()
+            return spacing.categoryBottom or defaults.categoryBottom
+        end,
+        setFunc = function(value)
+            spacing.categoryBottom = setters.normalize(value, defaults.categoryBottom, 0, 30)
+            setters.onChange()
+        end,
+        default = defaults.categoryBottom,
+    }
+
+    controls[#controls + 1] = {
+        type = "slider",
+        name = GetString(SI_NVK3UT_LAM_SPACING_CATEGORY_INDENT),
+        min = 0,
+        max = 100,
+        getFunc = function()
+            return spacing.categoryIndent or defaults.categoryIndent
+        end,
+        setFunc = function(value)
+            spacing.categoryIndent = setters.normalize(value, defaults.categoryIndent, 0, 100)
+            setters.onChange()
+        end,
+        default = defaults.categoryIndent,
+    }
+
+    controls[#controls + 1] = {
+        type = "header",
+        name = GetString(SI_NVK3UT_LAM_SPACING_HEADER_ENTRY),
+    }
+
+    controls[#controls + 1] = {
+        type = "slider",
+        name = GetString(SI_NVK3UT_LAM_SPACING_ENTRY_SPACING),
+        min = 0,
+        max = 30,
+        getFunc = function()
+            return spacing.entrySpacing or defaults.entrySpacing
+        end,
+        setFunc = function(value)
+            spacing.entrySpacing = setters.normalize(value, defaults.entrySpacing, 0, 30)
+            setters.onChange()
+        end,
+        default = defaults.entrySpacing,
+    }
+
+    controls[#controls + 1] = {
+        type = "slider",
+        name = GetString(SI_NVK3UT_LAM_SPACING_ENTRY_HEIGHT),
+        min = 12,
+        max = 80,
+        getFunc = function()
+            return spacing.entryHeight or defaults.entryHeight
+        end,
+        setFunc = function(value)
+            spacing.entryHeight = setters.normalize(value, defaults.entryHeight, 12, 80)
+            setters.onChange()
+        end,
+        default = defaults.entryHeight,
+    }
+
+    controls[#controls + 1] = {
+        type = "slider",
+        name = GetString(SI_NVK3UT_LAM_SPACING_ENTRY_PADDING),
+        min = 0,
+        max = 20,
+        getFunc = function()
+            return spacing.entryPadding or defaults.entryPadding
+        end,
+        setFunc = function(value)
+            spacing.entryPadding = setters.normalize(value, defaults.entryPadding, 0, 20)
+            setters.onChange()
+        end,
+        default = defaults.entryPadding,
+    }
+
+    controls[#controls + 1] = {
+        type = "header",
+        name = GetString(SI_NVK3UT_LAM_SPACING_HEADER_OBJECTIVE),
+    }
+
+    controls[#controls + 1] = {
+        type = "slider",
+        name = GetString(SI_NVK3UT_LAM_SPACING_OBJECTIVE_FIRST),
+        min = 0,
+        max = 30,
+        getFunc = function()
+            return spacing.objectiveTop or defaults.objectiveTop
+        end,
+        setFunc = function(value)
+            spacing.objectiveTop = setters.normalize(value, defaults.objectiveTop, 0, 30)
+            setters.onChange()
+        end,
+        default = defaults.objectiveTop,
+    }
+
+    controls[#controls + 1] = {
+        type = "slider",
+        name = GetString(SI_NVK3UT_LAM_SPACING_OBJECTIVE_BETWEEN),
+        min = 0,
+        max = 30,
+        getFunc = function()
+            return spacing.objectiveSpacing or defaults.objectiveSpacing
+        end,
+        setFunc = function(value)
+            spacing.objectiveSpacing = setters.normalize(value, defaults.objectiveSpacing, 0, 30)
+            setters.onChange()
+        end,
+        default = defaults.objectiveSpacing,
+    }
+
+    controls[#controls + 1] = {
+        type = "slider",
+        name = GetString(SI_NVK3UT_LAM_SPACING_OBJECTIVE_INDENT),
+        min = 0,
+        max = 120,
+        getFunc = function()
+            return spacing.objectiveIndent or defaults.objectiveIndent
+        end,
+        setFunc = function(value)
+            spacing.objectiveIndent = setters.normalize(value, defaults.objectiveIndent, 0, 120)
+            setters.onChange()
+        end,
+        default = defaults.objectiveIndent,
+    }
+
+    controls[#controls + 1] = {
+        type = "slider",
+        name = GetString(SI_NVK3UT_LAM_SPACING_OBJECTIVE_BOTTOM),
+        min = 0,
+        max = 30,
+        getFunc = function()
+            return spacing.objectiveBottom or defaults.objectiveBottom
+        end,
+        setFunc = function(value)
+            spacing.objectiveBottom = setters.normalize(value, defaults.objectiveBottom, 0, 30)
+            setters.onChange()
+        end,
+        default = defaults.objectiveBottom,
+    }
+
+    return controls
 end
 
 local function LamQueueFullRebuild(reason)
@@ -2466,6 +2658,32 @@ local function registerPanel(displayTitle)
                 controls = buildQuestFontControls(),
             }
 
+            local questSpacingDefaults = {
+                categoryTop = 3,
+                categoryBottom = 6,
+                categoryIndent = 18,
+                entrySpacing = 3,
+                entryHeight = 24,
+                entryPadding = 4,
+                objectiveTop = 3,
+                objectiveSpacing = 3,
+                objectiveIndent = 60,
+                objectiveBottom = 3,
+            }
+
+            local questSpacing = getQuestSettings().spacing
+
+            controls[#controls + 1] = {
+                type = "submenu",
+                name = GetString(SI_NVK3UT_LAM_SPACING_SUBMENU),
+                controls = buildSpacingControls(questSpacing, questSpacingDefaults, {
+                    normalize = normalizeSpacingValue,
+                    onChange = function()
+                        refreshQuestTracker()
+                    end,
+                }),
+            }
+
             return controls
         end)(),
     }
@@ -2782,6 +3000,33 @@ local function registerPanel(displayTitle)
                 name = GetString(SI_NVK3UT_LAM_ENDEAVOR_SECTION_FONTS),
                 controls = buildEndeavorFontControls(),
             }
+
+            local endeavorSpacingDefaults = {
+                categoryTop = 3,
+                categoryBottom = 3,
+                categoryIndent = 18,
+                entrySpacing = 3,
+                entryHeight = 24,
+                entryPadding = 4,
+                objectiveTop = 3,
+                objectiveSpacing = 1,
+                objectiveIndent = 32,
+                objectiveBottom = 2,
+            }
+
+            local endeavorSpacing = getEndeavorConfig().Tracker.Spacing
+
+            controls[#controls + 1] = {
+                type = "submenu",
+                name = GetString(SI_NVK3UT_LAM_SPACING_SUBMENU),
+                controls = buildSpacingControls(endeavorSpacing, endeavorSpacingDefaults, {
+                    normalize = normalizeSpacingValue,
+                    onChange = function()
+                        markEndeavorDirty("spacing")
+                        queueEndeavorDirty()
+                    end,
+                }),
+            }
             return controls
         end)(),
     }
@@ -2957,6 +3202,32 @@ local function registerPanel(displayTitle)
                 type = "submenu",
                 name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_HEADER_FONTS),
                 controls = buildAchievementFontControls(),
+            }
+
+            local achievementSpacingDefaults = {
+                categoryTop = 3,
+                categoryBottom = 6,
+                categoryIndent = 18,
+                entrySpacing = 3,
+                entryHeight = 24,
+                entryPadding = 4,
+                objectiveTop = 3,
+                objectiveSpacing = 3,
+                objectiveIndent = 60,
+                objectiveBottom = 3,
+            }
+
+            local achievementSpacing = getAchievementSettings().spacing
+
+            controls[#controls + 1] = {
+                type = "submenu",
+                name = GetString(SI_NVK3UT_LAM_SPACING_SUBMENU),
+                controls = buildSpacingControls(achievementSpacing, achievementSpacingDefaults, {
+                    normalize = normalizeSpacingValue,
+                    onChange = function()
+                        refreshAchievementTracker()
+                    end,
+                }),
             }
 
             return controls
@@ -3398,6 +3669,33 @@ local function registerPanel(displayTitle)
                 type = "submenu",
                 name = GetString(SI_NVK3UT_LAM_GOLDEN_SECTION_FONTS),
                 controls = buildGoldenFontControls(),
+            }
+
+            local goldenSpacingDefaults = {
+                categoryTop = 3,
+                categoryBottom = 6,
+                categoryIndent = 60,
+                entrySpacing = 3,
+                entryHeight = 24,
+                entryPadding = 4,
+                objectiveTop = 3,
+                objectiveSpacing = 2,
+                objectiveIndent = 60,
+                objectiveBottom = 3,
+            }
+
+            local goldenSpacing = getGoldenConfig().Tracker.Spacing
+
+            controls[#controls + 1] = {
+                type = "submenu",
+                name = GetString(SI_NVK3UT_LAM_SPACING_SUBMENU),
+                controls = buildSpacingControls(goldenSpacing, goldenSpacingDefaults, {
+                    normalize = normalizeSpacingValue,
+                    onChange = function()
+                        markGoldenDirty("spacing")
+                        queueGoldenDirty()
+                    end,
+                }),
             }
 
             return controls

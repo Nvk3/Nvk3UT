@@ -118,6 +118,22 @@ local strings = {
     SI_NVK3UT_LAM_QUEST_FONT_TITLE_LABEL = "Quest title",
     SI_NVK3UT_LAM_QUEST_FONT_LINE_LABEL = "Quest lines",
 
+    -- Spacing
+    SI_NVK3UT_LAM_SPACING_SUBMENU = "Spacing",
+    SI_NVK3UT_LAM_SPACING_HEADER_CATEGORY = "Category",
+    SI_NVK3UT_LAM_SPACING_HEADER_ENTRY = "Entry",
+    SI_NVK3UT_LAM_SPACING_HEADER_OBJECTIVE = "Objective",
+    SI_NVK3UT_LAM_SPACING_CATEGORY_TOP = "Space above category",
+    SI_NVK3UT_LAM_SPACING_CATEGORY_BOTTOM = "Space below category",
+    SI_NVK3UT_LAM_SPACING_CATEGORY_INDENT = "Category content indent",
+    SI_NVK3UT_LAM_SPACING_ENTRY_SPACING = "Space between entries",
+    SI_NVK3UT_LAM_SPACING_ENTRY_HEIGHT = "Single-line entry height",
+    SI_NVK3UT_LAM_SPACING_ENTRY_PADDING = "Vertical padding",
+    SI_NVK3UT_LAM_SPACING_OBJECTIVE_FIRST = "Space from title to first objective",
+    SI_NVK3UT_LAM_SPACING_OBJECTIVE_BETWEEN = "Space between objectives",
+    SI_NVK3UT_LAM_SPACING_OBJECTIVE_INDENT = "Objective indent",
+    SI_NVK3UT_LAM_SPACING_OBJECTIVE_BOTTOM = "Space after objectives",
+
     -- Endeavor tracker
     SI_NVK3UT_LAM_ENDEAVOR_SECTION = "Endeavor Tracker",
     SI_NVK3UT_LAM_ENDEAVOR_HEADER_FUNCTIONS = "Endeavor Tracker Functions",

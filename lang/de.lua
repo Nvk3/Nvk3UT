@@ -118,6 +118,22 @@ local strings = {
     SI_NVK3UT_LAM_QUEST_FONT_TITLE_LABEL = "Questtitel",
     SI_NVK3UT_LAM_QUEST_FONT_LINE_LABEL = "Questzeilen",
 
+    -- Abstände
+    SI_NVK3UT_LAM_SPACING_SUBMENU = "Abstände",
+    SI_NVK3UT_LAM_SPACING_HEADER_CATEGORY = "Kategorie",
+    SI_NVK3UT_LAM_SPACING_HEADER_ENTRY = "Eintrag",
+    SI_NVK3UT_LAM_SPACING_HEADER_OBJECTIVE = "Ziel",
+    SI_NVK3UT_LAM_SPACING_CATEGORY_TOP = "Abstand oberhalb der Kategorie",
+    SI_NVK3UT_LAM_SPACING_CATEGORY_BOTTOM = "Abstand unterhalb der Kategorie",
+    SI_NVK3UT_LAM_SPACING_CATEGORY_INDENT = "Einzug der Kategorie-Inhalte",
+    SI_NVK3UT_LAM_SPACING_ENTRY_SPACING = "Abstand zwischen Einträgen",
+    SI_NVK3UT_LAM_SPACING_ENTRY_HEIGHT = "Höhe eines Eintrags (einzeilig)",
+    SI_NVK3UT_LAM_SPACING_ENTRY_PADDING = "Vertikales Innenpadding",
+    SI_NVK3UT_LAM_SPACING_OBJECTIVE_FIRST = "Abstand Titel → erstes Ziel",
+    SI_NVK3UT_LAM_SPACING_OBJECTIVE_BETWEEN = "Abstand zwischen Zielen",
+    SI_NVK3UT_LAM_SPACING_OBJECTIVE_INDENT = "Einzug der Ziele",
+    SI_NVK3UT_LAM_SPACING_OBJECTIVE_BOTTOM = "Abstand nach letztem Ziel",
+
     -- Endeavor tracker
     SI_NVK3UT_LAM_ENDEAVOR_SECTION = "Bestrebungen Tracker",
     SI_NVK3UT_LAM_ENDEAVOR_HEADER_FUNCTIONS = "Funktionen Bestrebungen Tracker",
