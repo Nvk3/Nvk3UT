@@ -382,7 +382,13 @@ function Rows:CreateAchievementRow(rowKey)
     if control.iconSlot then
         control.iconSlot:SetDimensions(18, 18)
         control.iconSlot:ClearAnchors()
-        control.iconSlot:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+        control.iconSlot:SetAnchor(
+            TOPLEFT,
+            control,
+            TOPLEFT,
+            -(18 + 6),
+            0
+        )
         if control.iconSlot.SetTexture then
             control.iconSlot:SetTexture(nil)
         end

@@ -177,7 +177,7 @@ local QUEST_INDENT_X = 18
 local QUEST_ICON_SLOT_WIDTH = 18
 local QUEST_ICON_SLOT_HEIGHT = 18
 local QUEST_ICON_SLOT_PADDING_X = 6
-local QUEST_LABEL_INDENT_X = QUEST_INDENT_X + QUEST_ICON_SLOT_WIDTH + QUEST_ICON_SLOT_PADDING_X
+local QUEST_LABEL_INDENT_X = QUEST_INDENT_X
 -- keep objective indentation ahead of quest titles even with the persistent icon slot
 local CONDITION_RELATIVE_INDENT = 18
 local CONDITION_INDENT_X = QUEST_LABEL_INDENT_X + CONDITION_RELATIVE_INDENT
@@ -303,7 +303,7 @@ local function ApplyQuestSpacing(settings)
     QUEST_MIN_HEIGHT = resolved.entryHeight
     ROW_TEXT_PADDING_Y = resolved.entryPadding
     QUEST_INDENT_X = resolved.categoryIndent
-    QUEST_LABEL_INDENT_X = QUEST_INDENT_X + QUEST_ICON_SLOT_WIDTH + QUEST_ICON_SLOT_PADDING_X
+    QUEST_LABEL_INDENT_X = QUEST_INDENT_X
     CONDITION_INDENT_X = resolved.objectiveIndent
     CATEGORY_BOTTOM_PAD_EXPANDED = resolved.categoryBottom
     CATEGORY_BOTTOM_PAD_COLLAPSED = resolved.categoryBottom
@@ -4107,15 +4107,21 @@ local function AcquireQuestControl(providedControl)
         if control.iconSlot then
             control.iconSlot:SetDimensions(QUEST_ICON_SLOT_WIDTH, QUEST_ICON_SLOT_HEIGHT)
             control.iconSlot:ClearAnchors()
-            control.iconSlot:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+            control.iconSlot:SetAnchor(
+                TOPLEFT,
+                control,
+                TOPLEFT,
+                -(QUEST_ICON_SLOT_WIDTH + QUEST_ICON_SLOT_PADDING_X),
+                0
+            )
             if control.iconSlot.SetTexture then
                 control.iconSlot:SetTexture(nil)
             end
             if control.iconSlot.SetAlpha then
-                control.iconSlot:SetAlpha(0)
+                control.iconSlot.SetAlpha(0)
             end
             if control.iconSlot.SetHidden then
-                control.iconSlot:SetHidden(false)
+                control.iconSlot.SetHidden(false)
             end
             if control.iconSlot.SetMouseEnabled then
                 control.iconSlot:SetMouseEnabled(true)
