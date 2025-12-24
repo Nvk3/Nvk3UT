@@ -1425,6 +1425,19 @@ end
 
 local function buildSpacingControls(trackerKey)
     local controls = {}
+    local function notifySpacingChanged()
+        if trackerKey == "quest" then
+            applyQuestSettings()
+        elseif trackerKey == "achievement" then
+            refreshAchievementTracker()
+        elseif trackerKey == "endeavor" then
+            markEndeavorDirty("spacing")
+            queueEndeavorDirty()
+        elseif trackerKey == "golden" then
+            markGoldenDirty("spacing")
+            queueGoldenDirty()
+        end
+    end
 
     local function setSpacingValue(groupKey, fieldKey, value)
         local spacing = getTrackerSpacing(trackerKey)
@@ -1434,6 +1447,7 @@ local function buildSpacingControls(trackerKey)
             spacing[groupKey] = group
         end
         group[fieldKey] = normalizeSpacingValue(value, DEFAULT_SPACING[groupKey][fieldKey])
+        notifySpacingChanged()
     end
 
     local function getSpacingValue(groupKey, fieldKey)
