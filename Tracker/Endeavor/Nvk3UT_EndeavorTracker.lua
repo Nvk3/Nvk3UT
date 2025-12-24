@@ -155,7 +155,7 @@ end
 
 function EndeavorTracker.GetCategorySpacingFromSV()
     local addon = Nvk3UT
-    local sv = addon and addon.SV
+    local sv = addon and (addon.sv or addon.SV)
     local spacing = sv and sv.spacing
     local endeavorSpacing = spacing and spacing.endeavor
     local category = endeavorSpacing and endeavorSpacing.category

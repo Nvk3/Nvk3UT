@@ -90,8 +90,8 @@ end
 local function getCategorySpacingFromSV()
     local tracker = Nvk3UT and Nvk3UT.GoldenTracker
     if tracker and type(tracker.GetCategorySpacingFromSV) == "function" then
-        local ok, spacing = pcall(tracker.GetCategorySpacingFromSV)
-        if ok and type(spacing) == "table" then
+        local spacing = tracker.GetCategorySpacingFromSV()
+        if type(spacing) == "table" then
             return spacing
         end
     end
