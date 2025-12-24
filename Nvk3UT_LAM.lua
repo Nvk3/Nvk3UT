@@ -160,6 +160,12 @@ local DEFAULT_WINDOW_BARS = {
     footerHeightPx = 100,
 }
 
+local DEFAULT_SPACING = {
+    category = { indent = 0, spacingAbove = 3, spacingBelow = 6 },
+    entry = { indent = 40, spacingAbove = 3, spacingBelow = 3 },
+    objective = { indent = 60, spacingAbove = 3, spacingBelow = 3, spacingBetween = 1 },
+}
+
 local DEFAULT_HOST_SETTINGS = {
     HideInCombat = false,
     CornerButtonEnabled = true,
@@ -601,6 +607,50 @@ local function getAchievementSettings()
     sv.AchievementTracker.fonts = sv.AchievementTracker.fonts or {}
     sv.AchievementTracker.sections = sv.AchievementTracker.sections or {}
     return sv.AchievementTracker
+end
+
+local function normalizeSpacingValue(value, fallback)
+    local numeric = tonumber(value)
+    if numeric == nil then
+        numeric = fallback
+    end
+    return math.floor(numeric + 0.5)
+end
+
+local function ensureSpacingGroup(target, defaults)
+    if type(target) ~= "table" then
+        target = {}
+    end
+
+    for key, defaultValue in pairs(defaults) do
+        target[key] = normalizeSpacingValue(target[key], defaultValue)
+    end
+
+    return target
+end
+
+local function getTrackerSpacing(trackerKey)
+    local sv = getSavedVars()
+    if type(sv) ~= "table" then
+        return {
+            category = ensureSpacingGroup({}, DEFAULT_SPACING.category),
+            entry = ensureSpacingGroup({}, DEFAULT_SPACING.entry),
+            objective = ensureSpacingGroup({}, DEFAULT_SPACING.objective),
+        }
+    end
+
+    sv.spacing = sv.spacing or {}
+    local spacing = sv.spacing
+    if type(spacing[trackerKey]) ~= "table" then
+        spacing[trackerKey] = {}
+    end
+
+    local trackerSpacing = spacing[trackerKey]
+    trackerSpacing.category = ensureSpacingGroup(trackerSpacing.category, DEFAULT_SPACING.category)
+    trackerSpacing.entry = ensureSpacingGroup(trackerSpacing.entry, DEFAULT_SPACING.entry)
+    trackerSpacing.objective = ensureSpacingGroup(trackerSpacing.objective, DEFAULT_SPACING.objective)
+
+    return trackerSpacing
 end
 
 local ENDEAVOR_COLOR_ROLES = {
@@ -1371,6 +1421,177 @@ local function buildFontControls(label, settings, key, defaults, onChanged, adap
             end,
         },
     }
+end
+
+local function buildSpacingControls(trackerKey)
+    local controls = {}
+
+    local function setSpacingValue(groupKey, fieldKey, value)
+        local spacing = getTrackerSpacing(trackerKey)
+        local group = spacing[groupKey]
+        if type(group) ~= "table" then
+            group = {}
+            spacing[groupKey] = group
+        end
+        group[fieldKey] = normalizeSpacingValue(value, DEFAULT_SPACING[groupKey][fieldKey])
+    end
+
+    local function getSpacingValue(groupKey, fieldKey)
+        local spacing = getTrackerSpacing(trackerKey)
+        local group = spacing[groupKey]
+        if type(group) ~= "table" then
+            return DEFAULT_SPACING[groupKey][fieldKey]
+        end
+        return normalizeSpacingValue(group[fieldKey], DEFAULT_SPACING[groupKey][fieldKey])
+    end
+
+    controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_SPACING_GROUP_CATEGORY) }
+    controls[#controls + 1] = {
+        type = "slider",
+        name = GetString(SI_NVK3UT_LAM_SPACING_CATEGORY_INDENT),
+        min = 0,
+        max = 200,
+        step = 1,
+        getFunc = function()
+            return getSpacingValue("category", "indent")
+        end,
+        setFunc = function(value)
+            setSpacingValue("category", "indent", value)
+        end,
+        default = DEFAULT_SPACING.category.indent,
+    }
+    controls[#controls + 1] = {
+        type = "slider",
+        name = GetString(SI_NVK3UT_LAM_SPACING_CATEGORY_ABOVE),
+        min = 0,
+        max = 50,
+        step = 1,
+        getFunc = function()
+            return getSpacingValue("category", "spacingAbove")
+        end,
+        setFunc = function(value)
+            setSpacingValue("category", "spacingAbove", value)
+        end,
+        default = DEFAULT_SPACING.category.spacingAbove,
+    }
+    controls[#controls + 1] = {
+        type = "slider",
+        name = GetString(SI_NVK3UT_LAM_SPACING_CATEGORY_BELOW),
+        min = 0,
+        max = 50,
+        step = 1,
+        getFunc = function()
+            return getSpacingValue("category", "spacingBelow")
+        end,
+        setFunc = function(value)
+            setSpacingValue("category", "spacingBelow", value)
+        end,
+        default = DEFAULT_SPACING.category.spacingBelow,
+    }
+
+    controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_SPACING_GROUP_ENTRY) }
+    controls[#controls + 1] = {
+        type = "slider",
+        name = GetString(SI_NVK3UT_LAM_SPACING_ENTRY_INDENT),
+        min = 0,
+        max = 200,
+        step = 1,
+        getFunc = function()
+            return getSpacingValue("entry", "indent")
+        end,
+        setFunc = function(value)
+            setSpacingValue("entry", "indent", value)
+        end,
+        default = DEFAULT_SPACING.entry.indent,
+    }
+    controls[#controls + 1] = {
+        type = "slider",
+        name = GetString(SI_NVK3UT_LAM_SPACING_ENTRY_ABOVE),
+        min = 0,
+        max = 50,
+        step = 1,
+        getFunc = function()
+            return getSpacingValue("entry", "spacingAbove")
+        end,
+        setFunc = function(value)
+            setSpacingValue("entry", "spacingAbove", value)
+        end,
+        default = DEFAULT_SPACING.entry.spacingAbove,
+    }
+    controls[#controls + 1] = {
+        type = "slider",
+        name = GetString(SI_NVK3UT_LAM_SPACING_ENTRY_BELOW),
+        min = 0,
+        max = 50,
+        step = 1,
+        getFunc = function()
+            return getSpacingValue("entry", "spacingBelow")
+        end,
+        setFunc = function(value)
+            setSpacingValue("entry", "spacingBelow", value)
+        end,
+        default = DEFAULT_SPACING.entry.spacingBelow,
+    }
+
+    controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_SPACING_GROUP_OBJECTIVE) }
+    controls[#controls + 1] = {
+        type = "slider",
+        name = GetString(SI_NVK3UT_LAM_SPACING_OBJECTIVE_INDENT),
+        min = 0,
+        max = 200,
+        step = 1,
+        getFunc = function()
+            return getSpacingValue("objective", "indent")
+        end,
+        setFunc = function(value)
+            setSpacingValue("objective", "indent", value)
+        end,
+        default = DEFAULT_SPACING.objective.indent,
+    }
+    controls[#controls + 1] = {
+        type = "slider",
+        name = GetString(SI_NVK3UT_LAM_SPACING_OBJECTIVE_ABOVE),
+        min = 0,
+        max = 50,
+        step = 1,
+        getFunc = function()
+            return getSpacingValue("objective", "spacingAbove")
+        end,
+        setFunc = function(value)
+            setSpacingValue("objective", "spacingAbove", value)
+        end,
+        default = DEFAULT_SPACING.objective.spacingAbove,
+    }
+    controls[#controls + 1] = {
+        type = "slider",
+        name = GetString(SI_NVK3UT_LAM_SPACING_OBJECTIVE_BELOW),
+        min = 0,
+        max = 50,
+        step = 1,
+        getFunc = function()
+            return getSpacingValue("objective", "spacingBelow")
+        end,
+        setFunc = function(value)
+            setSpacingValue("objective", "spacingBelow", value)
+        end,
+        default = DEFAULT_SPACING.objective.spacingBelow,
+    }
+    controls[#controls + 1] = {
+        type = "slider",
+        name = GetString(SI_NVK3UT_LAM_SPACING_OBJECTIVE_BETWEEN),
+        min = 0,
+        max = 50,
+        step = 1,
+        getFunc = function()
+            return getSpacingValue("objective", "spacingBetween")
+        end,
+        setFunc = function(value)
+            setSpacingValue("objective", "spacingBetween", value)
+        end,
+        default = DEFAULT_SPACING.objective.spacingBetween,
+    }
+
+    return controls
 end
 
 function acquireLam()
@@ -2466,6 +2687,12 @@ local function registerPanel(displayTitle)
                 controls = buildQuestFontControls(),
             }
 
+            controls[#controls + 1] = {
+                type = "submenu",
+                name = GetString(SI_NVK3UT_LAM_SPACING_QUEST_SUBMENU),
+                controls = buildSpacingControls("quest"),
+            }
+
             return controls
         end)(),
     }
@@ -2782,6 +3009,11 @@ local function registerPanel(displayTitle)
                 name = GetString(SI_NVK3UT_LAM_ENDEAVOR_SECTION_FONTS),
                 controls = buildEndeavorFontControls(),
             }
+            controls[#controls + 1] = {
+                type = "submenu",
+                name = GetString(SI_NVK3UT_LAM_SPACING_ENDEAVOR_SUBMENU),
+                controls = buildSpacingControls("endeavor"),
+            }
             return controls
         end)(),
     }
@@ -2957,6 +3189,11 @@ local function registerPanel(displayTitle)
                 type = "submenu",
                 name = GetString(SI_NVK3UT_LAM_ACHIEVEMENT_HEADER_FONTS),
                 controls = buildAchievementFontControls(),
+            }
+            controls[#controls + 1] = {
+                type = "submenu",
+                name = GetString(SI_NVK3UT_LAM_SPACING_ACHIEVEMENT_SUBMENU),
+                controls = buildSpacingControls("achievement"),
             }
 
             return controls
@@ -3398,6 +3635,11 @@ local function registerPanel(displayTitle)
                 type = "submenu",
                 name = GetString(SI_NVK3UT_LAM_GOLDEN_SECTION_FONTS),
                 controls = buildGoldenFontControls(),
+            }
+            controls[#controls + 1] = {
+                type = "submenu",
+                name = GetString(SI_NVK3UT_LAM_SPACING_GOLDEN_SUBMENU),
+                controls = buildSpacingControls("golden"),
             }
 
             return controls

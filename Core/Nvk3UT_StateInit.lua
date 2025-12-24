@@ -290,6 +290,27 @@ local function CreateTrackerDefaults(fontDefaultsCopier)
     }
 end
 
+local function CopySpacingDefaults()
+    return {
+        category = {
+            indent = 0,
+            spacingAbove = 3,
+            spacingBelow = 6,
+        },
+        entry = {
+            indent = 40,
+            spacingAbove = 3,
+            spacingBelow = 3,
+        },
+        objective = {
+            indent = 60,
+            spacingAbove = 3,
+            spacingBelow = 3,
+            spacingBetween = 1,
+        },
+    }
+end
+
 local defaultSV = {
     TrackerDefaults = {
         EndeavorDefaults = CreateTrackerDefaults(CopyEndeavorFontDefaults), -- Endeavor tracker defaults
@@ -403,6 +424,12 @@ local defaults = {
     AchievementCache = DEFAULT_ACHIEVEMENT_CACHE,
     EndeavorData = DEFAULT_ENDEAVOR_DATA,
     Endeavor = DEFAULT_ENDEAVOR_SETTINGS,
+    spacing = {
+        quest = CopySpacingDefaults(),
+        endeavor = CopySpacingDefaults(),
+        achievement = CopySpacingDefaults(),
+        golden = CopySpacingDefaults(),
+    },
 }
 
 local ENDEAVOR_COLOR_ROLE_MAPPING = {
@@ -841,6 +868,12 @@ local function EnsureFirstLoginStructures(saved)
     EnsureEndeavorSettings(saved)
     EnsureTable(appearance, "questTracker")
     EnsureTable(appearance, "achievementTracker")
+
+    local spacing = EnsureTable(saved, "spacing")
+    MergeDefaults(EnsureTable(spacing, "quest"), defaults.spacing.quest)
+    MergeDefaults(EnsureTable(spacing, "endeavor"), defaults.spacing.endeavor)
+    MergeDefaults(EnsureTable(spacing, "achievement"), defaults.spacing.achievement)
+    MergeDefaults(EnsureTable(spacing, "golden"), defaults.spacing.golden)
 
     local settings = EnsureTable(saved, "Settings")
     local hostSettings = EnsureTable(settings, "Host")
