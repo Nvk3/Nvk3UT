@@ -1445,6 +1445,20 @@ local function buildSpacingControls(trackerKey)
         return normalizeSpacingValue(group[fieldKey], DEFAULT_SPACING[groupKey][fieldKey])
     end
 
+    local function refreshCategorySpacing()
+        if trackerKey == "quest" then
+            refreshQuestTracker()
+        elseif trackerKey == "achievement" then
+            refreshAchievementTracker()
+        elseif trackerKey == "endeavor" then
+            markEndeavorDirty("spacing")
+            queueEndeavorDirty()
+        elseif trackerKey == "golden" then
+            markGoldenDirty("spacing")
+            queueGoldenDirty()
+        end
+    end
+
     controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_SPACING_GROUP_CATEGORY) }
     controls[#controls + 1] = {
         type = "slider",
@@ -1457,6 +1471,7 @@ local function buildSpacingControls(trackerKey)
         end,
         setFunc = function(value)
             setSpacingValue("category", "indent", value)
+            refreshCategorySpacing()
         end,
         default = DEFAULT_SPACING.category.indent,
     }
@@ -1471,6 +1486,7 @@ local function buildSpacingControls(trackerKey)
         end,
         setFunc = function(value)
             setSpacingValue("category", "spacingAbove", value)
+            refreshCategorySpacing()
         end,
         default = DEFAULT_SPACING.category.spacingAbove,
     }
@@ -1485,6 +1501,7 @@ local function buildSpacingControls(trackerKey)
         end,
         setFunc = function(value)
             setSpacingValue("category", "spacingBelow", value)
+            refreshCategorySpacing()
         end,
         default = DEFAULT_SPACING.category.spacingBelow,
     }
