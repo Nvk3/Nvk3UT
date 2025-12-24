@@ -1423,17 +1423,8 @@ local function buildFontControls(label, settings, key, defaults, onChanged, adap
     }
 end
 
-local function buildSpacingControls(trackerKey, trackerLabelId)
+local function buildSpacingControls(trackerKey)
     local controls = {}
-    local trackerLabel = GetString(trackerLabelId)
-
-    local function formatLabel(stringId)
-        return string.format(GetString(SI_NVK3UT_LAM_SPACING_LABEL_FORMAT), trackerLabel, GetString(stringId))
-    end
-
-    local function formatHeader(stringId)
-        return string.format(GetString(SI_NVK3UT_LAM_SPACING_LABEL_FORMAT), trackerLabel, GetString(stringId))
-    end
 
     local function setSpacingValue(groupKey, fieldKey, value)
         local spacing = getTrackerSpacing(trackerKey)
@@ -1454,10 +1445,10 @@ local function buildSpacingControls(trackerKey, trackerLabelId)
         return normalizeSpacingValue(group[fieldKey], DEFAULT_SPACING[groupKey][fieldKey])
     end
 
-    controls[#controls + 1] = { type = "header", name = formatHeader(SI_NVK3UT_LAM_SPACING_GROUP_CATEGORY) }
+    controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_SPACING_GROUP_CATEGORY) }
     controls[#controls + 1] = {
         type = "slider",
-        name = formatLabel(SI_NVK3UT_LAM_SPACING_CATEGORY_INDENT),
+        name = GetString(SI_NVK3UT_LAM_SPACING_CATEGORY_INDENT),
         min = 0,
         max = 200,
         step = 1,
@@ -1471,7 +1462,7 @@ local function buildSpacingControls(trackerKey, trackerLabelId)
     }
     controls[#controls + 1] = {
         type = "slider",
-        name = formatLabel(SI_NVK3UT_LAM_SPACING_CATEGORY_ABOVE),
+        name = GetString(SI_NVK3UT_LAM_SPACING_CATEGORY_ABOVE),
         min = 0,
         max = 50,
         step = 1,
@@ -1485,7 +1476,7 @@ local function buildSpacingControls(trackerKey, trackerLabelId)
     }
     controls[#controls + 1] = {
         type = "slider",
-        name = formatLabel(SI_NVK3UT_LAM_SPACING_CATEGORY_BELOW),
+        name = GetString(SI_NVK3UT_LAM_SPACING_CATEGORY_BELOW),
         min = 0,
         max = 50,
         step = 1,
@@ -1498,10 +1489,10 @@ local function buildSpacingControls(trackerKey, trackerLabelId)
         default = DEFAULT_SPACING.category.spacingBelow,
     }
 
-    controls[#controls + 1] = { type = "header", name = formatHeader(SI_NVK3UT_LAM_SPACING_GROUP_ENTRY) }
+    controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_SPACING_GROUP_ENTRY) }
     controls[#controls + 1] = {
         type = "slider",
-        name = formatLabel(SI_NVK3UT_LAM_SPACING_ENTRY_INDENT),
+        name = GetString(SI_NVK3UT_LAM_SPACING_ENTRY_INDENT),
         min = 0,
         max = 200,
         step = 1,
@@ -1515,7 +1506,7 @@ local function buildSpacingControls(trackerKey, trackerLabelId)
     }
     controls[#controls + 1] = {
         type = "slider",
-        name = formatLabel(SI_NVK3UT_LAM_SPACING_ENTRY_ABOVE),
+        name = GetString(SI_NVK3UT_LAM_SPACING_ENTRY_ABOVE),
         min = 0,
         max = 50,
         step = 1,
@@ -1529,7 +1520,7 @@ local function buildSpacingControls(trackerKey, trackerLabelId)
     }
     controls[#controls + 1] = {
         type = "slider",
-        name = formatLabel(SI_NVK3UT_LAM_SPACING_ENTRY_BELOW),
+        name = GetString(SI_NVK3UT_LAM_SPACING_ENTRY_BELOW),
         min = 0,
         max = 50,
         step = 1,
@@ -1542,10 +1533,10 @@ local function buildSpacingControls(trackerKey, trackerLabelId)
         default = DEFAULT_SPACING.entry.spacingBelow,
     }
 
-    controls[#controls + 1] = { type = "header", name = formatHeader(SI_NVK3UT_LAM_SPACING_GROUP_OBJECTIVE) }
+    controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_SPACING_GROUP_OBJECTIVE) }
     controls[#controls + 1] = {
         type = "slider",
-        name = formatLabel(SI_NVK3UT_LAM_SPACING_OBJECTIVE_INDENT),
+        name = GetString(SI_NVK3UT_LAM_SPACING_OBJECTIVE_INDENT),
         min = 0,
         max = 200,
         step = 1,
@@ -1559,7 +1550,7 @@ local function buildSpacingControls(trackerKey, trackerLabelId)
     }
     controls[#controls + 1] = {
         type = "slider",
-        name = formatLabel(SI_NVK3UT_LAM_SPACING_OBJECTIVE_ABOVE),
+        name = GetString(SI_NVK3UT_LAM_SPACING_OBJECTIVE_ABOVE),
         min = 0,
         max = 50,
         step = 1,
@@ -1573,7 +1564,7 @@ local function buildSpacingControls(trackerKey, trackerLabelId)
     }
     controls[#controls + 1] = {
         type = "slider",
-        name = formatLabel(SI_NVK3UT_LAM_SPACING_OBJECTIVE_BELOW),
+        name = GetString(SI_NVK3UT_LAM_SPACING_OBJECTIVE_BELOW),
         min = 0,
         max = 50,
         step = 1,
@@ -1587,7 +1578,7 @@ local function buildSpacingControls(trackerKey, trackerLabelId)
     }
     controls[#controls + 1] = {
         type = "slider",
-        name = formatLabel(SI_NVK3UT_LAM_SPACING_OBJECTIVE_BETWEEN),
+        name = GetString(SI_NVK3UT_LAM_SPACING_OBJECTIVE_BETWEEN),
         min = 0,
         max = 50,
         step = 1,
@@ -2699,7 +2690,7 @@ local function registerPanel(displayTitle)
             controls[#controls + 1] = {
                 type = "submenu",
                 name = GetString(SI_NVK3UT_LAM_SPACING_QUEST_SUBMENU),
-                controls = buildSpacingControls("quest", SI_NVK3UT_LAM_TRACKER_NAME_QUEST),
+                controls = buildSpacingControls("quest"),
             }
 
             return controls
@@ -3021,7 +3012,7 @@ local function registerPanel(displayTitle)
             controls[#controls + 1] = {
                 type = "submenu",
                 name = GetString(SI_NVK3UT_LAM_SPACING_ENDEAVOR_SUBMENU),
-                controls = buildSpacingControls("endeavor", SI_NVK3UT_LAM_TRACKER_NAME_ENDEAVOR),
+                controls = buildSpacingControls("endeavor"),
             }
             return controls
         end)(),
@@ -3202,7 +3193,7 @@ local function registerPanel(displayTitle)
             controls[#controls + 1] = {
                 type = "submenu",
                 name = GetString(SI_NVK3UT_LAM_SPACING_ACHIEVEMENT_SUBMENU),
-                controls = buildSpacingControls("achievement", SI_NVK3UT_LAM_TRACKER_NAME_ACHIEVEMENT),
+                controls = buildSpacingControls("achievement"),
             }
 
             return controls
@@ -3648,7 +3639,7 @@ local function registerPanel(displayTitle)
             controls[#controls + 1] = {
                 type = "submenu",
                 name = GetString(SI_NVK3UT_LAM_SPACING_GOLDEN_SUBMENU),
-                controls = buildSpacingControls("golden", SI_NVK3UT_LAM_TRACKER_NAME_GOLDEN),
+                controls = buildSpacingControls("golden"),
             }
 
             return controls
