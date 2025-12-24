@@ -181,6 +181,7 @@ local QUEST_LABEL_INDENT_X = QUEST_INDENT_X + QUEST_ICON_SLOT_WIDTH + QUEST_ICON
 -- keep objective indentation ahead of quest titles even with the persistent icon slot
 local CONDITION_RELATIVE_INDENT = 18
 local CONDITION_INDENT_X = QUEST_LABEL_INDENT_X + CONDITION_RELATIVE_INDENT
+local CATEGORY_SPACING_ABOVE = 3
 local VERTICAL_PADDING = 3
 local CATEGORY_BOTTOM_PAD_EXPANDED = 6
 local CATEGORY_BOTTOM_PAD_COLLAPSED = 6
@@ -203,6 +204,32 @@ local DEFAULT_FONTS = {
 local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
 local REFRESH_DEBOUNCE_MS = 80
 local DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR = { 1, 1, 0.6, 1 }
+
+local function NormalizeSpacingValue(value, fallback)
+    local numeric = tonumber(value)
+    if numeric == nil or numeric ~= numeric then
+        return fallback
+    end
+    if numeric < 0 then
+        return fallback
+    end
+    return numeric
+end
+
+local function ApplyCategorySpacingFromSaved()
+    local addon = Nvk3UT
+    local sv = addon and addon.SV
+    local spacing = sv and sv.spacing
+    local questSpacing = spacing and spacing.quest
+    local category = questSpacing and questSpacing.category
+
+    CATEGORY_INDENT_X = NormalizeSpacingValue(category and category.indent, CATEGORY_INDENT_X)
+    CATEGORY_SPACING_ABOVE = NormalizeSpacingValue(category and category.spacingAbove, CATEGORY_SPACING_ABOVE)
+
+    local belowSpacing = NormalizeSpacingValue(category and category.spacingBelow, CATEGORY_BOTTOM_PAD_EXPANDED)
+    CATEGORY_BOTTOM_PAD_EXPANDED = belowSpacing
+    CATEGORY_BOTTOM_PAD_COLLAPSED = belowSpacing
+end
 
 local function ScheduleToggleFollowup(reason)
     local rebuild = (Nvk3UT and Nvk3UT.Rebuild) or _G.Nvk3UT_Rebuild
@@ -1218,10 +1245,6 @@ end
 
 local function GetToggleWidth(toggle, fallback)
     if toggle then
-        if toggle.IsHidden and toggle:IsHidden() then
-            return 0
-        end
-
         if toggle.GetWidth then
             local width = toggle:GetWidth()
             if width and width > 0 then
@@ -3946,6 +3969,7 @@ local function InitializeCategoryControl(control)
 
     control.label = control:GetNamedChild("Label")
     control.toggle = control:GetNamedChild("Toggle")
+    control.indentAnchor = control:GetNamedChild("IndentAnchor")
     if control.toggle and control.toggle.SetTexture then
         control.toggle:SetTexture(SelectCategoryToggleTexture(false, false))
     end
@@ -4412,6 +4436,7 @@ local function UnsubscribeFromQuestModel()
 end
 
 local function ConfigureLayoutHelper()
+    ApplyCategorySpacingFromSaved()
     if QuestTrackerLayout and QuestTrackerLayout.Init then
         QuestTrackerLayout:Init(state, {
             VERTICAL_PADDING = VERTICAL_PADDING,
@@ -4422,6 +4447,8 @@ local function ConfigureLayoutHelper()
             QUEST_ICON_SLOT_PADDING_X = QUEST_ICON_SLOT_PADDING_X,
             QUEST_MIN_HEIGHT = QUEST_MIN_HEIGHT,
             CATEGORY_INDENT_X = CATEGORY_INDENT_X,
+            CATEGORY_SPACING_ABOVE = CATEGORY_SPACING_ABOVE,
+            CATEGORY_SPACING_BELOW = CATEGORY_BOTTOM_PAD_EXPANDED,
             CATEGORY_TOGGLE_WIDTH = CATEGORY_TOGGLE_WIDTH,
             TOGGLE_LABEL_PADDING_X = TOGGLE_LABEL_PADDING_X,
             CATEGORY_MIN_HEIGHT = CATEGORY_MIN_HEIGHT,
@@ -4667,6 +4694,7 @@ function QuestTracker.ApplySettings(settings)
         settings.autoCollapsePreviousCategoryOnActiveQuestChange == true
     state.opts.active = (settings.active ~= false)
 
+    ConfigureLayoutHelper()
     RefreshVisibility()
     RequestRefresh()
     NotifyStatusRefresh()

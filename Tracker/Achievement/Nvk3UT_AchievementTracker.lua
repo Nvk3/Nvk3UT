@@ -72,6 +72,8 @@ local function FormatDisplayString(text)
 end
 
 local CATEGORY_INDENT_X = 0
+local CATEGORY_SPACING_ABOVE = 3
+local CATEGORY_SPACING_BELOW = 6
 local ACHIEVEMENT_INDENT_X = 18
 local ACHIEVEMENT_ICON_SLOT_WIDTH = 18
 local ACHIEVEMENT_ICON_SLOT_HEIGHT = 18
@@ -127,15 +129,7 @@ local function GetSubrowSpacing()
 end
 
 local function GetCategoryBottomPadding(isExpanded)
-    if AchievementTrackerLayout and type(AchievementTrackerLayout.GetCategoryBottomPadding) == "function" then
-        return AchievementTrackerLayout.GetCategoryBottomPadding(isExpanded)
-    end
-
-    if isExpanded == true then
-        return 6
-    end
-
-    return 6
+    return CATEGORY_SPACING_BELOW
 end
 
 local function GetBottomPixelNudge()
@@ -170,6 +164,29 @@ local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
 local REFRESH_DEBOUNCE_MS = 80
 
 local DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR = { 1, 1, 0.6, 1 }
+
+local function NormalizeSpacingValue(value, fallback)
+    local numeric = tonumber(value)
+    if numeric == nil or numeric ~= numeric then
+        return fallback
+    end
+    if numeric < 0 then
+        return fallback
+    end
+    return numeric
+end
+
+local function ApplyCategorySpacingFromSaved()
+    local addon = Nvk3UT
+    local sv = addon and addon.SV
+    local spacing = sv and sv.spacing
+    local achievementSpacing = spacing and spacing.achievement
+    local category = achievementSpacing and achievementSpacing.category
+
+    CATEGORY_INDENT_X = NormalizeSpacingValue(category and category.indent, CATEGORY_INDENT_X)
+    CATEGORY_SPACING_ABOVE = NormalizeSpacingValue(category and category.spacingAbove, CATEGORY_SPACING_ABOVE)
+    CATEGORY_SPACING_BELOW = NormalizeSpacingValue(category and category.spacingBelow, CATEGORY_SPACING_BELOW)
+end
 
 local function IsDebugLoggingEnabled()
     local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
@@ -234,6 +251,7 @@ local state = {
     container = nil,
     orderedControls = {},
     lastAnchoredControl = nil,
+    nextCategoryGap = nil,
     snapshot = nil,
     subscription = nil,
     pendingRefresh = false,
@@ -340,10 +358,6 @@ end
 
 local function GetToggleWidth(toggle, fallback)
     if toggle then
-        if toggle.IsHidden and toggle:IsHidden() then
-            return 0
-        end
-
         if toggle.GetWidth then
             local width = toggle:GetWidth()
             if width and width > 0 then
@@ -1160,6 +1174,7 @@ local function ResetLayoutState()
     state.lastAnchoredControl = nil
     state.lastAnchoredKind = nil
     state.categoryExpanded = nil
+    state.nextCategoryGap = nil
 end
 
 local function WarnMissingRows()
@@ -1207,14 +1222,18 @@ local function ResolveRowKind(control)
     return "row"
 end
 
-local function AnchorControl(control, indentX)
+local function AnchorControl(control, indentX, gapOverride)
     indentX = indentX or 0
     control:ClearAnchors()
 
     local rowKind = ResolveRowKind(control)
-    local verticalPadding = GetRowGap()
-    if state.lastAnchoredKind == "header" then
-        verticalPadding = GetHeaderToRowsGap()
+    local verticalPadding = gapOverride
+    if type(verticalPadding) ~= "number" then
+        if rowKind == "header" then
+            verticalPadding = CATEGORY_SPACING_ABOVE
+        else
+            verticalPadding = GetRowGap()
+        end
     end
 
     if state.lastAnchoredControl then
@@ -1239,6 +1258,7 @@ local function UpdateContentSize()
     local rowCount = 0
     local measuredHeight = 0
     local previousKind
+    local pendingCategoryGap = nil
 
     for index = 1, #state.orderedControls do
         local control = state.orderedControls[index]
@@ -1250,8 +1270,10 @@ local function UpdateContentSize()
             local rowKind = ResolveRowKind(control)
             local gap = 0
             if previousKind ~= nil then
-                if previousKind == "header" then
-                    gap = GetHeaderToRowsGap()
+                if type(pendingCategoryGap) == "number" then
+                    gap = pendingCategoryGap
+                elseif rowKind == "header" then
+                    gap = CATEGORY_SPACING_ABOVE
                 else
                     gap = GetRowGap()
                 end
@@ -1269,12 +1291,18 @@ local function UpdateContentSize()
             end
 
             previousKind = rowKind
+            pendingCategoryGap = nil
+            if rowKind == "header" then
+                pendingCategoryGap = CATEGORY_SPACING_BELOW
+            end
         end
     end
 
     if visibleCount > 0 then
-        local bottomPad = GetCategoryBottomPadding(state.categoryExpanded == true and rowCount > 0)
-        measuredHeight = measuredHeight + bottomPad + GetBottomPixelNudge()
+        if type(pendingCategoryGap) == "number" then
+            measuredHeight = measuredHeight + pendingCategoryGap
+        end
+        measuredHeight = measuredHeight + GetBottomPixelNudge()
     end
 
     state.contentWidth = maxWidth
@@ -1506,7 +1534,8 @@ local function LayoutObjective(rows, achievement, objective, objectiveIndex)
     })
     ApplyRowMetrics(control, "objective", OBJECTIVE_INDENT_X, 0, 0, 0)
     control:SetHidden(false)
-    AnchorControl(control, OBJECTIVE_INDENT_X)
+    AnchorControl(control, OBJECTIVE_INDENT_X, state.nextCategoryGap)
+    state.nextCategoryGap = nil
 
     return control:GetHeight()
 end
@@ -1539,7 +1568,8 @@ local function LayoutAchievement(rows, achievement)
         0
     )
     control:SetHidden(false)
-    AnchorControl(control, ACHIEVEMENT_INDENT_X)
+    AnchorControl(control, ACHIEVEMENT_INDENT_X, state.nextCategoryGap)
+    state.nextCategoryGap = nil
 
     if hasObjectives and expanded then
         for index = 1, #achievement.objectives do
@@ -1653,7 +1683,16 @@ local function LayoutCategory(rows)
     )
 
     control:SetHidden(false)
-    AnchorControl(control, CATEGORY_INDENT_X)
+    if control.indentAnchor and control.indentAnchor.SetAnchor then
+        control.indentAnchor:ClearAnchors()
+        control.indentAnchor:SetAnchor(TOPLEFT, control, TOPLEFT, CATEGORY_INDENT_X, 0)
+    end
+    local gapOverride = state.nextCategoryGap
+    if type(gapOverride) ~= "number" then
+        gapOverride = CATEGORY_SPACING_ABOVE
+    end
+    AnchorControl(control, 0, gapOverride)
+    state.nextCategoryGap = CATEGORY_SPACING_BELOW
 
     if expanded then
         for index = 1, #visibleEntries do
@@ -1832,6 +1871,7 @@ function AchievementTracker.ApplySettings(settings)
         return
     end
 
+    ApplyCategorySpacingFromSaved()
     state.opts.active = settings.active ~= false
     ApplySections(settings.sections)
     if settings.tooltips ~= nil then

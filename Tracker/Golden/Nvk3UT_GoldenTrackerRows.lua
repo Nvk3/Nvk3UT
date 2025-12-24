@@ -1081,6 +1081,14 @@ local function createCategoryRow(parent)
         control:SetHeight(control.__height)
     end
 
+    local indentName = string.format("%s_CategoryIndent", controlName)
+    local indentAnchor = wm:CreateControl(indentName, control, CT_CONTROL)
+    if indentAnchor then
+        indentAnchor:SetDimensions(1, 1)
+        indentAnchor:ClearAnchors()
+        indentAnchor:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+    end
+
     local chevronName = string.format("%s_CategoryChevron", controlName)
     local chevron = wm:CreateControl(chevronName, control, CT_TEXTURE)
     if chevron.SetMouseEnabled then
@@ -1094,7 +1102,7 @@ local function createCategoryRow(parent)
     end
     if chevron.ClearAnchors then
         chevron:ClearAnchors()
-        chevron:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+        chevron:SetAnchor(TOPLEFT, indentAnchor or control, TOPLEFT, 0, 0)
     end
 
     local label = createLabel(control, "Category")
@@ -1111,6 +1119,7 @@ local function createCategoryRow(parent)
         control = control,
         label = label,
         chevron = chevron,
+        indentAnchor = indentAnchor,
         name = controlName,
         __height = getCategoryRowHeight(),
         __rowKind = ROW_KINDS.category,
@@ -1119,6 +1128,7 @@ local function createCategoryRow(parent)
 
     if control then
         control.label = label
+        control.indentAnchor = indentAnchor
     end
 
     if control and control.SetHandler then
@@ -1393,7 +1403,21 @@ local function applyCategoryRow(row, categoryData)
         )
     end
 
-    local availableWidth = computeAvailableWidth(targetRow, CATEGORY_CHEVRON_SIZE + CATEGORY_LABEL_OFFSET_X, 0, 0)
+    local indentValue = tonumber(categoryData and categoryData.categoryIndent) or 0
+    if indentValue < 0 then
+        indentValue = 0
+    end
+    if row.indentAnchor and row.indentAnchor.SetAnchor then
+        row.indentAnchor:ClearAnchors()
+        row.indentAnchor:SetAnchor(TOPLEFT, targetRow, TOPLEFT, indentValue, 0)
+    end
+
+    local availableWidth = computeAvailableWidth(
+        targetRow,
+        indentValue + CATEGORY_CHEVRON_SIZE + CATEGORY_LABEL_OFFSET_X,
+        0,
+        0
+    )
     if label.SetWidth then
         label:SetWidth(availableWidth)
     end

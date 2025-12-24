@@ -97,6 +97,9 @@ local ROW_GAP = 3
 local SECTION_BOTTOM_GAP = 3
 local SECTION_BOTTOM_GAP_COLLAPSED = 3
 local DEFAULT_BOTTOM_PIXEL_NUDGE = 3
+local CATEGORY_INDENT_X = 0
+local CATEGORY_SPACING_ABOVE = 3
+local CATEGORY_SPACING_BELOW = 6
 local CATEGORY_CHEVRON_SIZE = 20
 local CATEGORY_LABEL_OFFSET_X = 4
 local SUBHEADER_INDENT_X = 18
@@ -137,6 +140,29 @@ local function coerceHeight(value)
     end
 
     return 0
+end
+
+local function normalizeSpacingValue(value, fallback)
+    local numeric = tonumber(value)
+    if numeric == nil or numeric ~= numeric then
+        return fallback
+    end
+    if numeric < 0 then
+        return fallback
+    end
+    return numeric
+end
+
+local function applyCategorySpacingFromSaved()
+    local addon = Nvk3UT
+    local sv = addon and addon.SV
+    local spacing = sv and sv.spacing
+    local endeavorSpacing = spacing and spacing.endeavor
+    local category = endeavorSpacing and endeavorSpacing.category
+
+    CATEGORY_INDENT_X = normalizeSpacingValue(category and category.indent, CATEGORY_INDENT_X)
+    CATEGORY_SPACING_ABOVE = normalizeSpacingValue(category and category.spacingAbove, CATEGORY_SPACING_ABOVE)
+    CATEGORY_SPACING_BELOW = normalizeSpacingValue(category and category.spacingBelow, CATEGORY_SPACING_BELOW)
 end
 
 local function getCategoryRowHeightValue(rows, expanded)
@@ -1256,6 +1282,7 @@ local function newLayoutContext(container)
         visibleCount = 0,
         rowCount = 0,
         previousKind = nil,
+        pendingCategoryGap = nil,
     }
 
     if container and container.SetResizeToFitDescendents then
@@ -1288,9 +1315,13 @@ local function appendLayoutControl(context, control, fallbackHeight, kind)
 
     local offsetY = context.cursorY
     if context.visibleCount > 0 then
-        local gap = ROW_GAP
-        if context.previousKind == "header" then
-            gap = HEADER_TO_ROWS_GAP
+        local gap = context.pendingCategoryGap
+        if type(gap) ~= "number" then
+            if kind == "header" then
+                gap = CATEGORY_SPACING_ABOVE
+            else
+                gap = ROW_GAP
+            end
         end
         offsetY = offsetY + gap
         context.height = context.height + gap
@@ -1310,6 +1341,10 @@ local function appendLayoutControl(context, control, fallbackHeight, kind)
         context.rowCount = context.rowCount + 1
     end
     context.previousKind = resolvedKind
+    context.pendingCategoryGap = nil
+    if resolvedKind == "header" then
+        context.pendingCategoryGap = CATEGORY_SPACING_BELOW
+    end
 end
 
 local function N3UT_Endeavor_InitPoller_Tick()
@@ -1746,6 +1781,8 @@ function EndeavorTracker.Refresh(viewModel)
         return
     end
 
+    applyCategorySpacingFromSaved()
+
     if EndeavorTracker._building then
         safeDebug("[EndeavorTracker.UI] Refresh skipped due to active guard")
         return
@@ -1926,6 +1963,7 @@ function EndeavorTracker.Refresh(viewModel)
                     formatHeader = formatCategoryHeader,
                     overrideColors = overrideColors,
                     textures = CHEVRON_TEXTURES,
+                    categoryIndent = CATEGORY_INDENT_X,
                     colorRoles = {
                         expanded = CATEGORY_COLOR_ROLE_EXPANDED,
                         collapsed = CATEGORY_COLOR_ROLE_COLLAPSED,

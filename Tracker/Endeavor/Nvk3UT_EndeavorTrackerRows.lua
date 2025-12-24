@@ -1333,6 +1333,17 @@ local function createCategoryRow(parent)
     control:SetMouseEnabled(true)
     control:SetHidden(false)
 
+    local indentName = controlName .. "IndentAnchor"
+    local indentAnchor = ensureCategoryChild(control, indentName, CT_CONTROL)
+    if indentAnchor then
+        indentAnchor:SetHidden(false)
+        indentAnchor:SetDimensions(1, 1)
+        if indentAnchor.ClearAnchors then
+            indentAnchor:ClearAnchors()
+        end
+        indentAnchor:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+    end
+
     local chevronName = controlName .. "Chevron"
     local chevron = ensureCategoryChild(control, chevronName, CT_TEXTURE)
     if chevron then
@@ -1342,7 +1353,7 @@ local function createCategoryRow(parent)
         if chevron.ClearAnchors then
             chevron:ClearAnchors()
         end
-        chevron:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+        chevron:SetAnchor(TOPLEFT, indentAnchor or control, TOPLEFT, 0, 0)
         if chevron.SetTexture then
             chevron:SetTexture(DEFAULT_CATEGORY_CHEVRON_TEXTURES.collapsed)
         end
@@ -1369,12 +1380,14 @@ local function createCategoryRow(parent)
         control = control,
         label = label,
         chevron = chevron,
+        indentAnchor = indentAnchor,
         name = controlName,
         _poolState = "fresh",
     }
 
     if control then
         control.label = label
+        control.indentAnchor = indentAnchor
     end
 
     if control and control.SetHandler then
@@ -1763,7 +1776,21 @@ local function applyCategoryRow(row, data)
         end
     end
 
-    local availableWidth = computeEndeavorAvailableWidth(control, CATEGORY_CHEVRON_SIZE + CATEGORY_LABEL_OFFSET_X, 0, 0)
+    local indentValue = tonumber(info.categoryIndent) or 0
+    if indentValue < 0 then
+        indentValue = 0
+    end
+    if row.indentAnchor and row.indentAnchor.SetAnchor then
+        row.indentAnchor:ClearAnchors()
+        row.indentAnchor:SetAnchor(TOPLEFT, control, TOPLEFT, indentValue, 0)
+    end
+
+    local availableWidth = computeEndeavorAvailableWidth(
+        control,
+        indentValue + CATEGORY_CHEVRON_SIZE + CATEGORY_LABEL_OFFSET_X,
+        0,
+        0
+    )
     if label.SetWidth then
         label:SetWidth(availableWidth)
     end
