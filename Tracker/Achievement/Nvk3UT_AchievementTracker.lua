@@ -82,6 +82,8 @@ local ACHIEVEMENT_LABEL_INDENT_X = ACHIEVEMENT_INDENT_X + ACHIEVEMENT_ICON_SLOT_
 -- keep objective text inset relative to achievement titles after adding the persistent icon slot
 local OBJECTIVE_RELATIVE_INDENT = 18
 local OBJECTIVE_INDENT_X = ACHIEVEMENT_LABEL_INDENT_X + OBJECTIVE_RELATIVE_INDENT
+local OBJECTIVE_INDENT_DEFAULT = 40
+local OBJECTIVE_BASE_INDENT = 20
 
 local CATEGORY_KEY = "achievements"
 local CATEGORY_ROW_KEY = string.format("cat:%s", CATEGORY_KEY)
@@ -182,10 +184,12 @@ local function ApplyCategorySpacingFromSaved()
     local spacing = sv and sv.spacing
     local achievementSpacing = spacing and spacing.achievement
     local category = achievementSpacing and achievementSpacing.category
+    local objective = achievementSpacing and achievementSpacing.objective
 
     CATEGORY_INDENT_X = NormalizeSpacingValue(category and category.indent, CATEGORY_INDENT_X)
     CATEGORY_SPACING_ABOVE = NormalizeSpacingValue(category and category.spacingAbove, CATEGORY_SPACING_ABOVE)
     CATEGORY_SPACING_BELOW = NormalizeSpacingValue(category and category.spacingBelow, CATEGORY_SPACING_BELOW)
+    OBJECTIVE_INDENT_X = NormalizeSpacingValue(objective and objective.indent, OBJECTIVE_INDENT_DEFAULT) + OBJECTIVE_BASE_INDENT
 end
 
 local function IsDebugLoggingEnabled()

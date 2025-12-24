@@ -104,6 +104,8 @@ local CATEGORY_CHEVRON_SIZE = 20
 local CATEGORY_LABEL_OFFSET_X = 4
 local SUBHEADER_INDENT_X = 18
 local TITLE_INDENT_DELTA_PX = 14
+local OBJECTIVE_INDENT_DEFAULT = 40
+local OBJECTIVE_BASE_INDENT = 20
 local OBJECTIVE_ROW_SPACING = 3
 local SUBROW_FIRST_SPACING = 2
 local SUBROW_BETWEEN_SPACING = 1
@@ -163,6 +165,17 @@ local function applyCategorySpacingFromSaved()
     CATEGORY_INDENT_X = normalizeSpacingValue(category and category.indent, CATEGORY_INDENT_X)
     CATEGORY_SPACING_ABOVE = normalizeSpacingValue(category and category.spacingAbove, CATEGORY_SPACING_ABOVE)
     CATEGORY_SPACING_BELOW = normalizeSpacingValue(category and category.spacingBelow, CATEGORY_SPACING_BELOW)
+end
+
+local function getObjectiveIndentFromSaved()
+    local addon = Nvk3UT
+    local sv = addon and addon.SV
+    local spacing = sv and sv.spacing
+    local endeavorSpacing = spacing and spacing.endeavor
+    local objective = endeavorSpacing and endeavorSpacing.objective
+
+    local indent = normalizeSpacingValue(objective and objective.indent, OBJECTIVE_INDENT_DEFAULT)
+    return indent + OBJECTIVE_BASE_INDENT
 end
 
 local function getCategoryRowHeightValue(rows, expanded)
@@ -1844,6 +1857,7 @@ function EndeavorTracker.Refresh(viewModel)
             rowsOptions.rowHeight = rowHeight
             rowsOptions.colors = overrideColors
             rowsOptions.completedHandling = completedHandling
+            rowsOptions.objectiveIndent = getObjectiveIndentFromSaved()
 
             local dailyObjectivesList = type(dailyVm.objectives) == "table" and dailyVm.objectives or {}
             local weeklyObjectivesList = type(weeklyVm.objectives) == "table" and weeklyVm.objectives or {}

@@ -115,6 +115,18 @@ local SUBROW_ICON_SIZE = 16
 local SUBROW_ICON_GAP = 4
 local SUBROW_RIGHT_COLUMN_GAP = 8
 
+local function resolveObjectiveIndent(options)
+    local indent = options and options.objectiveIndent
+    local numeric = tonumber(indent)
+    if numeric == nil or numeric ~= numeric then
+        return OBJECTIVE_INDENT_X
+    end
+    if numeric < 0 then
+        return OBJECTIVE_INDENT_X
+    end
+    return numeric
+end
+
 local SUBROW_KIND_ALIASES = {
     info = "sub_info",
     description = "sub_info",
@@ -658,7 +670,8 @@ function Rows.ApplySubrow(control, kind, data, options)
             if icon.ClearAnchors then
                 icon:ClearAnchors()
             end
-            icon:SetAnchor(LEFT, control, LEFT, OBJECTIVE_INDENT_X - SUBROW_ICON_SIZE - SUBROW_ICON_GAP, 0)
+            local indentX = resolveObjectiveIndent(options)
+            icon:SetAnchor(LEFT, control, LEFT, indentX - SUBROW_ICON_SIZE - SUBROW_ICON_GAP, 0)
         else
             if icon.SetTexture then
                 icon:SetTexture(nil)
@@ -675,7 +688,7 @@ function Rows.ApplySubrow(control, kind, data, options)
         if icon and icon.IsHidden and not icon:IsHidden() then
             leftLabel:SetAnchor(TOPLEFT, icon, TOPRIGHT, SUBROW_ICON_GAP, 0)
         else
-            leftLabel:SetAnchor(TOPLEFT, control, TOPLEFT, OBJECTIVE_INDENT_X, 0)
+            leftLabel:SetAnchor(TOPLEFT, control, TOPLEFT, resolveObjectiveIndent(options), 0)
         end
     end
 
@@ -753,7 +766,7 @@ function Rows.ApplySubrow(control, kind, data, options)
         rightLabel:SetColor(r, g, b, a)
     end
 
-    local availableWidth = computeEndeavorAvailableWidth(control, OBJECTIVE_INDENT_X, 0, 0)
+    local availableWidth = computeEndeavorAvailableWidth(control, resolveObjectiveIndent(options), 0, 0)
     if leftLabel and leftLabel.SetWidth then
         leftLabel:SetWidth(availableWidth)
     end
@@ -2035,7 +2048,7 @@ local function applyEntryRow(row, objective, options)
         applyFontString(title, resolvedFont, DEFAULT_OBJECTIVE_FONT)
     end
     title:ClearAnchors()
-    title:SetAnchor(TOPLEFT, row, TOPLEFT, OBJECTIVE_INDENT_X, ENTRY_TOP_PAD)
+    title:SetAnchor(TOPLEFT, row, TOPLEFT, resolveObjectiveIndent(options), ENTRY_TOP_PAD)
     title:SetText(combinedText)
     row.Label = title
     row.label = title
@@ -2064,7 +2077,7 @@ local function applyEntryRow(row, objective, options)
 
     applyObjectiveColor(title, options, data)
 
-    local availableWidth = computeEndeavorAvailableWidth(row, OBJECTIVE_INDENT_X, 0, 0)
+    local availableWidth = computeEndeavorAvailableWidth(row, resolveObjectiveIndent(options), 0, 0)
     if title.SetWidth then
         title:SetWidth(availableWidth)
     end
