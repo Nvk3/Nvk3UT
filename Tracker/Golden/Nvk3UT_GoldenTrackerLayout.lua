@@ -87,15 +87,27 @@ local function normalizeSpacingValue(value, fallback)
     return numeric
 end
 
-local function applyCategorySpacingFromSaved()
-    local addon = Nvk3UT
-    local sv = addon and addon.SV
-    local spacing = sv and sv.spacing
-    local goldenSpacing = spacing and spacing.golden
-    local category = goldenSpacing and goldenSpacing.category
+local function getCategorySpacingFromSV()
+    local tracker = Nvk3UT and Nvk3UT.GoldenTracker
+    if tracker and type(tracker.GetCategorySpacingFromSV) == "function" then
+        local ok, spacing = pcall(tracker.GetCategorySpacingFromSV)
+        if ok and type(spacing) == "table" then
+            return spacing
+        end
+    end
 
-    CATEGORY_SPACING_ABOVE = normalizeSpacingValue(category and category.spacingAbove, CATEGORY_SPACING_ABOVE)
-    CATEGORY_SPACING_BELOW = normalizeSpacingValue(category and category.spacingBelow, CATEGORY_SPACING_BELOW)
+    return {
+        indentX = 0,
+        spacingAbove = 3,
+        spacingBelow = 6,
+    }
+end
+
+local function applyCategorySpacingFromSaved()
+    local spacing = getCategorySpacingFromSV()
+
+    CATEGORY_SPACING_ABOVE = normalizeSpacingValue(spacing.spacingAbove, 3)
+    CATEGORY_SPACING_BELOW = normalizeSpacingValue(spacing.spacingBelow, 6)
 end
 
 local function getControlHeight(control, fallback)

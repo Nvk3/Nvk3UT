@@ -107,13 +107,22 @@ local function normalizeSpacingValue(value, fallback)
     return numeric
 end
 
-local function getCategoryIndentFromSaved()
+function GoldenTracker.GetCategorySpacingFromSV()
     local root = getAddonRoot()
     local sv = root and (root.SV or root.sv)
     local spacing = sv and sv.spacing
     local goldenSpacing = spacing and spacing.golden
     local category = goldenSpacing and goldenSpacing.category
-    return normalizeSpacingValue(category and category.indent, 0)
+    return {
+        indentX = normalizeSpacingValue(category and category.indent, 0),
+        spacingAbove = normalizeSpacingValue(category and category.spacingAbove, 3),
+        spacingBelow = normalizeSpacingValue(category and category.spacingBelow, 6),
+    }
+end
+
+local function getCategoryIndentFromSaved()
+    local spacing = GoldenTracker.GetCategorySpacingFromSV()
+    return spacing.indentX
 end
 
 local function isObjectiveCompleted(objectiveData)

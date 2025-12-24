@@ -216,19 +216,27 @@ local function NormalizeSpacingValue(value, fallback)
     return numeric
 end
 
-local function ApplyCategorySpacingFromSaved()
+function QuestTracker.GetCategorySpacingFromSV()
     local addon = Nvk3UT
     local sv = addon and addon.SV
     local spacing = sv and sv.spacing
     local questSpacing = spacing and spacing.quest
     local category = questSpacing and questSpacing.category
 
-    CATEGORY_INDENT_X = NormalizeSpacingValue(category and category.indent, CATEGORY_INDENT_X)
-    CATEGORY_SPACING_ABOVE = NormalizeSpacingValue(category and category.spacingAbove, CATEGORY_SPACING_ABOVE)
+    return {
+        indentX = NormalizeSpacingValue(category and category.indent, 0),
+        spacingAbove = NormalizeSpacingValue(category and category.spacingAbove, 3),
+        spacingBelow = NormalizeSpacingValue(category and category.spacingBelow, 6),
+    }
+end
 
-    local belowSpacing = NormalizeSpacingValue(category and category.spacingBelow, CATEGORY_BOTTOM_PAD_EXPANDED)
-    CATEGORY_BOTTOM_PAD_EXPANDED = belowSpacing
-    CATEGORY_BOTTOM_PAD_COLLAPSED = belowSpacing
+local function ApplyCategorySpacingFromSaved()
+    local spacing = QuestTracker.GetCategorySpacingFromSV()
+
+    CATEGORY_INDENT_X = spacing.indentX
+    CATEGORY_SPACING_ABOVE = spacing.spacingAbove
+    CATEGORY_BOTTOM_PAD_EXPANDED = spacing.spacingBelow
+    CATEGORY_BOTTOM_PAD_COLLAPSED = spacing.spacingBelow
 end
 
 local function ScheduleToggleFollowup(reason)

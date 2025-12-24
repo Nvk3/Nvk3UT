@@ -176,16 +176,26 @@ local function NormalizeSpacingValue(value, fallback)
     return numeric
 end
 
-local function ApplyCategorySpacingFromSaved()
+function AchievementTracker.GetCategorySpacingFromSV()
     local addon = Nvk3UT
     local sv = addon and addon.SV
     local spacing = sv and sv.spacing
     local achievementSpacing = spacing and spacing.achievement
     local category = achievementSpacing and achievementSpacing.category
 
-    CATEGORY_INDENT_X = NormalizeSpacingValue(category and category.indent, CATEGORY_INDENT_X)
-    CATEGORY_SPACING_ABOVE = NormalizeSpacingValue(category and category.spacingAbove, CATEGORY_SPACING_ABOVE)
-    CATEGORY_SPACING_BELOW = NormalizeSpacingValue(category and category.spacingBelow, CATEGORY_SPACING_BELOW)
+    return {
+        indentX = NormalizeSpacingValue(category and category.indent, 0),
+        spacingAbove = NormalizeSpacingValue(category and category.spacingAbove, 3),
+        spacingBelow = NormalizeSpacingValue(category and category.spacingBelow, 6),
+    }
+end
+
+local function ApplyCategorySpacingFromSaved()
+    local spacing = AchievementTracker.GetCategorySpacingFromSV()
+
+    CATEGORY_INDENT_X = spacing.indentX
+    CATEGORY_SPACING_ABOVE = spacing.spacingAbove
+    CATEGORY_SPACING_BELOW = spacing.spacingBelow
 end
 
 local function IsDebugLoggingEnabled()

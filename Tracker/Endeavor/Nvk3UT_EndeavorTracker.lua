@@ -153,16 +153,26 @@ local function normalizeSpacingValue(value, fallback)
     return numeric
 end
 
-local function applyCategorySpacingFromSaved()
+function EndeavorTracker.GetCategorySpacingFromSV()
     local addon = Nvk3UT
     local sv = addon and addon.SV
     local spacing = sv and sv.spacing
     local endeavorSpacing = spacing and spacing.endeavor
     local category = endeavorSpacing and endeavorSpacing.category
 
-    CATEGORY_INDENT_X = normalizeSpacingValue(category and category.indent, CATEGORY_INDENT_X)
-    CATEGORY_SPACING_ABOVE = normalizeSpacingValue(category and category.spacingAbove, CATEGORY_SPACING_ABOVE)
-    CATEGORY_SPACING_BELOW = normalizeSpacingValue(category and category.spacingBelow, CATEGORY_SPACING_BELOW)
+    return {
+        indentX = normalizeSpacingValue(category and category.indent, 0),
+        spacingAbove = normalizeSpacingValue(category and category.spacingAbove, 3),
+        spacingBelow = normalizeSpacingValue(category and category.spacingBelow, 6),
+    }
+end
+
+local function applyCategorySpacingFromSaved()
+    local spacing = EndeavorTracker.GetCategorySpacingFromSV()
+
+    CATEGORY_INDENT_X = spacing.indentX
+    CATEGORY_SPACING_ABOVE = spacing.spacingAbove
+    CATEGORY_SPACING_BELOW = spacing.spacingBelow
 end
 
 local function getCategoryRowHeightValue(rows, expanded)
