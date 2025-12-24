@@ -227,6 +227,7 @@ local strings = {
     SI_NVK3UT_LAM_SPACING_CATEGORY_INDENT = "Indent Category",
     SI_NVK3UT_LAM_SPACING_CATEGORY_ABOVE = "Vertical spacing above Category",
     SI_NVK3UT_LAM_SPACING_CATEGORY_BELOW = "Vertical spacing below Category",
+    SI_NVK3UT_LAM_SPACING_CATEGORY_TOP_PADDING = "Content top padding",
     SI_NVK3UT_LAM_SPACING_ENTRY_INDENT = "Indent Entry",
     SI_NVK3UT_LAM_SPACING_ENTRY_ABOVE = "Vertical spacing above Entry",
     SI_NVK3UT_LAM_SPACING_ENTRY_BELOW = "Vertical spacing below Entry",

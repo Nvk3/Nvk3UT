@@ -182,6 +182,7 @@ local QUEST_LABEL_INDENT_X = QUEST_INDENT_X + QUEST_ICON_SLOT_WIDTH + QUEST_ICON
 local CONDITION_RELATIVE_INDENT = 18
 local CONDITION_INDENT_X = QUEST_LABEL_INDENT_X + CONDITION_RELATIVE_INDENT
 local CATEGORY_SPACING_ABOVE = 3
+local CONTENT_TOP_PADDING = 0
 local VERTICAL_PADDING = 3
 local CATEGORY_BOTTOM_PAD_EXPANDED = 6
 local CATEGORY_BOTTOM_PAD_COLLAPSED = 6
@@ -225,6 +226,7 @@ local function ApplyCategorySpacingFromSaved()
 
     CATEGORY_INDENT_X = NormalizeSpacingValue(category and category.indent, CATEGORY_INDENT_X)
     CATEGORY_SPACING_ABOVE = NormalizeSpacingValue(category and category.spacingAbove, CATEGORY_SPACING_ABOVE)
+    CONTENT_TOP_PADDING = NormalizeSpacingValue(category and category.topPadding, CONTENT_TOP_PADDING)
 
     local belowSpacing = NormalizeSpacingValue(category and category.spacingBelow, CATEGORY_BOTTOM_PAD_EXPANDED)
     CATEGORY_BOTTOM_PAD_EXPANDED = belowSpacing
@@ -4440,6 +4442,7 @@ local function ConfigureLayoutHelper()
     if QuestTrackerLayout and QuestTrackerLayout.Init then
         QuestTrackerLayout:Init(state, {
             VERTICAL_PADDING = VERTICAL_PADDING,
+            CONTENT_TOP_PADDING = CONTENT_TOP_PADDING,
             CONDITION_INDENT_X = CONDITION_INDENT_X,
             CONDITION_MIN_HEIGHT = CONDITION_MIN_HEIGHT,
             QUEST_INDENT_X = QUEST_INDENT_X,
