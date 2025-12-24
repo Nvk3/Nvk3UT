@@ -161,7 +161,7 @@ local DEFAULT_WINDOW_BARS = {
 }
 
 local DEFAULT_SPACING = {
-    category = { indent = 0, spacingAbove = 3, spacingBelow = 6, topPadding = 0 },
+    category = { indent = 0, spacingAbove = 3, spacingBelow = 6 },
     entry = { indent = 40, spacingAbove = 3, spacingBelow = 3 },
     objective = { indent = 60, spacingAbove = 3, spacingBelow = 3, spacingBetween = 1 },
 }
@@ -1427,7 +1427,7 @@ local function buildSpacingControls(trackerKey)
     local controls = {}
     local function notifySpacingChanged()
         if trackerKey == "quest" then
-            refreshQuestTracker()
+            applyQuestSettings()
         elseif trackerKey == "achievement" then
             refreshAchievementTracker()
         elseif trackerKey == "endeavor" then
@@ -1501,20 +1501,6 @@ local function buildSpacingControls(trackerKey)
             setSpacingValue("category", "spacingBelow", value)
         end,
         default = DEFAULT_SPACING.category.spacingBelow,
-    }
-    controls[#controls + 1] = {
-        type = "slider",
-        name = GetString(SI_NVK3UT_LAM_SPACING_CATEGORY_TOP_PADDING),
-        min = 0,
-        max = 50,
-        step = 1,
-        getFunc = function()
-            return getSpacingValue("category", "topPadding")
-        end,
-        setFunc = function(value)
-            setSpacingValue("category", "topPadding", value)
-        end,
-        default = DEFAULT_SPACING.category.topPadding,
     }
 
     controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_SPACING_GROUP_ENTRY) }

@@ -36,7 +36,6 @@ function Layout:Init(trackerState, deps)
     self.deps = deps or {}
 
     self.verticalPadding = deps.VERTICAL_PADDING or 0
-    self.contentTopPadding = deps.CONTENT_TOP_PADDING or 0
     self.categoryBottomPadExpanded = deps.CATEGORY_BOTTOM_PAD_EXPANDED or 0
     self.categoryBottomPadCollapsed = deps.CATEGORY_BOTTOM_PAD_COLLAPSED or 0
     self.bottomPixelNudge = deps.BOTTOM_PIXEL_NUDGE or 0
@@ -277,9 +276,7 @@ function Layout:AnchorControl(control, indentX, gapOverride)
             pendingGap = self:ConsumePendingCategoryGap()
         end
 
-        if isFirst then
-            gap = self.contentTopPadding or 0
-        elseif type(pendingGap) == "number" then
+        if type(pendingGap) == "number" then
             gap = pendingGap
         elseif rowType == "category" then
             gap = 0
@@ -334,9 +331,7 @@ function Layout:UpdateContentSize()
             pendingGap = pendingCategoryGap
         end
 
-        if isFirst then
-            gap = self.contentTopPadding or 0
-        elseif type(pendingGap) == "number" then
+        if type(pendingGap) == "number" then
             gap = pendingGap
             pendingCategoryGap = nil
         elseif rowType == "category" then

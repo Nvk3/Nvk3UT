@@ -227,7 +227,6 @@ local strings = {
     SI_NVK3UT_LAM_SPACING_CATEGORY_INDENT = "Einzug Kategorie",
     SI_NVK3UT_LAM_SPACING_CATEGORY_ABOVE = "Vertikales Spacing über Kategorie",
     SI_NVK3UT_LAM_SPACING_CATEGORY_BELOW = "Vertikales Spacing unter Kategorie",
-    SI_NVK3UT_LAM_SPACING_CATEGORY_TOP_PADDING = "Oberer Abstand im Inhalt",
     SI_NVK3UT_LAM_SPACING_ENTRY_INDENT = "Einzug Eintrag",
     SI_NVK3UT_LAM_SPACING_ENTRY_ABOVE = "Vertikales Spacing über Eintrag",
     SI_NVK3UT_LAM_SPACING_ENTRY_BELOW = "Vertikales Spacing unter Eintrag",
