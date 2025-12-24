@@ -4366,6 +4366,12 @@ local function OnQuestViewModelUpdated(viewModel, context)
         return
     end
 
+    ApplyCategorySpacingFromSaved()
+    if QuestTrackerLayout and QuestTrackerLayout.UpdateCategorySpacing then
+        local spacing = QuestTracker.GetCategorySpacingFromSV()
+        QuestTrackerLayout:UpdateCategorySpacing(spacing.indentX, spacing.spacingAbove, spacing.spacingBelow)
+    end
+
     local previousCategories, previousQuests = CountViewModelEntries(state.viewModel)
     local previousHeight = state.contentHeight or 0
 

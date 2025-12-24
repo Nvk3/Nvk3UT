@@ -51,6 +51,20 @@ function Layout:Init(trackerState, deps)
     safeDebug("%s: Init layout helper", MODULE_TAG)
 end
 
+function Layout:UpdateCategorySpacing(indentX, spacingAbove, spacingBelow)
+    if type(indentX) == "number" then
+        self.deps.CATEGORY_INDENT_X = indentX
+    end
+    if type(spacingAbove) == "number" then
+        self.categorySpacingAbove = spacingAbove
+    end
+    if type(spacingBelow) == "number" then
+        self.categoryBottomPadExpanded = spacingBelow
+        self.categoryBottomPadCollapsed = spacingBelow
+        self.categorySpacingBelow = spacingBelow
+    end
+end
+
 function Layout:ResetLayoutState()
     local state = self.state or {}
     state.orderedControls = {}
