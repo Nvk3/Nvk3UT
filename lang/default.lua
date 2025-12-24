@@ -117,7 +117,7 @@ local strings = {
     SI_NVK3UT_LAM_QUEST_FONT_CATEGORY_LABEL = "Category header",
     SI_NVK3UT_LAM_QUEST_FONT_TITLE_LABEL = "Quest title",
     SI_NVK3UT_LAM_QUEST_FONT_LINE_LABEL = "Quest lines",
-    SI_NVK3UT_LAM_SPACING_QUEST_SUBMENU = "Spacing Quest Tracker",
+    SI_NVK3UT_LAM_SPACING_QUEST_SUBMENU = "Quest Tracker Spacing",
 
     -- Endeavor tracker
     SI_NVK3UT_LAM_ENDEAVOR_SECTION = "Endeavor Tracker",
@@ -150,7 +150,7 @@ local strings = {
     SI_NVK3UT_LAM_ENDEAVOR_FONT_CATEGORY_LABEL = "Category header",
     SI_NVK3UT_LAM_ENDEAVOR_FONT_TITLE_LABEL = "Title",
     SI_NVK3UT_LAM_ENDEAVOR_FONT_LINE_LABEL = "Lines",
-    SI_NVK3UT_LAM_SPACING_ENDEAVOR_SUBMENU = "Spacing Endeavor Tracker",
+    SI_NVK3UT_LAM_SPACING_ENDEAVOR_SUBMENU = "Endeavor Tracker Spacing",
 
     -- Achievement tracker
     SI_NVK3UT_LAM_ACHIEVEMENT_SECTION = "Achievement Tracker",
@@ -178,7 +178,7 @@ local strings = {
     SI_NVK3UT_LAM_ACHIEVEMENT_FONT_CATEGORY_LABEL = "Category header",
     SI_NVK3UT_LAM_ACHIEVEMENT_FONT_TITLE_LABEL = "Title",
     SI_NVK3UT_LAM_ACHIEVEMENT_FONT_LINE_LABEL = "Lines",
-    SI_NVK3UT_LAM_SPACING_ACHIEVEMENT_SUBMENU = "Spacing Achievement Tracker",
+    SI_NVK3UT_LAM_SPACING_ACHIEVEMENT_SUBMENU = "Achievement Tracker Spacing",
 
     -- Golden tracker
     SI_NVK3UT_LAM_GOLDEN_SECTION = "Golden Pursuit Tracker",
@@ -218,7 +218,7 @@ local strings = {
     SI_NVK3UT_LAM_GOLDEN_FONT_CATEGORY_LABEL = "Category header",
     SI_NVK3UT_LAM_GOLDEN_FONT_TITLE_LABEL = "Title",
     SI_NVK3UT_LAM_GOLDEN_FONT_LINE_LABEL = "Lines",
-    SI_NVK3UT_LAM_SPACING_GOLDEN_SUBMENU = "Spacing Golden Pursuit Tracker",
+    SI_NVK3UT_LAM_SPACING_GOLDEN_SUBMENU = "Golden Pursuit Tracker Spacing",
 
     -- Tracker spacing
     SI_NVK3UT_LAM_SPACING_GROUP_CATEGORY = "Category",
