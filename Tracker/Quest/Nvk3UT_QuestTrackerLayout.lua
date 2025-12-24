@@ -39,6 +39,14 @@ function Layout:Init(trackerState, deps)
     self.categoryBottomPadExpanded = deps.CATEGORY_BOTTOM_PAD_EXPANDED or 0
     self.categoryBottomPadCollapsed = deps.CATEGORY_BOTTOM_PAD_COLLAPSED or 0
     self.bottomPixelNudge = deps.BOTTOM_PIXEL_NUDGE or 0
+    self.categorySpacingAbove = deps.CATEGORY_SPACING_ABOVE
+    if self.categorySpacingAbove == nil then
+        self.categorySpacingAbove = self.verticalPadding
+    end
+    self.categorySpacingBelow = deps.CATEGORY_SPACING_BELOW
+    if self.categorySpacingBelow == nil then
+        self.categorySpacingBelow = self.categoryBottomPadExpanded or 0
+    end
 
     safeDebug("%s: Init layout helper", MODULE_TAG)
 end
@@ -86,7 +94,11 @@ end
 
 function Layout:SetPendingCategoryGap(expanded)
     local state = self.state or {}
-    state.nextCategoryGap = self:GetCategoryBottomPadding(expanded)
+    local gap = self.categorySpacingBelow
+    if type(gap) ~= "number" then
+        gap = self:GetCategoryBottomPadding(expanded)
+    end
+    state.nextCategoryGap = gap
 end
 
 function Layout:ComputeRowHeight(control, indent, toggleWidth, leftPadding, rightPadding, minHeight)
@@ -308,10 +320,6 @@ function Layout:UpdateContentSize()
                     )
                 end
 
-                if currentCategoryControl then
-                    pendingCategoryGap = self:GetCategoryBottomPadding(currentCategoryControl.isExpanded)
-                end
-
                 currentCategoryControl = control
                 if categoryKey and rowsByCategory then
                     currentCategoryRows = rowsByCategory[categoryKey] or {}
@@ -369,7 +377,15 @@ function Layout:UpdateContentSize()
             end
 
             if visibleCount > 0 then
-                local gap = pendingCategoryGap or self.verticalPadding
+                local gap = pendingCategoryGap
+                if type(gap) ~= "number" then
+                    if rowType == "category" then
+                        gap = self.categorySpacingAbove
+                    end
+                    if type(gap) ~= "number" then
+                        gap = self.verticalPadding
+                    end
+                end
                 totalHeight = totalHeight + gap
             end
 
@@ -381,6 +397,12 @@ function Layout:UpdateContentSize()
             local width = (control:GetWidth() or 0) + (control.currentIndent or 0)
             if width > maxWidth then
                 maxWidth = width
+            end
+            if rowType == "category" then
+                pendingCategoryGap = self.categorySpacingBelow
+                if type(pendingCategoryGap) ~= "number" then
+                    pendingCategoryGap = self:GetCategoryBottomPadding(control.isExpanded)
+                end
             end
         end
     end
@@ -503,7 +525,7 @@ function Layout:LayoutQuest(quest)
     end
     self:GetQuestRowContentHeight(control, control.data)
     control:SetHidden(false)
-    self:AnchorControl(control, self.deps.QUEST_INDENT_X)
+    self:AnchorControl(control, self.deps.QUEST_INDENT_X, self:ConsumePendingCategoryGap())
 
     local state = self.state or {}
     if quest and quest.journalIndex then
@@ -569,9 +591,18 @@ function Layout:LayoutCategory(category, providedControl)
     if UpdateCategoryToggle then
         UpdateCategoryToggle(control, expanded)
     end
+    if control.indentAnchor and control.indentAnchor.SetAnchor then
+        control.indentAnchor:ClearAnchors()
+        control.indentAnchor:SetAnchor(TOPLEFT, control, TOPLEFT, self.deps.CATEGORY_INDENT_X or 0, 0)
+    end
     self:GetCategoryHeaderHeight(control)
     control:SetHidden(false)
-    self:AnchorControl(control, self.deps.CATEGORY_INDENT_X, self:ConsumePendingCategoryGap())
+    local gapOverride = self:ConsumePendingCategoryGap()
+    if type(gapOverride) ~= "number" then
+        gapOverride = self.categorySpacingAbove
+    end
+    self:AnchorControl(control, 0, gapOverride)
+    self:SetPendingCategoryGap(expanded)
 
     if expanded and category.quests then
         for index = 1, count do
@@ -580,8 +611,6 @@ function Layout:LayoutCategory(category, providedControl)
     elseif self.deps.SetCategoryRowsVisible then
         self.deps.SetCategoryRowsVisible(category.key, false)
     end
-
-    self:SetPendingCategoryGap(expanded)
 end
 
 function Layout:ReleaseRowControl(control)
