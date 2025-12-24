@@ -47,6 +47,14 @@ function Layout:Init(trackerState, deps)
     if self.categorySpacingBelow == nil then
         self.categorySpacingBelow = self.categoryBottomPadExpanded or 0
     end
+    self.entrySpacingAbove = deps.ENTRY_SPACING_ABOVE
+    if self.entrySpacingAbove == nil then
+        self.entrySpacingAbove = self.verticalPadding
+    end
+    self.entrySpacingBelow = deps.ENTRY_SPACING_BELOW
+    if self.entrySpacingBelow == nil then
+        self.entrySpacingBelow = self.verticalPadding
+    end
 
     safeDebug("%s: Init layout helper", MODULE_TAG)
 end
@@ -56,6 +64,7 @@ function Layout:ResetLayoutState()
     state.orderedControls = {}
     state.lastAnchoredControl = nil
     state.pendingCategoryGap = nil
+    state.pendingEntryGap = nil
     state.visibleRowCount = 0
     state.categoryControls = {}
     state.questControls = {}
@@ -93,6 +102,13 @@ function Layout:ConsumePendingCategoryGap()
     return gap
 end
 
+function Layout:ConsumePendingEntryGap()
+    local state = self.state or {}
+    local gap = state.pendingEntryGap
+    state.pendingEntryGap = nil
+    return gap
+end
+
 function Layout:SetPendingCategoryGap(expanded)
     local state = self.state or {}
     local gap = self.categorySpacingBelow
@@ -100,6 +116,15 @@ function Layout:SetPendingCategoryGap(expanded)
         gap = self:GetCategoryBottomPadding(expanded)
     end
     state.pendingCategoryGap = gap
+end
+
+function Layout:SetPendingEntryGap()
+    local state = self.state or {}
+    local gap = self.entrySpacingBelow
+    if type(gap) ~= "number" then
+        gap = self.verticalPadding
+    end
+    state.pendingEntryGap = gap
 end
 
 function Layout:ComputeRowHeight(control, indent, toggleWidth, leftPadding, rightPadding, minHeight)
@@ -271,9 +296,11 @@ function Layout:AnchorControl(control, indentX, gapOverride)
         local rowType = control.rowType
         local isFirst = (state.visibleRowCount or 0) == 0
         local pendingGap = nil
+        local pendingEntryGap = nil
 
         if not isFirst then
             pendingGap = self:ConsumePendingCategoryGap()
+            pendingEntryGap = self:ConsumePendingEntryGap()
         end
 
         if type(pendingGap) == "number" then
@@ -284,8 +311,18 @@ function Layout:AnchorControl(control, indentX, gapOverride)
             gap = self.verticalPadding
         end
 
+        if type(pendingEntryGap) == "number" then
+            gap = gap + pendingEntryGap
+        end
+
         if rowType == "category" then
             local aboveGap = self.categorySpacingAbove
+            if type(aboveGap) ~= "number" then
+                aboveGap = self.verticalPadding
+            end
+            gap = gap + aboveGap
+        elseif rowType == "quest" then
+            local aboveGap = self.entrySpacingAbove
             if type(aboveGap) ~= "number" then
                 aboveGap = self.verticalPadding
             end
@@ -322,13 +359,16 @@ function Layout:UpdateContentSize()
     local currentCategoryControl = nil
     local currentCategoryRows = nil
     local pendingCategoryGap = nil
+    local pendingEntryGap = nil
     local currentCategoryActive = false
 
     local function resolveRowSpacingBefore(rowType, isFirst)
         local gap = 0
         local pendingGap = nil
+        local pendingEntry = nil
         if not isFirst then
             pendingGap = pendingCategoryGap
+            pendingEntry = pendingEntryGap
         end
 
         if type(pendingGap) == "number" then
@@ -340,8 +380,19 @@ function Layout:UpdateContentSize()
             gap = self.verticalPadding
         end
 
+        if type(pendingEntry) == "number" then
+            gap = gap + pendingEntry
+            pendingEntryGap = nil
+        end
+
         if rowType == "category" then
             local aboveGap = self.categorySpacingAbove
+            if type(aboveGap) ~= "number" then
+                aboveGap = self.verticalPadding
+            end
+            gap = gap + aboveGap
+        elseif rowType == "quest" then
+            local aboveGap = self.entrySpacingAbove
             if type(aboveGap) ~= "number" then
                 aboveGap = self.verticalPadding
             end
@@ -454,6 +505,14 @@ function Layout:UpdateContentSize()
             end
 
             local nextControl, nextRowType = peekNextVisibleRow(index)
+            if rowType == "quest" or rowType == "condition" then
+                if nextControl == nil or nextRowType ~= "condition" then
+                    pendingEntryGap = self.entrySpacingBelow
+                    if type(pendingEntryGap) ~= "number" then
+                        pendingEntryGap = self.verticalPadding
+                    end
+                end
+            end
             if currentCategoryActive and (nextControl == nil or nextRowType == "category") then
                 pendingCategoryGap = self.categorySpacingBelow
                 if type(pendingCategoryGap) ~= "number" then
@@ -473,6 +532,10 @@ function Layout:UpdateContentSize()
             questCount or 0,
             tostring(height)
         )
+    end
+
+    if type(pendingEntryGap) == "number" then
+        totalHeight = totalHeight + pendingEntryGap
     end
 
     if type(pendingCategoryGap) == "number" then
@@ -599,6 +662,8 @@ function Layout:LayoutQuest(quest)
             end
         end
     end
+
+    self:SetPendingEntryGap()
 end
 
 function Layout:LayoutCategory(category, providedControl)
@@ -741,8 +806,10 @@ function Layout:TrimOrderedControlsToCategory(keepCategoryCount)
         end
     end
     state.pendingCategoryGap = nil
+    state.pendingEntryGap = nil
     if state.visibleRowCount > 0 then
         local lastCategoryControl = nil
+        local lastVisibleControl = nil
         for index = #state.orderedControls, 1, -1 do
             local control = state.orderedControls[index]
             if control and control.rowType == "category" then
@@ -750,8 +817,21 @@ function Layout:TrimOrderedControlsToCategory(keepCategoryCount)
                 break
             end
         end
+        for index = #state.orderedControls, 1, -1 do
+            local control = state.orderedControls[index]
+            if control and not control:IsHidden() then
+                lastVisibleControl = control
+                break
+            end
+        end
         if lastCategoryControl then
             self:SetPendingCategoryGap(lastCategoryControl.isExpanded)
+        end
+        if lastVisibleControl then
+            local rowType = lastVisibleControl.rowType
+            if rowType == "quest" or rowType == "condition" then
+                self:SetPendingEntryGap()
+            end
         end
     end
 end

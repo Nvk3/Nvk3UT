@@ -185,6 +185,8 @@ local CATEGORY_SPACING_ABOVE = 3
 local VERTICAL_PADDING = 3
 local CATEGORY_BOTTOM_PAD_EXPANDED = 6
 local CATEGORY_BOTTOM_PAD_COLLAPSED = 6
+local ENTRY_SPACING_ABOVE = 3
+local ENTRY_SPACING_BELOW = 3
 local BOTTOM_PIXEL_NUDGE = 3
 
 local CATEGORY_MIN_HEIGHT = 26
@@ -216,12 +218,14 @@ local function NormalizeSpacingValue(value, fallback)
     return numeric
 end
 
-local function ApplyCategorySpacingFromSaved()
+local function ApplyQuestSpacingFromSaved()
     local addon = Nvk3UT
     local sv = addon and addon.SV
     local spacing = sv and sv.spacing
     local questSpacing = spacing and spacing.quest
     local category = questSpacing and questSpacing.category
+    local entry = questSpacing and questSpacing.entry
+    local objective = questSpacing and questSpacing.objective
 
     CATEGORY_INDENT_X = NormalizeSpacingValue(category and category.indent, CATEGORY_INDENT_X)
     CATEGORY_SPACING_ABOVE = NormalizeSpacingValue(category and category.spacingAbove, CATEGORY_SPACING_ABOVE)
@@ -229,6 +233,13 @@ local function ApplyCategorySpacingFromSaved()
     local belowSpacing = NormalizeSpacingValue(category and category.spacingBelow, CATEGORY_BOTTOM_PAD_EXPANDED)
     CATEGORY_BOTTOM_PAD_EXPANDED = belowSpacing
     CATEGORY_BOTTOM_PAD_COLLAPSED = belowSpacing
+
+    QUEST_INDENT_X = NormalizeSpacingValue(entry and entry.indent, QUEST_INDENT_X)
+    ENTRY_SPACING_ABOVE = NormalizeSpacingValue(entry and entry.spacingAbove, ENTRY_SPACING_ABOVE)
+    ENTRY_SPACING_BELOW = NormalizeSpacingValue(entry and entry.spacingBelow, ENTRY_SPACING_BELOW)
+
+    QUEST_LABEL_INDENT_X = QUEST_INDENT_X + QUEST_ICON_SLOT_WIDTH + QUEST_ICON_SLOT_PADDING_X
+    CONDITION_INDENT_X = NormalizeSpacingValue(objective and objective.indent, QUEST_LABEL_INDENT_X + CONDITION_RELATIVE_INDENT)
 end
 
 local function ScheduleToggleFollowup(reason)
@@ -4436,7 +4447,7 @@ local function UnsubscribeFromQuestModel()
 end
 
 local function ConfigureLayoutHelper()
-    ApplyCategorySpacingFromSaved()
+    ApplyQuestSpacingFromSaved()
     if QuestTrackerLayout and QuestTrackerLayout.Init then
         QuestTrackerLayout:Init(state, {
             VERTICAL_PADDING = VERTICAL_PADDING,
@@ -4446,6 +4457,8 @@ local function ConfigureLayoutHelper()
             QUEST_ICON_SLOT_WIDTH = QUEST_ICON_SLOT_WIDTH,
             QUEST_ICON_SLOT_PADDING_X = QUEST_ICON_SLOT_PADDING_X,
             QUEST_MIN_HEIGHT = QUEST_MIN_HEIGHT,
+            ENTRY_SPACING_ABOVE = ENTRY_SPACING_ABOVE,
+            ENTRY_SPACING_BELOW = ENTRY_SPACING_BELOW,
             CATEGORY_INDENT_X = CATEGORY_INDENT_X,
             CATEGORY_SPACING_ABOVE = CATEGORY_SPACING_ABOVE,
             CATEGORY_SPACING_BELOW = CATEGORY_BOTTOM_PAD_EXPANDED,
