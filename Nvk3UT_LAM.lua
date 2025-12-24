@@ -163,7 +163,7 @@ local DEFAULT_WINDOW_BARS = {
 local DEFAULT_SPACING = {
     category = { indent = 0, spacingAbove = 3, spacingBelow = 6 },
     entry = { indent = 20, spacingAbove = 3, spacingBelow = 0 },
-    objective = { indent = 60, spacingAbove = 3, spacingBelow = 3, spacingBetween = 1 },
+    objective = { indent = 40, spacingAbove = 3, spacingBelow = 3, spacingBetween = 1 },
 }
 
 local DEFAULT_HOST_SETTINGS = {

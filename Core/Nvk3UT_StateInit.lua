@@ -303,7 +303,7 @@ local function CopySpacingDefaults()
             spacingBelow = 3,
         },
         objective = {
-            indent = 60,
+            indent = 40,
             spacingAbove = 3,
             spacingBelow = 3,
             spacingBetween = 1,

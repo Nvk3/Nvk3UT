@@ -55,6 +55,18 @@ function Layout:Init(trackerState, deps)
     if self.entrySpacingBelow == nil then
         self.entrySpacingBelow = self.verticalPadding
     end
+    self.objectiveSpacingAbove = deps.OBJECTIVE_SPACING_ABOVE
+    if self.objectiveSpacingAbove == nil then
+        self.objectiveSpacingAbove = self.verticalPadding
+    end
+    self.objectiveSpacingBelow = deps.OBJECTIVE_SPACING_BELOW
+    if self.objectiveSpacingBelow == nil then
+        self.objectiveSpacingBelow = self.verticalPadding
+    end
+    self.objectiveSpacingBetween = deps.OBJECTIVE_SPACING_BETWEEN
+    if self.objectiveSpacingBetween == nil then
+        self.objectiveSpacingBetween = self.verticalPadding
+    end
 
     safeDebug("%s: Init layout helper", MODULE_TAG)
 end
@@ -153,6 +165,28 @@ function Layout:ComputeRowHeight(control, indent, toggleWidth, leftPadding, righ
     control:SetHeight(targetHeight)
 
     return targetHeight
+end
+
+function Layout:GetObjectiveSpacing(prevRowType, rowType)
+    if not prevRowType or not rowType then
+        return 0
+    end
+
+    local prevIsObjective = prevRowType == "condition"
+    local currentIsObjective = rowType == "condition"
+
+    if currentIsObjective then
+        if prevIsObjective then
+            return tonumber(self.objectiveSpacingBetween) or 0
+        end
+        return tonumber(self.objectiveSpacingAbove) or 0
+    end
+
+    if prevIsObjective then
+        return tonumber(self.objectiveSpacingBelow) or 0
+    end
+
+    return 0
 end
 
 function Layout:GetCategoryHeaderHeight(categoryControl)
@@ -297,6 +331,7 @@ function Layout:AnchorControl(control, indentX, gapOverride)
         local isFirst = (state.visibleRowCount or 0) == 0
         local pendingGap = nil
         local pendingEntryGap = nil
+        local previousRowType = state.lastAnchoredControl and state.lastAnchoredControl.rowType
 
         if not isFirst then
             pendingGap = self:ConsumePendingCategoryGap()
@@ -314,6 +349,8 @@ function Layout:AnchorControl(control, indentX, gapOverride)
         if type(pendingEntryGap) == "number" then
             gap = gap + pendingEntryGap
         end
+
+        gap = gap + self:GetObjectiveSpacing(previousRowType, rowType)
 
         if rowType == "category" then
             local aboveGap = self.categorySpacingAbove
@@ -361,8 +398,9 @@ function Layout:UpdateContentSize()
     local pendingCategoryGap = nil
     local pendingEntryGap = nil
     local currentCategoryActive = false
+    local prevRowType = nil
 
-    local function resolveRowSpacingBefore(rowType, isFirst)
+    local function resolveRowSpacingBefore(rowType, prevType, isFirst)
         local gap = 0
         local pendingGap = nil
         local pendingEntry = nil
@@ -384,6 +422,8 @@ function Layout:UpdateContentSize()
             gap = gap + pendingEntry
             pendingEntryGap = nil
         end
+
+        gap = gap + self:GetObjectiveSpacing(prevType, rowType)
 
         if rowType == "category" then
             local aboveGap = self.categorySpacingAbove
@@ -491,13 +531,14 @@ function Layout:UpdateContentSize()
                 height = control.GetHeight and control:GetHeight() or 0
             end
 
-            local gap = resolveRowSpacingBefore(rowType, visibleCount == 0)
+            local gap = resolveRowSpacingBefore(rowType, prevRowType, visibleCount == 0)
             if gap > 0 then
                 totalHeight = totalHeight + gap
             end
 
             totalHeight = totalHeight + height
             visibleCount = visibleCount + 1
+            prevRowType = rowType
 
             local width = (control:GetWidth() or 0) + (control.currentIndent or 0)
             if width > maxWidth then

@@ -109,6 +109,19 @@ local objectivePool = {
     nextId = 1,
 }
 
+function Rows.SetObjectiveIndent(indent)
+    local numeric = tonumber(indent)
+    if numeric == nil or numeric ~= numeric then
+        return
+    end
+    if numeric < 0 then
+        return
+    end
+
+    DEFAULTS.OBJECTIVE_INDENT_X = numeric
+    ENTRY_INDENT_X = numeric
+end
+
 local function getAddon()
     return rawget(_G, addonName)
 end

@@ -107,6 +107,9 @@ local function normalizeSpacingValue(value, fallback)
     return numeric
 end
 
+local OBJECTIVE_INDENT_DEFAULT = 40
+local OBJECTIVE_BASE_INDENT = 20
+
 local function getCategoryIndentFromSaved()
     local root = getAddonRoot()
     local sv = root and (root.SV or root.sv)
@@ -114,6 +117,17 @@ local function getCategoryIndentFromSaved()
     local goldenSpacing = spacing and spacing.golden
     local category = goldenSpacing and goldenSpacing.category
     return normalizeSpacingValue(category and category.indent, 0)
+end
+
+local function getObjectiveIndentFromSaved()
+    local root = getAddonRoot()
+    local sv = root and (root.SV or root.sv)
+    local spacing = sv and sv.spacing
+    local goldenSpacing = spacing and spacing.golden
+    local objective = goldenSpacing and goldenSpacing.objective
+
+    local indent = normalizeSpacingValue(objective and objective.indent, OBJECTIVE_INDENT_DEFAULT)
+    return indent + OBJECTIVE_BASE_INDENT
 end
 
 local function isObjectiveCompleted(objectiveData)
@@ -1064,6 +1078,10 @@ function GoldenTracker.Refresh(...)
 
     local rowsModule = getRowsModule()
     local layoutModule = getLayoutModule()
+
+    if rowsModule and type(rowsModule.SetObjectiveIndent) == "function" then
+        rowsModule.SetObjectiveIndent(getObjectiveIndentFromSaved())
+    end
 
     if rowsModule and type(rowsModule.ReleaseAllCategoryRows) == "function" then
         rowsModule.ReleaseAllCategoryRows()
