@@ -117,6 +117,7 @@ local strings = {
     SI_NVK3UT_LAM_QUEST_FONT_CATEGORY_LABEL = "Category header",
     SI_NVK3UT_LAM_QUEST_FONT_TITLE_LABEL = "Quest title",
     SI_NVK3UT_LAM_QUEST_FONT_LINE_LABEL = "Quest lines",
+    SI_NVK3UT_LAM_SPACING_QUEST_SUBMENU = "Spacing QuestTracker",
 
     -- Endeavor tracker
     SI_NVK3UT_LAM_ENDEAVOR_SECTION = "Endeavor Tracker",
@@ -149,6 +150,7 @@ local strings = {
     SI_NVK3UT_LAM_ENDEAVOR_FONT_CATEGORY_LABEL = "Category header",
     SI_NVK3UT_LAM_ENDEAVOR_FONT_TITLE_LABEL = "Title",
     SI_NVK3UT_LAM_ENDEAVOR_FONT_LINE_LABEL = "Lines",
+    SI_NVK3UT_LAM_SPACING_ENDEAVOR_SUBMENU = "Spacing EndeavorTracker",
 
     -- Achievement tracker
     SI_NVK3UT_LAM_ACHIEVEMENT_SECTION = "Achievement Tracker",
@@ -176,6 +178,7 @@ local strings = {
     SI_NVK3UT_LAM_ACHIEVEMENT_FONT_CATEGORY_LABEL = "Category header",
     SI_NVK3UT_LAM_ACHIEVEMENT_FONT_TITLE_LABEL = "Title",
     SI_NVK3UT_LAM_ACHIEVEMENT_FONT_LINE_LABEL = "Lines",
+    SI_NVK3UT_LAM_SPACING_ACHIEVEMENT_SUBMENU = "Spacing AchievementTracker",
 
     -- Golden tracker
     SI_NVK3UT_LAM_GOLDEN_SECTION = "Golden Pursuit Tracker",
@@ -215,6 +218,27 @@ local strings = {
     SI_NVK3UT_LAM_GOLDEN_FONT_CATEGORY_LABEL = "Category header",
     SI_NVK3UT_LAM_GOLDEN_FONT_TITLE_LABEL = "Title",
     SI_NVK3UT_LAM_GOLDEN_FONT_LINE_LABEL = "Lines",
+    SI_NVK3UT_LAM_SPACING_GOLDEN_SUBMENU = "Spacing GoldenTracker",
+
+    -- Tracker spacing
+    SI_NVK3UT_LAM_TRACKER_NAME_QUEST = "QuestTracker",
+    SI_NVK3UT_LAM_TRACKER_NAME_ENDEAVOR = "EndeavorTracker",
+    SI_NVK3UT_LAM_TRACKER_NAME_ACHIEVEMENT = "AchievementTracker",
+    SI_NVK3UT_LAM_TRACKER_NAME_GOLDEN = "GoldenTracker",
+    SI_NVK3UT_LAM_SPACING_LABEL_FORMAT = "%s: %s",
+    SI_NVK3UT_LAM_SPACING_GROUP_CATEGORY = "Category",
+    SI_NVK3UT_LAM_SPACING_GROUP_ENTRY = "Entry",
+    SI_NVK3UT_LAM_SPACING_GROUP_OBJECTIVE = "Objective",
+    SI_NVK3UT_LAM_SPACING_CATEGORY_INDENT = "Indent Category",
+    SI_NVK3UT_LAM_SPACING_CATEGORY_ABOVE = "Vertical spacing above Category",
+    SI_NVK3UT_LAM_SPACING_CATEGORY_BELOW = "Vertical spacing below Category",
+    SI_NVK3UT_LAM_SPACING_ENTRY_INDENT = "Indent Entry",
+    SI_NVK3UT_LAM_SPACING_ENTRY_ABOVE = "Vertical spacing above Entry",
+    SI_NVK3UT_LAM_SPACING_ENTRY_BELOW = "Vertical spacing below Entry",
+    SI_NVK3UT_LAM_SPACING_OBJECTIVE_INDENT = "Indent Objective",
+    SI_NVK3UT_LAM_SPACING_OBJECTIVE_ABOVE = "Vertical spacing above Objective",
+    SI_NVK3UT_LAM_SPACING_OBJECTIVE_BELOW = "Vertical spacing below Objective",
+    SI_NVK3UT_LAM_SPACING_OBJECTIVE_BETWEEN = "Vertical spacing between Objective",
 
     -- Tracker UI – categories and context menus
     SI_NVK3UT_TRACKER_ENDEAVOR_CATEGORY_ROOT = "Endeavors",
