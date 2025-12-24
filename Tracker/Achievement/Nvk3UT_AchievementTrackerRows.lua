@@ -326,6 +326,7 @@ function Rows:CreateCategoryRow(rowKey)
     control.rowType = "category"
     control.label = control:GetNamedChild("Label")
     control.toggle = control:GetNamedChild("Toggle")
+    control.indentAnchor = control:GetNamedChild("IndentAnchor")
 
     ApplyLabelDefaults(control.label)
     ApplyToggleDefaults(control.toggle)
@@ -616,4 +617,3 @@ function Rows:EndRefresh()
 end
 
 Nvk3UT.AchievementTrackerRows = Rows
-

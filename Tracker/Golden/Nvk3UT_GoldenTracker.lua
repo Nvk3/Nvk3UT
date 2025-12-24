@@ -96,6 +96,26 @@ local function safeDebug(message, ...)
     pcall(debugFn, string.format("%s: %s", MODULE_TAG, tostring(payload)))
 end
 
+local function normalizeSpacingValue(value, fallback)
+    local numeric = tonumber(value)
+    if numeric == nil or numeric ~= numeric then
+        return fallback
+    end
+    if numeric < 0 then
+        return fallback
+    end
+    return numeric
+end
+
+local function getCategoryIndentFromSaved()
+    local root = getAddonRoot()
+    local sv = root and (root.SV or root.sv)
+    local spacing = sv and sv.spacing
+    local goldenSpacing = spacing and spacing.golden
+    local category = goldenSpacing and goldenSpacing.category
+    return normalizeSpacingValue(category and category.indent, 0)
+end
+
 local function isObjectiveCompleted(objectiveData)
     if type(objectiveData) ~= "table" then
         return false
@@ -1141,6 +1161,7 @@ function GoldenTracker.Refresh(...)
             local categoryPayload = summary
             if type(categoryPayload) == "table" then
                 categoryPayload.isExpanded = categoryExpanded
+                categoryPayload.categoryIndent = getCategoryIndentFromSaved()
             end
 
             local categoryRow = nil

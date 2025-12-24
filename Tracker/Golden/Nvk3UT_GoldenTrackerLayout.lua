@@ -15,6 +15,8 @@ local ENTRY_ROW_SPACING = 3
 local CATEGORY_ENTRY_SPACING = 3
 local CATEGORY_BOTTOM_PAD_EXPANDED = 6
 local CATEGORY_BOTTOM_PAD_COLLAPSED = 6
+local CATEGORY_SPACING_ABOVE = 3
+local CATEGORY_SPACING_BELOW = 6
 local BOTTOM_PIXEL_NUDGE = 3
 local Rows = Nvk3UT and Nvk3UT.GoldenTrackerRows
 
@@ -72,6 +74,28 @@ local function coerceHeight(value)
     end
 
     return numeric
+end
+
+local function normalizeSpacingValue(value, fallback)
+    local numeric = tonumber(value)
+    if numeric == nil or numeric ~= numeric then
+        return fallback
+    end
+    if numeric < 0 then
+        return fallback
+    end
+    return numeric
+end
+
+local function applyCategorySpacingFromSaved()
+    local addon = Nvk3UT
+    local sv = addon and addon.SV
+    local spacing = sv and sv.spacing
+    local goldenSpacing = spacing and spacing.golden
+    local category = goldenSpacing and goldenSpacing.category
+
+    CATEGORY_SPACING_ABOVE = normalizeSpacingValue(category and category.spacingAbove, CATEGORY_SPACING_ABOVE)
+    CATEGORY_SPACING_BELOW = normalizeSpacingValue(category and category.spacingBelow, CATEGORY_SPACING_BELOW)
 end
 
 local function getControlHeight(control, fallback)
@@ -157,6 +181,8 @@ function Layout.ApplyLayout(parentControl, rows)
         return 0
     end
 
+    applyCategorySpacingFromSaved()
+
     if type(rows) ~= "table" then
         rows = {}
     end
@@ -205,19 +231,6 @@ function Layout.ApplyLayout(parentControl, rows)
             return
         end
 
-        local pad
-        if categoryExpanded and categoryRowCount > 0 then
-            pad = CATEGORY_BOTTOM_PAD_EXPANDED
-        else
-            pad = CATEGORY_BOTTOM_PAD_COLLAPSED
-        end
-
-        pad = coerceHeight(pad)
-        if pad > 0 then
-            totalHeight = totalHeight + pad
-            pendingGap = math.max(pendingGap or 0, pad)
-        end
-
         categoryHasHeader = false
         categoryRowCount = 0
         categoryExpanded = nil
@@ -256,8 +269,8 @@ function Layout.ApplyLayout(parentControl, rows)
         if visibleCount > 0 then
             if pendingGap and pendingGap > 0 then
                 gap = pendingGap
-            elseif previousKind == "header" and kind ~= "header" then
-                gap = HEADER_TO_ROWS_GAP
+            elseif kind == "category" then
+                gap = CATEGORY_SPACING_ABOVE
             else
                 gap = ENTRY_ROW_SPACING
             end
@@ -292,6 +305,9 @@ function Layout.ApplyLayout(parentControl, rows)
         visibleCount = visibleCount + 1
         previousRow = control
         previousKind = kind
+        if kind == "category" then
+            pendingGap = CATEGORY_SPACING_BELOW
+        end
 
         if kind ~= "header" and categoryHasHeader then
             categoryRowCount = categoryRowCount + 1
@@ -318,6 +334,9 @@ function Layout.ApplyLayout(parentControl, rows)
     finalizeCategory()
 
     if visibleCount > 0 then
+        if pendingGap and pendingGap > 0 then
+            totalHeight = totalHeight + pendingGap
+        end
         totalHeight = totalHeight + BOTTOM_PIXEL_NUDGE
     end
 
