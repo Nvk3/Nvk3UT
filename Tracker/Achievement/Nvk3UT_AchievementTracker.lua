@@ -81,7 +81,6 @@ local ENTRY_SPACING_BELOW = 0
 local OBJECTIVE_SPACING_ABOVE = 3
 local OBJECTIVE_SPACING_BETWEEN = 1
 local OBJECTIVE_SPACING_BELOW = 3
-local EXPANDED_END_GAP_FIX = -6
 local ACHIEVEMENT_ICON_SLOT_WIDTH = 18
 local ACHIEVEMENT_ICON_SLOT_HEIGHT = 18
 local ACHIEVEMENT_ICON_SLOT_PADDING_X = 6
@@ -288,7 +287,6 @@ local state = {
     nextCategoryGap = nil,
     nextEntryGap = nil,
     nextObjectiveGap = nil,
-    lastCategoryExpanded = nil,
     snapshot = nil,
     subscription = nil,
     pendingRefresh = false,
@@ -1214,7 +1212,6 @@ local function ResetLayoutState()
     state.nextCategoryGap = nil
     state.nextEntryGap = nil
     state.nextObjectiveGap = nil
-    state.lastCategoryExpanded = nil
 end
 
 local function WarnMissingRows()
@@ -1292,11 +1289,6 @@ local function AnchorControl(control, indentX, gapOverride)
     if rowType == "achievement" then
         verticalPadding = verticalPadding + ENTRY_SPACING_ABOVE
     end
-    if state.lastAnchoredControl and rowKind == "header" then
-        if state.lastAnchoredControl.rowType == "objective" and state.lastCategoryExpanded then
-            verticalPadding = verticalPadding + EXPANDED_END_GAP_FIX
-        end
-    end
 
     if state.lastAnchoredControl then
         local previousIndent = state.lastAnchoredControl.currentIndent or 0
@@ -1328,7 +1320,6 @@ local function UpdateContentSize()
     local pendingEntryGap = nil
     local pendingObjectiveGap = nil
     local previousRowType = nil
-    local previousCategoryExpanded = nil
 
     local function peekNextVisibleRow(startIndex)
         for nextIndex = startIndex + 1, #state.orderedControls do
@@ -1376,11 +1367,6 @@ local function UpdateContentSize()
                 if rowType == "achievement" then
                     gap = gap + ENTRY_SPACING_ABOVE
                 end
-                if rowKind == "header" and previousRowType == "objective" then
-                    if previousCategoryExpanded then
-                        gap = gap + EXPANDED_END_GAP_FIX
-                    end
-                end
             elseif rowKind == "header" then
                 gap = CATEGORY_SPACING_ABOVE
             elseif rowType == "objective" then
@@ -1405,9 +1391,6 @@ local function UpdateContentSize()
             pendingCategoryGap = nil
             if rowKind == "header" then
                 pendingCategoryGap = CATEGORY_SPACING_BELOW
-            end
-            if rowType == "category" then
-                previousCategoryExpanded = control.isExpanded ~= false
             end
 
             local nextControl, nextRowType = peekNextVisibleRow(index)
@@ -1860,7 +1843,6 @@ local function LayoutCategory(rows)
         end
     end
 
-    state.lastCategoryExpanded = expanded
 end
 
 local function Rebuild()
