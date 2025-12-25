@@ -1349,8 +1349,7 @@ local function appendLayoutControl(context, control, fallbackHeight, kind)
         context.height = context.height + gap
     end
 
-    local indentX = (kind == "header") and 0 or CATEGORY_INDENT_X
-    anchorControlAtOffset(control, container, offsetY, indentX)
+    anchorControlAtOffset(control, container, offsetY, 0)
     if control.SetHidden then
         control:SetHidden(false)
     end
@@ -1983,7 +1982,7 @@ function EndeavorTracker.Refresh(viewModel)
                     formatHeader = formatCategoryHeader,
                     overrideColors = overrideColors,
                     textures = CHEVRON_TEXTURES,
-                    categoryIndent = 0,
+                    categoryIndent = CATEGORY_INDENT_X,
                     colorRoles = {
                         expanded = CATEGORY_COLOR_ROLE_EXPANDED,
                         collapsed = CATEGORY_COLOR_ROLE_COLLAPSED,
