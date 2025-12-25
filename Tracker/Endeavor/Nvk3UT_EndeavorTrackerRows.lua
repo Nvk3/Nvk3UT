@@ -1361,6 +1361,9 @@ local function createCategoryRow(parent)
     local chevronName = controlName .. "Chevron"
     local chevron = ensureCategoryChild(control, chevronName, CT_TEXTURE)
     if chevron then
+        if indentAnchor and chevron.SetParent then
+            chevron:SetParent(indentAnchor)
+        end
         chevron:SetMouseEnabled(false)
         chevron:SetHidden(false)
         chevron:SetDimensions(CATEGORY_CHEVRON_SIZE, CATEGORY_CHEVRON_SIZE)
@@ -1376,6 +1379,9 @@ local function createCategoryRow(parent)
     local labelName = controlName .. "Label"
     local label = ensureCategoryChild(control, labelName, CT_LABEL)
     if label then
+        if indentAnchor and label.SetParent then
+            label:SetParent(indentAnchor)
+        end
         label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
         label:SetVerticalAlignment(TEXT_ALIGN_TOP)
         if label.SetWrapMode then
