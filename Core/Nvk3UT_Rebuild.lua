@@ -737,6 +737,14 @@ function Rebuild.ScheduleToggleFollowup(reason)
     return true
 end
 
+function Rebuild.ScheduleSpacingRebuild(reason)
+    local spacingReason = reason
+    if spacingReason == nil or spacingReason == "" then
+        spacingReason = "spacing"
+    end
+    return Rebuild.ScheduleToggleFollowup(spacingReason)
+end
+
 attachToRoot = function(root)
     if type(root) ~= "table" then
         return

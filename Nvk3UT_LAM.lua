@@ -962,6 +962,16 @@ local function queueLayoutDirty()
     end
 end
 
+local function queueSpacingFullRebuild()
+    local rebuild = (Nvk3UT and Nvk3UT.Rebuild) or Nvk3UT_Rebuild
+    if type(rebuild) == "table" then
+        local schedule = rebuild.ScheduleSpacingRebuild or rebuild.ScheduleToggleFollowup or rebuild.All
+        if type(schedule) == "function" then
+            pcall(schedule, "spacing")
+        end
+    end
+end
+
 local function queueGoldenDirty()
     local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
     if type(runtime) == "table" then
@@ -1448,6 +1458,7 @@ local function buildSpacingControls(trackerKey)
             markGoldenDirty("spacing")
             queueGoldenDirty()
         end
+        queueSpacingFullRebuild()
     end
 
     local function setSpacingValue(groupKey, fieldKey, value)
