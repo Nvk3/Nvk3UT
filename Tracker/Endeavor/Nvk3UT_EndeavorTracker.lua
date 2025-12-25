@@ -105,6 +105,7 @@ local CATEGORY_LABEL_OFFSET_X = 4
 local SUBHEADER_INDENT_X = 18
 local TITLE_INDENT_DELTA_PX = 14
 local ENTRY_INDENT_X = SUBHEADER_INDENT_X
+local ENTRY_ICON_SLOT_PX = 20
 local ENTRY_SPACING_ABOVE = HEADER_TO_ROWS_GAP
 local ENTRY_SPACING_BELOW = 0
 local OBJECTIVE_INDENT_DEFAULT = 40
@@ -362,8 +363,9 @@ local function applyEntryLabelAnchors(label, control)
         return
     end
 
+    local entryLabelIndentX = ENTRY_INDENT_X + ENTRY_ICON_SLOT_PX
     label:ClearAnchors()
-    label:SetAnchor(TOPLEFT, control, TOPLEFT, ENTRY_INDENT_X + TITLE_INDENT_DELTA_PX, 0)
+    label:SetAnchor(TOPLEFT, control, TOPLEFT, entryLabelIndentX + TITLE_INDENT_DELTA_PX, 0)
     label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
 end
 
