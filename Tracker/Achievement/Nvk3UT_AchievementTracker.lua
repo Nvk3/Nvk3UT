@@ -1246,8 +1246,12 @@ local function AnchorControl(control, indentX, gapOverride)
         control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, offsetX, verticalPadding)
         control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, 0, verticalPadding)
     else
-        control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, 0)
-        control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, 0, 0)
+        local offsetY = 0
+        if rowKind == "header" and type(verticalPadding) == "number" then
+            offsetY = verticalPadding
+        end
+        control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, offsetY)
+        control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, 0, offsetY)
     end
 
     state.lastAnchoredControl = control
@@ -1281,6 +1285,8 @@ local function UpdateContentSize()
                 else
                     gap = GetRowGap()
                 end
+            elseif rowKind == "header" then
+                gap = CATEGORY_SPACING_ABOVE
             end
 
             measuredHeight = measuredHeight + gap + height
@@ -1689,13 +1695,13 @@ local function LayoutCategory(rows)
     control:SetHidden(false)
     if control.indentAnchor and control.indentAnchor.SetAnchor then
         control.indentAnchor:ClearAnchors()
-        control.indentAnchor:SetAnchor(TOPLEFT, control, TOPLEFT, CATEGORY_INDENT_X, 0)
+        control.indentAnchor:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
     end
     local gapOverride = state.nextCategoryGap
     if type(gapOverride) ~= "number" then
         gapOverride = CATEGORY_SPACING_ABOVE
     end
-    AnchorControl(control, 0, gapOverride)
+    AnchorControl(control, CATEGORY_INDENT_X, gapOverride)
     state.nextCategoryGap = CATEGORY_SPACING_BELOW
 
     if expanded then
@@ -1815,6 +1821,8 @@ function AchievementTracker:Refresh(viewModel)
     if not state.isInitialized then
         return
     end
+
+    ApplyCategorySpacingFromSaved()
 
     if data ~= nil then
         state.snapshot = data
