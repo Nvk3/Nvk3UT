@@ -17,8 +17,8 @@ local CATEGORY_BOTTOM_PAD_EXPANDED = 6
 local CATEGORY_BOTTOM_PAD_COLLAPSED = 6
 local CATEGORY_SPACING_ABOVE = 3
 local CATEGORY_SPACING_BELOW = 6
-local ENTRY_SPACING_ABOVE = 3
-local ENTRY_SPACING_BELOW = 3
+local ENTRY_SPACING_ABOVE = ENTRY_ROW_SPACING
+local ENTRY_SPACING_BELOW = ENTRY_ROW_SPACING
 local CATEGORY_TEXT_PADDING_Y = 4
 local BOTTOM_PIXEL_NUDGE = 3
 local Rows = Nvk3UT and Nvk3UT.GoldenTrackerRows
@@ -251,6 +251,7 @@ function Layout.ApplyLayout(parentControl, rows)
     local categoryRowCount = 0
     local categoryExpanded = nil
     local pendingCategoryGap = 0
+    local pendingEntryGap = 0
 
     local function resolveCategoryExpanded(rowData)
         if type(rowData) == "table" then
@@ -283,6 +284,10 @@ function Layout.ApplyLayout(parentControl, rows)
         categoryHasHeader = false
         categoryRowCount = 0
         categoryExpanded = nil
+    end
+
+    local function finalizeEntry()
+        pendingEntryGap = ENTRY_SPACING_BELOW
     end
 
     local function resolveFallbackHeight(kind)
@@ -319,11 +324,7 @@ function Layout.ApplyLayout(parentControl, rows)
             gap = CATEGORY_SPACING_ABOVE
         elseif kind == "entry" then
             if visibleCount > 0 then
-                if previousKind == "entry" then
-                    gap = ENTRY_SPACING_BELOW
-                else
-                    gap = ENTRY_SPACING_ABOVE
-                end
+                gap = ENTRY_SPACING_ABOVE
             end
         elseif visibleCount > 0 then
             gap = ENTRY_ROW_SPACING
@@ -332,6 +333,11 @@ function Layout.ApplyLayout(parentControl, rows)
         if pendingCategoryGap and pendingCategoryGap > 0 and visibleCount > 0 then
             gap = gap + pendingCategoryGap
             pendingCategoryGap = 0
+        end
+
+        if pendingEntryGap and pendingEntryGap > 0 and visibleCount > 0 then
+            gap = gap + pendingEntryGap
+            pendingEntryGap = 0
         end
 
         if visibleCount > 0 or gap > 0 then
@@ -390,6 +396,10 @@ function Layout.ApplyLayout(parentControl, rows)
         if control and (type(control) == "userdata" or type(control) == "table") then
             addControl(control, rowData, kind or "row")
         end
+
+        if kind == "entry" then
+            finalizeEntry()
+        end
     end
 
     finalizeCategory()
@@ -397,6 +407,11 @@ function Layout.ApplyLayout(parentControl, rows)
     if visibleCount > 0 then
         if pendingCategoryGap and pendingCategoryGap > 0 then
             totalHeight = totalHeight + pendingCategoryGap
+            pendingCategoryGap = 0
+        end
+        if pendingEntryGap and pendingEntryGap > 0 then
+            totalHeight = totalHeight + pendingEntryGap
+            pendingEntryGap = 0
         end
         totalHeight = totalHeight + BOTTOM_PIXEL_NUDGE
     end
