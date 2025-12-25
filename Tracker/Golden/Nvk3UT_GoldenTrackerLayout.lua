@@ -251,7 +251,10 @@ function Layout.ApplyLayout(parentControl, rows)
     local categoryRowCount = 0
     local categoryExpanded = nil
     local pendingCategoryGap = 0
-    local pendingEntryGap = 0
+    local entryChildEndGap = 0
+    local inEntryChildBlock = false
+    local sawChildObjective = false
+    local deferredPreGap = 0
 
     local function resolveCategoryExpanded(rowData)
         if type(rowData) == "table" then
@@ -284,10 +287,6 @@ function Layout.ApplyLayout(parentControl, rows)
         categoryHasHeader = false
         categoryRowCount = 0
         categoryExpanded = nil
-    end
-
-    local function finalizeEntry()
-        pendingEntryGap = ENTRY_SPACING_BELOW
     end
 
     local function resolveFallbackHeight(kind)
@@ -335,9 +334,9 @@ function Layout.ApplyLayout(parentControl, rows)
             pendingCategoryGap = 0
         end
 
-        if pendingEntryGap and pendingEntryGap > 0 and visibleCount > 0 then
-            gap = gap + pendingEntryGap
-            pendingEntryGap = 0
+        if deferredPreGap > 0 and visibleCount > 0 then
+            gap = gap + deferredPreGap
+            deferredPreGap = 0
         end
 
         if visibleCount > 0 or gap > 0 then
@@ -386,6 +385,21 @@ function Layout.ApplyLayout(parentControl, rows)
         local control, rowData = resolveControl(row)
         local kind = resolveRowKind(control, rowData)
 
+        if inEntryChildBlock then
+            if kind == "objective" then
+                sawChildObjective = true
+            else
+                if sawChildObjective then
+                    deferredPreGap = entryChildEndGap
+                elseif entryChildEndGap > 0 then
+                    deferredPreGap = entryChildEndGap
+                end
+                entryChildEndGap = 0
+                inEntryChildBlock = false
+                sawChildObjective = false
+            end
+        end
+
         if kind == "category" then
             finalizeCategory()
             categoryHasHeader = true
@@ -398,7 +412,9 @@ function Layout.ApplyLayout(parentControl, rows)
         end
 
         if kind == "entry" then
-            finalizeEntry()
+            inEntryChildBlock = true
+            sawChildObjective = false
+            entryChildEndGap = ENTRY_SPACING_BELOW
         end
     end
 
@@ -409,9 +425,15 @@ function Layout.ApplyLayout(parentControl, rows)
             totalHeight = totalHeight + pendingCategoryGap
             pendingCategoryGap = 0
         end
-        if pendingEntryGap and pendingEntryGap > 0 then
-            totalHeight = totalHeight + pendingEntryGap
-            pendingEntryGap = 0
+        if inEntryChildBlock and entryChildEndGap > 0 then
+            if sawChildObjective then
+                totalHeight = totalHeight + entryChildEndGap
+            else
+                totalHeight = totalHeight + entryChildEndGap
+            end
+            entryChildEndGap = 0
+            inEntryChildBlock = false
+            sawChildObjective = false
         end
         totalHeight = totalHeight + BOTTOM_PIXEL_NUDGE
     end
