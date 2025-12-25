@@ -75,6 +75,12 @@ local CATEGORY_INDENT_X = 0
 local CATEGORY_SPACING_ABOVE = 3
 local CATEGORY_SPACING_BELOW = 6
 local ACHIEVEMENT_INDENT_X = 18
+local ENTRY_INDENT_X = ACHIEVEMENT_INDENT_X
+local ENTRY_SPACING_ABOVE = 3
+local ENTRY_SPACING_BELOW = 0
+local OBJECTIVE_SPACING_ABOVE = 3
+local OBJECTIVE_SPACING_BETWEEN = 1
+local OBJECTIVE_SPACING_BELOW = 3
 local ACHIEVEMENT_ICON_SLOT_WIDTH = 18
 local ACHIEVEMENT_ICON_SLOT_HEIGHT = 18
 local ACHIEVEMENT_ICON_SLOT_PADDING_X = 6
@@ -184,12 +190,35 @@ local function ApplyCategorySpacingFromSaved()
     local spacing = sv and sv.spacing
     local achievementSpacing = spacing and spacing.achievement
     local category = achievementSpacing and achievementSpacing.category
-    local objective = achievementSpacing and achievementSpacing.objective
 
     CATEGORY_INDENT_X = NormalizeSpacingValue(category and category.indent, CATEGORY_INDENT_X)
     CATEGORY_SPACING_ABOVE = NormalizeSpacingValue(category and category.spacingAbove, CATEGORY_SPACING_ABOVE)
     CATEGORY_SPACING_BELOW = NormalizeSpacingValue(category and category.spacingBelow, CATEGORY_SPACING_BELOW)
+end
+
+local function ApplyEntrySpacingFromSaved()
+    local addon = Nvk3UT
+    local sv = addon and addon.SV
+    local spacing = sv and sv.spacing
+    local achievementSpacing = spacing and spacing.achievement
+    local entry = achievementSpacing and achievementSpacing.entry
+
+    ENTRY_INDENT_X = NormalizeSpacingValue(entry and entry.indent, ENTRY_INDENT_X)
+    ENTRY_SPACING_ABOVE = NormalizeSpacingValue(entry and entry.spacingAbove, ENTRY_SPACING_ABOVE)
+    ENTRY_SPACING_BELOW = NormalizeSpacingValue(entry and entry.spacingBelow, ENTRY_SPACING_BELOW)
+end
+
+local function ApplyObjectiveSpacingFromSaved()
+    local addon = Nvk3UT
+    local sv = addon and addon.SV
+    local spacing = sv and sv.spacing
+    local achievementSpacing = spacing and spacing.achievement
+    local objective = achievementSpacing and achievementSpacing.objective
+
     OBJECTIVE_INDENT_X = NormalizeSpacingValue(objective and objective.indent, OBJECTIVE_INDENT_DEFAULT) + OBJECTIVE_BASE_INDENT
+    OBJECTIVE_SPACING_ABOVE = NormalizeSpacingValue(objective and objective.spacingAbove, OBJECTIVE_SPACING_ABOVE)
+    OBJECTIVE_SPACING_BETWEEN = NormalizeSpacingValue(objective and objective.spacingBetween, OBJECTIVE_SPACING_BETWEEN)
+    OBJECTIVE_SPACING_BELOW = NormalizeSpacingValue(objective and objective.spacingBelow, OBJECTIVE_SPACING_BELOW)
 end
 
 local function IsDebugLoggingEnabled()
@@ -256,6 +285,8 @@ local state = {
     orderedControls = {},
     lastAnchoredControl = nil,
     nextCategoryGap = nil,
+    nextEntryGap = nil,
+    nextObjectiveGap = nil,
     snapshot = nil,
     subscription = nil,
     pendingRefresh = false,
@@ -1179,6 +1210,8 @@ local function ResetLayoutState()
     state.lastAnchoredKind = nil
     state.categoryExpanded = nil
     state.nextCategoryGap = nil
+    state.nextEntryGap = nil
+    state.nextObjectiveGap = nil
 end
 
 local function WarnMissingRows()
@@ -1231,13 +1264,30 @@ local function AnchorControl(control, indentX, gapOverride)
     control:ClearAnchors()
 
     local rowKind = ResolveRowKind(control)
+    local rowType = control.rowType
     local verticalPadding = gapOverride
+    local pendingEntryGap = nil
+    local pendingObjectiveGap = nil
+    if state.lastAnchoredControl then
+        pendingEntryGap = state.nextEntryGap
+        state.nextEntryGap = nil
+        pendingObjectiveGap = state.nextObjectiveGap
+        state.nextObjectiveGap = nil
+    end
     if type(verticalPadding) ~= "number" then
-        if rowKind == "header" then
+        if type(pendingObjectiveGap) == "number" then
+            verticalPadding = pendingObjectiveGap
+        elseif rowKind == "header" then
             verticalPadding = CATEGORY_SPACING_ABOVE
         else
             verticalPadding = GetRowGap()
         end
+    end
+    if type(pendingEntryGap) == "number" then
+        verticalPadding = verticalPadding + pendingEntryGap
+    end
+    if rowType == "achievement" then
+        verticalPadding = verticalPadding + ENTRY_SPACING_ABOVE
     end
 
     if state.lastAnchoredControl then
@@ -1267,6 +1317,19 @@ local function UpdateContentSize()
     local measuredHeight = 0
     local previousKind
     local pendingCategoryGap = nil
+    local pendingEntryGap = nil
+    local pendingObjectiveGap = nil
+    local previousRowType = nil
+
+    local function peekNextVisibleRow(startIndex)
+        for nextIndex = startIndex + 1, #state.orderedControls do
+            local nextControl = state.orderedControls[nextIndex]
+            if nextControl and not nextControl:IsHidden() then
+                return nextControl, nextControl.rowType
+            end
+        end
+        return nil, nil
+    end
 
     for index = 1, #state.orderedControls do
         local control = state.orderedControls[index]
@@ -1276,17 +1339,40 @@ local function UpdateContentSize()
         if control and not control:IsHidden() then
             local height = control:GetHeight() or 0
             local rowKind = ResolveRowKind(control)
+            local rowType = control.rowType
             local gap = 0
             if previousKind ~= nil then
                 if type(pendingCategoryGap) == "number" then
                     gap = pendingCategoryGap
+                    pendingCategoryGap = nil
+                elseif type(pendingObjectiveGap) == "number" then
+                    gap = pendingObjectiveGap
+                    pendingObjectiveGap = nil
                 elseif rowKind == "header" then
                     gap = CATEGORY_SPACING_ABOVE
                 else
                     gap = GetRowGap()
                 end
+                if type(pendingEntryGap) == "number" then
+                    gap = gap + pendingEntryGap
+                    pendingEntryGap = nil
+                end
+                if rowType == "objective" then
+                    if previousRowType == "objective" then
+                        gap = gap + OBJECTIVE_SPACING_BETWEEN
+                    else
+                        gap = gap + OBJECTIVE_SPACING_ABOVE
+                    end
+                end
+                if rowType == "achievement" then
+                    gap = gap + ENTRY_SPACING_ABOVE
+                end
             elseif rowKind == "header" then
                 gap = CATEGORY_SPACING_ABOVE
+            elseif rowType == "objective" then
+                gap = gap + OBJECTIVE_SPACING_ABOVE
+            elseif rowType == "achievement" then
+                gap = ENTRY_SPACING_ABOVE
             end
 
             measuredHeight = measuredHeight + gap + height
@@ -1301,14 +1387,33 @@ local function UpdateContentSize()
             end
 
             previousKind = rowKind
+            previousRowType = rowType
             pendingCategoryGap = nil
             if rowKind == "header" then
                 pendingCategoryGap = CATEGORY_SPACING_BELOW
+            end
+
+            local nextControl, nextRowType = peekNextVisibleRow(index)
+            if rowType == "achievement" or rowType == "objective" then
+                if nextControl == nil or nextRowType ~= "objective" then
+                    pendingEntryGap = ENTRY_SPACING_BELOW
+                end
+            end
+            if rowType == "objective" then
+                if nextControl == nil or nextRowType ~= "objective" then
+                    pendingObjectiveGap = OBJECTIVE_SPACING_BELOW
+                end
             end
         end
     end
 
     if visibleCount > 0 then
+        if type(pendingObjectiveGap) == "number" then
+            measuredHeight = measuredHeight + pendingObjectiveGap
+        end
+        if type(pendingEntryGap) == "number" then
+            measuredHeight = measuredHeight + pendingEntryGap
+        end
         if type(pendingCategoryGap) == "number" then
             measuredHeight = measuredHeight + pendingCategoryGap
         end
@@ -1572,24 +1677,50 @@ local function LayoutAchievement(rows, achievement)
     ApplyRowMetrics(
         control,
         "achievement",
-        ACHIEVEMENT_INDENT_X,
+        ENTRY_INDENT_X,
         ACHIEVEMENT_ICON_SLOT_WIDTH,
         ACHIEVEMENT_ICON_SLOT_PADDING_X,
         0
     )
     control:SetHidden(false)
-    AnchorControl(control, ACHIEVEMENT_INDENT_X, state.nextCategoryGap)
+    AnchorControl(control, ENTRY_INDENT_X, state.nextCategoryGap)
     state.nextCategoryGap = nil
 
     if hasObjectives and expanded then
+        local visibleObjectives = {}
         for index = 1, #achievement.objectives do
-            local objectiveHeight = LayoutObjective(rows, achievement, achievement.objectives[index], index)
+            local objective = achievement.objectives[index]
+            if ShouldDisplayObjective(objective) then
+                visibleObjectives[#visibleObjectives + 1] = {
+                    objective = objective,
+                    index = index,
+                }
+            end
+        end
+
+        for index = 1, #visibleObjectives do
+            local objectiveData = visibleObjectives[index]
+            local isFirst = index == 1
+            local isLast = index == #visibleObjectives
+
+            if isFirst then
+                state.nextObjectiveGap = OBJECTIVE_SPACING_ABOVE
+            else
+                state.nextObjectiveGap = OBJECTIVE_SPACING_BETWEEN
+            end
+
+            local objectiveHeight = LayoutObjective(rows, achievement, objectiveData.objective, objectiveData.index)
             if objectiveHeight then
                 laidOutSubrows = laidOutSubrows + 1
                 objectiveHeights[laidOutSubrows] = objectiveHeight
+                if isLast then
+                    state.nextObjectiveGap = OBJECTIVE_SPACING_BELOW
+                end
             end
         end
     end
+
+    state.nextEntryGap = ENTRY_SPACING_BELOW
 
     if AchievementTrackerLayout and type(AchievementTrackerLayout.ComputeEntryHeight) == "function" then
         local baseRowHeight = control:GetHeight() or 0
@@ -1699,7 +1830,9 @@ local function LayoutCategory(rows)
     end
     local gapOverride = state.nextCategoryGap
     if type(gapOverride) ~= "number" then
-        gapOverride = CATEGORY_SPACING_ABOVE
+        if type(state.nextEntryGap) ~= "number" and type(state.nextObjectiveGap) ~= "number" then
+            gapOverride = CATEGORY_SPACING_ABOVE
+        end
     end
     AnchorControl(control, CATEGORY_INDENT_X, gapOverride)
     state.nextCategoryGap = CATEGORY_SPACING_BELOW
@@ -1709,6 +1842,7 @@ local function LayoutCategory(rows)
             LayoutAchievement(rows, visibleEntries[index])
         end
     end
+
 end
 
 local function Rebuild()
@@ -1823,6 +1957,8 @@ function AchievementTracker:Refresh(viewModel)
     end
 
     ApplyCategorySpacingFromSaved()
+    ApplyEntrySpacingFromSaved()
+    ApplyObjectiveSpacingFromSaved()
 
     if data ~= nil then
         state.snapshot = data
@@ -1884,6 +2020,8 @@ function AchievementTracker.ApplySettings(settings)
     end
 
     ApplyCategorySpacingFromSaved()
+    ApplyEntrySpacingFromSaved()
+    ApplyObjectiveSpacingFromSaved()
     state.opts.active = settings.active ~= false
     ApplySections(settings.sections)
     if settings.tooltips ~= nil then

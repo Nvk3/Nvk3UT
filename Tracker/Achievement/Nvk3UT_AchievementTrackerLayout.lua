@@ -12,10 +12,10 @@ local HEADER_TO_ROWS_GAP = 3
 local ROW_TEXT_PADDING_Y = 4
 local CATEGORY_MIN_HEIGHT = 26
 local ACHIEVEMENT_MIN_HEIGHT = 24
-local OBJECTIVE_MIN_HEIGHT = 24
+local OBJECTIVE_MIN_HEIGHT = 20
 local CATEGORY_BOTTOM_PAD_EXPANDED = 6
 local CATEGORY_BOTTOM_PAD_COLLAPSED = 6
-local BOTTOM_PIXEL_NUDGE = 3
+local BOTTOM_PIXEL_NUDGE = 0
 
 local function logLoaded()
     local root = rawget(_G, addonName)
