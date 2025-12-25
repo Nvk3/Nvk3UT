@@ -952,6 +952,16 @@ local function queueEndeavorDirty()
     end
 end
 
+local function queueLayoutDirty()
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if type(runtime) == "table" then
+        local queueDirty = runtime.QueueDirty or runtime.QueueLayout
+        if type(queueDirty) == "function" then
+            pcall(queueDirty, runtime, "layout")
+        end
+    end
+end
+
 local function queueGoldenDirty()
     local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
     if type(runtime) == "table" then
@@ -1433,6 +1443,7 @@ local function buildSpacingControls(trackerKey)
         elseif trackerKey == "endeavor" then
             markEndeavorDirty("spacing")
             queueEndeavorDirty()
+            queueLayoutDirty()
         elseif trackerKey == "golden" then
             markGoldenDirty("spacing")
             queueGoldenDirty()

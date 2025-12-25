@@ -407,6 +407,40 @@ local function isControlHidden(control)
     return false
 end
 
+local function getTrackerHeight(sectionId)
+    local tracker
+    if sectionId == "quest" then
+        tracker = Addon and Addon.QuestTracker
+    elseif sectionId == "endeavor" then
+        tracker = (Addon and Addon.Endeavor) or (Addon and Addon.EndeavorTracker)
+    elseif sectionId == "achievement" then
+        tracker = Addon and Addon.AchievementTracker
+    elseif sectionId == "golden" then
+        tracker = Addon and Addon.GoldenTracker
+    end
+
+    if type(tracker) ~= "table" then
+        return nil
+    end
+
+    local getHeight = tracker.GetHeight or tracker.GetContentHeight or tracker.GetSize
+    if type(getHeight) ~= "function" then
+        return nil
+    end
+
+    local ok, height = pcall(getHeight, tracker)
+    if not ok then
+        return nil
+    end
+
+    local resolved = tonumber(height)
+    if resolved == nil or resolved ~= resolved or resolved < 0 then
+        return 0
+    end
+
+    return resolved
+end
+
 local function measureSection(host, sectionId, container)
     local width = 0
     local height = 0
@@ -419,6 +453,11 @@ local function measureSection(host, sectionId, container)
         height = tonumber(measuredHeight) or 0
         hostWidth = width
         hostHeight = height
+    end
+
+    local trackerHeight = getTrackerHeight(sectionId)
+    if trackerHeight ~= nil then
+        height = trackerHeight
     end
 
     local runtime = Addon and Addon.TrackerRuntime
