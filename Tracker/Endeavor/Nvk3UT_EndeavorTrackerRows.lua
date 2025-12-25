@@ -1790,6 +1790,11 @@ local function applyCategoryRow(row, data)
     end
 
     local indentValue = tonumber(info.categoryIndent) or 0
+    safeDebug(
+        "[CategoryRow] indent=%s indentAnchor=%s",
+        tostring(indentValue),
+        tostring(row.indentAnchor ~= nil)
+    )
     if indentValue < 0 then
         indentValue = 0
     end

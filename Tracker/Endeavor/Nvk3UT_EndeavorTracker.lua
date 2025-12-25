@@ -1800,6 +1800,18 @@ function EndeavorTracker.Refresh(viewModel)
     end
 
     applyCategorySpacingFromSaved()
+    do
+        local sv = Nvk3UT and Nvk3UT.SV
+        local spacing = sv and sv.spacing
+        local endeavorSpacing = spacing and spacing.endeavor
+        local categorySpacing = endeavorSpacing and endeavorSpacing.category
+        local spacingIndent = categorySpacing and categorySpacing.indent
+        safeDebug(
+            "[EndeavorTracker.UI] categoryIndent SV=%s CATEGORY_INDENT_X=%s",
+            tostring(spacingIndent),
+            tostring(CATEGORY_INDENT_X)
+        )
+    end
 
     if EndeavorTracker._building then
         safeDebug("[EndeavorTracker.UI] Refresh skipped due to active guard")
@@ -1974,6 +1986,10 @@ function EndeavorTracker.Refresh(viewModel)
 
             local appliedCategoryRow = false
             if categoryRow and rows and type(rows.ApplyCategoryRow) == "function" then
+                safeDebug(
+                    "[EndeavorTracker.UI] ApplyCategoryRow categoryIndent=%s",
+                    tostring(CATEGORY_INDENT_X)
+                )
                 rows.ApplyCategoryRow(categoryRow, {
                     title = categoryTitle,
                     remaining = categoryRemaining,
