@@ -1420,6 +1420,13 @@ local function applyCategoryRow(row, categoryData)
     if indentValue < 0 then
         indentValue = 0
     end
+    if isGoldenColorDebugEnabled() then
+        safeDebug(
+            "[GoldenIndent] ApplyCategoryRow categoryIndent=%s indentValue=%s",
+            tostring(categoryData and categoryData.categoryIndent),
+            tostring(indentValue)
+        )
+    end
     if row.indentAnchor and row.indentAnchor.SetAnchor then
         row.indentAnchor:ClearAnchors()
         row.indentAnchor:SetAnchor(TOPLEFT, targetRow, TOPLEFT, indentValue, 0)
