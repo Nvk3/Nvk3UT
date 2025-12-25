@@ -96,16 +96,14 @@ local HEADER_TO_ROWS_GAP = 3
 local ROW_GAP = 3
 local SECTION_BOTTOM_GAP = 3
 local SECTION_BOTTOM_GAP_COLLAPSED = 3
-local DEFAULT_BOTTOM_PIXEL_NUDGE = 3
 local CATEGORY_INDENT_X = 0
 local CATEGORY_SPACING_ABOVE = 3
 local CATEGORY_SPACING_BELOW = 6
 local CATEGORY_CHEVRON_SIZE = 20
 local CATEGORY_LABEL_OFFSET_X = 4
 local SUBHEADER_INDENT_X = 18
-local TITLE_INDENT_DELTA_PX = 14
 local ENTRY_INDENT_X = SUBHEADER_INDENT_X
-local ENTRY_ICON_SLOT_PX = 10
+local ENTRY_ICON_SLOT_PX = 20
 local ENTRY_SPACING_ABOVE = HEADER_TO_ROWS_GAP
 local ENTRY_SPACING_BELOW = 0
 local OBJECTIVE_INDENT_DEFAULT = 40
@@ -397,7 +395,7 @@ local function applyEntryLabelAnchors(label, control)
 
     local entryLabelIndentX = ENTRY_INDENT_X + ENTRY_ICON_SLOT_PX
     label:ClearAnchors()
-    label:SetAnchor(TOPLEFT, control, TOPLEFT, entryLabelIndentX + TITLE_INDENT_DELTA_PX, 0)
+    label:SetAnchor(TOPLEFT, control, TOPLEFT, entryLabelIndentX, 0)
     label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
 end
 
@@ -2299,7 +2297,7 @@ function EndeavorTracker.Refresh(viewModel)
                 else
                     bottomPadding = SECTION_BOTTOM_GAP_COLLAPSED
                 end
-                layout.height = layout.height + bottomPadding + CATEGORY_SPACING_BELOW + DEFAULT_BOTTOM_PIXEL_NUDGE
+                layout.height = layout.height + bottomPadding + CATEGORY_SPACING_BELOW
             end
             state.currentHeight = coerceHeight(layout.height)
             if container and container.SetHeight then
