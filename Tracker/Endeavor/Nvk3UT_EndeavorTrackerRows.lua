@@ -1349,14 +1349,16 @@ local function createCategoryRow(parent)
 
     local indentName = controlName .. "IndentAnchor"
     local indentAnchor = ensureCategoryChild(control, indentName, CT_CONTROL)
-    if indentAnchor then
-        indentAnchor:SetHidden(false)
-        indentAnchor:SetDimensions(1, 1)
-        if indentAnchor.ClearAnchors then
-            indentAnchor:ClearAnchors()
-        end
-        indentAnchor:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+    if not indentAnchor then
+        return nil
     end
+
+    indentAnchor:SetHidden(false)
+    indentAnchor:SetDimensions(1, 1)
+    if indentAnchor.ClearAnchors then
+        indentAnchor:ClearAnchors()
+    end
+    indentAnchor:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
 
     local chevronName = controlName .. "Chevron"
     local chevron = ensureCategoryChild(control, chevronName, CT_TEXTURE)
@@ -1370,7 +1372,7 @@ local function createCategoryRow(parent)
         if chevron.ClearAnchors then
             chevron:ClearAnchors()
         end
-        chevron:SetAnchor(TOPLEFT, indentAnchor or control, TOPLEFT, 0, 0)
+        chevron:SetAnchor(TOPLEFT, indentAnchor, TOPLEFT, 0, 0)
         if chevron.SetTexture then
             chevron:SetTexture(DEFAULT_CATEGORY_CHEVRON_TEXTURES.collapsed)
         end
