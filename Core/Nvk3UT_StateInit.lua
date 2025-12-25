@@ -299,7 +299,7 @@ local function CopySpacingDefaults()
         },
         entry = {
             indent = 20,
-            spacingAbove = 3,
+            spacingAbove = 0,
             spacingBelow = 0,
         },
         objective = {
