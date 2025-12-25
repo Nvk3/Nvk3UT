@@ -7,6 +7,7 @@ local Rows = {}
 Rows.__index = Rows
 
 local MODULE_TAG = addonName .. ".EndeavorTrackerRows"
+local LOGGER = LibDebugLogger and LibDebugLogger.Create(MODULE_TAG)
 
 local ROW_TEXT_PADDING_Y = 4
 
@@ -1348,25 +1349,30 @@ local function createCategoryRow(parent)
 
     local indentName = controlName .. "IndentAnchor"
     local indentAnchor = ensureCategoryChild(control, indentName, CT_CONTROL)
-    if indentAnchor then
-        indentAnchor:SetHidden(false)
-        indentAnchor:SetDimensions(1, 1)
-        if indentAnchor.ClearAnchors then
-            indentAnchor:ClearAnchors()
-        end
-        indentAnchor:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+    if not indentAnchor then
+        return nil
     end
+
+    indentAnchor:SetHidden(false)
+    indentAnchor:SetDimensions(1, 1)
+    if indentAnchor.ClearAnchors then
+        indentAnchor:ClearAnchors()
+    end
+    indentAnchor:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
 
     local chevronName = controlName .. "Chevron"
     local chevron = ensureCategoryChild(control, chevronName, CT_TEXTURE)
     if chevron then
+        if indentAnchor and chevron.SetParent then
+            chevron:SetParent(indentAnchor)
+        end
         chevron:SetMouseEnabled(false)
         chevron:SetHidden(false)
         chevron:SetDimensions(CATEGORY_CHEVRON_SIZE, CATEGORY_CHEVRON_SIZE)
         if chevron.ClearAnchors then
             chevron:ClearAnchors()
         end
-        chevron:SetAnchor(TOPLEFT, indentAnchor or control, TOPLEFT, 0, 0)
+        chevron:SetAnchor(TOPLEFT, indentAnchor, TOPLEFT, 0, 0)
         if chevron.SetTexture then
             chevron:SetTexture(DEFAULT_CATEGORY_CHEVRON_TEXTURES.collapsed)
         end
@@ -1375,6 +1381,9 @@ local function createCategoryRow(parent)
     local labelName = controlName .. "Label"
     local label = ensureCategoryChild(control, labelName, CT_LABEL)
     if label then
+        if indentAnchor and label.SetParent then
+            label:SetParent(indentAnchor)
+        end
         label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
         label:SetVerticalAlignment(TEXT_ALIGN_TOP)
         if label.SetWrapMode then
@@ -1632,7 +1641,7 @@ local function acquireCategoryRow(parent)
         end
         if chevron.ClearAnchors then
             chevron:ClearAnchors()
-            chevron:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+            chevron:SetAnchor(TOPLEFT, row.indentAnchor or control, TOPLEFT, 0, 0)
         end
     end
 
@@ -1790,6 +1799,7 @@ local function applyCategoryRow(row, data)
     end
 
     local indentValue = tonumber(info.categoryIndent) or 0
+    local hasIndentAnchor = row.indentAnchor ~= nil
     if indentValue < 0 then
         indentValue = 0
     end
@@ -1822,13 +1832,17 @@ local function applyCategoryRow(row, data)
 
     row._onToggle = info.onToggle
 
-    safeDebug(
-        "[CategoryRow] apply title=%s expanded=%s remaining=%d counts=%s",
-        tostring(formattedText),
-        tostring(expanded),
-        remaining,
-        tostring(showCounts)
-    )
+    if LOGGER and type(LOGGER.Info) == "function" then
+        LOGGER:Info(
+            "[CategoryRow] apply title=%s expanded=%s remaining=%d counts=%s categoryIndent=%s hasIndentAnchor=%s",
+            tostring(formattedText),
+            tostring(expanded),
+            remaining,
+            tostring(showCounts),
+            tostring(tonumber(info.categoryIndent)),
+            tostring(hasIndentAnchor)
+        )
+    end
 end
 
 function Rows.AcquireCategoryRow(parent)

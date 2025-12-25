@@ -1095,9 +1095,14 @@ local function measureControlHeight(control, fallback)
     return coerceHeight(fallback)
 end
 
-local function anchorControlAtOffset(control, container, offsetY)
+local function anchorControlAtOffset(control, container, offsetY, indentX)
     if not (control and container) then
         return
+    end
+
+    indentX = tonumber(indentX) or 0
+    if indentX < 0 then
+        indentX = 0
     end
 
     if control.ClearAnchors then
@@ -1105,7 +1110,7 @@ local function anchorControlAtOffset(control, container, offsetY)
     end
 
     if control.SetAnchor then
-        control:SetAnchor(TOPLEFT, container, TOPLEFT, 0, offsetY)
+        control:SetAnchor(TOPLEFT, container, TOPLEFT, indentX, offsetY)
         control:SetAnchor(TOPRIGHT, container, TOPRIGHT, 0, offsetY)
     end
 end
@@ -1295,7 +1300,6 @@ local function newLayoutContext(container)
         visibleCount = 0,
         rowCount = 0,
         previousKind = nil,
-        pendingCategoryGap = nil,
     }
 
     if container and container.SetResizeToFitDescendents then
@@ -1327,20 +1331,25 @@ local function appendLayoutControl(context, control, fallbackHeight, kind)
     end
 
     local offsetY = context.cursorY
+    local gap = 0
     if context.visibleCount > 0 then
-        local gap = context.pendingCategoryGap
-        if type(gap) ~= "number" then
-            if kind == "header" then
-                gap = CATEGORY_SPACING_ABOVE
-            else
-                gap = ROW_GAP
-            end
+        if kind == "header" then
+            gap = CATEGORY_SPACING_ABOVE
+        elseif context.previousKind == "header" then
+            gap = HEADER_TO_ROWS_GAP
+        else
+            gap = ROW_GAP
         end
+    elseif kind == "header" then
+        gap = CATEGORY_SPACING_ABOVE
+    end
+
+    if gap > 0 then
         offsetY = offsetY + gap
         context.height = context.height + gap
     end
 
-    anchorControlAtOffset(control, container, offsetY)
+    anchorControlAtOffset(control, container, offsetY, 0)
     if control.SetHidden then
         control:SetHidden(false)
     end
@@ -1354,10 +1363,6 @@ local function appendLayoutControl(context, control, fallbackHeight, kind)
         context.rowCount = context.rowCount + 1
     end
     context.previousKind = resolvedKind
-    context.pendingCategoryGap = nil
-    if resolvedKind == "header" then
-        context.pendingCategoryGap = CATEGORY_SPACING_BELOW
-    end
 end
 
 local function N3UT_Endeavor_InitPoller_Tick()
@@ -1795,6 +1800,18 @@ function EndeavorTracker.Refresh(viewModel)
     end
 
     applyCategorySpacingFromSaved()
+    do
+        local sv = Nvk3UT and Nvk3UT.SV
+        local spacing = sv and sv.spacing
+        local endeavorSpacing = spacing and spacing.endeavor
+        local categorySpacing = endeavorSpacing and endeavorSpacing.category
+        local spacingIndent = categorySpacing and categorySpacing.indent
+        safeDebug(
+            "[EndeavorTracker.UI] categoryIndent SV=%s CATEGORY_INDENT_X=%s",
+            tostring(spacingIndent),
+            tostring(CATEGORY_INDENT_X)
+        )
+    end
 
     if EndeavorTracker._building then
         safeDebug("[EndeavorTracker.UI] Refresh skipped due to active guard")
@@ -1969,6 +1986,10 @@ function EndeavorTracker.Refresh(viewModel)
 
             local appliedCategoryRow = false
             if categoryRow and rows and type(rows.ApplyCategoryRow) == "function" then
+                safeDebug(
+                    "[EndeavorTracker.UI] ApplyCategoryRow categoryIndent=%s",
+                    tostring(CATEGORY_INDENT_X)
+                )
                 rows.ApplyCategoryRow(categoryRow, {
                     title = categoryTitle,
                     remaining = categoryRemaining,
@@ -2193,7 +2214,7 @@ function EndeavorTracker.Refresh(viewModel)
                 else
                     bottomPadding = SECTION_BOTTOM_GAP_COLLAPSED
                 end
-                layout.height = layout.height + bottomPadding + DEFAULT_BOTTOM_PIXEL_NUDGE
+                layout.height = layout.height + bottomPadding + CATEGORY_SPACING_BELOW + DEFAULT_BOTTOM_PIXEL_NUDGE
             end
             state.currentHeight = coerceHeight(layout.height)
             if container and container.SetHeight then
