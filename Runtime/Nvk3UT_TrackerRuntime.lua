@@ -39,6 +39,8 @@ Runtime._pendingFullRebuildReason = type(Runtime._pendingFullRebuildReason) == "
 Runtime.needsFullRebuildOnVisible = Runtime.needsFullRebuildOnVisible == true
 Runtime._fullRebuildPending = Runtime._fullRebuildPending == true
 Runtime._fullRebuildReason = type(Runtime._fullRebuildReason) == "string" and Runtime._fullRebuildReason or nil
+Runtime._endeavorExpandedAtInit = Runtime._endeavorExpandedAtInit
+Runtime._endeavorInitReflowDone = Runtime._endeavorInitReflowDone == true
 
 local function debug(fmt, ...)
     if Addon and type(Addon.Debug) == "function" then
@@ -510,6 +512,63 @@ local function refreshEndeavorTracker(viewModel)
     end)
 
     return refreshed
+end
+
+local function resolveEndeavorReady(viewModel)
+    if type(viewModel) ~= "table" then
+        return false
+    end
+
+    local settings = viewModel.settings
+    if type(settings) == "table" and settings.enabled == false then
+        return false
+    end
+
+    local itemCount = 0
+    if type(viewModel.items) == "table" then
+        itemCount = #viewModel.items
+    elseif type(viewModel.count) == "number" then
+        itemCount = viewModel.count
+    end
+
+    if itemCount > 0 then
+        return true
+    end
+
+    local dailyTotal = tonumber(viewModel.daily and viewModel.daily.total) or 0
+    local weeklyTotal = tonumber(viewModel.weekly and viewModel.weekly.total) or 0
+
+    return dailyTotal > 0 or weeklyTotal > 0
+end
+
+local function maybeTriggerEndeavorInitReflow(runtime, viewModel, refreshed)
+    if type(runtime) ~= "table" or runtime._endeavorInitReflowDone then
+        return
+    end
+
+    if runtime._endeavorExpandedAtInit ~= true then
+        return
+    end
+
+    if refreshed ~= true then
+        return
+    end
+
+    if not resolveEndeavorReady(viewModel) then
+        return
+    end
+
+    local rebuild = (Addon and Addon.Rebuild) or _G.Nvk3UT_Rebuild
+    local rebuildAll = rebuild and (rebuild.All or rebuild.all)
+    if type(rebuildAll) ~= "function" then
+        return
+    end
+
+    runtime._endeavorInitReflowDone = true
+    debug("Runtime: endeavor init ready; scheduling one-time full rebuild")
+    safeCall(function()
+        rebuildAll("endeavorInitReady")
+    end)
 end
 
 local function refreshGoldenModel()
@@ -1148,6 +1207,8 @@ function Runtime:ProcessFrame(nowMs)
                     debug("Runtime: endeavor tracker refreshed (geometry changed)")
                 end
             end
+
+            maybeTriggerEndeavorInitReflow(self, endeavorViewModel, refreshedEndeavor)
         end
 
         local achievementGeometryChanged = false
