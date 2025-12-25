@@ -236,6 +236,7 @@ function Layout.ApplyLayout(parentControl, rows)
     local categoryHasHeader = false
     local categoryRowCount = 0
     local categoryExpanded = nil
+    local pendingCategoryGap = 0
 
     local function resolveCategoryExpanded(rowData)
         if type(rowData) == "table" then
@@ -264,6 +265,7 @@ function Layout.ApplyLayout(parentControl, rows)
             return
         end
 
+        pendingCategoryGap = CATEGORY_SPACING_BELOW
         categoryHasHeader = false
         categoryRowCount = 0
         categoryExpanded = nil
@@ -301,13 +303,16 @@ function Layout.ApplyLayout(parentControl, rows)
         local gap = 0
         if kind == "category" then
             gap = CATEGORY_SPACING_ABOVE
-            totalHeight = totalHeight + gap
         elseif visibleCount > 0 then
-            if previousKind == "category" then
-                gap = 0
-            else
-                gap = ENTRY_ROW_SPACING
-            end
+            gap = ENTRY_ROW_SPACING
+        end
+
+        if pendingCategoryGap and pendingCategoryGap > 0 and visibleCount > 0 then
+            gap = gap + pendingCategoryGap
+            pendingCategoryGap = 0
+        end
+
+        if visibleCount > 0 or gap > 0 then
             totalHeight = totalHeight + gap
         end
 
@@ -332,9 +337,6 @@ function Layout.ApplyLayout(parentControl, rows)
         if control then
             if kind == "category" and control.SetResizeToFitDescendents then
                 control:SetResizeToFitDescendents(false)
-            end
-            if kind == "category" then
-                height = height + CATEGORY_SPACING_BELOW
             end
             control.__height = height
         end
@@ -371,6 +373,9 @@ function Layout.ApplyLayout(parentControl, rows)
     finalizeCategory()
 
     if visibleCount > 0 then
+        if pendingCategoryGap and pendingCategoryGap > 0 then
+            totalHeight = totalHeight + pendingCategoryGap
+        end
         totalHeight = totalHeight + BOTTOM_PIXEL_NUDGE
     end
 

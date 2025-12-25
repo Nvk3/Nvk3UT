@@ -116,7 +116,7 @@ local function getCategoryIndentFromSaved()
     local spacing = sv and sv.spacing
     local goldenSpacing = spacing and spacing.golden
     local category = goldenSpacing and goldenSpacing.category
-    return normalizeSpacingValue(category and category.indent, 0)
+    return normalizeSpacingValue(category and category.contentIndent, 0)
 end
 
 local function getObjectiveIndentFromSaved()
