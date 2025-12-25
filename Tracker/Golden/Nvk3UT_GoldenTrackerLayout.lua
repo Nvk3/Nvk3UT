@@ -151,6 +151,8 @@ local function resolveRowKind(control, rowData)
     return nil
 end
 
+local resolveRowHeight
+
 local function resolveCategoryHeight(control, rowData)
     local baseHeight = resolveRowHeight(control, rowData)
     local textHeight = getCategoryTextHeight(control, rowData)
@@ -160,7 +162,7 @@ local function resolveCategoryHeight(control, rowData)
     return baseHeight
 end
 
-local function resolveRowHeight(control, rowData)
+resolveRowHeight = function(control, rowData)
     local rowsModule = getRowsModule()
     local kind = resolveRowKind(control, rowData)
     local fallback
