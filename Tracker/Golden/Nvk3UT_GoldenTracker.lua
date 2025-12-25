@@ -109,6 +109,8 @@ end
 
 local OBJECTIVE_INDENT_DEFAULT = 40
 local OBJECTIVE_BASE_INDENT = 20
+local ENTRY_INDENT_DEFAULT = 60
+local ENTRY_SPACING_DEFAULT = 3
 
 local function getCategoryIndentFromSaved()
     local root = getAddonRoot()
@@ -134,6 +136,39 @@ local function getObjectiveIndentFromSaved()
 
     local indent = normalizeSpacingValue(objective and objective.indent, OBJECTIVE_INDENT_DEFAULT)
     return indent + OBJECTIVE_BASE_INDENT
+end
+
+local function getEntryIndentFromSaved()
+    local root = getAddonRoot()
+    local sv = root and (root.SV or root.sv)
+    local spacing = sv and sv.spacing
+    local goldenSpacing = spacing and spacing.golden
+    local entry = goldenSpacing and goldenSpacing.entry
+
+    local rawIndent = entry and entry.indent
+    local normalized = normalizeSpacingValue(rawIndent, ENTRY_INDENT_DEFAULT)
+    safeDebug("[GoldenEntryIndent] SV raw=%s normalized=%s", tostring(rawIndent), tostring(normalized))
+    return normalized
+end
+
+local function getEntrySpacingAboveFromSaved()
+    local root = getAddonRoot()
+    local sv = root and (root.SV or root.sv)
+    local spacing = sv and sv.spacing
+    local goldenSpacing = spacing and spacing.golden
+    local entry = goldenSpacing and goldenSpacing.entry
+
+    return normalizeSpacingValue(entry and entry.spacingAbove, ENTRY_SPACING_DEFAULT)
+end
+
+local function getEntrySpacingBelowFromSaved()
+    local root = getAddonRoot()
+    local sv = root and (root.SV or root.sv)
+    local spacing = sv and sv.spacing
+    local goldenSpacing = spacing and spacing.golden
+    local entry = goldenSpacing and goldenSpacing.entry
+
+    return normalizeSpacingValue(entry and entry.spacingBelow, ENTRY_SPACING_DEFAULT)
 end
 
 local function isObjectiveCompleted(objectiveData)
@@ -1085,9 +1120,22 @@ function GoldenTracker.Refresh(...)
     local rowsModule = getRowsModule()
     local layoutModule = getLayoutModule()
 
+    local objectiveIndent = getObjectiveIndentFromSaved()
+    local entryIndent = getEntryIndentFromSaved()
+
     if rowsModule and type(rowsModule.SetObjectiveIndent) == "function" then
-        rowsModule.SetObjectiveIndent(getObjectiveIndentFromSaved())
+        rowsModule.SetObjectiveIndent(objectiveIndent)
     end
+
+    if rowsModule and type(rowsModule.SetEntryIndent) == "function" then
+        rowsModule.SetEntryIndent(entryIndent)
+    end
+
+    safeDebug(
+        "[GoldenIndent] resolved objective=%s entry=%s",
+        tostring(objectiveIndent),
+        tostring(entryIndent)
+    )
 
     if rowsModule and type(rowsModule.ReleaseAllCategoryRows) == "function" then
         rowsModule.ReleaseAllCategoryRows()

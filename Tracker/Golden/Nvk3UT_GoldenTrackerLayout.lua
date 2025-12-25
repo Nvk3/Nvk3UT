@@ -17,6 +17,8 @@ local CATEGORY_BOTTOM_PAD_EXPANDED = 6
 local CATEGORY_BOTTOM_PAD_COLLAPSED = 6
 local CATEGORY_SPACING_ABOVE = 3
 local CATEGORY_SPACING_BELOW = 6
+local ENTRY_SPACING_ABOVE = 3
+local ENTRY_SPACING_BELOW = 3
 local CATEGORY_TEXT_PADDING_Y = 4
 local BOTTOM_PIXEL_NUDGE = 3
 local Rows = Nvk3UT and Nvk3UT.GoldenTrackerRows
@@ -97,6 +99,17 @@ local function applyCategorySpacingFromSaved()
 
     CATEGORY_SPACING_ABOVE = normalizeSpacingValue(category and category.spacingAbove, CATEGORY_SPACING_ABOVE)
     CATEGORY_SPACING_BELOW = normalizeSpacingValue(category and category.spacingBelow, CATEGORY_SPACING_BELOW)
+end
+
+local function applyEntrySpacingFromSaved()
+    local addon = Nvk3UT
+    local sv = addon and addon.SV
+    local spacing = sv and sv.spacing
+    local goldenSpacing = spacing and spacing.golden
+    local entry = goldenSpacing and goldenSpacing.entry
+
+    ENTRY_SPACING_ABOVE = normalizeSpacingValue(entry and entry.spacingAbove, ENTRY_SPACING_ABOVE)
+    ENTRY_SPACING_BELOW = normalizeSpacingValue(entry and entry.spacingBelow, ENTRY_SPACING_BELOW)
 end
 
 local function getControlHeight(control, fallback)
@@ -216,6 +229,7 @@ function Layout.ApplyLayout(parentControl, rows)
     end
 
     applyCategorySpacingFromSaved()
+    applyEntrySpacingFromSaved()
 
     if type(rows) ~= "table" then
         rows = {}
@@ -303,6 +317,14 @@ function Layout.ApplyLayout(parentControl, rows)
         local gap = 0
         if kind == "category" then
             gap = CATEGORY_SPACING_ABOVE
+        elseif kind == "entry" then
+            if visibleCount > 0 then
+                if previousKind == "entry" then
+                    gap = ENTRY_SPACING_BELOW
+                else
+                    gap = ENTRY_SPACING_ABOVE
+                end
+            end
         elseif visibleCount > 0 then
             gap = ENTRY_ROW_SPACING
         end

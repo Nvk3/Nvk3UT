@@ -46,6 +46,7 @@ local DEFAULTS = {
     ENTRY_FONT = "$(BOLD_FONT)|16|soft-shadow-thick",
     OBJECTIVE_FONT = "$(BOLD_FONT)|14|soft-shadow-thick",
     OBJECTIVE_INDENT_X = 60,
+    ENTRY_INDENT_X = 60,
     OBJECTIVE_PIN_MARKER_OFFSET_X = 10,
 }
 
@@ -58,7 +59,7 @@ local GOLDEN_HEADER_TITLE = GetString(SI_NVK3UT_TRACKER_GOLDEN_CATEGORY_MAIN)
 
 local CATEGORY_CHEVRON_SIZE = 20
 local CATEGORY_LABEL_OFFSET_X = 4
-local ENTRY_INDENT_X = DEFAULTS.OBJECTIVE_INDENT_X
+local ENTRY_INDENT_X = DEFAULTS.ENTRY_INDENT_X
 
 local CATEGORY_CHEVRON_TEXTURES = {
     expanded = "EsoUI/Art/Buttons/tree_open_up.dds",
@@ -119,6 +120,18 @@ function Rows.SetObjectiveIndent(indent)
     end
 
     DEFAULTS.OBJECTIVE_INDENT_X = numeric
+end
+
+function Rows.SetEntryIndent(indent)
+    local numeric = tonumber(indent)
+    if numeric == nil or numeric ~= numeric then
+        return
+    end
+    if numeric < 0 then
+        return
+    end
+
+    DEFAULTS.ENTRY_INDENT_X = numeric
     ENTRY_INDENT_X = numeric
 end
 
