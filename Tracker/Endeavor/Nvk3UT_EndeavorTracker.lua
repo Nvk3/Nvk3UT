@@ -97,7 +97,6 @@ local ROW_GAP = 3
 local SECTION_BOTTOM_GAP = 3
 local SECTION_BOTTOM_GAP_COLLAPSED = 3
 local DEFAULT_BOTTOM_PIXEL_NUDGE = 3
-local CATEGORY_INDENT_X = 0
 local CATEGORY_SPACING_ABOVE = 3
 local CATEGORY_SPACING_BELOW = 6
 local CATEGORY_CHEVRON_SIZE = 20
@@ -162,7 +161,6 @@ local function applyCategorySpacingFromSaved()
     local endeavorSpacing = spacing and spacing.endeavor
     local category = endeavorSpacing and endeavorSpacing.category
 
-    CATEGORY_INDENT_X = normalizeSpacingValue(category and category.indent, CATEGORY_INDENT_X)
     CATEGORY_SPACING_ABOVE = normalizeSpacingValue(category and category.spacingAbove, CATEGORY_SPACING_ABOVE)
     CATEGORY_SPACING_BELOW = normalizeSpacingValue(category and category.spacingBelow, CATEGORY_SPACING_BELOW)
 end
@@ -1972,6 +1970,12 @@ function EndeavorTracker.Refresh(viewModel)
             local categoryExpanded = categoryVm.expanded == true
             local categoryShowCounts = enabled and shouldShowCountsFor(categoryVm)
 
+            local addon = getAddon()
+            local spacing = addon and addon.SV and addon.SV.spacing
+            local endeavorSpacing = spacing and spacing.endeavor
+            local categorySpacing = endeavorSpacing and endeavorSpacing.category
+            local categoryIndent = normalizeSpacingValue(categorySpacing and categorySpacing.indent, 0)
+
             local appliedCategoryRow = false
             if categoryRow and rows and type(rows.ApplyCategoryRow) == "function" then
                 rows.ApplyCategoryRow(categoryRow, {
@@ -1982,7 +1986,7 @@ function EndeavorTracker.Refresh(viewModel)
                     formatHeader = formatCategoryHeader,
                     overrideColors = overrideColors,
                     textures = CHEVRON_TEXTURES,
-                    categoryIndent = CATEGORY_INDENT_X,
+                    categoryIndent = categoryIndent,
                     colorRoles = {
                         expanded = CATEGORY_COLOR_ROLE_EXPANDED,
                         collapsed = CATEGORY_COLOR_ROLE_COLLAPSED,
