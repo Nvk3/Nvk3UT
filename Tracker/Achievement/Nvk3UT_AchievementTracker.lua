@@ -1292,8 +1292,8 @@ local function AnchorControl(control, indentX, gapOverride)
     if rowType == "achievement" then
         verticalPadding = verticalPadding + ENTRY_SPACING_ABOVE
     end
-    if rowType == "category" and state.lastAnchoredControl and state.lastAnchoredControl.rowType ~= "category" then
-        if state.lastCategoryExpanded then
+    if state.lastAnchoredControl and rowKind == "header" then
+        if state.lastAnchoredControl.rowType == "objective" and state.lastCategoryExpanded then
             verticalPadding = verticalPadding + EXPANDED_END_GAP_FIX
         end
     end
@@ -1376,7 +1376,7 @@ local function UpdateContentSize()
                 if rowType == "achievement" then
                     gap = gap + ENTRY_SPACING_ABOVE
                 end
-                if rowType == "category" and previousRowType ~= "category" then
+                if rowKind == "header" and previousRowType == "objective" then
                     if previousCategoryExpanded then
                         gap = gap + EXPANDED_END_GAP_FIX
                     end
