@@ -59,6 +59,7 @@ local GOLDEN_HEADER_TITLE = GetString(SI_NVK3UT_TRACKER_GOLDEN_CATEGORY_MAIN)
 
 local CATEGORY_CHEVRON_SIZE = 20
 local CATEGORY_LABEL_OFFSET_X = 4
+local ENTRY_ICON_SLOT_X = 20
 local ENTRY_INDENT_X = DEFAULTS.ENTRY_INDENT_X
 
 local CATEGORY_CHEVRON_TEXTURES = {
@@ -1618,7 +1619,7 @@ local function createEntryRow(parent)
     if label then
         label:ClearAnchors()
         if label.SetAnchor then
-            label:SetAnchor(TOPLEFT, control, TOPLEFT, ENTRY_INDENT_X, 0)
+            label:SetAnchor(TOPLEFT, control, TOPLEFT, ENTRY_ICON_SLOT_X + ENTRY_INDENT_X, 0)
         end
         applyLabelDefaults(label, getGoldenTitleFont())
         if label.SetAlpha then
@@ -1715,7 +1716,7 @@ local function resetEntryRowVisuals(row, parent)
     if label then
         label:ClearAnchors()
         if label.SetAnchor and control then
-            label:SetAnchor(TOPLEFT, control, TOPLEFT, ENTRY_INDENT_X, 0)
+            label:SetAnchor(TOPLEFT, control, TOPLEFT, ENTRY_ICON_SLOT_X + ENTRY_INDENT_X, 0)
         end
         applyLabelDefaults(label, getGoldenTitleFont())
         applyLabelColor(label, GOLDEN_COLOR_ROLES.EntryName, getGoldenTrackerColors())
@@ -2128,7 +2129,7 @@ local function applyEntryRow(row, entryData)
         end
     end
 
-    local availableWidth = computeAvailableWidth(targetRow, ENTRY_INDENT_X, 0, 0)
+    local availableWidth = computeAvailableWidth(targetRow, ENTRY_ICON_SLOT_X + ENTRY_INDENT_X, 0, 0)
     if label.SetWidth then
         label:SetWidth(availableWidth)
     end
