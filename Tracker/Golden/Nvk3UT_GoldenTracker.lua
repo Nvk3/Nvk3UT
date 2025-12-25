@@ -113,10 +113,16 @@ local OBJECTIVE_BASE_INDENT = 20
 local function getCategoryIndentFromSaved()
     local root = getAddonRoot()
     local sv = root and (root.SV or root.sv)
+    if sv == nil then
+        sv = Nvk3UT and Nvk3UT.SV
+    end
     local spacing = sv and sv.spacing
     local goldenSpacing = spacing and spacing.golden
     local category = goldenSpacing and goldenSpacing.category
-    return normalizeSpacingValue(category and category.indent, 0)
+    local rawIndent = category and category.indent
+    local normalized = normalizeSpacingValue(rawIndent, 0)
+    safeDebug("[GoldenIndent] SV raw=%s normalized=%s", tostring(rawIndent), tostring(normalized))
+    return normalized
 end
 
 local function getObjectiveIndentFromSaved()
@@ -1176,11 +1182,19 @@ function GoldenTracker.Refresh(...)
 
     if rowsModule then
         if summary.hasActiveCampaign == true then
-            local categoryPayload = summary
-            if type(categoryPayload) == "table" then
-                categoryPayload.isExpanded = categoryExpanded
-                categoryPayload.categoryIndent = getCategoryIndentFromSaved()
-            end
+            local categoryPayload = {
+                isExpanded = categoryExpanded,
+                categoryIndent = getCategoryIndentFromSaved(),
+                remainingObjectivesToNextReward = summary.remainingObjectivesToNextReward,
+                remainingAllObjectives = summary.remainingAllObjectives,
+                generalCompletedMode = summary.generalCompletedMode,
+                capstoneReached = summary.capstoneReached,
+                textures = summary.textures,
+            }
+            safeDebug(
+                "[GoldenIndent] payload.categoryIndent=%s",
+                tostring(categoryPayload.categoryIndent)
+            )
 
             local categoryRow = nil
             if type(rowsModule.AcquireCategoryRow) == "function" then

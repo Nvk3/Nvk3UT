@@ -1420,9 +1420,56 @@ local function applyCategoryRow(row, categoryData)
     if indentValue < 0 then
         indentValue = 0
     end
+    if isGoldenColorDebugEnabled() then
+        safeDebug(
+            "[GoldenIndent] ApplyCategoryRow categoryIndent=%s indentValue=%s",
+            tostring(categoryData and categoryData.categoryIndent),
+            tostring(indentValue)
+        )
+    end
     if row.indentAnchor and row.indentAnchor.SetAnchor then
         row.indentAnchor:ClearAnchors()
         row.indentAnchor:SetAnchor(TOPLEFT, targetRow, TOPLEFT, indentValue, 0)
+    end
+    if chevron and chevron.ClearAnchors and row.indentAnchor and row.indentAnchor.SetAnchor then
+        chevron:ClearAnchors()
+        chevron:SetAnchor(TOPLEFT, row.indentAnchor, TOPLEFT, 0, 0)
+    end
+
+    if label and label.ClearAnchors then
+        label:ClearAnchors()
+        if label.SetAnchor then
+            label:SetAnchor(TOPLEFT, chevron, TOPRIGHT, CATEGORY_LABEL_OFFSET_X, 0)
+            label:SetAnchor(TOPRIGHT, targetRow, TOPRIGHT, 0, 0)
+        end
+    end
+
+    if isGoldenColorDebugEnabled() then
+        local function formatAnchor(control, index)
+            if not (control and control.GetAnchor) then
+                return "<anchor read failed>"
+            end
+            local ok, point, relativeTo, relativePoint, offsetX, offsetY =
+                pcall(control.GetAnchor, control, index or 0)
+            if not ok then
+                return "<anchor read failed>"
+            end
+            local relativeName = tostring(relativeTo)
+            if type(relativeTo) == "userdata" and relativeTo.GetName then
+                local nameOk, name = pcall(relativeTo.GetName, relativeTo)
+                if nameOk and name ~= nil then
+                    relativeName = tostring(name)
+                end
+            end
+            return string.format("%s→%s (%s, %s)", tostring(point), tostring(relativeName), tostring(offsetX), tostring(offsetY))
+        end
+
+        safeDebug(
+            "[GoldenIndent] anchors indent=%s chevron=%s label=%s",
+            formatAnchor(row.indentAnchor, 0),
+            formatAnchor(chevron, 0),
+            formatAnchor(label, 0)
+        )
     end
 
     local availableWidth = computeAvailableWidth(
