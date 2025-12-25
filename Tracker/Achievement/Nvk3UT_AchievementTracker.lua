@@ -1830,7 +1830,9 @@ local function LayoutCategory(rows)
     end
     local gapOverride = state.nextCategoryGap
     if type(gapOverride) ~= "number" then
-        gapOverride = CATEGORY_SPACING_ABOVE
+        if type(state.nextEntryGap) ~= "number" and type(state.nextObjectiveGap) ~= "number" then
+            gapOverride = CATEGORY_SPACING_ABOVE
+        end
     end
     AnchorControl(control, CATEGORY_INDENT_X, gapOverride)
     state.nextCategoryGap = CATEGORY_SPACING_BELOW
