@@ -17,6 +17,8 @@ local CATEGORY_BOTTOM_PAD_EXPANDED = 6
 local CATEGORY_BOTTOM_PAD_COLLAPSED = 6
 local CATEGORY_SPACING_ABOVE = 3
 local CATEGORY_SPACING_BELOW = 6
+local ENTRY_SPACING_ABOVE = ENTRY_ROW_SPACING
+local ENTRY_SPACING_BELOW = ENTRY_ROW_SPACING
 local CATEGORY_TEXT_PADDING_Y = 4
 local BOTTOM_PIXEL_NUDGE = 3
 local Rows = Nvk3UT and Nvk3UT.GoldenTrackerRows
@@ -97,6 +99,17 @@ local function applyCategorySpacingFromSaved()
 
     CATEGORY_SPACING_ABOVE = normalizeSpacingValue(category and category.spacingAbove, CATEGORY_SPACING_ABOVE)
     CATEGORY_SPACING_BELOW = normalizeSpacingValue(category and category.spacingBelow, CATEGORY_SPACING_BELOW)
+end
+
+local function applyEntrySpacingFromSaved()
+    local addon = Nvk3UT
+    local sv = addon and addon.SV
+    local spacing = sv and sv.spacing
+    local goldenSpacing = spacing and spacing.golden
+    local entry = goldenSpacing and goldenSpacing.entry
+
+    ENTRY_SPACING_ABOVE = normalizeSpacingValue(entry and entry.spacingAbove, ENTRY_SPACING_ABOVE)
+    ENTRY_SPACING_BELOW = normalizeSpacingValue(entry and entry.spacingBelow, ENTRY_SPACING_BELOW)
 end
 
 local function getControlHeight(control, fallback)
@@ -216,6 +229,7 @@ function Layout.ApplyLayout(parentControl, rows)
     end
 
     applyCategorySpacingFromSaved()
+    applyEntrySpacingFromSaved()
 
     if type(rows) ~= "table" then
         rows = {}
@@ -237,6 +251,10 @@ function Layout.ApplyLayout(parentControl, rows)
     local categoryRowCount = 0
     local categoryExpanded = nil
     local pendingCategoryGap = 0
+    local entryChildEndGap = 0
+    local inEntryChildBlock = false
+    local sawChildObjective = false
+    local deferredPreGap = 0
 
     local function resolveCategoryExpanded(rowData)
         if type(rowData) == "table" then
@@ -303,6 +321,10 @@ function Layout.ApplyLayout(parentControl, rows)
         local gap = 0
         if kind == "category" then
             gap = CATEGORY_SPACING_ABOVE
+        elseif kind == "entry" then
+            if visibleCount > 0 then
+                gap = ENTRY_SPACING_ABOVE
+            end
         elseif visibleCount > 0 then
             gap = ENTRY_ROW_SPACING
         end
@@ -310,6 +332,11 @@ function Layout.ApplyLayout(parentControl, rows)
         if pendingCategoryGap and pendingCategoryGap > 0 and visibleCount > 0 then
             gap = gap + pendingCategoryGap
             pendingCategoryGap = 0
+        end
+
+        if deferredPreGap > 0 and visibleCount > 0 then
+            gap = gap + deferredPreGap
+            deferredPreGap = 0
         end
 
         if visibleCount > 0 or gap > 0 then
@@ -358,6 +385,21 @@ function Layout.ApplyLayout(parentControl, rows)
         local control, rowData = resolveControl(row)
         local kind = resolveRowKind(control, rowData)
 
+        if inEntryChildBlock then
+            if kind == "objective" then
+                sawChildObjective = true
+            else
+                if sawChildObjective then
+                    deferredPreGap = entryChildEndGap
+                elseif entryChildEndGap > 0 then
+                    deferredPreGap = entryChildEndGap
+                end
+                entryChildEndGap = 0
+                inEntryChildBlock = false
+                sawChildObjective = false
+            end
+        end
+
         if kind == "category" then
             finalizeCategory()
             categoryHasHeader = true
@@ -368,6 +410,12 @@ function Layout.ApplyLayout(parentControl, rows)
         if control and (type(control) == "userdata" or type(control) == "table") then
             addControl(control, rowData, kind or "row")
         end
+
+        if kind == "entry" then
+            inEntryChildBlock = true
+            sawChildObjective = false
+            entryChildEndGap = ENTRY_SPACING_BELOW
+        end
     end
 
     finalizeCategory()
@@ -375,6 +423,17 @@ function Layout.ApplyLayout(parentControl, rows)
     if visibleCount > 0 then
         if pendingCategoryGap and pendingCategoryGap > 0 then
             totalHeight = totalHeight + pendingCategoryGap
+            pendingCategoryGap = 0
+        end
+        if inEntryChildBlock and entryChildEndGap > 0 then
+            if sawChildObjective then
+                totalHeight = totalHeight + entryChildEndGap
+            else
+                totalHeight = totalHeight + entryChildEndGap
+            end
+            entryChildEndGap = 0
+            inEntryChildBlock = false
+            sawChildObjective = false
         end
         totalHeight = totalHeight + BOTTOM_PIXEL_NUDGE
     end
