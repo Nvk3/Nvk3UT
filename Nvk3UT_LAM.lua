@@ -161,8 +161,8 @@ local DEFAULT_WINDOW_BARS = {
 }
 
 local DEFAULT_SPACING = {
-    category = { indent = 0, spacingAbove = 3, spacingBelow = 6 },
-    entry = { indent = 20, spacingAbove = 3, spacingBelow = 0 },
+    category = { indent = 0, spacingAbove = 3, spacingBelow = 3 },
+    entry = { indent = 20, spacingAbove = 0, spacingBelow = 0 },
     objective = { indent = 40, spacingAbove = 3, spacingBelow = 3, spacingBetween = 1 },
 }
 
