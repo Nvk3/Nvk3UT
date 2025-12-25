@@ -1641,7 +1641,7 @@ local function acquireCategoryRow(parent)
         end
         if chevron.ClearAnchors then
             chevron:ClearAnchors()
-            chevron:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+            chevron:SetAnchor(TOPLEFT, row.indentAnchor or control, TOPLEFT, 0, 0)
         end
     end
 
