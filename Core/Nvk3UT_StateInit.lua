@@ -295,12 +295,12 @@ local function CopySpacingDefaults()
         category = {
             indent = 0,
             spacingAbove = 3,
-            spacingBelow = 6,
+            spacingBelow = 3,
         },
         entry = {
-            indent = 40,
+            indent = 20,
             spacingAbove = 3,
-            spacingBelow = 3,
+            spacingBelow = 0,
         },
         objective = {
             indent = 40,

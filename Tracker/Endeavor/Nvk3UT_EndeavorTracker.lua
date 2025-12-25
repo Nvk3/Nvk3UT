@@ -110,7 +110,9 @@ local ENTRY_SPACING_ABOVE = HEADER_TO_ROWS_GAP
 local ENTRY_SPACING_BELOW = 0
 local OBJECTIVE_INDENT_DEFAULT = 40
 local OBJECTIVE_BASE_INDENT = 20
-local OBJECTIVE_ROW_SPACING = 3
+local OBJECTIVE_SPACING_ABOVE_DEFAULT = 3
+local OBJECTIVE_SPACING_BELOW_DEFAULT = 3
+local OBJECTIVE_SPACING_BETWEEN_DEFAULT = 1
 local SUBROW_FIRST_SPACING = 2
 local SUBROW_BETWEEN_SPACING = 1
 local SUBROW_TRAILING_SPACING = 2
@@ -184,6 +186,36 @@ local function getObjectiveIndentFromSaved()
 
     local indent = normalizeSpacingValue(objective and objective.indent, OBJECTIVE_INDENT_DEFAULT)
     return indent + OBJECTIVE_BASE_INDENT
+end
+
+local function getObjectiveSpacingAboveFromSaved()
+    local addon = Nvk3UT
+    local sv = addon and addon.SV
+    local spacing = sv and sv.spacing
+    local endeavorSpacing = spacing and spacing.endeavor
+    local objective = endeavorSpacing and endeavorSpacing.objective
+
+    return normalizeSpacingValue(objective and objective.spacingAbove, OBJECTIVE_SPACING_ABOVE_DEFAULT)
+end
+
+local function getObjectiveSpacingBelowFromSaved()
+    local addon = Nvk3UT
+    local sv = addon and addon.SV
+    local spacing = sv and sv.spacing
+    local endeavorSpacing = spacing and spacing.endeavor
+    local objective = endeavorSpacing and endeavorSpacing.objective
+
+    return normalizeSpacingValue(objective and objective.spacingBelow, OBJECTIVE_SPACING_BELOW_DEFAULT)
+end
+
+local function getObjectiveSpacingBetweenFromSaved()
+    local addon = Nvk3UT
+    local sv = addon and addon.SV
+    local spacing = sv and sv.spacing
+    local endeavorSpacing = spacing and spacing.endeavor
+    local objective = endeavorSpacing and endeavorSpacing.objective
+
+    return normalizeSpacingValue(objective and objective.spacingBetween, OBJECTIVE_SPACING_BETWEEN_DEFAULT)
 end
 
 local function getCategoryRowHeightValue(rows, expanded)
@@ -1185,6 +1217,9 @@ local function buildObjectiveRows(rows, container, objectivesList, rowsOptions)
 
     local cursorY = 0
     local visibleObjectives = 0
+    local spacingAbove = normalizeSpacingValue(rowsOptions and rowsOptions.objectiveSpacingAbove, OBJECTIVE_SPACING_ABOVE_DEFAULT)
+    local spacingBetween = normalizeSpacingValue(rowsOptions and rowsOptions.objectiveSpacingBetween, OBJECTIVE_SPACING_BETWEEN_DEFAULT)
+    local spacingBelow = normalizeSpacingValue(rowsOptions and rowsOptions.objectiveSpacingBelow, OBJECTIVE_SPACING_BELOW_DEFAULT)
 
     for index = 1, #objectives do
         local objective = objectives[index]
@@ -1197,8 +1232,12 @@ local function buildObjectiveRows(rows, container, objectivesList, rowsOptions)
                     module.ApplyEntryRow(row, objective, rowsOptions)
                 end
 
-                if visibleObjectives > 0 then
-                    cursorY = cursorY + OBJECTIVE_ROW_SPACING
+                if visibleObjectives == 0 then
+                    if spacingAbove > 0 then
+                        cursorY = cursorY + spacingAbove
+                    end
+                elseif spacingBetween > 0 then
+                    cursorY = cursorY + spacingBetween
                 end
 
                 anchorControlAtOffset(row, container, cursorY)
@@ -1270,6 +1309,10 @@ local function buildObjectiveRows(rows, container, objectivesList, rowsOptions)
                 end
             end
         end
+    end
+
+    if visibleObjectives > 0 and spacingBelow > 0 then
+        cursorY = cursorY + spacingBelow
     end
 
     local totalHeight = coerceHeight(cursorY)
@@ -1912,6 +1955,9 @@ function EndeavorTracker.Refresh(viewModel)
             rowsOptions.colors = overrideColors
             rowsOptions.completedHandling = completedHandling
             rowsOptions.objectiveIndent = getObjectiveIndentFromSaved()
+            rowsOptions.objectiveSpacingAbove = getObjectiveSpacingAboveFromSaved()
+            rowsOptions.objectiveSpacingBelow = getObjectiveSpacingBelowFromSaved()
+            rowsOptions.objectiveSpacingBetween = getObjectiveSpacingBetweenFromSaved()
 
             local dailyObjectivesList = type(dailyVm.objectives) == "table" and dailyVm.objectives or {}
             local weeklyObjectivesList = type(weeklyVm.objectives) == "table" and weeklyVm.objectives or {}
