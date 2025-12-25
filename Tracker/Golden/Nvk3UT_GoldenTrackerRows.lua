@@ -1447,13 +1447,20 @@ local function applyCategoryRow(row, categoryData)
     if isGoldenColorDebugEnabled() then
         local function formatAnchor(control, index)
             if not (control and control.GetAnchor) then
-                return "n/a"
+                return "<anchor read failed>"
             end
-            local ok, point, relativeTo, relativePoint, offsetX, offsetY = pcall(control.GetAnchor, control, index or 0)
+            local ok, point, relativeTo, relativePoint, offsetX, offsetY =
+                pcall(control.GetAnchor, control, index or 0)
             if not ok then
-                return "n/a"
+                return "<anchor read failed>"
             end
-            local relativeName = relativeTo and relativeTo.GetName and relativeTo:GetName() or tostring(relativeTo)
+            local relativeName = tostring(relativeTo)
+            if type(relativeTo) == "userdata" and relativeTo.GetName then
+                local nameOk, name = pcall(relativeTo.GetName, relativeTo)
+                if nameOk and name ~= nil then
+                    relativeName = tostring(name)
+                end
+            end
             return string.format("%s→%s (%s, %s)", tostring(point), tostring(relativeName), tostring(offsetX), tostring(offsetY))
         end
 
