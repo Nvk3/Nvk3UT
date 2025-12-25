@@ -111,7 +111,11 @@ local OBJECTIVE_INDENT_DEFAULT = 40
 local OBJECTIVE_BASE_INDENT = 20
 
 local function getCategoryIndentFromSaved()
-    local sv = Nvk3UT and Nvk3UT.sv
+    local root = getAddonRoot()
+    local sv = root and (root.SV or root.sv)
+    if sv == nil then
+        sv = Nvk3UT and Nvk3UT.SV
+    end
     local spacing = sv and sv.spacing
     local goldenSpacing = spacing and spacing.golden
     local category = goldenSpacing and goldenSpacing.category
