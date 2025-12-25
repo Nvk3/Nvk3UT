@@ -104,6 +104,9 @@ local CATEGORY_CHEVRON_SIZE = 20
 local CATEGORY_LABEL_OFFSET_X = 4
 local SUBHEADER_INDENT_X = 18
 local TITLE_INDENT_DELTA_PX = 14
+local ENTRY_INDENT_X = SUBHEADER_INDENT_X
+local ENTRY_SPACING_ABOVE = HEADER_TO_ROWS_GAP
+local ENTRY_SPACING_BELOW = 0
 local OBJECTIVE_INDENT_DEFAULT = 40
 local OBJECTIVE_BASE_INDENT = 20
 local OBJECTIVE_ROW_SPACING = 3
@@ -161,10 +164,14 @@ local function applyCategorySpacingFromSaved()
     local spacing = sv and sv.spacing
     local endeavorSpacing = spacing and spacing.endeavor
     local category = endeavorSpacing and endeavorSpacing.category
+    local entry = endeavorSpacing and endeavorSpacing.entry
 
     CATEGORY_INDENT_X = normalizeSpacingValue(category and category.indent, CATEGORY_INDENT_X)
     CATEGORY_SPACING_ABOVE = normalizeSpacingValue(category and category.spacingAbove, CATEGORY_SPACING_ABOVE)
     CATEGORY_SPACING_BELOW = normalizeSpacingValue(category and category.spacingBelow, CATEGORY_SPACING_BELOW)
+    ENTRY_INDENT_X = normalizeSpacingValue(entry and entry.indent, ENTRY_INDENT_X)
+    ENTRY_SPACING_ABOVE = normalizeSpacingValue(entry and entry.spacingAbove, ENTRY_SPACING_ABOVE)
+    ENTRY_SPACING_BELOW = normalizeSpacingValue(entry and entry.spacingBelow, ENTRY_SPACING_BELOW)
 end
 
 local function getObjectiveIndentFromSaved()
@@ -348,6 +355,16 @@ local function applyLabelFont(label, font, fallback)
     if resolved and resolved ~= "" then
         label:SetFont(resolved)
     end
+end
+
+local function applyEntryLabelAnchors(label, control)
+    if not (label and label.ClearAnchors and label.SetAnchor and control) then
+        return
+    end
+
+    label:ClearAnchors()
+    label:SetAnchor(TOPLEFT, control, TOPLEFT, ENTRY_INDENT_X + TITLE_INDENT_DELTA_PX, 0)
+    label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
 end
 
 local function extractColorComponents(color)
@@ -1300,6 +1317,7 @@ local function newLayoutContext(container)
         visibleCount = 0,
         rowCount = 0,
         previousKind = nil,
+        pendingEntryGap = nil,
     }
 
     if container and container.SetResizeToFitDescendents then
@@ -1332,16 +1350,31 @@ local function appendLayoutControl(context, control, fallbackHeight, kind)
 
     local offsetY = context.cursorY
     local gap = 0
-    if context.visibleCount > 0 then
-        if kind == "header" then
+    local resolvedKind = kind or "row"
+    local pendingEntryGap = context.pendingEntryGap
+    local isObjectivesAfterEntry = context.previousKind == "entry" and resolvedKind == "objectives"
+
+    if pendingEntryGap ~= nil and pendingEntryGap > 0 and not isObjectivesAfterEntry then
+        gap = pendingEntryGap
+        context.pendingEntryGap = nil
+    else
+        if context.visibleCount > 0 then
+            if isObjectivesAfterEntry then
+                gap = 0
+            elseif resolvedKind == "entry" then
+                gap = ENTRY_SPACING_ABOVE
+            elseif resolvedKind == "header" then
+                gap = CATEGORY_SPACING_ABOVE
+            elseif context.previousKind == "header" then
+                gap = HEADER_TO_ROWS_GAP
+            else
+                gap = ROW_GAP
+            end
+        elseif resolvedKind == "header" then
             gap = CATEGORY_SPACING_ABOVE
-        elseif context.previousKind == "header" then
-            gap = HEADER_TO_ROWS_GAP
-        else
-            gap = ROW_GAP
+        elseif resolvedKind == "entry" then
+            gap = ENTRY_SPACING_ABOVE
         end
-    elseif kind == "header" then
-        gap = CATEGORY_SPACING_ABOVE
     end
 
     if gap > 0 then
@@ -1358,11 +1391,17 @@ local function appendLayoutControl(context, control, fallbackHeight, kind)
     context.height = context.cursorY
     context.visibleCount = context.visibleCount + 1
 
-    local resolvedKind = kind or "row"
     if resolvedKind ~= "header" then
         context.rowCount = context.rowCount + 1
     end
     context.previousKind = resolvedKind
+    if resolvedKind == "entry" then
+        if ENTRY_SPACING_BELOW > 0 then
+            context.pendingEntryGap = ENTRY_SPACING_BELOW
+        else
+            context.pendingEntryGap = nil
+        end
+    end
 end
 
 local function N3UT_Endeavor_InitPoller_Tick()
@@ -1561,9 +1600,7 @@ local function ensureUi(container)
         label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
         label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
         label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
-        label:ClearAnchors()
-        label:SetAnchor(TOPLEFT, control, TOPLEFT, SUBHEADER_INDENT_X + TITLE_INDENT_DELTA_PX, 0)
-        label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
+        applyEntryLabelAnchors(label, control)
         applyLabelFont(label, DEFAULT_SECTION_FONT, DEFAULT_SECTION_FONT)
 
         control:SetHandler("OnMouseEnter", function(ctrl)
@@ -1639,9 +1676,7 @@ local function ensureUi(container)
         label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
         label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
         label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
-        label:ClearAnchors()
-        label:SetAnchor(TOPLEFT, control, TOPLEFT, SUBHEADER_INDENT_X + TITLE_INDENT_DELTA_PX, 0)
-        label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
+        applyEntryLabelAnchors(label, control)
         applyLabelFont(label, DEFAULT_SECTION_FONT, DEFAULT_SECTION_FONT)
 
         control:SetHandler("OnMouseEnter", function(ctrl)
@@ -1976,6 +2011,8 @@ function EndeavorTracker.Refresh(viewModel)
             applyLabelFont(categoryLabel, categoryFont, DEFAULT_CATEGORY_FONT)
             applyLabelFont(dailyLabel, sectionFont, DEFAULT_SECTION_FONT)
             applyLabelFont(weeklyLabel, sectionFont, DEFAULT_SECTION_FONT)
+            applyEntryLabelAnchors(dailyLabel, dailyControl)
+            applyEntryLabelAnchors(weeklyLabel, weeklyControl)
 
             local formatCategoryHeader = Utils and Utils.FormatCategoryHeaderText
             local categoryTitle = resolveTitle(categoryVm.title, GetString(SI_NVK3UT_TRACKER_ENDEAVOR_CATEGORY_ROOT))
@@ -2194,16 +2231,16 @@ function EndeavorTracker.Refresh(viewModel)
 
             if categoryExpanded then
                 if dailyControl and not dailyHideRow then
-                    appendLayoutControl(layout, dailyControl, SECTION_ROW_HEIGHT, "row")
+                    appendLayoutControl(layout, dailyControl, SECTION_ROW_HEIGHT, "entry")
                 end
                 if dailyObjectivesIncluded then
-                    appendLayoutControl(layout, dailyObjectivesControl, dailyObjectivesHeight, "row")
+                    appendLayoutControl(layout, dailyObjectivesControl, dailyObjectivesHeight, "objectives")
                 end
                 if weeklyControl and not weeklyHideRow then
-                    appendLayoutControl(layout, weeklyControl, SECTION_ROW_HEIGHT, "row")
+                    appendLayoutControl(layout, weeklyControl, SECTION_ROW_HEIGHT, "entry")
                 end
                 if weeklyObjectivesIncluded then
-                    appendLayoutControl(layout, weeklyObjectivesControl, weeklyObjectivesHeight, "row")
+                    appendLayoutControl(layout, weeklyObjectivesControl, weeklyObjectivesHeight, "objectives")
                 end
             end
 
