@@ -427,6 +427,30 @@ local function getSavedVars()
     return Nvk3UT and Nvk3UT.sv
 end
 
+local function snapshotEndeavorExpandedAtInit()
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if type(runtime) ~= "table" then
+        return
+    end
+
+    if runtime._endeavorExpandedAtInit ~= nil then
+        return
+    end
+
+    local sv = getSavedVars()
+    local expanded
+    local endeavorData = sv and sv.EndeavorData
+    if type(endeavorData) == "table" and endeavorData.expanded ~= nil then
+        expanded = endeavorData.expanded ~= false
+    end
+
+    if expanded == nil then
+        expanded = true
+    end
+
+    runtime._endeavorExpandedAtInit = expanded
+end
+
 local function clamp(value, minimum, maximum)
     if value == nil then
         return minimum
@@ -5041,6 +5065,8 @@ function TrackerHost.Init()
     if not getSavedVars() then
         return
     end
+
+    snapshotEndeavorExpandedAtInit()
 
     state.initializing = true
 
