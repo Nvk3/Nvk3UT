@@ -1450,6 +1450,7 @@ local function buildSpacingControls(trackerKey)
             applyQuestSettings()
         elseif trackerKey == "achievement" then
             refreshAchievementTracker()
+            return
         elseif trackerKey == "endeavor" then
             markEndeavorDirty("spacing")
             queueEndeavorDirty()

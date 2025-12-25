@@ -1822,6 +1822,8 @@ function AchievementTracker:Refresh(viewModel)
         return
     end
 
+    ApplyCategorySpacingFromSaved()
+
     if data ~= nil then
         state.snapshot = data
     elseif Nvk3UT.AchievementModel and Nvk3UT.AchievementModel.GetViewData then
