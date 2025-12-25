@@ -7,6 +7,7 @@ local Rows = {}
 Rows.__index = Rows
 
 local MODULE_TAG = addonName .. ".EndeavorTrackerRows"
+local LOGGER = LibDebugLogger and LibDebugLogger.Create(MODULE_TAG)
 
 local ROW_TEXT_PADDING_Y = 4
 
@@ -1790,11 +1791,7 @@ local function applyCategoryRow(row, data)
     end
 
     local indentValue = tonumber(info.categoryIndent) or 0
-    safeDebug(
-        "[CategoryRow] indent=%s indentAnchor=%s",
-        tostring(indentValue),
-        tostring(row.indentAnchor ~= nil)
-    )
+    local hasIndentAnchor = row.indentAnchor ~= nil
     if indentValue < 0 then
         indentValue = 0
     end
@@ -1827,13 +1824,17 @@ local function applyCategoryRow(row, data)
 
     row._onToggle = info.onToggle
 
-    safeDebug(
-        "[CategoryRow] apply title=%s expanded=%s remaining=%d counts=%s",
-        tostring(formattedText),
-        tostring(expanded),
-        remaining,
-        tostring(showCounts)
-    )
+    if LOGGER and type(LOGGER.Info) == "function" then
+        LOGGER:Info(
+            "[CategoryRow] apply title=%s expanded=%s remaining=%d counts=%s categoryIndent=%s hasIndentAnchor=%s",
+            tostring(formattedText),
+            tostring(expanded),
+            remaining,
+            tostring(showCounts),
+            tostring(tonumber(info.categoryIndent)),
+            tostring(hasIndentAnchor)
+        )
+    end
 end
 
 function Rows.AcquireCategoryRow(parent)
