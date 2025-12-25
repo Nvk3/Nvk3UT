@@ -1431,6 +1431,39 @@ local function applyCategoryRow(row, categoryData)
         row.indentAnchor:ClearAnchors()
         row.indentAnchor:SetAnchor(TOPLEFT, targetRow, TOPLEFT, indentValue, 0)
     end
+    if chevron and chevron.ClearAnchors and row.indentAnchor and row.indentAnchor.SetAnchor then
+        chevron:ClearAnchors()
+        chevron:SetAnchor(TOPLEFT, row.indentAnchor, TOPLEFT, 0, 0)
+    end
+
+    if label and label.ClearAnchors then
+        label:ClearAnchors()
+        if label.SetAnchor then
+            label:SetAnchor(TOPLEFT, chevron, TOPRIGHT, CATEGORY_LABEL_OFFSET_X, 0)
+            label:SetAnchor(TOPRIGHT, targetRow, TOPRIGHT, 0, 0)
+        end
+    end
+
+    if isGoldenColorDebugEnabled() then
+        local function formatAnchor(control, index)
+            if not (control and control.GetAnchor) then
+                return "n/a"
+            end
+            local ok, point, relativeTo, relativePoint, offsetX, offsetY = pcall(control.GetAnchor, control, index or 0)
+            if not ok then
+                return "n/a"
+            end
+            local relativeName = relativeTo and relativeTo.GetName and relativeTo:GetName() or tostring(relativeTo)
+            return string.format("%s→%s (%s, %s)", tostring(point), tostring(relativeName), tostring(offsetX), tostring(offsetY))
+        end
+
+        safeDebug(
+            "[GoldenIndent] anchors indent=%s chevron=%s label=%s",
+            formatAnchor(row.indentAnchor, 0),
+            formatAnchor(chevron, 0),
+            formatAnchor(label, 0)
+        )
+    end
 
     local availableWidth = computeAvailableWidth(
         targetRow,
