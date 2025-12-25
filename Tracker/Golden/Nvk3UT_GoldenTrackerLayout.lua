@@ -19,6 +19,9 @@ local CATEGORY_SPACING_ABOVE = 3
 local CATEGORY_SPACING_BELOW = 6
 local ENTRY_SPACING_ABOVE = ENTRY_ROW_SPACING
 local ENTRY_SPACING_BELOW = ENTRY_ROW_SPACING
+local OBJECTIVE_SPACING_ABOVE = 3
+local OBJECTIVE_SPACING_BELOW = 3
+local OBJECTIVE_SPACING_BETWEEN = 1
 local CATEGORY_TEXT_PADDING_Y = 4
 local BOTTOM_PIXEL_NUDGE = 3
 local Rows = Nvk3UT and Nvk3UT.GoldenTrackerRows
@@ -110,6 +113,18 @@ local function applyEntrySpacingFromSaved()
 
     ENTRY_SPACING_ABOVE = normalizeSpacingValue(entry and entry.spacingAbove, ENTRY_SPACING_ABOVE)
     ENTRY_SPACING_BELOW = normalizeSpacingValue(entry and entry.spacingBelow, ENTRY_SPACING_BELOW)
+end
+
+local function applyObjectiveSpacingFromSaved()
+    local addon = Nvk3UT
+    local sv = addon and addon.SV
+    local spacing = sv and sv.spacing
+    local goldenSpacing = spacing and spacing.golden
+    local objective = goldenSpacing and goldenSpacing.objective
+
+    OBJECTIVE_SPACING_ABOVE = normalizeSpacingValue(objective and objective.spacingAbove, OBJECTIVE_SPACING_ABOVE)
+    OBJECTIVE_SPACING_BELOW = normalizeSpacingValue(objective and objective.spacingBelow, OBJECTIVE_SPACING_BELOW)
+    OBJECTIVE_SPACING_BETWEEN = normalizeSpacingValue(objective and objective.spacingBetween, OBJECTIVE_SPACING_BETWEEN)
 end
 
 local function getControlHeight(control, fallback)
@@ -230,6 +245,7 @@ function Layout.ApplyLayout(parentControl, rows)
 
     applyCategorySpacingFromSaved()
     applyEntrySpacingFromSaved()
+    applyObjectiveSpacingFromSaved()
 
     if type(rows) ~= "table" then
         rows = {}
@@ -325,6 +341,14 @@ function Layout.ApplyLayout(parentControl, rows)
             if visibleCount > 0 then
                 gap = ENTRY_SPACING_ABOVE
             end
+        elseif kind == "objective" then
+            if visibleCount > 0 then
+                if previousKind == "objective" then
+                    gap = OBJECTIVE_SPACING_BETWEEN
+                else
+                    gap = OBJECTIVE_SPACING_ABOVE
+                end
+            end
         elseif visibleCount > 0 then
             gap = ENTRY_ROW_SPACING
         end
@@ -390,7 +414,7 @@ function Layout.ApplyLayout(parentControl, rows)
                 sawChildObjective = true
             else
                 if sawChildObjective then
-                    deferredPreGap = entryChildEndGap
+                    deferredPreGap = OBJECTIVE_SPACING_BELOW + entryChildEndGap
                 elseif entryChildEndGap > 0 then
                     deferredPreGap = entryChildEndGap
                 end
@@ -425,10 +449,10 @@ function Layout.ApplyLayout(parentControl, rows)
             totalHeight = totalHeight + pendingCategoryGap
             pendingCategoryGap = 0
         end
-        if inEntryChildBlock and entryChildEndGap > 0 then
+        if inEntryChildBlock and (sawChildObjective or entryChildEndGap > 0) then
             if sawChildObjective then
-                totalHeight = totalHeight + entryChildEndGap
-            else
+                totalHeight = totalHeight + OBJECTIVE_SPACING_BELOW + entryChildEndGap
+            elseif entryChildEndGap > 0 then
                 totalHeight = totalHeight + entryChildEndGap
             end
             entryChildEndGap = 0
