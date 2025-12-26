@@ -169,6 +169,21 @@ function Addon:MirrorOffset(value)
     return number * sign
 end
 
+function Addon:FormatCategoryHeaderWithCount(text, count)
+    local numeric = tonumber(count)
+    if not numeric or numeric < 0 then
+        return text
+    end
+
+    numeric = math.floor(numeric + 0.5)
+
+    if self:IsTrackerRightAligned() then
+        return string.format("(%d) %s", numeric, text)
+    end
+
+    return string.format("%s (%d)", text, numeric)
+end
+
 ---Initialises SavedVariables and exposes them on the addon table.
 function Addon:InitSavedVariables()
     local stateInit = Nvk3UT_StateInit

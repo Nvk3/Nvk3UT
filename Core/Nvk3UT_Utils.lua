@@ -331,6 +331,10 @@ function Utils.FormatCategoryHeaderText(baseText, count, showCounts)
     local numericCount = tonumber(count)
     if shouldShowCount and numericCount and numericCount >= 0 then
         numericCount = math.floor(numericCount + 0.5)
+        local root = rawget(_G, "Nvk3UT")
+        if type(root) == "table" and type(root.FormatCategoryHeaderWithCount) == "function" then
+            return root:FormatCategoryHeaderWithCount(text, numericCount)
+        end
         return string.format("%s (%d)", text, numericCount)
     end
 
