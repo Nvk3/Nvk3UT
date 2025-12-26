@@ -170,6 +170,7 @@ local DEFAULT_HOST_SETTINGS = {
     HideInCombat = false,
     CornerButtonEnabled = true,
     CornerPosition = "TOP_RIGHT",
+    scrollbarSide = "right",
     sectionOrder = {
         "questSectionContainer",
         "endeavorSectionContainer",
@@ -230,6 +231,19 @@ local function normalizeCornerPosition(value)
     end
 
     return DEFAULT_HOST_SETTINGS.CornerPosition
+end
+
+local function normalizeScrollbarSide(value)
+    if type(value) ~= "string" then
+        return DEFAULT_HOST_SETTINGS.scrollbarSide
+    end
+
+    local normalized = string.lower(value)
+    if normalized == "left" or normalized == "right" then
+        return normalized
+    end
+
+    return DEFAULT_HOST_SETTINGS.scrollbarSide
 end
 
 local function getSavedVars()
@@ -343,6 +357,7 @@ local function getHostSettings()
     end
 
     host.CornerPosition = normalizeCornerPosition(host.CornerPosition)
+    host.scrollbarSide = normalizeScrollbarSide(host.scrollbarSide)
     host.sectionOrder = normalizeSectionOrder(host.sectionOrder)
 
     return host
@@ -2366,6 +2381,28 @@ local function registerPanel(displayTitle)
                     return settings.CornerButtonEnabled == false
                 end,
                 default = DEFAULT_HOST_SETTINGS.CornerPosition,
+            })
+
+            addControl({
+                type = "dropdown",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_SCROLLBAR_SIDE),
+                choices = {
+                    GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_SCROLLBAR_SIDE_RIGHT),
+                    GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_SCROLLBAR_SIDE_LEFT),
+                },
+                choicesValues = { "right", "left" },
+                getFunc = function()
+                    local settings = getHostSettings()
+                    return settings.scrollbarSide
+                end,
+                setFunc = function(value)
+                    local settings = getHostSettings()
+                    settings.scrollbarSide = normalizeScrollbarSide(value)
+                    if Nvk3UT and Nvk3UT.TrackerHost and Nvk3UT.TrackerHost.ApplyAppearance then
+                        Nvk3UT.TrackerHost.ApplyAppearance()
+                    end
+                end,
+                default = DEFAULT_HOST_SETTINGS.scrollbarSide,
             })
 
             return controls

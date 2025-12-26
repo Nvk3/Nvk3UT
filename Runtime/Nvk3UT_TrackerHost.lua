@@ -227,6 +227,7 @@ local DEFAULT_HOST_SETTINGS = {
     HideInCombat = false,
     CornerButtonEnabled = true,
     CornerPosition = "TOP_RIGHT",
+    scrollbarSide = "right",
     sectionOrder = DEFAULT_SECTION_ORDER_KEYS,
 }
 
@@ -240,6 +241,7 @@ local state = {
     scrollContent = nil,
     scrollbar = nil,
     clientArea = nil,
+    scrollContentLeftOffset = 0,
     scrollContentRightOffset = 0,
     scrollOffset = 0,
     desiredScrollOffset = 0,
@@ -393,6 +395,7 @@ local lamPreview = {
 local ensureSceneFragment
 local refreshScroll
 local applyViewportPadding
+local applyScrollbarSide
 local measureTrackerContent
 local setScrollOffset
 local updateScrollContentAnchors
@@ -644,6 +647,19 @@ local function normalizeCornerPosition(value)
     return DEFAULT_CORNER_POSITION
 end
 
+local function normalizeScrollbarSide(value)
+    if type(value) ~= "string" then
+        return DEFAULT_HOST_SETTINGS.scrollbarSide
+    end
+
+    local normalized = string.lower(value)
+    if normalized == "left" or normalized == "right" then
+        return normalized
+    end
+
+    return DEFAULT_HOST_SETTINGS.scrollbarSide
+end
+
 local function getDefaultSectionOrder()
     local layout = Nvk3UT and Nvk3UT.TrackerHostLayout
     if layout and type(layout.GetDefaultSectionOrder) == "function" then
@@ -702,6 +718,7 @@ local function ensureHostSettings()
     end
 
     hostSettings.CornerPosition = normalizeCornerPosition(hostSettings.CornerPosition)
+    hostSettings.scrollbarSide = normalizeScrollbarSide(hostSettings.scrollbarSide)
     hostSettings.sectionOrder = normalizeSectionOrder(hostSettings.sectionOrder)
 
     return hostSettings
@@ -741,6 +758,11 @@ local function getHostSettings()
     end
 
     return state.hostSettings
+end
+
+local function getScrollbarSide()
+    local hostSettings = getHostSettings()
+    return normalizeScrollbarSide(hostSettings and hostSettings.scrollbarSide)
 end
 
 local function getDefaultColor(trackerType, role)
@@ -2250,7 +2272,13 @@ updateScrollContentAnchors = function()
 
     scrollContent:ClearAnchors()
     local offsetY = -(state.scrollOffset or 0)
-    scrollContent:SetAnchor(TOPLEFT, scrollContainer, TOPLEFT, 0, offsetY)
+    scrollContent:SetAnchor(
+        TOPLEFT,
+        scrollContainer,
+        TOPLEFT,
+        state.scrollContentLeftOffset or 0,
+        offsetY
+    )
     scrollContent:SetAnchor(
         TOPRIGHT,
         scrollContainer,
@@ -3228,6 +3256,52 @@ applyWindowBars = function()
     anchorContainers()
 end
 
+applyScrollbarSide = function(showScrollbar)
+    local scrollbar = state.scrollbar
+    local parent = state.scrollContainer or state.clientArea or state.root
+    local scrollbarWidth = Num0(scrollbar and scrollbar.GetWidth and scrollbar:GetWidth())
+    if scrollbarWidth <= 0 then
+        scrollbarWidth = SCROLLBAR_WIDTH
+    end
+
+    if showScrollbar == nil then
+        if scrollbar and scrollbar.IsHidden then
+            showScrollbar = not scrollbar:IsHidden()
+        else
+            showScrollbar = (state.scrollMaxOffset or 0) > 0.5
+        end
+    end
+
+    local desiredLeftOffset = 0
+    local desiredRightOffset = 0
+    if showScrollbar then
+        if getScrollbarSide() == "left" then
+            desiredLeftOffset = scrollbarWidth
+        else
+            desiredRightOffset = -scrollbarWidth
+        end
+    end
+
+    state.scrollContentLeftOffset = desiredLeftOffset
+    state.scrollContentRightOffset = desiredRightOffset
+
+    if scrollbar and parent then
+        scrollbar:ClearAnchors()
+        if getScrollbarSide() == "left" then
+            scrollbar:SetAnchor(TOPLEFT, parent, TOPLEFT, 0, 0)
+            scrollbar:SetAnchor(BOTTOMLEFT, parent, BOTTOMLEFT, 0, 0)
+        else
+            scrollbar:SetAnchor(TOPRIGHT, parent, TOPRIGHT, 0, 0)
+            scrollbar:SetAnchor(BOTTOMRIGHT, parent, BOTTOMRIGHT, 0, 0)
+        end
+        if scrollbar.SetWidth then
+            scrollbar:SetWidth(SCROLLBAR_WIDTH)
+        end
+    end
+
+    updateScrollContentAnchors()
+end
+
 applyViewportPadding = function()
     local appearance = state.appearance or ensureAppearanceSettings()
     if not state.root then
@@ -3244,17 +3318,7 @@ applyViewportPadding = function()
         state.scrollContainer:SetAnchor(BOTTOMRIGHT, containerParent, BOTTOMRIGHT, -padding, -padding)
     end
 
-    updateScrollContentAnchors()
-
-    if state.scrollbar then
-        state.scrollbar:ClearAnchors()
-        local parent = state.scrollContainer or state.clientArea or state.root
-        state.scrollbar:SetAnchor(TOPRIGHT, parent, TOPRIGHT, 0, 0)
-        state.scrollbar:SetAnchor(BOTTOMRIGHT, parent, BOTTOMRIGHT, 0, 0)
-        if state.scrollbar.SetWidth then
-            state.scrollbar:SetWidth(SCROLLBAR_WIDTH)
-        end
-    end
+    applyScrollbarSide()
 end
 
 refreshScroll = function(targetOffset)
@@ -3513,12 +3577,6 @@ refreshScroll = function(targetOffset)
         local maxOffset = math.max(contentHeight - viewportHeight + overshootPadding, 0)
         local showScrollbar = maxOffset > 0.5
 
-        local scrollbarWidth = Num0(scrollbar and scrollbar.GetWidth and scrollbar:GetWidth())
-        if scrollbarWidth <= 0 then
-            scrollbarWidth = SCROLLBAR_WIDTH
-        end
-        local desiredRightOffset = showScrollbar and -scrollbarWidth or 0
-
         if scrollbar.SetMinMax then
             state.updatingScrollbar = true
             local ok, err = pcall(scrollbar.SetMinMax, scrollbar, 0, maxOffset)
@@ -3533,11 +3591,7 @@ refreshScroll = function(targetOffset)
         end
 
         state.scrollMaxOffset = maxOffset
-
-        if numbersDiffer(state.scrollContentRightOffset or 0, desiredRightOffset, 0.01) then
-            state.scrollContentRightOffset = desiredRightOffset
-            applyViewportPadding()
-        end
+        applyScrollbarSide(showScrollbar)
     end
 
     debugLog(string.format(
@@ -3727,6 +3781,7 @@ local function createScrollContainer()
     state.scrollContainer = scrollContainer
     state.scrollContent = scrollContent
     state.scrollbar = scrollbar
+    state.scrollContentLeftOffset = 0
     state.scrollContentRightOffset = 0
     state.scrollOffset = 0
     state.desiredScrollOffset = 0
