@@ -92,6 +92,9 @@ local function ApplyCategoryHeaderAlignment(control, indentX)
 
     if toggle then
         toggle:ClearAnchors()
+        if toggle.SetHidden then
+            toggle:SetHidden(false)
+        end
         if alignment.isRight then
             toggle:SetAnchor(TOPRIGHT, indentAnchor or control, TOPRIGHT, 0, 0)
         else

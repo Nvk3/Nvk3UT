@@ -85,6 +85,9 @@ local function ApplyCategoryHeaderAlignment(control, indentX)
 
     if chevron then
         chevron:ClearAnchors()
+        if chevron.SetHidden then
+            chevron:SetHidden(false)
+        end
         chevron:SetAnchor(topInner, indentAnchor or control, topInner, 0, 0)
         ApplyCategoryChevronOrientation(chevron)
     end

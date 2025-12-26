@@ -440,6 +440,9 @@ local function applyEntryLabelAnchors(label, control)
     label:ClearAnchors()
     label:SetAnchor(topInner, control, topInner, mirrorOffset(entryLabelIndentX), 0)
     label:SetAnchor(bottomOuter, control, bottomOuter, 0, 0)
+    if Nvk3UT and type(Nvk3UT.ApplyLabelHorizontalAlignment) == "function" then
+        Nvk3UT:ApplyLabelHorizontalAlignment(label)
+    end
 end
 
 local function extractColorComponents(color)

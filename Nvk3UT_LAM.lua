@@ -2413,11 +2413,13 @@ local function registerPanel(displayTitle)
                 setFunc = function(value)
                     local settings = getHostSettings()
                     settings.trackerAlignment = normalizeTrackerAlignment(value)
-                    local host = Nvk3UT and Nvk3UT.TrackerHost
-                    if host and host.ApplySettings then
-                        host.ApplySettings()
-                    elseif host and host.Refresh then
-                        host.Refresh()
+                    local function queueRebuild()
+                        LamQueueFullRebuild("trackerAlignment")
+                    end
+                    if type(zo_callLater) == "function" then
+                        zo_callLater(queueRebuild, 0)
+                    else
+                        queueRebuild()
                     end
                 end,
                 default = DEFAULT_HOST_SETTINGS.trackerAlignment,
