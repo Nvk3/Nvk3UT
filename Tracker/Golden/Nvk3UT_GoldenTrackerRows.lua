@@ -105,7 +105,7 @@ local function ApplyCategoryHeaderAlignment(control, indentX)
     end
 
     if not (indentAnchor or chevron or iconSlot or label) then
-        if isGoldenColorDebugEnabled() then
+        if type(isGoldenColorDebugEnabled) == "function" and isGoldenColorDebugEnabled() then
             safeDebug("ApplyCategoryHeaderAlignment skipped; missing header parts for %s", tostring(control))
         end
         return

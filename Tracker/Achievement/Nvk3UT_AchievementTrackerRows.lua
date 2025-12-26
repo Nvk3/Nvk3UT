@@ -59,6 +59,8 @@ local function getHorizontalAnchorPoints()
     return TOPLEFT, TOPRIGHT, BOTTOMLEFT, BOTTOMRIGHT
 end
 
+local SelectCategoryToggleTexture
+
 local function ApplyCategoryChevronOrientation(toggle, isExpanded)
     if not (toggle and toggle.SetTextureRotation) then
         return
@@ -308,7 +310,7 @@ local function IsEntryRowType(rowType)
     return ENTRY_ROW_TYPES[rowType] == true
 end
 
-local function SelectCategoryToggleTexture(expanded, isMouseOver)
+SelectCategoryToggleTexture = function(expanded, isMouseOver)
     local textures = expanded and CATEGORY_TOGGLE_TEXTURES.expanded or CATEGORY_TOGGLE_TEXTURES.collapsed
     if isMouseOver then
         return textures.over

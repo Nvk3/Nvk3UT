@@ -25,6 +25,16 @@ local ROWS_HEIGHTS = {
     spacing_after_last_sub = 2,
 }
 
+local CATEGORY_CHEVRON_SIZE = 20
+local CATEGORY_LABEL_OFFSET_X = 4
+local DEFAULT_CATEGORY_COLOR_ROLE_EXPANDED = "activeTitle"
+local DEFAULT_CATEGORY_COLOR_ROLE_COLLAPSED = "categoryTitle"
+
+local DEFAULT_CATEGORY_CHEVRON_TEXTURES = {
+    expanded = "EsoUI/Art/Buttons/tree_open_up.dds",
+    collapsed = "EsoUI/Art/Buttons/tree_closed_up.dds",
+}
+
 local function getAlignmentParams()
     local addon = Nvk3UT
     if addon and type(addon.GetTrackerAlignmentParams) == "function" then
@@ -290,16 +300,6 @@ local SUBROW_KIND_ALIASES = {
     hint = "sub_warning",
     error = "sub_warning",
     alert = "sub_warning",
-}
-
-local CATEGORY_CHEVRON_SIZE = 20
-local CATEGORY_LABEL_OFFSET_X = 4
-local DEFAULT_CATEGORY_COLOR_ROLE_EXPANDED = "activeTitle"
-local DEFAULT_CATEGORY_COLOR_ROLE_COLLAPSED = "categoryTitle"
-
-local DEFAULT_CATEGORY_CHEVRON_TEXTURES = {
-    expanded = "EsoUI/Art/Buttons/tree_open_up.dds",
-    collapsed = "EsoUI/Art/Buttons/tree_closed_up.dds",
 }
 
 local MOUSE_BUTTON_LEFT = rawget(_G, "MOUSE_BUTTON_INDEX_LEFT") or 1
