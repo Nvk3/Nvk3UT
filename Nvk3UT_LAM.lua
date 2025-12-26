@@ -170,6 +170,7 @@ local DEFAULT_HOST_SETTINGS = {
     HideInCombat = false,
     CornerButtonEnabled = true,
     CornerPosition = "TOP_RIGHT",
+    trackerAlignment = "left",
     scrollbarSide = "right",
     sectionOrder = {
         "questSectionContainer",
@@ -244,6 +245,19 @@ local function normalizeScrollbarSide(value)
     end
 
     return DEFAULT_HOST_SETTINGS.scrollbarSide
+end
+
+local function normalizeTrackerAlignment(value)
+    if type(value) ~= "string" then
+        return DEFAULT_HOST_SETTINGS.trackerAlignment
+    end
+
+    local normalized = string.lower(value)
+    if normalized == "left" or normalized == "right" then
+        return normalized
+    end
+
+    return DEFAULT_HOST_SETTINGS.trackerAlignment
 end
 
 local function getSavedVars()
@@ -358,6 +372,7 @@ local function getHostSettings()
 
     host.CornerPosition = normalizeCornerPosition(host.CornerPosition)
     host.scrollbarSide = normalizeScrollbarSide(host.scrollbarSide)
+    host.trackerAlignment = normalizeTrackerAlignment(host.trackerAlignment)
     host.sectionOrder = normalizeSectionOrder(host.sectionOrder)
 
     return host
@@ -2381,6 +2396,25 @@ local function registerPanel(displayTitle)
                     return settings.CornerButtonEnabled == false
                 end,
                 default = DEFAULT_HOST_SETTINGS.CornerPosition,
+            })
+
+            addControl({
+                type = "dropdown",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_ALIGNMENT),
+                choices = {
+                    GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_ALIGNMENT_LEFT),
+                    GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_ALIGNMENT_RIGHT),
+                },
+                choicesValues = { "left", "right" },
+                getFunc = function()
+                    local settings = getHostSettings()
+                    return settings.trackerAlignment
+                end,
+                setFunc = function(value)
+                    local settings = getHostSettings()
+                    settings.trackerAlignment = normalizeTrackerAlignment(value)
+                end,
+                default = DEFAULT_HOST_SETTINGS.trackerAlignment,
             })
 
             addControl({

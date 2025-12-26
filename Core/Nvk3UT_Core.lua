@@ -128,6 +128,40 @@ function Addon:SetDebugEnabled(enabled)
     self.debugEnabled = enabled and true or false
 end
 
+function Addon:GetTrackerAlignment()
+    local sv = self.sv or self.SV
+    local settings = sv and sv.Settings
+    local host = settings and settings.Host
+    local alignment = host and host.trackerAlignment
+    if alignment ~= "left" and alignment ~= "right" then
+        alignment = "left"
+    end
+    return alignment
+end
+
+function Addon:IsTrackerRightAligned()
+    return self:GetTrackerAlignment() == "right"
+end
+
+function Addon:GetTrackerAlignmentParams()
+    local isRight = self:IsTrackerRightAligned()
+    return {
+        isRight = isRight,
+        anchorInner = isRight and RIGHT or LEFT,
+        anchorOuter = isRight and LEFT or RIGHT,
+        sign = isRight and -1 or 1,
+    }
+end
+
+function Addon:ApplyLabelHorizontalAlignment(labelControl)
+    if not labelControl or not labelControl.SetHorizontalAlignment then
+        return
+    end
+
+    local isRight = self:IsTrackerRightAligned()
+    labelControl:SetHorizontalAlignment(isRight and TEXT_ALIGN_RIGHT or TEXT_ALIGN_LEFT)
+end
+
 ---Initialises SavedVariables and exposes them on the addon table.
 function Addon:InitSavedVariables()
     local stateInit = Nvk3UT_StateInit
