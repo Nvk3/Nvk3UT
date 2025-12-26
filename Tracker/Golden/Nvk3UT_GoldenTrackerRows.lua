@@ -1254,6 +1254,7 @@ local function createCategoryRow(parent)
     if control then
         control.label = label
         control.indentAnchor = indentAnchor
+        control.chevron = chevron
     end
 
     if control and control.SetHandler then
@@ -1339,6 +1340,10 @@ local function resetCategoryRowVisuals(row, parent)
         if chevron.ClearAnchors then
             chevron:ClearAnchors()
         end
+    end
+
+    if control then
+        control.chevron = chevron
     end
 
     row._poolParent = parent
@@ -1512,7 +1517,13 @@ local function applyCategoryRow(row, categoryData)
     end
 
     if showCounter and remaining ~= nil then
-        text = string.format("%s (%d)", GOLDEN_HEADER_TITLE, remaining)
+        local isRightAligned = Nvk3UT and type(Nvk3UT.IsTrackerRightAligned) == "function"
+            and Nvk3UT:IsTrackerRightAligned()
+        if isRightAligned then
+            text = string.format("(%d) %s", remaining, GOLDEN_HEADER_TITLE)
+        else
+            text = string.format("%s (%d)", GOLDEN_HEADER_TITLE, remaining)
+        end
     end
 
     if not showCounter then
