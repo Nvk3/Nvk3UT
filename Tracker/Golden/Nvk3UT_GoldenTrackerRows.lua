@@ -67,17 +67,15 @@ local function getHorizontalAnchorPoints()
     return TOPLEFT, TOPRIGHT, BOTTOMLEFT, BOTTOMRIGHT
 end
 
-local function ApplyCategoryChevronOrientation(chevron)
-    if not (chevron and chevron.SetTextureCoords) then
+local function ApplyCategoryChevronOrientation(chevron, isExpanded)
+    if not (chevron and chevron.SetTextureRotation) then
         return
     end
 
     local alignment = getAlignmentParams()
-    if alignment.isRight then
-        chevron:SetTextureCoords(1, 0, 0, 1)
-    else
-        chevron:SetTextureCoords(0, 1, 0, 1)
-    end
+    local baseRotation = alignment.isRight and math.pi or 0
+    local rotation = baseRotation + (isExpanded and 0 or 0)
+    chevron:SetTextureRotation(rotation, 0.5, 0.5)
 end
 
 local function ApplyCategoryHeaderAlignment(control, indentX)
@@ -104,7 +102,7 @@ local function ApplyCategoryHeaderAlignment(control, indentX)
             chevron:SetHidden(false)
         end
         chevron:SetAnchor(topInner, indentAnchor or control, topInner, 0, 0)
-        ApplyCategoryChevronOrientation(chevron)
+        ApplyCategoryChevronOrientation(chevron, control._nvk3utCategoryExpanded)
     end
 
     if iconSlot then
@@ -1333,7 +1331,7 @@ local function resetCategoryRowVisuals(row, parent)
         if chevron.SetTexture then
             chevron:SetTexture(CATEGORY_CHEVRON_TEXTURES.collapsed)
         end
-        ApplyCategoryChevronOrientation(chevron)
+        ApplyCategoryChevronOrientation(chevron, row and row.__categoryExpanded)
         if chevron.SetDimensions then
             chevron:SetDimensions(CATEGORY_CHEVRON_SIZE, CATEGORY_CHEVRON_SIZE)
         end
@@ -1608,7 +1606,7 @@ local function applyCategoryRow(row, categoryData)
             (expanded and textures.expanded) or (not expanded and textures.collapsed) or fallback
         )
     end
-    ApplyCategoryChevronOrientation(chevron)
+    ApplyCategoryChevronOrientation(chevron, expanded)
 
     row._onToggle = function()
         local controller = rawget(Nvk3UT, "GoldenTrackerController")

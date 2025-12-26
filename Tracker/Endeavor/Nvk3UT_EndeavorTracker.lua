@@ -144,17 +144,15 @@ local function getHorizontalAnchorPoints()
     return TOPLEFT, TOPRIGHT, BOTTOMLEFT, BOTTOMRIGHT
 end
 
-local function applyCategoryChevronOrientation(chevron)
-    if not (chevron and chevron.SetTextureCoords) then
+local function applyCategoryChevronOrientation(chevron, isExpanded)
+    if not (chevron and chevron.SetTextureRotation) then
         return
     end
 
     local alignment = getAlignmentParams()
-    if alignment.isRight then
-        chevron:SetTextureCoords(1, 0, 0, 1)
-    else
-        chevron:SetTextureCoords(0, 1, 0, 1)
-    end
+    local baseRotation = alignment.isRight and math.pi or 0
+    local rotation = baseRotation + (isExpanded and 0 or 0)
+    chevron:SetTextureRotation(rotation, 0.5, 0.5)
 end
 
 local DEFAULT_CATEGORY_FONT = "$(BOLD_FONT)|20|soft-shadow-thick"
@@ -2162,7 +2160,7 @@ function EndeavorTracker.Refresh(viewModel)
                     local texturePath = categoryExpanded and CHEVRON_TEXTURES.expanded or CHEVRON_TEXTURES.collapsed
                     categoryChevron:SetTexture(texturePath)
                 end
-                applyCategoryChevronOrientation(categoryChevron)
+                applyCategoryChevronOrientation(categoryChevron, categoryExpanded)
 
                 if categoryLabel then
                     local role = categoryExpanded and CATEGORY_COLOR_ROLE_EXPANDED or CATEGORY_COLOR_ROLE_COLLAPSED

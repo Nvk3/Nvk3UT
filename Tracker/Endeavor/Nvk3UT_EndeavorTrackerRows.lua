@@ -52,17 +52,15 @@ local function getHorizontalAnchorPoints()
     return TOPLEFT, TOPRIGHT, BOTTOMLEFT, BOTTOMRIGHT
 end
 
-local function ApplyCategoryChevronOrientation(chevron)
-    if not (chevron and chevron.SetTextureCoords) then
+local function ApplyCategoryChevronOrientation(chevron, isExpanded)
+    if not (chevron and chevron.SetTextureRotation) then
         return
     end
 
     local alignment = getAlignmentParams()
-    if alignment.isRight then
-        chevron:SetTextureCoords(1, 0, 0, 1)
-    else
-        chevron:SetTextureCoords(0, 1, 0, 1)
-    end
+    local baseRotation = alignment.isRight and math.pi or 0
+    local rotation = baseRotation + (isExpanded and 0 or 0)
+    chevron:SetTextureRotation(rotation, 0.5, 0.5)
 end
 
 local function ApplyCategoryHeaderAlignment(control, indentX)
@@ -89,7 +87,7 @@ local function ApplyCategoryHeaderAlignment(control, indentX)
             chevron:SetHidden(false)
         end
         chevron:SetAnchor(topInner, indentAnchor or control, topInner, 0, 0)
-        ApplyCategoryChevronOrientation(chevron)
+        ApplyCategoryChevronOrientation(chevron, control.isExpanded)
     end
 
     if iconSlot then
@@ -1486,7 +1484,7 @@ local function createCategoryRow(parent)
         if chevron.SetTexture then
             chevron:SetTexture(DEFAULT_CATEGORY_CHEVRON_TEXTURES.collapsed)
         end
-        ApplyCategoryChevronOrientation(chevron)
+        ApplyCategoryChevronOrientation(chevron, row and row.__categoryExpanded)
     end
 
     local labelName = controlName .. "Label"
@@ -1872,6 +1870,7 @@ local function applyCategoryRow(row, data)
 
     local colorRoles = type(info.colorRoles) == "table" and info.colorRoles or {}
     local expanded = info.expanded == true
+    control.isExpanded = expanded and true or false
     local role
     if expanded then
         role = colorRoles.expanded or DEFAULT_CATEGORY_COLOR_ROLE_EXPANDED
@@ -1914,7 +1913,7 @@ local function applyCategoryRow(row, data)
             chevron:SetTexture(fallback)
         end
     end
-    ApplyCategoryChevronOrientation(chevron)
+    ApplyCategoryChevronOrientation(chevron, expanded)
 
     local indentValue = tonumber(info.categoryIndent) or 0
     local hasIndentAnchor = row.indentAnchor ~= nil
