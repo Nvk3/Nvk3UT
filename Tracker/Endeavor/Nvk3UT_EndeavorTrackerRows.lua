@@ -86,6 +86,9 @@ local function ApplyCategoryHeaderAlignment(control, indentX)
         if chevron.SetHidden then
             chevron:SetHidden(false)
         end
+        if chevron.SetParent then
+            chevron:SetParent(control)
+        end
         chevron:SetAnchor(topInner, indentAnchor or control, topInner, 0, 0)
         ApplyCategoryChevronOrientation(chevron, control.isExpanded)
     end
@@ -1472,8 +1475,8 @@ local function createCategoryRow(parent)
     local chevronName = controlName .. "Chevron"
     local chevron = ensureCategoryChild(control, chevronName, CT_TEXTURE)
     if chevron then
-        if indentAnchor and chevron.SetParent then
-            chevron:SetParent(indentAnchor)
+        if chevron.SetParent then
+            chevron:SetParent(control)
         end
         chevron:SetMouseEnabled(false)
         chevron:SetHidden(false)
@@ -1490,8 +1493,8 @@ local function createCategoryRow(parent)
     local labelName = controlName .. "Label"
     local label = ensureCategoryChild(control, labelName, CT_LABEL)
     if label then
-        if indentAnchor and label.SetParent then
-            label:SetParent(indentAnchor)
+        if label.SetParent then
+            label:SetParent(control)
         end
         if Nvk3UT and type(Nvk3UT.ApplyLabelHorizontalAlignment) == "function" then
             Nvk3UT:ApplyLabelHorizontalAlignment(label)
