@@ -43,6 +43,27 @@ local function safeDebug(message, ...)
     pcall(debugFn, string.format("%s: %s", MODULE_TAG, tostring(payload)))
 end
 
+local function getAlignmentParams()
+    local addon = Nvk3UT
+    if addon and type(addon.GetTrackerAlignmentParams) == "function" then
+        return addon:GetTrackerAlignmentParams()
+    end
+    return {
+        isRight = false,
+        anchorInner = LEFT,
+        anchorOuter = RIGHT,
+        sign = 1,
+    }
+end
+
+local function getHorizontalAnchorPoints()
+    local alignment = getAlignmentParams()
+    if alignment.isRight then
+        return TOPRIGHT, TOPLEFT, BOTTOMRIGHT, BOTTOMLEFT
+    end
+    return TOPLEFT, TOPRIGHT, BOTTOMLEFT, BOTTOMRIGHT
+end
+
 local function getRowsModule()
     if type(Rows) == "table" then
         return Rows
@@ -368,12 +389,13 @@ function Layout.ApplyLayout(parentControl, rows)
         end
 
         if type(control.SetAnchor) == "function" then
+            local topInner, topOuter, bottomInner, bottomOuter = getHorizontalAnchorPoints()
             if previousRow then
-                control:SetAnchor(TOPLEFT, previousRow, BOTTOMLEFT, 0, gap)
-                control:SetAnchor(TOPRIGHT, previousRow, BOTTOMRIGHT, 0, gap)
+                control:SetAnchor(topInner, previousRow, bottomInner, 0, gap)
+                control:SetAnchor(topOuter, previousRow, bottomOuter, 0, gap)
             else
-                control:SetAnchor(TOPLEFT, parentControl, TOPLEFT, 0, gap)
-                control:SetAnchor(TOPRIGHT, parentControl, TOPRIGHT, 0, gap)
+                control:SetAnchor(topInner, parentControl, topInner, 0, gap)
+                control:SetAnchor(topOuter, parentControl, topOuter, 0, gap)
             end
         end
 

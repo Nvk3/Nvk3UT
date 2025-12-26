@@ -23,13 +23,46 @@ local ROWS_HEIGHTS = {
     spacing_after_last_sub = 2,
 }
 
+local function getAlignmentParams()
+    local addon = Nvk3UT
+    if addon and type(addon.GetTrackerAlignmentParams) == "function" then
+        return addon:GetTrackerAlignmentParams()
+    end
+    return {
+        isRight = false,
+        anchorInner = LEFT,
+        anchorOuter = RIGHT,
+        sign = 1,
+    }
+end
+
+local function mirrorOffset(value)
+    local addon = Nvk3UT
+    if addon and type(addon.MirrorOffset) == "function" then
+        return addon:MirrorOffset(value)
+    end
+    return tonumber(value) or 0
+end
+
+local function getHorizontalAnchorPoints()
+    local alignment = getAlignmentParams()
+    if alignment.isRight then
+        return TOPRIGHT, TOPLEFT, BOTTOMRIGHT, BOTTOMLEFT
+    end
+    return TOPLEFT, TOPRIGHT, BOTTOMLEFT, BOTTOMRIGHT
+end
+
 local function applyEndeavorLabelDefaults(label)
     if not label then
         return
     end
 
     if label.SetHorizontalAlignment then
-        label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        if Nvk3UT and type(Nvk3UT.ApplyLabelHorizontalAlignment) == "function" then
+            Nvk3UT:ApplyLabelHorizontalAlignment(label)
+        else
+            label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        end
     end
 
     if label.SetVerticalAlignment then
@@ -561,7 +594,11 @@ local function ensureSubrowLeftLabel(control)
         end
     end
 
-    label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+    if Nvk3UT and type(Nvk3UT.ApplyLabelHorizontalAlignment) == "function" then
+        Nvk3UT:ApplyLabelHorizontalAlignment(label)
+    else
+        label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+    end
     label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
     if label.SetWrapMode then
         label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
@@ -599,7 +636,8 @@ local function ensureSubrowRightLabel(control)
         end
     end
 
-    label:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+    local alignment = getAlignmentParams()
+    label:SetHorizontalAlignment(alignment.isRight and TEXT_ALIGN_LEFT or TEXT_ALIGN_RIGHT)
     label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
     if label.SetWrapMode then
         label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
@@ -672,7 +710,9 @@ function Rows.ApplySubrow(control, kind, data, options)
                 icon:ClearAnchors()
             end
             local indentX = resolveObjectiveIndent(options)
-            icon:SetAnchor(LEFT, control, LEFT, indentX - SUBROW_ICON_SIZE - SUBROW_ICON_GAP, 0)
+            local alignment = getAlignmentParams()
+            local anchorPoint = alignment.isRight and RIGHT or LEFT
+            icon:SetAnchor(anchorPoint, control, anchorPoint, mirrorOffset(indentX - SUBROW_ICON_SIZE - SUBROW_ICON_GAP), 0)
         else
             if icon.SetTexture then
                 icon:SetTexture(nil)
@@ -686,10 +726,15 @@ function Rows.ApplySubrow(control, kind, data, options)
 
     if leftLabel then
         leftLabel:ClearAnchors()
+        local topInner, topOuter = getHorizontalAnchorPoints()
         if icon and icon.IsHidden and not icon:IsHidden() then
-            leftLabel:SetAnchor(TOPLEFT, icon, TOPRIGHT, SUBROW_ICON_GAP, 0)
+            if getAlignmentParams().isRight then
+                leftLabel:SetAnchor(TOPRIGHT, icon, TOPLEFT, mirrorOffset(SUBROW_ICON_GAP), 0)
+            else
+                leftLabel:SetAnchor(TOPLEFT, icon, TOPRIGHT, mirrorOffset(SUBROW_ICON_GAP), 0)
+            end
         else
-            leftLabel:SetAnchor(TOPLEFT, control, TOPLEFT, resolveObjectiveIndent(options), 0)
+            leftLabel:SetAnchor(topInner, control, topInner, mirrorOffset(resolveObjectiveIndent(options)), 0)
         end
     end
 
@@ -708,7 +753,8 @@ function Rows.ApplySubrow(control, kind, data, options)
             if rightLabel.SetText then
                 rightLabel:SetText(rightText)
             end
-            rightLabel:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+            local _, topOuter = getHorizontalAnchorPoints()
+            rightLabel:SetAnchor(topOuter, control, topOuter, 0, 0)
         else
             if rightLabel.SetHidden then
                 rightLabel:SetHidden(true)
@@ -1358,7 +1404,8 @@ local function createCategoryRow(parent)
     if indentAnchor.ClearAnchors then
         indentAnchor:ClearAnchors()
     end
-    indentAnchor:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+    local topInner = getHorizontalAnchorPoints()
+    indentAnchor:SetAnchor(topInner, control, topInner, 0, 0)
 
     local chevronName = controlName .. "Chevron"
     local chevron = ensureCategoryChild(control, chevronName, CT_TEXTURE)
@@ -1372,7 +1419,8 @@ local function createCategoryRow(parent)
         if chevron.ClearAnchors then
             chevron:ClearAnchors()
         end
-        chevron:SetAnchor(TOPLEFT, indentAnchor, TOPLEFT, 0, 0)
+        local topInner = getHorizontalAnchorPoints()
+        chevron:SetAnchor(topInner, indentAnchor, topInner, 0, 0)
         if chevron.SetTexture then
             chevron:SetTexture(DEFAULT_CATEGORY_CHEVRON_TEXTURES.collapsed)
         end
@@ -1384,7 +1432,11 @@ local function createCategoryRow(parent)
         if indentAnchor and label.SetParent then
             label:SetParent(indentAnchor)
         end
-        label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        if Nvk3UT and type(Nvk3UT.ApplyLabelHorizontalAlignment) == "function" then
+            Nvk3UT:ApplyLabelHorizontalAlignment(label)
+        else
+            label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        end
         label:SetVerticalAlignment(TEXT_ALIGN_TOP)
         if label.SetWrapMode then
             label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
@@ -1392,7 +1444,11 @@ local function createCategoryRow(parent)
         if label.ClearAnchors then
             label:ClearAnchors()
         end
-        label:SetAnchor(TOPLEFT, chevron, TOPRIGHT, CATEGORY_LABEL_OFFSET_X, 0)
+        if getAlignmentParams().isRight then
+            label:SetAnchor(TOPRIGHT, chevron, TOPLEFT, mirrorOffset(CATEGORY_LABEL_OFFSET_X), 0)
+        else
+            label:SetAnchor(TOPLEFT, chevron, TOPRIGHT, mirrorOffset(CATEGORY_LABEL_OFFSET_X), 0)
+        end
         if label.SetHidden then
             label:SetHidden(false)
         end
@@ -1641,7 +1697,8 @@ local function acquireCategoryRow(parent)
         end
         if chevron.ClearAnchors then
             chevron:ClearAnchors()
-            chevron:SetAnchor(TOPLEFT, row.indentAnchor or control, TOPLEFT, 0, 0)
+            local topInner = getHorizontalAnchorPoints()
+            chevron:SetAnchor(topInner, row.indentAnchor or control, topInner, 0, 0)
         end
     end
 
@@ -1805,7 +1862,8 @@ local function applyCategoryRow(row, data)
     end
     if row.indentAnchor and row.indentAnchor.SetAnchor then
         row.indentAnchor:ClearAnchors()
-        row.indentAnchor:SetAnchor(TOPLEFT, control, TOPLEFT, indentValue, 0)
+        local topInner = getHorizontalAnchorPoints()
+        row.indentAnchor:SetAnchor(topInner, control, topInner, mirrorOffset(indentValue), 0)
     end
 
     local availableWidth = computeEndeavorAvailableWidth(
@@ -2062,7 +2120,8 @@ local function applyEntryRow(row, objective, options)
         applyFontString(title, resolvedFont, DEFAULT_OBJECTIVE_FONT)
     end
     title:ClearAnchors()
-    title:SetAnchor(TOPLEFT, row, TOPLEFT, resolveObjectiveIndent(options), ENTRY_TOP_PAD)
+    local topInner = getHorizontalAnchorPoints()
+    title:SetAnchor(topInner, row, topInner, mirrorOffset(resolveObjectiveIndent(options)), ENTRY_TOP_PAD)
     title:SetText(combinedText)
     row.Label = title
     row.label = title

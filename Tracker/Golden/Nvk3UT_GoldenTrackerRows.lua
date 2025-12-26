@@ -38,6 +38,35 @@ local DEFAULT_GOLDEN_COLOR_VALUES = {
     [GOLDEN_COLOR_ROLES.Completed] = { r = 0.6, g = 0.6, b = 0.6, a = 1 },
 }
 
+local function getAlignmentParams()
+    local addon = Nvk3UT
+    if addon and type(addon.GetTrackerAlignmentParams) == "function" then
+        return addon:GetTrackerAlignmentParams()
+    end
+    return {
+        isRight = false,
+        anchorInner = LEFT,
+        anchorOuter = RIGHT,
+        sign = 1,
+    }
+end
+
+local function mirrorOffset(value)
+    local addon = Nvk3UT
+    if addon and type(addon.MirrorOffset) == "function" then
+        return addon:MirrorOffset(value)
+    end
+    return tonumber(value) or 0
+end
+
+local function getHorizontalAnchorPoints()
+    local alignment = getAlignmentParams()
+    if alignment.isRight then
+        return TOPRIGHT, TOPLEFT, BOTTOMRIGHT, BOTTOMLEFT
+    end
+    return TOPLEFT, TOPRIGHT, BOTTOMLEFT, BOTTOMRIGHT
+end
+
 local DEFAULTS = {
     CATEGORY_HEIGHT = 26,
     ENTRY_HEIGHT = 24,
@@ -358,7 +387,11 @@ local function applyLabelDefaults(label, font, color)
     end
 
     if label.SetHorizontalAlignment then
-        label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        if Nvk3UT and type(Nvk3UT.ApplyLabelHorizontalAlignment) == "function" then
+            Nvk3UT:ApplyLabelHorizontalAlignment(label)
+        else
+            label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        end
     end
 
     if label.SetVerticalAlignment then
@@ -1113,7 +1146,8 @@ local function createCategoryRow(parent)
     if indentAnchor then
         indentAnchor:SetDimensions(1, 1)
         indentAnchor:ClearAnchors()
-        indentAnchor:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+        local topInner = getHorizontalAnchorPoints()
+        indentAnchor:SetAnchor(topInner, control, topInner, 0, 0)
     end
 
     local chevronName = string.format("%s_CategoryChevron", controlName)
@@ -1129,15 +1163,21 @@ local function createCategoryRow(parent)
     end
     if chevron.ClearAnchors then
         chevron:ClearAnchors()
-        chevron:SetAnchor(TOPLEFT, indentAnchor or control, TOPLEFT, 0, 0)
+        local topInner = getHorizontalAnchorPoints()
+        chevron:SetAnchor(topInner, indentAnchor or control, topInner, 0, 0)
     end
 
     local label = createLabel(control, "Category")
     if label then
         label:ClearAnchors()
         if label.SetAnchor then
-            label:SetAnchor(TOPLEFT, chevron, TOPRIGHT, CATEGORY_LABEL_OFFSET_X, 0)
-            label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+            if getAlignmentParams().isRight then
+                label:SetAnchor(TOPRIGHT, chevron, TOPLEFT, mirrorOffset(CATEGORY_LABEL_OFFSET_X), 0)
+            else
+                label:SetAnchor(TOPLEFT, chevron, TOPRIGHT, mirrorOffset(CATEGORY_LABEL_OFFSET_X), 0)
+            end
+            local _, topOuter = getHorizontalAnchorPoints()
+            label:SetAnchor(topOuter, control, topOuter, 0, 0)
         end
         applyLabelDefaults(label, getGoldenCategoryFont())
     end
@@ -1239,7 +1279,8 @@ local function resetCategoryRowVisuals(row, parent)
         end
         if chevron.ClearAnchors then
             chevron:ClearAnchors()
-            chevron:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+            local topInner = getHorizontalAnchorPoints()
+            chevron:SetAnchor(topInner, control, topInner, 0, 0)
         end
     end
 
@@ -1443,18 +1484,25 @@ local function applyCategoryRow(row, categoryData)
     end
     if row.indentAnchor and row.indentAnchor.SetAnchor then
         row.indentAnchor:ClearAnchors()
-        row.indentAnchor:SetAnchor(TOPLEFT, targetRow, TOPLEFT, indentValue, 0)
+        local topInner = getHorizontalAnchorPoints()
+        row.indentAnchor:SetAnchor(topInner, targetRow, topInner, mirrorOffset(indentValue), 0)
     end
     if chevron and chevron.ClearAnchors and row.indentAnchor and row.indentAnchor.SetAnchor then
         chevron:ClearAnchors()
-        chevron:SetAnchor(TOPLEFT, row.indentAnchor, TOPLEFT, 0, 0)
+        local topInner = getHorizontalAnchorPoints()
+        chevron:SetAnchor(topInner, row.indentAnchor, topInner, 0, 0)
     end
 
     if label and label.ClearAnchors then
         label:ClearAnchors()
         if label.SetAnchor then
-            label:SetAnchor(TOPLEFT, chevron, TOPRIGHT, CATEGORY_LABEL_OFFSET_X, 0)
-            label:SetAnchor(TOPRIGHT, targetRow, TOPRIGHT, 0, 0)
+            if getAlignmentParams().isRight then
+                label:SetAnchor(TOPRIGHT, chevron, TOPLEFT, mirrorOffset(CATEGORY_LABEL_OFFSET_X), 0)
+            else
+                label:SetAnchor(TOPLEFT, chevron, TOPRIGHT, mirrorOffset(CATEGORY_LABEL_OFFSET_X), 0)
+            end
+            local _, topOuter = getHorizontalAnchorPoints()
+            label:SetAnchor(topOuter, targetRow, topOuter, 0, 0)
         end
     end
 
@@ -1619,7 +1667,9 @@ local function createEntryRow(parent)
     if label then
         label:ClearAnchors()
         if label.SetAnchor then
-            label:SetAnchor(TOPLEFT, control, TOPLEFT, ENTRY_ICON_SLOT_X + ENTRY_INDENT_X, 0)
+            local topInner, topOuter = getHorizontalAnchorPoints()
+            label:SetAnchor(topInner, control, topInner, mirrorOffset(ENTRY_ICON_SLOT_X + ENTRY_INDENT_X), 0)
+            label:SetAnchor(topOuter, control, topOuter, 0, 0)
         end
         applyLabelDefaults(label, getGoldenTitleFont())
         if label.SetAlpha then
@@ -1716,7 +1766,9 @@ local function resetEntryRowVisuals(row, parent)
     if label then
         label:ClearAnchors()
         if label.SetAnchor and control then
-            label:SetAnchor(TOPLEFT, control, TOPLEFT, ENTRY_ICON_SLOT_X + ENTRY_INDENT_X, 0)
+            local topInner, topOuter = getHorizontalAnchorPoints()
+            label:SetAnchor(topInner, control, topInner, mirrorOffset(ENTRY_ICON_SLOT_X + ENTRY_INDENT_X), 0)
+            label:SetAnchor(topOuter, control, topOuter, 0, 0)
         end
         applyLabelDefaults(label, getGoldenTitleFont())
         applyLabelColor(label, GOLDEN_COLOR_ROLES.EntryName, getGoldenTrackerColors())
@@ -1851,7 +1903,9 @@ local function createObjectiveRow(parent)
     if label then
         label:ClearAnchors()
         if label.SetAnchor then
-            label:SetAnchor(TOPLEFT, control, TOPLEFT, DEFAULTS.OBJECTIVE_INDENT_X, 0)
+            local topInner, topOuter = getHorizontalAnchorPoints()
+            label:SetAnchor(topInner, control, topInner, mirrorOffset(DEFAULTS.OBJECTIVE_INDENT_X), 0)
+            label:SetAnchor(topOuter, control, topOuter, 0, 0)
         end
     end
 
@@ -1859,11 +1913,13 @@ local function createObjectiveRow(parent)
     if pinLabel then
         pinLabel:ClearAnchors()
         if pinLabel.SetAnchor then
+            local alignment = getAlignmentParams()
+            local anchorPoint = alignment.isRight and RIGHT or LEFT
             pinLabel:SetAnchor(
-                LEFT,
+                anchorPoint,
                 control,
-                LEFT,
-                DEFAULTS.OBJECTIVE_INDENT_X - DEFAULTS.OBJECTIVE_PIN_MARKER_OFFSET_X,
+                anchorPoint,
+                mirrorOffset(DEFAULTS.OBJECTIVE_INDENT_X - DEFAULTS.OBJECTIVE_PIN_MARKER_OFFSET_X),
                 0
             )
         end
@@ -1917,7 +1973,9 @@ local function resetObjectiveRowVisuals(row, parent)
         end
         label:ClearAnchors()
         if label.SetAnchor then
-            label:SetAnchor(TOPLEFT, control, TOPLEFT, DEFAULTS.OBJECTIVE_INDENT_X, 0)
+            local topInner, topOuter = getHorizontalAnchorPoints()
+            label:SetAnchor(topInner, control, topInner, mirrorOffset(DEFAULTS.OBJECTIVE_INDENT_X), 0)
+            label:SetAnchor(topOuter, control, topOuter, 0, 0)
         end
         if label.SetText then
             label:SetText("")
@@ -1931,11 +1989,13 @@ local function resetObjectiveRowVisuals(row, parent)
         end
         pinLabel:ClearAnchors()
         if pinLabel.SetAnchor then
+            local alignment = getAlignmentParams()
+            local anchorPoint = alignment.isRight and RIGHT or LEFT
             pinLabel:SetAnchor(
-                LEFT,
+                anchorPoint,
                 control,
-                LEFT,
-                DEFAULTS.OBJECTIVE_INDENT_X - DEFAULTS.OBJECTIVE_PIN_MARKER_OFFSET_X,
+                anchorPoint,
+                mirrorOffset(DEFAULTS.OBJECTIVE_INDENT_X - DEFAULTS.OBJECTIVE_PIN_MARKER_OFFSET_X),
                 0
             )
         end

@@ -7,6 +7,38 @@ Rows.__index = Rows
 
 local MODULE_TAG = addonName .. ".QuestTrackerRows"
 
+local function getAlignmentParams()
+    local addon = Nvk3UT
+    if addon and type(addon.GetTrackerAlignmentParams) == "function" then
+        return addon:GetTrackerAlignmentParams()
+    end
+    return {
+        isRight = false,
+        anchorInner = LEFT,
+        anchorOuter = RIGHT,
+        sign = 1,
+    }
+end
+
+local function getHorizontalAnchorPoints()
+    local alignment = getAlignmentParams()
+    if alignment.isRight then
+        return TOPRIGHT, TOPLEFT, BOTTOMRIGHT, BOTTOMLEFT
+    end
+    return TOPLEFT, TOPRIGHT, BOTTOMLEFT, BOTTOMRIGHT
+end
+
+local function applyLabelAlignment(label)
+    if not label then
+        return
+    end
+    if Nvk3UT and type(Nvk3UT.ApplyLabelHorizontalAlignment) == "function" then
+        Nvk3UT:ApplyLabelHorizontalAlignment(label)
+    elseif label.SetHorizontalAlignment then
+        label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+    end
+end
+
 local function ensureObjectivePool(row)
     if not row then
         return nil
@@ -103,6 +135,11 @@ local function AcquireObjectiveLabel(row)
     if label.ClearAnchors then
         label:ClearAnchors()
     end
+    if label.label then
+        applyLabelAlignment(label.label)
+    else
+        applyLabelAlignment(label)
+    end
 
     pool.used[#pool.used + 1] = label
     row.objectiveControls = pool.used
@@ -180,6 +217,7 @@ function Rows:ApplyObjectives(row, objectives)
 
     local verticalPadding = (self.state and self.state.verticalPadding) or 0
     local lastObjective = nil
+    local topInner, topOuter, bottomInner, bottomOuter = getHorizontalAnchorPoints()
 
     local rawObjectiveCount = 0
     if type(objectives) == "table" then
@@ -257,11 +295,11 @@ function Rows:ApplyObjectives(row, objectives)
             end
 
             if lastObjective then
-                label:SetAnchor(TOPLEFT, lastObjective, BOTTOMLEFT, 0, verticalPadding)
-                label:SetAnchor(TOPRIGHT, lastObjective, BOTTOMRIGHT, 0, verticalPadding)
+                label:SetAnchor(topInner, lastObjective, bottomInner, 0, verticalPadding)
+                label:SetAnchor(topOuter, lastObjective, bottomOuter, 0, verticalPadding)
             else
-                label:SetAnchor(TOPLEFT, objectiveContainer, TOPLEFT, 0, 0)
-                label:SetAnchor(TOPRIGHT, objectiveContainer, TOPRIGHT, 0, 0)
+                label:SetAnchor(topInner, objectiveContainer, topInner, 0, 0)
+                label:SetAnchor(topOuter, objectiveContainer, topOuter, 0, 0)
             end
 
             if label.SetHidden then

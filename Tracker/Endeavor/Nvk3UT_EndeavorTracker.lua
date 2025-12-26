@@ -115,6 +115,35 @@ local SUBROW_FIRST_SPACING = 2
 local SUBROW_BETWEEN_SPACING = 1
 local SUBROW_TRAILING_SPACING = 2
 
+local function getAlignmentParams()
+    local addon = Nvk3UT
+    if addon and type(addon.GetTrackerAlignmentParams) == "function" then
+        return addon:GetTrackerAlignmentParams()
+    end
+    return {
+        isRight = false,
+        anchorInner = LEFT,
+        anchorOuter = RIGHT,
+        sign = 1,
+    }
+end
+
+local function mirrorOffset(value)
+    local addon = Nvk3UT
+    if addon and type(addon.MirrorOffset) == "function" then
+        return addon:MirrorOffset(value)
+    end
+    return tonumber(value) or 0
+end
+
+local function getHorizontalAnchorPoints()
+    local alignment = getAlignmentParams()
+    if alignment.isRight then
+        return TOPRIGHT, TOPLEFT, BOTTOMRIGHT, BOTTOMLEFT
+    end
+    return TOPLEFT, TOPRIGHT, BOTTOMLEFT, BOTTOMRIGHT
+end
+
 local DEFAULT_CATEGORY_FONT = "$(BOLD_FONT)|20|soft-shadow-thick"
 local DEFAULT_SECTION_FONT = "$(BOLD_FONT)|16|soft-shadow-thick"
 local DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR = { 1, 1, 0.6, 1 }
@@ -394,9 +423,10 @@ local function applyEntryLabelAnchors(label, control)
     end
 
     local entryLabelIndentX = ENTRY_INDENT_X + ENTRY_ICON_SLOT_PX
+    local topInner, topOuter, bottomInner, bottomOuter = getHorizontalAnchorPoints()
     label:ClearAnchors()
-    label:SetAnchor(TOPLEFT, control, TOPLEFT, entryLabelIndentX, 0)
-    label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
+    label:SetAnchor(topInner, control, topInner, mirrorOffset(entryLabelIndentX), 0)
+    label:SetAnchor(bottomOuter, control, bottomOuter, 0, 0)
 end
 
 local function extractColorComponents(color)
@@ -1159,8 +1189,9 @@ local function anchorControlAtOffset(control, container, offsetY, indentX)
     end
 
     if control.SetAnchor then
-        control:SetAnchor(TOPLEFT, container, TOPLEFT, indentX, offsetY)
-        control:SetAnchor(TOPRIGHT, container, TOPRIGHT, 0, offsetY)
+        local topInner, topOuter = getHorizontalAnchorPoints()
+        control:SetAnchor(topInner, container, topInner, mirrorOffset(indentX), offsetY)
+        control:SetAnchor(topOuter, container, topOuter, 0, offsetY)
     end
 end
 
@@ -1640,7 +1671,11 @@ local function ensureUi(container)
             label = wm:CreateControl(labelName, control, CT_LABEL)
         end
         label:SetParent(control)
-        label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        if Nvk3UT and type(Nvk3UT.ApplyLabelHorizontalAlignment) == "function" then
+            Nvk3UT:ApplyLabelHorizontalAlignment(label)
+        else
+            label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        end
         label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
         label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
         applyEntryLabelAnchors(label, control)
@@ -1716,7 +1751,11 @@ local function ensureUi(container)
             label = wm:CreateControl(labelName, control, CT_LABEL)
         end
         label:SetParent(control)
-        label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        if Nvk3UT and type(Nvk3UT.ApplyLabelHorizontalAlignment) == "function" then
+            Nvk3UT:ApplyLabelHorizontalAlignment(label)
+        else
+            label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        end
         label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
         label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
         applyEntryLabelAnchors(label, control)

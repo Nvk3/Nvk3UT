@@ -45,6 +45,27 @@ local function safeDebug(fmt, ...)
     end
 end
 
+local function getAlignmentParams()
+    local addon = Nvk3UT
+    if addon and type(addon.GetTrackerAlignmentParams) == "function" then
+        return addon:GetTrackerAlignmentParams()
+    end
+    return {
+        isRight = false,
+        anchorInner = LEFT,
+        anchorOuter = RIGHT,
+        sign = 1,
+    }
+end
+
+local function getHorizontalAnchorPoints()
+    local alignment = getAlignmentParams()
+    if alignment.isRight then
+        return TOPRIGHT, TOPLEFT, BOTTOMRIGHT, BOTTOMLEFT
+    end
+    return TOPLEFT, TOPRIGHT, BOTTOMLEFT, BOTTOMRIGHT
+end
+
 local function coerceHeight(value)
     if type(value) == "number" then
         if value ~= value then
@@ -105,14 +126,15 @@ function Layout.Apply(container, context)
         if control.ClearAnchors then
             control:ClearAnchors()
         end
+        local topInner, topOuter, bottomInner, bottomOuter = getHorizontalAnchorPoints()
 
         if previous then
             local gap = offsetY or ROW_GAP
-            control:SetAnchor(TOPLEFT, previous, BOTTOMLEFT, 0, gap)
-            control:SetAnchor(TOPRIGHT, previous, BOTTOMRIGHT, 0, gap)
+            control:SetAnchor(topInner, previous, bottomInner, 0, gap)
+            control:SetAnchor(topOuter, previous, bottomOuter, 0, gap)
         else
-            control:SetAnchor(TOPLEFT, container, TOPLEFT, 0, 0)
-            control:SetAnchor(TOPRIGHT, container, TOPRIGHT, 0, 0)
+            control:SetAnchor(topInner, container, topInner, 0, 0)
+            control:SetAnchor(topOuter, container, topOuter, 0, 0)
         end
 
         previous = control

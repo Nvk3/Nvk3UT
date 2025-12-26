@@ -31,6 +31,35 @@ local function safeDebug(message, ...)
     end
 end
 
+local function getAlignmentParams()
+    local addon = Nvk3UT
+    if addon and type(addon.GetTrackerAlignmentParams) == "function" then
+        return addon:GetTrackerAlignmentParams()
+    end
+    return {
+        isRight = false,
+        anchorInner = LEFT,
+        anchorOuter = RIGHT,
+        sign = 1,
+    }
+end
+
+local function mirrorOffset(value)
+    local addon = Nvk3UT
+    if addon and type(addon.MirrorOffset) == "function" then
+        return addon:MirrorOffset(value)
+    end
+    return tonumber(value) or 0
+end
+
+local function getHorizontalAnchorPoints()
+    local alignment = getAlignmentParams()
+    if alignment.isRight then
+        return TOPRIGHT, TOPLEFT, BOTTOMRIGHT, BOTTOMLEFT
+    end
+    return TOPLEFT, TOPRIGHT, BOTTOMLEFT, BOTTOMRIGHT
+end
+
 function Layout:Init(trackerState, deps)
     self.state = trackerState
     self.deps = deps or {}
@@ -324,6 +353,7 @@ function Layout:AnchorControl(control, indentX, gapOverride)
     indentX = indentX or 0
 
     control:ClearAnchors()
+    local topInner, topOuter, bottomInner, bottomOuter = getHorizontalAnchorPoints()
 
     local gap = gapOverride
     if type(gap) ~= "number" then
@@ -369,12 +399,12 @@ function Layout:AnchorControl(control, indentX, gapOverride)
 
     if state.lastAnchoredControl then
         local previousIndent = state.lastAnchoredControl.currentIndent or 0
-        local offsetX = indentX - previousIndent
-        control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, offsetX, gap)
-        control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, 0, gap)
+        local offsetX = mirrorOffset(indentX - previousIndent)
+        control:SetAnchor(topInner, state.lastAnchoredControl, bottomInner, offsetX, gap)
+        control:SetAnchor(topOuter, state.lastAnchoredControl, bottomOuter, 0, gap)
     else
-        control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, gap)
-        control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, 0, gap)
+        control:SetAnchor(topInner, state.container, topInner, mirrorOffset(indentX), gap)
+        control:SetAnchor(topOuter, state.container, topOuter, 0, gap)
     end
 
     state.lastAnchoredControl = control
@@ -756,7 +786,8 @@ function Layout:LayoutCategory(category, providedControl)
     end
     if control.indentAnchor and control.indentAnchor.SetAnchor then
         control.indentAnchor:ClearAnchors()
-        control.indentAnchor:SetAnchor(TOPLEFT, control, TOPLEFT, self.deps.CATEGORY_INDENT_X or 0, 0)
+        local topInner = getHorizontalAnchorPoints()
+        control.indentAnchor:SetAnchor(topInner, control, topInner, mirrorOffset(self.deps.CATEGORY_INDENT_X or 0), 0)
     end
     self:GetCategoryHeaderHeight(control)
     control:SetHidden(false)

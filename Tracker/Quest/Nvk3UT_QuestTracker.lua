@@ -1246,7 +1246,11 @@ local function ApplyLabelDefaults(label)
         return
     end
 
-    label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+    if Nvk3UT and type(Nvk3UT.ApplyLabelHorizontalAlignment) == "function" then
+        Nvk3UT:ApplyLabelHorizontalAlignment(label)
+    else
+        label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+    end
     if label.SetVerticalAlignment then
         label:SetVerticalAlignment(TEXT_ALIGN_TOP)
     end
@@ -1261,6 +1265,35 @@ local function ApplyToggleDefaults(toggle)
     end
 
     toggle:SetVerticalAlignment(TEXT_ALIGN_TOP)
+end
+
+local function getAlignmentParams()
+    local addon = Nvk3UT
+    if addon and type(addon.GetTrackerAlignmentParams) == "function" then
+        return addon:GetTrackerAlignmentParams()
+    end
+    return {
+        isRight = false,
+        anchorInner = LEFT,
+        anchorOuter = RIGHT,
+        sign = 1,
+    }
+end
+
+local function mirrorOffset(value)
+    local addon = Nvk3UT
+    if addon and type(addon.MirrorOffset) == "function" then
+        return addon:MirrorOffset(value)
+    end
+    return tonumber(value) or 0
+end
+
+local function getHorizontalAnchorPoints()
+    local alignment = getAlignmentParams()
+    if alignment.isRight then
+        return TOPRIGHT, TOPLEFT, BOTTOMRIGHT, BOTTOMLEFT
+    end
+    return TOPLEFT, TOPRIGHT, BOTTOMLEFT, BOTTOMRIGHT
 end
 
 local function GetToggleWidth(toggle, fallback)
@@ -3990,8 +4023,31 @@ local function InitializeCategoryControl(control)
     control.label = control:GetNamedChild("Label")
     control.toggle = control:GetNamedChild("Toggle")
     control.indentAnchor = control:GetNamedChild("IndentAnchor")
+    local alignment = getAlignmentParams()
+    local topInner, topOuter = getHorizontalAnchorPoints()
     if control.toggle and control.toggle.SetTexture then
         control.toggle:SetTexture(SelectCategoryToggleTexture(false, false))
+    end
+    if control.toggle then
+        control.toggle:ClearAnchors()
+        if alignment.isRight then
+            control.toggle:SetAnchor(TOPRIGHT, control.indentAnchor or control, TOPRIGHT, 0, 0)
+        else
+            control.toggle:SetAnchor(TOPLEFT, control.indentAnchor or control, TOPLEFT, 0, 0)
+        end
+    end
+    if control.label then
+        control.label:ClearAnchors()
+        if control.toggle then
+            if alignment.isRight then
+                control.label:SetAnchor(TOPRIGHT, control.toggle, TOPLEFT, mirrorOffset(4), 0)
+            else
+                control.label:SetAnchor(TOPLEFT, control.toggle, TOPRIGHT, mirrorOffset(4), 0)
+            end
+        else
+            control.label:SetAnchor(topInner, control, topInner, 0, 0)
+        end
+        control.label:SetAnchor(topOuter, control, topOuter, 0, 0)
     end
     control.isExpanded = false
     control:SetHandler("OnMouseUp", function(ctrl, button, upInside)
@@ -4072,10 +4128,12 @@ local function AcquireQuestControl(providedControl)
     if not control.initialized then
         control.label = control:GetNamedChild("Label")
         control.iconSlot = control:GetNamedChild("IconSlot")
+        local alignment = getAlignmentParams()
+        local topInner, topOuter = getHorizontalAnchorPoints()
         if control.iconSlot then
             control.iconSlot:SetDimensions(QUEST_ICON_SLOT_WIDTH, QUEST_ICON_SLOT_HEIGHT)
             control.iconSlot:ClearAnchors()
-            control.iconSlot:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+            control.iconSlot:SetAnchor(topInner, control, topInner, 0, 0)
             if control.iconSlot.SetTexture then
                 control.iconSlot:SetTexture(nil)
             end
@@ -4106,11 +4164,15 @@ local function AcquireQuestControl(providedControl)
         if control.label then
             control.label:ClearAnchors()
             if control.iconSlot then
-                control.label:SetAnchor(TOPLEFT, control.iconSlot, TOPRIGHT, QUEST_ICON_SLOT_PADDING_X, 0)
+                if alignment.isRight then
+                    control.label:SetAnchor(TOPRIGHT, control.iconSlot, TOPLEFT, mirrorOffset(QUEST_ICON_SLOT_PADDING_X), 0)
+                else
+                    control.label:SetAnchor(TOPLEFT, control.iconSlot, TOPRIGHT, mirrorOffset(QUEST_ICON_SLOT_PADDING_X), 0)
+                end
             else
-                control.label:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+                control.label:SetAnchor(topInner, control, topInner, 0, 0)
             end
-            control.label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+            control.label:SetAnchor(topOuter, control, topOuter, 0, 0)
         end
         control:SetHandler("OnMouseUp", function(ctrl, button, upInside)
             if not upInside then

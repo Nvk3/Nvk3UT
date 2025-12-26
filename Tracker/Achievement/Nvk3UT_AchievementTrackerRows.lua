@@ -30,6 +30,35 @@ local ENTRY_ROW_TYPES = {
     objective = true,
 }
 
+local function getAlignmentParams()
+    local addon = Nvk3UT
+    if addon and type(addon.GetTrackerAlignmentParams) == "function" then
+        return addon:GetTrackerAlignmentParams()
+    end
+    return {
+        isRight = false,
+        anchorInner = LEFT,
+        anchorOuter = RIGHT,
+        sign = 1,
+    }
+end
+
+local function mirrorOffset(value)
+    local addon = Nvk3UT
+    if addon and type(addon.MirrorOffset) == "function" then
+        return addon:MirrorOffset(value)
+    end
+    return tonumber(value) or 0
+end
+
+local function getHorizontalAnchorPoints()
+    local alignment = getAlignmentParams()
+    if alignment.isRight then
+        return TOPRIGHT, TOPLEFT, BOTTOMRIGHT, BOTTOMLEFT
+    end
+    return TOPLEFT, TOPRIGHT, BOTTOMLEFT, BOTTOMRIGHT
+end
+
 local function Call(callback, ...)
     if type(callback) == "function" then
         return callback(...)
@@ -72,7 +101,11 @@ local function ApplyLabelDefaults(label)
         return
     end
 
-    label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+    if Nvk3UT and type(Nvk3UT.ApplyLabelHorizontalAlignment) == "function" then
+        Nvk3UT:ApplyLabelHorizontalAlignment(label)
+    else
+        label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+    end
     if label.SetVerticalAlignment then
         label:SetVerticalAlignment(TEXT_ALIGN_TOP)
     end
@@ -327,12 +360,35 @@ function Rows:CreateCategoryRow(rowKey)
     control.label = control:GetNamedChild("Label")
     control.toggle = control:GetNamedChild("Toggle")
     control.indentAnchor = control:GetNamedChild("IndentAnchor")
+    local alignment = getAlignmentParams()
+    local topInner, topOuter = getHorizontalAnchorPoints()
 
     ApplyLabelDefaults(control.label)
     ApplyToggleDefaults(control.toggle)
     self:ApplyFonts(control, "category")
     if control.toggle and control.toggle.SetTexture then
         control.toggle:SetTexture(SelectCategoryToggleTexture(false, false))
+    end
+    if control.toggle then
+        control.toggle:ClearAnchors()
+        if alignment.isRight then
+            control.toggle:SetAnchor(TOPRIGHT, control.indentAnchor or control, TOPRIGHT, 0, 0)
+        else
+            control.toggle:SetAnchor(TOPLEFT, control.indentAnchor or control, TOPLEFT, 0, 0)
+        end
+    end
+    if control.label then
+        control.label:ClearAnchors()
+        if control.toggle then
+            if alignment.isRight then
+                control.label:SetAnchor(TOPRIGHT, control.toggle, TOPLEFT, mirrorOffset(4), 0)
+            else
+                control.label:SetAnchor(TOPLEFT, control.toggle, TOPRIGHT, mirrorOffset(4), 0)
+            end
+        else
+            control.label:SetAnchor(topInner, control, topInner, 0, 0)
+        end
+        control.label:SetAnchor(topOuter, control, topOuter, 0, 0)
     end
 
     control:SetHandler("OnMouseUp", function(ctrl, button, upInside)
@@ -366,11 +422,13 @@ function Rows:CreateAchievementRow(rowKey)
     control.rowType = "achievement"
     control.label = control:GetNamedChild("Label")
     control.iconSlot = control:GetNamedChild("IconSlot")
+    local alignment = getAlignmentParams()
+    local topInner, topOuter = getHorizontalAnchorPoints()
 
     if control.iconSlot then
         control.iconSlot:SetDimensions(18, 18)
         control.iconSlot:ClearAnchors()
-        control.iconSlot:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+        control.iconSlot:SetAnchor(topInner, control, topInner, 0, 0)
         if control.iconSlot.SetTexture then
             control.iconSlot:SetTexture(nil)
         end
@@ -385,11 +443,15 @@ function Rows:CreateAchievementRow(rowKey)
     if control.label then
         control.label:ClearAnchors()
         if control.iconSlot then
-            control.label:SetAnchor(TOPLEFT, control.iconSlot, TOPRIGHT, 6, 0)
+            if alignment.isRight then
+                control.label:SetAnchor(TOPRIGHT, control.iconSlot, TOPLEFT, mirrorOffset(6), 0)
+            else
+                control.label:SetAnchor(TOPLEFT, control.iconSlot, TOPRIGHT, mirrorOffset(6), 0)
+            end
         else
-            control.label:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+            control.label:SetAnchor(topInner, control, topInner, 0, 0)
         end
-        control.label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+        control.label:SetAnchor(topOuter, control, topOuter, 0, 0)
     end
 
     ApplyLabelDefaults(control.label)
@@ -430,7 +492,13 @@ function Rows:CreateObjectiveRow(rowKey)
     local control = CreateControlFromVirtual(self:GetRowName("Objective", rowKey), self.parent, "AchievementObjective_Template")
     control.rowType = "objective"
     control.label = control:GetNamedChild("Label")
+    local topInner, topOuter = getHorizontalAnchorPoints()
 
+    if control.label then
+        control.label:ClearAnchors()
+        control.label:SetAnchor(topInner, control, topInner, 0, 0)
+        control.label:SetAnchor(topOuter, control, topOuter, 0, 0)
+    end
     ApplyLabelDefaults(control.label)
     self:ApplyFonts(control, "objective")
 

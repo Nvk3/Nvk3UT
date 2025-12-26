@@ -184,6 +184,35 @@ local function NormalizeSpacingValue(value, fallback)
     return numeric
 end
 
+local function getAlignmentParams()
+    local addon = Nvk3UT
+    if addon and type(addon.GetTrackerAlignmentParams) == "function" then
+        return addon:GetTrackerAlignmentParams()
+    end
+    return {
+        isRight = false,
+        anchorInner = LEFT,
+        anchorOuter = RIGHT,
+        sign = 1,
+    }
+end
+
+local function mirrorOffset(value)
+    local addon = Nvk3UT
+    if addon and type(addon.MirrorOffset) == "function" then
+        return addon:MirrorOffset(value)
+    end
+    return tonumber(value) or 0
+end
+
+local function getHorizontalAnchorPoints()
+    local alignment = getAlignmentParams()
+    if alignment.isRight then
+        return TOPRIGHT, TOPLEFT, BOTTOMRIGHT, BOTTOMLEFT
+    end
+    return TOPLEFT, TOPRIGHT, BOTTOMLEFT, BOTTOMRIGHT
+end
+
 local function ApplyCategorySpacingFromSaved()
     local addon = Nvk3UT
     local sv = addon and addon.SV
@@ -1290,18 +1319,20 @@ local function AnchorControl(control, indentX, gapOverride)
         verticalPadding = verticalPadding + ENTRY_SPACING_ABOVE
     end
 
+    local topInner, topOuter, bottomInner, bottomOuter = getHorizontalAnchorPoints()
+
     if state.lastAnchoredControl then
         local previousIndent = state.lastAnchoredControl.currentIndent or 0
-        local offsetX = indentX - previousIndent
-        control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, offsetX, verticalPadding)
-        control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, 0, verticalPadding)
+        local offsetX = mirrorOffset(indentX - previousIndent)
+        control:SetAnchor(topInner, state.lastAnchoredControl, bottomInner, offsetX, verticalPadding)
+        control:SetAnchor(topOuter, state.lastAnchoredControl, bottomOuter, 0, verticalPadding)
     else
         local offsetY = 0
         if rowKind == "header" and type(verticalPadding) == "number" then
             offsetY = verticalPadding
         end
-        control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, offsetY)
-        control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, 0, offsetY)
+        control:SetAnchor(topInner, state.container, topInner, mirrorOffset(indentX), offsetY)
+        control:SetAnchor(topOuter, state.container, topOuter, 0, offsetY)
     end
 
     state.lastAnchoredControl = control
@@ -1826,7 +1857,8 @@ local function LayoutCategory(rows)
     control:SetHidden(false)
     if control.indentAnchor and control.indentAnchor.SetAnchor then
         control.indentAnchor:ClearAnchors()
-        control.indentAnchor:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+        local topInner = getHorizontalAnchorPoints()
+        control.indentAnchor:SetAnchor(topInner, control, topInner, mirrorOffset(CATEGORY_INDENT_X or 0), 0)
     end
     local gapOverride = state.nextCategoryGap
     if type(gapOverride) ~= "number" then

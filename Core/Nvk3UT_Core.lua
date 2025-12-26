@@ -162,6 +162,13 @@ function Addon:ApplyLabelHorizontalAlignment(labelControl)
     labelControl:SetHorizontalAlignment(isRight and TEXT_ALIGN_RIGHT or TEXT_ALIGN_LEFT)
 end
 
+function Addon:MirrorOffset(value)
+    local number = tonumber(value) or 0
+    local alignment = self.GetTrackerAlignmentParams and self:GetTrackerAlignmentParams() or nil
+    local sign = alignment and alignment.sign or 1
+    return number * sign
+end
+
 ---Initialises SavedVariables and exposes them on the addon table.
 function Addon:InitSavedVariables()
     local stateInit = Nvk3UT_StateInit
