@@ -52,6 +52,19 @@ local function getHorizontalAnchorPoints()
     return TOPLEFT, TOPRIGHT, BOTTOMLEFT, BOTTOMRIGHT
 end
 
+local function ApplyCategoryChevronOrientation(chevron)
+    if not (chevron and chevron.SetTextureCoords) then
+        return
+    end
+
+    local alignment = getAlignmentParams()
+    if alignment.isRight then
+        chevron:SetTextureCoords(1, 0, 0, 1)
+    else
+        chevron:SetTextureCoords(0, 1, 0, 1)
+    end
+end
+
 local function ApplyCategoryHeaderAlignment(control, indentX)
     if not control then
         return
@@ -73,6 +86,7 @@ local function ApplyCategoryHeaderAlignment(control, indentX)
     if chevron then
         chevron:ClearAnchors()
         chevron:SetAnchor(topInner, indentAnchor or control, topInner, 0, 0)
+        ApplyCategoryChevronOrientation(chevron)
     end
 
     if iconSlot then
@@ -1469,6 +1483,7 @@ local function createCategoryRow(parent)
         if chevron.SetTexture then
             chevron:SetTexture(DEFAULT_CATEGORY_CHEVRON_TEXTURES.collapsed)
         end
+        ApplyCategoryChevronOrientation(chevron)
     end
 
     local labelName = controlName .. "Label"
@@ -1896,6 +1911,7 @@ local function applyCategoryRow(row, data)
             chevron:SetTexture(fallback)
         end
     end
+    ApplyCategoryChevronOrientation(chevron)
 
     local indentValue = tonumber(info.categoryIndent) or 0
     local hasIndentAnchor = row.indentAnchor ~= nil
@@ -2164,8 +2180,9 @@ local function applyEntryRow(row, objective, options)
         applyFontString(title, resolvedFont, DEFAULT_OBJECTIVE_FONT)
     end
     title:ClearAnchors()
-    local topInner = getHorizontalAnchorPoints()
+    local topInner, topOuter = getHorizontalAnchorPoints()
     title:SetAnchor(topInner, row, topInner, mirrorOffset(resolveObjectiveIndent(options)), ENTRY_TOP_PAD)
+    title:SetAnchor(topOuter, row, topOuter, 0, ENTRY_TOP_PAD)
     title:SetText(combinedText)
     row.Label = title
     row.label = title

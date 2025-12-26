@@ -67,6 +67,19 @@ local function getHorizontalAnchorPoints()
     return TOPLEFT, TOPRIGHT, BOTTOMLEFT, BOTTOMRIGHT
 end
 
+local function ApplyCategoryChevronOrientation(chevron)
+    if not (chevron and chevron.SetTextureCoords) then
+        return
+    end
+
+    local alignment = getAlignmentParams()
+    if alignment.isRight then
+        chevron:SetTextureCoords(1, 0, 0, 1)
+    else
+        chevron:SetTextureCoords(0, 1, 0, 1)
+    end
+end
+
 local function ApplyCategoryHeaderAlignment(control, indentX)
     if not control then
         return
@@ -88,6 +101,7 @@ local function ApplyCategoryHeaderAlignment(control, indentX)
     if chevron then
         chevron:ClearAnchors()
         chevron:SetAnchor(topInner, indentAnchor or control, topInner, 0, 0)
+        ApplyCategoryChevronOrientation(chevron)
     end
 
     if iconSlot then
@@ -1315,6 +1329,7 @@ local function resetCategoryRowVisuals(row, parent)
         if chevron.SetTexture then
             chevron:SetTexture(CATEGORY_CHEVRON_TEXTURES.collapsed)
         end
+        ApplyCategoryChevronOrientation(chevron)
         if chevron.SetDimensions then
             chevron:SetDimensions(CATEGORY_CHEVRON_SIZE, CATEGORY_CHEVRON_SIZE)
         end
@@ -1579,6 +1594,7 @@ local function applyCategoryRow(row, categoryData)
             (expanded and textures.expanded) or (not expanded and textures.collapsed) or fallback
         )
     end
+    ApplyCategoryChevronOrientation(chevron)
 
     row._onToggle = function()
         local controller = rawget(Nvk3UT, "GoldenTrackerController")

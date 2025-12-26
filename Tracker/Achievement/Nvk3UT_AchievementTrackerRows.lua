@@ -59,6 +59,19 @@ local function getHorizontalAnchorPoints()
     return TOPLEFT, TOPRIGHT, BOTTOMLEFT, BOTTOMRIGHT
 end
 
+local function ApplyCategoryChevronOrientation(toggle)
+    if not (toggle and toggle.SetTextureCoords) then
+        return
+    end
+
+    local alignment = getAlignmentParams()
+    if alignment.isRight then
+        toggle:SetTextureCoords(1, 0, 0, 1)
+    else
+        toggle:SetTextureCoords(0, 1, 0, 1)
+    end
+end
+
 local function ApplyCategoryHeaderAlignment(control, indentX)
     if not control then
         return
@@ -84,6 +97,7 @@ local function ApplyCategoryHeaderAlignment(control, indentX)
         else
             toggle:SetAnchor(TOPLEFT, indentAnchor or control, TOPLEFT, 0, 0)
         end
+        ApplyCategoryChevronOrientation(toggle)
     end
 
     if iconSlot then
@@ -117,6 +131,56 @@ end
 
 function Rows:ApplyCategoryHeaderAlignment(control, indentX)
     return ApplyCategoryHeaderAlignment(control, indentX)
+end
+
+local function ApplyAchievementRowAlignment(control)
+    if not control then
+        return
+    end
+
+    local alignment = getAlignmentParams()
+    local topInner, topOuter = getHorizontalAnchorPoints()
+    local iconSlot = control.iconSlot
+    local label = control.label
+
+    if iconSlot then
+        iconSlot:ClearAnchors()
+        iconSlot:SetAnchor(topInner, control, topInner, 0, 0)
+    end
+
+    if label then
+        label:ClearAnchors()
+        if iconSlot then
+            if alignment.isRight then
+                label:SetAnchor(TOPRIGHT, iconSlot, TOPLEFT, mirrorOffset(6), 0)
+            else
+                label:SetAnchor(TOPLEFT, iconSlot, TOPRIGHT, mirrorOffset(6), 0)
+            end
+        else
+            label:SetAnchor(topInner, control, topInner, 0, 0)
+        end
+        label:SetAnchor(topOuter, control, topOuter, 0, 0)
+        if Nvk3UT and type(Nvk3UT.ApplyLabelHorizontalAlignment) == "function" then
+            Nvk3UT:ApplyLabelHorizontalAlignment(label)
+        end
+    end
+end
+
+local function ApplyObjectiveRowAlignment(control)
+    if not control then
+        return
+    end
+
+    local topInner, topOuter = getHorizontalAnchorPoints()
+    local label = control.label
+    if label then
+        label:ClearAnchors()
+        label:SetAnchor(topInner, control, topInner, 0, 0)
+        label:SetAnchor(topOuter, control, topOuter, 0, 0)
+        if Nvk3UT and type(Nvk3UT.ApplyLabelHorizontalAlignment) == "function" then
+            Nvk3UT:ApplyLabelHorizontalAlignment(label)
+        end
+    end
 end
 
 local function Call(callback, ...)
@@ -370,6 +434,7 @@ function Rows:UpdateCategoryToggle(control, expanded)
         local texture = SelectCategoryToggleTexture(expanded, isMouseOver)
         control.toggle:SetTexture(texture)
     end
+    ApplyCategoryChevronOrientation(control.toggle)
     control.isExpanded = expanded and true or false
 end
 
@@ -459,13 +524,8 @@ function Rows:CreateAchievementRow(rowKey)
     control.rowType = "achievement"
     control.label = control:GetNamedChild("Label")
     control.iconSlot = control:GetNamedChild("IconSlot")
-    local alignment = getAlignmentParams()
-    local topInner, topOuter = getHorizontalAnchorPoints()
-
     if control.iconSlot then
         control.iconSlot:SetDimensions(18, 18)
-        control.iconSlot:ClearAnchors()
-        control.iconSlot:SetAnchor(topInner, control, topInner, 0, 0)
         if control.iconSlot.SetTexture then
             control.iconSlot:SetTexture(nil)
         end
@@ -477,19 +537,7 @@ function Rows:CreateAchievementRow(rowKey)
         end
     end
 
-    if control.label then
-        control.label:ClearAnchors()
-        if control.iconSlot then
-            if alignment.isRight then
-                control.label:SetAnchor(TOPRIGHT, control.iconSlot, TOPLEFT, mirrorOffset(6), 0)
-            else
-                control.label:SetAnchor(TOPLEFT, control.iconSlot, TOPRIGHT, mirrorOffset(6), 0)
-            end
-        else
-            control.label:SetAnchor(topInner, control, topInner, 0, 0)
-        end
-        control.label:SetAnchor(topOuter, control, topOuter, 0, 0)
-    end
+    ApplyAchievementRowAlignment(control)
 
     ApplyLabelDefaults(control.label)
     self:ApplyFonts(control, "achievement")
@@ -529,13 +577,7 @@ function Rows:CreateObjectiveRow(rowKey)
     local control = CreateControlFromVirtual(self:GetRowName("Objective", rowKey), self.parent, "AchievementObjective_Template")
     control.rowType = "objective"
     control.label = control:GetNamedChild("Label")
-    local topInner, topOuter = getHorizontalAnchorPoints()
-
-    if control.label then
-        control.label:ClearAnchors()
-        control.label:SetAnchor(topInner, control, topInner, 0, 0)
-        control.label:SetAnchor(topOuter, control, topOuter, 0, 0)
-    end
+    ApplyObjectiveRowAlignment(control)
     ApplyLabelDefaults(control.label)
     self:ApplyFonts(control, "objective")
 
@@ -680,6 +722,7 @@ function Rows:ApplyRow(control, rowType, rowData)
             control.label:SetText(rowData and rowData.labelText or "")
         end
         self:UpdateAchievementIconSlot(control)
+        ApplyAchievementRowAlignment(control)
         if rowData and rowData.baseColor then
             ApplyBaseColor(control, unpack(rowData.baseColor))
         end
@@ -688,6 +731,7 @@ function Rows:ApplyRow(control, rowType, rowData)
         if control.label and control.label.SetText then
             control.label:SetText(rowData and rowData.labelText or "")
         end
+        ApplyObjectiveRowAlignment(control)
         if rowData and rowData.color and control.label and control.label.SetColor then
             control.label:SetColor(unpack(rowData.color))
         end

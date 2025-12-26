@@ -1296,6 +1296,19 @@ local function getHorizontalAnchorPoints()
     return TOPLEFT, TOPRIGHT, BOTTOMLEFT, BOTTOMRIGHT
 end
 
+local function ApplyCategoryChevronOrientation(toggle)
+    if not (toggle and toggle.SetTextureCoords) then
+        return
+    end
+
+    local alignment = getAlignmentParams()
+    if alignment.isRight then
+        toggle:SetTextureCoords(1, 0, 0, 1)
+    else
+        toggle:SetTextureCoords(0, 1, 0, 1)
+    end
+end
+
 local function ApplyCategoryHeaderAlignment(control, indentX)
     if not control then
         return
@@ -1321,6 +1334,7 @@ local function ApplyCategoryHeaderAlignment(control, indentX)
         else
             toggle:SetAnchor(TOPLEFT, indentAnchor or control, TOPLEFT, 0, 0)
         end
+        ApplyCategoryChevronOrientation(toggle)
     end
 
     if iconSlot then
@@ -3709,6 +3723,7 @@ local function UpdateCategoryToggle(control, expanded)
 
     local texture = SelectCategoryToggleTexture(expanded, isMouseOver)
     control.toggle:SetTexture(texture)
+    ApplyCategoryChevronOrientation(control.toggle)
     control.isExpanded = expanded and true or false
 end
 
