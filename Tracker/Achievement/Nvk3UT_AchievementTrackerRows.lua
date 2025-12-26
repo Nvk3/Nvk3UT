@@ -88,7 +88,16 @@ local function ApplyCategoryHeaderAlignment(control, indentX)
         indentAnchor:SetAnchor(topInner, control, topInner, mirrorOffset(indentValue), 0)
     end
 
-    if toggle then
+    if Nvk3UT and type(Nvk3UT.EnsureCategoryChevronReady) == "function" then
+        toggle = Nvk3UT:EnsureCategoryChevronReady(control, {
+            chevronName = "Toggle",
+            texture = SelectCategoryToggleTexture(false, false),
+            size = 20,
+            indentAnchor = indentAnchor,
+            expanded = control.isExpanded,
+            applyRotation = ApplyCategoryChevronOrientation,
+        }) or toggle
+    elseif toggle then
         toggle:ClearAnchors()
         if toggle.SetHidden then
             toggle:SetHidden(false)

@@ -184,6 +184,92 @@ function Addon:FormatCategoryHeaderWithCount(text, count)
     return string.format("%s (%d)", text, numeric)
 end
 
+function Addon:EnsureCategoryChevronReady(control, options)
+    if type(control) ~= "table" then
+        return nil
+    end
+
+    local chevron = control.chevron or control.toggle
+    if not chevron and type(control.GetNamedChild) == "function" then
+        if options and options.chevronName then
+            chevron = control:GetNamedChild(options.chevronName)
+        end
+        chevron = chevron or control:GetNamedChild("Toggle") or control:GetNamedChild("Chevron")
+    end
+
+    if not chevron then
+        return nil
+    end
+
+    if chevron.SetHidden then
+        chevron:SetHidden(false)
+    end
+
+    local texture = options and options.texture
+    if texture and chevron.SetTexture then
+        local current = chevron.GetTexture and chevron:GetTexture() or nil
+        if current == nil or current == "" then
+            chevron:SetTexture(texture)
+        end
+    end
+
+    local size = options and options.size
+    if size and chevron.SetDimensions then
+        local width = chevron.GetWidth and chevron:GetWidth() or 0
+        local height = chevron.GetHeight and chevron:GetHeight() or 0
+        if width <= 0 or height <= 0 then
+            chevron:SetDimensions(size, size)
+        end
+    end
+
+    if chevron.ClearAnchors and chevron.SetAnchor then
+        local alignment = self:GetTrackerAlignmentParams()
+        local topInner = alignment.isRight and TOPRIGHT or TOPLEFT
+        local anchorTarget = (options and options.indentAnchor) or control
+        chevron:ClearAnchors()
+        chevron:SetAnchor(topInner, anchorTarget, topInner, 0, 0)
+    end
+
+    if options and type(options.applyRotation) == "function" then
+        options.applyRotation(chevron, options.expanded)
+    end
+
+    if self.IsDebugEnabled and self:IsDebugEnabled() and self:IsTrackerRightAligned() then
+        local controlName = control.GetName and control:GetName() or "<unnamed>"
+        local chevronName = chevron.GetName and chevron:GetName() or "<chevron>"
+        local hidden = chevron.IsHidden and chevron:IsHidden()
+        local textureValue = chevron.GetTexture and chevron:GetTexture()
+        local width = chevron.GetWidth and chevron:GetWidth() or 0
+        local height = chevron.GetHeight and chevron:GetHeight() or 0
+        local anchorCount = chevron.GetNumAnchors and chevron:GetNumAnchors() or "?"
+        if type(self.Debug) == "function" then
+            self:Debug(
+                "ChevronReady control=%s chevron=%s hidden=%s texture=%s size=%sx%s anchors=%s",
+                tostring(controlName),
+                tostring(chevronName),
+                tostring(hidden),
+                tostring(textureValue ~= nil and textureValue ~= ""),
+                tostring(width),
+                tostring(height),
+                tostring(anchorCount)
+            )
+        elseif d then
+            d(string.format(
+                "[Nvk3UT DEBUG] ChevronReady control=%s chevron=%s hidden=%s texture=%s size=%sx%s anchors=%s",
+                tostring(controlName),
+                tostring(chevronName),
+                tostring(hidden),
+                tostring(textureValue ~= nil and textureValue ~= ""),
+                tostring(width),
+                tostring(height),
+                tostring(anchorCount)
+            ))
+        end
+    end
+
+    return chevron
+end
+
 ---Initialises SavedVariables and exposes them on the addon table.
 function Addon:InitSavedVariables()
     local stateInit = Nvk3UT_StateInit

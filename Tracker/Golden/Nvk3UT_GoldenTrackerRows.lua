@@ -96,7 +96,16 @@ local function ApplyCategoryHeaderAlignment(control, indentX)
         indentAnchor:SetAnchor(topInner, control, topInner, mirrorOffset(indentValue), 0)
     end
 
-    if chevron then
+    if Nvk3UT and type(Nvk3UT.EnsureCategoryChevronReady) == "function" then
+        chevron = Nvk3UT:EnsureCategoryChevronReady(control, {
+            chevronName = "CategoryChevron",
+            texture = CATEGORY_CHEVRON_TEXTURES.collapsed,
+            size = CATEGORY_CHEVRON_SIZE,
+            indentAnchor = indentAnchor,
+            expanded = control._nvk3utCategoryExpanded,
+            applyRotation = ApplyCategoryChevronOrientation,
+        }) or chevron
+    elseif chevron then
         chevron:ClearAnchors()
         if chevron.SetHidden then
             chevron:SetHidden(false)
