@@ -3650,6 +3650,79 @@ local function createDragLayer()
     state.dragLayer = dragLayer
 end
 
+local function disableScrollContainerFades(scrollContainer)
+    if not scrollContainer then
+        return
+    end
+
+    local disabledCount = 0
+
+    local function disableControl(control)
+        if not control then
+            return false
+        end
+
+        if control.SetHidden then
+            control:SetHidden(true)
+        end
+
+        if control.SetAlpha then
+            control:SetAlpha(0)
+        end
+
+        disabledCount = disabledCount + 1
+        return true
+    end
+
+    local knownChildNames = {
+        "FadeTop",
+        "FadeBottom",
+        "TopFade",
+        "BottomFade",
+        "EdgeFadeTop",
+        "EdgeFadeBottom",
+        "GradientTop",
+        "GradientBottom",
+    }
+
+    for _, childName in ipairs(knownChildNames) do
+        disableControl(scrollContainer:GetNamedChild(childName))
+    end
+
+    local patterns = {
+        "fade",
+        "fader",
+        "gradient",
+        "edgefade",
+        "edge_fade",
+        "edgegradient",
+        "edge_gradient",
+    }
+
+    if scrollContainer.GetNumChildren and scrollContainer.GetChild then
+        local childCount = scrollContainer:GetNumChildren()
+        for i = 1, childCount do
+            local child = scrollContainer:GetChild(i)
+            local childName = child and child.GetName and child:GetName()
+            if childName then
+                local lowerName = string.lower(childName)
+                for _, pattern in ipairs(patterns) do
+                    if string.find(lowerName, pattern, 1, true) then
+                        disableControl(child)
+                        break
+                    end
+                end
+            end
+        end
+    end
+
+    if disabledCount > 0 then
+        debugLog(string.format("TrackerHost: disabled %d scroll fade overlay(s)", disabledCount))
+    else
+        debugLog("TrackerHost: scroll fade overlays not found")
+    end
+end
+
 local function createScrollContainer()
     if state.scrollContainer or not (state.root and WINDOW_MANAGER) then
         return
@@ -3777,6 +3850,8 @@ local function createScrollContainer()
     scrollContainer:SetHandler("OnMouseWheel", function(_, delta)
         adjustScroll(delta)
     end)
+
+    disableScrollContainerFades(scrollContainer)
 
     state.scrollContainer = scrollContainer
     state.scrollContent = scrollContent
