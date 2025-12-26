@@ -1325,7 +1325,7 @@ local function AnchorControl(control, indentX, gapOverride)
         local previousIndent = state.lastAnchoredControl.currentIndent or 0
         local offsetX = mirrorOffset(indentX - previousIndent)
         control:SetAnchor(topInner, state.lastAnchoredControl, bottomInner, offsetX, verticalPadding)
-        control:SetAnchor(topOuter, state.lastAnchoredControl, bottomOuter, 0, verticalPadding)
+        control:SetAnchor(topOuter, state.container, topOuter, 0, verticalPadding)
     else
         local offsetY = 0
         if rowKind == "header" and type(verticalPadding) == "number" then
