@@ -1296,6 +1296,62 @@ local function getHorizontalAnchorPoints()
     return TOPLEFT, TOPRIGHT, BOTTOMLEFT, BOTTOMRIGHT
 end
 
+local function ApplyCategoryHeaderAlignment(control, indentX)
+    if not control then
+        return
+    end
+
+    local alignment = getAlignmentParams()
+    local topInner, topOuter = getHorizontalAnchorPoints()
+    local indentAnchor = control.indentAnchor
+    local toggle = control.toggle
+    local iconSlot = control.iconSlot
+    local label = control.label
+    local indentValue = tonumber(indentX) or 0
+
+    if indentAnchor and indentAnchor.ClearAnchors then
+        indentAnchor:ClearAnchors()
+        indentAnchor:SetAnchor(topInner, control, topInner, mirrorOffset(indentValue), 0)
+    end
+
+    if toggle then
+        toggle:ClearAnchors()
+        if alignment.isRight then
+            toggle:SetAnchor(TOPRIGHT, indentAnchor or control, TOPRIGHT, 0, 0)
+        else
+            toggle:SetAnchor(TOPLEFT, indentAnchor or control, TOPLEFT, 0, 0)
+        end
+    end
+
+    if iconSlot then
+        iconSlot:ClearAnchors()
+        iconSlot:SetAnchor(topInner, control, topInner, 0, 0)
+    end
+
+    if label then
+        label:ClearAnchors()
+        if toggle then
+            if alignment.isRight then
+                label:SetAnchor(TOPRIGHT, toggle, TOPLEFT, mirrorOffset(4), 0)
+            else
+                label:SetAnchor(TOPLEFT, toggle, TOPRIGHT, mirrorOffset(4), 0)
+            end
+        elseif iconSlot then
+            if alignment.isRight then
+                label:SetAnchor(TOPRIGHT, iconSlot, TOPLEFT, 0, 0)
+            else
+                label:SetAnchor(TOPLEFT, iconSlot, TOPRIGHT, 0, 0)
+            end
+        else
+            label:SetAnchor(topInner, control, topInner, 0, 0)
+        end
+        label:SetAnchor(topOuter, control, topOuter, 0, 0)
+        if Nvk3UT and type(Nvk3UT.ApplyLabelHorizontalAlignment) == "function" then
+            Nvk3UT:ApplyLabelHorizontalAlignment(label)
+        end
+    end
+end
+
 local function GetToggleWidth(toggle, fallback)
     if toggle then
         if toggle.GetWidth then
@@ -4023,32 +4079,10 @@ local function InitializeCategoryControl(control)
     control.label = control:GetNamedChild("Label")
     control.toggle = control:GetNamedChild("Toggle")
     control.indentAnchor = control:GetNamedChild("IndentAnchor")
-    local alignment = getAlignmentParams()
-    local topInner, topOuter = getHorizontalAnchorPoints()
     if control.toggle and control.toggle.SetTexture then
         control.toggle:SetTexture(SelectCategoryToggleTexture(false, false))
     end
-    if control.toggle then
-        control.toggle:ClearAnchors()
-        if alignment.isRight then
-            control.toggle:SetAnchor(TOPRIGHT, control.indentAnchor or control, TOPRIGHT, 0, 0)
-        else
-            control.toggle:SetAnchor(TOPLEFT, control.indentAnchor or control, TOPLEFT, 0, 0)
-        end
-    end
-    if control.label then
-        control.label:ClearAnchors()
-        if control.toggle then
-            if alignment.isRight then
-                control.label:SetAnchor(TOPRIGHT, control.toggle, TOPLEFT, mirrorOffset(4), 0)
-            else
-                control.label:SetAnchor(TOPLEFT, control.toggle, TOPRIGHT, mirrorOffset(4), 0)
-            end
-        else
-            control.label:SetAnchor(topInner, control, topInner, 0, 0)
-        end
-        control.label:SetAnchor(topOuter, control, topOuter, 0, 0)
-    end
+    ApplyCategoryHeaderAlignment(control, CATEGORY_INDENT_X or 0)
     control.isExpanded = false
     control:SetHandler("OnMouseUp", function(ctrl, button, upInside)
         if not upInside or button ~= MOUSE_BUTTON_INDEX_LEFT then
@@ -4576,6 +4610,7 @@ local function ConfigureLayoutHelper()
             FormatCategoryHeaderText = FormatCategoryHeaderText,
             UpdateCategoryToggle = UpdateCategoryToggle,
             AcquireCategoryControl = AcquireCategoryControl,
+            ApplyCategoryHeaderAlignment = ApplyCategoryHeaderAlignment,
             NormalizeCategoryKey = NormalizeCategoryKey,
             SetCategoryRowsVisible = function(categoryKey, visible)
                 if QuestTrackerRows and QuestTrackerRows.SetCategoryRowsVisible then

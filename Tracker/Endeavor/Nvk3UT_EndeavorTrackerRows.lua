@@ -52,6 +52,58 @@ local function getHorizontalAnchorPoints()
     return TOPLEFT, TOPRIGHT, BOTTOMLEFT, BOTTOMRIGHT
 end
 
+local function ApplyCategoryHeaderAlignment(control, indentX)
+    if not control then
+        return
+    end
+
+    local alignment = getAlignmentParams()
+    local topInner, topOuter = getHorizontalAnchorPoints()
+    local indentAnchor = control.indentAnchor
+    local chevron = control.chevron or (control.GetNamedChild and control:GetNamedChild("Chevron"))
+    local iconSlot = control.iconSlot
+    local label = control.label or (control.GetNamedChild and control:GetNamedChild("Label"))
+    local indentValue = tonumber(indentX) or 0
+
+    if indentAnchor and indentAnchor.ClearAnchors then
+        indentAnchor:ClearAnchors()
+        indentAnchor:SetAnchor(topInner, control, topInner, mirrorOffset(indentValue), 0)
+    end
+
+    if chevron then
+        chevron:ClearAnchors()
+        chevron:SetAnchor(topInner, indentAnchor or control, topInner, 0, 0)
+    end
+
+    if iconSlot then
+        iconSlot:ClearAnchors()
+        iconSlot:SetAnchor(topInner, control, topInner, 0, 0)
+    end
+
+    if label then
+        label:ClearAnchors()
+        if chevron then
+            if alignment.isRight then
+                label:SetAnchor(TOPRIGHT, chevron, TOPLEFT, mirrorOffset(CATEGORY_LABEL_OFFSET_X), 0)
+            else
+                label:SetAnchor(TOPLEFT, chevron, TOPRIGHT, mirrorOffset(CATEGORY_LABEL_OFFSET_X), 0)
+            end
+        elseif iconSlot then
+            if alignment.isRight then
+                label:SetAnchor(TOPRIGHT, iconSlot, TOPLEFT, 0, 0)
+            else
+                label:SetAnchor(TOPLEFT, iconSlot, TOPRIGHT, 0, 0)
+            end
+        else
+            label:SetAnchor(topInner, control, topInner, 0, 0)
+        end
+        label:SetAnchor(topOuter, control, topOuter, 0, 0)
+        if Nvk3UT and type(Nvk3UT.ApplyLabelHorizontalAlignment) == "function" then
+            Nvk3UT:ApplyLabelHorizontalAlignment(label)
+        end
+    end
+end
+
 local function applyEndeavorLabelDefaults(label)
     if not label then
         return
@@ -1401,11 +1453,6 @@ local function createCategoryRow(parent)
 
     indentAnchor:SetHidden(false)
     indentAnchor:SetDimensions(1, 1)
-    if indentAnchor.ClearAnchors then
-        indentAnchor:ClearAnchors()
-    end
-    local topInner = getHorizontalAnchorPoints()
-    indentAnchor:SetAnchor(topInner, control, topInner, 0, 0)
 
     local chevronName = controlName .. "Chevron"
     local chevron = ensureCategoryChild(control, chevronName, CT_TEXTURE)
@@ -1419,8 +1466,6 @@ local function createCategoryRow(parent)
         if chevron.ClearAnchors then
             chevron:ClearAnchors()
         end
-        local topInner = getHorizontalAnchorPoints()
-        chevron:SetAnchor(topInner, indentAnchor, topInner, 0, 0)
         if chevron.SetTexture then
             chevron:SetTexture(DEFAULT_CATEGORY_CHEVRON_TEXTURES.collapsed)
         end
@@ -1444,15 +1489,12 @@ local function createCategoryRow(parent)
         if label.ClearAnchors then
             label:ClearAnchors()
         end
-        if getAlignmentParams().isRight then
-            label:SetAnchor(TOPRIGHT, chevron, TOPLEFT, mirrorOffset(CATEGORY_LABEL_OFFSET_X), 0)
-        else
-            label:SetAnchor(TOPLEFT, chevron, TOPRIGHT, mirrorOffset(CATEGORY_LABEL_OFFSET_X), 0)
-        end
         if label.SetHidden then
             label:SetHidden(false)
         end
     end
+
+    ApplyCategoryHeaderAlignment(control, 0)
 
     local row = {
         control = control,
@@ -1860,7 +1902,9 @@ local function applyCategoryRow(row, data)
     if indentValue < 0 then
         indentValue = 0
     end
-    if row.indentAnchor and row.indentAnchor.SetAnchor then
+    if row then
+        ApplyCategoryHeaderAlignment(control, indentValue)
+    elseif row.indentAnchor and row.indentAnchor.SetAnchor then
         row.indentAnchor:ClearAnchors()
         local topInner = getHorizontalAnchorPoints()
         row.indentAnchor:SetAnchor(topInner, control, topInner, mirrorOffset(indentValue), 0)

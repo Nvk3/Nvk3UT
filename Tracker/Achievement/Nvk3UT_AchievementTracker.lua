@@ -1855,7 +1855,9 @@ local function LayoutCategory(rows)
     )
 
     control:SetHidden(false)
-    if control.indentAnchor and control.indentAnchor.SetAnchor then
+    if rows and type(rows.ApplyCategoryHeaderAlignment) == "function" then
+        rows:ApplyCategoryHeaderAlignment(control, CATEGORY_INDENT_X or 0)
+    elseif control.indentAnchor and control.indentAnchor.SetAnchor then
         control.indentAnchor:ClearAnchors()
         local topInner = getHorizontalAnchorPoints()
         control.indentAnchor:SetAnchor(topInner, control, topInner, mirrorOffset(CATEGORY_INDENT_X or 0), 0)

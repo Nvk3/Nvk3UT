@@ -784,7 +784,9 @@ function Layout:LayoutCategory(category, providedControl)
     if UpdateCategoryToggle then
         UpdateCategoryToggle(control, expanded)
     end
-    if control.indentAnchor and control.indentAnchor.SetAnchor then
+    if self.deps and type(self.deps.ApplyCategoryHeaderAlignment) == "function" then
+        self.deps.ApplyCategoryHeaderAlignment(control, self.deps.CATEGORY_INDENT_X or 0)
+    elseif control.indentAnchor and control.indentAnchor.SetAnchor then
         control.indentAnchor:ClearAnchors()
         local topInner = getHorizontalAnchorPoints()
         control.indentAnchor:SetAnchor(topInner, control, topInner, mirrorOffset(self.deps.CATEGORY_INDENT_X or 0), 0)

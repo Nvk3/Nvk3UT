@@ -67,6 +67,58 @@ local function getHorizontalAnchorPoints()
     return TOPLEFT, TOPRIGHT, BOTTOMLEFT, BOTTOMRIGHT
 end
 
+local function ApplyCategoryHeaderAlignment(control, indentX)
+    if not control then
+        return
+    end
+
+    local alignment = getAlignmentParams()
+    local topInner, topOuter = getHorizontalAnchorPoints()
+    local indentAnchor = control.indentAnchor
+    local chevron = control.chevron or (control.GetNamedChild and control:GetNamedChild("CategoryChevron"))
+    local iconSlot = control.iconSlot
+    local label = control.label
+    local indentValue = tonumber(indentX) or 0
+
+    if indentAnchor and indentAnchor.ClearAnchors then
+        indentAnchor:ClearAnchors()
+        indentAnchor:SetAnchor(topInner, control, topInner, mirrorOffset(indentValue), 0)
+    end
+
+    if chevron then
+        chevron:ClearAnchors()
+        chevron:SetAnchor(topInner, indentAnchor or control, topInner, 0, 0)
+    end
+
+    if iconSlot then
+        iconSlot:ClearAnchors()
+        iconSlot:SetAnchor(topInner, control, topInner, 0, 0)
+    end
+
+    if label then
+        label:ClearAnchors()
+        if chevron then
+            if alignment.isRight then
+                label:SetAnchor(TOPRIGHT, chevron, TOPLEFT, mirrorOffset(CATEGORY_LABEL_OFFSET_X), 0)
+            else
+                label:SetAnchor(TOPLEFT, chevron, TOPRIGHT, mirrorOffset(CATEGORY_LABEL_OFFSET_X), 0)
+            end
+        elseif iconSlot then
+            if alignment.isRight then
+                label:SetAnchor(TOPRIGHT, iconSlot, TOPLEFT, 0, 0)
+            else
+                label:SetAnchor(TOPLEFT, iconSlot, TOPRIGHT, 0, 0)
+            end
+        else
+            label:SetAnchor(topInner, control, topInner, 0, 0)
+        end
+        label:SetAnchor(topOuter, control, topOuter, 0, 0)
+        if Nvk3UT and type(Nvk3UT.ApplyLabelHorizontalAlignment) == "function" then
+            Nvk3UT:ApplyLabelHorizontalAlignment(label)
+        end
+    end
+end
+
 local DEFAULTS = {
     CATEGORY_HEIGHT = 26,
     ENTRY_HEIGHT = 24,
@@ -1146,8 +1198,6 @@ local function createCategoryRow(parent)
     if indentAnchor then
         indentAnchor:SetDimensions(1, 1)
         indentAnchor:ClearAnchors()
-        local topInner = getHorizontalAnchorPoints()
-        indentAnchor:SetAnchor(topInner, control, topInner, 0, 0)
     end
 
     local chevronName = string.format("%s_CategoryChevron", controlName)
@@ -1163,24 +1213,15 @@ local function createCategoryRow(parent)
     end
     if chevron.ClearAnchors then
         chevron:ClearAnchors()
-        local topInner = getHorizontalAnchorPoints()
-        chevron:SetAnchor(topInner, indentAnchor or control, topInner, 0, 0)
     end
 
     local label = createLabel(control, "Category")
     if label then
         label:ClearAnchors()
-        if label.SetAnchor then
-            if getAlignmentParams().isRight then
-                label:SetAnchor(TOPRIGHT, chevron, TOPLEFT, mirrorOffset(CATEGORY_LABEL_OFFSET_X), 0)
-            else
-                label:SetAnchor(TOPLEFT, chevron, TOPRIGHT, mirrorOffset(CATEGORY_LABEL_OFFSET_X), 0)
-            end
-            local _, topOuter = getHorizontalAnchorPoints()
-            label:SetAnchor(topOuter, control, topOuter, 0, 0)
-        end
         applyLabelDefaults(label, getGoldenCategoryFont())
     end
+
+    ApplyCategoryHeaderAlignment(control, 0)
 
     local row = {
         control = control,
@@ -1279,8 +1320,6 @@ local function resetCategoryRowVisuals(row, parent)
         end
         if chevron.ClearAnchors then
             chevron:ClearAnchors()
-            local topInner = getHorizontalAnchorPoints()
-            chevron:SetAnchor(topInner, control, topInner, 0, 0)
         end
     end
 
@@ -1482,29 +1521,7 @@ local function applyCategoryRow(row, categoryData)
             tostring(indentValue)
         )
     end
-    if row.indentAnchor and row.indentAnchor.SetAnchor then
-        row.indentAnchor:ClearAnchors()
-        local topInner = getHorizontalAnchorPoints()
-        row.indentAnchor:SetAnchor(topInner, targetRow, topInner, mirrorOffset(indentValue), 0)
-    end
-    if chevron and chevron.ClearAnchors and row.indentAnchor and row.indentAnchor.SetAnchor then
-        chevron:ClearAnchors()
-        local topInner = getHorizontalAnchorPoints()
-        chevron:SetAnchor(topInner, row.indentAnchor, topInner, 0, 0)
-    end
-
-    if label and label.ClearAnchors then
-        label:ClearAnchors()
-        if label.SetAnchor then
-            if getAlignmentParams().isRight then
-                label:SetAnchor(TOPRIGHT, chevron, TOPLEFT, mirrorOffset(CATEGORY_LABEL_OFFSET_X), 0)
-            else
-                label:SetAnchor(TOPLEFT, chevron, TOPRIGHT, mirrorOffset(CATEGORY_LABEL_OFFSET_X), 0)
-            end
-            local _, topOuter = getHorizontalAnchorPoints()
-            label:SetAnchor(topOuter, targetRow, topOuter, 0, 0)
-        end
-    end
+    ApplyCategoryHeaderAlignment(targetRow, indentValue)
 
     if isGoldenColorDebugEnabled() then
         local function formatAnchor(control, index)
