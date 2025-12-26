@@ -490,7 +490,16 @@ function Rows:ApplyFonts(control, rowType)
 end
 
 function Rows:CreateCategoryRow(rowKey)
-    local control = CreateControlFromVirtual(self:GetRowName("Category", rowKey), self.parent, "AchievementsCategoryHeader_Template")
+    local controlName = self:GetRowName("Category", rowKey)
+    local control = nil
+    if type(GetControl) == "function" then
+        control = GetControl(controlName)
+    end
+    if not control then
+        control = CreateControlFromVirtual(controlName, self.parent, "AchievementsCategoryHeader_Template")
+    elseif control.SetParent then
+        control:SetParent(self.parent)
+    end
     control.rowType = "category"
     control.label = control:GetNamedChild("Label")
     control.toggle = control:GetNamedChild("Toggle")

@@ -11,6 +11,8 @@ local LOGGER = LibDebugLogger and LibDebugLogger.Create(MODULE_TAG)
 
 local ROW_TEXT_PADDING_Y = 4
 
+local safeDebug
+
 local ROWS_HEIGHTS = {
     category = 26,
     entry = 20,
@@ -68,12 +70,46 @@ local function ApplyCategoryHeaderAlignment(control, indentX)
         return
     end
 
+    local indentAnchor = control.indentAnchor
+    if not indentAnchor and control.GetNamedChild then
+        indentAnchor = control:GetNamedChild("IndentAnchor")
+    end
+
+    local chevron = control.chevron
+    if not chevron and control.GetNamedChild then
+        chevron = control:GetNamedChild("Chevron")
+    end
+
+    local iconSlot = control.iconSlot
+    if not iconSlot and control.GetNamedChild then
+        iconSlot = control:GetNamedChild("IconSlot")
+    end
+
+    local label = control.label
+    if not label and control.GetNamedChild then
+        label = control:GetNamedChild("Label")
+    end
+
+    if not (indentAnchor or chevron or iconSlot or label) then
+        safeDebug("ApplyCategoryHeaderAlignment skipped; missing header parts for %s", tostring(control))
+        return
+    end
+
+    if indentAnchor then
+        control.indentAnchor = indentAnchor
+    end
+    if chevron then
+        control.chevron = chevron
+    end
+    if iconSlot then
+        control.iconSlot = iconSlot
+    end
+    if label then
+        control.label = label
+    end
+
     local alignment = getAlignmentParams()
     local topInner, topOuter = getHorizontalAnchorPoints()
-    local indentAnchor = control.indentAnchor
-    local chevron = control.chevron or (control.GetNamedChild and control:GetNamedChild("Chevron"))
-    local iconSlot = control.iconSlot
-    local label = control.label or (control.GetNamedChild and control:GetNamedChild("Label"))
     local indentValue = tonumber(indentX) or 0
 
     if indentAnchor and indentAnchor.ClearAnchors then
@@ -446,7 +482,7 @@ local entryPool = {
 
 local loggedSubrowsOnce = false
 
-local function safeDebug(fmt, ...)
+safeDebug = function(fmt, ...)
     if not isDebugEnabled() then
         return
     end

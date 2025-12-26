@@ -19,6 +19,7 @@ local GOLDEN_COLOR_ROLES = {
 
 local DEFAULT_COLOR_KIND = "goldenTracker"
 local DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR = { 1, 1, 0.6, 1 }
+local safeDebug
 
 local GOLDEN_COLOR_ROLE_LIST = {
     GOLDEN_COLOR_ROLES.CategoryTitleClosed,
@@ -83,12 +84,48 @@ local function ApplyCategoryHeaderAlignment(control, indentX)
         return
     end
 
+    local indentAnchor = control.indentAnchor
+    if not indentAnchor and control.GetNamedChild then
+        indentAnchor = control:GetNamedChild("CategoryIndent")
+    end
+
+    local chevron = control.chevron
+    if not chevron and control.GetNamedChild then
+        chevron = control:GetNamedChild("CategoryChevron")
+    end
+
+    local iconSlot = control.iconSlot
+    if not iconSlot and control.GetNamedChild then
+        iconSlot = control:GetNamedChild("IconSlot")
+    end
+
+    local label = control.label
+    if not label and control.GetNamedChild then
+        label = control:GetNamedChild("CategoryLabel")
+    end
+
+    if not (indentAnchor or chevron or iconSlot or label) then
+        if isGoldenColorDebugEnabled() then
+            safeDebug("ApplyCategoryHeaderAlignment skipped; missing header parts for %s", tostring(control))
+        end
+        return
+    end
+
+    if indentAnchor then
+        control.indentAnchor = indentAnchor
+    end
+    if chevron then
+        control.chevron = chevron
+    end
+    if iconSlot then
+        control.iconSlot = iconSlot
+    end
+    if label then
+        control.label = label
+    end
+
     local alignment = getAlignmentParams()
     local topInner, topOuter = getHorizontalAnchorPoints()
-    local indentAnchor = control.indentAnchor
-    local chevron = control.chevron or (control.GetNamedChild and control:GetNamedChild("CategoryChevron"))
-    local iconSlot = control.iconSlot
-    local label = control.label
     local indentValue = tonumber(indentX) or 0
 
     if indentAnchor and indentAnchor.ClearAnchors then
@@ -321,7 +358,7 @@ local function isGoldenWrapDebugEnabled()
     return isGoldenColorDebugEnabled()
 end
 
-local function safeDebug(message, ...)
+safeDebug = function(message, ...)
     local debugFn = Nvk3UT and Nvk3UT.Debug
     if type(debugFn) ~= "function" then
         return
