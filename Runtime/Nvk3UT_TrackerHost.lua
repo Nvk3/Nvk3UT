@@ -1135,6 +1135,54 @@ local function clampWindowToScreen(width, height)
     window.top = math.min(math.max(window.top or 0, 0), maxTop)
 end
 
+local function getAlignmentParams()
+    local addon = Nvk3UT
+    if addon and type(addon.GetTrackerAlignmentParams) == "function" then
+        return addon:GetTrackerAlignmentParams()
+    end
+    return {
+        isRight = false,
+        anchorInner = LEFT,
+        anchorOuter = RIGHT,
+        sign = 1,
+    }
+end
+
+local function getHorizontalAnchorPoints()
+    local alignment = getAlignmentParams()
+    if alignment.isRight then
+        return TOPRIGHT, TOPLEFT, BOTTOMRIGHT, BOTTOMLEFT
+    end
+    return TOPLEFT, TOPRIGHT, BOTTOMLEFT, BOTTOMRIGHT
+end
+
+local function applyRootAnchor(anchorParent, left, top, width)
+    if not (state.root and anchorParent) then
+        return
+    end
+
+    local alignment = getAlignmentParams()
+    local anchorPoint = alignment.isRight and TOPRIGHT or TOPLEFT
+    local relativePoint = anchorPoint
+    local offsetX = left or 0
+
+    if alignment.isRight then
+        local parentWidth = 0
+        if anchorParent.GetWidth then
+            parentWidth = anchorParent:GetWidth() or 0
+        elseif GuiRoot and GuiRoot.GetWidth then
+            parentWidth = GuiRoot:GetWidth() or 0
+        end
+
+        local anchorWidth = tonumber(width) or (state.root.GetWidth and state.root:GetWidth()) or 0
+        local rightOffset = parentWidth - ((left or 0) + anchorWidth)
+        offsetX = -rightOffset
+    end
+
+    state.root:ClearAnchors()
+    state.root:SetAnchor(anchorPoint, anchorParent, relativePoint, offsetX, top or 0)
+end
+
 local function saveWindowPosition()
     if not (state.root and state.window) then
         return
@@ -1414,8 +1462,7 @@ local function updateResize()
     local finalLeft = window.left or newLeft
     local finalTop = window.top or newTop
 
-    state.root:ClearAnchors()
-    state.root:SetAnchor(TOPLEFT, anchorParent, TOPLEFT, finalLeft, finalTop)
+    applyRootAnchor(anchorParent, finalLeft, finalTop, window.width)
     state.root:SetDimensions(window.width, window.height)
 end
 
@@ -2271,19 +2318,20 @@ updateScrollContentAnchors = function()
     end
 
     scrollContent:ClearAnchors()
+    local topInner, topOuter = getHorizontalAnchorPoints()
     local offsetY = -(state.scrollOffset or 0)
     scrollContent:SetAnchor(
-        TOPLEFT,
+        topInner,
         scrollContainer,
-        TOPLEFT,
-        state.scrollContentLeftOffset or 0,
+        topInner,
+        (topInner == TOPLEFT and state.scrollContentLeftOffset or state.scrollContentRightOffset) or 0,
         offsetY
     )
     scrollContent:SetAnchor(
-        TOPRIGHT,
+        topOuter,
         scrollContainer,
-        TOPRIGHT,
-        state.scrollContentRightOffset or 0,
+        topOuter,
+        (topOuter == TOPRIGHT and state.scrollContentRightOffset or state.scrollContentLeftOffset) or 0,
         offsetY
     )
 end
@@ -2846,8 +2894,7 @@ local function updateWindowGeometry()
     clampWindowToScreen(targetWidth, targetHeight)
 
     local anchorParent = GuiRoot or state.root:GetParent()
-    state.root:ClearAnchors()
-    state.root:SetAnchor(TOPLEFT, anchorParent, TOPLEFT, state.window.left or 0, state.window.top or 0)
+    applyRootAnchor(anchorParent, state.window.left or 0, state.window.top or 0, targetWidth)
     state.root:SetDimensions(targetWidth, targetHeight)
     state.root:SetClampedToScreen(state.window.clamp ~= false)
 end
@@ -3155,34 +3202,36 @@ local function anchorContainers()
         headerVisible = headerBar ~= nil and headerHeight > 0.5
     end
 
+    local topInner, topOuter, bottomInner, bottomOuter = getHorizontalAnchorPoints()
+
     if headerBar then
         headerBar:ClearAnchors()
-        headerBar:SetAnchor(TOPLEFT, scrollContent, TOPLEFT, 0, 0)
-        headerBar:SetAnchor(TOPRIGHT, scrollContent, TOPRIGHT, 0, 0)
+        headerBar:SetAnchor(topInner, scrollContent, topInner, 0, 0)
+        headerBar:SetAnchor(topOuter, scrollContent, topOuter, 0, 0)
     end
 
     if contentStack then
         contentStack:ClearAnchors()
         if headerVisible and headerBar then
-            contentStack:SetAnchor(TOPLEFT, headerBar, BOTTOMLEFT, 0, 0)
-            contentStack:SetAnchor(TOPRIGHT, headerBar, BOTTOMRIGHT, 0, 0)
+            contentStack:SetAnchor(topInner, headerBar, bottomInner, 0, 0)
+            contentStack:SetAnchor(topOuter, headerBar, bottomOuter, 0, 0)
         else
-            contentStack:SetAnchor(TOPLEFT, scrollContent, TOPLEFT, 0, 0)
-            contentStack:SetAnchor(TOPRIGHT, scrollContent, TOPRIGHT, 0, 0)
+            contentStack:SetAnchor(topInner, scrollContent, topInner, 0, 0)
+            contentStack:SetAnchor(topOuter, scrollContent, topOuter, 0, 0)
         end
     end
 
     if footerBar then
         footerBar:ClearAnchors()
         if contentStack then
-            footerBar:SetAnchor(TOPLEFT, contentStack, BOTTOMLEFT, 0, 0)
-            footerBar:SetAnchor(TOPRIGHT, contentStack, BOTTOMRIGHT, 0, 0)
+            footerBar:SetAnchor(topInner, contentStack, bottomInner, 0, 0)
+            footerBar:SetAnchor(topOuter, contentStack, bottomOuter, 0, 0)
         elseif headerVisible and headerBar then
-            footerBar:SetAnchor(TOPLEFT, headerBar, BOTTOMLEFT, 0, 0)
-            footerBar:SetAnchor(TOPRIGHT, headerBar, BOTTOMRIGHT, 0, 0)
+            footerBar:SetAnchor(topInner, headerBar, bottomInner, 0, 0)
+            footerBar:SetAnchor(topOuter, headerBar, bottomOuter, 0, 0)
         else
-            footerBar:SetAnchor(TOPLEFT, scrollContent, TOPLEFT, 0, 0)
-            footerBar:SetAnchor(TOPRIGHT, scrollContent, TOPRIGHT, 0, 0)
+            footerBar:SetAnchor(topInner, scrollContent, topInner, 0, 0)
+            footerBar:SetAnchor(topOuter, scrollContent, topOuter, 0, 0)
         end
     end
 

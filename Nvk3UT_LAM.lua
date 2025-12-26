@@ -2413,6 +2413,12 @@ local function registerPanel(displayTitle)
                 setFunc = function(value)
                     local settings = getHostSettings()
                     settings.trackerAlignment = normalizeTrackerAlignment(value)
+                    local host = Nvk3UT and Nvk3UT.TrackerHost
+                    if host and host.ApplySettings then
+                        host.ApplySettings()
+                    elseif host and host.Refresh then
+                        host.Refresh()
+                    end
                 end,
                 default = DEFAULT_HOST_SETTINGS.trackerAlignment,
             })

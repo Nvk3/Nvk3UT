@@ -580,6 +580,27 @@ local function applyAnchors(control, anchors)
     return true
 end
 
+local function getAlignmentParams()
+    local addon = Nvk3UT
+    if addon and type(addon.GetTrackerAlignmentParams) == "function" then
+        return addon:GetTrackerAlignmentParams()
+    end
+    return {
+        isRight = false,
+        anchorInner = LEFT,
+        anchorOuter = RIGHT,
+        sign = 1,
+    }
+end
+
+local function getHorizontalAnchorPoints()
+    local alignment = getAlignmentParams()
+    if alignment.isRight then
+        return TOPRIGHT, TOPLEFT, BOTTOMRIGHT, BOTTOMLEFT
+    end
+    return TOPLEFT, TOPRIGHT, BOTTOMLEFT, BOTTOMRIGHT
+end
+
 local function reportAnchored(host, sectionId)
     if host and type(host.ReportSectionAnchored) == "function" then
         host.ReportSectionAnchored(sectionId)
@@ -1101,15 +1122,16 @@ function Layout.ApplyLayout(host, sizes)
                 break
             end
 
+            local topInner, topOuter, bottomInner, bottomOuter = getHorizontalAnchorPoints()
             if previousVisible then
                 anchors = {
-                    { point = TOPLEFT, relativeTo = anchorTarget, relativePoint = BOTTOMLEFT, offsetX = 0, offsetY = gap },
-                    { point = TOPRIGHT, relativeTo = anchorTarget, relativePoint = BOTTOMRIGHT, offsetX = 0, offsetY = gap },
+                    { point = topInner, relativeTo = anchorTarget, relativePoint = bottomInner, offsetX = 0, offsetY = gap },
+                    { point = topOuter, relativeTo = anchorTarget, relativePoint = bottomOuter, offsetX = 0, offsetY = gap },
                 }
             else
                 anchors = {
-                    { point = TOPLEFT, relativeTo = anchorTarget, relativePoint = TOPLEFT, offsetX = 0, offsetY = topOffset },
-                    { point = TOPRIGHT, relativeTo = anchorTarget, relativePoint = TOPRIGHT, offsetX = 0, offsetY = topOffset },
+                    { point = topInner, relativeTo = anchorTarget, relativePoint = topInner, offsetX = 0, offsetY = topOffset },
+                    { point = topOuter, relativeTo = anchorTarget, relativePoint = topOuter, offsetX = 0, offsetY = topOffset },
                 }
             end
 
