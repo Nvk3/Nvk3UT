@@ -2075,6 +2075,10 @@ function AchievementTracker:GetHeight()
     return NormalizeMetric(state.contentHeight)
 end
 
+function AchievementTracker.GetOrderedControls()
+    return state.orderedControls or {}
+end
+
 function AchievementTracker.GetContentSize()
     UpdateContentSize()
     return state.contentWidth or 0, state.contentHeight or 0

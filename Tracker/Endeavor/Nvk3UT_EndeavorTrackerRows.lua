@@ -2154,6 +2154,14 @@ function Rows.ApplyGroupLabelColor(label, options, useCompletedStyle)
     return applyGroupLabelColor(label, options, useCompletedStyle == true)
 end
 
+function Rows.GetActiveCategoryRows()
+    return categoryPool.used or {}
+end
+
+function Rows.GetActiveEntryRows()
+    return entryPool.used or {}
+end
+
 function Rows.Init()
     categoryPool.free = categoryPool.free or {}
     categoryPool.used = categoryPool.used or {}

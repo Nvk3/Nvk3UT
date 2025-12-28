@@ -2345,6 +2345,10 @@ function EndeavorTracker.Dispose()
     state.ui = nil
 end
 
+function EndeavorTracker.GetUI()
+    return state.ui
+end
+
 Nvk3UT.EndeavorTracker = EndeavorTracker
 
 return EndeavorTracker

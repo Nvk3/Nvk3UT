@@ -37,6 +37,7 @@ local SCROLLBAR_WIDTH = 18
 local SCROLL_OVERSHOOT_PADDING = 0 -- no overshoot, scroll range == content height
 local FRAGMENT_RETRY_DELAY_MS = 200
 local MAX_BAR_HEIGHT = 250
+local MIN_LABEL_WIDTH = 20
 
 local FRAGMENT_REASON_SUPPRESSED = "NVK3UT_SUPPRESSED"
 local FRAGMENT_REASON_USER = "NVK3UT_USER"
@@ -425,6 +426,161 @@ local refreshCornerButton
 local applyCollapsedVisibility
 local updateCornerButtonVisualState
 local applyWindowLock
+
+local function getControlLeftOffset(control, label)
+    if not (control and label and control.GetLeft and label.GetLeft) then
+        return 0
+    end
+
+    local controlLeft = control:GetLeft()
+    local labelLeft = label:GetLeft()
+    if type(controlLeft) ~= "number" or type(labelLeft) ~= "number" then
+        return 0
+    end
+
+    local offset = labelLeft - controlLeft
+    if offset < 0 then
+        return 0
+    end
+
+    return offset
+end
+
+local function getViewportWidth()
+    local scrollContent = state.scrollContent
+    if not (scrollContent and scrollContent.GetWidth) then
+        return nil
+    end
+
+    local width = scrollContent:GetWidth()
+    if type(width) ~= "number" or width <= 0 then
+        return nil
+    end
+
+    return width
+end
+
+function TrackerHost:ReflowRowLabelWidths()
+    local viewportWidth = getViewportWidth()
+    if not viewportWidth then
+        return
+    end
+
+    local function clampWidth(value)
+        return math.max(MIN_LABEL_WIDTH, value or 0)
+    end
+
+    local function applyLabelWidth(label, fixedSlots)
+        if not (label and label.SetWidth) then
+            return nil
+        end
+        local width = viewportWidth - (fixedSlots or 0)
+        width = clampWidth(width)
+        label:SetWidth(width)
+        return width
+    end
+
+    local function reflowControlLabel(control, label)
+        if not (control and label) then
+            return nil
+        end
+        local indent = control.currentIndent or 0
+        local leftOffset = getControlLeftOffset(control, label)
+        return applyLabelWidth(label, indent + leftOffset)
+    end
+
+    local questLayout = Nvk3UT and Nvk3UT.QuestTrackerLayout
+    local questState = questLayout and questLayout.state
+    local questRows = questState and questState.orderedControls
+    if type(questRows) == "table" then
+        for index = 1, #questRows do
+            local control = questRows[index]
+            local rowType = control and control.rowType
+            local label = control and control.label
+            if label and (rowType == "category" or rowType == "quest" or rowType == "condition") then
+                local labelWidth = reflowControlLabel(control, label)
+                if rowType == "quest" and labelWidth and control.objectiveControls then
+                    for objectiveIndex = 1, #control.objectiveControls do
+                        local objectiveControl = control.objectiveControls[objectiveIndex]
+                        if objectiveControl then
+                            if objectiveControl.SetWidth then
+                                objectiveControl:SetWidth(labelWidth)
+                            end
+                            local objectiveLabel = objectiveControl.label or objectiveControl.Label
+                            if objectiveLabel and objectiveLabel.SetWidth then
+                                objectiveLabel:SetWidth(labelWidth)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    local achievementTracker = Nvk3UT and Nvk3UT.AchievementTracker
+    local achievementRows = achievementTracker and achievementTracker.GetOrderedControls and achievementTracker.GetOrderedControls()
+    if type(achievementRows) == "table" then
+        for index = 1, #achievementRows do
+            local control = achievementRows[index]
+            local rowType = control and control.rowType
+            local label = control and control.label
+            if label and (rowType == "category" or rowType == "achievement" or rowType == "objective") then
+                reflowControlLabel(control, label)
+            end
+        end
+    end
+
+    local endeavorModule = getEndeavorModule()
+    local endeavorRows = Nvk3UT and Nvk3UT.EndeavorTrackerRows
+    local endeavorCategoryRows = endeavorRows and endeavorRows.GetActiveCategoryRows and endeavorRows.GetActiveCategoryRows()
+    if type(endeavorCategoryRows) == "table" then
+        for index = 1, #endeavorCategoryRows do
+            local row = endeavorCategoryRows[index]
+            local control = row and (row.control or row)
+            local label = row and (row.label or (control and control.label))
+            if control and label then
+                applyLabelWidth(label, getControlLeftOffset(control, label))
+            end
+        end
+    end
+
+    local endeavorEntryRows = endeavorRows and endeavorRows.GetActiveEntryRows and endeavorRows.GetActiveEntryRows()
+    if type(endeavorEntryRows) == "table" then
+        for index = 1, #endeavorEntryRows do
+            local control = endeavorEntryRows[index]
+            local label = control and (control.label or control.Label)
+            if control and label then
+                applyLabelWidth(label, getControlLeftOffset(control, label))
+            end
+        end
+    end
+
+    local endeavorUi = endeavorModule and endeavorModule.GetUI and endeavorModule.GetUI()
+    if type(endeavorUi) == "table" then
+        local daily = endeavorUi.daily
+        if daily and daily.control and daily.label then
+            applyLabelWidth(daily.label, getControlLeftOffset(daily.control, daily.label))
+        end
+        local weekly = endeavorUi.weekly
+        if weekly and weekly.control and weekly.label then
+            applyLabelWidth(weekly.label, getControlLeftOffset(weekly.control, weekly.label))
+        end
+    end
+
+    local goldenTracker = Nvk3UT and Nvk3UT.GoldenTracker
+    local goldenRows = goldenTracker and goldenTracker.rows
+    if type(goldenRows) == "table" then
+        for index = 1, #goldenRows do
+            local control = goldenRows[index]
+            local rowKind = control and control.__rowKind
+            local label = control and (control.label or control.Label)
+            if label and (rowKind == "category" or rowKind == "entry" or rowKind == "objective") then
+                local indent = control.currentIndent or 0
+                applyLabelWidth(label, indent + getControlLeftOffset(control, label))
+            end
+        end
+    end
+end
 
 local function getSavedVars()
     return Nvk3UT and Nvk3UT.sv
@@ -3300,6 +3456,7 @@ applyScrollbarSide = function(showScrollbar)
     end
 
     updateScrollContentAnchors()
+    TrackerHost:ReflowRowLabelWidths()
 end
 
 applyViewportPadding = function()
@@ -4509,6 +4666,7 @@ local function refreshWindowLayout(targetOffset)
     applyWindowVisibility()
     refreshScroll(targetOffset)
     applyCollapsedVisibility()
+    TrackerHost:ReflowRowLabelWidths()
 end
 
 local function scheduleDeferredRefresh(targetOffset)
