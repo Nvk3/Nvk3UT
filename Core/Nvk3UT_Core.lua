@@ -136,9 +136,161 @@ function Addon:GetAlignmentMode()
     return "LEFT"
 end
 
+local function getIndentOffset(indentAnchor)
+    if not (indentAnchor and indentAnchor.GetAnchor) then
+        return 0
+    end
+
+    local ok, _, _, _, offsetX = pcall(indentAnchor.GetAnchor, indentAnchor, 0)
+    if ok and type(offsetX) == "number" then
+        return offsetX
+    end
+
+    return 0
+end
+
+local function applyCategoryHeaderAlignment(root, label, chevron, counter, mode, options)
+    if not (root and label and chevron) then
+        return
+    end
+
+    local normalized = (type(mode) == "string" and mode:upper()) or "LEFT"
+    if normalized ~= "RIGHT" then
+        normalized = "LEFT"
+    end
+
+    local indentAnchor = options and options.indentAnchor or nil
+    local labelGap = (options and tonumber(options.labelGap)) or 4
+    local applyStretch = options and options.stretchLabel == true
+
+    local indentOffset = getIndentOffset(indentAnchor)
+    local leftChevronOffset = indentAnchor and 0 or indentOffset
+
+    if chevron.ClearAnchors then
+        chevron:ClearAnchors()
+    end
+    if label.ClearAnchors then
+        label:ClearAnchors()
+    end
+    if counter and counter.ClearAnchors then
+        counter:ClearAnchors()
+    end
+
+    if normalized == "LEFT" then
+        chevron:SetAnchor(TOPLEFT, indentAnchor or root, TOPLEFT, leftChevronOffset, 0)
+        label:SetAnchor(TOPLEFT, chevron, TOPRIGHT, labelGap, 0)
+        if applyStretch then
+            label:SetAnchor(TOPRIGHT, root, TOPRIGHT, 0, 0)
+        end
+        if counter then
+            counter:SetAnchor(TOPLEFT, label, TOPRIGHT, labelGap, 0)
+        end
+        if label.SetHorizontalAlignment then
+            label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        end
+    else
+        chevron:SetAnchor(TOPRIGHT, root, TOPRIGHT, -indentOffset, 0)
+        label:SetAnchor(TOPRIGHT, chevron, TOPLEFT, -labelGap, 0)
+        if applyStretch then
+            label:SetAnchor(TOPLEFT, root, TOPLEFT, 0, 0)
+        end
+        if counter then
+            counter:SetAnchor(TOPRIGHT, label, TOPLEFT, -labelGap, 0)
+        end
+        if label.SetHorizontalAlignment then
+            label:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+        end
+    end
+
+    if chevron.SetTextureRotation then
+        local rotation = normalized == "RIGHT" and math.pi or 0
+        chevron:SetTextureRotation(rotation, 0.5, 0.5)
+    end
+end
+
 function Addon:ApplyAlignment_Categories(alignmentMode)
-    if type(self.Debug) == "function" then
-        self.Debug("Alignment: categories -> %s", tostring(alignmentMode))
+    local mode = alignmentMode
+    if type(mode) ~= "string" then
+        mode = "LEFT"
+    end
+
+    local questRows = self.QuestTrackerRows
+    if questRows and type(questRows.GetCategoryControls) == "function" then
+        local ok, controls = pcall(questRows.GetCategoryControls, questRows)
+        if ok and type(controls) == "table" then
+            for index = 1, #controls do
+                local header = controls[index]
+                if header then
+                    local label = header.label or (header.GetNamedChild and header:GetNamedChild("Label"))
+                    local chevron = header.toggle or (header.GetNamedChild and header:GetNamedChild("Toggle"))
+                    local indentAnchor = header.indentAnchor or (header.GetNamedChild and header:GetNamedChild("IndentAnchor"))
+                    applyCategoryHeaderAlignment(header, label, chevron, nil, mode, {
+                        indentAnchor = indentAnchor,
+                        labelGap = 4,
+                        stretchLabel = true,
+                    })
+                end
+            end
+        end
+    end
+
+    local achievementRows = self.AchievementTrackerRows
+    local achievementActive = achievementRows and achievementRows.activeControlsByKey
+    if type(achievementActive) == "table" then
+        for _, control in pairs(achievementActive) do
+            if control and control.rowType == "category" then
+                local label = control.label or (control.GetNamedChild and control:GetNamedChild("Label"))
+                local chevron = control.toggle or (control.GetNamedChild and control:GetNamedChild("Toggle"))
+                local indentAnchor = control.indentAnchor or (control.GetNamedChild and control:GetNamedChild("IndentAnchor"))
+                applyCategoryHeaderAlignment(control, label, chevron, nil, mode, {
+                    indentAnchor = indentAnchor,
+                    labelGap = 4,
+                    stretchLabel = true,
+                })
+            end
+        end
+    end
+
+    local endeavorRows = self.EndeavorTrackerRows
+    if endeavorRows and type(endeavorRows.GetActiveCategoryRows) == "function" then
+        local ok, rows = pcall(endeavorRows.GetActiveCategoryRows, endeavorRows)
+        if ok and type(rows) == "table" then
+            for index = 1, #rows do
+                local row = rows[index]
+                local control = row and row.control
+                if control then
+                    applyCategoryHeaderAlignment(
+                        control,
+                        row.label or control.label,
+                        row.chevron,
+                        nil,
+                        mode,
+                        { indentAnchor = row.indentAnchor, labelGap = 4 }
+                    )
+                end
+            end
+        end
+    end
+
+    local goldenRows = self.GoldenTrackerRows
+    if goldenRows and type(goldenRows.GetActiveCategoryRows) == "function" then
+        local ok, rows = pcall(goldenRows.GetActiveCategoryRows, goldenRows)
+        if ok and type(rows) == "table" then
+            for index = 1, #rows do
+                local row = rows[index]
+                local control = row and row.control
+                if control then
+                    applyCategoryHeaderAlignment(
+                        control,
+                        row.label or control.label,
+                        row.chevron,
+                        nil,
+                        mode,
+                        { indentAnchor = row.indentAnchor, labelGap = 4, stretchLabel = true }
+                    )
+                end
+            end
+        end
     end
 end
 

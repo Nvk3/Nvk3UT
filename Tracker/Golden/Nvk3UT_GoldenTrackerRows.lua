@@ -2254,6 +2254,10 @@ function Rows.ApplyCategoryRow(row, categoryData)
     return applyCategoryRow(row, categoryData)
 end
 
+function Rows.GetActiveCategoryRows()
+    return categoryPool.used or {}
+end
+
 function Rows.AcquireEntryRow(parent)
     return acquireEntryRow(parent)
 end

@@ -2242,6 +2242,10 @@ function Rows.GetCategoryRowHeight(expanded)
     return resolvedCategoryHeights[key] or getCategoryHeight(expanded)
 end
 
+function Rows.GetActiveCategoryRows()
+    return categoryPool.used or {}
+end
+
 function Rows.GetEntryRowHeight()
     return resolvedEntryHeight
 end

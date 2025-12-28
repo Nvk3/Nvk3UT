@@ -1317,6 +1317,20 @@ function Runtime:ProcessFrame(nowMs)
             end
         end
 
+        local shouldApplyAlignment = fullRebuildPending
+            or questDirty
+            or endeavorDirty
+            or achievementDirty
+            or goldenDirty
+            or refreshedQuest
+            or refreshedEndeavor
+            or refreshedAchievement
+            or goldenRefreshed
+
+        if shouldApplyAlignment then
+            applyAlignmentHooks()
+        end
+
         local layoutRequired = layoutDirty
             or questGeometryChanged
             or endeavorGeometryChanged
@@ -1364,21 +1378,6 @@ function Runtime:ProcessFrame(nowMs)
             debug("Runtime: achievement refresh + layout applied (height=%s)", tostring(achievementHeight))
         elseif shouldClearAchievementDirty and achievementDirty then
             dirty.achievement = true
-        end
-
-        local shouldApplyAlignment = fullRebuildPending
-            or questDirty
-            or endeavorDirty
-            or achievementDirty
-            or goldenDirty
-            or refreshedQuest
-            or refreshedEndeavor
-            or refreshedAchievement
-            or goldenRefreshed
-            or layoutRequired
-
-        if shouldApplyAlignment then
-            applyAlignmentHooks()
         end
 
         if interactivityDirty then
