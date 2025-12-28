@@ -400,6 +400,7 @@ local applyViewportPadding
 local applyScrollbarSide
 local measureTrackerContent
 local setScrollOffset
+local updateScrollBounds
 local updateScrollContentAnchors
 local anchorContainers
 local applyWindowBars
@@ -2290,6 +2291,45 @@ updateScrollContentAnchors = function()
     )
 end
 
+updateScrollBounds = function()
+    local viewport = state.scrollViewport
+    local scrollContent = state.scrollContent
+    local scrollbar = state.scrollbar
+    if not (viewport and scrollContent and scrollbar) then
+        return
+    end
+
+    local visibleHeight = Num0(viewport and viewport.GetHeight and viewport:GetHeight())
+    local contentHeight = Num0(scrollContent and scrollContent.GetHeight and scrollContent:GetHeight())
+    local maxOffset = math.max(contentHeight - visibleHeight, 0)
+
+    state.scrollMaxOffset = maxOffset
+
+    if scrollbar.SetMinMax then
+        state.updatingScrollbar = true
+        local ok, err = pcall(scrollbar.SetMinMax, scrollbar, 0, maxOffset)
+        state.updatingScrollbar = false
+        if not ok then
+            debugLog("Failed to update scroll range", err)
+        end
+    end
+
+    local showScrollbar = maxOffset > 0.5
+    if scrollbar.SetHidden then
+        scrollbar:SetHidden(not showScrollbar)
+    end
+
+    applyScrollbarSide(showScrollbar)
+
+    local desired = getCurrentScrollOffset()
+    if desired < 0 then
+        desired = 0
+    elseif desired > maxOffset then
+        desired = maxOffset
+    end
+    setScrollOffset(desired)
+end
+
 measureTrackerContent = function(container, trackerModule, sectionId)
     if not container or (container.IsHidden and container:IsHidden()) then
         return 0, 0
@@ -2568,6 +2608,10 @@ end
 
 function TrackerHost.SetScrollMaxOffset(maxOffset)
     state.scrollMaxOffset = math.max(0, tonumber(maxOffset) or 0)
+end
+
+function TrackerHost.UpdateScrollBounds()
+    updateScrollBounds()
 end
 
 function TrackerHost.GetScrollState()
@@ -3196,6 +3240,7 @@ local function anchorContainers()
     layoutModule = layoutModule or (Nvk3UT and Nvk3UT.TrackerHostLayout)
     if layoutModule and type(layoutModule.ApplyLayout) == "function" then
         layoutModule.ApplyLayout(TrackerHost)
+        updateScrollBounds()
         return
     end
 end
@@ -3474,6 +3519,7 @@ refreshScroll = function(targetOffset)
         debugFooterHeight = footerHeight
 
         layoutModule.ApplyLayout(TrackerHost, sizes)
+        updateScrollBounds()
     else
         local headerBar = state.headerBar
         local footerBar = state.footerBar
@@ -3594,30 +3640,7 @@ refreshScroll = function(targetOffset)
             scrollContent:SetHeight(contentHeight)
         end
 
-        local viewportHeight = Num0(scrollContainer and scrollContainer.GetHeight and scrollContainer:GetHeight())
-        local overshootPadding = 0
-        if viewportHeight > 0 and contentHeight > viewportHeight then
-            overshootPadding = SCROLL_OVERSHOOT_PADDING
-        end
-
-        local maxOffset = math.max(contentHeight - viewportHeight + overshootPadding, 0)
-        local showScrollbar = maxOffset > 0.5
-
-        if scrollbar.SetMinMax then
-            state.updatingScrollbar = true
-            local ok, err = pcall(scrollbar.SetMinMax, scrollbar, 0, maxOffset)
-            state.updatingScrollbar = false
-            if not ok then
-                debugLog("Failed to update scroll range", err)
-            end
-        end
-
-        if scrollbar.SetHidden then
-            scrollbar:SetHidden(not showScrollbar)
-        end
-
-        state.scrollMaxOffset = maxOffset
-        applyScrollbarSide(showScrollbar)
+        updateScrollBounds()
     end
 
     debugLog(string.format(
@@ -3633,9 +3656,9 @@ refreshScroll = function(targetOffset)
     ))
 
     local debugViewportHeight = nil
-    local scrollContainerForDebug = state.scrollContainer
-    if scrollContainerForDebug and scrollContainerForDebug.GetHeight then
-        local ok, h = pcall(scrollContainerForDebug.GetHeight, scrollContainerForDebug)
+    local viewportForDebug = state.scrollViewport
+    if viewportForDebug and viewportForDebug.GetHeight then
+        local ok, h = pcall(viewportForDebug.GetHeight, viewportForDebug)
         if ok and type(h) == "number" then
             debugViewportHeight = h
         end
@@ -3687,6 +3710,9 @@ local function createScrollViewport()
     end
 
     viewport:SetMouseEnabled(false)
+    if viewport.SetClipChildren then
+        viewport:SetClipChildren(true)
+    end
     if viewport.SetExcludeFromResizeToFitExtents then
         viewport:SetExcludeFromResizeToFitExtents(true)
     end
