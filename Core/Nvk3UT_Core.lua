@@ -136,6 +136,22 @@ function Addon:GetAlignmentMode()
     return "LEFT"
 end
 
+function Addon:GetScrollbarSide()
+    local sv = self.SV or self.sv
+    local settings = type(sv) == "table" and sv.Settings or nil
+    local host = settings and settings.Host or nil
+    local side = host and host.scrollbarSide or nil
+
+    if type(side) == "string" then
+        local normalized = side:upper()
+        if normalized == "LEFT" then
+            return "LEFT"
+        end
+    end
+
+    return "RIGHT"
+end
+
 function Addon:ApplyChevronLook_FromCornerTopRight(chevronControl, expanded)
     if expanded ~= true or not chevronControl then
         return
@@ -148,6 +164,36 @@ function Addon:ApplyChevronLook_FromCornerTopRight(chevronControl, expanded)
     if chevronControl.SetTextureRotation then
         chevronControl:SetTextureRotation(math.rad(225), 0.5, 0.5)
     end
+end
+
+function Addon:GetCategoryHeaderAlignmentAnchors(trackerId, headerControl)
+    local leftEdge = headerControl
+    local rightEdge = headerControl
+
+    local host = self.TrackerHost
+    local scrollContent = host and host.GetScrollContent and host:GetScrollContent()
+    local scrollContainer = host and host.GetScrollContainer and host:GetScrollContainer()
+
+    if headerControl and headerControl.GetParent then
+        local parent = headerControl:GetParent()
+        if parent then
+            leftEdge = parent
+            rightEdge = parent
+        end
+    end
+
+    if scrollContent then
+        leftEdge = scrollContent
+        rightEdge = scrollContent
+    end
+
+    if self:GetScrollbarSide() == "LEFT" then
+        if scrollContainer then
+            rightEdge = scrollContainer
+        end
+    end
+
+    return leftEdge, rightEdge
 end
 
 local function getIndentOffset(indentAnchor)
@@ -177,6 +223,8 @@ local function applyCategoryHeaderAlignment(root, label, chevron, counter, mode,
     local labelGap = (options and tonumber(options.labelGap)) or 4
     local applyStretch = options and options.stretchLabel == true
     local expanded = options and options.expanded == true
+    local leftEdge = options and options.leftEdge or root
+    local rightEdge = options and options.rightEdge or root
     local reparentOnScrollbarLeft = options and options.reparentOnScrollbarLeft == true
 
     local indentOffset = getIndentOffset(indentAnchor)
@@ -217,10 +265,10 @@ local function applyCategoryHeaderAlignment(root, label, chevron, counter, mode,
     end
 
     if normalized == "LEFT" then
-        chevron:SetAnchor(TOPLEFT, indentAnchor or root, TOPLEFT, leftChevronOffset, 0)
+        chevron:SetAnchor(TOPLEFT, indentAnchor or leftEdge, TOPLEFT, leftChevronOffset, 0)
         label:SetAnchor(TOPLEFT, chevron, TOPRIGHT, labelGap, 0)
         if applyStretch then
-            label:SetAnchor(TOPRIGHT, root, TOPRIGHT, 0, 0)
+            label:SetAnchor(TOPRIGHT, rightEdge, TOPRIGHT, 0, 0)
         end
         if counter then
             counter:SetAnchor(TOPLEFT, label, TOPRIGHT, labelGap, 0)
@@ -229,10 +277,10 @@ local function applyCategoryHeaderAlignment(root, label, chevron, counter, mode,
             label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
         end
     else
-        chevron:SetAnchor(TOPRIGHT, root, TOPRIGHT, -indentOffset, 0)
+        chevron:SetAnchor(TOPRIGHT, rightEdge, TOPRIGHT, -indentOffset, 0)
         label:SetAnchor(TOPRIGHT, chevron, TOPLEFT, -labelGap, 0)
         if applyStretch then
-            label:SetAnchor(TOPLEFT, root, TOPLEFT, 0, 0)
+            label:SetAnchor(TOPLEFT, leftEdge, TOPLEFT, 0, 0)
         end
         if counter then
             counter:SetAnchor(TOPRIGHT, label, TOPLEFT, -labelGap, 0)
@@ -273,12 +321,15 @@ function Addon:ApplyAlignment_Categories(alignmentMode)
                     local label = header.label or (header.GetNamedChild and header:GetNamedChild("Label"))
                     local chevron = header.toggle or (header.GetNamedChild and header:GetNamedChild("Toggle"))
                     local indentAnchor = header.indentAnchor or (header.GetNamedChild and header:GetNamedChild("IndentAnchor"))
+                    local leftEdge, rightEdge = self:GetCategoryHeaderAlignmentAnchors("quest", header)
                     applyCategoryHeaderAlignment(header, label, chevron, nil, mode, {
                         indentAnchor = indentAnchor,
                         labelGap = 4,
                         stretchLabel = true,
                         expanded = header.isExpanded == true,
                         reparentOnScrollbarLeft = true,
+                        leftEdge = leftEdge,
+                        rightEdge = rightEdge,
                     })
                 end
             end
@@ -293,12 +344,15 @@ function Addon:ApplyAlignment_Categories(alignmentMode)
                 local label = control.label or (control.GetNamedChild and control:GetNamedChild("Label"))
                 local chevron = control.toggle or (control.GetNamedChild and control:GetNamedChild("Toggle"))
                 local indentAnchor = control.indentAnchor or (control.GetNamedChild and control:GetNamedChild("IndentAnchor"))
+                local leftEdge, rightEdge = self:GetCategoryHeaderAlignmentAnchors("achievement", control)
                 applyCategoryHeaderAlignment(control, label, chevron, nil, mode, {
                     indentAnchor = indentAnchor,
                     labelGap = 4,
                     stretchLabel = true,
                     expanded = control.isExpanded == true,
                     reparentOnScrollbarLeft = true,
+                    leftEdge = leftEdge,
+                    rightEdge = rightEdge,
                 })
             end
         end
@@ -312,6 +366,7 @@ function Addon:ApplyAlignment_Categories(alignmentMode)
                 local row = rows[index]
                 local control = row and row.control
                 if control then
+                    local leftEdge, rightEdge = self:GetCategoryHeaderAlignmentAnchors("endeavor", control)
                     applyCategoryHeaderAlignment(
                         control,
                         row.label or control.label,
@@ -323,6 +378,8 @@ function Addon:ApplyAlignment_Categories(alignmentMode)
                             labelGap = 4,
                             expanded = row._nvk3utCategoryExpanded == true,
                             reparentOnScrollbarLeft = true,
+                            leftEdge = leftEdge,
+                            rightEdge = rightEdge,
                         }
                     )
                 end
@@ -338,6 +395,7 @@ function Addon:ApplyAlignment_Categories(alignmentMode)
                 local row = rows[index]
                 local control = row and row.control
                 if control then
+                    local leftEdge, rightEdge = self:GetCategoryHeaderAlignmentAnchors("golden", control)
                     applyCategoryHeaderAlignment(
                         control,
                         row.label or control.label,
@@ -350,6 +408,8 @@ function Addon:ApplyAlignment_Categories(alignmentMode)
                             stretchLabel = true,
                             expanded = row.__categoryExpanded == true,
                             reparentOnScrollbarLeft = true,
+                            leftEdge = leftEdge,
+                            rightEdge = rightEdge,
                         }
                     )
                 end
