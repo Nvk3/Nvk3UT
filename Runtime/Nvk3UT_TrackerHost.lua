@@ -3277,6 +3277,7 @@ applyScrollbarSide = function(showScrollbar)
     if showScrollbar then
         if getScrollbarSide() == "left" then
             desiredLeftOffset = scrollbarWidth
+            desiredRightOffset = -RESIZE_BORDER_THICKNESS
         else
             desiredRightOffset = -scrollbarWidth
         end
