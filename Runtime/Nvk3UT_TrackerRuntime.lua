@@ -91,6 +91,34 @@ local function safeCall(fn, ...)
     return nil
 end
 
+local function applyAlignmentHooks()
+    if type(Addon) ~= "table" then
+        return
+    end
+
+    local getAlignment = Addon.GetAlignmentMode
+    if type(getAlignment) ~= "function" then
+        return
+    end
+
+    local mode = getAlignment(Addon)
+
+    local applyCategories = Addon.ApplyAlignment_Categories
+    if type(applyCategories) == "function" then
+        safeCall(applyCategories, Addon, mode)
+    end
+
+    local applyEntries = Addon.ApplyAlignment_Entries
+    if type(applyEntries) == "function" then
+        safeCall(applyEntries, Addon, mode)
+    end
+
+    local applyObjectives = Addon.ApplyAlignment_Objectives
+    if type(applyObjectives) == "function" then
+        safeCall(applyObjectives, Addon, mode)
+    end
+end
+
 local function getHostWindow()
     local ref = Runtime._hostRef
     if type(ref) ~= "table" then
@@ -1336,6 +1364,21 @@ function Runtime:ProcessFrame(nowMs)
             debug("Runtime: achievement refresh + layout applied (height=%s)", tostring(achievementHeight))
         elseif shouldClearAchievementDirty and achievementDirty then
             dirty.achievement = true
+        end
+
+        local shouldApplyAlignment = fullRebuildPending
+            or questDirty
+            or endeavorDirty
+            or achievementDirty
+            or goldenDirty
+            or refreshedQuest
+            or refreshedEndeavor
+            or refreshedAchievement
+            or goldenRefreshed
+            or layoutRequired
+
+        if shouldApplyAlignment then
+            applyAlignmentHooks()
         end
 
         if interactivityDirty then

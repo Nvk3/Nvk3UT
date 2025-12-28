@@ -328,6 +328,7 @@ local DEFAULT_HOST_SETTINGS = {
     HideInCombat = false,
     CornerButtonEnabled = true,
     CornerPosition = "TOP_RIGHT",
+    alignment = "LEFT",
     sectionOrder = {
         "questSectionContainer",
         "endeavorSectionContainer",

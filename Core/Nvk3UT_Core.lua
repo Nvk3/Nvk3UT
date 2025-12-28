@@ -120,6 +120,40 @@ function Addon:GetVersion()
     return self.addonVersion
 end
 
+function Addon:GetAlignmentMode()
+    local sv = self.SV or self.sv
+    local settings = type(sv) == "table" and sv.Settings or nil
+    local host = settings and settings.Host or nil
+    local alignment = host and host.alignment or nil
+
+    if type(alignment) == "string" then
+        local normalized = alignment:upper()
+        if normalized == "RIGHT" then
+            return "RIGHT"
+        end
+    end
+
+    return "LEFT"
+end
+
+function Addon:ApplyAlignment_Categories(alignmentMode)
+    if type(self.Debug) == "function" then
+        self.Debug("Alignment: categories -> %s", tostring(alignmentMode))
+    end
+end
+
+function Addon:ApplyAlignment_Entries(alignmentMode)
+    if type(self.Debug) == "function" then
+        self.Debug("Alignment: entries -> %s", tostring(alignmentMode))
+    end
+end
+
+function Addon:ApplyAlignment_Objectives(alignmentMode)
+    if type(self.Debug) == "function" then
+        self.Debug("Alignment: objectives -> %s", tostring(alignmentMode))
+    end
+end
+
 function Addon:IsDebugEnabled()
     return self.debugEnabled == true
 end

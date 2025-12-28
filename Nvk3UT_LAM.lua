@@ -170,6 +170,7 @@ local DEFAULT_HOST_SETTINGS = {
     HideInCombat = false,
     CornerButtonEnabled = true,
     CornerPosition = "TOP_RIGHT",
+    alignment = "LEFT",
     scrollbarSide = "right",
     sectionOrder = {
         "questSectionContainer",
@@ -244,6 +245,19 @@ local function normalizeScrollbarSide(value)
     end
 
     return DEFAULT_HOST_SETTINGS.scrollbarSide
+end
+
+local function normalizeAlignmentMode(value)
+    if type(value) ~= "string" then
+        return DEFAULT_HOST_SETTINGS.alignment
+    end
+
+    local normalized = value:upper()
+    if normalized == "LEFT" or normalized == "RIGHT" then
+        return normalized
+    end
+
+    return DEFAULT_HOST_SETTINGS.alignment
 end
 
 local function getSavedVars()
@@ -358,6 +372,7 @@ local function getHostSettings()
 
     host.CornerPosition = normalizeCornerPosition(host.CornerPosition)
     host.scrollbarSide = normalizeScrollbarSide(host.scrollbarSide)
+    host.alignment = normalizeAlignmentMode(host.alignment)
     host.sectionOrder = normalizeSectionOrder(host.sectionOrder)
 
     return host
@@ -2191,6 +2206,31 @@ local function registerPanel(displayTitle)
             })
 
             controls[#controls + 1] = { type = "header", name = GetString(SI_NVK3UT_LAM_TRACKER_HOST_HEADER_LAYOUT) }
+
+            addControl({
+                type = "dropdown",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_ALIGNMENT),
+                tooltip = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_ALIGNMENT_DESC),
+                choices = {
+                    GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_ALIGNMENT_LEFT),
+                    GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_ALIGNMENT_RIGHT),
+                },
+                choicesValues = { "LEFT", "RIGHT" },
+                getFunc = function()
+                    local settings = getHostSettings()
+                    return settings.alignment
+                end,
+                setFunc = function(value)
+                    local settings = getHostSettings()
+                    local normalized = normalizeAlignmentMode(value)
+                    if settings.alignment == normalized then
+                        return
+                    end
+                    settings.alignment = normalized
+                    LamQueueFullRebuild("alignmentMode")
+                end,
+                default = DEFAULT_HOST_SETTINGS.alignment,
+            })
 
             addControl({
                 type = "checkbox",
