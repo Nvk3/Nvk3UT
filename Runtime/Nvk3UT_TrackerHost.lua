@@ -1579,26 +1579,22 @@ local function logGoldenLabelWidths(phase)
     end
 
     local goldenTracker = Nvk3UT and Nvk3UT.GoldenTracker
-    local rows = goldenTracker and goldenTracker.rows
     local categoryControl = nil
     local entryControl = nil
     local objectiveControls = {}
+    local debugRows = goldenTracker and goldenTracker._debugRows
+    local categoryRow = debugRows and debugRows.category
+    local entryRow = debugRows and debugRows.entry
+    local objectiveRows = debugRows and debugRows.objectives
 
-    if type(rows) == "table" then
-        for index = 1, #rows do
-            local control = rows[index]
-            local rowKind = control and control.__rowKind
-            if rowKind == "category" and not categoryControl then
-                categoryControl = control
-            elseif rowKind == "entry" and not entryControl then
-                entryControl = control
-            elseif rowKind == "objective" and #objectiveControls < 2 then
-                objectiveControls[#objectiveControls + 1] = control
-            end
-
-            if categoryControl and entryControl and #objectiveControls >= 2 then
-                break
-            end
+    categoryControl = categoryRow and categoryRow.control or categoryRow
+    entryControl = entryRow and entryRow.control or entryRow
+    if type(objectiveRows) == "table" then
+        if objectiveRows[1] then
+            objectiveControls[1] = objectiveRows[1].control or objectiveRows[1]
+        end
+        if objectiveRows[2] then
+            objectiveControls[2] = objectiveRows[2].control or objectiveRows[2]
         end
     end
 
@@ -1642,10 +1638,12 @@ local function logGoldenLabelWidths(phase)
 
     local obj1 = objectiveControls[1]
     local obj2 = objectiveControls[2]
-    local obj1Label = obj1 and obj1.label or nil
-    local obj2Label = obj2 and obj2.label or nil
-    local obj1Pin = obj1 and obj1.pinLabel or nil
-    local obj2Pin = obj2 and obj2.pinLabel or nil
+    local obj1Row = objectiveRows and objectiveRows[1] or nil
+    local obj2Row = objectiveRows and objectiveRows[2] or nil
+    local obj1Label = obj1Row and obj1Row.label or nil
+    local obj2Label = obj2Row and obj2Row.label or nil
+    local obj1Pin = obj1Row and obj1Row.pinLabel or nil
+    local obj2Pin = obj2Row and obj2Row.pinLabel or nil
 
     local hasCategory = logLabelLine("category", categoryLabel, categoryControl, nil)
     local hasEntry = logLabelLine("entry", entryLabel, entryControl, nil)
@@ -1653,6 +1651,74 @@ local function logGoldenLabelWidths(phase)
     local hasObj2 = logLabelLine("obj2", obj2Label, obj2, obj2Pin)
 
     return hasCategory and hasEntry and hasObj1 and hasObj2
+end
+
+local function logGoldenClipChain(phase)
+    if not isDebugEnabled() then
+        return true
+    end
+
+    local goldenTracker = Nvk3UT and Nvk3UT.GoldenTracker
+    local debugRows = goldenTracker and goldenTracker._debugRows
+    local categoryRow = debugRows and debugRows.category
+    local entryRow = debugRows and debugRows.entry
+    local categoryControl = categoryRow and (categoryRow.control or categoryRow) or nil
+    local entryControl = entryRow and (entryRow.control or entryRow) or nil
+    local chevron = categoryRow and categoryRow.chevron or nil
+    local categoryLabel = categoryRow and categoryRow.label or nil
+    local entryLabel = entryRow and entryRow.label or nil
+
+    debugLog(string.format(
+        "GoldenClipChain%s side=%s",
+        phase and ("." .. tostring(phase)) or "",
+        tostring(getScrollbarSide())
+    ))
+
+    local function logChain(label, control)
+        if not control then
+            debugLog(string.format("GoldenClip[%s] nil", label))
+            return false
+        end
+
+        local current = control
+        for depth = 1, 8 do
+            if not current then
+                break
+            end
+
+            local name = current.GetName and current:GetName()
+            if name == nil or name == "" then
+                name = "unnamed"
+            end
+            local width = formatControlWidth(current)
+            local clips = "n/a"
+            if current.GetClipsChildren then
+                clips = tostring(current:GetClipsChildren())
+            end
+
+            debugLog(string.format(
+                "GoldenClip[%s] depth=%d name=%s width=%s clipsChildren=%s",
+                label,
+                depth,
+                tostring(name),
+                width,
+                clips
+            ))
+
+            current = current.GetParent and current:GetParent() or nil
+        end
+
+        return true
+    end
+
+    local hasChevron = logChain("chevron", chevron)
+    local hasCategory = logChain("categoryLabel", categoryLabel)
+    local hasEntry = true
+    if entryControl or entryLabel then
+        hasEntry = logChain("entryLabel", entryLabel)
+    end
+
+    return hasChevron and hasCategory and hasEntry
 end
 
 local function safeCall(fn, ...)
@@ -3446,7 +3512,8 @@ applyScrollbarSide = function(showScrollbar)
     updateScrollContentAnchors()
     logScrollbarSideSizes("apply")
     local goldenReady = logGoldenLabelWidths("apply")
-    state.pendingGoldenLabelLog = not goldenReady
+    local clipReady = logGoldenClipChain("apply")
+    state.pendingGoldenLabelLog = not (goldenReady and clipReady)
 end
 
 applyViewportPadding = function()
@@ -4659,6 +4726,7 @@ local function refreshWindowLayout(targetOffset)
 
     if state.pendingGoldenLabelLog then
         logGoldenLabelWidths("postLayout")
+        logGoldenClipChain("postLayout")
         state.pendingGoldenLabelLog = false
     end
 end

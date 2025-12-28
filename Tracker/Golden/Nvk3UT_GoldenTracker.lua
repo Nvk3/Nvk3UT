@@ -1204,6 +1204,12 @@ function GoldenTracker.Refresh(...)
     resetRows(rows)
     tracker.rows = rows
 
+    local debugRows = tracker._debugRows or {}
+    debugRows.category = nil
+    debugRows.entry = nil
+    debugRows.objectives = {}
+    tracker._debugRows = debugRows
+
     if not hasEntriesForTracker then
         tracker.height = 0
         state.height = 0
@@ -1254,6 +1260,7 @@ function GoldenTracker.Refresh(...)
 
             if categoryRow then
                 table.insert(rows, categoryRow.control or categoryRow)
+                debugRows.category = categoryRow
             end
 
             if categoryExpanded then
@@ -1272,6 +1279,7 @@ function GoldenTracker.Refresh(...)
 
                 if campaignRow then
                     table.insert(rows, campaignRow.control or campaignRow)
+                    debugRows.entry = campaignRow
                 end
             end
         end
@@ -1304,6 +1312,7 @@ function GoldenTracker.Refresh(...)
 
                     if objectiveRow then
                         table.insert(rows, objectiveRow.control or objectiveRow)
+                        debugRows.objectives[#debugRows.objectives + 1] = objectiveRow
                     end
                 end
             end
