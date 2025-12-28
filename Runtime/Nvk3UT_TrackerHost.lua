@@ -1547,24 +1547,6 @@ local function logScrollbarSideSizes(phase)
     ))
 end
 
-local function resolveGoldenLabelControl(rowControl, suffix)
-    if not rowControl then
-        return nil
-    end
-
-    local label = rowControl.label or rowControl.Label
-    if label then
-        return label
-    end
-
-    local controlName = rowControl.GetName and rowControl:GetName()
-    if not controlName then
-        return nil
-    end
-
-    return _G[string.format("%s_%sLabel", controlName, suffix)]
-end
-
 local function formatLabelTextWidth(label)
     if not (label and label.GetTextWidth) then
         return "n/a"
@@ -1623,44 +1605,52 @@ local function logGoldenLabelWidths(phase)
     local scrollContainerWidth = formatControlWidth(state.scrollContainer)
     local scrollContentWidth = formatControlWidth(state.scrollContent)
     debugLog(string.format(
-        "GoldenLabelWidths%s side=%s scrollContainer=%s scrollContent=%s",
+        "GoldenLabels%s side=%s scrollContainer=%s scrollContent=%s",
         phase and ("." .. tostring(phase)) or "",
         tostring(getScrollbarSide()),
         scrollContainerWidth,
         scrollContentWidth
     ))
 
-    local function logLabelLine(labelName, label, rowControl, suffix)
-        local resolvedLabel = label or resolveGoldenLabelControl(rowControl, suffix)
-        local labelWidth = resolvedLabel and formatControlWidth(resolvedLabel) or "nil"
-        local textWidth = formatLabelTextWidth(resolvedLabel)
-        local parent = resolvedLabel and resolvedLabel.GetParent and resolvedLabel:GetParent() or nil
+    local function logLabelLine(labelName, label, rowControl, pinLabel)
+        local labelWidth = label and formatControlWidth(label) or "nil"
+        local textWidth = formatLabelTextWidth(label)
+        local parent = label and label.GetParent and label:GetParent() or nil
         local parentName = parent and parent.GetName and parent:GetName() or "nil"
         local parentWidth = formatControlWidth(parent)
         local rowName = rowControl and rowControl.GetName and rowControl:GetName() or "nil"
         local rowWidth = formatControlWidth(rowControl)
+        local pinWidth = pinLabel and formatControlWidth(pinLabel) or "nil"
 
         debugLog(string.format(
-            "GoldenLabel[%s] labelWidth=%s textWidth=%s parent=%s parentWidth=%s row=%s rowWidth=%s",
+            "GoldenLabel[%s] labelWidth=%s textWidth=%s parent=%s parentWidth=%s row=%s rowWidth=%s pinWidth=%s",
             labelName,
             labelWidth,
             textWidth,
             tostring(parentName),
             parentWidth,
             tostring(rowName),
-            rowWidth
+            rowWidth,
+            pinWidth
         ))
 
-        return resolvedLabel ~= nil
+        return label ~= nil
     end
 
-    local categoryLabel = categoryControl and (categoryControl.label or categoryControl.Label) or nil
-    local entryLabel = entryControl and (entryControl.label or entryControl.Label) or nil
+    local categoryLabel = categoryControl and categoryControl.label or nil
+    local entryLabel = entryControl and entryControl.label or nil
 
-    local hasCategory = logLabelLine("category", categoryLabel, categoryControl, "Category")
-    local hasEntry = logLabelLine("entry", entryLabel, entryControl, "EntryTitle")
-    local hasObj1 = logLabelLine("obj1", nil, objectiveControls[1], "Objective")
-    local hasObj2 = logLabelLine("obj2", nil, objectiveControls[2], "Objective")
+    local obj1 = objectiveControls[1]
+    local obj2 = objectiveControls[2]
+    local obj1Label = obj1 and obj1.label or nil
+    local obj2Label = obj2 and obj2.label or nil
+    local obj1Pin = obj1 and obj1.pinLabel or nil
+    local obj2Pin = obj2 and obj2.pinLabel or nil
+
+    local hasCategory = logLabelLine("category", categoryLabel, categoryControl, nil)
+    local hasEntry = logLabelLine("entry", entryLabel, entryControl, nil)
+    local hasObj1 = logLabelLine("obj1", obj1Label, obj1, obj1Pin)
+    local hasObj2 = logLabelLine("obj2", obj2Label, obj2, obj2Pin)
 
     return hasCategory and hasEntry and hasObj1 and hasObj2
 end
