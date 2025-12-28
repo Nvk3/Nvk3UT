@@ -1511,6 +1511,41 @@ local function visibilityDebug(fmt, ...)
     diagnosticsDebug(fmt, ...)
 end
 
+local function logScrollbarSideSizes(phase)
+    if not isDebugEnabled() then
+        return
+    end
+
+    local function formatControlSize(control)
+        if not (control and control.GetWidth and control.GetHeight) then
+            return "nil"
+        end
+
+        local width = control:GetWidth()
+        local height = control:GetHeight()
+        if width == nil or height == nil then
+            return "nil"
+        end
+
+        return string.format("w=%.2f h=%.2f", width, height)
+    end
+
+    debugLog(string.format(
+        "ScrollbarSideChange%s side=%s",
+        phase and ("." .. tostring(phase)) or "",
+        tostring(getScrollbarSide())
+    ))
+    debugLog(string.format("root=%s", formatControlSize(state.root)))
+    debugLog(string.format("clientArea=%s", formatControlSize(state.clientArea)))
+    debugLog(string.format("scrollContainer=%s", formatControlSize(state.scrollContainer)))
+    debugLog(string.format("scrollContent=%s", formatControlSize(state.scrollContent)))
+    debugLog(string.format(
+        "scrollContentOffsets left=%s right=%s",
+        tostring(state.scrollContentLeftOffset),
+        tostring(state.scrollContentRightOffset)
+    ))
+end
+
 local function safeCall(fn, ...)
     local safe = Nvk3UT and Nvk3UT.SafeCall
     if type(safe) == "function" then
@@ -3300,6 +3335,7 @@ applyScrollbarSide = function(showScrollbar)
     end
 
     updateScrollContentAnchors()
+    logScrollbarSideSizes("apply")
 end
 
 applyViewportPadding = function()
