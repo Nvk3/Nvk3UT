@@ -3700,24 +3700,9 @@ local function createScrollContainer()
     end
 
     local parent = state.scrollViewport or state.clientArea or state.root
-
-    local createdFromTemplate = false
-    local scrollContainer = WINDOW_MANAGER:CreateControlFromVirtual(
-        SCROLL_CONTAINER_NAME,
-        parent,
-        "ZO_ScrollContainer"
-    )
-    if scrollContainer then
-        createdFromTemplate = true
-    else
-        scrollContainer = WINDOW_MANAGER:CreateControl(SCROLL_CONTAINER_NAME, parent, CT_SCROLL)
-    end
+    local scrollContainer = WINDOW_MANAGER:CreateControl(SCROLL_CONTAINER_NAME, parent, CT_CONTROL)
     if not scrollContainer then
         return
-    end
-
-    if createdFromTemplate and type(ZO_Scroll_Initialize) == "function" then
-        ZO_Scroll_Initialize(scrollContainer)
     end
 
     scrollContainer:SetMouseEnabled(false)
@@ -3748,16 +3733,9 @@ local function createScrollContainer()
         state.scrollBackground = scrollBackground
     end
 
-    local scrollContent = scrollContainer:GetNamedChild("ScrollChild")
-    if scrollContent then
-        if scrollContent.SetName then
-            scrollContent:SetName(SCROLL_CONTENT_NAME)
-        end
-    else
-        scrollContent = WINDOW_MANAGER:CreateControl(SCROLL_CONTENT_NAME, scrollContainer, CT_CONTROL)
-        if scrollContainer.SetScrollChild then
-            scrollContainer:SetScrollChild(scrollContent)
-        end
+    local scrollContent = WINDOW_MANAGER:CreateControl(SCROLL_CONTENT_NAME, scrollContainer, CT_CONTROL)
+    if not scrollContent then
+        return
     end
 
     scrollContent:SetMouseEnabled(false)
@@ -3768,27 +3746,16 @@ local function createScrollContainer()
         scrollContent:SetResizeToFitDescendents(false)
     end
 
-    local scrollbar = scrollContainer:GetNamedChild("ScrollBar")
-    if scrollbar then
-        if scrollbar.SetName then
-            scrollbar:SetName(SCROLLBAR_NAME)
-        end
-    elseif not createdFromTemplate then
-        scrollbar = WINDOW_MANAGER:CreateControl(SCROLLBAR_NAME, scrollContainer, CT_SCROLLBAR)
-    end
+    local scrollbarParent = state.clientArea or state.root
+    local scrollbar = WINDOW_MANAGER:CreateControl(SCROLLBAR_NAME, scrollbarParent, CT_SCROLLBAR)
 
     if scrollbar then
         scrollbar:SetMouseEnabled(true)
-        if not createdFromTemplate then
-            scrollbar:ClearAnchors()
-            scrollbar:SetAnchor(TOPRIGHT, scrollContainer, TOPRIGHT, 0, 0)
-            scrollbar:SetAnchor(BOTTOMRIGHT, scrollContainer, BOTTOMRIGHT, 0, 0)
-            if scrollbar.SetWidth then
-                scrollbar:SetWidth(SCROLLBAR_WIDTH)
-            end
-        end
-        if createdFromTemplate and not scrollbar.GetName then
-            debugLog("TrackerHost: Scrollbar from template is missing expected API")
+        scrollbar:ClearAnchors()
+        scrollbar:SetAnchor(TOPRIGHT, scrollbarParent, TOPRIGHT, 0, 0)
+        scrollbar:SetAnchor(BOTTOMRIGHT, scrollbarParent, BOTTOMRIGHT, 0, 0)
+        if scrollbar.SetWidth then
+            scrollbar:SetWidth(SCROLLBAR_WIDTH)
         end
         if scrollbar.SetHidden then
             scrollbar:SetHidden(true)
@@ -3812,10 +3779,6 @@ local function createScrollContainer()
             end
             setScrollOffset(value, true)
         end)
-    end
-
-    if createdFromTemplate and not scrollbar then
-        debugLog("TrackerHost: ZO_ScrollContainer template missing ScrollBar child")
     end
 
     scrollContainer:SetHandler("OnMouseWheel", function(_, delta)
