@@ -177,9 +177,35 @@ local function applyCategoryHeaderAlignment(root, label, chevron, counter, mode,
     local labelGap = (options and tonumber(options.labelGap)) or 4
     local applyStretch = options and options.stretchLabel == true
     local expanded = options and options.expanded == true
+    local scrollbarSide = options and options.scrollbarSide
+    local reparentOnScrollbarLeft = options and options.reparentOnScrollbarLeft == true
 
     local indentOffset = getIndentOffset(indentAnchor)
     local leftChevronOffset = indentAnchor and 0 or indentOffset
+
+    if scrollbarSide == "left" and reparentOnScrollbarLeft and indentAnchor then
+        if normalized == "RIGHT" then
+            if chevron.SetParent and chevron.GetParent and chevron:GetParent() == indentAnchor then
+                chevron:SetParent(root)
+            end
+            if label.SetParent and label.GetParent and label:GetParent() == indentAnchor then
+                label:SetParent(root)
+            end
+            if counter and counter.SetParent and counter.GetParent and counter:GetParent() == indentAnchor then
+                counter:SetParent(root)
+            end
+        else
+            if chevron.SetParent and chevron.GetParent and chevron:GetParent() ~= indentAnchor then
+                chevron:SetParent(indentAnchor)
+            end
+            if label.SetParent and label.GetParent and label:GetParent() ~= indentAnchor then
+                label:SetParent(indentAnchor)
+            end
+            if counter and counter.SetParent and counter.GetParent and counter:GetParent() ~= indentAnchor then
+                counter:SetParent(indentAnchor)
+            end
+        end
+    end
 
     if chevron.ClearAnchors then
         chevron:ClearAnchors()
@@ -238,6 +264,11 @@ function Addon:ApplyAlignment_Categories(alignmentMode)
         mode = "LEFT"
     end
 
+    local sv = self.SV or self.sv
+    local settings = type(sv) == "table" and sv.Settings or nil
+    local hostSettings = settings and settings.Host or nil
+    local scrollbarSide = hostSettings and hostSettings.scrollbarSide
+
     local questRows = self.QuestTrackerRows
     if questRows and type(questRows.GetCategoryControls) == "function" then
         local ok, controls = pcall(questRows.GetCategoryControls, questRows)
@@ -253,6 +284,7 @@ function Addon:ApplyAlignment_Categories(alignmentMode)
                         labelGap = 4,
                         stretchLabel = true,
                         expanded = header.isExpanded == true,
+                        scrollbarSide = scrollbarSide,
                     })
                 end
             end
@@ -272,6 +304,7 @@ function Addon:ApplyAlignment_Categories(alignmentMode)
                     labelGap = 4,
                     stretchLabel = true,
                     expanded = control.isExpanded == true,
+                    scrollbarSide = scrollbarSide,
                 })
             end
         end
@@ -295,6 +328,8 @@ function Addon:ApplyAlignment_Categories(alignmentMode)
                             indentAnchor = row.indentAnchor,
                             labelGap = 4,
                             expanded = row._nvk3utCategoryExpanded == true,
+                            scrollbarSide = scrollbarSide,
+                            reparentOnScrollbarLeft = true,
                         }
                     )
                 end
@@ -321,6 +356,8 @@ function Addon:ApplyAlignment_Categories(alignmentMode)
                             labelGap = 4,
                             stretchLabel = true,
                             expanded = row.__categoryExpanded == true,
+                            scrollbarSide = scrollbarSide,
+                            reparentOnScrollbarLeft = true,
                         }
                     )
                 end
