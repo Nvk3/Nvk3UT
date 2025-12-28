@@ -19,6 +19,7 @@ local ACHIEVEMENT_CONTAINER_NAME = addonName .. "_AchievementContainer"
 local GOLDEN_CONTAINER_NAME = addonName .. "_GoldenContainer"
 local SECTION_TEMPLATE_NAME = "Nvk3UT_SectionContainerTemplate"
 local SCROLL_CONTAINER_NAME = addonName .. "_ScrollContainer"
+local SCROLL_VIEWPORT_NAME = SCROLL_CONTAINER_NAME .. "_Viewport"
 local SCROLL_BACKGROUND_NAME = SCROLL_CONTAINER_NAME .. "_Background"
 local SCROLL_CONTENT_NAME = SCROLL_CONTAINER_NAME .. "_Content"
 local SCROLLBAR_NAME = SCROLL_CONTAINER_NAME .. "_ScrollBar"
@@ -240,6 +241,7 @@ local state = {
     scrollContainer = nil,
     scrollContent = nil,
     scrollbar = nil,
+    scrollViewport = nil,
     clientArea = nil,
     scrollContentLeftOffset = 0,
     scrollContentRightOffset = 0,
@@ -2276,14 +2278,14 @@ updateScrollContentAnchors = function()
         TOPLEFT,
         scrollContainer,
         TOPLEFT,
-        state.scrollContentLeftOffset or 0,
+        0,
         offsetY
     )
     scrollContent:SetAnchor(
         TOPRIGHT,
         scrollContainer,
         TOPRIGHT,
-        state.scrollContentRightOffset or 0,
+        0,
         offsetY
     )
 end
@@ -3256,9 +3258,51 @@ applyWindowBars = function()
     anchorContainers()
 end
 
+local function updateViewportAnchors(showScrollbar, scrollbarWidth)
+    local viewport = state.scrollViewport
+    local clientArea = state.clientArea or state.root
+    if not (viewport and clientArea) then
+        return
+    end
+
+    local appearance = state.appearance or ensureAppearanceSettings()
+    local padding = math.max(0, tonumber(appearance and appearance.padding) or 0)
+    local width = tonumber(scrollbarWidth) or 0
+    if width <= 0 then
+        width = SCROLLBAR_WIDTH
+    end
+
+    local gap = 0
+    local leftOffset = padding
+    local rightOffset = -padding
+    if showScrollbar then
+        if getScrollbarSide() == "left" then
+            leftOffset = padding + width + gap
+        else
+            rightOffset = -padding - width - gap
+        end
+    end
+
+    viewport:ClearAnchors()
+    viewport:SetAnchor(TOPLEFT, clientArea, TOPLEFT, leftOffset, padding)
+    viewport:SetAnchor(BOTTOMRIGHT, clientArea, BOTTOMRIGHT, rightOffset, -padding)
+end
+
+local function updateScrollContainerAnchors()
+    local scrollContainer = state.scrollContainer
+    local viewport = state.scrollViewport
+    if not (scrollContainer and viewport) then
+        return
+    end
+
+    scrollContainer:ClearAnchors()
+    scrollContainer:SetAnchor(TOPLEFT, viewport, TOPLEFT, 0, 0)
+    scrollContainer:SetAnchor(BOTTOMRIGHT, viewport, BOTTOMRIGHT, 0, 0)
+end
+
 applyScrollbarSide = function(showScrollbar)
     local scrollbar = state.scrollbar
-    local parent = state.scrollContainer or state.clientArea or state.root
+    local clientArea = state.clientArea or state.root
     local scrollbarWidth = Num0(scrollbar and scrollbar.GetWidth and scrollbar:GetWidth())
     if scrollbarWidth <= 0 then
         scrollbarWidth = SCROLLBAR_WIDTH
@@ -3272,33 +3316,25 @@ applyScrollbarSide = function(showScrollbar)
         end
     end
 
-    local desiredLeftOffset = 0
-    local desiredRightOffset = 0
-    if showScrollbar then
-        if getScrollbarSide() == "left" then
-            desiredLeftOffset = scrollbarWidth
-        else
-            desiredRightOffset = -scrollbarWidth
+    if scrollbar and clientArea then
+        if scrollbar.GetParent and scrollbar:GetParent() ~= clientArea then
+            scrollbar:SetParent(clientArea)
         end
-    end
-
-    state.scrollContentLeftOffset = desiredLeftOffset
-    state.scrollContentRightOffset = desiredRightOffset
-
-    if scrollbar and parent then
         scrollbar:ClearAnchors()
         if getScrollbarSide() == "left" then
-            scrollbar:SetAnchor(TOPLEFT, parent, TOPLEFT, 0, 0)
-            scrollbar:SetAnchor(BOTTOMLEFT, parent, BOTTOMLEFT, 0, 0)
+            scrollbar:SetAnchor(TOPLEFT, clientArea, TOPLEFT, 0, 0)
+            scrollbar:SetAnchor(BOTTOMLEFT, clientArea, BOTTOMLEFT, 0, 0)
         else
-            scrollbar:SetAnchor(TOPRIGHT, parent, TOPRIGHT, 0, 0)
-            scrollbar:SetAnchor(BOTTOMRIGHT, parent, BOTTOMRIGHT, 0, 0)
+            scrollbar:SetAnchor(TOPRIGHT, clientArea, TOPRIGHT, 0, 0)
+            scrollbar:SetAnchor(BOTTOMRIGHT, clientArea, BOTTOMRIGHT, 0, 0)
         end
         if scrollbar.SetWidth then
             scrollbar:SetWidth(SCROLLBAR_WIDTH)
         end
     end
 
+    updateViewportAnchors(showScrollbar, scrollbarWidth)
+    updateScrollContainerAnchors()
     updateScrollContentAnchors()
 end
 
@@ -3307,17 +3343,7 @@ applyViewportPadding = function()
     if not state.root then
         return
     end
-
-    local padding = math.max(0, tonumber(appearance and appearance.padding) or 0)
-
-    local containerParent = state.clientArea or state.root
-
-    if state.scrollContainer and containerParent then
-        state.scrollContainer:ClearAnchors()
-        state.scrollContainer:SetAnchor(TOPLEFT, containerParent, TOPLEFT, padding, padding)
-        state.scrollContainer:SetAnchor(BOTTOMRIGHT, containerParent, BOTTOMRIGHT, -padding, -padding)
-    end
-
+    state.appearance = appearance
     applyScrollbarSide()
 end
 
@@ -3650,12 +3676,30 @@ local function createDragLayer()
     state.dragLayer = dragLayer
 end
 
+local function createScrollViewport()
+    if state.scrollViewport or not (state.clientArea and WINDOW_MANAGER) then
+        return
+    end
+
+    local viewport = WINDOW_MANAGER:CreateControl(SCROLL_VIEWPORT_NAME, state.clientArea, CT_CONTROL)
+    if not viewport then
+        return
+    end
+
+    viewport:SetMouseEnabled(false)
+    if viewport.SetExcludeFromResizeToFitExtents then
+        viewport:SetExcludeFromResizeToFitExtents(true)
+    end
+
+    state.scrollViewport = viewport
+end
+
 local function createScrollContainer()
     if state.scrollContainer or not (state.root and WINDOW_MANAGER) then
         return
     end
 
-    local parent = state.clientArea or state.root
+    local parent = state.scrollViewport or state.clientArea or state.root
 
     local createdFromTemplate = false
     local scrollContainer = WINDOW_MANAGER:CreateControlFromVirtual(
@@ -3781,8 +3825,6 @@ local function createScrollContainer()
     state.scrollContainer = scrollContainer
     state.scrollContent = scrollContent
     state.scrollbar = scrollbar
-    state.scrollContentLeftOffset = 0
-    state.scrollContentRightOffset = 0
     state.scrollOffset = 0
     state.desiredScrollOffset = 0
     state.scrollMaxOffset = 0
@@ -4115,6 +4157,7 @@ local function createContainers()
     end
 
     createDragLayer()
+    createScrollViewport()
     createScrollContainer()
     createResizeGrip()
 
@@ -5739,6 +5782,7 @@ function TrackerHost.Shutdown()
         state.scrollContent:SetParent(nil)
     end
     state.scrollContent = nil
+    state.scrollContentLeftOffset = 0
     state.scrollContentRightOffset = 0
     state.scrollOffset = 0
     state.desiredScrollOffset = 0
@@ -5750,6 +5794,11 @@ function TrackerHost.Shutdown()
         state.scrollContainer:SetParent(nil)
     end
     state.scrollContainer = nil
+
+    if state.scrollViewport then
+        state.scrollViewport:SetParent(nil)
+    end
+    state.scrollViewport = nil
 
     if state.backdrop then
         state.backdrop:SetHidden(true)
