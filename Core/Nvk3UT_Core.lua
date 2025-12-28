@@ -177,13 +177,12 @@ local function applyCategoryHeaderAlignment(root, label, chevron, counter, mode,
     local labelGap = (options and tonumber(options.labelGap)) or 4
     local applyStretch = options and options.stretchLabel == true
     local expanded = options and options.expanded == true
-    local scrollbarSide = options and options.scrollbarSide
     local reparentOnScrollbarLeft = options and options.reparentOnScrollbarLeft == true
 
     local indentOffset = getIndentOffset(indentAnchor)
     local leftChevronOffset = indentAnchor and 0 or indentOffset
 
-    if scrollbarSide == "left" and reparentOnScrollbarLeft and indentAnchor then
+    if reparentOnScrollbarLeft and indentAnchor then
         if normalized == "RIGHT" then
             if chevron.SetParent and chevron.GetParent and chevron:GetParent() == indentAnchor then
                 chevron:SetParent(root)
@@ -264,11 +263,6 @@ function Addon:ApplyAlignment_Categories(alignmentMode)
         mode = "LEFT"
     end
 
-    local sv = self.SV or self.sv
-    local settings = type(sv) == "table" and sv.Settings or nil
-    local hostSettings = settings and settings.Host or nil
-    local scrollbarSide = hostSettings and hostSettings.scrollbarSide
-
     local questRows = self.QuestTrackerRows
     if questRows and type(questRows.GetCategoryControls) == "function" then
         local ok, controls = pcall(questRows.GetCategoryControls, questRows)
@@ -284,7 +278,7 @@ function Addon:ApplyAlignment_Categories(alignmentMode)
                         labelGap = 4,
                         stretchLabel = true,
                         expanded = header.isExpanded == true,
-                        scrollbarSide = scrollbarSide,
+                        reparentOnScrollbarLeft = true,
                     })
                 end
             end
@@ -304,7 +298,7 @@ function Addon:ApplyAlignment_Categories(alignmentMode)
                     labelGap = 4,
                     stretchLabel = true,
                     expanded = control.isExpanded == true,
-                    scrollbarSide = scrollbarSide,
+                    reparentOnScrollbarLeft = true,
                 })
             end
         end
@@ -328,7 +322,6 @@ function Addon:ApplyAlignment_Categories(alignmentMode)
                             indentAnchor = row.indentAnchor,
                             labelGap = 4,
                             expanded = row._nvk3utCategoryExpanded == true,
-                            scrollbarSide = scrollbarSide,
                             reparentOnScrollbarLeft = true,
                         }
                     )
@@ -356,7 +349,6 @@ function Addon:ApplyAlignment_Categories(alignmentMode)
                             labelGap = 4,
                             stretchLabel = true,
                             expanded = row.__categoryExpanded == true,
-                            scrollbarSide = scrollbarSide,
                             reparentOnScrollbarLeft = true,
                         }
                     )
