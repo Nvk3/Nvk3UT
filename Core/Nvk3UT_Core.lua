@@ -136,6 +136,20 @@ function Addon:GetAlignmentMode()
     return "LEFT"
 end
 
+function Addon:ApplyChevronLook_FromCornerTopRight(chevronControl, expanded)
+    if expanded ~= true or not chevronControl then
+        return
+    end
+
+    if chevronControl.SetTexture then
+        chevronControl:SetTexture("EsoUI/Art/Buttons/tree_closed_up.dds")
+    end
+
+    if chevronControl.SetTextureRotation then
+        chevronControl:SetTextureRotation(math.rad(225), 0.5, 0.5)
+    end
+end
+
 local function getIndentOffset(indentAnchor)
     if not (indentAnchor and indentAnchor.GetAnchor) then
         return 0
@@ -207,10 +221,12 @@ local function applyCategoryHeaderAlignment(root, label, chevron, counter, mode,
         local rotation = 0
         if normalized == "RIGHT" then
             if expanded then
-                rotation = math.rad(225)
-            else
-                rotation = math.pi
+                if Addon and Addon.ApplyChevronLook_FromCornerTopRight then
+                    Addon:ApplyChevronLook_FromCornerTopRight(chevron, true)
+                end
+                return
             end
+            rotation = math.pi
         end
         chevron:SetTextureRotation(rotation, 0.5, 0.5)
     end
