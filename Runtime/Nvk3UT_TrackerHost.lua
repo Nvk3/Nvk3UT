@@ -305,6 +305,7 @@ local state = {
     collapsed = false,
     cornerExpandFullRefreshPending = false,
     expandedWindowSize = nil,
+    pendingGoldenLabelLog = false,
 }
 
 local resizeState = {
@@ -1544,6 +1545,124 @@ local function logScrollbarSideSizes(phase)
         tostring(state.scrollContentLeftOffset),
         tostring(state.scrollContentRightOffset)
     ))
+end
+
+local function resolveGoldenLabelControl(rowControl, suffix)
+    if not rowControl then
+        return nil
+    end
+
+    local label = rowControl.label or rowControl.Label
+    if label then
+        return label
+    end
+
+    local controlName = rowControl.GetName and rowControl:GetName()
+    if not controlName then
+        return nil
+    end
+
+    return _G[string.format("%s_%sLabel", controlName, suffix)]
+end
+
+local function formatLabelTextWidth(label)
+    if not (label and label.GetTextWidth) then
+        return "n/a"
+    end
+
+    local width = label:GetTextWidth()
+    if width == nil then
+        return "n/a"
+    end
+
+    return string.format("%.2f", width)
+end
+
+local function formatControlWidth(control)
+    if not (control and control.GetWidth) then
+        return "nil"
+    end
+
+    local width = control:GetWidth()
+    if width == nil then
+        return "nil"
+    end
+
+    return string.format("%.2f", width)
+end
+
+local function logGoldenLabelWidths(phase)
+    if not isDebugEnabled() then
+        return true
+    end
+
+    local goldenTracker = Nvk3UT and Nvk3UT.GoldenTracker
+    local rows = goldenTracker and goldenTracker.rows
+    local categoryControl = nil
+    local entryControl = nil
+    local objectiveControls = {}
+
+    if type(rows) == "table" then
+        for index = 1, #rows do
+            local control = rows[index]
+            local rowKind = control and control.__rowKind
+            if rowKind == "category" and not categoryControl then
+                categoryControl = control
+            elseif rowKind == "entry" and not entryControl then
+                entryControl = control
+            elseif rowKind == "objective" and #objectiveControls < 2 then
+                objectiveControls[#objectiveControls + 1] = control
+            end
+
+            if categoryControl and entryControl and #objectiveControls >= 2 then
+                break
+            end
+        end
+    end
+
+    local scrollContainerWidth = formatControlWidth(state.scrollContainer)
+    local scrollContentWidth = formatControlWidth(state.scrollContent)
+    debugLog(string.format(
+        "GoldenLabelWidths%s side=%s scrollContainer=%s scrollContent=%s",
+        phase and ("." .. tostring(phase)) or "",
+        tostring(getScrollbarSide()),
+        scrollContainerWidth,
+        scrollContentWidth
+    ))
+
+    local function logLabelLine(labelName, label, rowControl, suffix)
+        local resolvedLabel = label or resolveGoldenLabelControl(rowControl, suffix)
+        local labelWidth = resolvedLabel and formatControlWidth(resolvedLabel) or "nil"
+        local textWidth = formatLabelTextWidth(resolvedLabel)
+        local parent = resolvedLabel and resolvedLabel.GetParent and resolvedLabel:GetParent() or nil
+        local parentName = parent and parent.GetName and parent:GetName() or "nil"
+        local parentWidth = formatControlWidth(parent)
+        local rowName = rowControl and rowControl.GetName and rowControl:GetName() or "nil"
+        local rowWidth = formatControlWidth(rowControl)
+
+        debugLog(string.format(
+            "GoldenLabel[%s] labelWidth=%s textWidth=%s parent=%s parentWidth=%s row=%s rowWidth=%s",
+            labelName,
+            labelWidth,
+            textWidth,
+            tostring(parentName),
+            parentWidth,
+            tostring(rowName),
+            rowWidth
+        ))
+
+        return resolvedLabel ~= nil
+    end
+
+    local categoryLabel = categoryControl and (categoryControl.label or categoryControl.Label) or nil
+    local entryLabel = entryControl and (entryControl.label or entryControl.Label) or nil
+
+    local hasCategory = logLabelLine("category", categoryLabel, categoryControl, "Category")
+    local hasEntry = logLabelLine("entry", entryLabel, entryControl, "EntryTitle")
+    local hasObj1 = logLabelLine("obj1", nil, objectiveControls[1], "Objective")
+    local hasObj2 = logLabelLine("obj2", nil, objectiveControls[2], "Objective")
+
+    return hasCategory and hasEntry and hasObj1 and hasObj2
 end
 
 local function safeCall(fn, ...)
@@ -3336,6 +3455,8 @@ applyScrollbarSide = function(showScrollbar)
 
     updateScrollContentAnchors()
     logScrollbarSideSizes("apply")
+    local goldenReady = logGoldenLabelWidths("apply")
+    state.pendingGoldenLabelLog = not goldenReady
 end
 
 applyViewportPadding = function()
@@ -4545,6 +4666,11 @@ local function refreshWindowLayout(targetOffset)
     applyWindowVisibility()
     refreshScroll(targetOffset)
     applyCollapsedVisibility()
+
+    if state.pendingGoldenLabelLog then
+        logGoldenLabelWidths("postLayout")
+        state.pendingGoldenLabelLog = false
+    end
 end
 
 local function scheduleDeferredRefresh(targetOffset)
