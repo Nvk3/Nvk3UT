@@ -1798,6 +1798,8 @@ local function applyCategoryRow(row, data)
         end
     end
 
+    row._nvk3utCategoryExpanded = expanded
+
     local indentValue = tonumber(info.categoryIndent) or 0
     local hasIndentAnchor = row.indentAnchor ~= nil
     if indentValue < 0 then

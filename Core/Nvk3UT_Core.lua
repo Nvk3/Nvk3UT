@@ -162,6 +162,7 @@ local function applyCategoryHeaderAlignment(root, label, chevron, counter, mode,
     local indentAnchor = options and options.indentAnchor or nil
     local labelGap = (options and tonumber(options.labelGap)) or 4
     local applyStretch = options and options.stretchLabel == true
+    local expanded = options and options.expanded == true
 
     local indentOffset = getIndentOffset(indentAnchor)
     local leftChevronOffset = indentAnchor and 0 or indentOffset
@@ -203,7 +204,14 @@ local function applyCategoryHeaderAlignment(root, label, chevron, counter, mode,
     end
 
     if chevron.SetTextureRotation then
-        local rotation = normalized == "RIGHT" and math.pi or 0
+        local rotation = 0
+        if normalized == "RIGHT" then
+            if expanded then
+                rotation = math.rad(225)
+            else
+                rotation = math.pi
+            end
+        end
         chevron:SetTextureRotation(rotation, 0.5, 0.5)
     end
 end
@@ -228,6 +236,7 @@ function Addon:ApplyAlignment_Categories(alignmentMode)
                         indentAnchor = indentAnchor,
                         labelGap = 4,
                         stretchLabel = true,
+                        expanded = header.isExpanded == true,
                     })
                 end
             end
@@ -246,6 +255,7 @@ function Addon:ApplyAlignment_Categories(alignmentMode)
                     indentAnchor = indentAnchor,
                     labelGap = 4,
                     stretchLabel = true,
+                    expanded = control.isExpanded == true,
                 })
             end
         end
@@ -265,7 +275,11 @@ function Addon:ApplyAlignment_Categories(alignmentMode)
                         row.chevron,
                         nil,
                         mode,
-                        { indentAnchor = row.indentAnchor, labelGap = 4 }
+                        {
+                            indentAnchor = row.indentAnchor,
+                            labelGap = 4,
+                            expanded = row._nvk3utCategoryExpanded == true,
+                        }
                     )
                 end
             end
@@ -286,7 +300,12 @@ function Addon:ApplyAlignment_Categories(alignmentMode)
                         row.chevron,
                         nil,
                         mode,
-                        { indentAnchor = row.indentAnchor, labelGap = 4, stretchLabel = true }
+                        {
+                            indentAnchor = row.indentAnchor,
+                            labelGap = 4,
+                            stretchLabel = true,
+                            expanded = row.__categoryExpanded == true,
+                        }
                     )
                 end
             end
