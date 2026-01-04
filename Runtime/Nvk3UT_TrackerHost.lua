@@ -34,6 +34,7 @@ local MIN_HEIGHT = 240
 local RESIZE_HANDLE_SIZE = 12
 local RESIZE_GRIP_SIZE = 26 -- larger corner grips for easier interactions
 local SCROLLBAR_WIDTH = 18
+local SCROLLBAR_SIDE_INSET_FIX = 20
 local SCROLL_OVERSHOOT_PADDING = 0 -- no overshoot, scroll range == content height
 local FRAGMENT_RETRY_DELAY_MS = 200
 local MAX_BAR_HEIGHT = 250
@@ -227,6 +228,7 @@ local DEFAULT_HOST_SETTINGS = {
     HideInCombat = false,
     CornerButtonEnabled = true,
     CornerPosition = "TOP_RIGHT",
+    contentAlign = "left",
     scrollbarSide = "right",
     sectionOrder = DEFAULT_SECTION_ORDER_KEYS,
 }
@@ -660,6 +662,19 @@ local function normalizeScrollbarSide(value)
     return DEFAULT_HOST_SETTINGS.scrollbarSide
 end
 
+local function normalizeContentAlign(value)
+    if type(value) ~= "string" then
+        return DEFAULT_HOST_SETTINGS.contentAlign
+    end
+
+    local normalized = string.lower(value)
+    if normalized == "left" or normalized == "right" then
+        return normalized
+    end
+
+    return DEFAULT_HOST_SETTINGS.contentAlign
+end
+
 local function getDefaultSectionOrder()
     local layout = Nvk3UT and Nvk3UT.TrackerHostLayout
     if layout and type(layout.GetDefaultSectionOrder) == "function" then
@@ -718,6 +733,7 @@ local function ensureHostSettings()
     end
 
     hostSettings.CornerPosition = normalizeCornerPosition(hostSettings.CornerPosition)
+    hostSettings.contentAlign = normalizeContentAlign(hostSettings.contentAlign)
     hostSettings.scrollbarSide = normalizeScrollbarSide(hostSettings.scrollbarSide)
     hostSettings.sectionOrder = normalizeSectionOrder(hostSettings.sectionOrder)
 
@@ -763,6 +779,11 @@ end
 local function getScrollbarSide()
     local hostSettings = getHostSettings()
     return normalizeScrollbarSide(hostSettings and hostSettings.scrollbarSide)
+end
+
+local function getContentAlign()
+    local hostSettings = getHostSettings()
+    return normalizeContentAlign(hostSettings and hostSettings.contentAlign)
 end
 
 local function getDefaultColor(trackerType, role)
@@ -1510,6 +1531,8 @@ local function visibilityDebug(fmt, ...)
 
     diagnosticsDebug(fmt, ...)
 end
+
+local loggedTopRightChevronVisual = false
 
 local function safeCall(fn, ...)
     local safe = Nvk3UT and Nvk3UT.SafeCall
@@ -2490,6 +2513,10 @@ function TrackerHost.GetScrollbar()
     return state.scrollbar
 end
 
+function TrackerHost.GetScrollbarSide()
+    return getScrollbarSide()
+end
+
 function TrackerHost.GetScrollbarWidth()
     local scrollbar = state.scrollbar
     if scrollbar and scrollbar.GetWidth then
@@ -3303,23 +3330,106 @@ applyScrollbarSide = function(showScrollbar)
     updateScrollContentAnchors()
 end
 
-applyViewportPadding = function()
+local function getViewportInsets()
     local appearance = state.appearance or ensureAppearanceSettings()
+    local padding = math.max(0, tonumber(appearance and appearance.padding) or 0)
+    local leftInset = padding
+    local rightInset = padding
+    local fixApplied = false
+
+    if getScrollbarSide() == "left" then
+        rightInset = rightInset + SCROLLBAR_SIDE_INSET_FIX
+        fixApplied = true
+    end
+
+    return leftInset, rightInset, fixApplied
+end
+
+applyViewportPadding = function()
     if not state.root then
         return
     end
 
+    local leftInset, rightInset = getViewportInsets()
+    local appearance = state.appearance or ensureAppearanceSettings()
     local padding = math.max(0, tonumber(appearance and appearance.padding) or 0)
 
     local containerParent = state.clientArea or state.root
 
     if state.scrollContainer and containerParent then
         state.scrollContainer:ClearAnchors()
-        state.scrollContainer:SetAnchor(TOPLEFT, containerParent, TOPLEFT, padding, padding)
-        state.scrollContainer:SetAnchor(BOTTOMRIGHT, containerParent, BOTTOMRIGHT, -padding, -padding)
+        state.scrollContainer:SetAnchor(TOPLEFT, containerParent, TOPLEFT, leftInset, padding)
+        state.scrollContainer:SetAnchor(BOTTOMRIGHT, containerParent, BOTTOMRIGHT, -rightInset, -padding)
     end
 
     applyScrollbarSide()
+end
+
+function TrackerHost.GetContentAlignment()
+    return getContentAlign()
+end
+
+function TrackerHost.GetViewportInsets()
+    local leftInset, rightInset = getViewportInsets()
+    return leftInset, rightInset
+end
+
+function TrackerHost.GetViewportWidth()
+    local container = state.scrollContainer or state.clientArea or state.root
+    if not (container and container.GetWidth) then
+        return nil
+    end
+
+    local ok, width = pcall(container.GetWidth, container)
+    if not ok then
+        return nil
+    end
+
+    local resolved = tonumber(width) or 0
+    if resolved <= 0 then
+        return 0
+    end
+
+    if container ~= state.scrollContainer then
+        local leftInset, rightInset = getViewportInsets()
+        resolved = resolved - leftInset - rightInset
+        if resolved < 0 then
+            resolved = 0
+        end
+    end
+
+    return resolved
+end
+
+function TrackerHost.ApplyChevronVisualTopRightExpanded(chevron)
+    if not chevron then
+        return nil, nil
+    end
+
+    local texturePath = CORNER_TEXTURES.normal
+    if chevron.SetTexture then
+        chevron:SetTexture(texturePath)
+    end
+
+    local rotation = CORNER_ROTATIONS.TOP_RIGHT or 0
+    if chevron.SetTextureRotation then
+        chevron:SetTextureRotation(rotation, 0.5, 0.5)
+    end
+
+    if isDebugEnabled() and not loggedTopRightChevronVisual then
+        debugLog(
+            "Corner TOP_RIGHT expanded visual: texture=%s rotation=%s",
+            tostring(texturePath),
+            tostring(rotation)
+        )
+        loggedTopRightChevronVisual = true
+    end
+
+    return texturePath, rotation
+end
+
+function TrackerHost.ApplyViewportInsets()
+    applyViewportPadding()
 end
 
 refreshScroll = function(targetOffset)
@@ -5320,6 +5430,51 @@ function TrackerHost.SetCornerPosition(selfOrPosition, maybePosition)
 
     ensureCornerButton()
     refreshCornerButton()
+end
+
+function TrackerHost.ApplyContentAlignment(selfOrAlign, maybeAlign)
+    local align = maybeAlign
+    if selfOrAlign ~= TrackerHost then
+        align = selfOrAlign
+    end
+
+    local hostSettings = ensureHostSettings()
+    local normalized = normalizeContentAlign(align)
+    hostSettings.contentAlign = normalized
+
+    TrackerHost.ApplyViewportInsets()
+
+    local runtime = Nvk3UT and Nvk3UT.TrackerRuntime
+    if runtime and type(runtime.RequestFullRebuild) == "function" then
+        runtime:RequestFullRebuild("TrackerHost.ContentAlign")
+    end
+
+    if isDebugEnabled() then
+        local leftInset, rightInset, fixApplied = getViewportInsets()
+        local scrollbarSide = getScrollbarSide()
+        local viewportWidth = TrackerHost.GetViewportWidth()
+        local wrapperWidth
+        local wrapper = state.contentStack or state.scrollContent
+        if wrapper and wrapper.GetWidth then
+            local ok, width = pcall(wrapper.GetWidth, wrapper)
+            if ok then
+                wrapperWidth = tonumber(width) or wrapperWidth
+            end
+        end
+
+        debugLog(
+            "ContentAlign toggle: scrollbarSide=%s contentAlign=%s leftInset=%s rightInset=%s fix=%s viewportWidth=%s wrapperWidth=%s",
+            tostring(scrollbarSide),
+            tostring(normalized),
+            tostring(leftInset),
+            tostring(rightInset),
+            fixApplied and "20px" or "none",
+            tostring(viewportWidth),
+            tostring(wrapperWidth)
+        )
+    end
+
+    return normalized
 end
 
 function TrackerHost.SetCollapsed(selfOrCollapsed, maybeCollapsed)

@@ -1987,6 +1987,9 @@ function EndeavorTracker.Refresh(viewModel)
             if rows and type(rows.ResetCategoryPool) == "function" then
                 rows.ResetCategoryPool()
             end
+            if rows and type(rows.ResetAlignmentLog) == "function" then
+                rows.ResetAlignmentLog()
+            end
 
             local previousCategoryRow = type(ui.category) == "table" and ui.category or nil
             local categoryRow = nil

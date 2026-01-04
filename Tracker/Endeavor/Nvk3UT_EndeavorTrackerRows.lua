@@ -162,6 +162,14 @@ local function getTrackerHostScrollContentWidth()
     local addon = getAddon()
     local host = type(addon) == "table" and addon.TrackerHost or nil
     if type(host) == "table" then
+        local getViewportWidth = host.GetViewportWidth
+        if type(getViewportWidth) == "function" then
+            local ok, measured = pcall(getViewportWidth, host)
+            if ok and type(measured) == "number" and measured > 0 then
+                return measured
+            end
+        end
+
         local getScrollContent = host.GetScrollContent
         if type(getScrollContent) == "function" then
             local ok, scrollContent = pcall(getScrollContent, host)
@@ -333,6 +341,53 @@ local entryPool = {
 }
 
 local loggedSubrowsOnce = false
+local pendingCategoryAlignLog = true
+
+local function getHostViewportInfo()
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    local align = "left"
+    local scrollbarSide = "right"
+    local leftInset = 0
+    local rightInset = 0
+    local viewportWidth
+
+    if host and type(host.GetContentAlignment) == "function" then
+        local ok, value = pcall(host.GetContentAlignment, host)
+        if ok and type(value) == "string" and value ~= "" then
+            align = string.lower(value)
+        end
+    end
+
+    if host and type(host.GetScrollbarSide) == "function" then
+        local ok, value = pcall(host.GetScrollbarSide, host)
+        if ok and type(value) == "string" and value ~= "" then
+            scrollbarSide = string.lower(value)
+        end
+    end
+
+    if host and type(host.GetViewportInsets) == "function" then
+        local ok, leftValue, rightValue = pcall(host.GetViewportInsets, host)
+        if ok then
+            leftInset = tonumber(leftValue) or leftInset
+            rightInset = tonumber(rightValue) or rightInset
+        end
+    end
+
+    if host and type(host.GetViewportWidth) == "function" then
+        local ok, width = pcall(host.GetViewportWidth, host)
+        if ok and type(width) == "number" then
+            viewportWidth = width
+        end
+    end
+
+    return {
+        align = align,
+        scrollbarSide = scrollbarSide,
+        leftInset = leftInset,
+        rightInset = rightInset,
+        viewportWidth = viewportWidth,
+    }
+end
 
 local function safeDebug(fmt, ...)
     if not isDebugEnabled() then
@@ -1803,9 +1858,49 @@ local function applyCategoryRow(row, data)
     if indentValue < 0 then
         indentValue = 0
     end
+    local viewportInfo = getHostViewportInfo()
     if row.indentAnchor and row.indentAnchor.SetAnchor then
         row.indentAnchor:ClearAnchors()
-        row.indentAnchor:SetAnchor(TOPLEFT, control, TOPLEFT, indentValue, 0)
+        if viewportInfo.align == "right" then
+            row.indentAnchor:SetAnchor(TOPRIGHT, control, TOPRIGHT, -indentValue, 0)
+        else
+            row.indentAnchor:SetAnchor(TOPLEFT, control, TOPLEFT, indentValue, 0)
+        end
+    end
+    if chevron and chevron.SetAnchor then
+        chevron:ClearAnchors()
+        if viewportInfo.align == "right" then
+            chevron:SetAnchor(TOPRIGHT, row.indentAnchor or control, TOPRIGHT, 0, 0)
+        else
+            chevron:SetAnchor(TOPLEFT, row.indentAnchor or control, TOPLEFT, 0, 0)
+        end
+    end
+    if label and label.SetAnchor then
+        label:ClearAnchors()
+        if viewportInfo.align == "right" then
+            label:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+            label:SetAnchor(TOPRIGHT, chevron, TOPLEFT, -CATEGORY_LABEL_OFFSET_X, 0)
+            label:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+        else
+            label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+            label:SetAnchor(TOPLEFT, chevron, TOPRIGHT, CATEGORY_LABEL_OFFSET_X, 0)
+            label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+        end
+    end
+    local rotation = 0
+    local texturePath = nil
+    if chevron and chevron.SetTextureRotation then
+        if viewportInfo.align == "right" and expanded then
+            local host = Nvk3UT and Nvk3UT.TrackerHost
+            if host and type(host.ApplyChevronVisualTopRightExpanded) == "function" then
+                texturePath, rotation = host.ApplyChevronVisualTopRightExpanded(chevron)
+            end
+        else
+            if viewportInfo.align == "right" and not expanded then
+                rotation = math.pi
+            end
+            chevron:SetTextureRotation(rotation, 0.5, 0.5)
+        end
     end
 
     local availableWidth = computeEndeavorAvailableWidth(
@@ -1831,6 +1926,43 @@ local function applyCategoryRow(row, data)
     end
 
     row._onToggle = info.onToggle
+
+    if pendingCategoryAlignLog and isDebugEnabled() then
+        local width = viewportInfo.viewportWidth
+        if width == nil and control.GetWidth then
+            local okWidth, measured = pcall(control.GetWidth, control)
+            if okWidth then
+                width = tonumber(measured)
+            end
+        end
+        safeDebug(
+            "[CategoryAlign] align=%s scrollbar=%s insets=(%s,%s) rowWidth=%s",
+            tostring(viewportInfo.align),
+            tostring(viewportInfo.scrollbarSide),
+            tostring(viewportInfo.leftInset),
+            tostring(viewportInfo.rightInset),
+            tostring(width)
+        )
+        pendingCategoryAlignLog = false
+    end
+
+    local lastExpanded = row.__lastChevronExpanded
+    if viewportInfo.align == "right" and expanded and lastExpanded ~= expanded and isDebugEnabled() then
+        if texturePath == nil and chevron and chevron.GetTextureFileName then
+            local okTexture, resolved = pcall(chevron.GetTextureFileName, chevron)
+            if okTexture then
+                texturePath = resolved
+            end
+        end
+        safeDebug(
+            "[CategoryChevron] Endeavor align=%s expanded=%s texture=%s rotation=%s",
+            tostring(viewportInfo.align),
+            tostring(expanded),
+            tostring(texturePath),
+            tostring(rotation)
+        )
+    end
+    row.__lastChevronExpanded = expanded
 
     if LOGGER and type(LOGGER.Info) == "function" then
         LOGGER:Info(
@@ -1877,6 +2009,10 @@ end
 function Rows.ResetPools()
     Rows.ResetCategoryPool()
     Rows.ResetEntryPool()
+end
+
+function Rows.ResetAlignmentLog()
+    pendingCategoryAlignLog = true
 end
 
 local function getConfiguredFonts(options)

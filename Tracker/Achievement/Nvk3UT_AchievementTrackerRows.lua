@@ -277,6 +277,45 @@ function Rows:UpdateCategoryToggle(control, expanded)
         local texture = SelectCategoryToggleTexture(expanded, isMouseOver)
         control.toggle:SetTexture(texture)
     end
+    if control.toggle.SetTextureRotation then
+        local align = "left"
+        local host = Nvk3UT and Nvk3UT.TrackerHost
+        if host and type(host.GetContentAlignment) == "function" then
+            local ok, value = pcall(host.GetContentAlignment, host)
+            if ok and type(value) == "string" and value ~= "" then
+                align = string.lower(value)
+            end
+        end
+
+        local rotation = 0
+        local texturePath = nil
+        if align == "right" and expanded and host and type(host.ApplyChevronVisualTopRightExpanded) == "function" then
+            texturePath, rotation = host.ApplyChevronVisualTopRightExpanded(control.toggle)
+        else
+            if align == "right" and not expanded then
+                rotation = math.pi
+            end
+            control.toggle:SetTextureRotation(rotation, 0.5, 0.5)
+        end
+
+        local lastExpanded = control.__lastChevronExpanded
+        if align == "right" and expanded and lastExpanded ~= expanded and IsDebugLoggingEnabled() then
+            if texturePath == nil and control.toggle.GetTextureFileName then
+                local okTexture, resolved = pcall(control.toggle.GetTextureFileName, control.toggle)
+                if okTexture then
+                    texturePath = resolved
+                end
+            end
+            DebugLog(string.format(
+                "CategoryChevron Achievement align=%s expanded=%s texture=%s rotation=%s",
+                tostring(align),
+                tostring(expanded),
+                tostring(texturePath),
+                tostring(rotation)
+            ))
+        end
+        control.__lastChevronExpanded = expanded
+    end
     control.isExpanded = expanded and true or false
 end
 
