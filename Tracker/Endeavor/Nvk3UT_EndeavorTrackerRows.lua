@@ -342,6 +342,8 @@ local entryPool = {
 
 local loggedSubrowsOnce = false
 local pendingCategoryAlignLog = true
+local pendingEntryAlignLog = true
+local pendingObjectiveAlignLog = true
 
 local function getHostViewportInfo()
     local host = Nvk3UT and Nvk3UT.TrackerHost
@@ -714,6 +716,8 @@ function Rows.ApplySubrow(control, kind, data, options)
 
     local resolvedKind = normalizeSubrowKind(kind)
     local source = type(data) == "table" and data or {}
+    local viewportInfo = getHostViewportInfo()
+    local align = viewportInfo.align
 
     local icon = ensureSubrowIcon(control)
     local iconTexture = type(source.icon) == "string" and source.icon or nil
@@ -727,7 +731,11 @@ function Rows.ApplySubrow(control, kind, data, options)
                 icon:ClearAnchors()
             end
             local indentX = resolveObjectiveIndent(options)
-            icon:SetAnchor(LEFT, control, LEFT, indentX - SUBROW_ICON_SIZE - SUBROW_ICON_GAP, 0)
+            if align == "right" then
+                icon:SetAnchor(RIGHT, control, RIGHT, -(indentX - SUBROW_ICON_SIZE - SUBROW_ICON_GAP), 0)
+            else
+                icon:SetAnchor(LEFT, control, LEFT, indentX - SUBROW_ICON_SIZE - SUBROW_ICON_GAP, 0)
+            end
         else
             if icon.SetTexture then
                 icon:SetTexture(nil)
@@ -742,9 +750,17 @@ function Rows.ApplySubrow(control, kind, data, options)
     if leftLabel then
         leftLabel:ClearAnchors()
         if icon and icon.IsHidden and not icon:IsHidden() then
-            leftLabel:SetAnchor(TOPLEFT, icon, TOPRIGHT, SUBROW_ICON_GAP, 0)
+            if align == "right" then
+                leftLabel:SetAnchor(TOPRIGHT, icon, TOPLEFT, -SUBROW_ICON_GAP, 0)
+            else
+                leftLabel:SetAnchor(TOPLEFT, icon, TOPRIGHT, SUBROW_ICON_GAP, 0)
+            end
         else
-            leftLabel:SetAnchor(TOPLEFT, control, TOPLEFT, resolveObjectiveIndent(options), 0)
+            if align == "right" then
+                leftLabel:SetAnchor(TOPRIGHT, control, TOPRIGHT, -resolveObjectiveIndent(options), 0)
+            else
+                leftLabel:SetAnchor(TOPLEFT, control, TOPLEFT, resolveObjectiveIndent(options), 0)
+            end
         end
     end
 
@@ -763,7 +779,11 @@ function Rows.ApplySubrow(control, kind, data, options)
             if rightLabel.SetText then
                 rightLabel:SetText(rightText)
             end
-            rightLabel:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+            if align == "right" then
+                rightLabel:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+            else
+                rightLabel:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+            end
         else
             if rightLabel.SetHidden then
                 rightLabel:SetHidden(true)
@@ -789,6 +809,13 @@ function Rows.ApplySubrow(control, kind, data, options)
     if leftLabel then
         applyEndeavorLabelDefaults(leftLabel)
         applyFontString(leftLabel, resolvedFont, nil)
+        if leftLabel.SetHorizontalAlignment then
+            if align == "right" then
+                leftLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+            else
+                leftLabel:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+            end
+        end
     end
 
     if rightLabel then
@@ -796,7 +823,11 @@ function Rows.ApplySubrow(control, kind, data, options)
         applyEndeavorLabelDefaults(rightLabel)
         applyFontString(rightLabel, rightFont or fallbackFont, nil)
         if rightLabel.SetHorizontalAlignment then
-            rightLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+            if align == "right" then
+                rightLabel:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+            else
+                rightLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+            end
         end
     end
 
@@ -820,6 +851,27 @@ function Rows.ApplySubrow(control, kind, data, options)
     end
     if rightLabel and rightLabel.SetColor then
         rightLabel:SetColor(r, g, b, a)
+    end
+
+    if pendingObjectiveAlignLog and isDebugEnabled() then
+        local wrapperWidth = getEndeavorRowContainerWidth(control)
+        local labelWidth
+        if leftLabel and leftLabel.GetWidth then
+            local okWidth, measured = pcall(leftLabel.GetWidth, leftLabel)
+            if okWidth then
+                labelWidth = tonumber(measured)
+            end
+        end
+        local baseOffset = resolveObjectiveIndent(options)
+        safeDebug(
+            "[ObjectiveAlign] align=%s wrapperWidth=%s labelWidth=%s baseOffset=%s side=%s",
+            tostring(align),
+            tostring(wrapperWidth),
+            tostring(labelWidth),
+            tostring(baseOffset),
+            tostring(align)
+        )
+        pendingObjectiveAlignLog = false
     end
 
     local availableWidth = computeEndeavorAvailableWidth(control, resolveObjectiveIndent(options), 0, 0)
@@ -2013,6 +2065,8 @@ end
 
 function Rows.ResetAlignmentLog()
     pendingCategoryAlignLog = true
+    pendingEntryAlignLog = true
+    pendingObjectiveAlignLog = true
 end
 
 local function getConfiguredFonts(options)
@@ -2198,7 +2252,14 @@ local function applyEntryRow(row, objective, options)
         applyFontString(title, resolvedFont, DEFAULT_OBJECTIVE_FONT)
     end
     title:ClearAnchors()
-    title:SetAnchor(TOPLEFT, row, TOPLEFT, resolveObjectiveIndent(options), ENTRY_TOP_PAD)
+    local viewportInfo = getHostViewportInfo()
+    if viewportInfo.align == "right" then
+        title:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+        title:SetAnchor(TOPRIGHT, row, TOPRIGHT, -resolveObjectiveIndent(options), ENTRY_TOP_PAD)
+    else
+        title:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        title:SetAnchor(TOPLEFT, row, TOPLEFT, resolveObjectiveIndent(options), ENTRY_TOP_PAD)
+    end
     title:SetText(combinedText)
     row.Label = title
     row.label = title
@@ -2277,6 +2338,26 @@ local function applyEntryRow(row, objective, options)
 
     if row.SetAlpha then
         row:SetAlpha(1)
+    end
+
+    if pendingEntryAlignLog and isDebugEnabled() then
+        local wrapperWidth = getEndeavorRowContainerWidth(row)
+        local labelWidth
+        if title.GetWidth then
+            local okWidth, measured = pcall(title.GetWidth, title)
+            if okWidth then
+                labelWidth = tonumber(measured)
+            end
+        end
+        safeDebug(
+            "[EntryAlign] align=%s wrapperWidth=%s labelWidth=%s icon=%s anchors=%s",
+            tostring(viewportInfo.align),
+            tostring(wrapperWidth),
+            tostring(labelWidth),
+            "slot",
+            tostring(viewportInfo.align)
+        )
+        pendingEntryAlignLog = false
     end
 
     safeDebug("[EndeavorRows] objective inline: \"%s\"", combinedText)

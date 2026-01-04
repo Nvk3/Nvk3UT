@@ -475,6 +475,43 @@ local function getHostViewportInfo()
     }
 end
 
+local function applyEntryAlignment(control, viewportInfo)
+    if not (control and control.label and control.label.ClearAnchors) then
+        return
+    end
+
+    local align = viewportInfo and viewportInfo.align or "left"
+    local iconSlot = control.iconSlot
+
+    if iconSlot and iconSlot.ClearAnchors then
+        iconSlot:ClearAnchors()
+        if align == "right" then
+            iconSlot:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+        else
+            iconSlot:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+        end
+    end
+
+    control.label:ClearAnchors()
+    if align == "right" then
+        control.label:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+        if iconSlot then
+            control.label:SetAnchor(TOPRIGHT, iconSlot, TOPLEFT, -ACHIEVEMENT_ICON_SLOT_PADDING_X, 0)
+        else
+            control.label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+        end
+        control.label:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+    else
+        control.label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        if iconSlot then
+            control.label:SetAnchor(TOPLEFT, iconSlot, TOPRIGHT, ACHIEVEMENT_ICON_SLOT_PADDING_X, 0)
+        else
+            control.label:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+        end
+        control.label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+    end
+end
+
 local function ApplyRowMetrics(control, rowType, indent, toggleWidth, leftPadding, rightPadding, widthOverride)
     if not control or not control.label then
         return
@@ -1276,6 +1313,10 @@ local function ResetLayoutState()
     state.nextEntryGap = nil
     state.nextObjectiveGap = nil
     state.categoryAlignLogged = false
+    state.entryAlignLogged = false
+    state.objectiveAlignLogged = false
+    state.anchorHygieneLogged = false
+    state.lastAnchorY = 0
 end
 
 local function WarnMissingRows()
@@ -1329,6 +1370,8 @@ local function AnchorControl(control, indentX, gapOverride)
 
     local rowKind = ResolveRowKind(control)
     local rowType = control.rowType
+    local viewportInfo = getHostViewportInfo()
+    local align = viewportInfo.align
     local verticalPadding = gapOverride
     local pendingEntryGap = nil
     local pendingObjectiveGap = nil
@@ -1354,24 +1397,31 @@ local function AnchorControl(control, indentX, gapOverride)
         verticalPadding = verticalPadding + ENTRY_SPACING_ABOVE
     end
 
+    local currentY
     if state.lastAnchoredControl then
-        local previousIndent = state.lastAnchoredControl.currentIndent or 0
-        local offsetX = indentX - previousIndent
-        control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, offsetX, verticalPadding)
-        control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, 0, verticalPadding)
+        local previousHeight = state.lastAnchoredControl.GetHeight and state.lastAnchoredControl:GetHeight() or 0
+        currentY = (state.lastAnchorY or 0) + previousHeight + verticalPadding
     else
         local offsetY = 0
         if rowKind == "header" and type(verticalPadding) == "number" then
             offsetY = verticalPadding
         end
-        control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, offsetY)
-        control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, 0, offsetY)
+        currentY = offsetY
+    end
+
+    if rowType == "objective" and align == "right" then
+        control:SetAnchor(TOPLEFT, state.container, TOPLEFT, 0, currentY)
+        control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, -indentX, currentY)
+    else
+        control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, currentY)
+        control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, 0, currentY)
     end
 
     state.lastAnchoredControl = control
     state.lastAnchoredKind = rowKind
     state.orderedControls[#state.orderedControls + 1] = control
     control.currentIndent = indentX
+    state.lastAnchorY = currentY
 end
 
 local function UpdateContentSize()
@@ -1487,6 +1537,23 @@ local function UpdateContentSize()
     state.contentWidth = maxWidth
     state.contentHeight = measuredHeight
     state.lastHeight = NormalizeMetric(measuredHeight)
+
+    if not state.anchorHygieneLogged and IsDebugLoggingEnabled() then
+        local firstObjective
+        for index = 1, #state.orderedControls do
+            local control = state.orderedControls[index]
+            if control and control.rowType == "objective" then
+                firstObjective = control
+                break
+            end
+        end
+        DebugLog(string.format(
+            "Anchor hygiene rows=%d objectiveLabel=%s",
+            #state.orderedControls,
+            tostring(firstObjective and firstObjective.label and firstObjective.label.GetName and firstObjective.label:GetName() or "none")
+        ))
+        state.anchorHygieneLogged = true
+    end
 end
 
 local function IsCategoryExpanded()
@@ -1711,10 +1778,66 @@ local function LayoutObjective(rows, achievement, objective, objectiveIndex)
         labelText = text,
         color = { r, g, b, a },
     })
+    local viewportInfo = getHostViewportInfo()
+    if control.label then
+        if control.label.ClearAnchors then
+            control.label:ClearAnchors()
+            control.label:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+            control.label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+        end
+        if control.label.SetHorizontalAlignment then
+        if viewportInfo.align == "right" then
+            control.label:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+        else
+            control.label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        end
+        end
+    end
     ApplyRowMetrics(control, "objective", OBJECTIVE_INDENT_X, 0, 0, 0)
     control:SetHidden(false)
     AnchorControl(control, OBJECTIVE_INDENT_X, state.nextCategoryGap)
     state.nextCategoryGap = nil
+
+    if not state.objectiveAlignLogged and IsDebugLoggingEnabled() then
+        local wrapperWidth
+        local host = Nvk3UT and Nvk3UT.TrackerHost
+        if host and type(host.GetScrollContent) == "function" then
+            local okContent, scrollContent = pcall(host.GetScrollContent, host)
+            if okContent and scrollContent and scrollContent.GetWidth then
+                local okWidth, measured = pcall(scrollContent.GetWidth, scrollContent)
+                if okWidth then
+                    wrapperWidth = tonumber(measured)
+                end
+            end
+        end
+        if wrapperWidth == nil and control.GetParent then
+            local parent = control:GetParent()
+            if parent and parent.GetWidth then
+                local okWidth, measured = pcall(parent.GetWidth, parent)
+                if okWidth then
+                    wrapperWidth = tonumber(measured)
+                end
+            end
+        end
+
+        local labelWidth
+        if control.label and control.label.GetWidth then
+            local okWidth, measured = pcall(control.label.GetWidth, control.label)
+            if okWidth then
+                labelWidth = tonumber(measured)
+            end
+        end
+
+        DebugLog(string.format(
+            "Objective align=%s wrapperWidth=%s labelWidth=%s baseOffset=%s side=%s",
+            tostring(viewportInfo.align),
+            tostring(wrapperWidth),
+            tostring(labelWidth),
+            tostring(OBJECTIVE_BASE_INDENT),
+            tostring(viewportInfo.align)
+        ))
+        state.objectiveAlignLogged = true
+    end
 
     return control:GetHeight()
 end
@@ -1738,6 +1861,7 @@ local function LayoutAchievement(rows, achievement)
     })
 
     local expanded = hasObjectives and IsEntryExpanded(achievement.id)
+    local viewportInfo = getHostViewportInfo()
     ApplyRowMetrics(
         control,
         "achievement",
@@ -1746,9 +1870,69 @@ local function LayoutAchievement(rows, achievement)
         ACHIEVEMENT_ICON_SLOT_PADDING_X,
         0
     )
+    applyEntryAlignment(control, viewportInfo)
     control:SetHidden(false)
     AnchorControl(control, ENTRY_INDENT_X, state.nextCategoryGap)
     state.nextCategoryGap = nil
+
+    if not state.entryAlignLogged and IsDebugLoggingEnabled() then
+        local wrapperWidth
+        local host = Nvk3UT and Nvk3UT.TrackerHost
+        if host and type(host.GetScrollContent) == "function" then
+            local okContent, scrollContent = pcall(host.GetScrollContent, host)
+            if okContent and scrollContent and scrollContent.GetWidth then
+                local okWidth, measured = pcall(scrollContent.GetWidth, scrollContent)
+                if okWidth then
+                    wrapperWidth = tonumber(measured)
+                end
+            end
+        end
+        if wrapperWidth == nil and control.GetParent then
+            local parent = control:GetParent()
+            if parent and parent.GetWidth then
+                local okWidth, measured = pcall(parent.GetWidth, parent)
+                if okWidth then
+                    wrapperWidth = tonumber(measured)
+                end
+            end
+        end
+
+        local labelWidth
+        if control.label and control.label.GetWidth then
+            local okWidth, measured = pcall(control.label.GetWidth, control.label)
+            if okWidth then
+                labelWidth = tonumber(measured)
+            end
+        end
+
+        local iconUsage = "slot"
+        if control.iconSlot then
+            local hasTexture = false
+            if control.iconSlot.GetTextureFileName then
+                local okTexture, texture = pcall(control.iconSlot.GetTextureFileName, control.iconSlot)
+                if okTexture and type(texture) == "string" and texture ~= "" then
+                    hasTexture = true
+                end
+            end
+            if not hasTexture and control.iconSlot.GetAlpha then
+                local okAlpha, alpha = pcall(control.iconSlot.GetAlpha, control.iconSlot)
+                if okAlpha and type(alpha) == "number" and alpha > 0 then
+                    hasTexture = true
+                end
+            end
+            iconUsage = hasTexture and "real" or "slot"
+        end
+
+        DebugLog(string.format(
+            "Entry align=%s wrapperWidth=%s labelWidth=%s icon=%s anchors=%s",
+            tostring(viewportInfo.align),
+            tostring(wrapperWidth),
+            tostring(labelWidth),
+            tostring(iconUsage),
+            tostring(viewportInfo.align)
+        ))
+        state.entryAlignLogged = true
+    end
 
     if hasObjectives and expanded then
         local visibleObjectives = {}

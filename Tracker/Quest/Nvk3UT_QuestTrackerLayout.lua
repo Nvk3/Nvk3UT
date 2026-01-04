@@ -148,6 +148,10 @@ function Layout:ResetLayoutState()
     state.contentWidth = 0
     state.contentHeight = 0
     state.categoryAlignLogged = false
+    state.entryAlignLogged = false
+    state.objectiveAlignLogged = false
+    state.anchorHygieneLogged = false
+    state.lastAnchorY = 0
     state.rightExpandedCategoryCount = 0
     state.rightExpandedChevronTexture = nil
     state.rightExpandedChevronRotation = nil
@@ -321,6 +325,63 @@ function Layout:ApplyCategoryAlignment(control, expanded)
     end
 end
 
+function Layout:ApplyQuestEntryAlignment(control)
+    if not (control and control.label and control.label.ClearAnchors) then
+        return
+    end
+
+    local info = getHostViewportInfo()
+    local align = info.align
+    local padding = tonumber(self.deps.QUEST_ICON_SLOT_PADDING_X) or 0
+    local iconSlot = control.iconSlot
+
+    if iconSlot and iconSlot.ClearAnchors then
+        iconSlot:ClearAnchors()
+        if align == "right" then
+            iconSlot:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+        else
+            iconSlot:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+        end
+    end
+
+    control.label:ClearAnchors()
+    if align == "right" then
+        control.label:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+        if iconSlot then
+            control.label:SetAnchor(TOPRIGHT, iconSlot, TOPLEFT, -padding, 0)
+        else
+            control.label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+        end
+        control.label:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+    else
+        control.label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        if iconSlot then
+            control.label:SetAnchor(TOPLEFT, iconSlot, TOPRIGHT, padding, 0)
+        else
+            control.label:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+        end
+        control.label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+    end
+end
+
+function Layout:ApplyConditionAlignment(control)
+    if not (control and control.label and control.label.SetHorizontalAlignment) then
+        return
+    end
+
+    local info = getHostViewportInfo()
+    if control.label.ClearAnchors then
+        control.label:ClearAnchors()
+        control.label:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+        control.label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+    end
+    if info.align == "right" then
+        control.label:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+    else
+        control.label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+    end
+end
+
 function Layout:GetCategoryHeaderHeight(categoryControl)
     if not categoryControl then
         return 0
@@ -457,10 +518,12 @@ function Layout:AnchorControl(control, indentX, gapOverride)
     indentX = indentX or 0
 
     control:ClearAnchors()
+    local rowType = control.rowType
+    local info = getHostViewportInfo()
+    local align = info.align
 
     local gap = gapOverride
     if type(gap) ~= "number" then
-        local rowType = control.rowType
         local isFirst = (state.visibleRowCount or 0) == 0
         local pendingGap = nil
         local pendingEntryGap = nil
@@ -500,19 +563,26 @@ function Layout:AnchorControl(control, indentX, gapOverride)
         end
     end
 
+    local currentY
     if state.lastAnchoredControl then
-        local previousIndent = state.lastAnchoredControl.currentIndent or 0
-        local offsetX = indentX - previousIndent
-        control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, offsetX, gap)
-        control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, 0, gap)
+        local previousHeight = state.lastAnchoredControl.GetHeight and state.lastAnchoredControl:GetHeight() or 0
+        currentY = (state.lastAnchorY or 0) + previousHeight + gap
     else
-        control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, gap)
-        control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, 0, gap)
+        currentY = gap
+    end
+
+    if rowType == "condition" and align == "right" then
+        control:SetAnchor(TOPLEFT, state.container, TOPLEFT, 0, currentY)
+        control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, -indentX, currentY)
+    else
+        control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, currentY)
+        control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, 0, currentY)
     end
 
     state.lastAnchoredControl = control
     state.orderedControls[#state.orderedControls + 1] = control
     control.currentIndent = indentX
+    state.lastAnchorY = currentY
     state.visibleRowCount = (state.visibleRowCount or 0) + 1
 end
 
@@ -744,6 +814,30 @@ function Layout:UpdateContentSize()
         tostring(state.contentWidth),
         tostring(state.contentHeight)
     )
+
+    if not state.anchorHygieneLogged and isDebugEnabled() then
+        local firstQuest
+        local firstCondition
+        for index = 1, #state.orderedControls do
+            local control = state.orderedControls[index]
+            if control and control.rowType == "quest" and not firstQuest then
+                firstQuest = control
+            elseif control and control.rowType == "condition" and not firstCondition then
+                firstCondition = control
+            end
+            if firstQuest and firstCondition then
+                break
+            end
+        end
+        safeDebug(
+            "%s: Anchor hygiene rows=%d questRow=%s conditionLabel=%s",
+            MODULE_TAG,
+            #state.orderedControls,
+            tostring(firstQuest and firstQuest.GetName and firstQuest:GetName() or "none"),
+            tostring(firstCondition and firstCondition.label and firstCondition.label.GetName and firstCondition.label:GetName() or "none")
+        )
+        state.anchorHygieneLogged = true
+    end
 end
 
 function Layout:LayoutCondition(condition)
@@ -768,9 +862,55 @@ function Layout:LayoutCondition(condition)
         local r, g, b, a = GetQuestTrackerColor("objectiveText")
         control.label:SetColor(r, g, b, a)
     end
+    self:ApplyConditionAlignment(control)
     self:GetConditionHeight(control)
     control:SetHidden(false)
     self:AnchorControl(control, self.deps.CONDITION_INDENT_X)
+
+    local state = self.state or {}
+    if not state.objectiveAlignLogged and isDebugEnabled() then
+        local info = getHostViewportInfo()
+        local wrapperWidth
+        local host = Nvk3UT and Nvk3UT.TrackerHost
+        if host and type(host.GetScrollContent) == "function" then
+            local okContent, scrollContent = pcall(host.GetScrollContent, host)
+            if okContent and scrollContent and scrollContent.GetWidth then
+                local okWidth, measured = pcall(scrollContent.GetWidth, scrollContent)
+                if okWidth then
+                    wrapperWidth = tonumber(measured)
+                end
+            end
+        end
+        if wrapperWidth == nil and control.GetParent then
+            local parent = control:GetParent()
+            if parent and parent.GetWidth then
+                local okWidth, measured = pcall(parent.GetWidth, parent)
+                if okWidth then
+                    wrapperWidth = tonumber(measured)
+                end
+            end
+        end
+
+        local labelWidth
+        if control.label and control.label.GetWidth then
+            local okWidth, measured = pcall(control.label.GetWidth, control.label)
+            if okWidth then
+                labelWidth = tonumber(measured)
+            end
+        end
+
+        local baseOffset = self.deps and self.deps.OBJECTIVE_BASE_INDENT
+        safeDebug(
+            "%s: Objective align=%s wrapperWidth=%s labelWidth=%s baseOffset=%s side=%s",
+            MODULE_TAG,
+            tostring(info.align),
+            tostring(wrapperWidth),
+            tostring(labelWidth),
+            tostring(baseOffset),
+            tostring(info.align)
+        )
+        state.objectiveAlignLogged = true
+    end
 end
 
 function Layout:LayoutQuest(quest)
@@ -831,11 +971,73 @@ function Layout:LayoutQuest(quest)
     if UpdateQuestIconSlot then
         UpdateQuestIconSlot(control)
     end
+    self:ApplyQuestEntryAlignment(control)
     self:GetQuestRowContentHeight(control, control.data)
     control:SetHidden(false)
     self:AnchorControl(control, self.deps.QUEST_INDENT_X)
 
     local state = self.state or {}
+    if not state.entryAlignLogged and isDebugEnabled() then
+        local info = getHostViewportInfo()
+        local wrapperWidth
+        local host = Nvk3UT and Nvk3UT.TrackerHost
+        if host and type(host.GetScrollContent) == "function" then
+            local okContent, scrollContent = pcall(host.GetScrollContent, host)
+            if okContent and scrollContent and scrollContent.GetWidth then
+                local okWidth, measured = pcall(scrollContent.GetWidth, scrollContent)
+                if okWidth then
+                    wrapperWidth = tonumber(measured)
+                end
+            end
+        end
+        if wrapperWidth == nil and control.GetParent then
+            local parent = control:GetParent()
+            if parent and parent.GetWidth then
+                local okWidth, measured = pcall(parent.GetWidth, parent)
+                if okWidth then
+                    wrapperWidth = tonumber(measured)
+                end
+            end
+        end
+
+        local labelWidth
+        if control.label and control.label.GetWidth then
+            local okWidth, measured = pcall(control.label.GetWidth, control.label)
+            if okWidth then
+                labelWidth = tonumber(measured)
+            end
+        end
+
+        local iconUsage = "slot"
+        if control.iconSlot then
+            local hasTexture = false
+            if control.iconSlot.GetTextureFileName then
+                local okTexture, texture = pcall(control.iconSlot.GetTextureFileName, control.iconSlot)
+                if okTexture and type(texture) == "string" and texture ~= "" then
+                    hasTexture = true
+                end
+            end
+            if not hasTexture and control.iconSlot.GetAlpha then
+                local okAlpha, alpha = pcall(control.iconSlot.GetAlpha, control.iconSlot)
+                if okAlpha and type(alpha) == "number" and alpha > 0 then
+                    hasTexture = true
+                end
+            end
+            iconUsage = hasTexture and "real" or "slot"
+        end
+
+        safeDebug(
+            "%s: Entry align=%s wrapperWidth=%s labelWidth=%s icon=%s anchors=%s",
+            MODULE_TAG,
+            tostring(info.align),
+            tostring(wrapperWidth),
+            tostring(labelWidth),
+            tostring(iconUsage),
+            tostring(info.align)
+        )
+        state.entryAlignLogged = true
+    end
+
     if quest and quest.journalIndex then
         state.questControls[quest.journalIndex] = control
     end

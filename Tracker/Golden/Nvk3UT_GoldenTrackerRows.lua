@@ -217,6 +217,8 @@ local function isGoldenWrapDebugEnabled()
 end
 
 local pendingCategoryAlignLog = true
+local pendingEntryAlignLog = true
+local pendingObjectiveAlignLog = true
 
 local function getHostViewportInfo()
     local host = Nvk3UT and Nvk3UT.TrackerHost
@@ -2257,6 +2259,26 @@ local function applyEntryRow(row, entryData)
         end
     end
 
+    local viewportInfo = getHostViewportInfo()
+    if label.ClearAnchors then
+        label:ClearAnchors()
+    end
+    if viewportInfo.align == "right" then
+        if label.SetHorizontalAlignment then
+            label:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+        end
+        if label.SetAnchor then
+            label:SetAnchor(TOPRIGHT, targetRow, TOPRIGHT, -(ENTRY_ICON_SLOT_X + ENTRY_INDENT_X), 0)
+        end
+    else
+        if label.SetHorizontalAlignment then
+            label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        end
+        if label.SetAnchor then
+            label:SetAnchor(TOPLEFT, targetRow, TOPLEFT, ENTRY_ICON_SLOT_X + ENTRY_INDENT_X, 0)
+        end
+    end
+
     local availableWidth = computeAvailableWidth(targetRow, ENTRY_ICON_SLOT_X + ENTRY_INDENT_X, 0, 0)
     if label.SetWidth then
         label:SetWidth(availableWidth)
@@ -2271,6 +2293,26 @@ local function applyEntryRow(row, entryData)
     end
 
     debugGoldenWrap(label, "entry", availableWidth, getEntryRowHeight(), targetRow, text)
+
+    if pendingEntryAlignLog and isGoldenColorDebugEnabled() then
+        local wrapperWidth = getRowContainerWidth(targetRow)
+        local labelWidth
+        if label.GetWidth then
+            local okWidth, measured = pcall(label.GetWidth, label)
+            if okWidth then
+                labelWidth = tonumber(measured)
+            end
+        end
+        safeDebug(
+            "[EntryAlign] align=%s wrapperWidth=%s labelWidth=%s icon=%s anchors=%s",
+            tostring(viewportInfo.align),
+            tostring(wrapperWidth),
+            tostring(labelWidth),
+            "slot",
+            tostring(viewportInfo.align)
+        )
+        pendingEntryAlignLog = false
+    end
 
     return targetRow
 end
@@ -2344,6 +2386,52 @@ local function applyObjectiveRow(row, objectiveData)
         text = text:gsub("%s+", " "):gsub("%s+%)", ")")
     end
 
+    local viewportInfo = getHostViewportInfo()
+    if label.ClearAnchors then
+        label:ClearAnchors()
+    end
+    if viewportInfo.align == "right" then
+        if label.SetHorizontalAlignment then
+            label:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+        end
+        if label.SetAnchor then
+            label:SetAnchor(TOPRIGHT, control, TOPRIGHT, -DEFAULTS.OBJECTIVE_INDENT_X, 0)
+        end
+    else
+        if label.SetHorizontalAlignment then
+            label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        end
+        if label.SetAnchor then
+            label:SetAnchor(TOPLEFT, control, TOPLEFT, DEFAULTS.OBJECTIVE_INDENT_X, 0)
+        end
+    end
+    if pinLabel then
+        if pinLabel.ClearAnchors then
+            pinLabel:ClearAnchors()
+        end
+        if viewportInfo.align == "right" then
+            if pinLabel.SetAnchor then
+                pinLabel:SetAnchor(
+                    RIGHT,
+                    control,
+                    RIGHT,
+                    -(DEFAULTS.OBJECTIVE_INDENT_X - DEFAULTS.OBJECTIVE_PIN_MARKER_OFFSET_X),
+                    0
+                )
+            end
+        else
+            if pinLabel.SetAnchor then
+                pinLabel:SetAnchor(
+                    LEFT,
+                    control,
+                    LEFT,
+                    DEFAULTS.OBJECTIVE_INDENT_X - DEFAULTS.OBJECTIVE_PIN_MARKER_OFFSET_X,
+                    0
+                )
+            end
+        end
+    end
+
     local availableWidth = computeAvailableWidth(control, DEFAULTS.OBJECTIVE_INDENT_X, 0, 0)
     if label.SetWidth then
         label:SetWidth(availableWidth)
@@ -2358,6 +2446,26 @@ local function applyObjectiveRow(row, objectiveData)
     end
 
     debugGoldenWrap(label, "objective", availableWidth, getObjectiveRowHeight(), control, text)
+
+    if pendingObjectiveAlignLog and isGoldenColorDebugEnabled() then
+        local wrapperWidth = getRowContainerWidth(control)
+        local labelWidth
+        if label.GetWidth then
+            local okWidth, measured = pcall(label.GetWidth, label)
+            if okWidth then
+                labelWidth = tonumber(measured)
+            end
+        end
+        safeDebug(
+            "[ObjectiveAlign] align=%s wrapperWidth=%s labelWidth=%s baseOffset=%s side=%s",
+            tostring(viewportInfo.align),
+            tostring(wrapperWidth),
+            tostring(labelWidth),
+            tostring(DEFAULTS.OBJECTIVE_INDENT_X),
+            tostring(viewportInfo.align)
+        )
+        pendingObjectiveAlignLog = false
+    end
 
     local isPinned = type(objectiveData) == "table" and objectiveData.isPinned == true
     if pinLabel then
@@ -2408,6 +2516,8 @@ end
 
 function Rows.ResetAlignmentLog()
     pendingCategoryAlignLog = true
+    pendingEntryAlignLog = true
+    pendingObjectiveAlignLog = true
 end
 
 function Rows.GetCategoryRowHeight()

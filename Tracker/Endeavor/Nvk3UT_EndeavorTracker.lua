@@ -394,9 +394,24 @@ local function applyEntryLabelAnchors(label, control)
     end
 
     local entryLabelIndentX = ENTRY_INDENT_X + ENTRY_ICON_SLOT_PX
+    local align = "left"
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if host and type(host.GetContentAlignment) == "function" then
+        local ok, value = pcall(host.GetContentAlignment, host)
+        if ok and type(value) == "string" and value ~= "" then
+            align = string.lower(value)
+        end
+    end
     label:ClearAnchors()
-    label:SetAnchor(TOPLEFT, control, TOPLEFT, entryLabelIndentX, 0)
-    label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
+    if align == "right" then
+        label:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+        label:SetAnchor(TOPRIGHT, control, TOPRIGHT, -entryLabelIndentX, 0)
+        label:SetAnchor(BOTTOMLEFT, control, BOTTOMLEFT, 0, 0)
+    else
+        label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        label:SetAnchor(TOPLEFT, control, TOPLEFT, entryLabelIndentX, 0)
+        label:SetAnchor(BOTTOMRIGHT, control, BOTTOMRIGHT, 0, 0)
+    end
 end
 
 local function extractColorComponents(color)
