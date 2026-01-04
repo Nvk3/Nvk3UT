@@ -150,6 +150,8 @@ function Layout:ResetLayoutState()
     state.categoryAlignLogged = false
     state.entryAlignLogged = false
     state.objectiveAlignLogged = false
+    state.anchorHygieneLogged = false
+    state.lastAnchorY = 0
     state.rightExpandedCategoryCount = 0
     state.rightExpandedChevronTexture = nil
     state.rightExpandedChevronRotation = nil
@@ -368,6 +370,11 @@ function Layout:ApplyConditionAlignment(control)
     end
 
     local info = getHostViewportInfo()
+    if control.label.ClearAnchors then
+        control.label:ClearAnchors()
+        control.label:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+        control.label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+    end
     if info.align == "right" then
         control.label:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
     else
@@ -556,29 +563,26 @@ function Layout:AnchorControl(control, indentX, gapOverride)
         end
     end
 
+    local currentY
     if state.lastAnchoredControl then
-        local previousIndent = state.lastAnchoredControl.currentIndent or 0
-        if rowType == "condition" and align == "right" then
-            control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, -previousIndent, gap)
-            control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, -indentX, gap)
-        else
-            local offsetX = indentX - previousIndent
-            control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, offsetX, gap)
-            control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, 0, gap)
-        end
+        local previousHeight = state.lastAnchoredControl.GetHeight and state.lastAnchoredControl:GetHeight() or 0
+        currentY = (state.lastAnchorY or 0) + previousHeight + gap
     else
-        if rowType == "condition" and align == "right" then
-            control:SetAnchor(TOPLEFT, state.container, TOPLEFT, 0, gap)
-            control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, -indentX, gap)
-        else
-            control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, gap)
-            control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, 0, gap)
-        end
+        currentY = gap
+    end
+
+    if rowType == "condition" and align == "right" then
+        control:SetAnchor(TOPLEFT, state.container, TOPLEFT, 0, currentY)
+        control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, -indentX, currentY)
+    else
+        control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, currentY)
+        control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, 0, currentY)
     end
 
     state.lastAnchoredControl = control
     state.orderedControls[#state.orderedControls + 1] = control
     control.currentIndent = indentX
+    state.lastAnchorY = currentY
     state.visibleRowCount = (state.visibleRowCount or 0) + 1
 end
 
@@ -810,6 +814,30 @@ function Layout:UpdateContentSize()
         tostring(state.contentWidth),
         tostring(state.contentHeight)
     )
+
+    if not state.anchorHygieneLogged and isDebugEnabled() then
+        local firstQuest
+        local firstCondition
+        for index = 1, #state.orderedControls do
+            local control = state.orderedControls[index]
+            if control and control.rowType == "quest" and not firstQuest then
+                firstQuest = control
+            elseif control and control.rowType == "condition" and not firstCondition then
+                firstCondition = control
+            end
+            if firstQuest and firstCondition then
+                break
+            end
+        end
+        safeDebug(
+            "%s: Anchor hygiene rows=%d questRow=%s conditionLabel=%s",
+            MODULE_TAG,
+            #state.orderedControls,
+            tostring(firstQuest and firstQuest.GetName and firstQuest:GetName() or "none"),
+            tostring(firstCondition and firstCondition.label and firstCondition.label.GetName and firstCondition.label:GetName() or "none")
+        )
+        state.anchorHygieneLogged = true
+    end
 end
 
 function Layout:LayoutCondition(condition)

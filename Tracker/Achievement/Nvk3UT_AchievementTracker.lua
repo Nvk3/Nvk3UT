@@ -1315,6 +1315,8 @@ local function ResetLayoutState()
     state.categoryAlignLogged = false
     state.entryAlignLogged = false
     state.objectiveAlignLogged = false
+    state.anchorHygieneLogged = false
+    state.lastAnchorY = 0
 end
 
 local function WarnMissingRows()
@@ -1395,34 +1397,31 @@ local function AnchorControl(control, indentX, gapOverride)
         verticalPadding = verticalPadding + ENTRY_SPACING_ABOVE
     end
 
+    local currentY
     if state.lastAnchoredControl then
-        local previousIndent = state.lastAnchoredControl.currentIndent or 0
-        local offsetX = indentX - previousIndent
-        if rowType == "objective" and align == "right" then
-            control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, -previousIndent, verticalPadding)
-            control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, -indentX, verticalPadding)
-        else
-            control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, offsetX, verticalPadding)
-            control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, 0, verticalPadding)
-        end
+        local previousHeight = state.lastAnchoredControl.GetHeight and state.lastAnchoredControl:GetHeight() or 0
+        currentY = (state.lastAnchorY or 0) + previousHeight + verticalPadding
     else
         local offsetY = 0
         if rowKind == "header" and type(verticalPadding) == "number" then
             offsetY = verticalPadding
         end
-        if rowType == "objective" and align == "right" then
-            control:SetAnchor(TOPLEFT, state.container, TOPLEFT, 0, offsetY)
-            control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, -indentX, offsetY)
-        else
-            control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, offsetY)
-            control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, 0, offsetY)
-        end
+        currentY = offsetY
+    end
+
+    if rowType == "objective" and align == "right" then
+        control:SetAnchor(TOPLEFT, state.container, TOPLEFT, 0, currentY)
+        control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, -indentX, currentY)
+    else
+        control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, currentY)
+        control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, 0, currentY)
     end
 
     state.lastAnchoredControl = control
     state.lastAnchoredKind = rowKind
     state.orderedControls[#state.orderedControls + 1] = control
     control.currentIndent = indentX
+    state.lastAnchorY = currentY
 end
 
 local function UpdateContentSize()
@@ -1538,6 +1537,23 @@ local function UpdateContentSize()
     state.contentWidth = maxWidth
     state.contentHeight = measuredHeight
     state.lastHeight = NormalizeMetric(measuredHeight)
+
+    if not state.anchorHygieneLogged and IsDebugLoggingEnabled() then
+        local firstObjective
+        for index = 1, #state.orderedControls do
+            local control = state.orderedControls[index]
+            if control and control.rowType == "objective" then
+                firstObjective = control
+                break
+            end
+        end
+        DebugLog(string.format(
+            "Anchor hygiene rows=%d objectiveLabel=%s",
+            #state.orderedControls,
+            tostring(firstObjective and firstObjective.label and firstObjective.label.GetName and firstObjective.label:GetName() or "none")
+        ))
+        state.anchorHygieneLogged = true
+    end
 end
 
 local function IsCategoryExpanded()
@@ -1763,11 +1779,18 @@ local function LayoutObjective(rows, achievement, objective, objectiveIndex)
         color = { r, g, b, a },
     })
     local viewportInfo = getHostViewportInfo()
-    if control.label and control.label.SetHorizontalAlignment then
+    if control.label then
+        if control.label.ClearAnchors then
+            control.label:ClearAnchors()
+            control.label:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+            control.label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+        end
+        if control.label.SetHorizontalAlignment then
         if viewportInfo.align == "right" then
             control.label:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
         else
             control.label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        end
         end
     end
     ApplyRowMetrics(control, "objective", OBJECTIVE_INDENT_X, 0, 0, 0)
