@@ -148,6 +148,7 @@ function Layout:ResetLayoutState()
     state.contentWidth = 0
     state.contentHeight = 0
     state.categoryAlignLogged = false
+    state.entryAlignLogged = false
     state.rightExpandedCategoryCount = 0
     state.rightExpandedChevronTexture = nil
     state.rightExpandedChevronRotation = nil
@@ -318,6 +319,45 @@ function Layout:ApplyCategoryAlignment(control, expanded)
             rotation = math.pi
         end
         control.toggle:SetTextureRotation(rotation, 0.5, 0.5)
+    end
+end
+
+function Layout:ApplyQuestEntryAlignment(control)
+    if not (control and control.label and control.label.ClearAnchors) then
+        return
+    end
+
+    local info = getHostViewportInfo()
+    local align = info.align
+    local padding = tonumber(self.deps.QUEST_ICON_SLOT_PADDING_X) or 0
+    local iconSlot = control.iconSlot
+
+    if iconSlot and iconSlot.ClearAnchors then
+        iconSlot:ClearAnchors()
+        if align == "right" then
+            iconSlot:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+        else
+            iconSlot:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+        end
+    end
+
+    control.label:ClearAnchors()
+    if align == "right" then
+        control.label:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+        if iconSlot then
+            control.label:SetAnchor(TOPRIGHT, iconSlot, TOPLEFT, -padding, 0)
+        else
+            control.label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+        end
+        control.label:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+    else
+        control.label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        if iconSlot then
+            control.label:SetAnchor(TOPLEFT, iconSlot, TOPRIGHT, padding, 0)
+        else
+            control.label:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+        end
+        control.label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
     end
 end
 
@@ -831,11 +871,73 @@ function Layout:LayoutQuest(quest)
     if UpdateQuestIconSlot then
         UpdateQuestIconSlot(control)
     end
+    self:ApplyQuestEntryAlignment(control)
     self:GetQuestRowContentHeight(control, control.data)
     control:SetHidden(false)
     self:AnchorControl(control, self.deps.QUEST_INDENT_X)
 
     local state = self.state or {}
+    if not state.entryAlignLogged and isDebugEnabled() then
+        local info = getHostViewportInfo()
+        local wrapperWidth
+        local host = Nvk3UT and Nvk3UT.TrackerHost
+        if host and type(host.GetScrollContent) == "function" then
+            local okContent, scrollContent = pcall(host.GetScrollContent, host)
+            if okContent and scrollContent and scrollContent.GetWidth then
+                local okWidth, measured = pcall(scrollContent.GetWidth, scrollContent)
+                if okWidth then
+                    wrapperWidth = tonumber(measured)
+                end
+            end
+        end
+        if wrapperWidth == nil and control.GetParent then
+            local parent = control:GetParent()
+            if parent and parent.GetWidth then
+                local okWidth, measured = pcall(parent.GetWidth, parent)
+                if okWidth then
+                    wrapperWidth = tonumber(measured)
+                end
+            end
+        end
+
+        local labelWidth
+        if control.label and control.label.GetWidth then
+            local okWidth, measured = pcall(control.label.GetWidth, control.label)
+            if okWidth then
+                labelWidth = tonumber(measured)
+            end
+        end
+
+        local iconUsage = "slot"
+        if control.iconSlot then
+            local hasTexture = false
+            if control.iconSlot.GetTextureFileName then
+                local okTexture, texture = pcall(control.iconSlot.GetTextureFileName, control.iconSlot)
+                if okTexture and type(texture) == "string" and texture ~= "" then
+                    hasTexture = true
+                end
+            end
+            if not hasTexture and control.iconSlot.GetAlpha then
+                local okAlpha, alpha = pcall(control.iconSlot.GetAlpha, control.iconSlot)
+                if okAlpha and type(alpha) == "number" and alpha > 0 then
+                    hasTexture = true
+                end
+            end
+            iconUsage = hasTexture and "real" or "slot"
+        end
+
+        safeDebug(
+            "%s: Entry align=%s wrapperWidth=%s labelWidth=%s icon=%s anchors=%s",
+            MODULE_TAG,
+            tostring(info.align),
+            tostring(wrapperWidth),
+            tostring(labelWidth),
+            tostring(iconUsage),
+            tostring(info.align)
+        )
+        state.entryAlignLogged = true
+    end
+
     if quest and quest.journalIndex then
         state.questControls[quest.journalIndex] = control
     end

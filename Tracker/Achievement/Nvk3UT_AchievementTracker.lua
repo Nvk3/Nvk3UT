@@ -475,6 +475,43 @@ local function getHostViewportInfo()
     }
 end
 
+local function applyEntryAlignment(control, viewportInfo)
+    if not (control and control.label and control.label.ClearAnchors) then
+        return
+    end
+
+    local align = viewportInfo and viewportInfo.align or "left"
+    local iconSlot = control.iconSlot
+
+    if iconSlot and iconSlot.ClearAnchors then
+        iconSlot:ClearAnchors()
+        if align == "right" then
+            iconSlot:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+        else
+            iconSlot:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+        end
+    end
+
+    control.label:ClearAnchors()
+    if align == "right" then
+        control.label:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+        if iconSlot then
+            control.label:SetAnchor(TOPRIGHT, iconSlot, TOPLEFT, -ACHIEVEMENT_ICON_SLOT_PADDING_X, 0)
+        else
+            control.label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+        end
+        control.label:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+    else
+        control.label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        if iconSlot then
+            control.label:SetAnchor(TOPLEFT, iconSlot, TOPRIGHT, ACHIEVEMENT_ICON_SLOT_PADDING_X, 0)
+        else
+            control.label:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+        end
+        control.label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+    end
+end
+
 local function ApplyRowMetrics(control, rowType, indent, toggleWidth, leftPadding, rightPadding, widthOverride)
     if not control or not control.label then
         return
@@ -1276,6 +1313,7 @@ local function ResetLayoutState()
     state.nextEntryGap = nil
     state.nextObjectiveGap = nil
     state.categoryAlignLogged = false
+    state.entryAlignLogged = false
 end
 
 local function WarnMissingRows()
@@ -1738,6 +1776,7 @@ local function LayoutAchievement(rows, achievement)
     })
 
     local expanded = hasObjectives and IsEntryExpanded(achievement.id)
+    local viewportInfo = getHostViewportInfo()
     ApplyRowMetrics(
         control,
         "achievement",
@@ -1746,9 +1785,69 @@ local function LayoutAchievement(rows, achievement)
         ACHIEVEMENT_ICON_SLOT_PADDING_X,
         0
     )
+    applyEntryAlignment(control, viewportInfo)
     control:SetHidden(false)
     AnchorControl(control, ENTRY_INDENT_X, state.nextCategoryGap)
     state.nextCategoryGap = nil
+
+    if not state.entryAlignLogged and IsDebugLoggingEnabled() then
+        local wrapperWidth
+        local host = Nvk3UT and Nvk3UT.TrackerHost
+        if host and type(host.GetScrollContent) == "function" then
+            local okContent, scrollContent = pcall(host.GetScrollContent, host)
+            if okContent and scrollContent and scrollContent.GetWidth then
+                local okWidth, measured = pcall(scrollContent.GetWidth, scrollContent)
+                if okWidth then
+                    wrapperWidth = tonumber(measured)
+                end
+            end
+        end
+        if wrapperWidth == nil and control.GetParent then
+            local parent = control:GetParent()
+            if parent and parent.GetWidth then
+                local okWidth, measured = pcall(parent.GetWidth, parent)
+                if okWidth then
+                    wrapperWidth = tonumber(measured)
+                end
+            end
+        end
+
+        local labelWidth
+        if control.label and control.label.GetWidth then
+            local okWidth, measured = pcall(control.label.GetWidth, control.label)
+            if okWidth then
+                labelWidth = tonumber(measured)
+            end
+        end
+
+        local iconUsage = "slot"
+        if control.iconSlot then
+            local hasTexture = false
+            if control.iconSlot.GetTextureFileName then
+                local okTexture, texture = pcall(control.iconSlot.GetTextureFileName, control.iconSlot)
+                if okTexture and type(texture) == "string" and texture ~= "" then
+                    hasTexture = true
+                end
+            end
+            if not hasTexture and control.iconSlot.GetAlpha then
+                local okAlpha, alpha = pcall(control.iconSlot.GetAlpha, control.iconSlot)
+                if okAlpha and type(alpha) == "number" and alpha > 0 then
+                    hasTexture = true
+                end
+            end
+            iconUsage = hasTexture and "real" or "slot"
+        end
+
+        DebugLog(string.format(
+            "Entry align=%s wrapperWidth=%s labelWidth=%s icon=%s anchors=%s",
+            tostring(viewportInfo.align),
+            tostring(wrapperWidth),
+            tostring(labelWidth),
+            tostring(iconUsage),
+            tostring(viewportInfo.align)
+        ))
+        state.entryAlignLogged = true
+    end
 
     if hasObjectives and expanded then
         local visibleObjectives = {}

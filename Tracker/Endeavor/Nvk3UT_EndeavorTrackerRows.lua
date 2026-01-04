@@ -342,6 +342,7 @@ local entryPool = {
 
 local loggedSubrowsOnce = false
 local pendingCategoryAlignLog = true
+local pendingEntryAlignLog = true
 
 local function getHostViewportInfo()
     local host = Nvk3UT and Nvk3UT.TrackerHost
@@ -2013,6 +2014,7 @@ end
 
 function Rows.ResetAlignmentLog()
     pendingCategoryAlignLog = true
+    pendingEntryAlignLog = true
 end
 
 local function getConfiguredFonts(options)
@@ -2198,7 +2200,14 @@ local function applyEntryRow(row, objective, options)
         applyFontString(title, resolvedFont, DEFAULT_OBJECTIVE_FONT)
     end
     title:ClearAnchors()
-    title:SetAnchor(TOPLEFT, row, TOPLEFT, resolveObjectiveIndent(options), ENTRY_TOP_PAD)
+    local viewportInfo = getHostViewportInfo()
+    if viewportInfo.align == "right" then
+        title:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+        title:SetAnchor(TOPRIGHT, row, TOPRIGHT, -resolveObjectiveIndent(options), ENTRY_TOP_PAD)
+    else
+        title:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        title:SetAnchor(TOPLEFT, row, TOPLEFT, resolveObjectiveIndent(options), ENTRY_TOP_PAD)
+    end
     title:SetText(combinedText)
     row.Label = title
     row.label = title
@@ -2277,6 +2286,26 @@ local function applyEntryRow(row, objective, options)
 
     if row.SetAlpha then
         row:SetAlpha(1)
+    end
+
+    if pendingEntryAlignLog and isDebugEnabled() then
+        local wrapperWidth = getEndeavorRowContainerWidth(row)
+        local labelWidth
+        if title.GetWidth then
+            local okWidth, measured = pcall(title.GetWidth, title)
+            if okWidth then
+                labelWidth = tonumber(measured)
+            end
+        end
+        safeDebug(
+            "[EntryAlign] align=%s wrapperWidth=%s labelWidth=%s icon=%s anchors=%s",
+            tostring(viewportInfo.align),
+            tostring(wrapperWidth),
+            tostring(labelWidth),
+            "slot",
+            tostring(viewportInfo.align)
+        )
+        pendingEntryAlignLog = false
     end
 
     safeDebug("[EndeavorRows] objective inline: \"%s\"", combinedText)
