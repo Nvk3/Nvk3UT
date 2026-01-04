@@ -1314,6 +1314,7 @@ local function ResetLayoutState()
     state.nextObjectiveGap = nil
     state.categoryAlignLogged = false
     state.entryAlignLogged = false
+    state.objectiveAlignLogged = false
 end
 
 local function WarnMissingRows()
@@ -1367,6 +1368,8 @@ local function AnchorControl(control, indentX, gapOverride)
 
     local rowKind = ResolveRowKind(control)
     local rowType = control.rowType
+    local viewportInfo = getHostViewportInfo()
+    local align = viewportInfo.align
     local verticalPadding = gapOverride
     local pendingEntryGap = nil
     local pendingObjectiveGap = nil
@@ -1395,15 +1398,25 @@ local function AnchorControl(control, indentX, gapOverride)
     if state.lastAnchoredControl then
         local previousIndent = state.lastAnchoredControl.currentIndent or 0
         local offsetX = indentX - previousIndent
-        control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, offsetX, verticalPadding)
-        control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, 0, verticalPadding)
+        if rowType == "objective" and align == "right" then
+            control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, -previousIndent, verticalPadding)
+            control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, -indentX, verticalPadding)
+        else
+            control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, offsetX, verticalPadding)
+            control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, 0, verticalPadding)
+        end
     else
         local offsetY = 0
         if rowKind == "header" and type(verticalPadding) == "number" then
             offsetY = verticalPadding
         end
-        control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, offsetY)
-        control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, 0, offsetY)
+        if rowType == "objective" and align == "right" then
+            control:SetAnchor(TOPLEFT, state.container, TOPLEFT, 0, offsetY)
+            control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, -indentX, offsetY)
+        else
+            control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, offsetY)
+            control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, 0, offsetY)
+        end
     end
 
     state.lastAnchoredControl = control
@@ -1749,10 +1762,59 @@ local function LayoutObjective(rows, achievement, objective, objectiveIndex)
         labelText = text,
         color = { r, g, b, a },
     })
+    local viewportInfo = getHostViewportInfo()
+    if control.label and control.label.SetHorizontalAlignment then
+        if viewportInfo.align == "right" then
+            control.label:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+        else
+            control.label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        end
+    end
     ApplyRowMetrics(control, "objective", OBJECTIVE_INDENT_X, 0, 0, 0)
     control:SetHidden(false)
     AnchorControl(control, OBJECTIVE_INDENT_X, state.nextCategoryGap)
     state.nextCategoryGap = nil
+
+    if not state.objectiveAlignLogged and IsDebugLoggingEnabled() then
+        local wrapperWidth
+        local host = Nvk3UT and Nvk3UT.TrackerHost
+        if host and type(host.GetScrollContent) == "function" then
+            local okContent, scrollContent = pcall(host.GetScrollContent, host)
+            if okContent and scrollContent and scrollContent.GetWidth then
+                local okWidth, measured = pcall(scrollContent.GetWidth, scrollContent)
+                if okWidth then
+                    wrapperWidth = tonumber(measured)
+                end
+            end
+        end
+        if wrapperWidth == nil and control.GetParent then
+            local parent = control:GetParent()
+            if parent and parent.GetWidth then
+                local okWidth, measured = pcall(parent.GetWidth, parent)
+                if okWidth then
+                    wrapperWidth = tonumber(measured)
+                end
+            end
+        end
+
+        local labelWidth
+        if control.label and control.label.GetWidth then
+            local okWidth, measured = pcall(control.label.GetWidth, control.label)
+            if okWidth then
+                labelWidth = tonumber(measured)
+            end
+        end
+
+        DebugLog(string.format(
+            "Objective align=%s wrapperWidth=%s labelWidth=%s baseOffset=%s side=%s",
+            tostring(viewportInfo.align),
+            tostring(wrapperWidth),
+            tostring(labelWidth),
+            tostring(OBJECTIVE_BASE_INDENT),
+            tostring(viewportInfo.align)
+        ))
+        state.objectiveAlignLogged = true
+    end
 
     return control:GetHeight()
 end

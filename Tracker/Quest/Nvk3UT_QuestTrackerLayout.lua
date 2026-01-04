@@ -149,6 +149,7 @@ function Layout:ResetLayoutState()
     state.contentHeight = 0
     state.categoryAlignLogged = false
     state.entryAlignLogged = false
+    state.objectiveAlignLogged = false
     state.rightExpandedCategoryCount = 0
     state.rightExpandedChevronTexture = nil
     state.rightExpandedChevronRotation = nil
@@ -361,6 +362,19 @@ function Layout:ApplyQuestEntryAlignment(control)
     end
 end
 
+function Layout:ApplyConditionAlignment(control)
+    if not (control and control.label and control.label.SetHorizontalAlignment) then
+        return
+    end
+
+    local info = getHostViewportInfo()
+    if info.align == "right" then
+        control.label:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+    else
+        control.label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+    end
+end
+
 function Layout:GetCategoryHeaderHeight(categoryControl)
     if not categoryControl then
         return 0
@@ -497,10 +511,12 @@ function Layout:AnchorControl(control, indentX, gapOverride)
     indentX = indentX or 0
 
     control:ClearAnchors()
+    local rowType = control.rowType
+    local info = getHostViewportInfo()
+    local align = info.align
 
     local gap = gapOverride
     if type(gap) ~= "number" then
-        local rowType = control.rowType
         local isFirst = (state.visibleRowCount or 0) == 0
         local pendingGap = nil
         local pendingEntryGap = nil
@@ -542,12 +558,22 @@ function Layout:AnchorControl(control, indentX, gapOverride)
 
     if state.lastAnchoredControl then
         local previousIndent = state.lastAnchoredControl.currentIndent or 0
-        local offsetX = indentX - previousIndent
-        control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, offsetX, gap)
-        control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, 0, gap)
+        if rowType == "condition" and align == "right" then
+            control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, -previousIndent, gap)
+            control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, -indentX, gap)
+        else
+            local offsetX = indentX - previousIndent
+            control:SetAnchor(TOPLEFT, state.lastAnchoredControl, BOTTOMLEFT, offsetX, gap)
+            control:SetAnchor(TOPRIGHT, state.lastAnchoredControl, BOTTOMRIGHT, 0, gap)
+        end
     else
-        control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, gap)
-        control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, 0, gap)
+        if rowType == "condition" and align == "right" then
+            control:SetAnchor(TOPLEFT, state.container, TOPLEFT, 0, gap)
+            control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, -indentX, gap)
+        else
+            control:SetAnchor(TOPLEFT, state.container, TOPLEFT, indentX, gap)
+            control:SetAnchor(TOPRIGHT, state.container, TOPRIGHT, 0, gap)
+        end
     end
 
     state.lastAnchoredControl = control
@@ -808,9 +834,55 @@ function Layout:LayoutCondition(condition)
         local r, g, b, a = GetQuestTrackerColor("objectiveText")
         control.label:SetColor(r, g, b, a)
     end
+    self:ApplyConditionAlignment(control)
     self:GetConditionHeight(control)
     control:SetHidden(false)
     self:AnchorControl(control, self.deps.CONDITION_INDENT_X)
+
+    local state = self.state or {}
+    if not state.objectiveAlignLogged and isDebugEnabled() then
+        local info = getHostViewportInfo()
+        local wrapperWidth
+        local host = Nvk3UT and Nvk3UT.TrackerHost
+        if host and type(host.GetScrollContent) == "function" then
+            local okContent, scrollContent = pcall(host.GetScrollContent, host)
+            if okContent and scrollContent and scrollContent.GetWidth then
+                local okWidth, measured = pcall(scrollContent.GetWidth, scrollContent)
+                if okWidth then
+                    wrapperWidth = tonumber(measured)
+                end
+            end
+        end
+        if wrapperWidth == nil and control.GetParent then
+            local parent = control:GetParent()
+            if parent and parent.GetWidth then
+                local okWidth, measured = pcall(parent.GetWidth, parent)
+                if okWidth then
+                    wrapperWidth = tonumber(measured)
+                end
+            end
+        end
+
+        local labelWidth
+        if control.label and control.label.GetWidth then
+            local okWidth, measured = pcall(control.label.GetWidth, control.label)
+            if okWidth then
+                labelWidth = tonumber(measured)
+            end
+        end
+
+        local baseOffset = self.deps and self.deps.OBJECTIVE_BASE_INDENT
+        safeDebug(
+            "%s: Objective align=%s wrapperWidth=%s labelWidth=%s baseOffset=%s side=%s",
+            MODULE_TAG,
+            tostring(info.align),
+            tostring(wrapperWidth),
+            tostring(labelWidth),
+            tostring(baseOffset),
+            tostring(info.align)
+        )
+        state.objectiveAlignLogged = true
+    end
 end
 
 function Layout:LayoutQuest(quest)
