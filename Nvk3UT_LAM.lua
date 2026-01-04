@@ -170,6 +170,7 @@ local DEFAULT_HOST_SETTINGS = {
     HideInCombat = false,
     CornerButtonEnabled = true,
     CornerPosition = "TOP_RIGHT",
+    contentAlign = "left",
     scrollbarSide = "right",
     sectionOrder = {
         "questSectionContainer",
@@ -244,6 +245,19 @@ local function normalizeScrollbarSide(value)
     end
 
     return DEFAULT_HOST_SETTINGS.scrollbarSide
+end
+
+local function normalizeContentAlign(value)
+    if type(value) ~= "string" then
+        return DEFAULT_HOST_SETTINGS.contentAlign
+    end
+
+    local normalized = string.lower(value)
+    if normalized == "left" or normalized == "right" then
+        return normalized
+    end
+
+    return DEFAULT_HOST_SETTINGS.contentAlign
 end
 
 local function getSavedVars()
@@ -357,6 +371,7 @@ local function getHostSettings()
     end
 
     host.CornerPosition = normalizeCornerPosition(host.CornerPosition)
+    host.contentAlign = normalizeContentAlign(host.contentAlign)
     host.scrollbarSide = normalizeScrollbarSide(host.scrollbarSide)
     host.sectionOrder = normalizeSectionOrder(host.sectionOrder)
 
@@ -2381,6 +2396,30 @@ local function registerPanel(displayTitle)
                     return settings.CornerButtonEnabled == false
                 end,
                 default = DEFAULT_HOST_SETTINGS.CornerPosition,
+            })
+
+            addControl({
+                type = "dropdown",
+                name = GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_CONTENT_ALIGN),
+                choices = {
+                    GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_CONTENT_ALIGN_LEFT),
+                    GetString(SI_NVK3UT_LAM_OPTION_TRACKER_HOST_CONTENT_ALIGN_RIGHT),
+                },
+                choicesValues = { "left", "right" },
+                getFunc = function()
+                    local settings = getHostSettings()
+                    return settings.contentAlign
+                end,
+                setFunc = function(value)
+                    local host = Nvk3UT and Nvk3UT.TrackerHost
+                    if host and host.ApplyContentAlignment then
+                        host.ApplyContentAlignment(value)
+                    else
+                        local settings = getHostSettings()
+                        settings.contentAlign = normalizeContentAlign(value)
+                    end
+                end,
+                default = DEFAULT_HOST_SETTINGS.contentAlign,
             })
 
             addControl({

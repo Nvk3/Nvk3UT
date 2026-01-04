@@ -162,6 +162,14 @@ local function getTrackerHostScrollContentWidth()
     local addon = getAddon()
     local host = type(addon) == "table" and addon.TrackerHost or nil
     if type(host) == "table" then
+        local getViewportWidth = host.GetViewportWidth
+        if type(getViewportWidth) == "function" then
+            local ok, measured = pcall(getViewportWidth, host)
+            if ok and type(measured) == "number" and measured > 0 then
+                return measured
+            end
+        end
+
         local getScrollContent = host.GetScrollContent
         if type(getScrollContent) == "function" then
             local ok, scrollContent = pcall(getScrollContent, host)
