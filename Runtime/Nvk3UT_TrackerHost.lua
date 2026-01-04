@@ -1532,6 +1532,8 @@ local function visibilityDebug(fmt, ...)
     diagnosticsDebug(fmt, ...)
 end
 
+local loggedTopRightChevronVisual = false
+
 local function safeCall(fn, ...)
     local safe = Nvk3UT and Nvk3UT.SafeCall
     if type(safe) == "function" then
@@ -3397,6 +3399,33 @@ function TrackerHost.GetViewportWidth()
     end
 
     return resolved
+end
+
+function TrackerHost.ApplyChevronVisualTopRightExpanded(chevron)
+    if not chevron then
+        return nil, nil
+    end
+
+    local texturePath = CORNER_TEXTURES.normal
+    if chevron.SetTexture then
+        chevron:SetTexture(texturePath)
+    end
+
+    local rotation = CORNER_ROTATIONS.TOP_RIGHT or 0
+    if chevron.SetTextureRotation then
+        chevron:SetTextureRotation(rotation, 0.5, 0.5)
+    end
+
+    if isDebugEnabled() and not loggedTopRightChevronVisual then
+        debugLog(
+            "Corner TOP_RIGHT expanded visual: texture=%s rotation=%s",
+            tostring(texturePath),
+            tostring(rotation)
+        )
+        loggedTopRightChevronVisual = true
+    end
+
+    return texturePath, rotation
 end
 
 function TrackerHost.ApplyViewportInsets()

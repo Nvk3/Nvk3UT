@@ -1887,14 +1887,20 @@ local function applyCategoryRow(row, data)
             label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
         end
     end
+    local rotation = 0
+    local texturePath = nil
     if chevron and chevron.SetTextureRotation then
-        local rotation = 0
         if viewportInfo.align == "right" and expanded then
-            rotation = math.rad(225)
-        elseif viewportInfo.align == "right" and not expanded then
-            rotation = math.pi
+            local host = Nvk3UT and Nvk3UT.TrackerHost
+            if host and type(host.ApplyChevronVisualTopRightExpanded) == "function" then
+                texturePath, rotation = host.ApplyChevronVisualTopRightExpanded(chevron)
+            end
+        else
+            if viewportInfo.align == "right" and not expanded then
+                rotation = math.pi
+            end
+            chevron:SetTextureRotation(rotation, 0.5, 0.5)
         end
-        chevron:SetTextureRotation(rotation, 0.5, 0.5)
     end
 
     local availableWidth = computeEndeavorAvailableWidth(
@@ -1939,6 +1945,24 @@ local function applyCategoryRow(row, data)
         )
         pendingCategoryAlignLog = false
     end
+
+    local lastExpanded = row.__lastChevronExpanded
+    if viewportInfo.align == "right" and expanded and lastExpanded ~= expanded and isDebugEnabled() then
+        if texturePath == nil and chevron and chevron.GetTextureFileName then
+            local okTexture, resolved = pcall(chevron.GetTextureFileName, chevron)
+            if okTexture then
+                texturePath = resolved
+            end
+        end
+        safeDebug(
+            "[CategoryChevron] Endeavor align=%s expanded=%s texture=%s rotation=%s",
+            tostring(viewportInfo.align),
+            tostring(expanded),
+            tostring(texturePath),
+            tostring(rotation)
+        )
+    end
+    row.__lastChevronExpanded = expanded
 
     if LOGGER and type(LOGGER.Info) == "function" then
         LOGGER:Info(
