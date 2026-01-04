@@ -1529,9 +1529,11 @@ local function applyCategoryRow(row, categoryData)
             end
         end
     end
+    local rotation = 0
     if chevron and chevron.SetTextureRotation then
-        local rotation = 0
-        if viewportInfo.align == "right" and not expanded then
+        if viewportInfo.align == "right" and expanded then
+            rotation = math.rad(225)
+        elseif viewportInfo.align == "right" and not expanded then
             rotation = math.pi
         end
         chevron:SetTextureRotation(rotation, 0.5, 0.5)
@@ -1602,10 +1604,7 @@ local function applyCategoryRow(row, categoryData)
                 width = tonumber(measured)
             end
         end
-        local rotationValue = 0
-        if viewportInfo.align == "right" and not expanded then
-            rotationValue = math.pi
-        end
+        local rotationValue = rotation
         safeDebug(
             "[CategoryAlign] align=%s scrollbar=%s insets=(%s,%s) rowWidth=%s chevronSide=%s rotation=%s",
             tostring(viewportInfo.align),
@@ -1617,6 +1616,27 @@ local function applyCategoryRow(row, categoryData)
             tostring(rotationValue)
         )
         pendingCategoryAlignLog = false
+    end
+
+    if isGoldenColorDebugEnabled() then
+        local lastExpanded = row.__lastChevronExpanded
+        if lastExpanded ~= expanded then
+            local texturePath = nil
+            if chevron and chevron.GetTextureFileName then
+                local okTexture, texture = pcall(chevron.GetTextureFileName, chevron)
+                if okTexture then
+                    texturePath = texture
+                end
+            end
+            safeDebug(
+                "[CategoryChevron] align=%s expanded=%s texture=%s rotation=%s",
+                tostring(viewportInfo.align),
+                tostring(expanded),
+                tostring(texturePath),
+                tostring(rotation)
+            )
+            row.__lastChevronExpanded = expanded
+        end
     end
 
     row._onToggle = function()

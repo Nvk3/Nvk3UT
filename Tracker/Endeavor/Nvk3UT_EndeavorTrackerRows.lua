@@ -1889,7 +1889,9 @@ local function applyCategoryRow(row, data)
     end
     if chevron and chevron.SetTextureRotation then
         local rotation = 0
-        if viewportInfo.align == "right" and not expanded then
+        if viewportInfo.align == "right" and expanded then
+            rotation = math.rad(225)
+        elseif viewportInfo.align == "right" and not expanded then
             rotation = math.pi
         end
         chevron:SetTextureRotation(rotation, 0.5, 0.5)

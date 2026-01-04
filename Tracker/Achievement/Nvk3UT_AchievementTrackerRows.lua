@@ -288,7 +288,9 @@ function Rows:UpdateCategoryToggle(control, expanded)
         end
 
         local rotation = 0
-        if align == "right" and not expanded then
+        if align == "right" and expanded then
+            rotation = math.rad(225)
+        elseif align == "right" and not expanded then
             rotation = math.pi
         end
         control.toggle:SetTextureRotation(rotation, 0.5, 0.5)
