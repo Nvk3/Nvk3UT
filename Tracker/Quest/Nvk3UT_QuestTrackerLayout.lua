@@ -11,6 +11,25 @@ local function getAddon()
     return rawget(_G, addonName)
 end
 
+local function isDebugEnabled()
+    local utils = (Nvk3UT and Nvk3UT.Utils) or Nvk3UT_Utils
+    if utils and type(utils.IsDebugEnabled) == "function" then
+        return utils:IsDebugEnabled()
+    end
+
+    local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
+    if diagnostics and type(diagnostics.IsDebugEnabled) == "function" then
+        return diagnostics:IsDebugEnabled()
+    end
+
+    local addon = Nvk3UT
+    if addon and type(addon.IsDebugEnabled) == "function" then
+        return addon:IsDebugEnabled()
+    end
+
+    return false
+end
+
 local function safeDebug(message, ...)
     local addon = getAddon()
     local debugFn = addon and addon.Debug
@@ -29,6 +48,52 @@ local function safeDebug(message, ...)
     else
         debugFn(message)
     end
+end
+
+local function getHostViewportInfo()
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    local align = "left"
+    local scrollbarSide = "right"
+    local leftInset = 0
+    local rightInset = 0
+    local viewportWidth
+
+    if host and type(host.GetContentAlignment) == "function" then
+        local ok, value = pcall(host.GetContentAlignment, host)
+        if ok and type(value) == "string" and value ~= "" then
+            align = string.lower(value)
+        end
+    end
+
+    if host and type(host.GetScrollbarSide) == "function" then
+        local ok, value = pcall(host.GetScrollbarSide, host)
+        if ok and type(value) == "string" and value ~= "" then
+            scrollbarSide = string.lower(value)
+        end
+    end
+
+    if host and type(host.GetViewportInsets) == "function" then
+        local ok, leftValue, rightValue = pcall(host.GetViewportInsets, host)
+        if ok then
+            leftInset = tonumber(leftValue) or leftInset
+            rightInset = tonumber(rightValue) or rightInset
+        end
+    end
+
+    if host and type(host.GetViewportWidth) == "function" then
+        local ok, width = pcall(host.GetViewportWidth, host)
+        if ok and type(width) == "number" then
+            viewportWidth = width
+        end
+    end
+
+    return {
+        align = align,
+        scrollbarSide = scrollbarSide,
+        leftInset = leftInset,
+        rightInset = rightInset,
+        viewportWidth = viewportWidth,
+    }
 end
 
 function Layout:Init(trackerState, deps)
@@ -82,6 +147,7 @@ function Layout:ResetLayoutState()
     state.questControls = {}
     state.contentWidth = 0
     state.contentHeight = 0
+    state.categoryAlignLogged = false
     self.rowsByCategory = nil
 end
 
@@ -97,6 +163,15 @@ function Layout:GetContainerWidth()
     end
 
     return width
+end
+
+function Layout:GetViewportWidth()
+    local info = getHostViewportInfo()
+    if info.viewportWidth ~= nil then
+        return info.viewportWidth
+    end
+
+    return self:GetContainerWidth()
 end
 
 function Layout:GetCategoryBottomPadding(expanded)
@@ -139,7 +214,7 @@ function Layout:SetPendingEntryGap()
     state.pendingEntryGap = gap
 end
 
-function Layout:ComputeRowHeight(control, indent, toggleWidth, leftPadding, rightPadding, minHeight)
+function Layout:ComputeRowHeight(control, indent, toggleWidth, leftPadding, rightPadding, minHeight, widthOverride)
     if not control or not control.label then
         return 0
     end
@@ -149,7 +224,12 @@ function Layout:ComputeRowHeight(control, indent, toggleWidth, leftPadding, righ
     leftPadding = leftPadding or 0
     rightPadding = rightPadding or 0
 
-    local availableWidth = self:GetContainerWidth() - indent - toggleWidth - leftPadding - rightPadding
+    local targetWidth = widthOverride
+    if type(targetWidth) ~= "number" or targetWidth <= 0 then
+        targetWidth = self:GetContainerWidth()
+    end
+
+    local availableWidth = targetWidth - indent - toggleWidth - leftPadding - rightPadding
     if availableWidth < 0 then
         availableWidth = 0
     end
@@ -189,6 +269,54 @@ function Layout:GetObjectiveSpacing(prevRowType, rowType)
     return 0
 end
 
+function Layout:ApplyCategoryAlignment(control, expanded)
+    if not (control and control.label and control.toggle) then
+        return
+    end
+
+    local info = getHostViewportInfo()
+    local align = info.align
+    local indent = tonumber(self.deps.CATEGORY_INDENT_X) or 0
+    local padding = tonumber(self.deps.TOGGLE_LABEL_PADDING_X) or 0
+
+    if control.indentAnchor and control.indentAnchor.SetAnchor then
+        control.indentAnchor:ClearAnchors()
+        if align == "right" then
+            control.indentAnchor:SetAnchor(TOPRIGHT, control, TOPRIGHT, -indent, 0)
+        else
+            control.indentAnchor:SetAnchor(TOPLEFT, control, TOPLEFT, indent, 0)
+        end
+    end
+
+    control.toggle:ClearAnchors()
+    if align == "right" then
+        control.toggle:SetAnchor(TOPRIGHT, control.indentAnchor or control, TOPRIGHT, 0, 0)
+    else
+        control.toggle:SetAnchor(TOPLEFT, control.indentAnchor or control, TOPLEFT, 0, 0)
+    end
+
+    if control.label then
+        control.label:ClearAnchors()
+        if align == "right" then
+            control.label:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+            control.label:SetAnchor(TOPRIGHT, control.toggle, TOPLEFT, -padding, 0)
+            control.label:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+        else
+            control.label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+            control.label:SetAnchor(TOPLEFT, control.toggle, TOPRIGHT, padding, 0)
+            control.label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+        end
+    end
+
+    if control.toggle.SetTextureRotation then
+        local rotation = 0
+        if align == "right" and not expanded then
+            rotation = math.pi
+        end
+        control.toggle:SetTextureRotation(rotation, 0.5, 0.5)
+    end
+end
+
 function Layout:GetCategoryHeaderHeight(categoryControl)
     if not categoryControl then
         return 0
@@ -207,7 +335,8 @@ function Layout:GetCategoryHeaderHeight(categoryControl)
         toggleWidth,
         self.deps.TOGGLE_LABEL_PADDING_X,
         0,
-        self.deps.CATEGORY_MIN_HEIGHT
+        self.deps.CATEGORY_MIN_HEIGHT,
+        self:GetViewportWidth()
     )
 end
 
@@ -754,13 +883,26 @@ function Layout:LayoutCategory(category, providedControl)
     if UpdateCategoryToggle then
         UpdateCategoryToggle(control, expanded)
     end
-    if control.indentAnchor and control.indentAnchor.SetAnchor then
-        control.indentAnchor:ClearAnchors()
-        control.indentAnchor:SetAnchor(TOPLEFT, control, TOPLEFT, self.deps.CATEGORY_INDENT_X or 0, 0)
-    end
+    self:ApplyCategoryAlignment(control, expanded)
     self:GetCategoryHeaderHeight(control)
     control:SetHidden(false)
     self:AnchorControl(control, 0)
+
+    local state = self.state or {}
+    if not state.categoryAlignLogged and isDebugEnabled() then
+        local info = getHostViewportInfo()
+        local width = self:GetViewportWidth()
+        safeDebug(
+            "%s: Category align=%s scrollbar=%s insets=(%s,%s) rowWidth=%s",
+            MODULE_TAG,
+            tostring(info.align),
+            tostring(info.scrollbarSide),
+            tostring(info.leftInset),
+            tostring(info.rightInset),
+            tostring(width)
+        )
+        state.categoryAlignLogged = true
+    end
 
     if expanded and category.quests then
         for index = 1, count do

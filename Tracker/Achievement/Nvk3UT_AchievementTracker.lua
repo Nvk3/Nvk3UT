@@ -417,7 +417,65 @@ local function GetContainerWidth()
     return width
 end
 
-local function ApplyRowMetrics(control, rowType, indent, toggleWidth, leftPadding, rightPadding)
+local function GetViewportWidth()
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    if host and type(host.GetViewportWidth) == "function" then
+        local ok, width = pcall(host.GetViewportWidth, host)
+        if ok and type(width) == "number" and width > 0 then
+            return width
+        end
+    end
+
+    return GetContainerWidth()
+end
+
+local function getHostViewportInfo()
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    local align = "left"
+    local scrollbarSide = "right"
+    local leftInset = 0
+    local rightInset = 0
+    local viewportWidth
+
+    if host and type(host.GetContentAlignment) == "function" then
+        local ok, value = pcall(host.GetContentAlignment, host)
+        if ok and type(value) == "string" and value ~= "" then
+            align = string.lower(value)
+        end
+    end
+
+    if host and type(host.GetScrollbarSide) == "function" then
+        local ok, value = pcall(host.GetScrollbarSide, host)
+        if ok and type(value) == "string" and value ~= "" then
+            scrollbarSide = string.lower(value)
+        end
+    end
+
+    if host and type(host.GetViewportInsets) == "function" then
+        local ok, leftValue, rightValue = pcall(host.GetViewportInsets, host)
+        if ok then
+            leftInset = tonumber(leftValue) or leftInset
+            rightInset = tonumber(rightValue) or rightInset
+        end
+    end
+
+    if host and type(host.GetViewportWidth) == "function" then
+        local ok, width = pcall(host.GetViewportWidth, host)
+        if ok and type(width) == "number" then
+            viewportWidth = width
+        end
+    end
+
+    return {
+        align = align,
+        scrollbarSide = scrollbarSide,
+        leftInset = leftInset,
+        rightInset = rightInset,
+        viewportWidth = viewportWidth,
+    }
+end
+
+local function ApplyRowMetrics(control, rowType, indent, toggleWidth, leftPadding, rightPadding, widthOverride)
     if not control or not control.label then
         return
     end
@@ -427,7 +485,11 @@ local function ApplyRowMetrics(control, rowType, indent, toggleWidth, leftPaddin
     leftPadding = leftPadding or 0
     rightPadding = rightPadding or 0
 
-    local containerWidth = GetContainerWidth()
+    local containerWidth = widthOverride
+    if type(containerWidth) ~= "number" or containerWidth <= 0 then
+        containerWidth = GetContainerWidth()
+    end
+
     local availableWidth = containerWidth - indent - toggleWidth - leftPadding - rightPadding
     if availableWidth < 0 then
         availableWidth = 0
@@ -454,7 +516,8 @@ local function RefreshControlMetrics(control)
             indent,
             GetToggleWidth(control.toggle, CATEGORY_TOGGLE_WIDTH),
             TOGGLE_LABEL_PADDING_X,
-            0
+            0,
+            GetViewportWidth()
         )
     elseif rowType == "achievement" then
         ApplyRowMetrics(
@@ -1212,6 +1275,7 @@ local function ResetLayoutState()
     state.nextCategoryGap = nil
     state.nextEntryGap = nil
     state.nextObjectiveGap = nil
+    state.categoryAlignLogged = false
 end
 
 local function WarnMissingRows()
@@ -1814,19 +1878,45 @@ local function LayoutCategory(rows)
         expanded = expanded,
     })
     state.categoryExpanded = expanded
+    local viewportInfo = getHostViewportInfo()
     ApplyRowMetrics(
         control,
         "category",
         CATEGORY_INDENT_X,
         GetToggleWidth(control.toggle, CATEGORY_TOGGLE_WIDTH),
         TOGGLE_LABEL_PADDING_X,
-        0
+        0,
+        viewportInfo.viewportWidth or GetViewportWidth()
     )
 
     control:SetHidden(false)
     if control.indentAnchor and control.indentAnchor.SetAnchor then
         control.indentAnchor:ClearAnchors()
-        control.indentAnchor:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+        if viewportInfo.align == "right" then
+            control.indentAnchor:SetAnchor(TOPRIGHT, control, TOPRIGHT, -CATEGORY_INDENT_X, 0)
+        else
+            control.indentAnchor:SetAnchor(TOPLEFT, control, TOPLEFT, CATEGORY_INDENT_X, 0)
+        end
+    end
+    if control.toggle and control.toggle.SetAnchor then
+        control.toggle:ClearAnchors()
+        if viewportInfo.align == "right" then
+            control.toggle:SetAnchor(TOPRIGHT, control.indentAnchor or control, TOPRIGHT, 0, 0)
+        else
+            control.toggle:SetAnchor(TOPLEFT, control.indentAnchor or control, TOPLEFT, 0, 0)
+        end
+    end
+    if control.label and control.label.SetAnchor then
+        control.label:ClearAnchors()
+        if viewportInfo.align == "right" then
+            control.label:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+            control.label:SetAnchor(TOPRIGHT, control.toggle, TOPLEFT, -TOGGLE_LABEL_PADDING_X, 0)
+            control.label:SetAnchor(TOPLEFT, control, TOPLEFT, 0, 0)
+        else
+            control.label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+            control.label:SetAnchor(TOPLEFT, control.toggle, TOPRIGHT, TOGGLE_LABEL_PADDING_X, 0)
+            control.label:SetAnchor(TOPRIGHT, control, TOPRIGHT, 0, 0)
+        end
     end
     local gapOverride = state.nextCategoryGap
     if type(gapOverride) ~= "number" then
@@ -1836,6 +1926,19 @@ local function LayoutCategory(rows)
     end
     AnchorControl(control, CATEGORY_INDENT_X, gapOverride)
     state.nextCategoryGap = CATEGORY_SPACING_BELOW
+
+    if not state.categoryAlignLogged and IsDebugLoggingEnabled() then
+        local width = viewportInfo.viewportWidth or GetViewportWidth()
+        DebugLog(string.format(
+            "Category align=%s scrollbar=%s insets=(%s,%s) rowWidth=%s",
+            tostring(viewportInfo.align),
+            tostring(viewportInfo.scrollbarSide),
+            tostring(viewportInfo.leftInset),
+            tostring(viewportInfo.rightInset),
+            tostring(width)
+        ))
+        state.categoryAlignLogged = true
+    end
 
     if expanded then
         for index = 1, #visibleEntries do

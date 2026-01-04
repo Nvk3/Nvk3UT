@@ -216,6 +216,54 @@ local function isGoldenWrapDebugEnabled()
     return isGoldenColorDebugEnabled()
 end
 
+local pendingCategoryAlignLog = true
+
+local function getHostViewportInfo()
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    local align = "left"
+    local scrollbarSide = "right"
+    local leftInset = 0
+    local rightInset = 0
+    local viewportWidth
+
+    if host and type(host.GetContentAlignment) == "function" then
+        local ok, value = pcall(host.GetContentAlignment, host)
+        if ok and type(value) == "string" and value ~= "" then
+            align = string.lower(value)
+        end
+    end
+
+    if host and type(host.GetScrollbarSide) == "function" then
+        local ok, value = pcall(host.GetScrollbarSide, host)
+        if ok and type(value) == "string" and value ~= "" then
+            scrollbarSide = string.lower(value)
+        end
+    end
+
+    if host and type(host.GetViewportInsets) == "function" then
+        local ok, leftValue, rightValue = pcall(host.GetViewportInsets, host)
+        if ok then
+            leftInset = tonumber(leftValue) or leftInset
+            rightInset = tonumber(rightValue) or rightInset
+        end
+    end
+
+    if host and type(host.GetViewportWidth) == "function" then
+        local ok, width = pcall(host.GetViewportWidth, host)
+        if ok and type(width) == "number" then
+            viewportWidth = width
+        end
+    end
+
+    return {
+        align = align,
+        scrollbarSide = scrollbarSide,
+        leftInset = leftInset,
+        rightInset = rightInset,
+        viewportWidth = viewportWidth,
+    }
+end
+
 local function safeDebug(message, ...)
     local debugFn = Nvk3UT and Nvk3UT.Debug
     if type(debugFn) ~= "function" then
@@ -1442,6 +1490,7 @@ local function applyCategoryRow(row, categoryData)
     if indentValue < 0 then
         indentValue = 0
     end
+    local viewportInfo = getHostViewportInfo()
     if isGoldenColorDebugEnabled() then
         safeDebug(
             "[GoldenIndent] ApplyCategoryRow categoryIndent=%s indentValue=%s",
@@ -1451,19 +1500,41 @@ local function applyCategoryRow(row, categoryData)
     end
     if row.indentAnchor and row.indentAnchor.SetAnchor then
         row.indentAnchor:ClearAnchors()
-        row.indentAnchor:SetAnchor(TOPLEFT, targetRow, TOPLEFT, indentValue, 0)
+        if viewportInfo.align == "right" then
+            row.indentAnchor:SetAnchor(TOPRIGHT, targetRow, TOPRIGHT, -indentValue, 0)
+        else
+            row.indentAnchor:SetAnchor(TOPLEFT, targetRow, TOPLEFT, indentValue, 0)
+        end
     end
     if chevron and chevron.ClearAnchors and row.indentAnchor and row.indentAnchor.SetAnchor then
         chevron:ClearAnchors()
-        chevron:SetAnchor(TOPLEFT, row.indentAnchor, TOPLEFT, 0, 0)
+        if viewportInfo.align == "right" then
+            chevron:SetAnchor(TOPRIGHT, row.indentAnchor, TOPRIGHT, 0, 0)
+        else
+            chevron:SetAnchor(TOPLEFT, row.indentAnchor, TOPLEFT, 0, 0)
+        end
     end
 
     if label and label.ClearAnchors then
         label:ClearAnchors()
         if label.SetAnchor then
-            label:SetAnchor(TOPLEFT, chevron, TOPRIGHT, CATEGORY_LABEL_OFFSET_X, 0)
-            label:SetAnchor(TOPRIGHT, targetRow, TOPRIGHT, 0, 0)
+            if viewportInfo.align == "right" then
+                label:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+                label:SetAnchor(TOPRIGHT, chevron, TOPLEFT, -CATEGORY_LABEL_OFFSET_X, 0)
+                label:SetAnchor(TOPLEFT, targetRow, TOPLEFT, 0, 0)
+            else
+                label:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+                label:SetAnchor(TOPLEFT, chevron, TOPRIGHT, CATEGORY_LABEL_OFFSET_X, 0)
+                label:SetAnchor(TOPRIGHT, targetRow, TOPRIGHT, 0, 0)
+            end
         end
+    end
+    if chevron and chevron.SetTextureRotation then
+        local rotation = 0
+        if viewportInfo.align == "right" and not expanded then
+            rotation = math.pi
+        end
+        chevron:SetTextureRotation(rotation, 0.5, 0.5)
     end
 
     if isGoldenColorDebugEnabled() then
@@ -1521,6 +1592,31 @@ local function applyCategoryRow(row, categoryData)
         chevron:SetTexture(
             (expanded and textures.expanded) or (not expanded and textures.collapsed) or fallback
         )
+    end
+
+    if pendingCategoryAlignLog and isGoldenColorDebugEnabled() then
+        local width = viewportInfo.viewportWidth
+        if width == nil and targetRow.GetWidth then
+            local okWidth, measured = pcall(targetRow.GetWidth, targetRow)
+            if okWidth then
+                width = tonumber(measured)
+            end
+        end
+        local rotationValue = 0
+        if viewportInfo.align == "right" and not expanded then
+            rotationValue = math.pi
+        end
+        safeDebug(
+            "[CategoryAlign] align=%s scrollbar=%s insets=(%s,%s) rowWidth=%s chevronSide=%s rotation=%s",
+            tostring(viewportInfo.align),
+            tostring(viewportInfo.scrollbarSide),
+            tostring(viewportInfo.leftInset),
+            tostring(viewportInfo.rightInset),
+            tostring(width),
+            viewportInfo.align == "right" and "right" or "left",
+            tostring(rotationValue)
+        )
+        pendingCategoryAlignLog = false
     end
 
     row._onToggle = function()
@@ -2284,6 +2380,10 @@ end
 
 function Rows.ApplyObjectiveRow(row, objectiveData)
     return applyObjectiveRow(row, objectiveData)
+end
+
+function Rows.ResetAlignmentLog()
+    pendingCategoryAlignLog = true
 end
 
 function Rows.GetCategoryRowHeight()

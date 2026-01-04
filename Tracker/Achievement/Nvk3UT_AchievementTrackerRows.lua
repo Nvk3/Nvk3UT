@@ -277,6 +277,22 @@ function Rows:UpdateCategoryToggle(control, expanded)
         local texture = SelectCategoryToggleTexture(expanded, isMouseOver)
         control.toggle:SetTexture(texture)
     end
+    if control.toggle.SetTextureRotation then
+        local align = "left"
+        local host = Nvk3UT and Nvk3UT.TrackerHost
+        if host and type(host.GetContentAlignment) == "function" then
+            local ok, value = pcall(host.GetContentAlignment, host)
+            if ok and type(value) == "string" and value ~= "" then
+                align = string.lower(value)
+            end
+        end
+
+        local rotation = 0
+        if align == "right" and not expanded then
+            rotation = math.pi
+        end
+        control.toggle:SetTextureRotation(rotation, 0.5, 0.5)
+    end
     control.isExpanded = expanded and true or false
 end
 

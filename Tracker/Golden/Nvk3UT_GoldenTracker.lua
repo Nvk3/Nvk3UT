@@ -1120,6 +1120,10 @@ function GoldenTracker.Refresh(...)
     local rowsModule = getRowsModule()
     local layoutModule = getLayoutModule()
 
+    if rowsModule and type(rowsModule.ResetAlignmentLog) == "function" then
+        rowsModule.ResetAlignmentLog()
+    end
+
     local objectiveIndent = getObjectiveIndentFromSaved()
     local entryIndent = getEntryIndentFromSaved()
 

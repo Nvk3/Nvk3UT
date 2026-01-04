@@ -2511,6 +2511,10 @@ function TrackerHost.GetScrollbar()
     return state.scrollbar
 end
 
+function TrackerHost.GetScrollbarSide()
+    return getScrollbarSide()
+end
+
 function TrackerHost.GetScrollbarWidth()
     local scrollbar = state.scrollbar
     if scrollbar and scrollbar.GetWidth then
