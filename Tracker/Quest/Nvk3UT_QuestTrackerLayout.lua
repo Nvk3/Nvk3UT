@@ -148,6 +148,10 @@ function Layout:ResetLayoutState()
     state.contentWidth = 0
     state.contentHeight = 0
     state.categoryAlignLogged = false
+    state.rightExpandedCategoryCount = 0
+    state.rightExpandedChevronTexture = nil
+    state.rightExpandedChevronRotation = nil
+    state.rightExpandedLogEmitted = false
     self.rowsByCategory = nil
 end
 
@@ -719,6 +723,20 @@ function Layout:UpdateContentSize()
     state.contentWidth = maxWidth
     state.contentHeight = totalHeight
 
+    if isDebugEnabled() and not state.rightExpandedLogEmitted then
+        local info = getHostViewportInfo()
+        if info.align == "right" then
+            safeDebug(
+                "%s: Right align expanded categories=%s firstChevronTexture=%s rotation=%s",
+                MODULE_TAG,
+                tostring(state.rightExpandedCategoryCount or 0),
+                tostring(state.rightExpandedChevronTexture),
+                tostring(state.rightExpandedChevronRotation)
+            )
+            state.rightExpandedLogEmitted = true
+        end
+    end
+
     safeDebug(
         "%s: UpdateContentSize controls=%d width=%s height=%s",
         MODULE_TAG,
@@ -887,6 +905,29 @@ function Layout:LayoutCategory(category, providedControl)
     self:GetCategoryHeaderHeight(control)
     control:SetHidden(false)
     self:AnchorControl(control, 0)
+
+    local host = Nvk3UT and Nvk3UT.TrackerHost
+    local alignInfo = getHostViewportInfo()
+    if alignInfo.align == "right" and expanded and control.toggle then
+        local texturePath
+        local rotation
+        if host and type(host.ApplyChevronVisualTopRightExpanded) == "function" then
+            texturePath, rotation = host.ApplyChevronVisualTopRightExpanded(control.toggle)
+        end
+
+        local layoutState = self.state or {}
+        layoutState.rightExpandedCategoryCount = (layoutState.rightExpandedCategoryCount or 0) + 1
+        if layoutState.rightExpandedChevronTexture == nil then
+            if texturePath == nil and control.toggle.GetTextureFileName then
+                local okTexture, resolved = pcall(control.toggle.GetTextureFileName, control.toggle)
+                if okTexture then
+                    texturePath = resolved
+                end
+            end
+            layoutState.rightExpandedChevronTexture = texturePath
+            layoutState.rightExpandedChevronRotation = rotation
+        end
+    end
 
     local state = self.state or {}
     if not state.categoryAlignLogged and isDebugEnabled() then
