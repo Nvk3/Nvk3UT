@@ -4426,28 +4426,8 @@ local function OnQuestViewModelUpdated(viewModel, context)
         return
     end
 
-    if state.conditionPool then
-        state.conditionPool:ReleaseAllObjects()
-    end
-
-    ResetLayoutState()
-
-    local categoryControls
-    local rowControls
-    local rowsByCategory
-
-    if QuestTrackerRows and QuestTrackerRows.BuildOrRebuildRows then
-        rowsByCategory = QuestTrackerRows:BuildOrRebuildRows(state.viewModel)
-        if QuestTrackerRows.GetCategoryControls then
-            categoryControls = QuestTrackerRows:GetCategoryControls()
-        end
-        if QuestTrackerRows.GetRowControls then
-            rowControls = QuestTrackerRows:GetRowControls()
-        end
-    end
-
     if QuestTrackerLayout and QuestTrackerLayout.ApplyLayout then
-        QuestTrackerLayout:ApplyLayout(state.container, categoryControls, rowControls, rowsByCategory)
+        QuestTrackerLayout:ApplyLayout(state.container)
     end
 
     if IsDebugLoggingEnabled() then
@@ -4529,9 +4509,21 @@ local function ConfigureLayoutHelper()
             ApplyBaseColor = ApplyBaseColor,
             ShouldDisplayCondition = ShouldDisplayCondition,
             AcquireQuestControl = AcquireQuestControl,
+            AcquireCategoryRow = function()
+                if QuestTrackerRows and QuestTrackerRows.AcquireCategoryRow then
+                    return QuestTrackerRows:AcquireCategoryRow()
+                end
+                return nil
+            end,
             AcquireQuestRow = function()
                 if QuestTrackerRows and QuestTrackerRows.AcquireQuestRow then
                     return QuestTrackerRows:AcquireQuestRow()
+                end
+                return nil
+            end,
+            AcquireObjectiveRow = function()
+                if QuestTrackerRows and QuestTrackerRows.AcquireObjectiveRow then
+                    return QuestTrackerRows:AcquireObjectiveRow()
                 end
                 return nil
             end,
@@ -4540,9 +4532,9 @@ local function ConfigureLayoutHelper()
                     return QuestTrackerRows:ResetQuestRowObjectives(row)
                 end
             end,
-            ApplyQuestObjectives = function(row, objectives)
-                if QuestTrackerRows and QuestTrackerRows.ApplyObjectives then
-                    return QuestTrackerRows:ApplyObjectives(row, objectives)
+            ApplyObjectiveRow = function(control, condition)
+                if QuestTrackerRows and QuestTrackerRows.ApplyObjectiveRow then
+                    return QuestTrackerRows:ApplyObjectiveRow(control, condition)
                 end
             end,
             DetermineQuestColorRole = DetermineQuestColorRole,
@@ -4555,6 +4547,21 @@ local function ConfigureLayoutHelper()
             UpdateCategoryToggle = UpdateCategoryToggle,
             AcquireCategoryControl = AcquireCategoryControl,
             NormalizeCategoryKey = NormalizeCategoryKey,
+            ReleaseCategoryRow = function(control)
+                if QuestTrackerRows and QuestTrackerRows.ReleaseCategoryRow then
+                    return QuestTrackerRows:ReleaseCategoryRow(control)
+                end
+            end,
+            ReleaseQuestRow = function(control)
+                if QuestTrackerRows and QuestTrackerRows.ReleaseQuestRow then
+                    return QuestTrackerRows:ReleaseQuestRow(control)
+                end
+            end,
+            ReleaseObjectiveRow = function(control)
+                if QuestTrackerRows and QuestTrackerRows.ReleaseObjectiveRow then
+                    return QuestTrackerRows:ReleaseObjectiveRow(control)
+                end
+            end,
             SetCategoryRowsVisible = function(categoryKey, visible)
                 if QuestTrackerRows and QuestTrackerRows.SetCategoryRowsVisible then
                     return QuestTrackerRows:SetCategoryRowsVisible(categoryKey, visible)
@@ -4592,6 +4599,9 @@ local function ConfigureRowsHelper()
             UpdateContentSize = UpdateContentSize,
             NotifyHostContentChanged = NotifyHostContentChanged,
             ProcessPendingExternalReveal = ProcessPendingExternalReveal,
+            AcquireConditionControl = AcquireConditionControl,
+            FormatConditionText = FormatConditionText,
+            GetQuestTrackerColor = GetQuestTrackerColor,
         })
     end
 end

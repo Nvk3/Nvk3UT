@@ -147,6 +147,7 @@ function Layout:ResetLayoutState()
     state.questControls = {}
     state.contentWidth = 0
     state.contentHeight = 0
+    state.debugRowLogCount = 0
     state.categoryAlignLogged = false
     state.entryAlignLogged = false
     state.objectiveAlignLogged = false
@@ -277,6 +278,65 @@ function Layout:GetObjectiveSpacing(prevRowType, rowType)
     return 0
 end
 
+function Layout:BuildFlatRowList(viewModel)
+    local rows = {}
+    local categories = viewModel and viewModel.categories
+    if type(categories) ~= "table" then
+        return rows
+    end
+
+    local IsCategoryExpanded = self.deps.IsCategoryExpanded
+    local IsQuestExpanded = self.deps.IsQuestExpanded
+    local ShouldDisplayCondition = self.deps.ShouldDisplayCondition
+
+    for index = 1, #categories do
+        local category = categories[index]
+        if category and category.quests and #category.quests > 0 then
+            local expanded = IsCategoryExpanded and IsCategoryExpanded(category.key)
+            rows[#rows + 1] = {
+                rowType = "category",
+                category = category,
+                expanded = expanded == true,
+            }
+
+            if expanded then
+                for questIndex = 1, #category.quests do
+                    local quest = category.quests[questIndex]
+                    if quest then
+                        rows[#rows + 1] = {
+                            rowType = "quest",
+                            quest = quest,
+                            category = category,
+                        }
+
+                        local questExpanded = IsQuestExpanded and IsQuestExpanded(quest.journalIndex)
+                        if questExpanded and quest.steps then
+                            for stepIndex = 1, #quest.steps do
+                                local step = quest.steps[stepIndex]
+                                if step and step.isVisible ~= false and step.conditions then
+                                    for conditionIndex = 1, #step.conditions do
+                                        local condition = step.conditions[conditionIndex]
+                                        if not ShouldDisplayCondition or ShouldDisplayCondition(condition) then
+                                            rows[#rows + 1] = {
+                                                rowType = "condition",
+                                                quest = quest,
+                                                category = category,
+                                                condition = condition,
+                                            }
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return rows
+end
+
 function Layout:ApplyCategoryAlignment(control, expanded)
     if not (control and control.label and control.toggle) then
         return
@@ -382,6 +442,334 @@ function Layout:ApplyConditionAlignment(control)
     end
 end
 
+function Layout:LogRowMetrics(control, indentX)
+    if not (control and control.label) then
+        return
+    end
+
+    local state = self.state or {}
+    local maxLogs = self.deps.DEBUG_ROW_LOG_COUNT or 10
+    if maxLogs <= 0 then
+        return
+    end
+    if not isDebugEnabled() then
+        return
+    end
+    if (state.debugRowLogCount or 0) >= maxLogs then
+        return
+    end
+
+    local labelWidth = control.label.GetWidth and control.label:GetWidth()
+    local textHeight = control.label.GetTextHeight and control.label:GetTextHeight()
+    local controlHeight = control.GetHeight and control:GetHeight()
+
+    state.debugRowLogCount = (state.debugRowLogCount or 0) + 1
+    safeDebug(
+        "%s: RowMetrics #%d type=%s labelWidth=%s textHeight=%s controlHeight=%s indentX=%s",
+        MODULE_TAG,
+        state.debugRowLogCount,
+        tostring(control.rowType),
+        tostring(labelWidth),
+        tostring(textHeight),
+        tostring(controlHeight),
+        tostring(indentX)
+    )
+end
+
+function Layout:ApplyRowDescriptor(rowDescriptor, providedControl)
+    if not rowDescriptor then
+        return nil
+    end
+
+    local rowType = rowDescriptor.rowType
+
+    if rowType == "category" then
+        local AcquireCategoryControl = self.deps.AcquireCategoryControl
+        local control = AcquireCategoryControl and AcquireCategoryControl(providedControl)
+        if not control then
+            return nil
+        end
+
+        local category = rowDescriptor.category or {}
+        control.data = {
+            categoryKey = category.key,
+            parentKey = category.parent and category.parent.key or nil,
+            parentName = category.parent and category.parent.name or nil,
+            groupKey = category.groupKey,
+            groupName = category.groupName,
+            categoryType = category.type,
+            groupOrder = category.groupOrder,
+        }
+        control.categoryKey = category.key
+
+        local state = self.state or {}
+        local normalizedKey = self.deps.NormalizeCategoryKey and self.deps.NormalizeCategoryKey(category.key)
+        if normalizedKey then
+            state.categoryControls[normalizedKey] = control
+        end
+
+        local count = category.quests and #category.quests or 0
+        local FormatCategoryHeaderText = self.deps.FormatCategoryHeaderText
+        local ShouldShowQuestCategoryCounts = self.deps.ShouldShowQuestCategoryCounts
+        if control.label and FormatCategoryHeaderText then
+            control.label:SetText(FormatCategoryHeaderText(category.name or "", count, ShouldShowQuestCategoryCounts and ShouldShowQuestCategoryCounts()))
+        end
+
+        local expanded = rowDescriptor.expanded == true
+        control.isExpanded = expanded
+
+        local GetQuestTrackerColor = self.deps.GetQuestTrackerColor
+        local ApplyBaseColor = self.deps.ApplyBaseColor
+        if GetQuestTrackerColor and ApplyBaseColor then
+            local colorRole = expanded and "activeTitle" or "categoryTitle"
+            local r, g, b, a = GetQuestTrackerColor(colorRole)
+            ApplyBaseColor(control, r, g, b, a)
+        end
+
+        local UpdateCategoryToggle = self.deps.UpdateCategoryToggle
+        if UpdateCategoryToggle then
+            UpdateCategoryToggle(control, expanded)
+        end
+
+        self:ApplyCategoryAlignment(control, expanded)
+        self:GetCategoryHeaderHeight(control)
+        control:SetHidden(false)
+
+        local host = Nvk3UT and Nvk3UT.TrackerHost
+        local alignInfo = getHostViewportInfo()
+        if alignInfo.align == "right" and expanded and control.toggle then
+            local texturePath
+            local rotation
+            if host and type(host.ApplyChevronVisualTopRightExpanded) == "function" then
+                texturePath, rotation = host.ApplyChevronVisualTopRightExpanded(control.toggle)
+            end
+
+            local layoutState = self.state or {}
+            layoutState.rightExpandedCategoryCount = (layoutState.rightExpandedCategoryCount or 0) + 1
+            if layoutState.rightExpandedChevronTexture == nil then
+                if texturePath == nil and control.toggle.GetTextureFileName then
+                    local okTexture, resolved = pcall(control.toggle.GetTextureFileName, control.toggle)
+                    if okTexture then
+                        texturePath = resolved
+                    end
+                end
+                layoutState.rightExpandedChevronTexture = texturePath
+                layoutState.rightExpandedChevronRotation = rotation
+            end
+        end
+
+        local state = self.state or {}
+        if not state.categoryAlignLogged and isDebugEnabled() then
+            local info = getHostViewportInfo()
+            local width = self:GetViewportWidth()
+            safeDebug(
+                "%s: Category align=%s scrollbar=%s insets=(%s,%s) rowWidth=%s",
+                MODULE_TAG,
+                tostring(info.align),
+                tostring(info.scrollbarSide),
+                tostring(info.leftInset),
+                tostring(info.rightInset),
+                tostring(width)
+            )
+            state.categoryAlignLogged = true
+        end
+
+        return control, 0
+    elseif rowType == "quest" then
+        local AcquireQuestControl = self.deps.AcquireQuestControl
+        local control = AcquireQuestControl and AcquireQuestControl(providedControl)
+        if not control then
+            return nil
+        end
+
+        if self.deps.ResetQuestRowObjectives then
+            self.deps.ResetQuestRowObjectives(control)
+        end
+
+        local quest = rowDescriptor.quest or {}
+        control.data = { quest = quest }
+        control.questJournalIndex = quest and quest.journalIndex
+        control.questKey = self.deps.NormalizeQuestKey and self.deps.NormalizeQuestKey(quest and quest.journalIndex)
+        control.categoryKey = quest and quest.categoryKey
+        if control.label then
+            control.label:SetText(quest and quest.name or "")
+        end
+
+        if self.deps.RegisterQuestRow then
+            self.deps.RegisterQuestRow(control, control.categoryKey)
+        end
+
+        local DetermineQuestColorRole = self.deps.DetermineQuestColorRole
+        local GetQuestTrackerColor = self.deps.GetQuestTrackerColor
+        local ApplyBaseColor = self.deps.ApplyBaseColor
+        if DetermineQuestColorRole and GetQuestTrackerColor and ApplyBaseColor then
+            local colorRole = DetermineQuestColorRole(quest)
+            local r, g, b, a = GetQuestTrackerColor(colorRole)
+            ApplyBaseColor(control, r, g, b, a)
+        end
+
+        local questKey = control.questKey
+        local IsQuestExpanded = self.deps.IsQuestExpanded
+        local expanded = IsQuestExpanded and IsQuestExpanded(quest and quest.journalIndex)
+        safeDebug(
+            "%s: Layout quest=%s expanded=%s",
+            MODULE_TAG,
+            tostring(questKey or (quest and quest.journalIndex)),
+            tostring(expanded)
+        )
+
+        if self.deps.UpdateQuestIconSlot then
+            self.deps.UpdateQuestIconSlot(control)
+        end
+        self:ApplyQuestEntryAlignment(control)
+        self:GetQuestRowHeight(control, control.data)
+        control:SetHidden(false)
+
+        local state = self.state or {}
+        if not state.entryAlignLogged and isDebugEnabled() then
+            local info = getHostViewportInfo()
+            local wrapperWidth
+            local host = Nvk3UT and Nvk3UT.TrackerHost
+            if host and type(host.GetScrollContent) == "function" then
+                local okContent, scrollContent = pcall(host.GetScrollContent, host)
+                if okContent and scrollContent and scrollContent.GetWidth then
+                    local okWidth, measured = pcall(scrollContent.GetWidth, scrollContent)
+                    if okWidth then
+                        wrapperWidth = tonumber(measured)
+                    end
+                end
+            end
+            if wrapperWidth == nil and control.GetParent then
+                local parent = control:GetParent()
+                if parent and parent.GetWidth then
+                    local okWidth, measured = pcall(parent.GetWidth, parent)
+                    if okWidth then
+                        wrapperWidth = tonumber(measured)
+                    end
+                end
+            end
+
+            local labelWidth
+            if control.label and control.label.GetWidth then
+                local okWidth, measured = pcall(control.label.GetWidth, control.label)
+                if okWidth then
+                    labelWidth = tonumber(measured)
+                end
+            end
+
+            local iconUsage = "slot"
+            if control.iconSlot then
+                local hasTexture = false
+                if control.iconSlot.GetTextureFileName then
+                    local okTexture, texture = pcall(control.iconSlot.GetTextureFileName, control.iconSlot)
+                    if okTexture and type(texture) == "string" and texture ~= "" then
+                        hasTexture = true
+                    end
+                end
+                if not hasTexture and control.iconSlot.GetAlpha then
+                    local okAlpha, alpha = pcall(control.iconSlot.GetAlpha, control.iconSlot)
+                    if okAlpha and type(alpha) == "number" and alpha > 0 then
+                        hasTexture = true
+                    end
+                end
+                iconUsage = hasTexture and "real" or "slot"
+            end
+
+            safeDebug(
+                "%s: Entry align=%s wrapperWidth=%s labelWidth=%s icon=%s anchors=%s",
+                MODULE_TAG,
+                tostring(info.align),
+                tostring(wrapperWidth),
+                tostring(labelWidth),
+                tostring(iconUsage),
+                tostring(info.align)
+            )
+            state.entryAlignLogged = true
+        end
+
+        if quest and quest.journalIndex then
+            state.questControls[quest.journalIndex] = control
+        end
+
+        return control, self.deps.QUEST_INDENT_X or 0
+    elseif rowType == "condition" then
+        local AcquireObjectiveRow = self.deps.AcquireObjectiveRow
+        local control = AcquireObjectiveRow and AcquireObjectiveRow()
+        if not control then
+            return nil
+        end
+
+        if self.deps.ApplyObjectiveRow then
+            self.deps.ApplyObjectiveRow(control, rowDescriptor.condition)
+        else
+            control.data = { condition = rowDescriptor.condition }
+            local FormatConditionText = self.deps.FormatConditionText
+            if control.label and FormatConditionText then
+                control.label:SetText(FormatConditionText(rowDescriptor.condition))
+            end
+            local GetQuestTrackerColor = self.deps.GetQuestTrackerColor
+            if control.label and GetQuestTrackerColor then
+                local r, g, b, a = GetQuestTrackerColor("objectiveText")
+                control.label:SetColor(r, g, b, a)
+            end
+        end
+
+        control.categoryKey = rowDescriptor.category and rowDescriptor.category.key or nil
+        self:ApplyConditionAlignment(control)
+        self:GetConditionHeight(control)
+        control:SetHidden(false)
+
+        local state = self.state or {}
+        if not state.objectiveAlignLogged and isDebugEnabled() then
+            local info = getHostViewportInfo()
+            local wrapperWidth
+            local host = Nvk3UT and Nvk3UT.TrackerHost
+            if host and type(host.GetScrollContent) == "function" then
+                local okContent, scrollContent = pcall(host.GetScrollContent, host)
+                if okContent and scrollContent and scrollContent.GetWidth then
+                    local okWidth, measured = pcall(scrollContent.GetWidth, scrollContent)
+                    if okWidth then
+                        wrapperWidth = tonumber(measured)
+                    end
+                end
+            end
+            if wrapperWidth == nil and control.GetParent then
+                local parent = control:GetParent()
+                if parent and parent.GetWidth then
+                    local okWidth, measured = pcall(parent.GetWidth, parent)
+                    if okWidth then
+                        wrapperWidth = tonumber(measured)
+                    end
+                end
+            end
+
+            local labelWidth
+            if control.label and control.label.GetWidth then
+                local okWidth, measured = pcall(control.label.GetWidth, control.label)
+                if okWidth then
+                    labelWidth = tonumber(measured)
+                end
+            end
+
+            local baseOffset = self.deps and self.deps.OBJECTIVE_BASE_INDENT
+            safeDebug(
+                "%s: Objective align=%s wrapperWidth=%s labelWidth=%s baseOffset=%s side=%s",
+                MODULE_TAG,
+                tostring(info.align),
+                tostring(wrapperWidth),
+                tostring(labelWidth),
+                tostring(baseOffset),
+                tostring(info.align)
+            )
+            state.objectiveAlignLogged = true
+        end
+
+        return control, self.deps.CONDITION_INDENT_X or 0
+    end
+
+    return nil
+end
+
 function Layout:GetCategoryHeaderHeight(categoryControl)
     if not categoryControl then
         return 0
@@ -452,24 +840,7 @@ function Layout:GetQuestRowContentHeight(rowControl, rowData)
         return 0
     end
 
-    local totalHeight = self:GetQuestRowHeight(rowControl, rowData and rowData.quest)
-
-    if rowControl.objectiveControls and #rowControl.objectiveControls > 0 then
-        for index = 1, #rowControl.objectiveControls do
-            local objectiveControl = rowControl.objectiveControls[index]
-            if objectiveControl and not objectiveControl:IsHidden() then
-                local objectiveHeight = self:GetObjectiveTextHeight(
-                    objectiveControl,
-                    objectiveControl.data and (objectiveControl.data.objective or objectiveControl.data.condition)
-                )
-                if objectiveHeight > 0 then
-                    totalHeight = totalHeight + self.verticalPadding + objectiveHeight
-                end
-            end
-        end
-    end
-
-    return totalHeight
+    return self:GetQuestRowHeight(rowControl, rowData and rowData.quest)
 end
 
 function Layout:GetConditionHeight(conditionControl)
@@ -845,317 +1216,55 @@ function Layout:LayoutCondition(condition)
         return
     end
 
-    local AcquireConditionControl = self.deps.AcquireConditionControl
-    local FormatConditionText = self.deps.FormatConditionText
-    local GetQuestTrackerColor = self.deps.GetQuestTrackerColor
-
-    local control = AcquireConditionControl and AcquireConditionControl()
+    local control, indentX = self:ApplyRowDescriptor({
+        rowType = "condition",
+        condition = condition,
+    })
     if not control then
         return
     end
 
-    control.data = { condition = condition }
-    if control.label and FormatConditionText then
-        control.label:SetText(FormatConditionText(condition))
-    end
-    if control.label and GetQuestTrackerColor then
-        local r, g, b, a = GetQuestTrackerColor("objectiveText")
-        control.label:SetColor(r, g, b, a)
-    end
-    self:ApplyConditionAlignment(control)
-    self:GetConditionHeight(control)
-    control:SetHidden(false)
-    self:AnchorControl(control, self.deps.CONDITION_INDENT_X)
-
-    local state = self.state or {}
-    if not state.objectiveAlignLogged and isDebugEnabled() then
-        local info = getHostViewportInfo()
-        local wrapperWidth
-        local host = Nvk3UT and Nvk3UT.TrackerHost
-        if host and type(host.GetScrollContent) == "function" then
-            local okContent, scrollContent = pcall(host.GetScrollContent, host)
-            if okContent and scrollContent and scrollContent.GetWidth then
-                local okWidth, measured = pcall(scrollContent.GetWidth, scrollContent)
-                if okWidth then
-                    wrapperWidth = tonumber(measured)
-                end
-            end
-        end
-        if wrapperWidth == nil and control.GetParent then
-            local parent = control:GetParent()
-            if parent and parent.GetWidth then
-                local okWidth, measured = pcall(parent.GetWidth, parent)
-                if okWidth then
-                    wrapperWidth = tonumber(measured)
-                end
-            end
-        end
-
-        local labelWidth
-        if control.label and control.label.GetWidth then
-            local okWidth, measured = pcall(control.label.GetWidth, control.label)
-            if okWidth then
-                labelWidth = tonumber(measured)
-            end
-        end
-
-        local baseOffset = self.deps and self.deps.OBJECTIVE_BASE_INDENT
-        safeDebug(
-            "%s: Objective align=%s wrapperWidth=%s labelWidth=%s baseOffset=%s side=%s",
-            MODULE_TAG,
-            tostring(info.align),
-            tostring(wrapperWidth),
-            tostring(labelWidth),
-            tostring(baseOffset),
-            tostring(info.align)
-        )
-        state.objectiveAlignLogged = true
-    end
+    self:AnchorControl(control, indentX)
+    self:LogRowMetrics(control, indentX)
 end
 
 function Layout:LayoutQuest(quest)
-    local AcquireQuestControl = self.deps.AcquireQuestControl
-    local AcquireQuestRow = self.deps.AcquireQuestRow
-    local DetermineQuestColorRole = self.deps.DetermineQuestColorRole
-    local GetQuestTrackerColor = self.deps.GetQuestTrackerColor
-    local ApplyBaseColor = self.deps.ApplyBaseColor
-    local UpdateQuestIconSlot = self.deps.UpdateQuestIconSlot
-    local IsQuestExpanded = self.deps.IsQuestExpanded
-    local ResetQuestRowObjectives = self.deps.ResetQuestRowObjectives
-    local ApplyQuestObjectives = self.deps.ApplyQuestObjectives
-    local LayoutCondition = function(condition)
-        self:LayoutCondition(condition)
-    end
-
-    local providedControl = AcquireQuestRow and AcquireQuestRow()
-    local control = AcquireQuestControl and AcquireQuestControl(providedControl)
+    local providedControl = self.deps.AcquireQuestRow and self.deps.AcquireQuestRow()
+    local control, indentX = self:ApplyRowDescriptor({
+        rowType = "quest",
+        quest = quest,
+    }, providedControl)
     if not control then
         return
     end
 
-    if ResetQuestRowObjectives then
-        ResetQuestRowObjectives(control)
-    end
-
-    control.data = { quest = quest }
-    control.questJournalIndex = quest and quest.journalIndex
-    control.questKey = self.deps.NormalizeQuestKey and self.deps.NormalizeQuestKey(quest and quest.journalIndex)
-    control.categoryKey = quest and quest.categoryKey
-    if control.label then
-        control.label:SetText(quest and quest.name or "")
-    end
-
-    if ApplyQuestObjectives then
-        ApplyQuestObjectives(control, quest and quest.objectives)
-    end
-
-    if self.deps.RegisterQuestRow then
-        self.deps.RegisterQuestRow(control, control.categoryKey)
-    end
-
-    if DetermineQuestColorRole and GetQuestTrackerColor and ApplyBaseColor then
-        local colorRole = DetermineQuestColorRole(quest)
-        local r, g, b, a = GetQuestTrackerColor(colorRole)
-        ApplyBaseColor(control, r, g, b, a)
-    end
-
-    local questKey = control.questKey
-    local expanded = IsQuestExpanded and IsQuestExpanded(quest and quest.journalIndex)
-    safeDebug(
-        "%s: Layout quest=%s expanded=%s",
-        MODULE_TAG,
-        tostring(questKey or (quest and quest.journalIndex)),
-        tostring(expanded)
-    )
-
-    if UpdateQuestIconSlot then
-        UpdateQuestIconSlot(control)
-    end
-    self:ApplyQuestEntryAlignment(control)
-    self:GetQuestRowContentHeight(control, control.data)
-    control:SetHidden(false)
-    self:AnchorControl(control, self.deps.QUEST_INDENT_X)
-
-    local state = self.state or {}
-    if not state.entryAlignLogged and isDebugEnabled() then
-        local info = getHostViewportInfo()
-        local wrapperWidth
-        local host = Nvk3UT and Nvk3UT.TrackerHost
-        if host and type(host.GetScrollContent) == "function" then
-            local okContent, scrollContent = pcall(host.GetScrollContent, host)
-            if okContent and scrollContent and scrollContent.GetWidth then
-                local okWidth, measured = pcall(scrollContent.GetWidth, scrollContent)
-                if okWidth then
-                    wrapperWidth = tonumber(measured)
-                end
-            end
-        end
-        if wrapperWidth == nil and control.GetParent then
-            local parent = control:GetParent()
-            if parent and parent.GetWidth then
-                local okWidth, measured = pcall(parent.GetWidth, parent)
-                if okWidth then
-                    wrapperWidth = tonumber(measured)
-                end
-            end
-        end
-
-        local labelWidth
-        if control.label and control.label.GetWidth then
-            local okWidth, measured = pcall(control.label.GetWidth, control.label)
-            if okWidth then
-                labelWidth = tonumber(measured)
-            end
-        end
-
-        local iconUsage = "slot"
-        if control.iconSlot then
-            local hasTexture = false
-            if control.iconSlot.GetTextureFileName then
-                local okTexture, texture = pcall(control.iconSlot.GetTextureFileName, control.iconSlot)
-                if okTexture and type(texture) == "string" and texture ~= "" then
-                    hasTexture = true
-                end
-            end
-            if not hasTexture and control.iconSlot.GetAlpha then
-                local okAlpha, alpha = pcall(control.iconSlot.GetAlpha, control.iconSlot)
-                if okAlpha and type(alpha) == "number" and alpha > 0 then
-                    hasTexture = true
-                end
-            end
-            iconUsage = hasTexture and "real" or "slot"
-        end
-
-        safeDebug(
-            "%s: Entry align=%s wrapperWidth=%s labelWidth=%s icon=%s anchors=%s",
-            MODULE_TAG,
-            tostring(info.align),
-            tostring(wrapperWidth),
-            tostring(labelWidth),
-            tostring(iconUsage),
-            tostring(info.align)
-        )
-        state.entryAlignLogged = true
-    end
-
-    if quest and quest.journalIndex then
-        state.questControls[quest.journalIndex] = control
-    end
-
-    if expanded and quest and quest.steps then
-        for stepIndex = 1, #quest.steps do
-            local step = quest.steps[stepIndex]
-            if step.isVisible ~= false and step.conditions then
-                for conditionIndex = 1, #step.conditions do
-                    LayoutCondition(step.conditions[conditionIndex])
-                end
-            end
-        end
-    end
-
+    self:AnchorControl(control, indentX)
+    self:LogRowMetrics(control, indentX)
     self:SetPendingEntryGap()
 end
 
 function Layout:LayoutCategory(category, providedControl)
-    local AcquireCategoryControl = self.deps.AcquireCategoryControl
-    local FormatCategoryHeaderText = self.deps.FormatCategoryHeaderText
-    local ShouldShowQuestCategoryCounts = self.deps.ShouldShowQuestCategoryCounts
-    local IsCategoryExpanded = self.deps.IsCategoryExpanded
-    local GetQuestTrackerColor = self.deps.GetQuestTrackerColor
-    local ApplyBaseColor = self.deps.ApplyBaseColor
-    local UpdateCategoryToggle = self.deps.UpdateCategoryToggle
-
-    local control = AcquireCategoryControl and AcquireCategoryControl(providedControl)
+    local control, indentX = self:ApplyRowDescriptor({
+        rowType = "category",
+        category = category,
+        expanded = self.deps.IsCategoryExpanded and self.deps.IsCategoryExpanded(category.key),
+    }, providedControl)
     if not control then
         return
     end
 
-    control.data = {
-        categoryKey = category.key,
-        parentKey = category.parent and category.parent.key or nil,
-        parentName = category.parent and category.parent.name or nil,
-        groupKey = category.groupKey,
-        groupName = category.groupName,
-        categoryType = category.type,
-        groupOrder = category.groupOrder,
-    }
-    control.categoryKey = category.key
+    self:AnchorControl(control, indentX or 0)
+    self:LogRowMetrics(control, indentX or 0)
 
-    local state = self.state or {}
-    local normalizedKey = self.deps.NormalizeCategoryKey and self.deps.NormalizeCategoryKey(category.key)
-    if normalizedKey then
-        state.categoryControls[normalizedKey] = control
-    end
-
-    local count = #category.quests
-    if control.label and FormatCategoryHeaderText then
-        control.label:SetText(FormatCategoryHeaderText(category.name or "", count, ShouldShowQuestCategoryCounts and ShouldShowQuestCategoryCounts()))
-    end
-
-    local expanded = IsCategoryExpanded and IsCategoryExpanded(category.key)
-    safeDebug("%s: Layout cat=%s expanded=%s", MODULE_TAG, tostring(category.key), tostring(expanded))
-
-    if GetQuestTrackerColor and ApplyBaseColor then
-        local colorRole = expanded and "activeTitle" or "categoryTitle"
-        local r, g, b, a = GetQuestTrackerColor(colorRole)
-        ApplyBaseColor(control, r, g, b, a)
-    end
-    if UpdateCategoryToggle then
-        UpdateCategoryToggle(control, expanded)
-    end
-    self:ApplyCategoryAlignment(control, expanded)
-    self:GetCategoryHeaderHeight(control)
-    control:SetHidden(false)
-    self:AnchorControl(control, 0)
-
-    local host = Nvk3UT and Nvk3UT.TrackerHost
-    local alignInfo = getHostViewportInfo()
-    if alignInfo.align == "right" and expanded and control.toggle then
-        local texturePath
-        local rotation
-        if host and type(host.ApplyChevronVisualTopRightExpanded) == "function" then
-            texturePath, rotation = host.ApplyChevronVisualTopRightExpanded(control.toggle)
-        end
-
-        local layoutState = self.state or {}
-        layoutState.rightExpandedCategoryCount = (layoutState.rightExpandedCategoryCount or 0) + 1
-        if layoutState.rightExpandedChevronTexture == nil then
-            if texturePath == nil and control.toggle.GetTextureFileName then
-                local okTexture, resolved = pcall(control.toggle.GetTextureFileName, control.toggle)
-                if okTexture then
-                    texturePath = resolved
-                end
-            end
-            layoutState.rightExpandedChevronTexture = texturePath
-            layoutState.rightExpandedChevronRotation = rotation
-        end
-    end
-
-    local state = self.state or {}
-    if not state.categoryAlignLogged and isDebugEnabled() then
-        local info = getHostViewportInfo()
-        local width = self:GetViewportWidth()
-        safeDebug(
-            "%s: Category align=%s scrollbar=%s insets=(%s,%s) rowWidth=%s",
-            MODULE_TAG,
-            tostring(info.align),
-            tostring(info.scrollbarSide),
-            tostring(info.leftInset),
-            tostring(info.rightInset),
-            tostring(width)
-        )
-        state.categoryAlignLogged = true
-    end
-
-    if expanded and category.quests then
-        for index = 1, count do
+    if control.isExpanded and category.quests then
+        for index = 1, #category.quests do
             self:LayoutQuest(category.quests[index])
         end
     elseif self.deps.SetCategoryRowsVisible then
         self.deps.SetCategoryRowsVisible(category.key, false)
     end
 
-    self:SetPendingCategoryGap(expanded)
+    self:SetPendingCategoryGap(control.isExpanded)
 end
 
 function Layout:ReleaseRowControl(control)
@@ -1170,7 +1279,9 @@ function Layout:ReleaseRowControl(control)
         if normalized and state.categoryControls then
             state.categoryControls[normalized] = nil
         end
-        if state.categoryPool and control.poolKey then
+        if self.deps.ReleaseCategoryRow then
+            self.deps.ReleaseCategoryRow(control)
+        elseif state.categoryPool and control.poolKey then
             state.categoryPool:ReleaseObject(control.poolKey)
         end
     elseif rowType == "quest" then
@@ -1178,11 +1289,15 @@ function Layout:ReleaseRowControl(control)
         if questData and questData.journalIndex and state.questControls then
             state.questControls[questData.journalIndex] = nil
         end
-        if state.questPool and control.poolKey then
+        if self.deps.ReleaseQuestRow then
+            self.deps.ReleaseQuestRow(control)
+        elseif state.questPool and control.poolKey then
             state.questPool:ReleaseObject(control.poolKey)
         end
     else
-        if state.conditionPool and control.poolKey then
+        if self.deps.ReleaseObjectiveRow then
+            self.deps.ReleaseObjectiveRow(control)
+        elseif state.conditionPool and control.poolKey then
             state.conditionPool:ReleaseObject(control.poolKey)
         end
     end
@@ -1263,69 +1378,15 @@ function Layout:TrimOrderedControlsToCategory(keepCategoryCount)
 end
 
 function Layout:RelayoutFromCategoryIndex(startCategoryIndex)
-    local state = self.state or {}
-    local ApplyActiveQuestFromSaved = self.deps.ApplyActiveQuestFromSaved
-    local EnsurePools = self.deps.EnsurePools
-    local ReleaseAll = self.deps.ReleaseAll
-    local PrimeInitialSavedState = self.deps.PrimeInitialSavedState
-    local NotifyHostContentChanged = self.deps.NotifyHostContentChanged
-    local ProcessPendingExternalReveal = self.deps.ProcessPendingExternalReveal
-
-    if ApplyActiveQuestFromSaved then
-        ApplyActiveQuestFromSaved()
-    end
-    if EnsurePools then
-        EnsurePools()
+    if self.deps.ApplyActiveQuestFromSaved then
+        self.deps.ApplyActiveQuestFromSaved()
     end
 
-    local categories = state.viewModel and state.viewModel.categories
-    if type(categories) ~= "table" or #categories == 0 then
-        if ReleaseAll then
-            ReleaseAll(state.categoryPool)
-            ReleaseAll(state.questPool)
-            ReleaseAll(state.conditionPool)
-        end
-        self:ResetLayoutState()
-        self:UpdateContentSize()
-        if NotifyHostContentChanged then
-            NotifyHostContentChanged()
-        end
-        if ProcessPendingExternalReveal then
-            ProcessPendingExternalReveal()
-        end
-        return
+    if self.deps.PrimeInitialSavedState then
+        self.deps.PrimeInitialSavedState()
     end
 
-    if startCategoryIndex <= 1 then
-        if ReleaseAll then
-            ReleaseAll(state.categoryPool)
-            ReleaseAll(state.questPool)
-            ReleaseAll(state.conditionPool)
-        end
-        self:ResetLayoutState()
-        startCategoryIndex = 1
-    else
-        self:TrimOrderedControlsToCategory(startCategoryIndex - 1)
-    end
-
-    if PrimeInitialSavedState then
-        PrimeInitialSavedState()
-    end
-
-    for index = startCategoryIndex, #categories do
-        local category = categories[index]
-        if category and category.quests and #category.quests > 0 then
-            self:LayoutCategory(category)
-        end
-    end
-
-    self:UpdateContentSize()
-    if NotifyHostContentChanged then
-        NotifyHostContentChanged()
-    end
-    if ProcessPendingExternalReveal then
-        ProcessPendingExternalReveal()
-    end
+    self:ApplyLayout(self.state and self.state.container)
 end
 
 function Layout:ApplyLayout(parentContainer, categoryControls, rowControls, rowsByCategory)
@@ -1335,24 +1396,73 @@ function Layout:ApplyLayout(parentContainer, categoryControls, rowControls, rows
 
     self.rowsByCategory = rowsByCategory
 
-    if categoryControls and type(categoryControls) == "table" then
-        safeDebug("%s: ApplyLayout using provided controls (%d categories)", MODULE_TAG, #categoryControls)
-    else
-        safeDebug("%s: ApplyLayout using current view model", MODULE_TAG)
+    if self.deps.EnsurePools then
+        self.deps.EnsurePools()
+    end
+    if self.deps.ApplyActiveQuestFromSaved then
+        self.deps.ApplyActiveQuestFromSaved()
+    end
+    if self.deps.PrimeInitialSavedState then
+        self.deps.PrimeInitialSavedState()
     end
 
-    if self.state and (rowControls or (self.state.orderedControls and #self.state.orderedControls > 0)) then
-        self:UpdateContentSize()
-        if self.deps.NotifyHostContentChanged then
-            self.deps.NotifyHostContentChanged()
+    if self.state and self.state.orderedControls and #self.state.orderedControls > 0 then
+        for index = #self.state.orderedControls, 1, -1 do
+            self:ReleaseRowControl(self.state.orderedControls[index])
         end
-        if self.deps.ProcessPendingExternalReveal then
-            self.deps.ProcessPendingExternalReveal()
-        end
-        return rowControls or self.state.orderedControls
     end
 
-    self:RelayoutFromCategoryIndex(1)
+    self:ResetLayoutState()
+
+    local viewModel = self.state and self.state.viewModel
+    local flatRows = self:BuildFlatRowList(viewModel)
+    local currentCategoryExpanded = nil
+    local currentCategoryActive = false
+
+    for index = 1, #flatRows do
+        local rowDescriptor = flatRows[index]
+        local rowType = rowDescriptor and rowDescriptor.rowType
+        local nextRow = flatRows[index + 1]
+        local nextRowType = nextRow and nextRow.rowType
+
+        local providedControl = nil
+        if rowType == "category" and self.deps.AcquireCategoryRow then
+            providedControl = self.deps.AcquireCategoryRow()
+        elseif rowType == "quest" and self.deps.AcquireQuestRow then
+            providedControl = self.deps.AcquireQuestRow()
+        end
+
+        local control, indentX = self:ApplyRowDescriptor(rowDescriptor, providedControl)
+        if control then
+            self:AnchorControl(control, indentX or 0)
+            self:LogRowMetrics(control, indentX or 0)
+        end
+
+        if rowType == "category" then
+            currentCategoryExpanded = rowDescriptor.expanded == true
+            currentCategoryActive = true
+        end
+
+        if rowType == "quest" or rowType == "condition" then
+            if nextRowType ~= "condition" then
+                self:SetPendingEntryGap()
+            end
+        end
+
+        if currentCategoryActive and (nextRowType == nil or nextRowType == "category") then
+            self:SetPendingCategoryGap(currentCategoryExpanded)
+            currentCategoryActive = false
+        end
+    end
+
+    self:UpdateContentSize()
+    if self.deps.NotifyHostContentChanged then
+        self.deps.NotifyHostContentChanged()
+    end
+    if self.deps.ProcessPendingExternalReveal then
+        self.deps.ProcessPendingExternalReveal()
+    end
+
     return self.state and self.state.orderedControls or {}
 end
 

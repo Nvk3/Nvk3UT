@@ -161,6 +161,70 @@ function Rows:Init(parentContainer, trackerState, callbacks)
     safeDebug("%s: Init with parent %s", MODULE_TAG, tostring(parentContainer))
 end
 
+function Rows:AcquireCategoryRow()
+    local control, container = self:AcquireCategory()
+    if control then
+        control._categoryContainer = container
+    end
+    return control
+end
+
+function Rows:ReleaseCategoryRow(control)
+    if not control then
+        return
+    end
+    local container = control._categoryContainer
+    control._categoryContainer = nil
+    self:ReleaseCategory(control, container)
+end
+
+function Rows:AcquireObjectiveRow()
+    local acquire = self.callbacks and self.callbacks.AcquireConditionControl
+    if type(acquire) == "function" then
+        return acquire()
+    end
+    local pool = self.state and self.state.conditionPool
+    if not pool then
+        return nil
+    end
+    local control, key = pool:AcquireObject()
+    if control then
+        control.poolKey = key
+    end
+    return control
+end
+
+function Rows:ReleaseObjectiveRow(control)
+    if not control then
+        return
+    end
+    local pool = self.state and self.state.conditionPool
+    if pool and control.poolKey then
+        pool:ReleaseObject(control.poolKey)
+    end
+end
+
+function Rows:ApplyObjectiveRow(control, condition)
+    if not (control and control.label) then
+        return
+    end
+
+    control.data = { condition = condition }
+    local formatFn = self.callbacks and self.callbacks.FormatConditionText
+    if formatFn then
+        control.label:SetText(formatFn(condition))
+    else
+        local text = condition and (condition.displayText or condition.text) or ""
+        control.label:SetText(text or "")
+    end
+
+    local getColor = self.callbacks and self.callbacks.GetQuestTrackerColor
+    if getColor then
+        local r, g, b, a = getColor("objectiveText")
+        control.label:SetColor(r, g, b, a)
+    end
+end
+
 function Rows:ResetQuestRowObjectives(row)
     ReleaseAllObjectiveLabels(row)
 end
