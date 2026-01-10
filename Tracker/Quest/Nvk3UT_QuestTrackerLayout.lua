@@ -6,6 +6,7 @@ local Layout = {}
 Layout.__index = Layout
 
 local MODULE_TAG = addonName .. ".QuestTrackerLayout"
+local DEBUG_ROW_LOG_LIMIT = 5
 
 local function getAddon()
     return rawget(_G, addonName)
@@ -156,6 +157,7 @@ function Layout:ResetLayoutState()
     state.rightExpandedChevronTexture = nil
     state.rightExpandedChevronRotation = nil
     state.rightExpandedLogEmitted = false
+    state.debugRowLogCount = 0
     self.rowsByCategory = nil
 end
 
@@ -253,6 +255,37 @@ function Layout:ComputeRowHeight(control, indent, toggleWidth, leftPadding, righ
     control:SetHeight(targetHeight)
 
     return targetHeight
+end
+
+function Layout:LogRowMetrics(rowType, control)
+    if not isDebugEnabled() then
+        return
+    end
+
+    local state = self.state or {}
+    state.debugRowLogCount = state.debugRowLogCount or 0
+    if state.debugRowLogCount >= DEBUG_ROW_LOG_LIMIT then
+        return
+    end
+
+    if not (control and control.label) then
+        return
+    end
+
+    local labelWidth = control.label.GetWidth and control.label:GetWidth() or 0
+    local textHeight = control.label.GetTextHeight and control.label:GetTextHeight() or 0
+    local rowHeight = control.GetHeight and control:GetHeight() or 0
+
+    safeDebug(
+        "%s: Row metrics type=%s labelWidth=%s textHeight=%s rowHeight=%s",
+        MODULE_TAG,
+        tostring(rowType),
+        tostring(labelWidth),
+        tostring(textHeight),
+        tostring(rowHeight)
+    )
+
+    state.debugRowLogCount = state.debugRowLogCount + 1
 end
 
 function Layout:GetObjectiveSpacing(prevRowType, rowType)
@@ -864,6 +897,7 @@ function Layout:LayoutCondition(condition)
     end
     self:ApplyConditionAlignment(control)
     self:GetConditionHeight(control)
+    self:LogRowMetrics("quest objective", control)
     control:SetHidden(false)
     self:AnchorControl(control, self.deps.CONDITION_INDENT_X)
 
@@ -973,6 +1007,7 @@ function Layout:LayoutQuest(quest)
     end
     self:ApplyQuestEntryAlignment(control)
     self:GetQuestRowContentHeight(control, control.data)
+    self:LogRowMetrics("quest entry", control)
     control:SetHidden(false)
     self:AnchorControl(control, self.deps.QUEST_INDENT_X)
 

@@ -7,6 +7,45 @@ Rows.__index = Rows
 
 local MODULE_TAG = addonName .. ".QuestTrackerRows"
 
+local function ensureLabelReference(control)
+    if not control then
+        return nil
+    end
+
+    local label = control.label
+    if label and label.GetText then
+        return label
+    end
+
+    if control.GetNamedChild then
+        local named = control:GetNamedChild("Label")
+        if named then
+            control.label = named
+            return named
+        end
+    end
+
+    if control.SetText then
+        control.label = control
+        return control
+    end
+
+    return nil
+end
+
+local function resetRowHeight(control)
+    if not (control and control.SetHeight) then
+        return
+    end
+
+    if control.__nvkBaseHeight == nil and control.GetHeight then
+        control.__nvkBaseHeight = control:GetHeight() or 0
+    end
+
+    local baseline = control.__nvkBaseHeight or 0
+    control:SetHeight(baseline)
+end
+
 local function ensureObjectivePool(row)
     if not row then
         return nil
@@ -48,8 +87,9 @@ local function ReleaseAllObjectiveLabels(row)
     for index = #pool.used, 1, -1 do
         local label = table.remove(pool.used, index)
         if label then
-            if label.SetText then
-                label:SetText("")
+            local textLabel = ensureLabelReference(label)
+            if textLabel and textLabel.SetText then
+                textLabel:SetText("")
             end
             if label.ClearAnchors then
                 label:ClearAnchors()
@@ -57,11 +97,8 @@ local function ReleaseAllObjectiveLabels(row)
             if label.SetHidden then
                 label:SetHidden(true)
             end
-            if label.label and label.label.SetHidden then
-                label.label:SetHidden(true)
-            end
-            if label.label and label.label.SetText then
-                label.label:SetText("")
+            if textLabel and textLabel.SetHidden then
+                textLabel:SetHidden(true)
             end
             if pool.poolParent and label.SetParent then
                 label:SetParent(pool.poolParent)
@@ -96,6 +133,9 @@ local function AcquireObjectiveLabel(row)
             label:SetParent(objectiveContainer)
         end
     end
+
+    ensureLabelReference(label)
+    resetRowHeight(label)
 
     if label.SetHidden then
         label:SetHidden(false)
@@ -240,20 +280,16 @@ function Rows:ApplyObjectives(row, objectives)
         local objectiveText = getObjective(index)
         local label = AcquireObjectiveLabel(row)
         if label then
+            local textLabel = ensureLabelReference(label)
             local width = (objectiveContainer.GetWidth and objectiveContainer:GetWidth())
                 or (row.label and row.label.GetWidth and row.label:GetWidth())
                 or (row.GetWidth and row:GetWidth())
                 or 0
-            if label.SetWidth then
-                label:SetWidth(width)
+            if textLabel and textLabel.SetWidth then
+                textLabel:SetWidth(width)
             end
-            if label.label and label.label.SetWidth then
-                label.label:SetWidth(width)
-            end
-            if label.label and label.label.SetText then
-                label.label:SetText(objectiveText or "")
-            elseif label.SetText then
-                label:SetText(objectiveText or "")
+            if textLabel and textLabel.SetText then
+                textLabel:SetText(objectiveText or "")
             end
 
             if lastObjective then
@@ -267,8 +303,8 @@ function Rows:ApplyObjectives(row, objectives)
             if label.SetHidden then
                 label:SetHidden(false)
             end
-            if label.label and label.label.SetHidden then
-                label.label:SetHidden(false)
+            if textLabel and textLabel.SetHidden then
+                textLabel:SetHidden(false)
             end
 
             lastObjective = label
@@ -584,6 +620,9 @@ function Rows:AcquireQuestRow()
 
     ensureObjectivePool(row)
     self:ResetQuestRowObjectives(row)
+
+    ensureLabelReference(row)
+    resetRowHeight(row)
 
     if row.ClearAnchors then
         row:ClearAnchors()

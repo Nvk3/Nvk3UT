@@ -170,6 +170,7 @@ local RIGHT_MOUSE_BUTTON = MOUSE_BUTTON_INDEX_RIGHT or 2
 
 local DEFAULT_FONT_OUTLINE = "soft-shadow-thick"
 local REFRESH_DEBOUNCE_MS = 80
+local DEBUG_ROW_LOG_LIMIT = 5
 
 local DEFAULT_MOUSEOVER_HIGHLIGHT_COLOR = { 1, 1, 0.6, 1 }
 
@@ -247,6 +248,35 @@ local function DebugLog(...)
     elseif print then
         print("[" .. MODULE_NAME .. "]", ...)
     end
+end
+
+local function LogRowMetrics(rowType, control)
+    if not IsDebugLoggingEnabled() then
+        return
+    end
+
+    state.debugRowLogCount = state.debugRowLogCount or 0
+    if state.debugRowLogCount >= DEBUG_ROW_LOG_LIMIT then
+        return
+    end
+
+    if not (control and control.label) then
+        return
+    end
+
+    local labelWidth = control.label.GetWidth and control.label:GetWidth() or 0
+    local textHeight = control.label.GetTextHeight and control.label:GetTextHeight() or 0
+    local rowHeight = control.GetHeight and control:GetHeight() or 0
+
+    DebugLog(string.format(
+        "Row metrics type=%s labelWidth=%s textHeight=%s rowHeight=%s",
+        tostring(rowType),
+        tostring(labelWidth),
+        tostring(textHeight),
+        tostring(rowHeight)
+    ))
+
+    state.debugRowLogCount = state.debugRowLogCount + 1
 end
 
 local function DebugDiagnostics(message)
@@ -1317,6 +1347,7 @@ local function ResetLayoutState()
     state.objectiveAlignLogged = false
     state.anchorHygieneLogged = false
     state.lastAnchorY = 0
+    state.debugRowLogCount = 0
 end
 
 local function WarnMissingRows()
@@ -1794,6 +1825,7 @@ local function LayoutObjective(rows, achievement, objective, objectiveIndex)
         end
     end
     ApplyRowMetrics(control, "objective", OBJECTIVE_INDENT_X, 0, 0, 0)
+    LogRowMetrics("achievement objective", control)
     control:SetHidden(false)
     AnchorControl(control, OBJECTIVE_INDENT_X, state.nextCategoryGap)
     state.nextCategoryGap = nil
@@ -1862,6 +1894,7 @@ local function LayoutAchievement(rows, achievement)
 
     local expanded = hasObjectives and IsEntryExpanded(achievement.id)
     local viewportInfo = getHostViewportInfo()
+    applyEntryAlignment(control, viewportInfo)
     ApplyRowMetrics(
         control,
         "achievement",
@@ -1870,7 +1903,7 @@ local function LayoutAchievement(rows, achievement)
         ACHIEVEMENT_ICON_SLOT_PADDING_X,
         0
     )
-    applyEntryAlignment(control, viewportInfo)
+    LogRowMetrics("achievement entry", control)
     control:SetHidden(false)
     AnchorControl(control, ENTRY_INDENT_X, state.nextCategoryGap)
     state.nextCategoryGap = nil

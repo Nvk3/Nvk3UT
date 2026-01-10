@@ -30,6 +30,45 @@ local ENTRY_ROW_TYPES = {
     objective = true,
 }
 
+local function ensureLabelReference(control)
+    if not control then
+        return nil
+    end
+
+    local label = control.label
+    if label and label.GetText then
+        return label
+    end
+
+    if control.GetNamedChild then
+        local named = control:GetNamedChild("Label")
+        if named then
+            control.label = named
+            return named
+        end
+    end
+
+    if control.SetText then
+        control.label = control
+        return control
+    end
+
+    return nil
+end
+
+local function resetRowHeight(control)
+    if not (control and control.SetHeight) then
+        return
+    end
+
+    if control.__nvkBaseHeight == nil and control.GetHeight then
+        control.__nvkBaseHeight = control:GetHeight() or 0
+    end
+
+    local baseline = control.__nvkBaseHeight or 0
+    control:SetHeight(baseline)
+end
+
 local function Call(callback, ...)
     if type(callback) == "function" then
         return callback(...)
@@ -200,6 +239,9 @@ function Rows:ResetControl(control)
     if not control then
         return
     end
+
+    ensureLabelReference(control)
+    resetRowHeight(control)
 
     if control.SetHidden then
         control:SetHidden(true)
