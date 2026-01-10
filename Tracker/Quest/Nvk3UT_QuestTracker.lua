@@ -4203,9 +4203,6 @@ local function AcquireQuestControl(providedControl)
         end)
         control.initialized = true
     end
-    if QuestTrackerRows and QuestTrackerRows.ResetQuestRowObjectives then
-        QuestTrackerRows:ResetQuestRowObjectives(control)
-    end
     control.rowType = "quest"
     control.poolKey = key
     ApplyLabelDefaults(control.label)
@@ -4526,11 +4523,6 @@ local function ConfigureLayoutHelper()
                     return QuestTrackerRows:AcquireObjectiveRow()
                 end
                 return nil
-            end,
-            ResetQuestRowObjectives = function(row)
-                if QuestTrackerRows and QuestTrackerRows.ResetQuestRowObjectives then
-                    return QuestTrackerRows:ResetQuestRowObjectives(row)
-                end
             end,
             ApplyObjectiveRow = function(control, condition)
                 if QuestTrackerRows and QuestTrackerRows.ApplyObjectiveRow then

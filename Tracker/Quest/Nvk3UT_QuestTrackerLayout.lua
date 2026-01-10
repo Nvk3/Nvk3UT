@@ -582,10 +582,6 @@ function Layout:ApplyRowDescriptor(rowDescriptor, providedControl)
             return nil
         end
 
-        if self.deps.ResetQuestRowObjectives then
-            self.deps.ResetQuestRowObjectives(control)
-        end
-
         local quest = rowDescriptor.quest or {}
         control.data = { quest = quest }
         control.questJournalIndex = quest and quest.journalIndex
