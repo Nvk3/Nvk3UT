@@ -279,6 +279,28 @@ local function LogRowMetrics(rowType, control)
     state.debugRowLogCount = state.debugRowLogCount + 1
 end
 
+local function LogEntryHeightMetrics(rowType, headerHeight, objectiveSumHeight, totalHeight, control)
+    if not IsDebugLoggingEnabled() then
+        return
+    end
+
+    state.debugRowLogCount = state.debugRowLogCount or 0
+    if state.debugRowLogCount >= DEBUG_ROW_LOG_LIMIT then
+        return
+    end
+
+    local appliedHeight = control and control.GetHeight and control:GetHeight() or 0
+    DebugLog(string.format(
+        "Entry heights type=%s header=%s objectives=%s total=%s applied=%s",
+        tostring(rowType),
+        tostring(headerHeight),
+        tostring(objectiveSumHeight),
+        tostring(totalHeight),
+        tostring(appliedHeight)
+    ))
+
+    state.debugRowLogCount = state.debugRowLogCount + 1
+end
 local function DebugDiagnostics(message)
     local diagnostics = (Nvk3UT and Nvk3UT.Diagnostics) or Nvk3UT_Diagnostics
     if diagnostics and type(diagnostics.DebugIfEnabled) == "function" then
@@ -1348,6 +1370,7 @@ local function ResetLayoutState()
     state.anchorHygieneLogged = false
     state.lastAnchorY = 0
     state.debugRowLogCount = 0
+    state.entryObjectivesById = {}
 end
 
 local function WarnMissingRows()
@@ -1485,6 +1508,12 @@ local function UpdateContentSize()
             local height = control:GetHeight() or 0
             local rowKind = ResolveRowKind(control)
             local rowType = control.rowType
+            if rowType == "objective" then
+                local achievementId = control.data and control.data.achievementId
+                if achievementId and state.entryObjectivesById and state.entryObjectivesById[achievementId] then
+                    goto continue
+                end
+            end
             local gap = 0
             if previousKind ~= nil then
                 if type(pendingCategoryGap) == "number" then
@@ -1549,7 +1578,15 @@ local function UpdateContentSize()
                     pendingObjectiveGap = OBJECTIVE_SPACING_BELOW
                 end
             end
+            if rowType == "achievement" then
+                local achievementId = control.data and control.data.achievementId
+                if achievementId and state.entryObjectivesById and state.entryObjectivesById[achievementId] then
+                    pendingObjectiveGap = OBJECTIVE_SPACING_BELOW
+                    pendingEntryGap = ENTRY_SPACING_BELOW
+                end
+            end
         end
+        ::continue::
     end
 
     if visibleCount > 0 then
@@ -1903,6 +1940,7 @@ local function LayoutAchievement(rows, achievement)
         ACHIEVEMENT_ICON_SLOT_PADDING_X,
         0
     )
+    local baseRowHeight = control:GetHeight() or 0
     LogRowMetrics("achievement entry", control)
     control:SetHidden(false)
     AnchorControl(control, ENTRY_INDENT_X, state.nextCategoryGap)
@@ -2001,10 +2039,28 @@ local function LayoutAchievement(rows, achievement)
         end
     end
 
+    local objectiveBlockHeight = 0
+    if expanded and laidOutSubrows > 0 then
+        objectiveBlockHeight = OBJECTIVE_SPACING_ABOVE + ((laidOutSubrows - 1) * OBJECTIVE_SPACING_BETWEEN)
+        for index = 1, laidOutSubrows do
+            objectiveBlockHeight = objectiveBlockHeight + (objectiveHeights[index] or 0)
+        end
+    end
+
+    local totalHeight = baseRowHeight + objectiveBlockHeight
+    control:SetHeight(totalHeight)
+    if state.entryObjectivesById then
+        if expanded and laidOutSubrows > 0 then
+            state.entryObjectivesById[achievement.id] = true
+        else
+            state.entryObjectivesById[achievement.id] = nil
+        end
+    end
+    LogEntryHeightMetrics("achievement entry", baseRowHeight, objectiveBlockHeight, totalHeight, control)
+
     state.nextEntryGap = ENTRY_SPACING_BELOW
 
     if AchievementTrackerLayout and type(AchievementTrackerLayout.ComputeEntryHeight) == "function" then
-        local baseRowHeight = control:GetHeight() or 0
         local layoutHeight = AchievementTrackerLayout.ComputeEntryHeight(achievement, baseRowHeight, objectiveHeights)
     end
 end

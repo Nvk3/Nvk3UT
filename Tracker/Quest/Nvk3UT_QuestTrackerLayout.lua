@@ -257,6 +257,31 @@ function Layout:ComputeRowHeight(control, indent, toggleWidth, leftPadding, righ
     return targetHeight
 end
 
+function Layout:LogEntryHeightMetrics(rowType, headerHeight, objectiveSumHeight, totalHeight, control)
+    if not isDebugEnabled() then
+        return
+    end
+
+    local state = self.state or {}
+    state.debugRowLogCount = state.debugRowLogCount or 0
+    if state.debugRowLogCount >= DEBUG_ROW_LOG_LIMIT then
+        return
+    end
+
+    local appliedHeight = control and control.GetHeight and control:GetHeight() or 0
+    safeDebug(
+        "%s: Entry heights type=%s header=%s objectives=%s total=%s applied=%s",
+        MODULE_TAG,
+        tostring(rowType),
+        tostring(headerHeight),
+        tostring(objectiveSumHeight),
+        tostring(totalHeight),
+        tostring(appliedHeight)
+    )
+
+    state.debugRowLogCount = state.debugRowLogCount + 1
+end
+
 function Layout:LogRowMetrics(rowType, control)
     if not isDebugEnabled() then
         return
@@ -485,7 +510,9 @@ function Layout:GetQuestRowContentHeight(rowControl, rowData)
         return 0
     end
 
-    local totalHeight = self:GetQuestRowHeight(rowControl, rowData and rowData.quest)
+    local headerHeight = self:GetQuestRowHeight(rowControl, rowData and rowData.quest)
+    local totalHeight = headerHeight
+    local objectiveSumHeight = 0
 
     if rowControl.objectiveControls and #rowControl.objectiveControls > 0 then
         for index = 1, #rowControl.objectiveControls do
@@ -496,13 +523,18 @@ function Layout:GetQuestRowContentHeight(rowControl, rowData)
                     objectiveControl.data and (objectiveControl.data.objective or objectiveControl.data.condition)
                 )
                 if objectiveHeight > 0 then
+                    objectiveSumHeight = objectiveSumHeight + self.verticalPadding + objectiveHeight
                     totalHeight = totalHeight + self.verticalPadding + objectiveHeight
                 end
             end
         end
     end
 
-    return totalHeight
+    if rowControl.SetHeight then
+        rowControl:SetHeight(totalHeight)
+    end
+
+    return totalHeight, headerHeight, objectiveSumHeight
 end
 
 function Layout:GetConditionHeight(conditionControl)
@@ -1006,7 +1038,8 @@ function Layout:LayoutQuest(quest)
         UpdateQuestIconSlot(control)
     end
     self:ApplyQuestEntryAlignment(control)
-    self:GetQuestRowContentHeight(control, control.data)
+    local totalHeight, headerHeight, objectiveSumHeight = self:GetQuestRowContentHeight(control, control.data)
+    self:LogEntryHeightMetrics("quest entry", headerHeight, objectiveSumHeight, totalHeight, control)
     self:LogRowMetrics("quest entry", control)
     control:SetHidden(false)
     self:AnchorControl(control, self.deps.QUEST_INDENT_X)
