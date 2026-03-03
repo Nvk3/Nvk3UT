@@ -228,9 +228,7 @@ function Rows:ResetControl(control)
         if label.SetColor then
             label:SetColor(1, 1, 1, 1)
         end
-        if label.SetWrapMode then
-            label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
-        end
+        ApplyLabelDefaults(label)
         if label.SetHidden then
             label:SetHidden(false)
         end

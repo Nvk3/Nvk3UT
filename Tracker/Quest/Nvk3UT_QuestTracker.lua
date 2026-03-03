@@ -4585,6 +4585,9 @@ local function ConfigureLayoutHelper()
 end
 
 local function ConfigureRowsHelper()
+    state.questObjectiveMinHeight = CONDITION_MIN_HEIGHT
+    state.rowTextPaddingY = ROW_TEXT_PADDING_Y
+
     if QuestTrackerRows and QuestTrackerRows.Init then
         QuestTrackerRows:Init(state.container, state, {
             EnsurePools = EnsurePools,

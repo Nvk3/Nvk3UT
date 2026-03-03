@@ -535,6 +535,9 @@ local function ApplyRowMetrics(control, rowType, indent, toggleWidth, leftPaddin
     control.label:SetWidth(availableWidth)
 
     local textHeight = control.label:GetTextHeight() or 0
+    if rowType == "objective" and control.SetResizeToFitDescendents then
+        control:SetResizeToFitDescendents(false)
+    end
     control:SetHeight(GetRowHeight(rowType, textHeight))
 end
 

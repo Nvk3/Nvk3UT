@@ -18,6 +18,43 @@ local function ApplyObjectiveLabelDefaults(control)
     end
 end
 
+local function GetObjectiveTextLabel(control)
+    if not control then
+        return nil
+    end
+
+    return control.label or control
+end
+
+local function ApplyObjectiveControlMetrics(self, control, width)
+    if not control then
+        return
+    end
+
+    local textLabel = GetObjectiveTextLabel(control)
+    local minimumHeight = (self and self.state and tonumber(self.state.questObjectiveMinHeight)) or 20
+    local textPaddingY = (self and self.state and tonumber(self.state.rowTextPaddingY)) or 4
+
+    if textLabel and textLabel.SetWidth and type(width) == "number" then
+        textLabel:SetWidth(width)
+    end
+
+    local textHeight = 0
+    if textLabel and textLabel.GetTextHeight then
+        textHeight = tonumber(textLabel:GetTextHeight()) or 0
+    end
+
+    local measuredHeight = math.max(minimumHeight, textHeight + textPaddingY)
+
+    if control.SetResizeToFitDescendents then
+        control:SetResizeToFitDescendents(false)
+    end
+
+    if control.SetHeight then
+        control:SetHeight(measuredHeight)
+    end
+end
+
 local function ensureObjectivePool(row)
     if not row then
         return nil
@@ -262,14 +299,15 @@ function Rows:ApplyObjectives(row, objectives)
             if label.SetWidth then
                 label:SetWidth(width)
             end
-            if label.label and label.label.SetWidth then
-                label.label:SetWidth(width)
-            end
-            if label.label and label.label.SetText then
-                label.label:SetText(objectiveText or "")
+
+            local textLabel = GetObjectiveTextLabel(label)
+            if textLabel and textLabel.SetText then
+                textLabel:SetText(objectiveText or "")
             elseif label.SetText then
                 label:SetText(objectiveText or "")
             end
+
+            ApplyObjectiveControlMetrics(self, label, width)
 
             if lastObjective then
                 label:SetAnchor(TOPLEFT, lastObjective, BOTTOMLEFT, 0, verticalPadding)
