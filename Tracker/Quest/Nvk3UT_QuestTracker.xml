@@ -24,7 +24,6 @@
             </Controls>
         </Control>
         <Control name="QuestHeader_Template" virtual="true" mouseEnabled="true">
-            <Dimensions y="24" />
             <Controls>
                 <Texture name="$(parent)IconSlot"
                          textureSampleProcessingWeight="1">
@@ -42,7 +41,6 @@
             </Controls>
         </Control>
         <Control name="QuestCondition_Template" virtual="true">
-            <Dimensions y="20" />
             <Controls>
                 <Label name="$(parent)Label"
                        font="ZoFontGameSmall"

@@ -119,6 +119,69 @@ local function AcquireObjectiveLabel(row)
     return label
 end
 
+
+local function RecomputeQuestRowHeight(row, verticalPadding)
+    if not row then
+        return 0
+    end
+
+    local layout = Nvk3UT and Nvk3UT.QuestTrackerLayout
+    local contentHeight = 0
+
+    if layout and layout.GetQuestRowHeight then
+        contentHeight = layout:GetQuestRowHeight(row, row.data)
+    else
+        contentHeight = row.__height or (row.GetHeight and row:GetHeight()) or 0
+    end
+
+    local objectiveHeight = 0
+    local usedCount = 0
+    if row.objectiveControls and #row.objectiveControls > 0 then
+        for index = 1, #row.objectiveControls do
+            local objectiveControl = row.objectiveControls[index]
+            if objectiveControl and not objectiveControl:IsHidden() then
+                local currentHeight
+                if layout and layout.GetObjectiveTextHeight then
+                    currentHeight = layout:GetObjectiveTextHeight(
+                        objectiveControl,
+                        objectiveControl.data and (objectiveControl.data.objective or objectiveControl.data.condition)
+                    )
+                else
+                    currentHeight = objectiveControl.__height or (objectiveControl.GetHeight and objectiveControl:GetHeight()) or 0
+                end
+
+                objectiveControl.__height = currentHeight or 0
+                if objectiveControl.SetHeight then
+                    objectiveControl:SetHeight(objectiveControl.__height)
+                end
+
+                if usedCount > 0 then
+                    objectiveHeight = objectiveHeight + (verticalPadding or 0)
+                end
+
+                objectiveHeight = objectiveHeight + (objectiveControl.__height or 0)
+                usedCount = usedCount + 1
+            end
+        end
+    end
+
+    row.objectiveHeight = objectiveHeight
+    if row.objectiveContainer and row.objectiveContainer.SetHeight then
+        row.objectiveContainer:SetHeight(objectiveHeight)
+    end
+
+    if objectiveHeight > 0 then
+        contentHeight = contentHeight + (verticalPadding or 0) + objectiveHeight
+    end
+
+    row.__height = contentHeight
+    if row.SetHeight then
+        row:SetHeight(contentHeight)
+    end
+
+    return contentHeight
+end
+
 local function getAddon()
     return rawget(_G, addonName)
 end
@@ -256,6 +319,11 @@ function Rows:ApplyObjectives(row, objectives)
                 label:SetText(objectiveText or "")
             end
 
+            label.data = {
+                objective = objectiveText,
+                condition = objectiveText,
+            }
+
             if lastObjective then
                 label:SetAnchor(TOPLEFT, lastObjective, BOTTOMLEFT, 0, verticalPadding)
                 label:SetAnchor(TOPRIGHT, lastObjective, BOTTOMRIGHT, 0, verticalPadding)
@@ -294,6 +362,8 @@ function Rows:ApplyObjectives(row, objectives)
             iterCount
         )
     end
+
+    RecomputeQuestRowHeight(row, verticalPadding)
 end
 
 function Rows:Reset()

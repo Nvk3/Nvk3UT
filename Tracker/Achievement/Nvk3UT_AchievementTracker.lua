@@ -535,7 +535,9 @@ local function ApplyRowMetrics(control, rowType, indent, toggleWidth, leftPaddin
     control.label:SetWidth(availableWidth)
 
     local textHeight = control.label:GetTextHeight() or 0
-    control:SetHeight(GetRowHeight(rowType, textHeight))
+    local resolvedHeight = GetRowHeight(rowType, textHeight)
+    control.__height = resolvedHeight
+    control:SetHeight(resolvedHeight)
 end
 
 local function RefreshControlMetrics(control)
@@ -1399,7 +1401,9 @@ local function AnchorControl(control, indentX, gapOverride)
 
     local currentY
     if state.lastAnchoredControl then
-        local previousHeight = state.lastAnchoredControl.GetHeight and state.lastAnchoredControl:GetHeight() or 0
+        local previousHeight = state.lastAnchoredControl.__height
+            or (state.lastAnchoredControl.GetHeight and state.lastAnchoredControl:GetHeight())
+            or 0
         currentY = (state.lastAnchorY or 0) + previousHeight + verticalPadding
     else
         local offsetY = 0
@@ -1451,7 +1455,8 @@ local function UpdateContentSize()
             RefreshControlMetrics(control)
         end
         if control and not control:IsHidden() then
-            local height = control:GetHeight() or 0
+            local height = control.__height or (control.GetHeight and control:GetHeight()) or 0
+            control.__height = height
             local rowKind = ResolveRowKind(control)
             local rowType = control.rowType
             local gap = 0

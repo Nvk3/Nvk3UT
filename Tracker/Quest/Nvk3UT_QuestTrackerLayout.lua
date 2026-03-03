@@ -250,6 +250,7 @@ function Layout:ComputeRowHeight(control, indent, toggleWidth, leftPadding, righ
         targetHeight = math.max(minHeight, targetHeight)
     end
 
+    control.__height = targetHeight
     control:SetHeight(targetHeight)
 
     return targetHeight
@@ -469,6 +470,11 @@ function Layout:GetQuestRowContentHeight(rowControl, rowData)
         end
     end
 
+    rowControl.__height = totalHeight
+    if rowControl.SetHeight then
+        rowControl:SetHeight(totalHeight)
+    end
+
     return totalHeight
 end
 
@@ -497,7 +503,7 @@ function Layout:GetCategoryTotalHeight(categoryControl, rowsInCategory)
             elseif rowType == "condition" then
                 rowHeight = self:GetConditionHeight(row, row and row.data and row.data.condition)
             else
-                rowHeight = row and row.GetHeight and row:GetHeight() or 0
+                rowHeight = row and (row.__height or (row.GetHeight and row:GetHeight()) or 0)
             end
 
             if rowHeight > 0 then
@@ -565,7 +571,9 @@ function Layout:AnchorControl(control, indentX, gapOverride)
 
     local currentY
     if state.lastAnchoredControl then
-        local previousHeight = state.lastAnchoredControl.GetHeight and state.lastAnchoredControl:GetHeight() or 0
+        local previousHeight = state.lastAnchoredControl.__height
+            or (state.lastAnchoredControl.GetHeight and state.lastAnchoredControl:GetHeight())
+            or 0
         currentY = (state.lastAnchorY or 0) + previousHeight + gap
     else
         currentY = gap
@@ -659,7 +667,7 @@ function Layout:UpdateContentSize()
         local control = state.orderedControls[index]
         if control and not control:IsHidden() then
             local rowType = control.rowType
-            local height = 0
+            local height = control.__height or 0
 
             if rowType == "category" then
                 local categoryKey = control.categoryKey or (control.data and control.data.categoryKey)
@@ -739,6 +747,7 @@ function Layout:UpdateContentSize()
                 totalHeight = totalHeight + gap
             end
 
+            control.__height = height
             totalHeight = totalHeight + height
             visibleCount = visibleCount + 1
             prevRowType = rowType
@@ -972,7 +981,11 @@ function Layout:LayoutQuest(quest)
         UpdateQuestIconSlot(control)
     end
     self:ApplyQuestEntryAlignment(control)
-    self:GetQuestRowContentHeight(control, control.data)
+    local questHeight = self:GetQuestRowContentHeight(control, control.data)
+    control.__height = questHeight
+    if control.SetHeight then
+        control:SetHeight(questHeight)
+    end
     control:SetHidden(false)
     self:AnchorControl(control, self.deps.QUEST_INDENT_X)
 
