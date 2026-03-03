@@ -1367,8 +1367,11 @@ local function ResolveRowKind(control)
     return "row"
 end
 
-local function AnchorControl(control, indentX, gapOverride)
+local function AnchorControl(control, indentX, gapOverride, registerControl)
     indentX = indentX or 0
+    if registerControl == nil then
+        registerControl = true
+    end
     control:ClearAnchors()
 
     local rowKind = ResolveRowKind(control)
@@ -1424,9 +1427,32 @@ local function AnchorControl(control, indentX, gapOverride)
 
     state.lastAnchoredControl = control
     state.lastAnchoredKind = rowKind
-    state.orderedControls[#state.orderedControls + 1] = control
+    if registerControl then
+        state.orderedControls[#state.orderedControls + 1] = control
+    end
     control.currentIndent = indentX
     state.lastAnchorY = currentY
+end
+
+local function RegisterOrderedControl(control, indentX)
+    if not control then
+        return
+    end
+
+    state.orderedControls[#state.orderedControls + 1] = control
+    control.currentIndent = indentX or 0
+end
+
+local function GetRowIndent(rowType)
+    if rowType == "achievement" then
+        return ENTRY_INDENT_X
+    elseif rowType == "objective" then
+        return OBJECTIVE_INDENT_X
+    elseif rowType == "category" then
+        return CATEGORY_INDENT_X
+    end
+
+    return 0
 end
 
 local function UpdateContentSize()
@@ -1439,6 +1465,10 @@ local function UpdateContentSize()
     local pendingEntryGap = nil
     local pendingObjectiveGap = nil
     local previousRowType = nil
+
+    state.lastAnchoredControl = nil
+    state.lastAnchoredKind = nil
+    state.lastAnchorY = 0
 
     local function peekNextVisibleRow(startIndex)
         for nextIndex = startIndex + 1, #state.orderedControls do
@@ -1496,6 +1526,13 @@ local function UpdateContentSize()
             end
 
             measuredHeight = measuredHeight + gap + height
+
+            local indentX = control.currentIndent
+            if type(indentX) ~= "number" then
+                indentX = GetRowIndent(rowType)
+            end
+            AnchorControl(control, indentX, gap, false)
+
             visibleCount = visibleCount + 1
             if rowKind ~= "header" then
                 rowCount = rowCount + 1
@@ -1801,7 +1838,7 @@ local function LayoutObjective(rows, achievement, objective, objectiveIndex)
     end
     ApplyRowMetrics(control, "objective", OBJECTIVE_INDENT_X, 0, 0, 0)
     control:SetHidden(false)
-    AnchorControl(control, OBJECTIVE_INDENT_X, state.nextCategoryGap)
+    RegisterOrderedControl(control, OBJECTIVE_INDENT_X)
     state.nextCategoryGap = nil
 
     if not state.objectiveAlignLogged and IsDebugLoggingEnabled() then
@@ -1878,7 +1915,7 @@ local function LayoutAchievement(rows, achievement)
     )
     applyEntryAlignment(control, viewportInfo)
     control:SetHidden(false)
-    AnchorControl(control, ENTRY_INDENT_X, state.nextCategoryGap)
+    RegisterOrderedControl(control, ENTRY_INDENT_X)
     state.nextCategoryGap = nil
 
     if not state.entryAlignLogged and IsDebugLoggingEnabled() then
@@ -2114,7 +2151,7 @@ local function LayoutCategory(rows)
             gapOverride = CATEGORY_SPACING_ABOVE
         end
     end
-    AnchorControl(control, CATEGORY_INDENT_X, gapOverride)
+    RegisterOrderedControl(control, CATEGORY_INDENT_X)
     state.nextCategoryGap = CATEGORY_SPACING_BELOW
 
     if not state.categoryAlignLogged and IsDebugLoggingEnabled() then

@@ -508,9 +508,12 @@ function Layout:GetCategoryTotalHeight(categoryControl, rowsInCategory)
     return totalHeight, questCount
 end
 
-function Layout:AnchorControl(control, indentX, gapOverride)
+function Layout:AnchorControl(control, indentX, gapOverride, registerControl)
     local state = self.state or {}
     indentX = indentX or 0
+    if registerControl == nil then
+        registerControl = true
+    end
 
     if (control.__height or 0) <= 0 then
         if control.rowType == "category" then
@@ -587,10 +590,32 @@ function Layout:AnchorControl(control, indentX, gapOverride)
     end
 
     state.lastAnchoredControl = control
-    state.orderedControls[#state.orderedControls + 1] = control
+    if registerControl then
+        state.orderedControls[#state.orderedControls + 1] = control
+    end
     control.currentIndent = indentX
     state.lastAnchorY = currentY
     state.visibleRowCount = (state.visibleRowCount or 0) + 1
+end
+
+function Layout:RegisterOrderedControl(control, indentX)
+    if not control then
+        return
+    end
+
+    local state = self.state or {}
+    state.orderedControls[#state.orderedControls + 1] = control
+    control.currentIndent = indentX or 0
+end
+
+function Layout:GetRowIndent(rowType)
+    if rowType == "quest" then
+        return self.deps.QUEST_INDENT_X or 0
+    elseif rowType == "condition" then
+        return self.deps.CONDITION_INDENT_X or 0
+    end
+
+    return 0
 end
 
 function Layout:UpdateContentSize()
@@ -609,6 +634,10 @@ function Layout:UpdateContentSize()
     local pendingEntryGap = nil
     local currentCategoryActive = false
     local prevRowType = nil
+
+    state.lastAnchoredControl = nil
+    state.lastAnchorY = 0
+    state.visibleRowCount = 0
 
     local function resolveRowSpacingBefore(rowType, prevType, isFirst)
         local gap = 0
@@ -746,6 +775,12 @@ function Layout:UpdateContentSize()
                 totalHeight = totalHeight + gap
             end
 
+            local indentX = control.currentIndent
+            if type(indentX) ~= "number" then
+                indentX = self:GetRowIndent(rowType)
+            end
+            self:AnchorControl(control, indentX, gap, false)
+
             control.__height = height
             totalHeight = totalHeight + height
             visibleCount = visibleCount + 1
@@ -880,7 +915,7 @@ function Layout:LayoutCondition(condition)
     self:ApplyConditionAlignment(control)
     self:GetConditionHeight(control)
     control:SetHidden(false)
-    self:AnchorControl(control, self.deps.CONDITION_INDENT_X)
+    self:RegisterOrderedControl(control, self.deps.CONDITION_INDENT_X)
 
     local state = self.state or {}
     if not state.objectiveAlignLogged and isDebugEnabled() then
@@ -1003,7 +1038,7 @@ function Layout:LayoutQuest(quest)
     self:ApplyQuestEntryAlignment(control)
     self:GetQuestRowContentHeight(control, control.data)
     control:SetHidden(false)
-    self:AnchorControl(control, self.deps.QUEST_INDENT_X)
+    self:RegisterOrderedControl(control, self.deps.QUEST_INDENT_X)
 
     local state = self.state or {}
     if not state.entryAlignLogged and isDebugEnabled() then
@@ -1157,7 +1192,7 @@ function Layout:LayoutCategory(category, providedControl)
     self:ApplyCategoryAlignment(control, expanded)
     self:GetCategoryHeaderHeight(control)
     control:SetHidden(false)
-    self:AnchorControl(control, 0)
+    self:RegisterOrderedControl(control, 0)
 
     local host = Nvk3UT and Nvk3UT.TrackerHost
     local alignInfo = getHostViewportInfo()
