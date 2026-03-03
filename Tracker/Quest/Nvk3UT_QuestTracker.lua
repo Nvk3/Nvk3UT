@@ -1253,6 +1253,9 @@ local function ApplyLabelDefaults(label)
     if label.SetWrapMode then
         label:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
     end
+    if label.SetMaxLineCount then
+        label:SetMaxLineCount(0)
+    end
 end
 
 local function ApplyToggleDefaults(toggle)

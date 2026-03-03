@@ -7,6 +7,17 @@ Rows.__index = Rows
 
 local MODULE_TAG = addonName .. ".QuestTrackerRows"
 
+local function ApplyObjectiveLabelDefaults(control)
+    if not control then
+        return
+    end
+
+    local textLabel = control.label or control
+    if textLabel and textLabel.SetMaxLineCount then
+        textLabel:SetMaxLineCount(0)
+    end
+end
+
 local function ensureObjectivePool(row)
     if not row then
         return nil
@@ -103,6 +114,8 @@ local function AcquireObjectiveLabel(row)
     if label.ClearAnchors then
         label:ClearAnchors()
     end
+
+    ApplyObjectiveLabelDefaults(label)
 
     pool.used[#pool.used + 1] = label
     row.objectiveControls = pool.used
@@ -240,6 +253,8 @@ function Rows:ApplyObjectives(row, objectives)
         local objectiveText = getObjective(index)
         local label = AcquireObjectiveLabel(row)
         if label then
+            ApplyObjectiveLabelDefaults(label)
+
             local width = (objectiveContainer.GetWidth and objectiveContainer:GetWidth())
                 or (row.label and row.label.GetWidth and row.label:GetWidth())
                 or (row.GetWidth and row:GetWidth())
