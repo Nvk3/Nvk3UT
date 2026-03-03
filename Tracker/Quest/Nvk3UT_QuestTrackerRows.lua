@@ -7,181 +7,6 @@ Rows.__index = Rows
 
 local MODULE_TAG = addonName .. ".QuestTrackerRows"
 
-local function ensureObjectivePool(row)
-    if not row then
-        return nil
-    end
-
-    row._objPool = row._objPool or { free = {}, used = {} }
-
-    if not row._objPool.poolParent then
-        local poolParentName = (row.GetName and row:GetName() or MODULE_TAG) .. "_ObjectivePool"
-        local poolParent = CreateControl(poolParentName, row, CT_CONTROL)
-        poolParent:SetHidden(true)
-        poolParent:SetAnchor(TOPLEFT, row, TOPLEFT, 0, 0)
-        poolParent:SetAnchor(BOTTOMRIGHT, row, BOTTOMRIGHT, 0, 0)
-        row._objPool.poolParent = poolParent
-    end
-
-    row.objectiveControls = row.objectiveControls or {}
-    return row._objPool
-end
-
-local function ReleaseAllObjectiveLabels(row)
-    local pool = ensureObjectivePool(row)
-    if not pool then
-        return
-    end
-
-    if row.objectiveContainer then
-        if row.objectiveContainer.ClearAnchors then
-            row.objectiveContainer:ClearAnchors()
-        end
-        if row.objectiveContainer.SetHidden then
-            row.objectiveContainer:SetHidden(true)
-        end
-        if row.objectiveContainer.SetHeight then
-            row.objectiveContainer:SetHeight(0)
-        end
-    end
-
-    for index = #pool.used, 1, -1 do
-        local label = table.remove(pool.used, index)
-        if label then
-            if label.SetText then
-                label:SetText("")
-            end
-            if label.ClearAnchors then
-                label:ClearAnchors()
-            end
-            if label.SetHidden then
-                label:SetHidden(true)
-            end
-            if label.label and label.label.SetHidden then
-                label.label:SetHidden(true)
-            end
-            if label.label and label.label.SetText then
-                label.label:SetText("")
-            end
-            if pool.poolParent and label.SetParent then
-                label:SetParent(pool.poolParent)
-            end
-            pool.free[#pool.free + 1] = label
-        end
-    end
-
-    row.objectiveControls = pool.used
-    row.objectiveCount = nil
-    row.objectiveHeight = nil
-end
-
-local function AcquireObjectiveLabel(row)
-    local pool = ensureObjectivePool(row)
-    if not pool then
-        return nil
-    end
-
-    local label = table.remove(pool.free)
-    local created = false
-    local objectiveContainer = row.objectiveContainer or row
-
-    if not label then
-        local nameBase = row.GetName and row:GetName() or MODULE_TAG
-        local index = (#pool.used) + (#pool.free) + 1
-        local labelName = string.format("%s_Objective_%d", nameBase, index)
-        label = CreateControlFromVirtual(labelName, objectiveContainer, "QuestCondition_Template")
-        created = true
-    else
-        if label.SetParent then
-            label:SetParent(objectiveContainer)
-        end
-    end
-
-    if label.SetHidden then
-        label:SetHidden(false)
-    end
-    if label.ClearAnchors then
-        label:ClearAnchors()
-    end
-
-    pool.used[#pool.used + 1] = label
-    row.objectiveControls = pool.used
-
-    safeDebug(
-        "%s: AcquireObjectiveLabel %s (%s) used=%d free=%d",
-        MODULE_TAG,
-        label.GetName and label:GetName() or "<objective>",
-        created and "new" or "reused",
-        #pool.used,
-        #pool.free
-    )
-
-    return label
-end
-
-
-local function RecomputeQuestRowHeight(row, verticalPadding)
-    if not row then
-        return 0
-    end
-
-    local layout = Nvk3UT and Nvk3UT.QuestTrackerLayout
-    local contentHeight = 0
-
-    if layout and layout.GetQuestRowHeight then
-        contentHeight = layout:GetQuestRowHeight(row, row.data)
-    else
-        contentHeight = row.__height or (row.GetHeight and row:GetHeight()) or 0
-    end
-
-    local objectiveHeight = 0
-    local usedCount = 0
-    if row.objectiveControls and #row.objectiveControls > 0 then
-        for index = 1, #row.objectiveControls do
-            local objectiveControl = row.objectiveControls[index]
-            if objectiveControl and not objectiveControl:IsHidden() then
-                local currentHeight
-                if layout and layout.GetObjectiveTextHeight then
-                    currentHeight = layout:GetObjectiveTextHeight(
-                        objectiveControl,
-                        objectiveControl.data and (objectiveControl.data.objective or objectiveControl.data.condition)
-                    )
-                else
-                    currentHeight = objectiveControl.__height or (objectiveControl.GetHeight and objectiveControl:GetHeight()) or 0
-                end
-
-                objectiveControl.__height = currentHeight or 0
-                if objectiveControl.SetHeight then
-                    objectiveControl:SetHeight(objectiveControl.__height)
-                end
-
-                if usedCount > 0 then
-                    objectiveHeight = objectiveHeight + (verticalPadding or 0)
-                end
-
-                objectiveHeight = objectiveHeight + (objectiveControl.__height or 0)
-                usedCount = usedCount + 1
-            end
-        end
-    end
-
-    row.objectiveHeight = objectiveHeight
-    if row.objectiveContainer and row.objectiveContainer.SetHeight then
-        row.objectiveContainer:SetHeight(objectiveHeight)
-    end
-
-    if objectiveHeight > 0 then
-        contentHeight = contentHeight + (verticalPadding or 0) + objectiveHeight
-    end
-
-    row.__height = contentHeight
-    if row.SetHeight then
-        row:SetHeight(contentHeight)
-    end
-
-    return contentHeight
-end
-
 local function getAddon()
     return rawget(_G, addonName)
 end
@@ -225,142 +50,10 @@ function Rows:Init(parentContainer, trackerState, callbacks)
 end
 
 function Rows:ResetQuestRowObjectives(row)
-    ReleaseAllObjectiveLabels(row)
-end
-
-function Rows:ApplyObjectives(row, objectives)
-    if not row then
-        return
+    if row then
+        row.objectiveCount = nil
+        row.objectiveHeight = nil
     end
-
-    ReleaseAllObjectiveLabels(row)
-
-    local pool = ensureObjectivePool(row)
-    local objectiveContainer = row.objectiveContainer or row
-    if not pool or not objectiveContainer then
-        return
-    end
-
-    local verticalPadding = (self.state and self.state.verticalPadding) or 0
-    local lastObjective = nil
-
-    local rawObjectiveCount = 0
-    if type(objectives) == "table" then
-        for _ in pairs(objectives) do
-            rawObjectiveCount = rawObjectiveCount + 1
-        end
-    end
-
-    local arrayCount = 0
-    if type(objectives) == "table" then
-        for _ in ipairs(objectives) do
-            arrayCount = arrayCount + 1
-        end
-    end
-
-    local isArray = (rawObjectiveCount > 0 and arrayCount == rawObjectiveCount) or (rawObjectiveCount == 0)
-
-    if rawObjectiveCount > 0 and objectiveContainer.SetHidden then
-        objectiveContainer:SetHidden(false)
-    end
-
-    local orderedKeys = nil
-    if not isArray and type(objectives) == "table" then
-        orderedKeys = {}
-        for key in pairs(objectives) do
-            orderedKeys[#orderedKeys + 1] = key
-        end
-        table.sort(orderedKeys, function(left, right)
-            local leftNumber = tonumber(left)
-            local rightNumber = tonumber(right)
-            if leftNumber and rightNumber then
-                return leftNumber < rightNumber
-            end
-            if leftNumber and not rightNumber then
-                return true
-            end
-            if rightNumber and not leftNumber then
-                return false
-            end
-            return tostring(left) < tostring(right)
-        end)
-    end
-
-    local function getObjective(index)
-        if type(objectives) ~= "table" then
-            return nil
-        end
-        if isArray then
-            return objectives[index]
-        end
-        local key = orderedKeys and orderedKeys[index]
-        return key and objectives[key] or nil
-    end
-
-    local iterCount = isArray and arrayCount or (orderedKeys and #orderedKeys or 0)
-
-    for index = 1, iterCount do
-        local objectiveText = getObjective(index)
-        local label = AcquireObjectiveLabel(row)
-        if label then
-            local width = row._layoutWidth or 0
-            if label.SetWidth then
-                label:SetWidth(width)
-            end
-            if label.label and label.label.SetWidth then
-                label.label:SetWidth(width)
-            end
-            if label.label and label.label.SetText then
-                label.label:SetText(objectiveText or "")
-            elseif label.SetText then
-                label:SetText(objectiveText or "")
-            end
-
-            label.data = {
-                objective = objectiveText,
-                condition = objectiveText,
-            }
-
-            if lastObjective then
-                label:SetAnchor(TOPLEFT, lastObjective, BOTTOMLEFT, 0, verticalPadding)
-                label:SetAnchor(TOPRIGHT, lastObjective, BOTTOMRIGHT, 0, verticalPadding)
-            else
-                label:SetAnchor(TOPLEFT, objectiveContainer, TOPLEFT, 0, 0)
-                label:SetAnchor(TOPRIGHT, objectiveContainer, TOPRIGHT, 0, 0)
-            end
-
-            if label.SetHidden then
-                label:SetHidden(false)
-            end
-            if label.label and label.label.SetHidden then
-                label.label:SetHidden(false)
-            end
-
-            lastObjective = label
-        end
-    end
-
-    safeDebug(
-        "%s: ApplyObjectives quest=%s objectives=%d rawObjectiveKeys=%d array=%s used=%d free=%d",
-        MODULE_TAG,
-        tostring(row.questId or row.questKey or (row.data and row.data.quest and row.data.quest.journalIndex) or "<nil>"),
-        iterCount,
-        rawObjectiveCount,
-        tostring(isArray),
-        pool and #pool.used or 0,
-        pool and #pool.free or 0
-    )
-
-    if pool and #pool.used ~= iterCount then
-        safeDebug(
-            "%s: WARN objective pool mismatch used=%d expected=%d",
-            MODULE_TAG,
-            pool and #pool.used or 0,
-            iterCount
-        )
-    end
-
-    RecomputeQuestRowHeight(row, verticalPadding)
 end
 
 function Rows:Reset()
@@ -649,7 +342,6 @@ function Rows:AcquireQuestRow()
         name = row.GetName and row:GetName() or "<questRow>"
     end
 
-    ensureObjectivePool(row)
     self:ResetQuestRowObjectives(row)
 
     if row.ClearAnchors then
@@ -660,7 +352,6 @@ function Rows:AcquireQuestRow()
     end
 
     row.rowType = "quest"
-    row.objectiveControls = row.objectiveControls or {}
 
     table.insert(self.questPool.activeRows, row)
 
@@ -772,9 +463,6 @@ function Rows:SetCategoryRowsVisible(categoryKey, visible)
             end
             if not visible and row.ClearAnchors then
                 row:ClearAnchors()
-            end
-            if not visible then
-                ReleaseAllObjectiveLabels(row)
             end
         end
     end

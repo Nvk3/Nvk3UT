@@ -459,21 +459,6 @@ function Layout:GetQuestRowContentHeight(rowControl, rowData)
 
     local totalHeight = self:GetQuestRowHeight(rowControl, rowData and rowData.quest)
 
-    if rowControl.objectiveControls and #rowControl.objectiveControls > 0 then
-        for index = 1, #rowControl.objectiveControls do
-            local objectiveControl = rowControl.objectiveControls[index]
-            if objectiveControl and not objectiveControl:IsHidden() then
-                local objectiveHeight = self:GetObjectiveTextHeight(
-                    objectiveControl,
-                    objectiveControl.data and (objectiveControl.data.objective or objectiveControl.data.condition)
-                )
-                if objectiveHeight > 0 then
-                    totalHeight = totalHeight + self.verticalPadding + objectiveHeight
-                end
-            end
-        end
-    end
-
     rowControl.__height = totalHeight
     if rowControl.SetHeight then
         rowControl:SetHeight(totalHeight)
@@ -935,7 +920,6 @@ function Layout:LayoutQuest(quest)
     local UpdateQuestIconSlot = self.deps.UpdateQuestIconSlot
     local IsQuestExpanded = self.deps.IsQuestExpanded
     local ResetQuestRowObjectives = self.deps.ResetQuestRowObjectives
-    local ApplyQuestObjectives = self.deps.ApplyQuestObjectives
     local LayoutCondition = function(condition)
         self:LayoutCondition(condition)
     end
@@ -977,10 +961,6 @@ function Layout:LayoutQuest(quest)
         self.deps.QUEST_MIN_HEIGHT
     )
 
-    if ApplyQuestObjectives then
-        ApplyQuestObjectives(control, quest and quest.objectives)
-    end
-
     if self.deps.RegisterQuestRow then
         self.deps.RegisterQuestRow(control, control.categoryKey)
     end
@@ -1004,9 +984,7 @@ function Layout:LayoutQuest(quest)
         UpdateQuestIconSlot(control)
     end
     self:ApplyQuestEntryAlignment(control)
-    if not ApplyQuestObjectives then
-        self:GetQuestRowContentHeight(control, control.data)
-    end
+    self:GetQuestRowContentHeight(control, control.data)
     control:SetHidden(false)
     self:AnchorControl(control, self.deps.QUEST_INDENT_X)
 
@@ -1076,12 +1054,18 @@ function Layout:LayoutQuest(quest)
         state.questControls[quest.journalIndex] = control
     end
 
-    if expanded and quest and quest.steps then
-        for stepIndex = 1, #quest.steps do
-            local step = quest.steps[stepIndex]
-            if step.isVisible ~= false and step.conditions then
-                for conditionIndex = 1, #step.conditions do
-                    LayoutCondition(step.conditions[conditionIndex])
+    if expanded and quest then
+        if type(quest.objectives) == "table" and #quest.objectives > 0 then
+            for objectiveIndex = 1, #quest.objectives do
+                LayoutCondition(quest.objectives[objectiveIndex])
+            end
+        elseif quest.steps then
+            for stepIndex = 1, #quest.steps do
+                local step = quest.steps[stepIndex]
+                if step.isVisible ~= false and step.conditions then
+                    for conditionIndex = 1, #step.conditions do
+                        LayoutCondition(step.conditions[conditionIndex])
+                    end
                 end
             end
         end
