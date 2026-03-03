@@ -532,6 +532,7 @@ local function ApplyRowMetrics(control, rowType, indent, toggleWidth, leftPaddin
         availableWidth = 0
     end
 
+    control._layoutWidth = availableWidth
     control.label:SetWidth(availableWidth)
 
     local textHeight = control.label:GetTextHeight() or 0

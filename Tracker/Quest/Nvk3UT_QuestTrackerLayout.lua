@@ -232,12 +232,16 @@ function Layout:ComputeRowHeight(control, indent, toggleWidth, leftPadding, righ
     leftPadding = leftPadding or 0
     rightPadding = rightPadding or 0
 
-    local targetWidth = widthOverride
-    if type(targetWidth) ~= "number" or targetWidth <= 0 then
-        targetWidth = self:GetContainerWidth()
+    local availableWidth
+    if type(widthOverride) == "number" and widthOverride > 0 then
+        availableWidth = widthOverride - indent - toggleWidth - leftPadding - rightPadding
+    elseif type(control._layoutWidth) == "number" and control._layoutWidth > 0 then
+        availableWidth = control._layoutWidth
+    else
+        local targetWidth = self:GetContainerWidth()
+        availableWidth = targetWidth - indent - toggleWidth - leftPadding - rightPadding
     end
 
-    local availableWidth = targetWidth - indent - toggleWidth - leftPadding - rightPadding
     if availableWidth < 0 then
         availableWidth = 0
     end
@@ -954,6 +958,25 @@ function Layout:LayoutQuest(quest)
         control.label:SetText(quest and quest.name or "")
     end
 
+    local containerWidth = self:GetContainerWidth()
+    local availableWidth = containerWidth
+        - (self.deps.QUEST_INDENT_X or 0)
+        - (self.deps.QUEST_ICON_SLOT_WIDTH or 0)
+        - (self.deps.QUEST_ICON_SLOT_PADDING_X or 0)
+    if availableWidth < 0 then
+        availableWidth = 0
+    end
+    control._layoutWidth = availableWidth
+
+    self:ComputeRowHeight(
+        control,
+        self.deps.QUEST_INDENT_X,
+        self.deps.QUEST_ICON_SLOT_WIDTH,
+        self.deps.QUEST_ICON_SLOT_PADDING_X,
+        0,
+        self.deps.QUEST_MIN_HEIGHT
+    )
+
     if ApplyQuestObjectives then
         ApplyQuestObjectives(control, quest and quest.objectives)
     end
@@ -981,10 +1004,8 @@ function Layout:LayoutQuest(quest)
         UpdateQuestIconSlot(control)
     end
     self:ApplyQuestEntryAlignment(control)
-    local questHeight = self:GetQuestRowContentHeight(control, control.data)
-    control.__height = questHeight
-    if control.SetHeight then
-        control:SetHeight(questHeight)
+    if not ApplyQuestObjectives then
+        self:GetQuestRowContentHeight(control, control.data)
     end
     control:SetHidden(false)
     self:AnchorControl(control, self.deps.QUEST_INDENT_X)

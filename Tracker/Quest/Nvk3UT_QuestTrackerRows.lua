@@ -303,10 +303,7 @@ function Rows:ApplyObjectives(row, objectives)
         local objectiveText = getObjective(index)
         local label = AcquireObjectiveLabel(row)
         if label then
-            local width = (objectiveContainer.GetWidth and objectiveContainer:GetWidth())
-                or (row.label and row.label.GetWidth and row.label:GetWidth())
-                or (row.GetWidth and row:GetWidth())
-                or 0
+            local width = row._layoutWidth or 0
             if label.SetWidth then
                 label:SetWidth(width)
             end
