@@ -618,6 +618,24 @@ function Layout:GetRowIndent(rowType)
     return 0
 end
 
+function Layout:RefreshControlMetrics(control)
+    if not control then
+        return
+    end
+
+    local rowType = control.rowType
+    if rowType == "category" then
+        self:ApplyCategoryAlignment(control, control.isExpanded)
+        self:GetCategoryHeaderHeight(control)
+    elseif rowType == "quest" then
+        self:ApplyQuestEntryAlignment(control)
+        self:GetQuestRowContentHeight(control, control.data)
+    elseif rowType == "condition" then
+        self:ApplyConditionAlignment(control)
+        self:GetConditionHeight(control)
+    end
+end
+
 function Layout:UpdateContentSize()
     local state = self.state or {}
     local rowsByCategory = self.rowsByCategory
@@ -693,6 +711,9 @@ function Layout:UpdateContentSize()
 
     for index = 1, #state.orderedControls do
         local control = state.orderedControls[index]
+        if control then
+            self:RefreshControlMetrics(control)
+        end
         if control and not control:IsHidden() then
             local rowType = control.rowType
             local height = control.__height or 0
@@ -723,7 +744,7 @@ function Layout:UpdateContentSize()
                 if control.isExpanded == false then
                     currentCategoryRows = {}
                 end
-                height = self:GetCategoryHeaderHeight(control)
+                height = control.__height or 0
             elseif rowType == "quest" then
                 if currentCategoryControl and currentCategoryControl.isExpanded == false then
                     height = 0
@@ -734,7 +755,7 @@ function Layout:UpdateContentSize()
                         )
                     end
                 else
-                    height = self:GetQuestRowContentHeight(control, control.data)
+                    height = control.__height or 0
                     if currentCategoryRows then
                         local alreadyListed = false
                         for index = 1, #currentCategoryRows do
@@ -752,7 +773,7 @@ function Layout:UpdateContentSize()
                 if currentCategoryControl and currentCategoryControl.isExpanded == false then
                     height = 0
                 else
-                    height = self:GetConditionHeight(control, control.data and control.data.condition)
+                    height = control.__height or 0
                     if currentCategoryRows then
                         local alreadyListed = false
                         for index = 1, #currentCategoryRows do
