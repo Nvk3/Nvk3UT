@@ -512,6 +512,16 @@ function Layout:AnchorControl(control, indentX, gapOverride)
     local state = self.state or {}
     indentX = indentX or 0
 
+    if (control.__height or 0) <= 0 then
+        if control.rowType == "category" then
+            self:GetCategoryHeaderHeight(control)
+        elseif control.rowType == "quest" then
+            self:GetQuestRowContentHeight(control, control.data)
+        elseif control.rowType == "condition" then
+            self:GetConditionHeight(control)
+        end
+    end
+
     control:ClearAnchors()
     local rowType = control.rowType
     local info = getHostViewportInfo()
@@ -860,6 +870,13 @@ function Layout:LayoutCondition(condition)
         local r, g, b, a = GetQuestTrackerColor("objectiveText")
         control.label:SetColor(r, g, b, a)
     end
+
+    local conditionAvailableWidth = self:GetContainerWidth() - (self.deps.CONDITION_INDENT_X or 0)
+    if conditionAvailableWidth < 0 then
+        conditionAvailableWidth = 0
+    end
+    control._layoutWidth = conditionAvailableWidth
+
     self:ApplyConditionAlignment(control)
     self:GetConditionHeight(control)
     control:SetHidden(false)
@@ -1121,6 +1138,22 @@ function Layout:LayoutCategory(category, providedControl)
     if UpdateCategoryToggle then
         UpdateCategoryToggle(control, expanded)
     end
+    local categoryToggleWidth = 0
+    if control.toggle then
+        local GetToggleWidth = self.deps.GetToggleWidth
+        categoryToggleWidth = GetToggleWidth and GetToggleWidth(control.toggle, self.deps.CATEGORY_TOGGLE_WIDTH)
+            or (self.deps.CATEGORY_TOGGLE_WIDTH or 0)
+    end
+    local categoryTargetWidth = self:GetViewportWidth()
+    local categoryAvailableWidth = categoryTargetWidth
+        - (self.deps.CATEGORY_INDENT_X or 0)
+        - categoryToggleWidth
+        - (self.deps.TOGGLE_LABEL_PADDING_X or 0)
+    if categoryAvailableWidth < 0 then
+        categoryAvailableWidth = 0
+    end
+    control._layoutWidth = categoryAvailableWidth
+
     self:ApplyCategoryAlignment(control, expanded)
     self:GetCategoryHeaderHeight(control)
     control:SetHidden(false)
