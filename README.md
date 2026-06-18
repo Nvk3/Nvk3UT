@@ -1,11 +1,8 @@
 ﻿# ℹ️ This page contains the **English README first**, followed by the **German version** below.
 
 ---
-<p align="center">
-  <img src="https://raw.githubusercontent.com/Nvk3/Nvk3UT/main/media/sl2.png" width="280">
-</p>
 
-<p align="center">presents</p>
+IMPORTANT NOTE: This Addon is outdated and will not be further supported. This was a Test to see if Coding Agents are worth the Cost which failed. We are completely rewritting the Addon at this Moment under the Name: Nvk3´s Ultimate Tracker Reforged - NVK3UTR. The new Version will not contain any ai-written code.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/Nvk3/Nvk3UT/main/media/lazytracker.png" width="260">
@@ -220,12 +217,6 @@ Your feedback helped shape Nvk3UT into a stable, feature-complete addon.
 ---
 
 # 🇩🇪 Deutsche Version
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/Nvk3/Nvk3UT/main/media/sl2.png" width="280">
-</p>
-
-<p align="center">präsentiert</p>
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/Nvk3/Nvk3UT/main/media/lazytracker.png" width="260">
